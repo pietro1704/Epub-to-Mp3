@@ -4,12 +4,9 @@ The selector is the source of truth for the `IOS_DEST` value passed to
 `xcodebuild`. The mise `ios:build` task previously hard-coded
 `name=iPhone SE,OS=17.2`, which silently broke whenever the locally
 installed simulator was named `iPhone SE (2nd generation)`. The
-selector reads the live `xcrun simctl list -j devices available`
-payload and picks the best match from allowed runtimes, preferring:
-
-1. A booted iOS simulator on an allowed runtime.
-2. An available iPhone SE (any generation) on the newest allowed iOS.
-3. Any available iPhone on the newest allowed iOS.
+selector reads supplied JSON or queries available devices without booting them,
+then prefers an available iPhone SE on the oldest allowed runtime, followed by
+any iPhone and any iOS device. A booted device does not override that order.
 
 Recent simulator runtimes are blocked by default on this local Intel 8 GiB
 Mac because they have triggered kernel panics. If nothing safe matches, the
@@ -25,7 +22,10 @@ import json
 import os
 import subprocess
 import sys
+from io import StringIO
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "select_ios_simulator.py"
@@ -53,7 +53,7 @@ def _run(payload: dict) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_prefers_booted_simulator() -> None:
+def test_selects_available_iphone_se() -> None:
     payload = {
         "devices": {
             "com.apple.CoreSimulator.SimRuntime.iOS-17-2": [
@@ -120,7 +120,7 @@ def test_falls_back_to_any_iphone() -> None:
     assert "id=DDD" in result.stdout
 
 
-def test_prefers_newest_allowed_runtime_when_multiple_present() -> None:
+def test_prefers_oldest_allowed_runtime_when_multiple_present() -> None:
     payload = {
         "devices": {
             "com.apple.CoreSimulator.SimRuntime.iOS-16-4": [
@@ -143,7 +143,7 @@ def test_prefers_newest_allowed_runtime_when_multiple_present() -> None:
     }
     result = _run(payload)
     assert result.returncode == 0, result.stderr
-    assert "id=NEW" in result.stdout
+    assert "id=OLD" in result.stdout
 
 
 def test_skips_recent_runtime_by_default_even_when_booted() -> None:
@@ -202,14 +202,65 @@ def test_recent_runtime_requires_explicit_opt_in() -> None:
     assert "id=RISKY" in opted_in.stdout
 
 
-def test_live_simctl_is_refused_on_low_resource_intel_mac(monkeypatch, capsys) -> None:
+def test_live_query_failure_is_reported_without_selecting_device(monkeypatch, capsys) -> None:
     module = _load_module()
-    monkeypatch.delenv("IOS_ALLOW_LOW_RESOURCE_SIMULATOR", raising=False)
-    monkeypatch.setattr(module.platform, "machine", lambda: "x86_64")
-    monkeypatch.setattr(module, "_sysctl", lambda name: str(8 * 1024**3))
+    calls = []
 
-    assert module._refuse_live_simctl_on_low_resource_host() is True
-    assert "refusing to query CoreSimulator" in capsys.readouterr().err
+    def failed_query(arguments, **kwargs):
+        calls.append(arguments)
+        return subprocess.CompletedProcess(arguments, 23, "", "fixture service unavailable")
+
+    monkeypatch.setattr(module.subprocess, "run", failed_query)
+    with pytest.raises(SystemExit) as failure:
+        module._read_payload(False)
+    assert failure.value.code == 2
+    assert calls == [["xcrun", "simctl", "list", "-j", "devices", "available"]]
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "fixture service unavailable" in output.err
+
+
+def test_stdin_malformed_json_reports_error_without_querying_native_tools(
+    monkeypatch, capsys
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module.sys, "stdin", StringIO("{invalid"))
+
+    def unexpected_query(*args, **kwargs):
+        pytest.fail("stdin selection must not query native tools")
+
+    monkeypatch.setattr(module.subprocess, "run", unexpected_query)
+    with pytest.raises(SystemExit) as failure:
+        module._read_payload(True)
+    assert failure.value.code == 2
+    assert "malformed simctl JSON" in capsys.readouterr().err
+
+
+def test_booted_phone_does_not_override_oldest_available_se_identity() -> None:
+    payload = {"devices": {
+        "com.apple.CoreSimulator.SimRuntime.iOS-17-2": [{
+            "name": "iPhone 15", "udid": "BOOTED", "state": "Booted",
+            "isAvailable": True,
+        }],
+        "com.apple.CoreSimulator.SimRuntime.iOS-15-5": [{
+            "name": "iPhone SE (1st generation)", "udid": "REQUIRED-SE",
+            "state": "Shutdown", "isAvailable": True,
+        }],
+    }}
+    result = _run(payload)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "platform=iOS Simulator,id=REQUIRED-SE"
+
+
+def test_missing_selected_identity_fails_without_printing_destination() -> None:
+    payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-15-5": [{
+        "name": "iPhone SE (1st generation)", "state": "Shutdown",
+        "isAvailable": True,
+    }]}}
+    result = _run(payload)
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "chosen device has no UDID" in result.stderr
 
 
 def test_ignores_unavailable_devices() -> None:
