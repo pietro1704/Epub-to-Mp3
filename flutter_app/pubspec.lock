@@ -445,6 +445,11 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.20.2"
+  integration_test:
+    dependency: "direct dev"
+    description: flutter
+    source: sdk
+    version: "0.0.0"
   io:
     dependency: transitive
     description:
