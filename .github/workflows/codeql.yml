@@ -98,6 +98,9 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      # Bound the expanded Apple matrix instead of requesting seven Mac runners
+      # at once while other native verification jobs are queued.
+      max-parallel: 2
       matrix:
         include:
           # The production macOS build reaches every shared source that is
@@ -129,6 +132,33 @@ jobs:
             derived_data: .build-codeql-ios-ui-tests
             scheme: EpubToMp3-UITests
             action: build-for-testing
+          # Historical app-only identities are backed by their original real
+          # build scopes, not aliases of a different platform's SARIF.
+          - coverage: legacy-app
+            platform: macOS
+            destination: generic/platform=macOS
+            derived_data: .build-codeql-macos
+            scheme: EpubToMp3
+            action: build
+            legacy_category: /language:swift/platform:macOS
+            legacy_matrix: '{"derived_data":".build-codeql-macos","destination":"generic/platform=macOS","platform":"macOS"}'
+          - coverage: legacy-app
+            platform: iOS
+            destination: generic/platform=iOS
+            derived_data: .build-codeql-ios
+            scheme: EpubToMp3
+            action: build
+            legacy_category: /language:swift/platform:iOS
+            legacy_matrix: '{"derived_data":".build-codeql-ios","destination":"generic/platform=iOS","platform":"iOS"}'
+          # The generic identity originally traced both builds into one DB.
+          - coverage: legacy-combined-app
+            platform: macOS+iOS
+            destination: generic/platform=macOS
+            derived_data: .build-codeql-legacy-combined
+            scheme: EpubToMp3
+            action: build
+            legacy_category: /language:swift
+            legacy_matrix: '{}'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -152,19 +182,21 @@ jobs:
         with:
           languages: swift
           build-mode: manual
+          matrix: ${{ matrix.legacy_matrix || toJson(matrix) }}
 
       - name: Install Rust iOS target
-        if: matrix.platform == 'iOS'
+        if: matrix.platform != 'macOS'
         run: mise exec -- rustup target add aarch64-apple-ios
 
       - name: Build actual embedded Rust library
         env:
           CARGO_BUILD_JOBS: '1'
         run: |
-          if [[ '${{ matrix.platform }}' == 'iOS' ]]; then
+          if [[ '${{ matrix.platform }}' != 'macOS' ]]; then
             mise run converter-ffi:ios-device
             mise run converter-ffi:ios-device:verify
-          else
+          fi
+          if [[ '${{ matrix.platform }}' != 'iOS' ]]; then
             mise run converter-ffi:build
           fi
 
@@ -173,7 +205,7 @@ jobs:
         run: xcodegen generate
 
       - name: Build Rust macOS sidecar
-        if: matrix.platform == 'macOS'
+        if: matrix.platform != 'iOS'
         run: mise run sidecar:build
 
       - name: Report Swift coverage scope
@@ -189,20 +221,41 @@ jobs:
       - name: Build Swift target
         working-directory: ios/EpubToMp3
         run: |
-          xcodebuild \
-            -project EpubToMp3.xcodeproj \
-            -scheme '${{ matrix.scheme }}' \
-            -destination '${{ matrix.destination }}' \
-            -configuration Debug \
-            -derivedDataPath '${{ matrix.derived_data }}' \
-            -jobs 1 \
-            -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            EXPANDED_CODE_SIGN_IDENTITY=- \
-            ${{ matrix.action }}
+          destinations=('${{ matrix.destination }}')
+          if [[ '${{ matrix.platform }}' == 'macOS+iOS' ]]; then
+            destinations=('generic/platform=macOS' 'generic/platform=iOS')
+          fi
+          for destination in "${destinations[@]}"; do
+            derived_data='${{ matrix.derived_data }}'
+            if [[ '${{ matrix.platform }}' == 'macOS+iOS' ]]; then
+              derived_data="${derived_data}-${destination##*=}"
+            fi
+            xcodebuild \
+              -project EpubToMp3.xcodeproj \
+              -scheme '${{ matrix.scheme }}' \
+              -destination "$destination" \
+              -configuration Debug \
+              -derivedDataPath "$derived_data" \
+              -jobs 1 \
+              -parallel-testing-enabled NO \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              EXPANDED_CODE_SIGN_IDENTITY=- \
+              ${{ matrix.action }}
+          done
 
       - name: Analyze
+        id: swift-analysis
         uses: github/codeql-action/analyze@v4
         with:
-          category: /language:swift/coverage:${{ matrix.coverage }}/platform:${{ matrix.platform }}
+          category: ${{ matrix.legacy_category || format('/language:swift/coverage:{0}/platform:{1}', matrix.coverage, matrix.platform) }}
+          matrix: ${{ matrix.legacy_matrix || toJson(matrix) }}
+          upload: ${{ matrix.legacy_category && 'failure-only' || 'always' }}
+
+      - name: Upload actual historical-scope analysis with its original identity
+        if: matrix.legacy_category
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ steps.swift-analysis.outputs.sarif-output }}
+          category: ${{ matrix.legacy_category }}
+          matrix: ${{ matrix.legacy_matrix }}
