@@ -11,6 +11,11 @@ on:
       - 'flutter_app/windows/**'
       - 'flutter_app/cmake/**'
       - 'scripts/build_flutter_desktop.rb'
+      - 'crates/converter-ffi/**'
+      - 'crates/converter-core/**'
+      - 'native/piper-runtime/**'
+      - 'native/vendor/**'
+      - 'mise.toml'
   pull_request:
     paths:
       - '.github/workflows/flutter-rust-faber.yml'
