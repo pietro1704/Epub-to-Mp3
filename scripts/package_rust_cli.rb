@@ -98,7 +98,9 @@ ensure
 end
 executable = File.join(package, 'bin', name)
 if mode == '--run'
-  # The packaged dylib resolves relative to the executable; a development loader path is unnecessary.
-  exit(system({ 'DYLD_LIBRARY_PATH' => nil, 'ORT_LIB_LOCATION' => nil }, executable, *ARGV) ? 0 : ($?.exitstatus || 1))
+  environment = { 'DYLD_LIBRARY_PATH' => nil, 'ORT_LIB_LOCATION' => nil }
+  # Linux shared dependencies resolve only from the packaged runtime directory.
+  environment['LD_LIBRARY_PATH'] = File.dirname(executable) unless macos || windows
+  exit(system(environment, executable, *ARGV) ? 0 : ($?.exitstatus || 1))
 end
 puts executable
