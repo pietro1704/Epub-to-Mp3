@@ -12,7 +12,7 @@ require "rbconfig"
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
   COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check sidecar:build piper:build-runtime web:wasm-build].freeze
-  TASKS = (%w[ios:build ios:device:build ios:simulator:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS).to_h do |name|
+  TASKS = (%w[ios:build ios:device:build ios:simulator:test ios:simulator:run ios:simulator:resume ios:simulator:smoke:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS).to_h do |name|
     output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: ROOT)
     raise "Cannot read mise task #{name}: #{error}" unless status.success?
     [name, JSON.parse(output).fetch("run").join("\n")]
@@ -254,6 +254,17 @@ class NativeTaskWiringTest < Minitest::Test
     assert_match(/quarantined/, error)
     assert_empty events
     true
+  end
+
+  def test_all_simulator_launch_entrypoints_refuse_before_their_task_bodies_on_intel
+    skip "Intel macOS quarantine only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    %w[ios:simulator:run ios:simulator:resume ios:simulator:smoke:test].each do |task|
+      _, error, status = run_task(task)
+      assert_equal 75, status.exitstatus, "#{task}: #{error}"
+      assert_match(/quarantined/, error, task)
+      assert_empty events, "#{task} reached its task body"
+      assert_unlocked
+    end
   end
 
   def test_test_build_failure_never_boots_or_runs_tests
