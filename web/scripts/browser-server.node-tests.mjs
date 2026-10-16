@@ -26,6 +26,18 @@ async function ownedDescendantPid(root) {
   }
   return pid;
 }
+async function cleanupFixture(root, original) {
+  // Only fixture-owned descendants may be killed if an assertion fails.
+  try {
+    try { process.kill(await ownedDescendantPid(root), "SIGKILL"); }
+    catch (error) { if (!["ENOENT", "ESRCH"].includes(error.code)) throw error; }
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+}
 async function fakeMise(mode, operation) {
   const root = await mkdtemp(join(tmpdir(), "browser-server-owned-"));
   const original = { PATH: process.env.PATH, BROWSER_SERVER_FIXTURE_ROOT: process.env.BROWSER_SERVER_FIXTURE_ROOT, BROWSER_SERVER_FIXTURE_MODE: process.env.BROWSER_SERVER_FIXTURE_MODE };
@@ -60,18 +72,7 @@ async function fakeMise(mode, operation) {
   process.env.BROWSER_SERVER_FIXTURE_ROOT = root;
   process.env.BROWSER_SERVER_FIXTURE_MODE = mode;
   try { await operation(root); }
-  finally {
-    // Only fixture-owned descendants may be killed if an assertion fails.
-    try {
-      try { process.kill(await ownedDescendantPid(root), "SIGKILL"); }
-      catch (error) { if (!["ENOENT", "ESRCH"].includes(error.code)) throw error; }
-    } finally {
-      for (const [key, value] of Object.entries(original)) {
-        if (value === undefined) delete process.env[key]; else process.env[key] = value;
-      }
-      await rm(root, { recursive: true, force: true });
-    }
-  }
+  finally { await cleanupFixture(root, original); }
 }
 async function assertDescendantExited(root) {
   const pid = await ownedDescendantPid(root);
