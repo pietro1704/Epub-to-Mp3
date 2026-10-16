@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## APP-20261016-FABER-MAC-ARCHITECTURES — Verify native Faber on hosted Intel and Apple Silicon
+
+- [ ] Owner: crash_guard_audit; parameterize only the existing macOS integration job for `macos-15` / `arm64` and `macos-15-intel` / `x86_64`, with independent failures and uniquely named evidence artifacts. Retain Xcode 16.4, all Foundation/XCTest assertions, the existing two-chapter positive Faber case and its mandatory `FABER_NATIVE` log marker.
+- Acceptance pending: each hosted runner must report its expected host architecture, actual compiled FFI Mach-O architecture and pinned ORT manifest/library architecture before executing the same tests. Existing ORT checksums and explicit temporary model installation/cleanup remain unchanged. This proves neither physical-Mac GPU stability nor phone performance or exact SE1/iOS15.5 acceptance.
+- Source-only draft based on master `915e9c672b` plus local dependency Faber `2082ae5417`; publish only after #821 reaches master or an explicitly required integration revision. Preserve all currently running jobs. No local test, build, formatter, syntax execution, native app, Simulator action, commit or push.
+
 ## CI-20261016-CODEQL-ANDROID-SDK — Resolve the hosted SDK manager explicitly
 
 - [ ] Owner: github_monitor_plan; CodeQL run `38884593082`, Java/Kotlin job `116919152162`, head `765e57495f69d82bec20852ab1d121345c6f02cb` failed before Android compilation because `sdkmanager` was absent from PATH. The Ubuntu runner image installs it under `ANDROID_HOME/cmdline-tools/latest/bin`, confirmed against the official runner image installation script.
