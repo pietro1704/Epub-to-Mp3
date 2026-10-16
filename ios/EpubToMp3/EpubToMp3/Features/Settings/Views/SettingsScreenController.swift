@@ -194,7 +194,11 @@ final class SettingsScreenController: UITableViewController {
                 cell.configure(title: L10n.string("settings.onlineFallback"),
                                subtitle: L10n.string("settings.onlineFallbackDescription"),
                                isOn: settings.allowOnlineAudioFallback, accessibilityIdentifier: "settings.tts.onlineConsent")
-                cell.onValueChanged = { [weak self] in self?.settings.allowOnlineAudioFallback = $0 }
+                cell.onValueChanged = { [weak self] isAllowed in
+                    guard let self else { return }
+                    self.settings.allowOnlineAudioFallback = isAllowed
+                    tableView.reloadData()
+                }
                 return cell
             }
             let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)

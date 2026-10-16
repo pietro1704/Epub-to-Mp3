@@ -95,6 +95,8 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let (settings, defaults) = make()
         XCTAssertFalse(settings.selectableSecondaryAudioEngines.contains(.edge))
         settings.secondaryAudioEngine = .edge
+        XCTAssertNil(settings.secondaryAudioEngine, "Unconsented Edge must not be saved.")
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
         XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary, "Unconsented Edge must never reach conversion preferences.")
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
 
@@ -137,6 +139,30 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
     }
 
+    @MainActor
+    func testManualEdgePrimaryWithoutConsentKeepsSavedPreferences() async throws {
+        let (settings, _) = make()
+        let originalPreferences = settings.ttsPreferences
+        var captured: ConversionOptions?
+        let model = ConvertViewModel(converter: { _, _, _, options in
+            captured = options
+            return .init(jobID: "manual-edge-primary", manifestJSON: Data(),
+                         outputDirectory: URL(fileURLWithPath: "/unused-fixture"))
+        })
+        model.selectedFile = URL(fileURLWithPath: "/unused-fixture.epub")
+        model.engine = "edge"
+        model.voice = "pt-BR-AntonioNeural"
+        model.usesPreferences = false
+        model.allowSecondary = false
+
+        await model.submit()
+
+        XCTAssertEqual(captured?.ttsPreferences?.primary.engine, "edge")
+        XCTAssertNil(captured?.ttsPreferences?.secondary)
+        XCTAssertEqual(captured?.ttsPreferences?.allowOnlineFallback, false)
+        XCTAssertEqual(settings.ttsPreferences, originalPreferences)
+    }
+
     func testFaberDefaultsAndExplicitEdgeChoicePersist() throws {
         let (settings, defaults) = make()
         XCTAssertEqual(settings.audioEngine, .piper)
@@ -159,8 +185,8 @@ final class ToolbarSettingsParityTests: XCTestCase {
     @MainActor
     func testManualOverrideIsStrictAndDoesNotChangePreferences() async throws {
         let (settings, _) = make()
-        settings.secondaryAudioEngine = .edge
         settings.allowOnlineAudioFallback = true
+        settings.secondaryAudioEngine = .edge
         var captured: ConversionOptions?
         let model = ConvertViewModel(converter: { _, _, _, options in
             captured = options

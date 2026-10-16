@@ -335,7 +335,13 @@ final class AppSettings: ObservableObject {
     }
 
     @Published var secondaryAudioEngine: AudioEnginePreference? = nil {
-        didSet { defaults.set(secondaryAudioEngine?.rawValue, forKey: "secondaryAudioEngine") }
+        didSet {
+            if secondaryAudioEngine == .edge && !allowOnlineAudioFallback {
+                secondaryAudioEngine = nil
+                return
+            }
+            defaults.set(secondaryAudioEngine?.rawValue, forKey: "secondaryAudioEngine")
+        }
     }
     @Published var allowOnlineAudioFallback = false {
         didSet {
