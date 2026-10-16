@@ -1,0 +1,59 @@
+name: Repository Health Watchdog
+
+on:
+  schedule:
+    - cron: '11,41 * * * *'
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['CI', 'Release Desktop', 'Converter FFI portability', 'CodeQL']
+    types: [completed]
+  issues:
+    types: [opened, reopened, closed, labeled, unlabeled]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: repository-health-watchdog
+  cancel-in-progress: false
+
+jobs:
+  regression:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github
+      - name: Run monitor regression tests on GitHub
+        run: node --test .github/scripts/repository-health-watchdog.test.cjs
+
+  monitor:
+    needs: regression
+    # Bot-owned report creation must not recursively schedule another scan.
+    if: github.event_name != 'issues' || github.event.issue.user.login != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted default-branch monitor
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Inspect metadata and reconcile report
+        uses: actions/github-script@v9
+        env:
+          REPAIR_CREDENTIALS_AVAILABLE: ${{ secrets.OPENAI_API_KEY != '' }}
+          REPAIR_WRITERS_ENABLED: ${{ vars.PR_REPAIR_WRITERS_ENABLED }}
+        with:
+          script: |
+            const { monitor } = require('./.github/scripts/repository-health-watchdog.cjs');
+            await monitor({ github, context, core });

@@ -131,7 +131,7 @@ jobs:
           Never edit workflows, credentials, deployment, signing, or repository policy. Add a focused regression test.
           Run focused tests. Leave changes uncommitted.'
 
-      - name: Commit, open PR, and enable auto-merge
+      - name: Commit and open a PR for guarded review
         if: steps.remediation.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -149,4 +149,4 @@ jobs:
           git add -A && git commit -m "fix(security): remediate code scanning alert #${NUMBER}"
           git push --force-with-lease origin "$BRANCH"
           PR=$(gh pr create --base master --head "$BRANCH" --title "fix(security): remediate Code Scanning alert #${NUMBER}" --body "Automated remediation for alert #${NUMBER}.")
-          gh pr merge "$PR" --squash --auto --delete-branch
+          echo "::notice::Auto-merge disabled for $PR. After exact-head CI and CodeQL are green and the base is current, use the trusted master scripts/guarded_pr_merge.mjs with --repo $GITHUB_REPOSITORY --pr NUMBER --head SHA --merge."
