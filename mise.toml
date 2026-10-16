@@ -60,8 +60,8 @@ description = "Package the native Rust CLI; macOS preserves deployment target 12
 run = "mise exec -- ruby scripts/package_rust_cli.rb --package-only"
 
 [tasks."web:wasm-build"]
-description = "Build and verify the direct Rust EPUB WASM adapter"
-run = "bash scripts/build_web_wasm.sh"
+description = "Build and verify the direct Rust EPUB WASM adapter under the native build supervisor"
+run = "mise exec -- ruby scripts/native_build_command.rb -- bash scripts/build_web_wasm.sh"
 
 [tasks."migration:product-boundary-audit"]
 description = "Audit remaining web and Flutter HTTP/Python product boundaries"
