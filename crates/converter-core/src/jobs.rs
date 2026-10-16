@@ -402,18 +402,24 @@ mod tests {
         let (_directory, manager) = manager();
         let mut metadata = serde_json::Map::new();
         metadata.insert("source".into(), serde_json::json!("original-book"));
-        manager.create(JobRecord::new("cancelled", metadata)).unwrap();
+        manager
+            .create(JobRecord::new("cancelled", metadata))
+            .unwrap();
         manager.transition("cancelled", JobState::Running).unwrap();
         let cancelling = manager.request_cancellation("cancelled").unwrap();
         let progress = serde_json::json!({"completed": 2});
         let clone = manager.clone();
-        let updated = clone.update_progress("cancelled", progress.clone()).unwrap();
+        let updated = clone
+            .update_progress("cancelled", progress.clone())
+            .unwrap();
         assert_eq!(updated.state, JobState::Cancelling);
         assert_eq!(updated.progress, progress);
         assert_eq!(updated.metadata, cancelling.metadata);
         assert_eq!(manager.load("cancelled").unwrap(), updated);
 
-        let terminal = manager.transition("cancelled", JobState::Cancelled).unwrap();
+        let terminal = manager
+            .transition("cancelled", JobState::Cancelled)
+            .unwrap();
         let stored = fs::read(manager.job_path("cancelled")).unwrap();
         assert!(matches!(
             clone.update_progress("cancelled", serde_json::json!({"completed": 3})),
