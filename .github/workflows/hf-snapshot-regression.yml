@@ -100,16 +100,32 @@ jobs:
             [[ -n "$asset_url" ]] || continue
             [[ "$asset_url" == /* ]] || asset_url="/$asset_url"
             asset_status="$(curl --max-time 10 --silent --output "$RUNNER_TEMP/hf-served-asset" --write-out '%{http_code}' "http://127.0.0.1:17860$asset_url")"
+            asset_content_type="$(curl --max-time 10 --silent --output /dev/null --write-out '%{content_type}' "http://127.0.0.1:17860$asset_url")"
             asset_bytes="$(wc -c < "$RUNNER_TEMP/hf-served-asset" | tr -d ' ')"
-            echo "Asset $asset_url HTTP status=$asset_status bytes=$asset_bytes"
-            if [[ "$asset_status" != 200 || "$asset_bytes" == 0 ]]; then
-              echo "::error::Production SPA asset was not served successfully: $asset_url"
+            case "$asset_url" in
+              *.js|*.js\?*) expected_asset_type='application/javascript' ;;
+              *.css|*.css\?*) expected_asset_type='text/css' ;;
+              *) echo "::error::Unexpected production asset extension: $asset_url"; exit 1 ;;
+            esac
+            echo "Asset $asset_url HTTP status=$asset_status content-type=$asset_content_type bytes=$asset_bytes"
+            if [[ "$asset_status" != 200 || "$asset_bytes" == 0 || "$asset_content_type" != "$expected_asset_type"* ]] ||
+               grep -Eqi '^[[:space:]]*<!doctype[[:space:]]+html|^[[:space:]]*<html' "$RUNNER_TEMP/hf-served-asset"; then
+              echo "::error::Production SPA asset response is missing, has the wrong content type, or is an HTML fallback: $asset_url"
+              head -c 500 "$RUNNER_TEMP/hf-served-asset" || true
               exit 1
             fi
           done <<< "$asset_references"
 
-          echo "Checking explicit bind address and absence of model weights"
+          echo "Checking configured bind address, actual IPv4 listener and absence of model weights"
           docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0'
+          # Linux /proc/net/tcp stores IPv4 addresses in little-endian hex.
+          # 00000000:1EA4 is the actual wildcard listener on TCP port 7860;
+          # 0100007F:1EA4 would indicate a loopback-only bind and must fail.
+          if ! docker exec hf-snapshot-regression sh -c 'awk '''NR > 1 && $2 == "00000000:1EA4" && $4 == "0A" { found = 1 } END { exit !found }''' /proc/net/tcp'; then
+            echo "::error::Server is not listening on 0.0.0.0:7860 inside the container"
+            docker exec hf-snapshot-regression sh -c 'cat /proc/net/tcp'
+            exit 1
+          fi
           if ! docker exec hf-snapshot-regression sh -c 'test -z "$(find /app /data -name "*.onnx" -print -quit)"'; then
             echo "::error::Snapshot container unexpectedly contains ONNX model weights"
             docker exec hf-snapshot-regression sh -c 'find /app /data -name "*.onnx" -type f'
