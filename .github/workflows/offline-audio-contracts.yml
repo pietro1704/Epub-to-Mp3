@@ -1,0 +1,34 @@
+name: Offline audio contracts
+
+on:
+  pull_request:
+    paths:
+      - 'python_app/tests/test_audio_pause_integration.py'
+      - 'python_app/tests/test_audio_pause_policy.py'
+      - 'python_app/src/audio_postprocess.py'
+      - '.github/workflows/offline-audio-contracts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audio-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install deterministic audio test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          python -m pip install pytest
+      - name: Verify real MP3 postprocess and explicit network consent policy
+        env:
+          RUN_LIVE_EDGE_AUDIO_TESTS: '0'
+        run: python -m pytest -q python_app/tests/test_audio_pause_integration.py python_app/tests/test_audio_pause_policy.py

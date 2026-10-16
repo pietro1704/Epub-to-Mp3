@@ -1504,23 +1504,20 @@ mod protocol_tests {
     fn default_endpoint_uses_current_edge_read_aloud_host_and_subscription_query_key() {
         let endpoint = Url::parse(DEFAULT_ENDPOINT).unwrap();
         assert_eq!(endpoint.host_str(), Some("api.msedgeservices.com"));
-        assert_eq!(
-            endpoint.path(),
-            "/tts/cognitiveservices/websocket/v1"
-        );
+        assert_eq!(endpoint.path(), "/tts/cognitiveservices/websocket/v1");
 
         let request = request_url(&endpoint, "connection-id", TRUSTED_CLIENT_TOKEN).unwrap();
         let query = request.query_pairs().collect::<Vec<_>>();
         assert!(query.iter().any(|(key, value)| {
             key == "Ocp-Apim-Subscription-Key" && value == TRUSTED_CLIENT_TOKEN
         }));
-        assert!(query.iter().any(|(key, value)| {
-            key == "ConnectionId" && value == "connection-id"
-        }));
+        assert!(query
+            .iter()
+            .any(|(key, value)| { key == "ConnectionId" && value == "connection-id" }));
         assert!(query.iter().any(|(key, _)| key == "Sec-MS-GEC"));
-        assert!(query.iter().any(|(key, value)| {
-            key == "Sec-MS-GEC-Version" && value == EDGE_BROWSER_VERSION
-        }));
+        assert!(query
+            .iter()
+            .any(|(key, value)| { key == "Sec-MS-GEC-Version" && value == EDGE_BROWSER_VERSION }));
         assert!(!query.iter().any(|(key, _)| key == "TrustedClientToken"));
     }
 
