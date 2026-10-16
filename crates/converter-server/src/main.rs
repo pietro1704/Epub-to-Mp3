@@ -1055,11 +1055,10 @@ mod tests {
             server_bind_address(Some("0.0.0.0"), Some("9000")).unwrap(),
             "0.0.0.0:9000".parse::<SocketAddr>().unwrap()
         );
-        let listener = tokio::net::TcpListener::bind(
-            server_bind_address(Some("0.0.0.0"), Some("0")).unwrap(),
-        )
-        .await
-        .unwrap();
+        let listener =
+            tokio::net::TcpListener::bind(server_bind_address(Some("0.0.0.0"), Some("0")).unwrap())
+                .await
+                .unwrap();
         assert!(listener.local_addr().unwrap().ip().is_unspecified());
         assert_eq!(
             server_bind_address(Some("127.0.0.1"), Some("invalid"))
