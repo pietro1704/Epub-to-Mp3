@@ -50,6 +50,9 @@ jobs:
           sparse-checkout: .github/scripts
       - name: Inspect metadata and reconcile report
         uses: actions/github-script@v9
+        env:
+          REPAIR_CREDENTIALS_AVAILABLE: ${{ secrets.OPENAI_API_KEY != '' }}
+          REPAIR_WRITERS_ENABLED: ${{ vars.PR_REPAIR_WRITERS_ENABLED }}
         with:
           script: |
             const { monitor } = require('./.github/scripts/repository-health-watchdog.cjs');
