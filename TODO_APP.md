@@ -3528,3 +3528,11 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 - Evidence: Google API 35 `google_apis/x86_64` image build properties advertise `x86_64,arm64-v8a` and `libndk_translation.so`; Android's official emulator docs require accelerated guest architecture to match host CPU; specialist review rejected x86-host/ARM64-guest and hosted macOS ARM nested virtualization as invalid.
 
 - ARM64 test-runner correction: build and audit the integration-target APK explicitly for `android-arm64`, then use `flutter drive --use-application-binary` with the standard integration driver. `flutter test` would rebuild for the x64 guest and discard the intended ARM64 engine. GitHub runtime proof remains pending.
+
+
+## CI-20261016-SUPERSEDED-RUNS — Bound superseded branch validation
+
+- Status: reviewed concurrency correction; GitHub execution evidence pending.
+- Symptom: GitHub reported ten older Faber runs still in progress across Flutter real Rust Faber, FFI portability and Feature A/B. Flutter grouped by SHA with cancellation disabled; the other two had no workflow concurrency.
+- Acceptance: group by workflow/event/PR or branch; cancel superseded PR/non-master push validation, preserve running master checks, and give every manual dispatch its own group. Preserve existing triggers, job permissions and tests. Observe cancellation on a subsequent actual head update before marking this behavior verified.
+- Limit: changing group names does not cancel historical runs from previous groups. No old run was canceled and no local process was started.
