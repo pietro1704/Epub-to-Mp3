@@ -1,0 +1,26 @@
+[
+  {
+    "file": "Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+    "bytes": 1035965280,
+    "sha256": "8d18c94acb2addd042f97da63c98be144eafa76d0d9495177eab65130cf85129",
+    "verified_again_after_study": true
+  },
+  {
+    "file": "mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+    "bytes": 446422912,
+    "sha256": "6fd65188839bcd6ecc91b277ad471e22a0edfada4699a0fe82f1165c18cfcce2",
+    "verified_again_after_study": true
+  },
+  {
+    "file": "Qwen3-TTS-12Hz-0.6B-Base.Q4_K_M.gguf",
+    "bytes": 361023168,
+    "sha256": "2dec66bcf1595f48a6dfb64c14e7e8437315e1606eba03094ed7372e60a4b9af",
+    "verified_again_after_study": true
+  },
+  {
+    "file": "Qwen3-TTS-12Hz-0.6B-Base.mmproj-Q8_0.gguf",
+    "bytes": 401129632,
+    "sha256": "202c1fbf3a0f00b7586ca45b8328d696cc6cd980c3798979eaa4fefe8efd8320",
+    "verified_again_after_study": true
+  }
+]
