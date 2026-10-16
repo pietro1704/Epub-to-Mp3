@@ -638,6 +638,52 @@ class ArchiveSafetyTests(unittest.TestCase):
                     listing.feed(payload)
                 self.assertFalse(listing.receipt()["complete"])
 
+    def test_selector_failure_stops_started_child_and_clears_registry(self):
+        ready = self.inspector.root / "selector-ready"
+        launched = []
+        real_popen = subprocess.Popen
+
+        def capture(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            launched.append(child)
+            return child
+
+        def fail_selector():
+            deadline = time.monotonic() + 5
+            while not ready.exists():
+                if time.monotonic() >= deadline:
+                    self.fail("Controlled child did not become ready")
+                time.sleep(0.01)
+            self.assertTrue(
+                (self.inspector.reports / "active-command.json").exists()
+            )
+            raise OSError("selector fixture failure")
+
+        script = (
+            "import os,time; "
+            f"p={str(ready)!r}; "
+            "open(p+'.tmp','w').write('ready'); "
+            "os.replace(p+'.tmp',p); time.sleep(30)"
+        )
+        try:
+            with patch.object(archive.subprocess, "Popen", side_effect=capture), \\
+                    patch.object(archive.selectors, "DefaultSelector",
+                                 side_effect=fail_selector):
+                with self.assertRaisesRegex(OSError, "selector fixture failure"):
+                    self.inspector.command(
+                        [sys.executable, "-c", script],
+                        timeout=10, consumer=archive.PayloadListing()
+                    )
+            self.assertEqual(len(launched), 1)
+            self.assertIsNotNone(launched[0].poll())
+            self.assertFalse(
+                (self.inspector.reports / "active-command.json").exists()
+            )
+            self.assertNotIn("payload_listing", self.inspector.report)
+        finally:
+            for child in launched:
+                archive.Inspector.stop(child)
+
     def test_real_stream_errors_keep_partial_receipt_and_do_not_finalize(self):
         scripts = [
             "import sys; print('valid',flush=True); sys.exit(7)",

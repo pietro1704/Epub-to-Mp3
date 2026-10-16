@@ -323,10 +323,11 @@ class Inspector:
                                        stdin=subprocess.DEVNULL, start_new_session=True,
                                        env={**os.environ, "LC_ALL": "C"})
             active = self.reports / "active-command.json"
-            selector = selectors.DefaultSelector() if consumer else None
+            selector = None
             try:
                 active.write_text(json.dumps({"pid": process.pid, "tool": Path(arguments[0]).name}))
                 if consumer:
+                    selector = selectors.DefaultSelector()
                     os.set_blocking(process.stdout.fileno(), False)
                     selector.register(process.stdout, selectors.EVENT_READ)
                 while process.poll() is None or (selector is not None and selector.get_map()):
