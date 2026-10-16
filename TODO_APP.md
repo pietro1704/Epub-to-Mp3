@@ -2,9 +2,11 @@
 
 ## WIN-20261016-FABER-PACKAGE — Verify the supported Windows Flutter runtime
 
+- GitHub RED `38898019062`, Windows job `116963089315`, head `3224a0e7`: actual Flutter package compilation failed in ort-sys 2.0.0-rc.11 before audit/inference. The CMake command overrode explicit dynamic linking with `0`; ort-sys therefore attempted a static library layout. Its dynamic branch uses `ORT_LIB_LOCATION` literally, requiring the official archive's `lib/` directory containing `onnxruntime.lib`. Preserve Linux static selection and Windows default while honoring an explicit Windows dynamic choice; fix only the Windows workflow path. Positive packaged-DLL inference and all audit/decoder assertions remain mandatory and unverified until GitHub succeeds.
+
 - [ ] Owner: crash_guard_audit; preserve Linux golden `36d00c604` while adding GitHub Windows x64 verification through the existing `flutter:build-windows` task, actual packaged Dart→Rust FFI, complete Portuguese phoneme assets, exact public chapters 0..1 and full non-silent MP3 decoding.
 - Explicit temporary downloads only: Microsoft ORT 1.24.4 ZIP SHA256 `d2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357`; Gyan FFmpeg 9.0.2 essentials ZIP SHA256 `60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`, from the providers' GitHub release API digests. Preserve pinned Faber model/config hashes and mandatory positive marker/report. Retain metadata/logs only; clean owned downloads/output on success and failure.
-- Verification pending GitHub; no local execution/downloads, Windows compatibility claim, CMake/lock change, Apple/Flutter scaffolds or phone benchmark. Diagnose actual build/load/ABI/decoder failures without skipping or weakening assertions.
+- Verification pending GitHub; no local execution/downloads, Windows compatibility claim, lock change, Apple/Flutter scaffolds or phone benchmark. The CMake change is limited to the observed Windows linking failure. Diagnose actual build/load/ABI/decoder failures without skipping or weakening assertions.
 
 ## AH-13 — Preserve desktop Rust job directory identity
 

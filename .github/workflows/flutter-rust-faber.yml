@@ -76,7 +76,7 @@ jobs:
           $ort = Join-Path $owned 'ort/onnxruntime-win-x64-1.24.4'
           if (!(Test-Path (Join-Path $ort 'lib/onnxruntime.lib'))) { throw 'Missing ORT import library' }
           if (!(Test-Path (Join-Path $ort 'lib/onnxruntime.dll'))) { throw 'Missing ORT runtime DLL' }
-          "ORT_LIB_LOCATION=$ort" >> $env:GITHUB_ENV
+          "ORT_LIB_LOCATION=$(Join-Path $ort 'lib')" >> $env:GITHUB_ENV
           $decoderZip = Join-Path $owned 'ffmpeg.zip'
           Get-VerifiedFile 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip' $decoderZip 114768076 '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
           Expand-Archive -LiteralPath $decoderZip -DestinationPath (Join-Path $owned 'decoder')
