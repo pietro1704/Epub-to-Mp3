@@ -1,5 +1,10 @@
 # App delivery backlog
 
+## CI-20261016-CODEQL-ANDROID-SDK — Resolve the hosted SDK manager explicitly
+
+- [ ] Owner: github_monitor_plan; CodeQL run `38884593082`, Java/Kotlin job `116919152162`, head `765e57495f69d82bec20852ab1d121345c6f02cb` failed before Android compilation because `sdkmanager` was absent from PATH. The Ubuntu runner image installs it under `ANDROID_HOME/cmdline-tools/latest/bin`, confirmed against the official runner image installation script.
+- Source fix requires that executable path explicitly before installing NDK `28.2.13676358`; native rebuild, Android compilation, CodeQL extraction and coverage remain unchanged. GitHub verification pending; no local tests/builds or tools executed.
+
 ## APP-20261016-ONNX-BUNDLE-INSPECTION — Fail closed when inspecting native dependencies
 
 - [ ] Owner: github_monitor_plan; GitHub macOS job `116907086297` on `3f688999aa1090f6f25e10e42eabd693b5d531df` launched XCTest but actual Swift/Rust interop failed to load `@rpath/libonnxruntime.dylib`. Its packaging log reports missing `rg`; the script incorrectly treated that inspection failure as a static build and omitted the dependency.

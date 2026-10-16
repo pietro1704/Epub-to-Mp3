@@ -95,7 +95,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang libclang-dev cmake pkg-config
-          sdkmanager --install "ndk;28.2.13676358"
+          sdk_manager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdk_manager"
+          "$sdk_manager" --install "ndk;28.2.13676358"
           echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
       - name: Build Android app
