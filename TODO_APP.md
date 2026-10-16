@@ -75,6 +75,14 @@
 - Restore `/language:swift` with both macOS and iOS app builds in one traced database, and each platform-only category with its own actual app build. All uploads retain job identity `.github/workflows/codeql.yml:swift`; historical uploads use the exact original matrix environment, without filtering or relabeling unrelated coverage. Source evidence: successful master analyses `1620733555` (`78df918cf2`, combined, environment `{}`), `1621861648` (macOS) and `1621863231` (iOS), both platform analyses at `00073d5210`. The original/default query policy remains unchanged; no analyses, alerts or security configurations are deleted.
 - Limit Swift matrix concurrency to two hosted runners after the observed Mac capacity warning; preserve single-job native compilation and the 90-minute per-job timeout. GitHub extraction, SARIF processing and configuration reconciliation remain unverified until their actual jobs finish.
 
+## APP-20261016-RUSTLS-SECURITY — Patch confirmed rustls advisories
+
+- [ ] Resolve issue #791's GitHub cargo-audit findings by upgrading locked rustls 0.23.45 to 0.23.46, without unrelated dependency updates.
+- Owner: security dependency specialist; isolated `feature/security-rustls-patch`.
+- Evidence: GitHub run `38835537607` on c173556 reports RUSTSEC-2026-0346/0347/0348/0349; master `915e9c672b273d8ea63b189d0a2b12b3adc72847` retains the same vulnerable lock entry.
+- Source review: official crates.io sparse-index 0.23.45/0.23.46 records have identical dependencies, features and Rust 1.71 minimum; the patch is not yanked. New checksum: `48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf`.
+- Verification pending: GitHub-only locked dependency resolution, cargo-audit JSON artifact and existing Rust regression suites. No local scanner/test/build executed; no issue closure or successful remediation claimed.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
