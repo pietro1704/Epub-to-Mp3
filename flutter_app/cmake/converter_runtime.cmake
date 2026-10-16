@@ -14,12 +14,20 @@ else()
 endif()
 set(CONVERTER_FFI_LIBRARY "${CONVERTER_RUNTIME_STAGE}/lib/${CONVERTER_FFI_FILENAME}")
 set(_converter_rustflags "$ENV{RUSTFLAGS}")
+set(_converter_ort_dynamic 0)
+if(WIN32 AND DEFINED ENV{ORT_PREFER_DYNAMIC_LINK})
+  # Official Windows shared distributions supply an import library and DLL.
+  set(_converter_ort_dynamic "$ENV{ORT_PREFER_DYNAMIC_LINK}")
+  if(NOT _converter_ort_dynamic MATCHES "^[01]$")
+    message(FATAL_ERROR "ORT_PREFER_DYNAMIC_LINK must be 0 or 1 for Windows packaging")
+  endif()
+endif()
 if(NOT WIN32)
   string(APPEND _converter_rustflags " -C link-arg=-Wl,-rpath,$ORIGIN")
 endif()
 add_custom_target(converter_ffi_runtime ALL
   COMMAND "${CMAKE_COMMAND}" -E env CARGO_BUILD_JOBS=1 CMAKE_BUILD_PARALLEL_LEVEL=1
-    ORT_PREFER_DYNAMIC_LINK=0 ESPEAK_BUILD_SHARED_LIBS=0 "RUSTFLAGS=${_converter_rustflags}"
+    "ORT_PREFER_DYNAMIC_LINK=${_converter_ort_dynamic}" ESPEAK_BUILD_SHARED_LIBS=0 "RUSTFLAGS=${_converter_rustflags}"
     "${CONVERTER_CARGO_EXECUTABLE}" build --locked --release -p converter-ffi
     --features piper-runtime --jobs 1
     --manifest-path "${CONVERTER_RUST_ROOT}/Cargo.toml"

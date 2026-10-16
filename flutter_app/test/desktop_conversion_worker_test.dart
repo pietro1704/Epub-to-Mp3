@@ -31,6 +31,15 @@ static int wait_for_ui_heartbeat(const char* root) {
   usleep(1000);
  }
 }
+// Enforce the same byte-exact output-directory identity as the explicit Rust FFI.
+static int matches_job_directory(const char* output, const char* job) {
+ size_t end = strlen(output);
+ while (end > 0 && output[end - 1] == '/') end--;
+ size_t start = end;
+ while (start > 0 && output[start - 1] != '/') start--;
+ return end > start && strlen(job) == end - start &&
+  strncmp(output + start, job, end - start) == 0;
+}
 typedef struct { atomic_int cancelled; atomic_int queued; char* chunk_path; } FixtureControl;
 void* converter_session_open(const char* path) { return strdup(path); }
 void converter_session_free(void* session) { free(session); }
@@ -51,6 +60,7 @@ char* converter_job_control_take_audio_chunk_json(FixtureControl* control) {
 char* converter_session_convert_streaming_job_options_json_v1(void* session,
  const char* output, const char* job, const char* options, int start, int end,
  void* progress, void* chapter, void* chunk, void* context, FixtureControl* control) {
+ if (!matches_job_directory(output, job)) return NULL;
  mkdir(output, 0700);
  char path[2048];
  snprintf(path, sizeof(path), "%s/chunk-0.mp3", output);
@@ -80,6 +90,7 @@ char* converter_job_log_json(const char* id) { return strdup("[]"); }
 char* converter_session_convert_controlled_job_options_json_v1(void* session,
  const char* output, const char* job, const char* options, int start, int end,
  void* progress, void* chapter, void* context, atomic_int* control) {
+ if (!matches_job_directory(output, job)) return NULL;
  if (!strstr(options, "pt_BR-faber-medium") || start != 2 || end != 3) return NULL;
  for (int i=0; i<100; i++) {
    if (atomic_load(control)) return NULL;
@@ -138,6 +149,43 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stderr}');
   });
   tearDownAll(() async => directory.delete(recursive: true));
+
+  for (final basename in ['manual-real-job', 'manual %20#identity']) {
+    for (final trailing in ['', '/']) {
+      test('controlled conversion preserves literal basename $basename with trailing "$trailing"', () async {
+        final converter = DesktopEmbeddedConverter(libraryPath: library);
+        final manifest = await converter.convert(
+          inputPath: '/fixture.epub',
+          outputPath: '${directory.path}/$basename$trailing',
+          chapterStart: 2,
+          chapterEnd: 3,
+          optionsJson: const TtsPreferences().optionsJson(),
+        );
+        // A mismatched or URI-reinterpreted job ID is rejected by the C boundary.
+        expect(manifest, '{"chapters":[]}');
+      });
+      test('streaming conversion preserves literal basename $basename with trailing "$trailing"', () async {
+        final converter = DesktopEmbeddedConverter(libraryPath: library);
+        final output = '${directory.path}/stream-$basename$trailing';
+        var firstAudio = false;
+        final result = await converter.streamChapter(
+          inputPath: '/fixture.epub',
+          outputPath: output,
+          chapterIndex: 0,
+          optionsJson: const TtsPreferences().optionsJson(),
+          onFirstAudio: (source) async {
+            firstAudio = true;
+            expect(source.isComplete, false);
+            final response = await source.request();
+            expect(await response.stream.first, 'ID3fixture'.codeUnits);
+          },
+        );
+        expect(firstAudio, true);
+        expect(result.path, '$output/chunk-0.mp3');
+        expect(await File(result.path).readAsBytes(), 'ID3fixture'.codeUnits);
+      });
+    }
+  }
 
   test(
     'native streaming publishes playable bytes before chapter conversion finishes',
