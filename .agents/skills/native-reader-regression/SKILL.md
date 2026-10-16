@@ -45,10 +45,13 @@ Use native XCTest/UI automation and the pagination probe. Assert all of these:
 Add the narrowest permanent native test that is red on the reported behavior.
 Run the matching native test target only after explicit user authorization for
 the local simulator/device. Respect the repository resource guard; do not
-override it from this skill.
+override it from this skill. Follow `docs/agent-workflow.md`: verify all
+Simulators are shut down and SimMetalHost has exited before compiling; finish
+build-for-testing before booting, then run test-without-building from valid
+artifacts with one job and parallel testing disabled.
 
 ## Hand off visible evidence
 
-After an explicitly authorized simulator run, leave the app open on the seeded
-Lord of the Rings book. Report the test command, the relevant probe values,
-and whether the final app state is available for manual inspection.
+Capture the seeded Lord of the Rings state, test command and relevant probe
+values. When active verification ends, close the app, shut down its Simulator,
+quit Simulator.app and confirm shutdown; retain screenshots/reports for inspection.

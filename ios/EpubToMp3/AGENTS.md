@@ -26,7 +26,7 @@ legacy destination. The physical iPhone is not a substitute for this required
 Simulator target.
 Run only one native app/Simulator target at a time. Before switching targets, quit the
 active app and shut down its Simulator; verify it exited before opening the next.
-After iOS verification, leave only the required iPhone SE Simulator/app open.
+After verification or whenever idle, close the app, shut down its Simulator, quit Simulator.app and confirm shutdown. Retain screenshots/reports as evidence.
 Check that this exact Simulator destination and the macOS target are available
 before implementation; do not substitute another runtime or device. Install,
 launch, and exercise the affected behavior in each app. XCTest/UI tests supplement
@@ -35,8 +35,7 @@ unverified.
 
 Use `$native-reader-regression` for reader, pagination, chrome, safe-area,
 page-turn, EPUB/PDF-open, or expanded-player layout changes. Its evidence
-gate uses the seeded Lord of the Rings EPUB and leaves the app open after an
-explicit simulator verification.
+gate uses the seeded Lord of the Rings EPUB and retained screenshots/reports; close the Simulator after active verification.
 
 For architecture work, keep a single deep module at each real seam. The
 viewport transition owns transition ordering and restoration; paginated layout

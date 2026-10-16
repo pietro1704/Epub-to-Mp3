@@ -14,12 +14,13 @@ Product CLI, web, and Flutter integrations use Rust binaries, WASM, or bindings.
 Python/FastAPI remains legacy compatibility material, not an Apple sidecar or
 a product runtime dependency. Shared conversion features belong in Rust first.
 
-Current TTS policy: Edge is primary; installed platform speech is a temporary
-free fallback for isolated failed segments. Retry Edge on the next segment and
-stop persistent outages instead of switching the whole book to the local voice.
-Prioritize first playable audio on weak phones. Keep Piper
-suspended until the user explicitly reactivates it; use existing voices without
-implicit downloads or paid provider requirements.
+Current TTS policy: Piper `pt_BR-faber-medium` is the default primary provider.
+The user may select a primary and optional secondary provider; online Edge
+fallback requires explicit consent and is disabled by default. Manual conversion
+may inherit preferences or capture a strict per-job selection. Retry the primary
+on each segment and stop persistent failures instead of switching a whole book.
+Prioritize first playable audio on weak phones. Install models only through an
+explicit user action; never download implicitly or require a paid provider.
 
 ## Navigation
 
@@ -36,6 +37,23 @@ For domain documentation use `docs/agents/domain.md`; for authorized issue work
 use `docs/agents/issue-tracker.md`.
 
 ## Execution and delivery
+
+Close the app, shut down its Simulator and quit Simulator.app whenever active verification stops; stop the native Mac app whenever idle. Retain screenshots/reports and confirm shutdown.
+
+For autonomous whole-app verification, read the campaign plan in
+`docs/plans/2026-10-15-ios-whole-app-verification.md`. Review plans with
+specialists before executing. Parallelize independent inspection and review;
+serialize native compilation and Simulator work through the existing hooks and
+native lease. Exercise each corrected behavior in the real Simulator app and
+add meaningful unit, integration or UI regression coverage before delivery.
+When the user requests unattended work, continue independent tasks around
+blockers and report the remaining user-dependent items at the end.
+The 2026-10-15 campaign explicitly authorizes one branch/PR per feature or bug
+and merge to `master` after green required checks, including the focused check
+monitoring needed for those PRs. This is task-specific merge authorization.
+This campaign also includes actual native macOS verification, then corresponding
+Flutter work on separate branches with Samsung/Android and Arch Linux checks.
+Close iOS Simulator before macOS verification and stop the Mac app whenever idle.
 
 For performance-sensitive choices, Pietro prefers the oldest compatible
 technology and runtime on the target. Verify speed with a representative
@@ -67,7 +85,8 @@ in `docs/agent-workflow.md`.
 Track every concrete user request/correction in `TODO_APP.md` before implementation;
 keep stable task IDs, status, acceptance, platform checks and verification evidence.
 Tick completion only after the affected app behavior is verified and delivered.
-All development and verification happen on this Mac; do not route work to Arch.
+Native Apple development and verification happen on this Mac. Authorized
+Flutter Linux and Android/Samsung implementation and verification run on Arch.
 Keep `TODO_APP.md` and `handoff.md` limited to task-specific acceptance and actual
 verification evidence.
 Use actual task definitions in `mise.toml`; run project tasks through `mise run`
@@ -85,8 +104,7 @@ For audible checks, show the tested app/Simulator GUI and identify deliberate
 non-Edge fixture audio before playback; distinguish it from normal app narration.
 Before switching native targets, stop the active app and shut down its Simulator;
 verify the previous target has exited before starting another. Never leave the
-macOS app and an iOS Simulator app running together. For this reader workflow,
-leave only the required iPhone SE Simulator/app open after final verification.
+macOS app and an iOS Simulator app running together. Close the app, shut down its Simulator and quit Simulator.app whenever active verification stops, including the end of a campaign. Confirm shutdown and retain screenshots/reports.
 Prefer `xcodes` with installed `aria2` for Apple downloads; use
 `--experimental-unxip` for Xcode `.xip` extraction, not runtime `.dmg` imports.
 Preserve useful partial downloads; keep extraction/build/Simulator work serialized.
