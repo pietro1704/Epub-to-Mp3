@@ -106,9 +106,27 @@ jobs:
             derived_data: .build-codeql-macos
             scheme: EpubToMp3
             action: build
-          # Test targets are validated by the native test workflow. CodeQL
-          # scans production Swift once, avoiding duplicate databases and
-          # fragile test-only compilation failures.
+          # Preserve the historical category identities with real target builds.
+          - coverage: unit-tests
+            platform: macOS
+            destination: platform=macOS
+            derived_data: .build-codeql-macos-tests
+            scheme: EpubToMp3-UnitTests
+            action: build-for-testing
+          # The iOS app dependency graph includes ShareExtension and Widget.
+          # Device compilation traces UIKit-only code without booting Simulator.
+          - coverage: unit-tests
+            platform: iOS
+            destination: generic/platform=iOS
+            derived_data: .build-codeql-ios-tests
+            scheme: EpubToMp3-UnitTests
+            action: build-for-testing
+          - coverage: ui-tests
+            platform: iOS
+            destination: generic/platform=iOS
+            derived_data: .build-codeql-ios-ui-tests
+            scheme: EpubToMp3-UITests
+            action: build-for-testing
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -133,13 +151,24 @@ jobs:
           languages: swift
           build-mode: manual
 
-      - name: Generate Xcode project
-        working-directory: ios/EpubToMp3
+      - name: Install Rust iOS target
+        if: matrix.platform == 'iOS'
+        run: mise exec -- rustup target add aarch64-apple-ios
+
+      - name: Build actual embedded Rust library
+        env:
+          CARGO_BUILD_JOBS: '1'
         run: |
-          mkdir -p ../../target/release ../../target/aarch64-apple-ios/release
-          touch ../../target/release/libconverter_ffi.dylib
-          touch ../../target/aarch64-apple-ios/release/libconverter_ffi.dylib
-          xcodegen generate
+          if [[ '${{ matrix.platform }}' == 'iOS' ]]; then
+            mise run converter-ffi:ios-device
+            mise run converter-ffi:ios-device:verify
+          else
+            mise run converter-ffi:build
+          fi
+
+      - name: Generate Xcode project after native prerequisites exist
+        working-directory: ios/EpubToMp3
+        run: xcodegen generate
 
       - name: Build Rust macOS sidecar
         if: matrix.platform == 'macOS'
@@ -164,10 +193,12 @@ jobs:
             -destination '${{ matrix.destination }}' \
             -configuration Debug \
             -derivedDataPath '${{ matrix.derived_data }}' \
+            -jobs 1 \
+            -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            EXPANDED_CODE_SIGN_IDENTITY=- \
             ${{ matrix.action }}
-
-
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4

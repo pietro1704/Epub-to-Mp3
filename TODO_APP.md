@@ -1,5 +1,14 @@
 # App delivery backlog
 
+## CI-20261016-CODEQL-APPLE — Restore real Apple source coverage
+
+- [ ] Preserve the existing production macOS CodeQL category and restore the historical macOS unit, iOS unit and iOS UI compile categories with their real schemes.
+- [ ] Build actual SDK-correct Rust FFI prerequisites before project generation; compile iOS app, ShareExtension and Widget through the production dependency graph. Use generic device destinations; no Simulator boot or fake empty dylibs.
+- [ ] Verify all four Swift analyses on GitHub. Compilation and analysis are not app execution, native test success or proof of driver stability.
+- Owner: crash_workflow_audit specialist; branch `feature/codeql-apple-coverage`. Status: source prepared; no local tests/builds/syntax or remote configuration mutations. Preserve unrelated macOS/other-language jobs and the strict merge gate.
+- Baseline evidence: PR805 CodeQL check `116849734709` reported seven missing Swift configurations while its macOS Swift analysis was still pending. Three retired test categories last had successful master analyses on 2026-09-28. Current workflow omitted real UIKit/iOS extension extraction.
+- Superseded generic `/language:swift` and platform-only `/language:swift/platform:iOS` and `/language:swift/platform:macOS` configurations remain an explicit external reconciliation blocker. No category aliases, analysis deletion, security settings change or neutral-check bypass is included. GitHub documents rerunning out-of-date configurations or explicitly removing stale configurations; neither is silently substituted for missing coverage.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
