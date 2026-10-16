@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## SAFE-20261016-NATIVE-BUILD-ENTRYPOINTS — Route every native compile path through quarantine guards
+
+- [ ] Owner: root; close the specialist-found `mac:build` and `converter-ffi:ios-packaging:test` paths that bypassed `NativeJob` Simulator/SimMetalHost preflight and shared lease.
+- Acceptance: the full macOS build task and iOS packaging compile regression enter `NativeJob build` before project generation/compiler launch; `HEAVY_JOB_GUARD_DISABLE=1` cannot bypass the preflight; Intel GitHub host-safety tests prove booted-Simulator refusal occurs before task body and releases the lease. Intel Simulator runtime remains quarantined.
+- Verification: GitHub Actions only. No local command, build, test or Simulator execution after the reported host panics. Mark complete only after exact-head native safety checks pass; actual SE1 runtime acceptance stays blocked.
+
+
 ## SAFE-20261016-FABER-ENTRYPOINTS — Preserve containment across Faber integration
 
 - GitHub `38895272375`, head `a84a8bb`: Ubuntu entrypoints 10 runs / 75 assertions passed; Intel 10 runs / 75 assertions had one failure comparing temporary-directory spellings (`/var/folders/...` versus physical `/private/var/folders/...`). Canonicalize the owned temporary root once in setup; retain the original exact cwd equality, argv, exit and lease checks. Cancellation tree, authenticated runtime forwarding and all other nine entrypoint cases passed on Intel. Follow-up GitHub verification pending; no production change or local execution.
