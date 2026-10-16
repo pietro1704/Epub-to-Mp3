@@ -1,5 +1,7 @@
 export type EngineOption = "edge" | "piper" | string;
 export type FootnoteMode = "inline" | "chapter_end" | "skip";
+export interface TtsSelection { engine: "piper" | "edge"; model_id: string | null; voice: string | null; }
+export interface TtsPreferences { primary: TtsSelection; secondary: TtsSelection | null; allow_online_fallback: boolean; }
 
 export interface ConversionFormValues {
   file: File | null;
@@ -9,6 +11,7 @@ export interface ConversionFormValues {
   bookAuthor?: string;
   coverUrl?: string;
   engine: EngineOption;
+  tts_preferences?: TtsPreferences;
   voice?: string;
   model?: string;
   chapters?: string;

@@ -1,11 +1,44 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import ConversionForm from "../components/ConversionForm";
 import type { UploadResponse } from "../services/ConversionService";
 import { renderWithProviders } from "./testUtils";
 
 describe("ConversionForm", () => {
+  beforeEach(() => localStorage.clear());
+  it("routes a Tauri Open Books menu event through actual File upload without HTTP path IDs", async () => {
+    const listeners = new Map<string, (event: { payload: unknown }) => void>();
+    const native = vi.fn();
+    Object.defineProperty(window, "__TAURI__", { configurable: true, value: {
+      core: { invoke: native },
+      event: { listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => { listeners.set(name, handler); return () => listeners.delete(name); }) },
+    } });
+    const network = vi.spyOn(globalThis, "fetch");
+    try {
+      const user = userEvent.setup();
+      const upload = vi.fn().mockResolvedValue({ uploadId: "browser-upload", fileName: "local.epub", bookTitle: "Local book", bookAuthor: "Author" });
+      const submit = vi.fn();
+      renderWithProviders(<ConversionForm isSubmitting={false} onSubmit={submit} onUploadFile={upload} />);
+      await waitFor(() => expect(listeners.has("tauri-open-books")).toBe(true));
+      const input = screen.getByLabelText(/arquivo do livro/i);
+      const picker = vi.spyOn(input, "click").mockImplementation(() => undefined);
+      await act(async () => { listeners.get("tauri-open-books")?.({ payload: null }); });
+      expect(picker).toHaveBeenCalledTimes(1);
+      picker.mockRestore();
+      const file = new File(["EPUB fixture"], "local.epub", { type: "application/epub+zip" });
+      await user.upload(input, file);
+      await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
+      await waitFor(() => expect(screen.getByText("Local book")).toBeInTheDocument());
+      await user.click(screen.getByRole("button", { name: /converter agora/i }));
+      await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({ uploadId: "browser-upload", bookTitle: "Local book", bookAuthor: "Author" }), expect.anything()));
+      expect(submit.mock.calls[0][0].file).toBeNull();
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(network).not.toHaveBeenCalled();
+      expect(native).not.toHaveBeenCalled();
+    } finally { network.mockRestore(); delete window.__TAURI__; }
+  });
+
   it("shows error message when no file is selected", async () => {
     const user = userEvent.setup();
     const handleSubmit = vi.fn();
@@ -119,7 +152,7 @@ describe("ConversionForm", () => {
     ).toBeEnabled();
   });
 
-  it("ships character-voice toggle on by default and submits the new fields", async () => {
+  it("defaults to installed-offline Faber policy without unsupported character voices", async () => {
     const user = userEvent.setup();
     const handleSubmit = vi.fn().mockResolvedValue(undefined);
     const handleUpload = vi
@@ -144,19 +177,28 @@ describe("ConversionForm", () => {
       ).toBeEnabled(),
     );
 
-    // Toggle is rendered, on by default, and reveals the two voice selects.
+    // Fresh preferences must be offline and avoid unsupported character synthesis.
     const toggle = screen.getByLabelText(
       /vozes diferentes para narrador e personagens/i,
     );
-    expect(toggle).toBeChecked();
-    expect(screen.getByLabelText(/voz do narrador/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/voz dos personagens/i)).toBeInTheDocument();
+    expect(toggle).not.toBeChecked();
+    expect(screen.queryByLabelText(/voz do narrador/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/voz dos personagens/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Voz principal" })).toHaveValue("piper");
+    expect(screen.getByRole("combobox", { name: "Voz secundária" })).toHaveValue("none");
 
     await user.click(screen.getByRole("button", { name: /converter agora/i }));
 
     await waitFor(() => expect(handleSubmit).toHaveBeenCalledTimes(1));
     expect(handleSubmit.mock.calls[0][0]).toMatchObject({
-      enableCharacterVoices: true,
+      engine: "piper",
+      enableCharacterVoices: false,
+      formattingCues: false,
+      tts_preferences: {
+        primary: { engine: "piper", model_id: "pt_BR-faber-medium", voice: null },
+        secondary: null,
+        allow_online_fallback: false,
+      },
     });
   }, 10000);
 });

@@ -16,8 +16,10 @@ import {
   SubmitBatchOptions,
 } from "../types/conversion";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, resolveApiUrl } from "../config";
-import type { UploadResponse } from "../services/ConversionService";
-import { invoke, isTauri, listenTauri } from "../lib/tauri";
+import { conversionClient, type UploadResponse } from "../services/ConversionService";
+import { loadTtsPreferences, saveTtsPreferences, effectiveTtsPreferences, faber, edge } from "../services/TtsPreferences";
+import { installBrowserFaber, installedBrowserVoices, browserVoiceId } from "../services/BrowserConversionClient";
+import { openTauriBooks, isTauri, listenTauri } from "../lib/tauri";
 
 interface ConversionFormProps {
   isSubmitting: boolean;
@@ -83,7 +85,7 @@ const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
   piper: {
     defaultVoice: "pt_BR-faber-medium.onnx",
     multiLingual: false,
-    autoLanguage: false,
+    autoLanguage: true,
     languages: ["pt", "en"],
   },
 };
@@ -228,7 +230,17 @@ export default function ConversionForm({
 }: ConversionFormProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
-  const initialEngine: EngineOption = "edge";
+  const [preferences, setPreferences] = useState(loadTtsPreferences);
+  const [usePreferences, setUsePreferences] = useState(true);
+  const [useSecondary, setUseSecondary] = useState(false);
+  const [modelStatus, setModelStatus] = useState<"idle" | "installing" | "installed" | "error">("idle");
+  const [modelError, setModelError] = useState("");
+  const labels = t.form.ttsPreferences;
+  const updatePreferences = (next: typeof preferences) => { saveTtsPreferences(next); setPreferences(next); };
+  const installModel = async () => { setModelStatus("installing"); try { await installBrowserFaber(); setModelStatus("installed"); } catch (error) { setModelError(String(error)); setModelStatus("error"); } };
+  useEffect(() => { void installedBrowserVoices().then(voices => { if (voices.includes(browserVoiceId)) setModelStatus("installed"); }).catch(() => undefined); }, []);
+  const unavailableVoiceLabel = labels.unavailable;
+  const initialEngine: EngineOption = preferences.primary.engine;
   const initialMeta = getEngineMeta(initialEngine);
   const [fileQueue, setFileQueue] = useState<QueuedFileEntry[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -236,6 +248,8 @@ export default function ConversionForm({
   const dragCounter = useRef(0);
   const [engine, setEngine] = useState<EngineOption>(initialEngine);
   const [voice, setVoice] = useState(initialMeta.defaultVoice);
+  const manualSelection = engine === "piper" ? { ...faber } : { ...edge, voice: voice || edge.voice };
+  const manualSecondary = effectiveTtsPreferences(preferences, manualSelection, true).secondary;
   const [model, setModel] = useState("");
   const [chapters, setChapters] = useState("");
   const [fromChapterToEnd, setFromChapterToEnd] = useState("");
@@ -246,8 +260,8 @@ export default function ConversionForm({
   const [language, setLanguage] = useState<string>(
     initialMeta.autoLanguage ? "auto" : (initialMeta.languages[0] ?? ""),
   );
-  const [formattingCues, setFormattingCues] = useState(true);
-  const [enableCharacterVoices, setEnableCharacterVoices] = useState(true);
+  const [formattingCues, setFormattingCues] = useState(false);
+  const [enableCharacterVoices, setEnableCharacterVoices] = useState(false);
   const [narratorVoice, setNarratorVoice] = useState("");
   const [characterVoice, setCharacterVoice] = useState("");
   const [exportToIphone, setExportToIphone] = useState(false);
@@ -266,9 +280,9 @@ export default function ConversionForm({
   const [edgeStableMode, setEdgeStableMode] = useState(false);
   const [engineChainFallback, setEngineChainFallback] = useState(false);
   const [piperMaxProcs, setPiperMaxProcs] = useState("");
-  const [bitrate, setBitrate] = useState("8k");
-  const [sampleRate, setSampleRate] = useState("16000");
-  const [channels, setChannels] = useState("1");
+  const [bitrate, setBitrate] = useState("");
+  const [sampleRate, setSampleRate] = useState("");
+  const [channels, setChannels] = useState("");
   const [clearCache, setClearCache] = useState(false);
   const [forceReprocess, setForceReprocess] = useState(false);
   const [filterChapters, setFilterChapters] = useState(false);
@@ -349,6 +363,7 @@ export default function ConversionForm({
   }, [fileQueue, onUploadStateChange]);
 
   useEffect(() => {
+    if (conversionClient.mode === "embedded") return;
     let isMounted = true;
 
     const fetchVoices = async () => {
@@ -400,8 +415,9 @@ export default function ConversionForm({
     };
   }, []);
 
-  // Fetch pre-conversion duration estimate when a file is ready and engine changes
+  // Browser-local conversion has no remote estimate endpoint.
   useEffect(() => {
+    if (conversionClient.mode === "embedded") return;
     const readyEntry = fileQueue.find(
       (e) => e.status === "ready" && e.uploadId,
     );
@@ -444,21 +460,15 @@ export default function ConversionForm({
     };
   }, [fileQueue, engine]);
 
-  // In Tauri desktop mode, File > Open Books (or Cmd+O) emits "tauri-open-books".
-  // We open a native OS dialog via the pick_books Tauri command and register
-  // the selected files through the local-path upload endpoint (no bytes cross
-  // the IPC boundary — much faster for large EPUBs).
+  // Native menu events use actual File input for the local browser runtime.
+  // A legacy path-only upload ID cannot identify an embedded browser upload.
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     listenTauri("tauri-open-books", async () => {
-      try {
-        const paths = await invoke<string[]>("pick_books");
-        if (paths.length > 0) addNativePathsRef.current(paths);
-      } catch {
-        // Fallback: click the file input if pick_books is unavailable.
-        (document.getElementById("file") as HTMLInputElement | null)?.click();
-      }
+      await openTauriBooks(conversionClient.mode ?? "embedded",
+        () => (document.getElementById("file") as HTMLInputElement | null)?.click(),
+        paths => addNativePathsRef.current(paths));
     }).then((u) => {
       unlisten = u;
     });
@@ -939,8 +949,11 @@ export default function ConversionForm({
       return undefined;
     };
 
+    const effectivePreferences = effectiveTtsPreferences(preferences,
+      usePreferences ? null : manualSelection, useSecondary);
     const sharedConfig: ConversionTemplate = {
-      engine,
+      engine: effectivePreferences.primary.engine,
+      tts_preferences: structuredClone(effectivePreferences),
       voice: voice || undefined,
       model: model || undefined,
       chapters: chapters || undefined,
@@ -950,7 +963,7 @@ export default function ConversionForm({
       priority: priority || undefined,
       footnoteMode,
       language:
-        engineMeta.autoLanguage || !language || language === "auto"
+        !language || language === "auto"
           ? undefined
           : language,
       formattingCues,
@@ -1024,6 +1037,7 @@ export default function ConversionForm({
   };
 
   const handleEngineChange = (nextEngine: EngineOption) => {
+    setUsePreferences(false);
     setEngine(nextEngine);
     const meta = getEngineMeta(nextEngine);
     // In auto mode, don't set a voice (will be selected automatically)
@@ -1303,6 +1317,28 @@ export default function ConversionForm({
         <p className="form-hint">{t.form.fileHint}</p>
       </fieldset>
 
+      <fieldset className="form-row">
+        <legend>{labels.primary}</legend>
+        <p>{labels.capability}</p>
+        <label>{labels.primary}<select aria-label={labels.primary} value={preferences.primary.engine} onChange={e => updatePreferences({ ...preferences, primary: e.target.value === "piper" ? { ...faber } : { ...edge }, secondary: null })}>
+          <option value="piper">Faber medium</option><option value="edge" disabled>Edge — {unavailableVoiceLabel}</option>
+        </select></label>
+        <label>{labels.secondary}<select aria-label={labels.secondary} value={preferences.secondary?.engine ?? "none"} onChange={e => updatePreferences({ ...preferences, secondary: e.target.value === "none" ? null : e.target.value === "edge" ? { ...edge } : { ...faber } })}>
+          <option value="none">{labels.none}</option>
+          <option value={preferences.primary.engine === "piper" ? "edge" : "piper"} disabled={preferences.primary.engine === "piper"}>{preferences.primary.engine === "piper" ? `Edge — ${unavailableVoiceLabel}` : "Faber medium"}</option>
+        </select></label>
+        <label><input type="checkbox" checked={preferences.allow_online_fallback} onChange={e => updatePreferences({ ...preferences, allow_online_fallback: e.target.checked })} />{labels.online}</label>
+        <button type="button" onClick={() => void installModel()} disabled={modelStatus === "installing"}>{labels.install}</button>
+        <p role="status">{modelStatus === "idle" ? "" : modelStatus === "error" ? modelError : labels[modelStatus]}</p>
+        <label><input type="checkbox" checked={usePreferences} onChange={e => setUsePreferences(e.target.checked)} />{labels.inherit}</label>
+        {!usePreferences && <label>{labels.manualVoice}
+          <select aria-label={labels.manualVoice} value={engine} onChange={event => handleEngineChange(event.target.value)} disabled={isSubmitting}>
+            <option value="piper">Faber medium</option><option value="edge" disabled>Edge — {unavailableVoiceLabel}</option>
+          </select>
+        </label>}
+        {!usePreferences && <label><input type="checkbox" checked={Boolean(manualSecondary) && useSecondary} disabled={!manualSecondary} onChange={e => setUseSecondary(e.target.checked)} />{labels.reserve}</label>}
+      </fieldset>
+
       <details className="form-advanced">
         <summary>{t.form.advancedSummary}</summary>
         <div className="form-advanced__content">
@@ -1318,8 +1354,8 @@ export default function ConversionForm({
               }
             >
               {t.form.engineOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+                <option key={option.value} value={option.value} disabled={conversionClient.mode === "embedded" && option.value !== "piper"}>
+                  {option.label}{conversionClient.mode === "embedded" && option.value !== "piper" ? ` — ${unavailableVoiceLabel}` : ""}
                 </option>
               ))}
             </select>
@@ -1494,7 +1530,7 @@ export default function ConversionForm({
                     );
                   })}
               </select>
-              {engine !== "auto" && (
+              {engine !== "auto" && conversionClient.mode !== "embedded" && (
                 <VoicePreviewButton
                   engine={engine}
                   voice={voice}

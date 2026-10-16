@@ -4,6 +4,8 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod source_copy;
+
 macro_rules! debug_log {
     ($($arg:tt)*) => {
         if std::env::var("BUILD_DEBUG").is_ok() {
@@ -26,27 +28,6 @@ fn get_cargo_target_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Erro
     }
     let target_dir = target_dir.ok_or("not found")?;
     Ok(target_dir.to_path_buf())
-}
-
-fn copy_folder(src: &Path, dst: &Path) {
-    std::fs::create_dir_all(dst).expect("Failed to create dst directory");
-    if cfg!(unix) {
-        std::process::Command::new("cp")
-            .arg("-rf")
-            .arg(src)
-            .arg(dst.parent().unwrap())
-            .status()
-            .expect("Failed to execute cp command");
-    }
-
-    if cfg!(windows) {
-        std::process::Command::new("robocopy.exe")
-            .arg("/e")
-            .arg(src)
-            .arg(dst)
-            .status()
-            .expect("Failed to execute robocopy command");
-    }
 }
 
 fn extract_lib_names(out_dir: &Path, build_shared_libs: bool) -> Vec<String> {
@@ -143,6 +124,8 @@ fn macos_link_search_path() -> Option<String> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
+    println!("cargo:rerun-if-changed=.");
     println!("cargo:rustc-link-lib=speechPlayer");
     println!("cargo:rustc-link-lib=espeak-ng");
     println!("cargo:rustc-link-lib=ucd");
@@ -169,11 +152,9 @@ fn main() {
     debug_log!("OUT_DIR: {}", out_dir.display());
     debug_log!("BUILD_SHARED: {}", build_shared_libs);
 
-    // Prepare espeak-ng source
-    if !espeak_dst.exists() {
-        debug_log!("Copy {} to {}", espeak_src.display(), espeak_dst.display());
-        copy_folder(&espeak_src, &espeak_dst);
-    }
+    // Refresh source inputs after Cargo restores an existing OUT_DIR from cache.
+    debug_log!("Copy {} to {}", espeak_src.display(), espeak_dst.display());
+    source_copy::prepare_source(&espeak_src, &espeak_dst);
     // Speed up build
     env::set_var(
         "CMAKE_BUILD_PARALLEL_LEVEL",
@@ -216,6 +197,11 @@ fn main() {
     // Build with Cmake
 
     let mut config = Config::new(&espeak_dst);
+    if target.ends_with("-apple-darwin") {
+        if let Ok(deployment) = env::var("MACOSX_DEPLOYMENT_TARGET") {
+            config.define("CMAKE_OSX_DEPLOYMENT_TARGET", deployment);
+        }
+    }
 
     config.define(
         "BUILD_SHARED_LIBS",
@@ -234,13 +220,10 @@ fn main() {
         config
             .define("ANDROID_ABI", "arm64-v8a")
             .define("ANDROID_PLATFORM", "android-24");
-        let ndk_root = env::var("ANDROID_NDK_ROOT").expect("ANDROID_NDK_ROOT is required for Android builds");
-        println!(
-            "cargo:rustc-link-search=native={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android",
-            ndk_root
-        );
-        println!("cargo:rustc-link-lib=static=c++_static");
-        println!("cargo:rustc-link-lib=static=c++abi");
+        // Let the NDK driver search the API-specific shared system libraries
+        // before its archive directory. An explicit -L to the latter embeds
+        // static Bionic in the JNI library and crashes its TLS initialization.
+        println!("cargo:rustc-link-lib=dylib=c++_shared");
     }
 
     // General
@@ -283,8 +266,8 @@ fn main() {
         );
     }
 
-    // macOS
-    if target.ends_with("-apple-darwin") {
+    // Apple targets share the C++ runtime required by the speech player.
+    if target.contains("-apple-") {
         println!("cargo:rustc-link-lib=framework=Foundation");
         println!("cargo:rustc-link-lib=c++");
     }
@@ -310,7 +293,7 @@ fn main() {
     }
 
     // Linux
-    if cfg!(target_os = "linux") {
+    if target.contains("-linux-") && !target.ends_with("-android") {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
+import '../models/tts_preferences.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../models/session_record.dart';
@@ -56,6 +57,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   /// of truth — this just nudges the state stream.
   void _emit() {
     state = MirrorAppSettings(_prefs);
+  }
+
+  Future<void> setTtsPreferences(TtsPreferences value) async {
+    await state.setTtsPreferences(value);
+    _emit();
   }
 
   Future<void> setBackendUrl(String v) async {

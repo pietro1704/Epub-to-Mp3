@@ -27,7 +27,11 @@ static ESPEAK_DATA_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
 /// Configure the bundle directory containing `espeak-ng-data` before synthesis.
 pub fn set_espeak_data_directory(directory: impl AsRef<Path>) -> ESpeakResult<()> {
     let directory = directory.as_ref().to_path_buf();
-    if !directory.join(ESPEAKNG_DATA_DIR_NAME).join("phontab").is_file() {
+    if !directory
+        .join(ESPEAKNG_DATA_DIR_NAME)
+        .join("phontab")
+        .is_file()
+    {
         return Err(ESpeakError(format!(
             "eSpeak-ng data is missing from {}",
             directory.display()
@@ -37,7 +41,9 @@ pub fn set_espeak_data_directory(directory: impl AsRef<Path>) -> ESpeakResult<()
         return if current == &directory {
             Ok(())
         } else {
-            Err(ESpeakError("eSpeak-ng data directory is already configured".into()))
+            Err(ESpeakError(
+                "eSpeak-ng data directory is already configured".into(),
+            ))
         };
     }
     ESPEAK_DATA_DIRECTORY.set(directory).map_err(|_| {
@@ -53,14 +59,25 @@ fn init_espeak() -> ESpeakResult<()> {
         .and_then(|p| CString::new(p.to_string_lossy().as_ref()).ok());
     let path_ptr = path_cstr.as_ref().map_or(ptr::null(), |c| c.as_ptr());
 
-    let sample_rate = unsafe {
+    let resolved_data_directory = || unsafe {
+        let mut resolved: *const c_char = ptr::null();
+        espeak_rs_sys::espeak_Info(&mut resolved);
+        if resolved.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(resolved).to_string_lossy().into_owned())
+        }
+    };
+    let (sample_rate, resolved_before_initialize, resolved_after_initialize) = unsafe {
         espeak_rs_sys::espeak_ng_InitializePath(path_ptr);
-        espeak_rs_sys::espeak_Initialize(
+        let before = resolved_data_directory();
+        let sample_rate = espeak_rs_sys::espeak_Initialize(
             espeak_rs_sys::espeak_AUDIO_OUTPUT_AUDIO_OUTPUT_RETRIEVAL,
             0,
             path_ptr,
             espeak_rs_sys::espeakINITIALIZE_DONT_EXIT as i32,
-        )
+        );
+        (sample_rate, before, resolved_data_directory())
     };
 
     if sample_rate <= 0 {
@@ -73,7 +90,7 @@ fn init_espeak() -> ESpeakResult<()> {
             )
         });
         Err(ESpeakError(format!(
-            "Failed to initialize eSpeak-ng (code {sample_rate}, configured={configured:?}). \
+            "Failed to initialize eSpeak-ng (code {sample_rate}, configured={configured:?}, resolved_before={resolved_before_initialize:?}, resolved_after={resolved_after_initialize:?}). \
             Try setting `{PIPER_ESPEAKNG_DATA_DIRECTORY}` to the directory containing `{ESPEAKNG_DATA_DIR_NAME}`."
         )))
     } else {

@@ -59,6 +59,9 @@ var arguments = ["xcodebuild", "-quiet", "-project", project,
                  "-scheme", scheme, "-configuration", "Debug", "-jobs", "1",
                  "-parallel-testing-enabled", "NO", "-derivedDataPath", root + "/ios/EpubToMp3/.build",
                  "-resultBundlePath", report.appendingPathComponent("tests.xcresult").path] + filters
+if let modelRoot = environment["EPUB2MP3_PIPER_TEST_MODEL_ROOT"], !modelRoot.isEmpty {
+    arguments += ["EPUB2MP3_PIPER_TEST_MODEL_ROOT=\(modelRoot)"]
+}
 if mode == "build" {
     arguments += ["-destination", "generic/platform=iOS Simulator", "build-for-testing"]
 } else {

@@ -20,6 +20,7 @@ class WindowStreamingConverter extends UnavailableEmbeddedConverter
     required String outputPath,
     required int chapterIndex,
     required Future<void> Function(GrowingChapterAudioSource) onFirstAudio,
+    String? optionsJson,
   }) async {
     request = outputPath;
     final chunk = File('$outputPath/0.mp3')..writeAsBytesSync([1, 2, 3]);

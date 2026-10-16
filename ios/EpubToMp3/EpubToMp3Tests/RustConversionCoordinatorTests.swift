@@ -4,6 +4,19 @@ import AVFoundation
 import Darwin
 
 final class RustConversionCoordinatorTests: XCTestCase {
+    func testProgressUsesActualSecondaryModelAndVoice() throws {
+        let json = #"{"jobId":"fixture","state":"running","chaptersTotal":1,"chaptersCompleted":0,"percent":0,"engine":"edge","voice":"pt-BR-FranciscaNeural","fallbackUsed":true,"message":"Using edge"}"#
+        let event = try JSONDecoder().decode(RustConversionCoordinator.ConversionProgressEvent.self, from: Data(json.utf8))
+        XCTAssertEqual(event.voice, "pt-BR-FranciscaNeural")
+        XCTAssertEqual(event.fallbackUsed, true)
+        let manifest = #"{"manifest":{"jobId":"fixture","title":"Fixture","author":"Author","chapters":[],"usedSelections":[{"engine":"piper","model_id":"pt_BR-faber-medium"},{"engine":"edge","voice":"pt-BR-FranciscaNeural"}]}}"#
+        let result = RustConversionCoordinator.Result(jobID: "fixture", manifestJSON: Data(manifest.utf8), outputDirectory: URL(fileURLWithPath: "/unused"))
+        let finished = try result.snapshot()
+        XCTAssertEqual(finished.engine, "edge + piper")
+        XCTAssertEqual(finished.voice, "pt_BR-faber-medium + pt-BR-FranciscaNeural")
+        XCTAssertEqual(event.updating(finished).voice, "pt-BR-FranciscaNeural")
+    }
+
     func testConversionLogAppendPreservesPreviousChunkTrace() throws {
         let logURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("conversion-log-\(UUID().uuidString).log")

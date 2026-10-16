@@ -5,10 +5,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:convert';
 import '../services/platform_voice_notice.dart';
 import '../services/embedded_converter.dart';
+import '../services/desktop_embedded_converter.dart';
 
 import '../state/providers.dart';
+import '../l10n/app_localizations.dart';
+import '../models/tts_preferences.dart';
 
 class ConversionRequest {
   const ConversionRequest({
@@ -16,12 +20,14 @@ class ConversionRequest {
     required this.engine,
     required this.voice,
     required this.language,
+    this.ttsPreferences = const TtsPreferences(),
     this.chapterStart,
     this.chapterEnd,
     this.includeCover = true,
     this.normalizeAudio = true,
   });
 
+  final TtsPreferences ttsPreferences;
   final String filePath;
   final String engine;
   final String voice;
@@ -46,7 +52,9 @@ class ConvertScreen extends ConsumerStatefulWidget {
 
 class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   late String? _filePath = widget.initialFilePath;
-  String _engine = 'edge';
+  List<TtsSelection> _usedSelections = const [];
+  String _engine = 'preferences';
+  bool _allowSecondary = false;
   String _voice = 'pt-BR-AntonioNeural';
   String _language = 'pt';
   final _startController = TextEditingController();
@@ -59,6 +67,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   final _voiceSession = PlatformVoiceNoticeSession();
   StreamSubscription<dynamic>? _voiceSubscription;
   AndroidEmbeddedConverter? _activeAndroidConverter;
+  DesktopEmbeddedConverter? _activeDesktopConverter;
   String? _activeNativeOutputPath;
 
   @override
@@ -95,6 +104,9 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     final output = _activeNativeOutputPath;
     if (_submitting && output != null && converter != null) {
       unawaited(converter.cancelConversion(outputPath: output));
+    }
+    if (_submitting && output != null && _activeDesktopConverter != null) {
+      unawaited(_activeDesktopConverter!.cancelConversion(outputPath: output));
     }
     _voiceSession.end();
     _voiceSubscription?.cancel();
@@ -155,12 +167,30 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       _submitting = true;
       _error = null;
       _jobId = null;
+      _usedSelections = const [];
     });
     try {
+      final saved = ref.read(settingsProvider).ttsPreferences;
+      final manualPrimary = _engine == 'piper'
+          ? TtsSelection.faber
+          : TtsSelection(engine: 'edge', voice: _voice);
+      final selected = _engine == 'preferences'
+          ? saved
+          : TtsPreferences(
+              primary: manualPrimary,
+              secondary:
+                  _allowSecondary &&
+                      jsonEncode(saved.secondary?.toJson()) !=
+                          jsonEncode(manualPrimary.toJson())
+                  ? saved.secondary
+                  : null,
+              allowOnlineFallback: _allowSecondary && saved.allowOnlineFallback,
+            );
       final request = ConversionRequest(
         filePath: path,
-        engine: 'edge',
-        voice: _voice,
+        ttsPreferences: selected,
+        engine: selected.primary.engine,
+        voice: selected.primary.voice ?? selected.primary.modelId ?? '',
         language: _language,
         chapterStart: int.tryParse(_startController.text),
         chapterEnd: int.tryParse(_endController.text),
@@ -170,7 +200,10 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       final starter =
           widget.startConversion ??
           (request) async {
-            if (defaultTargetPlatform == TargetPlatform.android) {
+            if (!kIsWeb &&
+                (defaultTargetPlatform == TargetPlatform.android ||
+                    defaultTargetPlatform == TargetPlatform.linux ||
+                    defaultTargetPlatform == TargetPlatform.windows)) {
               final root = await getApplicationDocumentsDirectory();
               final output =
                   '${root.path}/audiobooks/${DateTime.now().millisecondsSinceEpoch}';
@@ -179,31 +212,60 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
               if (converter is AndroidEmbeddedConverter) {
                 _activeAndroidConverter = converter;
               }
+              if (converter is DesktopEmbeddedConverter) {
+                _activeDesktopConverter = converter;
+              }
+              final support = await getApplicationSupportDirectory();
               return converter.convert(
+                optionsJson: request.ttsPreferences.optionsJson(
+                  modelsRoot: '${support.path}/tts-models',
+                  language: request.language,
+                ),
                 inputPath: request.filePath,
                 outputPath: output,
                 chapterStart: request.chapterStart,
                 chapterEnd: request.chapterEnd,
               );
             }
-            return ref
-                .read(apiClientProvider)
-                .uploadAndConvert(
-                  request.filePath,
-                  engine: request.engine,
-                  voice: request.voice,
-                  language: request.language,
-                  chapterStart: request.chapterStart,
-                  chapterEnd: request.chapterEnd,
-                  includeCover: request.includeCover,
-                  normalizeAudio: request.normalizeAudio,
-                );
+            throw EmbeddedConverterUnavailable(
+              'No local Rust conversion adapter is registered for this platform.',
+            );
           };
       _voiceSession.begin(request.filePath);
-      final jobId = await starter(request);
+      final result = await starter(request);
+      var jobId = result;
+      var actual = <TtsSelection>[];
+      var nativeFallbackUsed = false;
+      try {
+        final decoded = jsonDecode(result);
+        if (decoded is Map) {
+          final manifest = decoded['manifest'] is Map
+              ? decoded['manifest'] as Map
+              : decoded;
+          if (manifest['jobId'] is String) jobId = manifest['jobId'] as String;
+          nativeFallbackUsed = manifest['fallbackUsed'] == true;
+          actual = (manifest['usedSelections'] as List? ?? const [])
+              .whereType<Map>()
+              .map(
+                (value) =>
+                    TtsSelection.fromJson(Map<String, dynamic>.from(value)),
+              )
+              .toList();
+        }
+      } on FormatException {
+        /* Legacy injected starters return only a job ID. */
+      }
       if (!mounted) return;
+      if (nativeFallbackUsed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.ttsSecondaryUsedNotice),
+          ),
+        );
+      }
       setState(() {
         _jobId = jobId;
+        _usedSelections = actual;
         _submitting = false;
       });
     } catch (e) {
@@ -221,6 +283,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   @override
   Widget build(BuildContext context) {
     final jobId = _jobId;
+    final t = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(title: const Text('Convert')),
       body: ListView(
@@ -231,34 +294,54 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             icon: const Icon(Icons.attach_file),
             label: Text(_filePath == null ? 'Choose EPUB or PDF' : _filePath!),
           ),
+          if (_usedSelections.isNotEmpty)
+            Text(
+              t.ttsActualVoices(
+                _usedSelections
+                    .map((selection) => selection.displayName)
+                    .join(', '),
+              ),
+            ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             initialValue: _engine,
             decoration: const InputDecoration(labelText: 'Engine'),
             items: [
-              const DropdownMenuItem(value: 'edge', child: Text('Edge TTS')),
+              DropdownMenuItem(
+                value: 'preferences',
+                child: Text(t.ttsUsePreferences),
+              ),
+              DropdownMenuItem(value: 'piper', child: Text(t.ttsFaberOffline)),
+              DropdownMenuItem(value: 'edge', child: Text(t.ttsEdgeOnline)),
             ],
             onChanged: (v) => setState(() => _engine = v ?? _engine),
           ),
-          DropdownButtonFormField<String>(
-            initialValue: _voice,
-            decoration: const InputDecoration(labelText: 'Voice'),
-            items: const [
-              DropdownMenuItem(
-                value: 'pt-BR-AntonioNeural',
-                child: Text('Antonio (pt-BR)'),
-              ),
-              DropdownMenuItem(
-                value: 'en-US-GuyNeural',
-                child: Text('Guy (en-US)'),
-              ),
-              DropdownMenuItem(
-                value: 'es-MX-JorgeNeural',
-                child: Text('Jorge (es-MX)'),
-              ),
-            ],
-            onChanged: (v) => setState(() => _voice = v ?? _voice),
-          ),
+          if (_engine != 'preferences')
+            SwitchListTile(
+              title: Text(t.ttsAllowJobSecondary),
+              value: _allowSecondary,
+              onChanged: (v) => setState(() => _allowSecondary = v),
+            ),
+          if (_engine == 'edge')
+            DropdownButtonFormField<String>(
+              initialValue: _voice,
+              decoration: const InputDecoration(labelText: 'Voice'),
+              items: const [
+                DropdownMenuItem(
+                  value: 'pt-BR-AntonioNeural',
+                  child: Text('Antonio (pt-BR)'),
+                ),
+                DropdownMenuItem(
+                  value: 'en-US-GuyNeural',
+                  child: Text('Guy (en-US)'),
+                ),
+                DropdownMenuItem(
+                  value: 'es-MX-JorgeNeural',
+                  child: Text('Jorge (es-MX)'),
+                ),
+              ],
+              onChanged: (v) => setState(() => _voice = v ?? _voice),
+            ),
           DropdownButtonFormField<String>(
             initialValue: _language,
             decoration: const InputDecoration(labelText: 'Language'),

@@ -879,6 +879,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Off'**
   String get off;
+
+  /// No description provided for @ttsPrimaryNarration.
+  ///
+  /// In en, this message translates to:
+  /// **'Primary narration'**
+  String get ttsPrimaryNarration;
+
+  /// No description provided for @ttsSecondaryNarration.
+  ///
+  /// In en, this message translates to:
+  /// **'Secondary narration'**
+  String get ttsSecondaryNarration;
+
+  /// No description provided for @ttsFaberOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Faber medium · Offline'**
+  String get ttsFaberOffline;
+
+  /// No description provided for @ttsEdgeOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Edge · Online'**
+  String get ttsEdgeOnline;
+
+  /// No description provided for @ttsNoSecondary.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get ttsNoSecondary;
+
+  /// No description provided for @ttsAllowOnlineSecondary.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow online secondary'**
+  String get ttsAllowOnlineSecondary;
+
+  /// No description provided for @ttsOnlineSecondaryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Send failed segments to Edge only when enabled.'**
+  String get ttsOnlineSecondaryDescription;
+
+  /// No description provided for @ttsUsePreferences.
+  ///
+  /// In en, this message translates to:
+  /// **'Use audio preferences'**
+  String get ttsUsePreferences;
+
+  /// No description provided for @ttsAllowJobSecondary.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow configured secondary for this conversion'**
+  String get ttsAllowJobSecondary;
+
+  /// No description provided for @ttsActualVoices.
+  ///
+  /// In en, this message translates to:
+  /// **'Used voice: {voices}'**
+  String ttsActualVoices(String voices);
+
+  /// No description provided for @ttsSecondaryUsedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Secondary voice used for an isolated segment. The primary voice will be retried.'**
+  String get ttsSecondaryUsedNotice;
 }
 
 class _AppLocalizationsDelegate

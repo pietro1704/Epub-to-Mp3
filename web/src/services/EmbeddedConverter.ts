@@ -1,5 +1,5 @@
 import initWasm, { inspect_epub } from "../wasm/converter_wasm";
-import type { BookTextChapter, BookTextDocument } from "../types/conversion";
+import type { BookTextChapter, BookTextDocument, DownloadAsset } from "../types/conversion";
 
 export type EmbeddedCapability = "metadata" | "chapter-preview" | "audio-conversion";
 export type EmbeddedUnavailableReason = "audio-conversion-not-implemented" | "capability-not-supported";
@@ -23,13 +23,13 @@ export interface EmbeddedConverter {
   readonly capabilities: ReadonlySet<EmbeddedCapability>;
   inspect(file: Blob): Promise<Pick<BookTextDocument, "bookTitle" | "bookAuthor" | "chapters">>;
   previewChapter(file: Blob, chapterIndex: number): Promise<string>;
-  convertToAudio(file: Blob): Promise<never>;
+  convertToAudio(file: Blob): Promise<DownloadAsset[]>;
 }
 
 export const embeddedCapabilities = {
   mode: "embedded" as const,
-  available: new Set<EmbeddedCapability>(["metadata", "chapter-preview"]),
-  unavailable: new Set<EmbeddedCapability>(["audio-conversion"]),
+  available: new Set<EmbeddedCapability>(["metadata", "chapter-preview", "audio-conversion"]),
+  unavailable: new Set<EmbeddedCapability>(),
 } as const;
 
 let wasmReady: Promise<void> | undefined;
@@ -52,7 +52,12 @@ export const embeddedConverter: EmbeddedConverter = {
     if (!chapter) throw new EmbeddedCapabilityUnavailableError("chapter-preview");
     return chapter.text;
   },
-  convertToAudio: async () => {
-    throw new EmbeddedCapabilityUnavailableError("audio-conversion", "audio-conversion-not-implemented");
+  convertToAudio: async file => {
+    const { conversionClient } = await import("./ConversionService");
+    const source = file instanceof File ? file : new File([file], "book.epub", { type: "application/epub+zip" });
+    const { jobId } = await conversionClient.submit({ file: source, engine: "piper", footnoteMode: "inline" });
+    const result = await conversionClient.poll(jobId);
+    if (result.state !== "finished") throw new Error(result.error ?? `Browser conversion ${result.state}`);
+    return result.outputs ?? [];
   },
 };

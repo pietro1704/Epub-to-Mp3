@@ -426,37 +426,21 @@ class MainActivity : AudioServiceActivity() {
             when (call.method) {
                 "enqueueChapter" -> {
                     val jobId = call.argument<String>("jobId")
-                    val text = call.argument<String>("text")
-                    val voice = call.argument<String>("voice")
+                    val inputPath = call.argument<String>("inputPath")
+                    val chapterIndex = call.argument<Int>("chapterIndex")
                     val outputPath = call.argument<String>("outputPath")
-                    if (jobId.isNullOrBlank() || text.isNullOrBlank() || voice.isNullOrBlank() || outputPath.isNullOrBlank()) {
-                        result.error("BAD_ARGS", "jobId, text, voice and outputPath are required", null)
+                    val optionsJson = call.argument<String>("optionsJson")
+                    if (jobId.isNullOrBlank() || inputPath.isNullOrBlank() || chapterIndex == null || outputPath.isNullOrBlank() || optionsJson.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "jobId, inputPath, chapterIndex, outputPath and optionsJson are required", null)
                     } else {
-                        val backendUrl = call.argument<String>("backendUrl")?.trim()
-                        if (backendUrl.isNullOrBlank()) {
-                            result.error("BAD_ARGS", "backendUrl is required", null)
+                        val payloadFile = persistBackgroundPayload(jobId, inputPath, chapterIndex, outputPath, optionsJson)
+                        if (payloadFile == null) {
+                            result.error("IO_ERROR", "Could not persist background conversion payload", null)
                         } else {
-                            val payloadFile = persistBackgroundPayload(jobId, text, voice, outputPath)
-                            if (payloadFile == null) {
-                                result.error("IO_ERROR", "Could not persist background conversion payload", null)
-                                return@setMethodCallHandler
-                            }
-                            getSharedPreferences("flutter_epub_to_mp3", MODE_PRIVATE)
-                                .edit().putString(BackgroundChapterWorker.KEY_BACKEND_URL, backendUrl).apply()
                             val request = OneTimeWorkRequestBuilder<BackgroundChapterWorker>()
-                            .setConstraints(
-                                Constraints.Builder()
-                                    .setRequiresBatteryNotLow(true)
-                                    .setRequiresStorageNotLow(true)
-                                    .build(),
-                            )
-                            .setInputData(Data.Builder()
-                                .putString(BackgroundChapterWorker.KEY_PAYLOAD, payloadFile.absolutePath)
-                                .build())
-                            .build()
-                            WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                                jobId, ExistingWorkPolicy.KEEP, request,
-                            )
+                                .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build())
+                                .setInputData(Data.Builder().putString(BackgroundChapterWorker.KEY_PAYLOAD, payloadFile.absolutePath).build()).build()
+                            WorkManager.getInstance(applicationContext).enqueueUniqueWork(jobId, ExistingWorkPolicy.KEEP, request)
                             result.success(true)
                         }
                     }
@@ -622,7 +606,7 @@ class MainActivity : AudioServiceActivity() {
                         val isolatedExecutor = Executors.newSingleThreadExecutor()
                         try {
                             val nativeFuture = isolatedExecutor.submit<Pair<Boolean, String?>> {
-                                val value = nativePiperSynthesize(text, output)
+                                val value = nativePiperSynthesizeWithOptions(text, output, conversionOptions(call.argument<String>("optionsJson")))
                                 value to if (value) null else nativeLastError()
                             }
                             val (value, error) = nativeFuture.get(120, TimeUnit.SECONDS)
@@ -705,9 +689,8 @@ class MainActivity : AudioServiceActivity() {
                             converterExecutor.execute {
                                 try {
                                     Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
-                                    // The native request is Edge-first. A local Piper model is
-                                    // optional and must not gate the online default.
-                                    Log.i(embeddedLogTag, "convert invoking JNI libraryLoaded=$converterLibraryLoaded engine=edge")
+                                    // Rust resolves the immutable provider selection for this job.
+                                    Log.i(embeddedLogTag, "convert invoking JNI libraryLoaded=$converterLibraryLoaded")
                                     val chapterStart = call.argument<Int>("chapterStart") ?: -1
                                     val chapterEnd = call.argument<Int>("chapterEnd") ?: -1
                                     val isolatedExecutor = Executors.newSingleThreadExecutor()
@@ -715,7 +698,7 @@ class MainActivity : AudioServiceActivity() {
                                     // same worker thread immediately after nativeConvert;
                                     // reading it after Future.get would lose the real error.
                                     val nativeFuture = isolatedExecutor.submit<Pair<String?, String?>> {
-                                        val value = if (call.argument<Boolean>("streaming") == true) nativeConvertStreaming(inputPath, outputPath, chapterStart, chapterEnd) else nativeConvert(inputPath, outputPath, chapterStart, chapterEnd)
+                                        val value = nativeConvertWithOptions(inputPath, outputPath, chapterStart, chapterEnd, conversionOptions(call.argument<String>("optionsJson")), call.argument<Boolean>("streaming") == true)
                                         value to if (value == null) nativeLastError() else null
                                     }
                                     // A complete EPUB can legitimately take several minutes on
@@ -763,6 +746,10 @@ class MainActivity : AudioServiceActivity() {
 
     }
 
+    private fun conversionOptions(raw: String?): String = NativeTtsOptions.prepare(applicationContext, raw)
+
+    private external fun nativeConvertWithOptions(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int, optionsJson: String, streaming: Boolean): String?
+    private external fun nativePiperSynthesizeWithOptions(text: String, output: String, optionsJson: String): Boolean
     private external fun nativeParse(inputPath: String): String?
     private external fun nativeJobLog(jobId: String): String?
     private external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
@@ -789,22 +776,16 @@ class MainActivity : AudioServiceActivity() {
         super.onDestroy()
     }
 
-    private fun persistBackgroundPayload(jobId: String, text: String, voice: String, outputPath: String): File? {
-        val dir = File(cacheDir, "background_conversion").apply { mkdirs() }
-        val target = File(dir, "${jobId.replace(Regex("[^A-Za-z0-9_-]"), "_")}.json")
-        val temp = File(dir, "${target.name}.${System.nanoTime()}.tmp")
+    private fun persistBackgroundPayload(jobId: String, inputPath: String, chapterIndex: Int, outputPath: String, optionsJson: String): File? {
         return try {
-            JSONObject().apply {
-                put("text", text)
-                put("voice", voice)
+            val payload = JSONObject().apply {
+                put("inputPath", inputPath)
+                put("chapterIndex", chapterIndex)
+                put("optionsJson", optionsJson)
                 put("outputPath", outputPath)
-            }.toString().also { temp.writeText(it, Charsets.UTF_8) }
-            if (!temp.renameTo(target)) throw java.io.IOException("Could not atomically publish payload")
-            target
-        } catch (_: Exception) {
-            temp.delete()
-            null
-        }
+            }.toString()
+            BackgroundPayloadStore.persist(File(filesDir, "background_conversion"), jobId, payload)
+        } catch (_: Exception) { null }
     }
 
     private fun handleIncomingIntent(incoming: Intent?) {

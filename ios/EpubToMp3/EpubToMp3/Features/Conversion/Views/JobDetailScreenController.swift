@@ -180,10 +180,7 @@ final class JobDetailScreenController: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch visibleSections[section] {
         case .job:
-            var count = 4
-            if viewModel.snapshot?.bookTitle != nil { count += 1 }
-            if viewModel.snapshot?.progressPercent != nil { count += 1 }
-            return count
+            return jobRows.count
         case .chapters:
             return viewModel.snapshot?.playableChapters.count ?? 0
         case .actions:
@@ -279,6 +276,12 @@ final class JobDetailScreenController: UITableViewController {
         ]
         if let title = viewModel.snapshot?.bookTitle {
             rows.insert((L10n.string("jobDetail.book"), title), at: 2)
+        }
+        if let engine = viewModel.snapshot?.engine {
+            rows.append((L10n.string("settings.audioEngineChoice"), engine))
+        }
+        if let voice = viewModel.snapshot?.voice {
+            rows.append((L10n.string("convert.voiceOptional"), voice))
         }
         if let pct = viewModel.snapshot?.progressPercent {
             rows.append((L10n.string("jobDetail.progress"), String(format: "%.0f%%", pct)))

@@ -811,7 +811,7 @@ export function useConversionFlow(
   const [healthStatus, setHealthStatus] = useState<
     "unknown" | "ok" | "fail" | "restarting"
   >("unknown");
-  const systemStats = useSystemStats(client ? 0 : 5000);
+  const systemStats = useSystemStats(client || api.mode === "embedded" ? 0 : 5000);
   const recentSpeed = useMemo(
     () => resolveRecentSpeed(state.summary),
     [state.summary?.chapterProgress],
@@ -963,6 +963,7 @@ export function useConversionFlow(
     return true;
   }, [state.phase]);
   const waitForBackendReady = useCallback(async () => {
+    if (api.mode === "embedded") return true;
     const tolerances = adaptiveTolerancesRef.current;
     const maxAttempts = Math.max(3, tolerances.healthFailureLimit + 2);
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -980,7 +981,7 @@ export function useConversionFlow(
     }
     markApiOffline();
     return false;
-  }, [markApiOffline, markApiOnline]);
+  }, [api, markApiOffline, markApiOnline]);
   const appendSnapshotEvents = useCallback(
     (events?: string[]) => {
       if (!events || events.length === 0) {
@@ -1116,7 +1117,7 @@ export function useConversionFlow(
   );
 
   useEffect(() => {
-    if (client) {
+    if (client || api.mode === "embedded") {
       setApiAvailable(true);
       return undefined;
     }
@@ -1216,7 +1217,7 @@ export function useConversionFlow(
         window.clearTimeout(timeoutId);
       }
     };
-  }, [client, markApiOffline, markApiOnline, state.phase]);
+  }, [api, client, markApiOffline, markApiOnline, state.phase]);
 
   useEffect(() => {
     if (typeof window === "undefined") {

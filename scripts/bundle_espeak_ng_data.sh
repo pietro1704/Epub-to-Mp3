@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The active Apple provider policy is Edge plus system speech. Piper resources
-# are bundled only for an explicitly requested optional runtime build.
-[[ "${CONVERTER_FFI_ENABLE_PIPER:-0}" == 1 ]] || exit 0
+# Piper is the default offline provider; minimal compatibility builds may opt out.
+[[ "${CONVERTER_FFI_ENABLE_PIPER:-1}" == 1 ]] || exit 0
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 data_root="$root/target/espeak-data"
