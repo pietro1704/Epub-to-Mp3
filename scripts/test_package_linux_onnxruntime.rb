@@ -43,7 +43,7 @@ class PackageLinuxOnnxruntimeTest < Minitest::Test
     refute File.symlink?(packaged)
     assert_equal expected, Digest::SHA256.file(packaged).hexdigest
     FileUtils.remove_entry(@runtime)
-    output, status = Open3.capture2e({'LD_LIBRARY_PATH' => @package, 'LD_PRELOAD' => nil}, @executable)
+    output, status = Open3.capture2e({'LD_LIBRARY_PATH' => @package, 'LD_PRELOAD' => nil}, [@executable, @executable])
     assert status.success?, "The relocated package could not load its own dependency: #{output}"
   end
 
