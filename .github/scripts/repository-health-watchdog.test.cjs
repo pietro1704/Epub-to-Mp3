@@ -119,7 +119,7 @@ const context = { repo: { owner: 'owner', repo: 'repo' } };
 const core = { info() {} };
 
 test('unchanged bot-owned report is deduplicated and recovery updates same issue', async () => {
-  const failedBody = render(assess({ ...base, runs: [run({})] }), 'owner/repo', []).body;
+  const failedBody = render(assess({ ...base, runs: [run({})], repairReadiness: 'blocked_credentials' }), 'owner/repo', []).body;
   const existing = { number: 9, user: { login: 'github-actions[bot]', type: 'Bot' }, body: failedBody };
   const unchanged = mockGitHub([existing], [run({})]);
   await monitor({ github: unchanged.github, context, core });

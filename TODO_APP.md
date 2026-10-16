@@ -1650,3 +1650,11 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 - [ ] Enable a30-minute GitHub-native watchdog for current-head Actions failures and actionable issue triage; verify its regression workflow and first live scan after merge.
 - Use builtin token only, bounded metadata reads, deduplicated bot-owned issue and explicit incomplete-coverage/recovery reporting. Treat issue content as untrusted data.
 - Repairs remain agent work; the watchdog does not claim unattended code repair, paid AI, deployments, retries or merge authority. All tests execute only on GitHub.
+# PR-REPAIR-SAFETY — Prepared autonomous PR repair safety
+
+- Status: source preparation; writers remain disabled by default. Missing LLM credentials must report `blocked_credentials`, never simulated repair readiness.
+- Scope: existing PR dispatcher/worker, trusted-master metadata/publication helper, executable fake-GitHub/real-temporary-Git regressions, and watchdog readiness/candidate metadata only. Issue remediation and merge writers remain unchanged.
+- Acceptance: reject stale/draft/closed/fork/untrusted PRs; authenticated attempt claim before inference; no credentials persisted into repair checkout; exact-head lease publication; explicit CI/CodeQL dispatch with observed new SHA; protected paths/renames/submodules rejected. Guarded master merge policy remains authoritative.
+- Verification: GitHub-only focused host regressions pending. No local test/build/lint/formatter execution and no real LLM or autonomous publication claimed. Activation and credentials are outside this preparation slice.
+- Review follow-up: bounded trusted CI identity/exact-SHA latest-run failure gate now repeats before claim, inference and publication; a successful newer rerun, in-progress head, missing/incomplete run history, stale SHA or startup failure blocks repair. This is failure evidence only, never an automatic code-defect classification. Untracked symlinks are rejected before staging. GitHub-only regression cases include these gates and bounded dispatch observation with an injected wait.
+

@@ -3,13 +3,14 @@
 const MARKER = '<!-- repository-health-watchdog:v1 -->';
 const TITLE = 'Repository health: Actions failures and issue triage';
 const BAD = new Set(['failure', 'timed_out', 'action_required', 'startup_failure']);
+const { validate, readiness } = require('./pr-repair-safety.cjs');
 
 function isOwnedReport(issue) {
   return !issue.pull_request && issue.user?.type === 'Bot' &&
     issue.user?.login === 'github-actions[bot]' && issue.body?.startsWith(MARKER);
 }
 
-function assess({ runs, pulls, issues, masterSha, capped }) {
+function assess({ runs, pulls, issues, masterSha, capped, repository, repairReadiness = 'not_checked' }) {
   const heads = new Map([[masterSha, 'master']]);
   for (const pr of pulls) {
     if (pr.head.repo?.full_name === pr.base.repo?.full_name) {
@@ -27,6 +28,14 @@ function assess({ runs, pulls, issues, masterSha, capped }) {
   const failures = [...latest.values()].filter(run => BAD.has(run.conclusion))
     .sort((a, b) => Number(a.id) - Number(b.id));
   const pending = [...latest.values()].filter(run => run.status !== 'completed');
+  const repairCandidates = [];
+  for (const pr of pulls) {
+    if (!failures.some(run => run.head_sha === pr.head.sha)) continue;
+    try {
+      const candidate = validate(pr, repository, pr.head.sha);
+      repairCandidates.push({ number: candidate.number, sha: candidate.sha });
+    } catch { /* Metadata-only triage never grants write eligibility. */ }
+  }
   const triage = issues.filter(issue => !issue.pull_request && !isOwnedReport(issue))
     .map(issue => ({ number: issue.number, updated_at: issue.updated_at }))
     .sort((a, b) => a.number - b.number);
@@ -35,9 +44,11 @@ function assess({ runs, pulls, issues, masterSha, capped }) {
     failures: failures.map(run => [run.id, run.run_attempt, run.conclusion]),
     pending: pending.map(run => [run.id, run.run_attempt, run.status]).sort(),
     triage,
+    repairReadiness,
+    repairCandidates,
     capped: [...capped].sort(),
   });
-  return { failures, pending, triage, signature, heads };
+  return { failures, pending, triage, signature, heads, repairReadiness, repairCandidates };
 }
 
 function render(state, repository, capped) {
@@ -52,6 +63,11 @@ function render(state, repository, capped) {
   lines.push('', `In-progress current-head runs: ${state.pending.length}.`, '', '### Open issues to triage');
   for (const issue of state.triage) lines.push(`- [Issue #${Number(issue.number)}](https://github.com/${repository}/issues/${Number(issue.number)})`);
   if (!state.triage.length) lines.push('- No open issues found within the inspected page set.');
+  lines.push('', '### PR repair readiness',
+    `- Credential/writer readiness: ${state.repairReadiness}. This is not LLM or publication verification.`,
+    `- Eligible metadata-only PR repair proposals: ${state.repairCandidates.length}. No repair is dispatched by this monitor.`,
+    '- Workflow enablement and exact-head CI/CodeQL must still be verified before activation; issue repair is a separate scope.');
+  for (const candidate of state.repairCandidates) lines.push(`- PR #${candidate.number} at ${candidate.sha}`);
   lines.push('', '### Coverage and limitations',
     '- Periodic checks can be delayed by GitHub scheduling. This report is not a required-check or merge gate.',
     '- Only current master and same-repository open PR heads are inspected; stale runs are ignored.',
@@ -84,7 +100,10 @@ async function monitor({ github, context, core }) {
   ]);
   const owned = issues.filter(isOwnedReport);
   if (owned.length > 1) throw new Error('Multiple watchdog issues found; refusing ambiguous writes.');
-  const state = assess({ runs, pulls, issues, masterSha: master.data.sha, capped });
+  const state = assess({ runs, pulls, issues, masterSha: master.data.sha, capped,
+    repository: `${owner}/${repo}`,
+    repairReadiness: readiness({ credentials: process.env.REPAIR_CREDENTIALS_AVAILABLE === 'true',
+      writers: process.env.REPAIR_WRITERS_ENABLED === 'true' }) });
   const report = render(state, `${owner}/${repo}`, capped);
   const current = owned[0];
   if (current?.body === report.body) {
