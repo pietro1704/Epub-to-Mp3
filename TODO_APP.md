@@ -14,6 +14,12 @@
 - Acceptance pending: GitHub-only Ruby/Rust integration passes the unchanged ADPCM capability assertions and native isolation cases. No local tests, builds, formatter, syntax checks or audio tools were executed.
 
 
+## APP-20261016-FFI-CANCEL-STATE — Persist controlled cancellation after cached playback
+
+- [ ] Owner: crash_guard_audit; restore the valid `Running -> Cancelling -> Cancelled` sequence for control-token cancellation and propagate job-store failures instead of leaving a running record behind.
+- [ ] Exercise token-only cancellation, an already durable cancellation request and a missing job record at the core seam. Seed the existing FFI priority/handle-release/cancellation tests through actual offline system-fixture conversion and verified receipts; assert replay performs no synthesis and preserves audio/receipt bytes.
+- Red evidence: GitHub portability run `38870071388`, job `116871820752`, failed one of 18 FFI tests because persisted state was `running` rather than `cancelled`. The fixture also attempted Edge synthesis because raw WAV files lacked completion receipts. Source prepared; GitHub verification pending. No local tests, builds, formatters, syntax checks or native/device actions executed.
+
 ## APP-20261016-CI-LEGACY-GUARDS — Reconcile legacy guard regression contracts
 
 - [ ] Owner: crash_guard_audit; acceptance: replace references to removed private resource APIs with the documented compatibility, lease and oldest-runtime selection contracts. Preserve canonical Ruby Intel quarantine independently in PR #804.

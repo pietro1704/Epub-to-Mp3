@@ -244,7 +244,12 @@ impl ConversionWorker {
                 self.jobs.transition(&request.job_id, JobState::Completed)?;
             }
             Err(WorkerError::Cancelled) => {
-                let _ = self.jobs.transition(&request.job_id, JobState::Cancelled);
+                // A control token can cancel without a persisted request. Follow
+                // the state machine before reporting terminal cancellation.
+                if self.jobs.load(&request.job_id)?.state != JobState::Cancelling {
+                    self.jobs.request_cancellation(&request.job_id)?;
+                }
+                self.jobs.transition(&request.job_id, JobState::Cancelled)?;
             }
             Err(_) => {
                 let _ = self.jobs.transition(&request.job_id, JobState::Failed);
@@ -1937,6 +1942,79 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, WorkerError::Cancelled));
         assert!(spoken.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn token_cancellation_is_durable_and_preserves_job_store_errors() {
+        struct CancelDuringSpeech {
+            cancel: CancellationToken,
+            jobs: JobManager,
+            durable_request: bool,
+            remove_record: bool,
+            calls: Arc<AtomicUsize>,
+        }
+        impl PlatformTts for CancelDuringSpeech {
+            fn synthesize_wav(
+                &self,
+                _: &str,
+                _: &str,
+                _: &Path,
+                _: &(dyn Fn() -> bool + Sync),
+            ) -> Result<(), String> {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                if self.remove_record {
+                    self.jobs.delete("cancelled-job").unwrap();
+                } else if self.durable_request {
+                    self.jobs.request_cancellation("cancelled-job").unwrap();
+                }
+                self.cancel.cancel();
+                Err("fixture cancellation".into())
+            }
+        }
+        for (durable_request, remove_record) in [(false, false), (true, false), (false, true)] {
+            let temp = tempfile::tempdir().unwrap();
+            let input = temp.path().join("book.epub");
+            platform_test_book(&input);
+            let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+                std::iter::empty::<(String, String)>(),
+                temp.path().to_path_buf(),
+            ));
+            let worker = ConversionWorker::new(config).unwrap();
+            let jobs = worker.jobs.clone();
+            let cancel = worker.cancel.clone();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let worker = worker.with_platform_tts(Arc::new(CancelDuringSpeech {
+                cancel,
+                jobs: jobs.clone(),
+                durable_request,
+                remove_record,
+                calls: Arc::clone(&calls),
+            }));
+            let result = worker.run(ConversionRequest {
+                input,
+                job_id: "cancelled-job".into(),
+                engine: Some("system".into()),
+                voice: None,
+                language: Some("pt-BR".into()),
+                piper_model: None,
+                piper_config: None,
+                chapter_indices: None,
+                no_parallel: true,
+            });
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+            if remove_record {
+                assert!(matches!(
+                    result,
+                    Err(WorkerError::Job(JobError::NotFound(_)))
+                ));
+            } else {
+                assert!(matches!(result, Err(WorkerError::Cancelled)));
+                assert_eq!(
+                    jobs.load("cancelled-job").unwrap().state,
+                    JobState::Cancelled
+                );
+            }
+        }
     }
 
     #[test]
