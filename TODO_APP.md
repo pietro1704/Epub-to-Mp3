@@ -25,6 +25,7 @@
 - Owner: Rust contract specialist; isolated `feature/restore-worker-execution-contract`.
 - Red evidence: GitHub Actions master `915e9c` failed compiling `worker_execution_flags` and the server resume regression because production APIs/request fields diverged.
 - Verification: GitHub-only Rust tests; local tests and native execution are suspended. Preserve cancellation, prior artifacts on failure and selected chapter boundaries.
+- Formatting also runs only on GitHub. A read-only formatting-preview job retains the exact source SHA and a patch for source review; it cannot push or modify a PR. Existing CI still requires a clean formatting check.
 
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
