@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "../config";
+import { resolveApiUrl } from "../config";
 
 export interface EngineStats {
   samples: number;
@@ -33,7 +33,7 @@ export interface TelemetryTimeline {
 }
 
 async function jsonFetch<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(resolveApiUrl(path), {
     headers: { Accept: "application/json" },
     signal,
   });

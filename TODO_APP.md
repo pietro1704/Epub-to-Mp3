@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## APP-20261016-WEB-LOCAL-HELP — Keep embedded help and diagnostics local
+
+- [ ] Owner: root; recover only local Help behavior from preserved `feature/web-local-help` (`6e6abd0`) into the current Faber integration. The Browser client must show local capability, explicit model-install guidance, phase, job ID, progress and failure cause without backend probes or restart controls. Preserve explicitly selected HTTP diagnostics and HTTP session history.
+- Acceptance: embedded Help causes no /api calls; success and failure report the correct local job; HTTP stats/telemetry use one API prefix, abort when Help closes and create fresh signals when reopened. Unknown injected-client mode fails closed to local Help.
+- Coverage: port integration cases with close actions scoped to the Help complementary region, plus a local failed-job/error-identity regression; mark HTTP client mode explicitly and preserve request AbortSignal. The separate legacy CLI-reproduction change is intentionally outside this slice.
+- Verification: specialist reviewed the focused source recovery and identified the error-display gap; implemented it alongside the failure regression. GitHub-only runtime/required checks remain pending on the new candidate. No local test, build, device action or Simulator execution. Preserve the original branch until all its distinct behavior and ancestry are reconciled.
+
 ## APP-20261016-CLI-CONSENT — Capture per-job online fallback revocation
 
 - [ ] Owner: root; the CLI currently accepts only an enabling consent flag, so a strict per-job choice cannot explicitly override saved online fallback consent to false. Add `--no-online-fallback` with tri-state parsing (omission inherits), reject opposing flags in either order, and apply the explicit value before validating preferences.

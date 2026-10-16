@@ -40,7 +40,10 @@ const ConfirmDialog = lazy(() => import("./components/ConfirmDialog"));
 import { useConversionFlow } from "./hooks/useConversionFlow";
 import { useSystemStats } from "./hooks/useSystemStats";
 import { useI18n, useTranslations } from "./i18n/I18nProvider";
-import type { ConversionClient } from "./services/ConversionService";
+import {
+  conversionClient,
+  type ConversionClient,
+} from "./services/ConversionService";
 import type {
   ConversionFormValues,
   ConversionState,
@@ -128,7 +131,8 @@ export default function App(props?: AppProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const statsPollInterval = isHelpOpen ? 5000 : 0;
+  const hasBackendDiagnostics = (client ?? conversionClient).mode === "http";
+  const statsPollInterval = isHelpOpen && hasBackendDiagnostics ? 5000 : 0;
   const apiHealthLabel = useMemo(() => {
     const url = resolveApiUrl("/api/health");
     if (url.startsWith("http")) {
@@ -1732,7 +1736,7 @@ export default function App(props?: AppProps): JSX.Element {
           {renderQueueDisplay({ marginTop: "1rem" })}
         </>
       )}
-      {showSetupPanels && (
+      {showSetupPanels && hasBackendDiagnostics && (
         <Suspense fallback={null}>
           <ConversionHistoryPanel />
         </Suspense>
@@ -1829,35 +1833,54 @@ export default function App(props?: AppProps): JSX.Element {
             ×
           </button>
         </div>
-        <Suspense fallback={<ComponentFallback />}>
-          <SystemStatsPanel
-            stats={systemStats}
-            labels={systemStatsLabels}
-            hasError={systemStatsError}
-            isLoading={systemStatsLoading}
-            updatedAt={systemStatsUpdatedAt}
-            nextRetryMs={systemStatsNextRetry}
-          />
-        </Suspense>
-        <Suspense fallback={<ComponentFallback />}>
-          <TelemetryPanel labels={telemetryLabels} />
-        </Suspense>
-        <div className="system-control">
-          <div className="system-control__text">
-            <strong>{t.layout.restartTitle}</strong>
-            <p>{t.layout.restartDescription}</p>
-          </div>
-          <button
-            type="button"
-            className="button-danger"
-            onClick={handleRestartBackend}
-            disabled={isRestartingBackend}
-          >
-            {isRestartingBackend
-              ? t.layout.restartProgress
-              : t.layout.restartButton}
-          </button>
-        </div>
+        {!hasBackendDiagnostics && isHelpOpen && (
+          <section aria-label={t.layout.localRuntime}>
+            <h2>{t.layout.localRuntime}</h2>
+            <p>{t.form.ttsPreferences.capability}</p>
+            <p>{t.layout.localInstallHelp}</p>
+            <p>{statusLabelOverride}</p>
+            {state.error && <p role="alert">{state.error}</p>}
+            {state.jobId && <p>{t.status.jobLabel(state.jobId)}</p>}
+            {typeof state.summary?.progressPercent === "number" && (
+              <p>
+                {t.status.progressLabel}: {Math.round(state.summary.progressPercent)}%
+              </p>
+            )}
+          </section>
+        )}
+        {hasBackendDiagnostics && isHelpOpen && (
+          <>
+            <Suspense fallback={<ComponentFallback />}>
+              <SystemStatsPanel
+                stats={systemStats}
+                labels={systemStatsLabels}
+                hasError={systemStatsError}
+                isLoading={systemStatsLoading}
+                updatedAt={systemStatsUpdatedAt}
+                nextRetryMs={systemStatsNextRetry}
+              />
+            </Suspense>
+            <Suspense fallback={<ComponentFallback />}>
+              <TelemetryPanel labels={telemetryLabels} />
+            </Suspense>
+            <div className="system-control">
+              <div className="system-control__text">
+                <strong>{t.layout.restartTitle}</strong>
+                <p>{t.layout.restartDescription}</p>
+              </div>
+              <button
+                type="button"
+                className="button-danger"
+                onClick={handleRestartBackend}
+                disabled={isRestartingBackend}
+              >
+                {isRestartingBackend
+                  ? t.layout.restartProgress
+                  : t.layout.restartButton}
+              </button>
+            </div>
+          </>
+        )}
       </aside>
       {isHfSpace && hfNotifications.length > 0 && (
         <div
