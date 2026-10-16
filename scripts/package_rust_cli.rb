@@ -11,6 +11,7 @@ require 'open3'
 require 'rbconfig'
 require 'tmpdir'
 require 'rubygems/version'
+require_relative 'package_linux_onnxruntime'
 
 root = File.expand_path('..', __dir__)
 Dir.chdir(root)
@@ -80,6 +81,12 @@ begin
   else
     # Static ONNX Runtime is the normal non-Apple build. Keep any explicitly built shared dependency adjacent.
     Dir.glob(File.join(root, 'target', 'release', '*.so*')).each { |library| FileUtils.cp(library, bin) }
+    begin
+      PackageLinuxOnnxruntime.copy!(executable: executable, directory: bin,
+        runtime_directory: ENV.fetch('ORT_LIB_LOCATION', File.join(root, 'target', 'release')))
+    rescue PackageLinuxOnnxruntime::Failure => error
+      abort error.message
+    end
   end
   files = Dir.glob(File.join(stage, '**', '*')).select { |path| File.file?(path) }.to_h { |path| [path.delete_prefix("#{stage}/"), Digest::SHA256.file(path).hexdigest] }
   File.write(File.join(stage, 'package.json'), JSON.pretty_generate({ 'runtime' => 'native Rust/Piper', 'host' => RbConfig::CONFIG['host'], 'model_weights_included' => false, 'files' => files }))
@@ -98,7 +105,9 @@ ensure
 end
 executable = File.join(package, 'bin', name)
 if mode == '--run'
-  # The packaged dylib resolves relative to the executable; a development loader path is unnecessary.
-  exit(system({ 'DYLD_LIBRARY_PATH' => nil, 'ORT_LIB_LOCATION' => nil }, executable, *ARGV) ? 0 : ($?.exitstatus || 1))
+  environment = { 'DYLD_LIBRARY_PATH' => nil, 'ORT_LIB_LOCATION' => nil }
+  # Linux shared dependencies resolve only from the packaged runtime directory.
+  environment['LD_LIBRARY_PATH'] = File.dirname(executable) unless macos || windows
+  exit(system(environment, executable, *ARGV) ? 0 : ($?.exitstatus || 1))
 end
 puts executable
