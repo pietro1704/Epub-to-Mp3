@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## APP-20261016-CI-LEGACY-GUARDS — Reconcile legacy guard regression contracts
+
+- [ ] Owner: crash_guard_audit; acceptance: replace references to removed private resource APIs with the documented compatibility, lease and oldest-runtime selection contracts. Preserve canonical Ruby Intel quarantine independently in PR #804.
+- [ ] Cover a real fixture child's held lease, literal argument identity, release after success/failure/spawn error, and preserved contention-holder record. Selector cases must use supplied JSON or mocked service failures, never a real Simulator.
+- Evidence: master Actions run `38862909247`, Python job `116849117822`, reported nine stale guard/selector failures. Source changes prepared; GitHub-only execution pending. No local tests, syntax checks, native tools or devices were executed for this slice. External Edge HTTP 403 failures are a separate atomic task.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
