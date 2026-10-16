@@ -20,6 +20,7 @@ final class PlayerScreenController: UIViewController {
     private let playPauseButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
     private let rateButton = UIButton(type: .system)
+    private var renderedRate: PlaybackRate?
     private let volumeView = MPVolumeView(frame: .zero)
     private var cancellables: Set<AnyCancellable> = []
 
@@ -212,10 +213,12 @@ final class PlayerScreenController: UIViewController {
     }
 
     private func updateRateMenu() {
+        guard renderedRate != player.rate || rateButton.menu == nil else { return }
+        renderedRate = player.rate
         rateButton.setTitle(player.rate.shortLabel, for: .normal)
         rateButton.accessibilityLabel = L10n.string("player.playbackSpeed", player.rate.shortLabel)
         rateButton.showsMenuAsPrimaryAction = true
-        rateButton.menu = UIMenu(children: PlaybackRate.allCases.map { rate in
+        rateButton.menu = UIMenu(children: PlaybackRate.primaryRates.map { rate in
             UIAction(title: rate.shortLabel, state: rate == player.rate ? .on : .off) { [weak self] _ in
                 self?.player.setRate(rate)
                 self?.render()

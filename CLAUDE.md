@@ -70,16 +70,16 @@ verification of the affected regression.
 Reuse valid build artifacts and run only the checks needed to prove that change;
 commit/push verified slices before expanding scope. Keep planning, delegation,
 and documentation proportional to the task.
-For substantial features when Pietro requests feature delivery, use Gitflow:
-create a `feature/*` branch from current `master`, keep modules
-cohesive and small, and apply SOLID at real ownership boundaries. Optimize the
-measured hot path rather than splitting files to meet an arbitrary line count.
-For a task that explicitly authorizes a PR and merge, open a PR targeting
-`master`. Merge only after required checks are green. Enable auto-merge only
-with explicit user authorization and after that green-check gate is satisfied.
-CI/PR monitoring remains opt-in; report pending checks without polling unless
-requested. PR authorization alone does not authorize merge. Follow
-`docs/agent-workflow.md` for post-merge reconciliation.
+For every requested feature, create a `feature/*` branch from current `master`
+and deliver through a PR targeting `master`. Keep modules cohesive and small;
+apply SOLID at real ownership boundaries and optimize measured hot paths.
+Pietro authorizes commit, push, PR creation, and automatic merge for feature
+requests by default, unless the current task explicitly revokes that scope.
+Enable automatic merge so required checks gate the actual merge; merge only
+when required checks pass. If automatic merge is unavailable, report the
+blocker and leave the PR open. CI/PR monitoring remains opt-in; report pending
+checks without polling unless requested. Follow `docs/agent-workflow.md` for
+post-merge reconciliation after a confirmed merge.
 For native Apple player/reader regressions, follow the exact Simulator procedure
 in `docs/agent-workflow.md`.
 Track every concrete user request/correction in `TODO_APP.md` before implementation;
@@ -114,11 +114,12 @@ For device benchmarks, follow [the benchmark guide](docs/device-benchmark.md);
 match the requested book/range literally and limit each book to two chapters unless
 `--whole-book` is explicit. Resume from persisted state/report and check the live PID once.
 
-Use existing `master`; substantial requested features use `feature/*` from
-current `master` as described above.
+Use current `master` as the feature branch base; deliver requested features
+through the branch and PR workflow above.
 Verified changes are committed and pushed by default;
 the user has standing authorization unless explicitly revoked for a task.
-Current user preference: no CI or PR monitoring. Do not infer permission to merge,
-publish, close issues, or expand verification into repository-wide remote audits.
+Current user preference: no CI or PR monitoring. Feature PR automatic merge is
+authorized above; publishing, closing issues, and repository-wide remote audits
+require task-specific authorization.
 Completion means the authorized scope is implemented and its verification is reported;
 a plan, skipped test, or displayed 100% alone does not establish success.

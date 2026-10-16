@@ -81,15 +81,11 @@ setup when dependencies are absent; inspect task definitions before execution.
 
 ## Before implementation
 
-For substantial feature delivery requested by Pietro, use Gitflow from current
-`master` and a `feature/*` branch. Keep modules cohesive and
-small, apply SOLID where responsibilities have distinct owners, and optimize
-measured hot paths instead of imposing arbitrary file-length limits. When a task
-explicitly authorizes a PR and merge, open a PR to `master`. Merge only after
-required checks are green. Enable auto-merge only with explicit user
-authorization and after that green-check gate is satisfied. CI/PR monitoring
-remains opt-in; report pending checks without polling unless requested. PR
-authorization alone does not authorize merge.
+For every requested feature, follow the branch, PR, and automatic merge
+authorization in `AGENTS.md`. Start from current `master`, keep one focused
+behavior change per branch, and let required checks gate the merge. Keep
+modules cohesive and optimize measured hot paths. CI/PR monitoring remains
+opt-in.
 
 For a feature larger than one focused change, write a short spec and split it
 into vertical tickets. Each ticket names its dependencies, acceptance evidence,
@@ -121,8 +117,8 @@ behavior; use the platform's executable test path for native changes.
 Every PR has one scope and a concrete acceptance checklist. Review the complete
 diff against the ticket and project standards. Merge only after all required
 checks are green, the PR is not behind `master`, security checks are green, and
-the merge is visible in `master`. Follow the explicit authorization and
-auto-merge rule above; do not monitor CI/PR unless requested.
+the merge is visible in `master`. Follow the feature authorization and automatic merge rule in `AGENTS.md`;
+do not monitor CI/PR unless requested.
 
 After merging, verify current branch and worktree status, preserve local changes,
 and fetch `origin`. Fast-forward local `master` to `origin/master` and confirm
