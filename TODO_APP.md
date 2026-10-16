@@ -2,6 +2,8 @@
 
 ## SAFE-20261016-FABER-ENTRYPOINTS — Preserve containment across Faber integration
 
+- GitHub `38895272375`, head `a84a8bb`: Ubuntu entrypoints 10 runs / 75 assertions passed; Intel 10 runs / 75 assertions had one failure comparing temporary-directory spellings (`/var/folders/...` versus physical `/private/var/folders/...`). Canonicalize the owned temporary root once in setup; retain the original exact cwd equality, argv, exit and lease checks. Cancellation tree, authenticated runtime forwarding and all other nine entrypoint cases passed on Intel. Follow-up GitHub verification pending; no production change or local execution.
+
 - [ ] Owner: crash_guard_audit; reconcile Faber `6359bc` and operational safety `b3f37b2` without dropping either runtime flags or Intel quarantine. Guard new native compile drivers before preparation; authenticate inherited leases instead of opening nested locks. Preserve Windows temporary lock behavior and non-Apple host compilation.
 - Verification pending GitHub: actual copied entrypoints/fake children prove blocked preflight, no compiler/preparation child, forged descriptor refusal, successful inherited coordination and child failure identity; task wiring preserves runtime/architecture flags. No local test, syntax, formatter, native build, app, device or Simulator execution.
 - Preserve the original Windows driver branches and locks; POSIX supervision applies only on Darwin/Linux. No new Windows supervisor or Windows execution claim. Model/runtime downloads remain explicit; read-only runtime validation remains read-only.
