@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## ANDROID-20261016-PIPER-OPTIONS — Forward captured TTS options to direct Android Piper synthesis
+
+- [ ] Owner: root; the Android `synthesizePiper` bridge currently sends only text/output even though the native channel accepts `optionsJson`. Preserve the selected model, explicit models root and language for direct/manual synthesis.
+- Acceptance: Dart forwards the exact options JSON unchanged; native channel failure remains visible and no Edge/network fallback is introduced. Regression covers a successful response and an explicit native error.
+- Verification: GitHub Actions only; keep the feature branch and PR workflow intact. This channel-contract test does not claim Android device inference or replace the hosted Android Faber runtime job.
+
+
 ## ANDROID-20261016-PIPER-CAPABILITY — Describe embedded runtime availability without implying Edge fallback
 
 - [ ] Owner: root; keep Android Piper enabled when its embedded runtime is linked and ABI-compatible, and report an accurate offline-runtime error when that capability is absent.
