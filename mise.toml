@@ -1003,7 +1003,6 @@ run = """
 set -euo pipefail
 mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
-"
 #!/bin/bash
 set -euo pipefail
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
