@@ -27,6 +27,10 @@ module NativeBuildPreflight
     return "Wait for SimMetalHost to exit before native compilation." if status.success?
     return "Cannot inspect SimMetalHost; native compilation blocked." unless status.exitstatus == 1
 
+    _, _, status = runner.call("pgrep", "-f", "/Simulator[.]app/Contents/MacOS/Simulator($| )")
+    return "Quit Simulator.app before native compilation." if status.success?
+    return "Cannot inspect Simulator.app; native compilation blocked." unless status.exitstatus == 1
+
     nil
   rescue JSON::ParserError, KeyError, SystemCallError => error
     "Native build preflight failed (#{error.class}); compilation blocked."

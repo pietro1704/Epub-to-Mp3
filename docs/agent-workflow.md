@@ -2,6 +2,23 @@
 
 Use this workflow for changes that must survive review and future agent runs.
 
+## Current execution gate (2026-10-16)
+
+All tests, lint, formatting and CI execute only on GitHub Actions. Local work
+is source inspection and implementation. Read the canonical
+[Intel GPU safety procedure](agents/intel-gpu-safety.md) before native tooling.
+Intel Simulator execution remains quarantined, including direct tools and
+existing artifacts; general campaign or GitHub-test authorization does not
+release that quarantine. This gate overrides older local-run, preflight and
+launch instructions below. Follow the current root instructions for authorized
+GitHub monitoring and delivery.
+
+Preserve the exact iPhone SE (1st generation)/iOS 15.5 and native macOS runtime
+acceptance criteria. Report each unexecuted app check as blocked or unverified;
+host checks, compilation and historical screenshots cannot satisfy it. Continue
+independent work without reproducing the panic. Re-enabling Intel Simulator
+requires a new explicit user safety decision and specialist review.
+
 ## Model and prompt selection
 
 For day-to-day work in Codex, use **GPT-5.6 Terra** as the default: it is the

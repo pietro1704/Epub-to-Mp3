@@ -96,6 +96,12 @@
 - Source review: official crates.io sparse-index 0.23.45/0.23.46 records have identical dependencies, features and Rust 1.71 minimum; the patch is not yanked. New checksum: `48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf`.
 - Verification pending: GitHub-only locked dependency resolution, cargo-audit JSON artifact and existing Rust regression suites. No local scanner/test/build executed; no issue closure or successful remediation claimed.
 
+## APP-20261016-CODEX-NATIVE-GUARD — Recognize direct native execution before tool use
+
+- [ ] Owner: crash_guard_audit; add the bounded Ruby PreToolUse recognizer and GitHub-only behavioral tests for direct native commands, cleanup/inspection, compound cleanup-plus-boot denial, invalid input and Git common-directory scope across real temporary worktrees.
+- Activation remains unverified: the reviewed immutable script copy is registered in the user's Codex configuration, preserving existing ai-memory and RTK entries and a private backup. User `/hooks` review/trust is still required; no trust state was changed and installed interception has not been demonstrated. See `docs/agents/intel-gpu-safety.md` for the exact path, hash and read-back evidence.
+- Limits: this is an additional cooperative guard, not shell interpretation or OS isolation. Existing TTY sessions, opaque scripts and unsupported tool paths can escape; host tests do not establish GPU stability or satisfy SE1/iOS15.5 or native macOS acceptance. All test/syntax/build execution remains GitHub-only.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
@@ -1612,3 +1618,10 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+
+## APP-20261016-INTEL-GPU-SAFETY
+
+- [ ] Quarantine Intel Simulator execution, remove automatic native hook builds, guard compiler bootstraps and verify refusal/cancellation/lease identity on GitHub. Preserve books/models/devices and existing work.
+- User reported recurrent IGGuC.cpp:2913 workqueue41 panic in SimMetalHost. Controlled shutdown confirmed no Simulator.app/SimMetalHost remains. No panic reproduction.
+- Validation: earlier local host checks preceded the GitHub-only instruction; candidate CI pending. Native GPU/SE acceptance remains blocked; no driver stability claim.
+- Delivery: atomic feature/intel-gpu-quarantine PR; exact-head CI before merge. Memory pinned at gotchas/intel-simulator-metal-panic.md and decisions/github-only-validation-master-delivery.md.
