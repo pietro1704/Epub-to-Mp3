@@ -35,6 +35,19 @@ test('Mac routes literal commands to Arch SSH; Arch uses local CLI and explicit 
   assert.equal(arch.calls[0].args[arch.calls[0].args.indexOf('--limit') + 1], '200');
 });
 
+test('deterministic peer fixtures use the caller transport without changing mailbox identity', () => {
+  for (const [role, transportRole, expectedCommand] of [['arch', 'mac', '/usr/bin/ssh'], ['mac', 'arch', 'ai-memory']]) {
+    let call;
+    const client = createClient({ config, role, transportRole, runner(command, args) {
+      call = { command, args }; return { status: 0, stdout: '[]' };
+    } });
+    client.list('inbox');
+    assert.equal(call.command, expectedCommand);
+    assert.ok(call.args.join(' ').includes(config.roles[role].project));
+  }
+  assert.throws(() => createClient({ config, role: 'mac', transportRole: 'other' }), /Transport role/);
+});
+
 test('send carries body on stdin without executing shell text or substituting payload', () => {
   const body = { ...request(), scope: ["$(touch /tmp/never) ' `echo secret`\nreader"] };
   const { client, calls } = fixture([[], { id }], 'mac');

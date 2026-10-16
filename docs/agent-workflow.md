@@ -86,6 +86,19 @@ read relevant ranges rather than dumping registries, whole logs or unrelated
 instructions. Preserve failure status when reducing output. Use argv interfaces
 or a deliberate shell script with `set -euo pipefail` for dependent operations.
 
+For ai-memory channel diagnostics, configuration delivery or transport-only
+revalidation, follow [collaboration operations](agents/collaboration-operations.md).
+These deterministic checks invoke no model. Use the existing actual-agent
+handshake only for initial integration or changed interpretation requirements.
+
+Collect native result evidence through `mise run native:xcresult -- BUNDLE --
+xcrun xcresulttool ... --path BUNDLE`. The wrapper locks the canonical bundle,
+including path aliases, so summary/export reads cannot race SQLite initialization.
+Independent bundles retain parallelism. `XCRESULT_LOCK_TIMEOUT_SECONDS` defaults
+to 30 and accepts a positive value up to 60; timeout returns 75, invalid input 2,
+and tool errors/signals retain their actual status. The lease follows the tool
+if its supervisor dies. It does not compile or launch an app.
+
 The local pre-commit hook remains a read-only whitespace gate. Native pairing
 and language checks keep their existing owners. Inspect task definitions before
 running build/test commands that may generate artifacts or set up dependencies.
