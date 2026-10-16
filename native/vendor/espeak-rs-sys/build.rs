@@ -4,6 +4,8 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod source_copy;
+
 macro_rules! debug_log {
     ($($arg:tt)*) => {
         if std::env::var("BUILD_DEBUG").is_ok() {
@@ -26,27 +28,6 @@ fn get_cargo_target_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Erro
     }
     let target_dir = target_dir.ok_or("not found")?;
     Ok(target_dir.to_path_buf())
-}
-
-fn copy_folder(src: &Path, dst: &Path) {
-    std::fs::create_dir_all(dst).expect("Failed to create dst directory");
-    if cfg!(unix) {
-        std::process::Command::new("cp")
-            .arg("-rf")
-            .arg(src)
-            .arg(dst.parent().unwrap())
-            .status()
-            .expect("Failed to execute cp command");
-    }
-
-    if cfg!(windows) {
-        std::process::Command::new("robocopy.exe")
-            .arg("/e")
-            .arg(src)
-            .arg(dst)
-            .status()
-            .expect("Failed to execute robocopy command");
-    }
 }
 
 fn extract_lib_names(out_dir: &Path, build_shared_libs: bool) -> Vec<String> {
@@ -169,11 +150,9 @@ fn main() {
     debug_log!("OUT_DIR: {}", out_dir.display());
     debug_log!("BUILD_SHARED: {}", build_shared_libs);
 
-    // Prepare espeak-ng source
-    if !espeak_dst.exists() {
-        debug_log!("Copy {} to {}", espeak_src.display(), espeak_dst.display());
-        copy_folder(&espeak_src, &espeak_dst);
-    }
+    // Refresh source inputs after Cargo restores an existing OUT_DIR from cache.
+    debug_log!("Copy {} to {}", espeak_src.display(), espeak_dst.display());
+    source_copy::prepare_source(&espeak_src, &espeak_dst);
     // Speed up build
     env::set_var(
         "CMAKE_BUILD_PARALLEL_LEVEL",

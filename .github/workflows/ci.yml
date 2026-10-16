@@ -153,6 +153,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+      - name: Verify vendored phoneme source assets
+        working-directory: native/vendor/espeak-rs-sys
+        run: sha256sum --check phsource-wav.sha256
       - name: Install mise
         uses: jdx/mise-action@v5
         with:
@@ -169,6 +172,10 @@ jobs:
           '
       - name: Install Rust toolchain
         run: mise install
+      - name: Test vendored source cache refresh
+        run: |
+          mise exec -- rustc --edition=2021 --test native/vendor/espeak-rs-sys/source_copy.rs -o "$RUNNER_TEMP/espeak-source-copy-tests"
+          "$RUNNER_TEMP/espeak-source-copy-tests"
       - name: Install ONNX Runtime smoke-test library
         run: |
           archive="$RUNNER_TEMP/onnxruntime-linux-x64-1.24.4.tgz"

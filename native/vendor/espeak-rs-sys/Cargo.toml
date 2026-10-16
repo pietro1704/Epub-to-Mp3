@@ -26,6 +26,7 @@ include = [
     "espeak-ng/espeak-ng.pc.in",
     "src/*.rs",
     "build.rs",
+    "source_copy.rs",
     "wrapper.h",
     "!espeak-ng/dictsource/extra/**",
     "!espeak-ng/dictsource/fo_list",
