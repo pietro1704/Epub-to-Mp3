@@ -20,7 +20,7 @@ void main() {
   test(
     'real Dart desktop adapter converts exactly two public chapters with Faber',
     () async {
-      expect(Platform.isLinux, true);
+      expect(Platform.isLinux || Platform.isWindows, true);
       final library = _requiredPath('EPUB_DART_FABER_LIBRARY');
       final models = _requiredPath('EPUB_DART_FABER_MODELS');
       final report = _requiredPath('EPUB_DART_FABER_REPORT');
@@ -88,7 +88,9 @@ void main() {
           'chapterStart': 0, 'chapterEnd': 1,
           'modelId': 'pt_BR-faber-medium', 'fallbackUsed': false,
           'elapsedMs': elapsed.elapsedMilliseconds,
-          'timingScope': 'GitHub-hosted Linux full conversion; no phone or first-playable latency claim',
+          'timingScope': Platform.isWindows
+              ? 'GitHub-hosted Windows full conversion; no phone or first-playable latency claim'
+              : 'GitHub-hosted Linux full conversion; no phone or first-playable latency claim',
           'outputs': audio,
         }));
         stdout.writeln('DART_FABER_NATIVE: model=pt_BR-faber-medium chapters=2');
