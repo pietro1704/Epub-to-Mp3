@@ -102,6 +102,12 @@
 - Activation remains unverified: the reviewed immutable script copy is registered in the user's Codex configuration, preserving existing ai-memory and RTK entries and a private backup. User `/hooks` review/trust is still required; no trust state was changed and installed interception has not been demonstrated. See `docs/agents/intel-gpu-safety.md` for the exact path, hash and read-back evidence.
 - Limits: this is an additional cooperative guard, not shell interpretation or OS isolation. Existing TTY sessions, opaque scripts and unsupported tool paths can escape; host tests do not establish GPU stability or satisfy SE1/iOS15.5 or native macOS acceptance. All test/syntax/build execution remains GitHub-only.
 
+## APP-20261016-WATCHDOG-PR-CHECKS — Separate PR regression from the metadata monitor
+
+- [ ] Owner: crash_guard_audit; keep actual read-only watchdog regression coverage on PRs in a dedicated workflow. Remove the PR trigger from the privileged metadata monitor, retaining its schedule, manual, workflow-completion and issue events and trusted default-branch checkout.
+- Evidence: PR #806 run `38864736033` completed its regression successfully but published a skipped `monitor` check (`116856468581`). The exact-green merge gate in #805 correctly rejects that skipped check. Do not relax the gate or turn a non-executed monitor into a successful no-op.
+- Acceptance pending: GitHub executes the PR regression without scheduling the monitor on that PR; monitor runtime and wiring regressions remain mandatory before operational writes. Preserve watchdog JS behavior and all five disabled writers. No local tests, builds, syntax checks, commit, push or external writes executed for this slice.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
@@ -1632,3 +1638,9 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 - Preserve draft/fork/review and malformed-metadata refusal. Remove raw automatic merges from every existing workflow writer; no force/admin fallback or automatic branch deletion before merged-state verification.
 - Coverage: 16 fake-GitHub policy/workflow regressions plus JS/YAML syntax run only in GitHub merge-policy workflow. Three new regressions were observed RED before the GitHub-only correction; final candidate checks pending.
 - Server limitation: base/check rechecks are snapshots; branch protection must enforce server-side freshness/required checks against changes after the last read. A successful command may enqueue a merge and is not proof of delivery.
+
+## APP-20261016-GITHUB-HEALTH — Periodic GitHub-only monitoring
+
+- [ ] Enable a30-minute GitHub-native watchdog for current-head Actions failures and actionable issue triage; verify its regression workflow and first live scan after merge.
+- Use builtin token only, bounded metadata reads, deduplicated bot-owned issue and explicit incomplete-coverage/recovery reporting. Treat issue content as untrusted data.
+- Repairs remain agent work; the watchdog does not claim unattended code repair, paid AI, deployments, retries or merge authority. All tests execute only on GitHub.
