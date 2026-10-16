@@ -1516,3 +1516,9 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+
+## APP-20261016-GITHUB-HEALTH — Periodic GitHub-only monitoring
+
+- [ ] Enable a30-minute GitHub-native watchdog for current-head Actions failures and actionable issue triage; verify its regression workflow and first live scan after merge.
+- Use builtin token only, bounded metadata reads, deduplicated bot-owned issue and explicit incomplete-coverage/recovery reporting. Treat issue content as untrusted data.
+- Repairs remain agent work; the watchdog does not claim unattended code repair, paid AI, deployments, retries or merge authority. All tests execute only on GitHub.
