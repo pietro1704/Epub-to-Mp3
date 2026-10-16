@@ -498,8 +498,10 @@ String _convertOnWorker(DesktopConversionRequest request) {
     if (session == ffi.nullptr) return readOwned(ffi.nullptr);
     try {
       final output = request.outputPath.toNativeUtf8(allocator: arena);
-      final job = 'flutter-${DateTime.now().microsecondsSinceEpoch}'
-          .toNativeUtf8(allocator: arena);
+      // The explicit Rust FFI owns the directory named by this exact job ID.
+      final jobId = Directory(request.outputPath)
+          .absolute.uri.pathSegments.where((segment) => segment.isNotEmpty).last;
+      final job = jobId.toNativeUtf8(allocator: arena);
       final captured = jsonEncode(options).toNativeUtf8(allocator: arena);
       final control = ffi.Pointer<ffi.Void>.fromAddress(request.controlAddress);
       if (request.streaming) {

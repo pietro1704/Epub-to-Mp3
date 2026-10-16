@@ -2,6 +2,8 @@
 
 ## AH-13 — Preserve desktop Rust job directory identity
 
+- Observed GitHub RED `38891768084`, Flutter job `116942778785`, head `a80ce65`: 446 passed, 12 failed, three skipped. All eight new controlled/streaming identity cases and four existing conversion/progressive/cancellation cases were rejected by the strengthened native boundary before valid work. Parse/install heartbeat tests still passed. Log `/tmp/epub-ah13-a80ce65-flutter-red.log`. Derive the FFI job ID from the literal absolute directory URI basename; retain all regression assertions. Follow-up GitHub validation pending.
+
 - [ ] Owner: crash_workflow_audit; clean baseline Faber `6359bc530a` locally fast-forwarded from master `915e9c672b`. The explicit Rust FFI requires job ID to equal the output directory basename; the Dart worker currently supplies an unrelated generated ID.
 - RED preparation only: strengthen both C fixture entrypoints to enforce byte-exact basename identity and exercise controlled/streaming output paths with trailing separators and literal spaces, `%` and `#`. Keep the production generated ID unchanged until a real GitHub failure is observed. Preserve native parse/install handshakes, progressive audio, cancellation and owner isolation tests.
 - Exclude Jobs UI, AH-05 fields and AH-14 logs. GitHub-only fixture execution and a proposed real Dart-to-Rust Faber check remain pending; no local tests, compilation, analyzer, formatter or native actions executed.
