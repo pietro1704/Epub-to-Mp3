@@ -102,6 +102,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary, "Unconsented Edge must never reach conversion preferences.")
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
 
+        settings.audioEngine = .piper
         settings.allowOnlineAudioFallback = true
         XCTAssertTrue(settings.selectableSecondaryAudioEngines.contains(.edge))
         settings.secondaryAudioEngine = .edge
