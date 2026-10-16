@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## APP-20261016-RUST-EXECUTION-CONTRACT — Restore worker execution contracts
+
+- [ ] Restore scoped cache refresh, forced transactional audio replacement, bounded performance options and pinned explicit Piper model identity without replacing current streaming/receipt behavior.
+- Owner: Rust contract specialist; isolated `feature/restore-worker-execution-contract`.
+- Red evidence: GitHub Actions master `915e9c` failed compiling `worker_execution_flags` and the server resume regression because production APIs/request fields diverged.
+- Verification: GitHub-only Rust tests; local tests and native execution are suspended. Preserve cancellation, prior artifacts on failure and selected chapter boundaries.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.

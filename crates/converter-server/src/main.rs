@@ -1206,6 +1206,8 @@ mod tests {
         let previous_result = previous.run(ConversionRequest {
             input: input_dir.join("source.epub"),
             job_id: "resume-job".into(),
+            piper_model: None,
+            piper_config: None,
             engine: None,
             voice: None,
             language: None,
