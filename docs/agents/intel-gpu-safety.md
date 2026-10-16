@@ -44,3 +44,64 @@ use those paths. Do not reproduce the panic, stress the GPU, change renderer or
 driver defaults, erase devices, restart services or install runtimes as an
 implicit workaround. If safety inspection is inconclusive, preserve evidence
 and continue independent work rather than retrying native graphics execution.
+
+### Proposed Codex tool hook (not installed or trusted)
+
+`scripts/native_codex_tool_guard.rb` reads a Codex PreToolUse JSON event and
+emits an explicit JSON denial for recognized local native commands. It starts
+no native child and prints no command arguments or event content. Invalid input
+is denied. A read-only Git common-directory query scopes the hook to this
+repository and its worktrees, including an explicit tool working-directory.
+It does not trust `GITHUB_ACTIONS` or another environment permission flag.
+Recognition runs before Git inspection, so ordinary reads outside a Git checkout
+remain available. A recognized native command is scoped using both the session
+directory and an explicit tool working-directory; changing only the latter cannot
+escape a project session. Inconclusive scope inspection denies recognized risk.
+Both documented Bash `command` and direct `exec_command` `cmd` fields are accepted;
+conflicting values are denied rather than choosing one.
+
+The recognizer covers known `xcodebuild`, `simctl`, Simulator/app launch, Swift,
+Apple Cargo targets, native mise tasks and Flutter execution signatures.
+Simple inspection and `simctl shutdown`/`terminate` remain available; combining
+cleanup with boot is denied. TTY allocation and recognizable interactive shells
+are denied because later `write_stdin` calls do not repeat PreToolUse.
+`Shellwords` is only a lexical recognizer: aliases, opaque scripts, encoded or
+indirect invocation, pre-existing terminal sessions and unsupported tool paths
+can escape. It is neither a complete shell parser nor a sandbox. Conservative
+matching can also deny complex inspection commands; use simple read-only calls.
+A small quote/escape scan distinguishes literal single-quoted documentation from
+known active command compositions and substitutions; it does not implement shell
+expansion or claim to recognize every equivalent spelling of a native command.
+
+Future activation must preserve every existing ai-memory and RTK hook. Copy the
+reviewed script to a stable, user-owned location outside branch checkouts, with
+its actual reviewed SHA-256 in the filename; keep that copy immutable by normal
+workflow. Review the exact copy, registration and repository scope before adding
+this separate entry to the existing user-level `PreToolUse` array:
+
+```json
+{
+  "matcher": "^Bash$|^exec_command$",
+  "hooks": [{
+    "type": "command",
+    "command": "ruby '/Users/pips/.codex/native-safety/native_codex_tool_guard-<reviewed-sha256>.rb' '/Users/pips/Developer/epubtomp3/.git'",
+    "timeout": 5
+  }]
+}
+```
+
+This example is not an installation command. Non-managed hooks require the
+user's exact review and trust through `/hooks`; never edit trust state, label
+the hook managed, or reuse a trusted memory/RTK hook to bypass that review.
+Switching branches must not replace or remove the reviewed executable copy.
+No user-level hook configuration has been changed for this proposal.
+
+The [official Codex hooks documentation](https://learn.chatgpt.com/docs/hooks)
+defines `exec_command`'s Bash alias, `tool_input.command` and supported denial
+JSON. Nested code-mode tool calls honor denial, but existing stdin sessions
+are outside this interception. Matching hooks run concurrently; this guard
+cannot prevent another hook from starting work. Hook errors, timeouts and
+malformed responses can fail without blocking the tool, so only an actual
+supported deny is evidence of interception. GitHub tests exercise the hook
+process, temporary Git worktrees and pure recognition; actual installed Codex
+interception remains unverified until explicit trust and safe acceptance.

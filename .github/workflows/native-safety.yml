@@ -6,6 +6,7 @@ on:
       - '.github/workflows/native-safety.yml'
       - '.claude/hooks/**'
       - 'scripts/native_job.rb'
+      - 'scripts/native_codex_tool_guard.rb'
       - 'scripts/native_build_preflight.rb'
       - 'scripts/device-workflow.sh'
       - 'scripts/ios_simulator_smoke.swift'
@@ -17,6 +18,7 @@ on:
       - '.github/workflows/native-safety.yml'
       - '.claude/hooks/**'
       - 'scripts/native_job.rb'
+      - 'scripts/native_codex_tool_guard.rb'
       - 'scripts/native_build_preflight.rb'
       - 'scripts/device-workflow.sh'
       - 'scripts/ios_simulator_smoke.swift'
@@ -56,6 +58,7 @@ jobs:
           ruby scripts/test_native_hook_safety.rb
           ruby scripts/test_native_entrypoint_safety.rb
           ruby scripts/test_native_task_wiring.rb
+          ruby scripts/test_native_codex_tool_guard.rb
       - name: Check shell and Ruby syntax
         run: |
           bash -n scripts/device-workflow.sh .claude/hooks/swift_test_after_edit.sh .claude/hooks/xcode_build_smoke.sh
