@@ -1,5 +1,13 @@
 # App delivery backlog
 
+## SAFE-20261016-INSTRUCTION-UPDATE — Recover verified instruction patches
+
+- [ ] Owner: root; independent recovery from architecture commit `a41b61ff` onto master `cc2ed618`. Scope is the explicit Ruby helper, runtime tests and isolated GitHub workflow only; no hooks, preflight, installation or current instruction files are changed.
+- Acceptance: a SHA256-verified byte baseline permits exactly one nonempty match, preserves surrounding bytes/file mode/symlink aliases, makes an already-applied patch a no-write operation, and rejects drift, ambiguous/overlapping matches, directory-lock contention, root escapes and missing CLI input.
+- Additional regressions simulate target drift and alias retargeting after staging: preserve concurrent/foreign bytes and remove owned temporary files before refusal. Directory locks coordinate cooperating invocations, not arbitrary writers or hostile filesystem races.
+- Verification pending exclusively on GitHub Ubuntu and macOS filesystem fixtures. The utility must not be run on the frozen user Mac; adding this source does not authorize local execution, change quarantine, prove driver stability or activate any automatic edit/build/test path.
+- Original architecture ancestry and dirty local work remain unmerged/uninspected and preserved. No claim that the full original branch is delivered.
+
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
 - [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
