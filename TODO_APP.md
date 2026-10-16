@@ -6,6 +6,12 @@
 - Acceptance: unavailable or incompatible runtime returns an actionable Piper capability error without implying Edge is required; a linked compatible runtime passes the capability gate before model initialization. Edge fallback remains governed by explicit typed preferences and consent.
 - Verification: meaningful unit regression for unavailable, incompatible, and available runtime statuses; exact-head GitHub Actions only. The Android FFI/JNI entrypoint registers the embedded runtime before conversion. This does not claim device inference or Simulator acceptance.
 
+## SAFE-20261016-RUST-COMPILER-ENTRYPOINTS — Guard standalone local compiler tasks
+
+- [ ] Owner: root; route `rust:health`, `rust:server`, `migration:build-and-gate`, `converter-ffi:android-check`, `sidecar:build`, and `piper:build-runtime` through the native build supervisor. Preserve the existing Windows heavy-job lock path.
+- Acceptance: on Intel macOS, every task refuses before its Cargo command when any Simulator is active or SimMetalHost/Simulator.app remains; after clean shutdown the task reaches Cargo while holding the authenticated lease. Linux and Windows task semantics remain compatible.
+- Verification: GitHub Actions only. Expand actual mise task wiring regressions with fake Cargo to cover all six refusals, lock release, successful entry under the lease, and exit-status propagation. This proves guard ordering only; it does not establish GPU stability or attribute the kernel panic to compilation.
+
 ## SAFE-20261016-NATIVE-BUILD-ENTRYPOINTS — Route every native compile path through quarantine guards
 
 - [ ] Owner: root; close the specialist-found direct `ios:device:build` path, along with `mac:build` and `converter-ffi:ios-packaging:test`, so every native compile task enters `NativeJob` before generation or compiler launch.
