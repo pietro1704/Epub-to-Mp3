@@ -1001,6 +1001,11 @@ description = "Build the native iOS app for a connected physical device using pe
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
+"
+#!/bin/bash
+set -euo pipefail
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -1050,6 +1055,7 @@ if ! xcodebuild \\
   exit 65
 fi
 tail -20 "${BUILD_LOG}"
+NATIVE_JOB
 """
 
 [tasks."ios:run"]
