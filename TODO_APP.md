@@ -1,5 +1,13 @@
 # App delivery backlog
 
+## PLAYER-20261016-DEFERRED-SEEK-IDENTITY — Scope delayed reader requests to their job
+
+- [ ] Owner: github_monitor_plan; isolated dependency baseline Faber `b12451ba30ee907e7ea899ddf161c4f34c89e409`. Prepare RED regressions before porting the production slice from historical `b7309f78aa`; playback rate/menu work and its obsolete merge automation are excluded.
+- Exercise the public `AudioPlayer.startFromReaderPage` API against an in-progress job without audio URLs, asserting its actual deferred ratio is `0.5`. Stop must discard it before a late duration; switching jobs at the same chapter must discard it before duration; refreshing the same job must retain it and seek to 60 seconds exactly once when a 120-second duration arrives. Only duration arrival uses the existing AV boundary hook; no replacement player or policy mirror.
+- GitHub-only RED acceptance: hosted ARM64 macOS with canonical Xcode16.4 runs the real app-host `AudioPlayerDivergenceTests` under the existing NativeJob guard, with one job, no parallel tests, ad hoc signing, and retained xcresult/log evidence. Shared FFI is built only for app linking; no voice models, synthesis, HTTP fixture, private book, or Simulator launch. Production remains unchanged until the actual RED is reviewed.
+- Exact SE1/iOS15.5 GUI and device acceptance remain unverified/quarantined. Source preparation is not runtime verification. No local tests/builds/syntax/formatters, commit or push in this preparation slice.
+- Always extract the actual xcresult summary when its bundle exists, retaining JSON even for a failed test run. GREEN requires a Passed result, at least three executed/passed cases, zero failures and zero skipped tests; absent bundles, missing counters and an empty test selection cannot pass. The expected RED remains a failing workflow until production is corrected after review.
+
 ## SAFE-20261016-FABER-ENTRYPOINTS — Preserve containment across Faber integration
 
 - GitHub `38895272375`, head `a84a8bb`: Ubuntu entrypoints 10 runs / 75 assertions passed; Intel 10 runs / 75 assertions had one failure comparing temporary-directory spellings (`/var/folders/...` versus physical `/private/var/folders/...`). Canonicalize the owned temporary root once in setup; retain the original exact cwd equality, argv, exit and lease checks. Cancellation tree, authenticated runtime forwarding and all other nine entrypoint cases passed on Intel. Follow-up GitHub verification pending; no production change or local execution.
