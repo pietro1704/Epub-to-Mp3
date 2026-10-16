@@ -20,6 +20,7 @@ struct CliOptions {
     fallback_model: Option<String>,
     fallback_voice: Option<String>,
     allow_online_fallback: Option<bool>,
+    tts_preferences: Option<converter_core::tts_preferences::TtsPreferences>,
     output_dir: Option<String>,
     chapters: Vec<String>,
     sections: Vec<String>,
@@ -47,6 +48,7 @@ impl Default for CliOptions {
             fallback_model: None,
             fallback_voice: None,
             allow_online_fallback: None,
+            tts_preferences: None,
             output_dir: None,
             chapters: Vec::new(),
             sections: Vec::new(),
@@ -264,11 +266,55 @@ fn preferences_with_legacy_engine(
     Ok(preferences)
 }
 
+// Keep CLI snapshots strict without changing persisted preference compatibility.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapturedTtsSelection {
+    engine: String,
+    model_id: Option<String>,
+    voice: Option<String>,
+}
+
+impl CapturedTtsSelection {
+    fn into_selection(self) -> converter_core::tts_preferences::TtsSelection {
+        converter_core::tts_preferences::TtsSelection {
+            engine: self.engine,
+            model_id: self.model_id,
+            voice: self.voice,
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapturedTtsPreferences {
+    primary: CapturedTtsSelection,
+    secondary: Option<CapturedTtsSelection>,
+    allow_online_fallback: bool,
+}
+
+fn parse_captured_preferences(
+    json: &str,
+) -> Result<converter_core::tts_preferences::TtsPreferences, String> {
+    let captured: CapturedTtsPreferences = serde_json::from_str(json)
+        .map_err(|error| format!("Invalid --tts-preferences-json: {error}"))?;
+    let preferences = converter_core::tts_preferences::TtsPreferences {
+        primary: captured.primary.into_selection(),
+        secondary: captured.secondary.map(CapturedTtsSelection::into_selection),
+        allow_online_fallback: captured.allow_online_fallback,
+    };
+    preferences.validate(None)?;
+    Ok(preferences)
+}
+
 fn effective_preferences(
     config: &converter_core::config::AppConfig,
     options: &CliOptions,
     raw: &[String],
 ) -> Result<converter_core::tts_preferences::TtsPreferences, String> {
+    if let Some(captured) = &options.tts_preferences {
+        return Ok(captured.clone());
+    }
     let legacy_engine = if raw
         .iter()
         .any(|value| matches!(value.as_str(), "--engine" | "--model"))
@@ -463,6 +509,7 @@ fn conversion_config(options: &CliOptions) -> converter_core::config::AppConfig 
 fn parse_args(args: &[String]) -> Result<CliOptions, String> {
     let mut options = CliOptions::default();
     let mut positional = Vec::new();
+    let mut tts_override_seen = false;
     let mut index = 0;
     if matches!(
         args.first().map(String::as_str),
@@ -475,6 +522,19 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
     }
     while index < args.len() {
         let value = &args[index];
+        tts_override_seen |= matches!(
+            value.as_str(),
+            "--engine"
+                | "--voice"
+                | "--model"
+                | "--fallback-engine"
+                | "--fallback-model"
+                | "--fallback-voice"
+                | "--engine-chain-fallback"
+                | "--allow-online-fallback"
+                | "--no-online-fallback"
+                | "--use-secondary"
+        );
         let mut next = |name: &str| -> Result<String, String> {
             index += 1;
             args.get(index)
@@ -482,6 +542,12 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
                 .ok_or_else(|| format!("{name} requires a value"))
         };
         match value.as_str() {
+            "--tts-preferences-json" => {
+                if options.tts_preferences.is_some() {
+                    return Err("--tts-preferences-json may be supplied only once".into());
+                }
+                options.tts_preferences = Some(parse_captured_preferences(&next(value)?)?);
+            }
             "--engine" => options.engine = next(value)?,
             "--fallback-engine" => options.fallback_engine = next(value)?,
             "--engine-chain-fallback" => options.fallback_engine = "auto".into(),
@@ -522,6 +588,9 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
             _ => positional.push(value.clone()),
         }
         index += 1;
+    }
+    if options.tts_preferences.is_some() && tts_override_seen {
+        return Err("--tts-preferences-json cannot be mixed with other TTS options".into());
     }
     options.inputs = positional;
     if !matches!(
@@ -865,7 +934,7 @@ fn show_structure(inputs: &[String]) -> Result<i32, String> {
 }
 
 fn print_help() {
-    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB/PDF files, directories, loose multiword names, and fuzzy matches.\n\nPreferences: preferences show | preferences set JSON\nModels: models list | models install MODEL_ID | models remove MODEL_ID --yes\nOptions: --engine {{edge,piper,system}} --fallback-engine {{none,edge,piper,system}} --allow-online-fallback | --no-online-fallback --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clean-cache --verify --batch PATH --batch-file FILE --yes");
+    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB/PDF files, directories, loose multiword names, and fuzzy matches.\n\nPreferences: preferences show | preferences set JSON\nModels: models list | models install MODEL_ID | models remove MODEL_ID --yes\nOptions: --tts-preferences-json JSON (per-job snapshot; exclusive of other TTS options)\n         --engine {{edge,piper,system}} --fallback-engine {{none,edge,piper,system}} --allow-online-fallback | --no-online-fallback --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clean-cache --verify --batch PATH --batch-file FILE --yes");
 }
 
 fn home_dir() -> PathBuf {
@@ -1134,6 +1203,154 @@ mod tests {
         assert_eq!(saved_preferences(&config).unwrap(), saved);
         assert_eq!(fs::read(preference_path(&config)).unwrap(), stored);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn captured_preferences_replace_saved_voice_and_consent_without_writing_the_profile() {
+        use converter_core::tts_preferences::{TtsPreferences, TtsSelection};
+        let root = std::env::temp_dir().join(format!("tts-cli-snapshot-{}", std::process::id()));
+        let paths = converter_core::paths::resolve_paths_from(
+            [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
+            root.clone(),
+        );
+        let config = converter_core::config::AppConfig::from_paths(paths);
+        let saved = TtsPreferences {
+            primary: TtsSelection {
+                engine: "edge".into(),
+                model_id: None,
+                voice: Some("pt-BR-FranciscaNeural".into()),
+            },
+            secondary: None,
+            allow_online_fallback: true,
+        };
+        converter_core::cache::atomic_write_json(preference_path(&config), &saved).unwrap();
+        let stored = fs::read(preference_path(&config)).unwrap();
+        let captured = TtsPreferences {
+            primary: TtsSelection {
+                engine: "edge".into(),
+                model_id: None,
+                voice: None,
+            },
+            secondary: None,
+            allow_online_fallback: false,
+        };
+        let json = serde_json::to_string(&captured).unwrap();
+        let args = vec![
+            "convert".into(),
+            "book.epub".into(),
+            "--tts-preferences-json".into(),
+            json,
+            "--chapter".into(),
+            "1-2".into(),
+            "--no-parallel".into(),
+        ];
+        let options = parse_args(&args).unwrap();
+        assert_eq!(options.chapters, vec!["1-2"]);
+        assert!(options.no_parallel);
+        assert_eq!(effective_preferences(&config, &options, &args).unwrap(), captured);
+        assert_eq!(saved_preferences(&config).unwrap(), saved);
+        assert_eq!(fs::read(preference_path(&config)).unwrap(), stored);
+
+        fs::write(preference_path(&config), b"invalid saved preferences").unwrap();
+        assert!(saved_preferences(&config).is_err());
+        assert_eq!(effective_preferences(&config, &options, &args).unwrap(), captured);
+        assert_eq!(
+            fs::read(preference_path(&config)).unwrap(),
+            b"invalid saved preferences"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn captured_preferences_reject_invalid_schema_policy_and_duplicate_arguments() {
+        use converter_core::tts_preferences::{TtsPreferences, TtsSelection};
+        let approved = TtsPreferences {
+            primary: TtsSelection::default(),
+            secondary: Some(TtsSelection {
+                engine: "edge".into(),
+                model_id: None,
+                voice: Some("pt-BR-FranciscaNeural".into()),
+            }),
+            allow_online_fallback: true,
+        };
+        assert_eq!(
+            parse_captured_preferences(&serde_json::to_string(&approved).unwrap()).unwrap(),
+            approved
+        );
+        let valid = serde_json::to_string(
+            &converter_core::tts_preferences::TtsPreferences::default(),
+        )
+        .unwrap();
+        for json in [
+            "{",
+            r#"{"primary":{"engine":"edge"},"secondary":null}"#,
+            r#"{"primary":{"engine":"edge"},"allow_online_fallback":false,"unknown":0}"#,
+            r#"{"primary":{"engine":"edge","unknown":0},"allow_online_fallback":false}"#,
+            r#"{"primary":{"engine":"edge","voice":null,"voice":"other"},"allow_online_fallback":false}"#,
+            r#"{"primary":{"engine":"edge"},"allow_online_fallback":false,"allow_online_fallback":true}"#,
+            r#"{"primary":{"engine":"piper","model_id":"pt_BR-faber-medium"},"secondary":{"engine":"edge"},"allow_online_fallback":false}"#,
+        ] {
+            let args = ["convert", "book.epub", "--tts-preferences-json", json]
+                .map(str::to_owned);
+            assert!(parse_args(&args).is_err(), "Unexpectedly accepted: {json}");
+        }
+        let duplicate = [
+            "convert",
+            "book.epub",
+            "--tts-preferences-json",
+            &valid,
+            "--tts-preferences-json",
+            &valid,
+        ]
+        .map(str::to_owned);
+        assert!(parse_args(&duplicate).unwrap_err().contains("only once"));
+        let missing = ["convert", "book.epub", "--tts-preferences-json"].map(str::to_owned);
+        assert!(parse_args(&missing).is_err());
+    }
+
+    #[test]
+    fn captured_preferences_are_exclusive_of_tts_flags_but_not_literal_flag_values() {
+        let json = serde_json::to_string(
+            &converter_core::tts_preferences::TtsPreferences::default(),
+        )
+        .unwrap();
+        for legacy in [
+            vec!["--engine", "edge"],
+            vec!["--voice", "pt-BR-FranciscaNeural"],
+            vec!["--model", "pt_BR-faber-medium"],
+            vec!["--fallback-engine", "none"],
+            vec!["--fallback-model", "pt_BR-faber-medium"],
+            vec!["--fallback-voice", "pt-BR-FranciscaNeural"],
+            vec!["--engine-chain-fallback"],
+            vec!["--allow-online-fallback"],
+            vec!["--no-online-fallback"],
+            vec!["--use-secondary"],
+        ] {
+            for snapshot_first in [true, false] {
+                let mut args = vec!["convert".to_owned(), "book.epub".to_owned()];
+                let snapshot = ["--tts-preferences-json", json.as_str()];
+                let (first, second): (&[&str], &[&str]) = if snapshot_first {
+                    (&snapshot, &legacy)
+                } else {
+                    (&legacy, &snapshot)
+                };
+                args.extend(first.iter().chain(second).map(|value| (*value).to_owned()));
+                assert!(parse_args(&args).is_err(), "Accepted mixed TTS flags: {args:?}");
+            }
+        }
+        let literal = [
+            "convert",
+            "book.epub",
+            "--tts-preferences-json",
+            &json,
+            "--output-dir",
+            "--engine",
+        ]
+        .map(str::to_owned);
+        assert_eq!(
+            parse_args(&literal).unwrap().output_dir.as_deref(),
+            Some("--engine")
+        );
     }
 
     #[test]

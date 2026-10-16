@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## APP-20261016-CLI-SNAPSHOT — Capture complete per-job voice preferences
+
+- [ ] Owner: root; flag-only CLI reproduction cannot clear a saved Edge voice when the captured job uses a null voice. Add `--tts-preferences-json` as an exclusive per-job snapshot, parsed and validated before conversion actions, with an immediate effective-preference return before saved profile or ENGINE lookup.
+- Acceptance: snapshot primary/secondary/consent matches the captured value, including Edge voice null and consent false; saved bytes remain unchanged even when the profile is corrupt. Reject malformed/unknown/duplicate fields, invalid policy, repeated snapshots and every mixed TTS flag in either order. Operational flags remain available; flag-like option values must not be mistaken for options.
+- Coverage: private strict input DTOs preserve persisted-schema compatibility; Rust tests exercise saved voice/consent identity, corrupt-profile isolation, consented secondary mapping, schema/policy rejection and flag exclusivity. Only serde's direct CLI dependency and its existing lockfile package entry change.
+- Verification: specialist reviewed the plan; exact-head GitHub Actions and final diff review remain pending. No local process, native build, model installation or device action. The web command renderer remains a separate pending slice.
+
 ## APP-20261016-WEB-LOCAL-HELP — Keep embedded help and diagnostics local
 
 - [ ] Owner: root; recover only local Help behavior from preserved `feature/web-local-help` (`6e6abd0`) into the current Faber integration. The Browser client must show local capability, explicit model-install guidance, phase, job ID, progress and failure cause without backend probes or restart controls. Preserve explicitly selected HTTP diagnostics and HTTP session history.
