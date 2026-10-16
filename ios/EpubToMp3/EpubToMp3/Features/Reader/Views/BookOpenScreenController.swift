@@ -2407,10 +2407,14 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         view.layoutIfNeeded()
         let estimatedTotal = measuredPageCount
         let current = pageNumber(at: scrollView.contentOffset.y)
+        let outgoingPage = settings.pageTurnStyle == .none || UIAccessibility.isReduceMotionEnabled
+            || ProcessInfo.processInfo.arguments.contains("-uiTestReduceMotion")
+            ? nil : snapshotReaderPage(afterScreenUpdates: false)
         if forward, current >= estimatedTotal, selectedChapter + 1 < fulltext.chapters.count {
             persistReadingProgress(); selectedChapter += 1; showChapter(selectedChapter)
-            scrollView.setContentOffset(.zero, animated: false); updatePageIndicator()
-            finishChapterTransition(); return
+            view.layoutIfNeeded()
+            setPageOffset(.zero, forward: true, outgoingPage: outgoingPage)
+            updatePageIndicator(); return
         }
         if !forward, current <= 1, selectedChapter > 0 {
             persistReadingProgress(); selectedChapter -= 1; showChapter(selectedChapter)
@@ -2421,8 +2425,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
                 uiTestPageNumber = previousTotal
             }
-            scrollView.setContentOffset(CGPoint(x: 0, y: pageOffset(for: previousTotal)), animated: false)
-            updatePageIndicator(); finishChapterTransition(); return
+            setPageOffset(CGPoint(x: 0, y: pageOffset(for: previousTotal)), forward: false, outgoingPage: outgoingPage)
+            updatePageIndicator(); return
         }
         if (forward && current >= estimatedTotal) || (!forward && current <= 1) {
             isPageTransitioning = false
@@ -2432,20 +2436,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             uiTestPageNumber = next
         }
-        setPageOffset(CGPoint(x: 0, y: pageOffset(for: next)), forward: forward)
+        setPageOffset(CGPoint(x: 0, y: pageOffset(for: next)), forward: forward, outgoingPage: outgoingPage)
         updatePageIndicator(); persistReadingProgress()
     }
 
-    private func finishChapterTransition() {
-        // Chapter rendering and layout can be expensive for EPUBs with many
-        // short sections. Keep the input serialized for one run-loop turn so
-        // another edge tap cannot observe half-rendered text metrics.
-        DispatchQueue.main.async { [weak self] in
-            self?.isPageTransitioning = false
+    private func setPageOffset(_ offset: CGPoint, forward: Bool, outgoingPage: UIView?) {
+        guard !UIAccessibility.isReduceMotionEnabled,
+              !ProcessInfo.processInfo.arguments.contains("-uiTestReduceMotion") else {
+            scrollView.setContentOffset(offset, animated: false)
+            isPageTransitioning = false
+            return
         }
-    }
-
-    private func setPageOffset(_ offset: CGPoint, forward: Bool) {
         switch settings.pageTurnStyle {
         case .none:
             scrollView.setContentOffset(offset, animated: false)
@@ -2456,10 +2457,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             // synchronously, and animate a snapshot horizontally. This also
             // prevents UIKit from exposing the intermediate vertical offset
             // when the reader is opened with everything else hidden.
-            let oldPage = scrollView.snapshotView(afterScreenUpdates: false)
             let frame = scrollView.convert(scrollView.bounds, to: view)
             scrollView.setContentOffset(offset, animated: false)
-            guard let oldPage else {
+            guard let oldPage = outgoingPage else {
                 isPageTransitioning = false
                 return
             }
@@ -2475,17 +2475,15 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 self.isPageTransitioning = false
             }
         case .flip:
-            performHorizontalPageCurl(to: offset, forward: forward)
+            performHorizontalPageCurl(to: offset, forward: forward, outgoingPage: outgoingPage)
         }
     }
 
     /// A horizontal page fold around the vertical reading edge. UIKit's
     /// built-in curl only travels vertically and `transitionFlip…` rotates
     /// like a card, so neither represents turning a book page.
-    private func performHorizontalPageCurl(to offset: CGPoint, forward: Bool) {
-        guard !UIAccessibility.isReduceMotionEnabled,
-              !ProcessInfo.processInfo.arguments.contains("-uiTestReduceMotion"),
-              let outgoingPage = scrollView.snapshotView(afterScreenUpdates: false) else {
+    private func performHorizontalPageCurl(to offset: CGPoint, forward: Bool, outgoingPage: UIView?) {
+        guard let outgoingPage else {
             scrollView.setContentOffset(offset, animated: false)
             isPageTransitioning = false
             return
@@ -2494,37 +2492,72 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         let frame = scrollView.convert(scrollView.bounds, to: view)
         scrollView.setContentOffset(offset, animated: false)
         outgoingPage.frame = frame
-        outgoingPage.accessibilityIdentifier = "reader.pageCurl"
-        outgoingPage.isAccessibilityElement = true
-        outgoingPage.accessibilityLabel = "Page turning"
-        outgoingPage.layer.isDoubleSided = false
-        outgoingPage.layer.anchorPoint = CGPoint(x: forward ? 1 : 0, y: 0.5)
-        outgoingPage.layer.position = CGPoint(x: forward ? frame.maxX : frame.minX, y: frame.midY)
+        view.addSubview(outgoingPage)
+        let turningPage: UIView
+        if forward {
+            turningPage = outgoingPage
+        } else {
+            // Keep the current page underneath while the previous page opens
+            // from the spine. Snapshot the committed destination, not the old page.
+            scrollView.layoutIfNeeded()
+            guard let incomingPage = snapshotReaderPage(afterScreenUpdates: true) else {
+                outgoingPage.removeFromSuperview()
+                isPageTransitioning = false
+                return
+            }
+            incomingPage.frame = frame
+            turningPage = incomingPage
+            view.addSubview(incomingPage)
+        }
+        turningPage.accessibilityIdentifier = "reader.pageCurl"
+        turningPage.isAccessibilityElement = true
+        turningPage.accessibilityLabel = "Page turning"
+        turningPage.layer.isDoubleSided = false
+        turningPage.layer.anchorPoint = CGPoint(x: 0, y: 0.5)
+        turningPage.layer.position = CGPoint(x: frame.minX, y: frame.midY)
 
         let foldShadow = CAGradientLayer()
-        foldShadow.frame = outgoingPage.bounds
-        foldShadow.colors = forward
-            ? [UIColor.black.withAlphaComponent(0.30).cgColor, UIColor.clear.cgColor]
-            : [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.30).cgColor]
-        foldShadow.startPoint = CGPoint(x: forward ? 1 : 0, y: 0.5)
-        foldShadow.endPoint = CGPoint(x: forward ? 0 : 1, y: 0.5)
-        outgoingPage.layer.addSublayer(foldShadow)
-        view.addSubview(outgoingPage)
+        foldShadow.frame = turningPage.bounds
+        foldShadow.colors = [UIColor.black.withAlphaComponent(0.30).cgColor, UIColor.clear.cgColor]
+        foldShadow.startPoint = CGPoint(x: 0, y: 0.5)
+        foldShadow.endPoint = CGPoint(x: 1, y: 0.5)
+        turningPage.layer.addSublayer(foldShadow)
 
         var fold = CATransform3DIdentity
         fold.m34 = -1 / 900
-        fold = CATransform3DRotate(fold, forward ? -.pi / 2 : .pi / 2, 0, 1, 0)
+        fold = CATransform3DRotate(fold, -.pi / 2, 0, 1, 0)
+        if !forward { turningPage.layer.transform = fold }
         UIView.animate(
             withDuration: 0.35,
             delay: 0,
             options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
         ) {
-            outgoingPage.layer.transform = fold
-            outgoingPage.alpha = 0.92
+            turningPage.layer.transform = forward ? fold : CATransform3DIdentity
+            foldShadow.opacity = forward ? 1 : 0
         } completion: { _ in
+            turningPage.removeFromSuperview()
             outgoingPage.removeFromSuperview()
             self.isPageTransitioning = false
         }
+    }
+
+    /// Edge masks live outside the scroll view. Carry them with its snapshot
+    /// so a raw offset restored by a chrome transition cannot expose half a glyph.
+    private func snapshotReaderPage(afterScreenUpdates: Bool) -> UIView? {
+        updatePageOverflowGuard()
+        guard let surface = scrollView.snapshotView(afterScreenUpdates: afterScreenUpdates) else { return nil }
+        let viewport = scrollView.convert(scrollView.bounds, to: view)
+        let page = UIView(frame: CGRect(origin: .zero, size: viewport.size))
+        page.backgroundColor = scrollView.backgroundColor
+        page.clipsToBounds = true
+        surface.frame = page.bounds
+        page.addSubview(surface)
+        for mask in [pageUnderflowGuard, pageOverflowGuard] where !mask.isHidden {
+            let cover = UIView(frame: mask.frame.offsetBy(dx: -viewport.minX, dy: -viewport.minY))
+            cover.backgroundColor = mask.backgroundColor
+            page.addSubview(cover)
+        }
+        return page
     }
 
     // MARK: - Selection → bookmark/highlight/note

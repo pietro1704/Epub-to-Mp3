@@ -32,8 +32,9 @@ Future<void> _pumpLibrary(
 }
 
 void main() {
-  testWidgets('library grid keeps two columns across phone and wide resize',
-      (tester) async {
+  testWidgets('library grid keeps two columns across phone and wide resize', (
+    tester,
+  ) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final books = List.generate(
       4,
@@ -47,9 +48,12 @@ void main() {
       ),
     );
     await tester.binding.setSurfaceSize(const Size(320, 1200));
-    await _pumpLibrary(tester, prefsData: {
-      'library.books.v1': '[${books.map((book) => book.encode()).join(',')}]',
-    });
+    await _pumpLibrary(
+      tester,
+      prefsData: {
+        'library.books.v1': '[${books.map((book) => book.encode()).join(',')}]',
+      },
+    );
 
     for (final width in [320.0, 390.0, 768.0, 1440.0, 320.0]) {
       await tester.binding.setSurfaceSize(Size(width, 2400));
@@ -81,8 +85,9 @@ void main() {
     expect(find.text('Add a book'), findsOneWidget);
   });
 
-  testWidgets('library with persisted books renders grid cards',
-      (tester) async {
+  testWidgets('library with persisted books renders grid cards', (
+    tester,
+  ) async {
     final book = BookEntity(
       id: 'abc123',
       title: 'Test Book',
@@ -108,8 +113,10 @@ void main() {
       displayFilename: 'test.epub',
       addedAt: DateTime(2025, 1, 1),
     );
-    await _pumpLibrary(tester,
-        prefsData: {'library.books.v1': '[${book.encode()}]'});
+    await _pumpLibrary(
+      tester,
+      prefsData: {'library.books.v1': '[${book.encode()}]'},
+    );
 
     expect(find.byIcon(Icons.sort), findsOneWidget);
   });
@@ -123,8 +130,10 @@ void main() {
       displayFilename: 'test.epub',
       addedAt: DateTime(2025, 1, 1),
     );
-    await _pumpLibrary(tester,
-        prefsData: {'library.books.v1': '[${book.encode()}]'});
+    await _pumpLibrary(
+      tester,
+      prefsData: {'library.books.v1': '[${book.encode()}]'},
+    );
 
     await tester.tap(find.byIcon(Icons.sort));
     await tester.pumpAndSettle();
@@ -138,7 +147,9 @@ void main() {
     await _pumpLibrary(tester);
 
     expect(
-      find.text('Tap + to import an EPUB or PDF, or share one from another app.'),
+      find.text(
+        'Tap + to import an EPUB or PDF, or share one from another app.',
+      ),
       findsOneWidget,
     );
   });

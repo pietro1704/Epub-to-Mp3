@@ -79,11 +79,32 @@ jobs:
           printf 'Kotlin source files compiled by the Android app target: '
           find flutter_app/android/app/src -type f -name '*.kt' | wc -l
 
-      - name: Build Android app
-        working-directory: flutter_app
+      - name: Set up Rust Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Set up native build tools
+        uses: jdx/mise-action@v5
+        env:
+          MISE_ENABLE_TOOLS: ruby,ninja
+        with:
+          experimental: true
+
+      - name: Install native Android prerequisites
         run: |
-          flutter pub get
-          flutter build apk --debug
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev cmake pkg-config
+          sdk_manager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdk_manager"
+          "$sdk_manager" --install "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Build Android app
+        env:
+          MISE_ENABLE_TOOLS: ruby,ninja
+          MISE_EXPERIMENTAL: "1"
+        run: mise run flutter:build-apk-debug
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4

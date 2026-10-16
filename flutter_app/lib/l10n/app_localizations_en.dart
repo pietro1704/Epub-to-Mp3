@@ -417,4 +417,42 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get off => 'Off';
+
+  @override
+  String get ttsPrimaryNarration => 'Primary narration';
+
+  @override
+  String get ttsSecondaryNarration => 'Secondary narration';
+
+  @override
+  String get ttsFaberOffline => 'Faber medium · Offline';
+
+  @override
+  String get ttsEdgeOnline => 'Edge · Online';
+
+  @override
+  String get ttsNoSecondary => 'None';
+
+  @override
+  String get ttsAllowOnlineSecondary => 'Allow online secondary';
+
+  @override
+  String get ttsOnlineSecondaryDescription =>
+      'Send failed segments to Edge only when enabled.';
+
+  @override
+  String get ttsUsePreferences => 'Use audio preferences';
+
+  @override
+  String get ttsAllowJobSecondary =>
+      'Allow configured secondary for this conversion';
+
+  @override
+  String ttsActualVoices(String voices) {
+    return 'Used voice: $voices';
+  }
+
+  @override
+  String get ttsSecondaryUsedNotice =>
+      'Secondary voice used for an isolated segment. The primary voice will be retried.';
 }

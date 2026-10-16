@@ -15,6 +15,7 @@ final class BookDetailManualConversionTests: XCTestCase {
     func testListenUsesStreamingExecutorInsteadOfWholeBookConversion() async throws {
         let id = "detail-listen-streaming-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defaults.set("edge", forKey: AppSettings.audioEngineKey)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let source = try EpubFixture.createWithChapter(body: "Listen should stream this chapter.")
@@ -61,8 +62,9 @@ final class BookDetailManualConversionTests: XCTestCase {
                          outputDirectory: root)
         }
 
+        let settings = AppSettings(defaults: defaults)
         let controller = BookDetailScreenController(
-            book: book, library: library, settings: AppSettings(defaults: defaults),
+            book: book, library: library, settings: settings,
             player: player, playerPresentation: presentation,
             conversionExecutor: { _, jobID, _, _, _, _, _ in
                 conversionCalled = true
@@ -74,12 +76,18 @@ final class BookDetailManualConversionTests: XCTestCase {
                 XCTAssertEqual(chapterStart, 0)
                 XCTAssertEqual(chapterEnd, -1, "Listen streams from the requested chapter onward.")
                 XCTAssertEqual(options?.engine, "edge")
+                XCTAssertEqual(options?.ttsPreferences?.primary.engine, "edge",
+                               "Listen must preserve the preferences captured before opening the book.")
+                XCTAssertEqual(player.snapshot?.engine, "edge")
                 XCTAssertNotNil(chunk, "Listen must supply the incremental audio callback.")
                 pendingPlaybackInstalled = player.snapshot?.jobId == jobID && player.isConverting
                 started.fulfill()
                 return try result(jobID: jobID)
             },
-            bookFileOpener: { _ in source }
+            bookFileOpener: { _ in
+                settings.audioEngine = .piper
+                return source
+            }
         )
         controller.loadViewIfNeeded()
         let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? UIButton }
@@ -96,6 +104,7 @@ final class BookDetailManualConversionTests: XCTestCase {
     func testListenIgnoresRepeatedTapWhileBookURLIsOpening() async throws {
         let id = "detail-listen-single-flight-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defaults.set("edge", forKey: AppSettings.audioEngineKey)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let source = try EpubFixture.createWithChapter(body: "Listen opens this book only once.")
@@ -157,6 +166,7 @@ final class BookDetailManualConversionTests: XCTestCase {
 
         let id = "detail-live-edge-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defaults.set("edge", forKey: AppSettings.audioEngineKey)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let body = String(repeating: "Este é um teste real de reprodução Edge no Simulator. ", count: 10)
@@ -305,6 +315,7 @@ final class BookDetailManualConversionTests: XCTestCase {
 
         let id = "detail-live-edge-manual-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defaults.set("edge", forKey: AppSettings.audioEngineKey)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let source = try EpubFixture.createWithChapter(
@@ -434,6 +445,7 @@ final class BookDetailManualConversionTests: XCTestCase {
     func testMacListenRoutesThroughStreamingExecutor() async throws {
         let id = "detail-streaming-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defaults.set("edge", forKey: AppSettings.audioEngineKey)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let source = try EpubFixture.createWithChapter(body: "A fixture for the Mac Listen action.")
@@ -507,6 +519,7 @@ final class BookDetailManualConversionTests: XCTestCase {
     private func verifyBookDetailOpenIsAsynchronous(actionIdentifier: String) async throws {
         let id = "detail-open-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defaults.set("edge", forKey: AppSettings.audioEngineKey)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let source = try EpubFixture.createWithChapter(body: "Book Detail actions open this readable chapter asynchronously.")
@@ -606,6 +619,7 @@ final class BookDetailManualConversionTests: XCTestCase {
     private func verifyManualConversion(existingSession: Bool) async throws {
         let id = "manual-detail-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defaults.set("edge", forKey: AppSettings.audioEngineKey)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let source = try EpubFixture.create()
@@ -691,7 +705,7 @@ final class BookDetailManualConversionTests: XCTestCase {
             playerPresentation: presentation, onRead: { _ in }, onShowJobs: {},
             conversionExecutor: executor)
         _ = controller.view
-        controller.convertWholeBook()
+        controller.convertWholeBook(options: AppSettings(defaults: defaults).conversionOptions)
         #endif
         for _ in 0..<200 {
             if requestedJob != nil { break }

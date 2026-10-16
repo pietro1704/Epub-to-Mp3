@@ -66,6 +66,27 @@ export async function listenTauri(
   return window.__TAURI__.event.listen(event, (e) => handler(e.payload));
 }
 
+/** The embedded browser client needs File bytes, not a legacy HTTP upload ID.
+ * This repository exposes no native read-bytes command, so its HTML picker is
+ * the truthful local path. Native path uploads remain legacy HTTP compatibility.
+ */
+export async function openTauriBooks(
+  mode: "embedded" | "http",
+  chooseBrowserFiles: () => void,
+  registerLegacyPaths: (paths: string[]) => void,
+): Promise<void> {
+  if (mode === "embedded") {
+    chooseBrowserFiles();
+    return;
+  }
+  try {
+    const paths = await invoke<string[]>("pick_books");
+    if (paths.length > 0) registerLegacyPaths(paths);
+  } catch {
+    chooseBrowserFiles();
+  }
+}
+
 type TauriAny = Record<string, unknown>;
 
 /** Check for updates via the Tauri updater plugin. */

@@ -17,6 +17,10 @@ use thiserror::Error;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EmbeddedConversionOptions {
     pub job_id: Option<String>,
+    pub tts_preferences: Option<crate::tts_preferences::TtsPreferences>,
+    pub models_root: Option<PathBuf>,
+    pub piper_model: Option<PathBuf>,
+    pub piper_config: Option<PathBuf>,
     pub engine: Option<String>,
     pub voice: Option<String>,
     pub language: Option<String>,
@@ -126,11 +130,13 @@ impl EmbeddedConversionSession {
             .run(ConversionRequest {
                 input: self.input.clone(),
                 job_id,
+                tts_preferences: self.options.tts_preferences.clone(),
+                models_root: self.options.models_root.clone(),
                 engine: self.options.engine.clone(),
                 voice: self.options.voice.clone(),
                 language: self.options.language.clone(),
-                piper_model: None,
-                piper_config: None,
+                piper_model: self.options.piper_model.clone(),
+                piper_config: self.options.piper_config.clone(),
                 chapter_indices: self.options.chapter_indices.clone(),
                 no_parallel: self.options.no_parallel,
             })

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 import AVFoundation
 import ImageIO
+import CryptoKit
 #if APP_FOUNDATION_HOST_TESTS
 @testable import AppFoundation
 #else
@@ -18,6 +19,111 @@ final class ConversionOptionsInteropTests: XCTestCase {
         #else
         return ConverterFFIAdapter()
         #endif
+    }
+
+    @MainActor
+    func testOptInFaberStreamsFirstPlayableAudioAndPublishesOfflineChapters() async throws {
+        guard let suppliedRoot = ProcessInfo.processInfo.environment["EPUB2MP3_PIPER_TEST_MODEL_ROOT"],
+              !suppliedRoot.isEmpty, !suppliedRoot.contains("$("), !suppliedRoot.contains("${") else {
+            throw XCTSkip("Set EPUB2MP3_PIPER_TEST_MODEL_ROOT to the existing original Faber model directory; this test never downloads voices.")
+        }
+        let fixtureRoot = URL(fileURLWithPath: suppliedRoot, isDirectory: true)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("faber-inference-\(UUID().uuidString)", isDirectory: true)
+        let models = root.appendingPathComponent("models", isDirectory: true)
+        let modelDirectory = models.appendingPathComponent("pt_BR-faber-medium", isDirectory: true)
+        try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let artifacts = [
+            (source: "pt_BR-faber-medium.onnx", target: "model.onnx", bytes: 63_201_294, hash: "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7"),
+            (source: "pt_BR-faber-medium.onnx.json", target: "model.onnx.json", bytes: 4_855, hash: "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f"),
+        ]
+        for artifact in artifacts {
+            let source = fixtureRoot.appendingPathComponent(artifact.source)
+            let data = try Data(contentsOf: source, options: .mappedIfSafe)
+            XCTAssertEqual(data.count, artifact.bytes, "The fixture must be the original catalog model.")
+            XCTAssertEqual(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), artifact.hash)
+            let destination = modelDirectory.appendingPathComponent(artifact.target)
+            do { try FileManager.default.linkItem(at: source, to: destination) }
+            catch { try FileManager.default.copyItem(at: source, to: destination) }
+        }
+        let metadata: [String: Any] = ["id": "pt_BR-faber-medium", "artifacts": artifacts.map { ["path": $0.target, "sha256": $0.hash] }]
+        try JSONSerialization.data(withJSONObject: metadata).write(to: modelDirectory.appendingPathComponent("metadata.json"))
+        #if !APP_FOUNDATION_HOST_TESTS
+        XCTAssertTrue(AppSettings.isFaberInstalled(modelsRoot: models))
+        #endif
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: resources.appendingPathComponent("espeak-ng-data/phontab").path),
+                      "The real application must bundle eSpeak data before offline synthesis.")
+        let book = try EpubFixture.createWithChapters([
+            "Olá. Esta primeira página verifica a voz Faber em português. O áudio começa antes de terminar a conversão completa.",
+            "Neste segundo capítulo, a mesma voz continua funcionando sem internet. Cada palavra deve produzir áudio válido e audível.",
+        ])
+        defer { try? FileManager.default.removeItem(at: book) }
+        let adapter = try runtimeAdapter()
+        let control = try adapter.makePlaybackControl()
+        control.updatePlaybackWindow(currentChapter: 0, chaptersAhead: 1)
+        var options = ConversionOptions.selectedEngine(.piper, modelsRoot: models)
+        options.language = "pt-BR"
+        options.espeakDataDirectory = resources.path
+        options.ttsPreferences = TtsPreferences(primary: .selected(.piper), secondary: nil, allowOnlineFallback: false)
+        let chunks = FaberInferenceEvidence()
+        var providers: [RustConversionCoordinator.ConversionProgressEvent] = []
+        let started = ProcessInfo.processInfo.systemUptime
+        let result = try await RustConversionCoordinator(adapter: adapter).convert(
+            bookURL: book, chapterStart: 0, chapterEnd: 1, options: options, playbackControl: control,
+            onProgress: { event in if event.modelId != nil { providers.append(event) } },
+            onAudioChunk: { chapter, index, bytes in chunks.capture(chapter: chapter, index: index, bytes: bytes); return true }
+        )
+        defer { try? FileManager.default.removeItem(at: result.outputDirectory) }
+        let elapsed = ProcessInfo.processInfo.systemUptime - started
+        let first = try XCTUnwrap(chunks.first())
+        XCTAssertEqual(first.chapter, 0)
+        XCTAssertEqual(first.index, 0)
+        XCTAssertGreaterThan(chunks.count(), 1, "Both chapters must deliver playable segments.")
+        XCTAssertLessThan(first.time - started, elapsed, "First playable audio must precede full conversion completion.")
+        let firstURL = root.appendingPathComponent("first-chunk.mp3")
+        try first.bytes.write(to: firstURL)
+        let firstPeak = try assertNonSilentFullyDecodedAudio(firstURL)
+        XCTAssertFalse(providers.isEmpty, "The real Rust worker must report the actual Faber model.")
+        XCTAssertTrue(providers.allSatisfy { $0.engine == "piper" && $0.modelId == "pt_BR-faber-medium" && $0.fallbackUsed == false })
+        let snapshot = try result.snapshot()
+        XCTAssertEqual(snapshot.state, "finished")
+        XCTAssertEqual(snapshot.engine, "piper")
+        XCTAssertEqual(snapshot.voice, "pt_BR-faber-medium")
+        let chapters = try XCTUnwrap(snapshot.chapterProgress)
+        XCTAssertEqual(chapters.map(\.index), [0, 1])
+        for chapter in chapters {
+            let url = URL(fileURLWithPath: try XCTUnwrap(chapter.downloadUrl))
+            XCTAssertTrue(url.path.hasSuffix(".mp3"))
+            _ = try assertNonSilentFullyDecodedAudio(url)
+        }
+        print("FABER_NATIVE firstChunkSeconds=\(first.time - started) totalSeconds=\(elapsed) chunks=\(chunks.count()) firstPeak=\(firstPeak) engine=\(snapshot.engine ?? "") model=\(snapshot.voice ?? "") chapters=\(chapters.count)")
+    }
+
+    private func assertNonSilentFullyDecodedAudio(_ url: URL, file: StaticString = #filePath, line: UInt = #line) throws -> Float {
+        let audio = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
+        XCTAssertGreaterThan(audio.length, 0, file: file, line: line)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: 4_096), file: file, line: line)
+        var decoded: AVAudioFramePosition = 0
+        var peak: Float = 0
+        var allFinite = true
+        while audio.framePosition < audio.length {
+            try audio.read(into: buffer)
+            guard buffer.frameLength > 0 else { break }
+            let samples = try XCTUnwrap(buffer.floatChannelData, file: file, line: line)
+            for channel in 0..<Int(buffer.format.channelCount) {
+                for index in 0..<Int(buffer.frameLength) {
+                    let sample = samples[channel][index]
+                    allFinite = allFinite && sample.isFinite
+                    peak = max(peak, abs(sample))
+                }
+            }
+            decoded += AVAudioFramePosition(buffer.frameLength)
+        }
+        XCTAssertTrue(allFinite, "Decoded audio samples must be finite.", file: file, line: line)
+        XCTAssertEqual(decoded, audio.length, "The complete MP3 must decode, not merely its header.", file: file, line: line)
+        XCTAssertGreaterThan(peak, 0.0001, "Synthesized speech must contain non-silent samples.", file: file, line: line)
+        return peak
     }
 
     func testOptInSystemProviderPublishesPlayableMP3ThroughRust() async throws {
@@ -405,3 +511,17 @@ private final class FFIChunkCollector: @unchecked Sendable {
     }
 }
 #endif
+
+private final class FaberInferenceEvidence: @unchecked Sendable {
+    struct FirstChunk { let chapter: Int; let index: Int; let bytes: Data; let time: Double }
+    private let lock = NSLock()
+    private var firstChunk: FirstChunk?
+    private var received = 0
+    func capture(chapter: Int, index: Int, bytes: Data) {
+        lock.lock(); defer { lock.unlock() }
+        received += 1
+        if firstChunk == nil { firstChunk = FirstChunk(chapter: chapter, index: index, bytes: bytes, time: ProcessInfo.processInfo.systemUptime) }
+    }
+    func first() -> FirstChunk? { lock.lock(); defer { lock.unlock() }; return firstChunk }
+    func count() -> Int { lock.lock(); defer { lock.unlock() }; return received }
+}
