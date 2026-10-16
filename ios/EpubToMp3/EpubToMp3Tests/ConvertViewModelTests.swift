@@ -36,8 +36,9 @@ final class ConvertViewModelTests: XCTestCase {
         model.selectedFile = URL(fileURLWithPath: "/must-not-open-unsupported-provider.epub")
         model.engine = "coqui"
         await model.submit()
-        XCTAssertTrue(model.error?.contains("unsupported conversion engine") == true,
-                      "Default form executor did not validate its explicit options: \(model.error ?? "no error")")
+        XCTAssertEqual(model.error,
+                       EmbeddedConverterError.conversionFailed("Unsupported TTS engine: coqui").errorDescription,
+                       "The typed provider policy must reject the literal engine before opening the book")
         XCTAssertNil(model.submittedJobId)
         XCTAssertFalse(model.isSubmitting)
     }

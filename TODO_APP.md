@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
+
+- [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.
+- GitHub evidence: `38885350620`, job `116922195739`, head `2082ae54179413373bfe77019602c6347d249243` verified both model downloads, passed the root to `xcodebuild` and exported it in target build phases, but the XCTest runtime guard skipped Faber at line 28. The Unit plan has its own runtime configuration and previously declared no environment entries; scheme-only forwarding did not satisfy this run. The log does not distinguish an absent, empty or unexpanded runtime value.
+- Same run: Foundation 38 tests, 11 skips, zero failures; app XCTest 43 tests, 3 skips, one failure. Both installer tests and all 18 settings parity tests passed. The sole failing assertion expected the old unsupported-engine text; keep complete equality against the actual typed-policy error for literal `coqui`, plus no-job/submission-finished assertions. GREEN and actual app Faber inference remain pending GitHub; no local execution.
+
 ## CI-20261016-CODEQL-ANDROID-SDK — Resolve the hosted SDK manager explicitly
 
 - [ ] Owner: github_monitor_plan; CodeQL run `38884593082`, Java/Kotlin job `116919152162`, head `765e57495f69d82bec20852ab1d121345c6f02cb` failed before Android compilation because `sdkmanager` was absent from PATH. The Ubuntu runner image installs it under `ANDROID_HOME/cmdline-tools/latest/bin`, confirmed against the official runner image installation script.
