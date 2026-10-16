@@ -209,6 +209,54 @@ fn invalid_audio(message: impl Into<String>) -> AudioError {
     AudioError::Validation(message.into())
 }
 
+/// Collect a finished rusty_mp3 1.0.0 encoder without changing MPEG audio payloads.
+/// That producer counts the Info/Xing metadata frame itself, unlike the audio-frame
+/// count consumed by MPEG readers. Normalize only this known encoder's output.
+pub(crate) fn collect_rusty_mp3_output(
+    encoder: &mut rusty_mp3::Mp3Encoder,
+) -> Result<Vec<u8>, AudioError> {
+    let mut encoded = Vec::new();
+    let mut packets = 0u32;
+    let mut count_offset = None;
+    loop {
+        let packet = match encoder.next_packet() {
+            Ok(packet) => packet,
+            Err(rusty_mp3::Error::Eof) => break,
+            Err(error) => return Err(invalid_audio(format!("MP3 encoder did not finish: {error}"))),
+        };
+        let bytes: [u8; 4] = packet.get(..4)
+            .ok_or_else(|| invalid_audio("MP3 encoder emitted a short frame"))?
+            .try_into().unwrap();
+        let header = rusty_mp3::header::FrameHeader::parse(bytes)
+            .map_err(|error| invalid_audio(format!("MP3 encoder emitted an invalid frame: {error}")))?;
+        if header.frame_size() != packet.len() {
+            return Err(invalid_audio("MP3 encoder emitted an incomplete frame"));
+        }
+        if packets == 0 {
+            let tag = 4 + usize::from(header.crc_protected) * 2 + header.side_info_len();
+            let metadata = packet.get(tag..tag + 16)
+                .ok_or_else(|| invalid_audio("MP3 encoder omitted Info/Xing counts"))?;
+            if (&metadata[..4] != b"Info" && &metadata[..4] != b"Xing")
+                || metadata[4..8] != 3u32.to_be_bytes()
+            {
+                return Err(invalid_audio("MP3 encoder emitted unexpected Info/Xing flags"));
+            }
+            count_offset = Some(tag + 8);
+        }
+        packets = packets.checked_add(1)
+            .ok_or_else(|| invalid_audio("MP3 encoder frame count overflows"))?;
+        encoded.extend_from_slice(&packet);
+    }
+    let field = count_offset.ok_or_else(|| invalid_audio("MP3 encoder emitted no frames"))?;
+    let declared = u32::from_be_bytes(encoded[field..field + 4].try_into().unwrap());
+    let declared_bytes = u32::from_be_bytes(encoded[field + 4..field + 8].try_into().unwrap());
+    if packets < 2 || declared != packets || u64::from(declared_bytes) != encoded.len() as u64 {
+        return Err(invalid_audio("MP3 encoder Info/Xing counts do not match emitted frames"));
+    }
+    encoded[field..field + 4].copy_from_slice(&(packets - 1).to_be_bytes());
+    Ok(encoded)
+}
+
 fn native_audio_info(path: &Path) -> Result<Option<NativeAudioInfo>, AudioError> {
     let mut file = File::open(path)?;
     let mut prefix = [0u8; 12];
@@ -1130,6 +1178,66 @@ fn embed_cover_external(input: &Path, cover: &Path) -> Result<(), AudioError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finished_rusty_encoder_normalizes_only_metadata_and_rejects_frame_loss() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("native-encoder.mp3");
+        for rate in [16_000, 22_050, 24_000, 44_100] {
+            for channels in [1, 2] {
+                let pcm: Vec<u8> = (0..rate / 8)
+                    .flat_map(|index| {
+                        let sample = ((index % 100) as i16 - 50) * 100;
+                        (0..channels).flat_map(move |_| sample.to_le_bytes())
+                    })
+                    .collect();
+                let prepare = || {
+                    let mut encoder = rusty_mp3::Mp3Encoder::new(rusty_mp3::Mp3EncoderConfig {
+                        bitrate_kbps: 96,
+                        vbr_quality: None,
+                    });
+                    encoder.push_pcm_s16le(&pcm, channels, rate).unwrap();
+                    encoder.finish();
+                    encoder
+                };
+                let mut original = prepare();
+                let mut raw = Vec::new();
+                let mut last_frame_bytes = 0;
+                while let Ok(packet) = original.next_packet() {
+                    last_frame_bytes = packet.len();
+                    raw.extend_from_slice(&packet);
+                }
+                let mut finished = prepare();
+                let encoded = collect_rusty_mp3_output(&mut finished).unwrap();
+                let header = rusty_mp3::header::FrameHeader::parse(raw[..4].try_into().unwrap()).unwrap();
+                let field = 4 + usize::from(header.crc_protected) * 2 + header.side_info_len() + 8;
+                assert_eq!(&encoded[..field], &raw[..field]);
+                assert_eq!(&encoded[field + 4..], &raw[field + 4..]);
+                let old_count = u32::from_be_bytes(raw[field..field + 4].try_into().unwrap());
+                let new_count = u32::from_be_bytes(encoded[field..field + 4].try_into().unwrap());
+                assert_eq!(new_count + 1, old_count);
+                fs::write(&path, &encoded).unwrap();
+                assert_eq!(validate_mpeg_bounds(&mut File::open(&path).unwrap()).unwrap().len(), 1);
+                assert!(probe_duration(&path).unwrap() > 0.0);
+                assert_eq!(probe_sample_rate(&path).unwrap(), rate);
+                fs::write(&path, &encoded[..encoded.len() - last_frame_bytes]).unwrap();
+                assert!(validate_mpeg_bounds(&mut File::open(&path).unwrap()).is_err());
+                assert!(probe_duration(&path).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn rusty_encoder_collection_rejects_unfinished_or_empty_streams() {
+        let mut encoder = rusty_mp3::Mp3Encoder::new(rusty_mp3::Mp3EncoderConfig {
+            bitrate_kbps: 96,
+            vbr_quality: None,
+        });
+        assert!(collect_rusty_mp3_output(&mut encoder).is_err());
+        encoder.finish();
+        assert!(collect_rusty_mp3_output(&mut encoder).is_err());
+    }
+
 
     #[test]
     fn bounded_audio_source_preserves_logical_identity_and_hides_adjacent_bytes() {

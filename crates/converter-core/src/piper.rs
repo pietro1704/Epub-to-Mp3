@@ -556,10 +556,8 @@ fn encode_piper_mp3(wav: &Path, output: &Path) -> Result<(), PiperError> {
         .push_pcm_s16le(payload, channels, sample_rate)
         .map_err(|error| PiperError::Synthesis(format!("MP3 encoding failed: {error}")))?;
     encoder.finish();
-    let mut encoded = Vec::new();
-    while let Ok(packet) = encoder.next_packet() {
-        encoded.extend_from_slice(&packet);
-    }
+    let encoded = crate::audio::collect_rusty_mp3_output(&mut encoder)
+        .map_err(|error| PiperError::Synthesis(error.to_string()))?;
     let mut decoder = rusty_mp3::Mp3Decoder::new();
     decoder.push(&encoded);
     decoder.flush();

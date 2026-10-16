@@ -137,10 +137,8 @@ pub(crate) fn encode_wav(data: &[u8]) -> Result<Vec<u8>, String> {
         .push_pcm_s16le(normalized, channels, target_rate)
         .map_err(|error| error.to_string())?;
     encoder.finish();
-    let mut encoded = Vec::new();
-    while let Ok(packet) = encoder.next_packet() {
-        encoded.extend_from_slice(&packet);
-    }
+    let encoded = crate::audio::collect_rusty_mp3_output(&mut encoder)
+        .map_err(|error| error.to_string())?;
     validate_mp3(&encoded)?;
     Ok(encoded)
 }
