@@ -119,7 +119,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p .reports/tts-preferences
-          mise run apple:foundation:test |& tee .reports/tts-preferences/foundation.log
+          mise run apple:foundation:test 2>&1 | tee .reports/tts-preferences/foundation.log
       - name: Explicitly install checksum-pinned native Faber test model
         run: |
           model_dir="$RUNNER_TEMP/faber-models"

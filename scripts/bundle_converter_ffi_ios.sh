@@ -46,6 +46,11 @@ identity="${EXPANDED_CODE_SIGN_IDENTITY:-}"
 if [[ "$PLATFORM_NAME" == iphonesimulator ]]; then
   identity="${identity:--}"
 fi
+# Build-only CI leaves the app and extensions unsigned. Sign only this copied
+# dylib locally without declaring a fictitious signing identity for its host.
+if [[ -z "$identity" && "${CODE_SIGNING_ALLOWED:-}" == NO ]]; then
+  identity=-
+fi
 [[ -n "$identity" ]] || { echo "error: missing iOS dylib signing identity" >&2; exit 2; }
 codesign --force --sign "$identity" "$destination/libconverter_ffi.dylib"
 codesign --verify --strict "$destination/libconverter_ffi.dylib"
