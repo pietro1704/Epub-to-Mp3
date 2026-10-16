@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## AH-09 — Recover validated predecessor audio through the real FFI
+
+- [ ] Owner: github_monitor_plan; isolated branch `feature/ffi-predecessor-recovery` starts from master and has Faber `2082ae54179413373bfe77019602c6347d249243` as an uncommitted local merge dependency. Preserve the original dirty architecture worktree and all existing conversion contracts.
+- Acceptance: import only complete, identity-matched sibling-job artifacts without mutating the predecessor; preserve actual provider receipts and explicit zero/nonzero policy state. Forced reprocessing must synthesize again, explicit model B must exclude prepared/default A, and cached recovery must not invent a successful primary attempt or reset failure counters. Retain durable cancellation, atomic receipts and strict model/content identity.
+- Actual verification seams: the public FFI does not expose execution force flags or a prepared-model handle, so force/prepared-A/explicit-B regressions use the actual ConversionWorker/control/runtime integration seam. Policy counters use the public controlled FFI options and real platform callback. No ignored JSON field or artificial API is introduced. These cases are authored but not yet executed on GitHub.
+- Verification: retain the original FFI recovery regressions and add real runtime/callback cases for force, model overrides and policy persistence. All tests/builds/formatting execute only on GitHub; this slice is source preparation only, with no commit/push/PR or delivery claim yet. Current actionable GitHub failures take priority.
+
 ## CI-20261016-CODEQL-ANDROID-SDK — Resolve the hosted SDK manager explicitly
 
 - [ ] Owner: github_monitor_plan; CodeQL run `38884593082`, Java/Kotlin job `116919152162`, head `765e57495f69d82bec20852ab1d121345c6f02cb` failed before Android compilation because `sdkmanager` was absent from PATH. The Ubuntu runner image installs it under `ANDROID_HOME/cmdline-tools/latest/bin`, confirmed against the official runner image installation script.
