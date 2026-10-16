@@ -336,8 +336,12 @@ try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 '''
 
 [tasks."converter-ffi:ios-packaging:test"]
-description = "Verify real device/Simulator artifacts, reject wrong platforms and exercise signed bundling"
-run = "bash scripts/test_converter_ffi_ios_packaging.sh"
+description = "Verify real device/Simulator artifacts, reject wrong platforms and exercise signed bundling under native host safeguards"
+run = """
+#!/bin/bash
+set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash "${MISE_PROJECT_ROOT:-.}/scripts/test_converter_ffi_ios_packaging.sh"
+"""
 
 [tasks."converter-ffi:android-check"]
 description = "Check JNI and embedded Piper adapter on the host; Android ELF validation is a separate packaging gate"
@@ -746,6 +750,7 @@ depends = ["converter-ffi:build"]
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 # Default stays Release so this task keeps producing the same distributable
 # artifact release-desktop.yml expects. Debug (wholemodule/-O/ThinLTO/dSYM
@@ -765,7 +770,6 @@ xcodegen generate
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
 # Hold the single-heavy-job lock around xcodebuild (CPU CATERR / PCIe panic
 # guard on constrained Intel Macs — never let it race another heavy job).
-python3 "${MISE_PROJECT_ROOT:-../..}/scripts/heavy_job_guard.py" mac:build -- \\
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
@@ -789,6 +793,7 @@ else
   echo "error: build did not produce $APP_OUT"
   exit 1
 fi
+NATIVE_JOB
 """
 
 [tasks."mac:build:dev"]
