@@ -1,5 +1,177 @@
 # App delivery backlog
 
+## APP-20261016-PIPER-IMMUTABLE-CATALOG — Pin explicit model installation sources
+
+- [ ] Owner: crash_guard_audit; restore only the six Piper artifact URLs and manifest identity regressions from historical commit `5147fe1d4161088f508c2a73ce81d85b1ee84aa9`. Use upstream snapshot `c10ece1aade47bb51c153c893d14e5bf8e5b7117`, preserving verified hashes, byte sizes, Faber default and explicit installation behavior.
+- Acceptance pending GitHub: all three model manifests retain their exact model/config paths, hashes and sizes; existing installation integrity/failure tests remain unchanged. No local tests/builds/formatter, downloads, runtime changes or unrelated historical research/docs.
+
+## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
+
+- [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.
+- GitHub evidence: `38885350620`, job `116922195739`, head `2082ae54179413373bfe77019602c6347d249243` verified both model downloads, passed the root to `xcodebuild` and exported it in target build phases, but the XCTest runtime guard skipped Faber at line 28. The Unit plan has its own runtime configuration and previously declared no environment entries; scheme-only forwarding did not satisfy this run. The log does not distinguish an absent, empty or unexpanded runtime value.
+- Same run: Foundation 38 tests, 11 skips, zero failures; app XCTest 43 tests, 3 skips, one failure. Both installer tests and all 18 settings parity tests passed. The sole failing assertion expected the old unsupported-engine text; keep complete equality against the actual typed-policy error for literal `coqui`, plus no-job/submission-finished assertions. GREEN and actual app Faber inference remain pending GitHub; no local execution.
+
+## APP-20261016-FABER-MAC-ARCHITECTURES — Verify native Faber on hosted Intel and Apple Silicon
+
+- [ ] Owner: crash_guard_audit; parameterize only the existing macOS integration job for `macos-15` / `arm64` and `macos-15-intel` / `x86_64`, with independent failures and uniquely named evidence artifacts. Retain Xcode 16.4, all Foundation/XCTest assertions, the existing two-chapter positive Faber case and its mandatory `FABER_NATIVE` log marker.
+- Acceptance pending: each hosted runner must report its expected host architecture, actual compiled FFI Mach-O architecture and pinned ORT manifest/library architecture before executing the same tests. Existing ORT checksums and explicit temporary model installation/cleanup remain unchanged. This proves neither physical-Mac GPU stability nor phone performance or exact SE1/iOS15.5 acceptance.
+- Source draft was reviewed against master `915e9c672b` plus Faber `2082ae5417` and integrated into the required follow-up revision after its native XCTest failure. Both architectures must now verify the repaired test-plan environment and positive inference path on GitHub. No local test, build, formatter, syntax, native app or Simulator execution; no runtime acceptance claim yet.
+
+## CI-20261016-CODEQL-ANDROID-SDK — Resolve the hosted SDK manager explicitly
+
+- [ ] Owner: github_monitor_plan; CodeQL run `38884593082`, Java/Kotlin job `116919152162`, head `765e57495f69d82bec20852ab1d121345c6f02cb` failed before Android compilation because `sdkmanager` was absent from PATH. The Ubuntu runner image installs it under `ANDROID_HOME/cmdline-tools/latest/bin`, confirmed against the official runner image installation script.
+- Source fix requires that executable path explicitly before installing NDK `28.2.13676358`; native rebuild, Android compilation, CodeQL extraction and coverage remain unchanged. GitHub verification pending; no local tests/builds or tools executed.
+
+## APP-20261016-ONNX-BUNDLE-INSPECTION — Fail closed when inspecting native dependencies
+
+- [ ] Owner: github_monitor_plan; GitHub macOS job `116907086297` on `3f688999aa1090f6f25e10e42eabd693b5d531df` launched XCTest but actual Swift/Rust interop failed to load `@rpath/libonnxruntime.dylib`. Its packaging log reports missing `rg`; the script incorrectly treated that inspection failure as a static build and omitted the dependency.
+- Source fix removes the optional search-tool dependency, requires successful `otool` inspection, extracts the link name once, and retains required-library, copying and signing checks. Linux-hosted executable script regressions use only owned temporary fixtures and fake Apple commands: dynamic copy/sign, static build without ORT, inspection failure, missing required ORT and paths containing spaces. They do not launch Apple tools or Simulator and do not establish native acceptance.
+- Pending verification: GitHub fixture tests plus the existing real macOS Swift/Rust interop tests; no test assertions or skip conditions were weakened, and no local test/build execution occurred.
+
+## FLUTTER-20261016-WORKER-HEARTBEAT — Prove responsiveness during native work
+
+- [ ] Owner: crash_workflow_audit; acceptance: parsing and model installation remain blocked inside the native fixture while the UI isolate processes an explicit heartbeat, then finish only after the UI releases the operation.
+- GitHub failure: CI `38878958274`, head `be057cbe`, Flutter job `116900794629` failed both periodic-timer assertions (one tick versus more than five). Production already dispatches both operations through `Isolate.run`; a single C `usleep(200000)` and periodic callback count are not a deterministic handshake.
+- GitHub GREEN for both focused cases in CI `38880891513`, head `3f688999`, Flutter job `116907148132`: native started/release handshake required a UI heartbeat while native work remained blocked. Metadata/model assertions and real FFI execution were preserved. The overall Flutter job remained RED for the separate post-dispose persistence regression; no local compilation or tests executed.
+
+## WEB-20261016-PRODUCTION-SERVER-IDENTITY — Verify actual built browser assets
+
+- [ ] Owner: crash_workflow_audit; acceptance: production browser verification must use the owned preview server and built assets, retain actual Faber synthesis/full-decode assertions, and shut down the owned server descendants before returning.
+- GitHub RED: browser run `38878958333`, job `116900757681`, head `be057cbe`, passed development synthesis with two outputs and 4469 ms first playable audio on the hosted runner; production rejected development assets at `verify-browser-tts.mjs:68`. Both modes reused port 5177 and cleanup terminated only the mise/npm wrapper. These are hosted-runner timings, not phone latency.
+- GitHub GREEN: focused run `38880891520`, head `3f688999`, browser job `116907086665`: Node helper tests 3/3, IndexedDB Blob roundtrip 65,536 bytes, real development and built-production Faber synthesis each finished two non-silent fully decoded MP3s without page errors. First-playable times were 3317 ms development and 3710 ms production on the hosted runner, not phone latency. Artifact `faber-browser-runtime` (`12037995848`) retains evidence. Distinct owned servers and built-assets assertion remain mandatory; no local browser/server/build execution.
+
+## WEB-20261016-CANCELLED-PREFLIGHT — Reject stale browser inference
+
+- [ ] Owner: crash_workflow_audit; acceptance: cancellation while model readiness is pending must prevent worker/inference start, fallback and audio publication; a fresh job identity must still complete independently.
+- Source evidence: browser synthesis awaits installation/import/storage/checksum readiness before starting the worker; cancelling before a worker exists does not invalidate that pending continuation. Prepared a minimal injectable readiness seam that preserves this behavior and a deferred-preflight runtime regression. Production cancellation fix waits for GitHub RED.
+- GitHub RED: CI `38878958274`, head `be057cbe`, Web job `116900794709`: 173 passed and one failed; the deferred-preflight regression received two worker messages instead of one. Added generation invalidation before worker start; the regression is unchanged. On `3f688999`, all 174 product tests passed, including the seven browser-client cases. The Web job/workflow was cancelled after a separate Node-only file was miscollected by Vitest (`No test suite found`, followed by worker-termination timeout); it is not an overall GREEN. Renamed that standalone helper suite to `.node-tests.mjs` without changing product test discovery. On `ee4c7174`, all 174 product tests again passed cleanly in nine seconds; the Web job then failed only ESLint `no-unsafe-finally` in the Node fixture cleanup. Extracted the same checked cleanup into a helper without changing its three tests; full lint/build rerun is pending. No local tests, builds, lint, formatter, syntax checks, model downloads or inference executed.
+
+## APP-20261016-MAC-MODEL-INSTALL-RESPONSIVENESS — Keep settings responsive during explicit voice installation
+
+- [ ] Owner: crash_guard_audit; first prepare a real macOS XCTest through the existing installation button with a blocking fake installer, MainActor heartbeat, bounded watchdog and unchanged preference snapshot. Inject only the synchronous installer operation before RED; keep its existing MainActor execution unchanged until GitHub proves the regression.
+- Diagnosis: `MacSettingsViewController` is MainActor-isolated and its `Task` calls synchronous Rust model installation, whose FFI function blocks on download/validation. The iOS caller already uses detached work. No local runtime reproduction or test execution claimed.
+- RED verified: GitHub run `38880891520`, job `116907086297`, head `3f688999aa1090f6f25e10e42eabd693b5d531df`, Xcode 16.4, executed the installation regression in 2.367 seconds; both main-thread and heartbeat assertions failed. The other 18 settings parity tests passed. Full job had 41 tests, 3 skips and 10 failures; unrelated ORT packaging and legacy expected-options failures remain separately tracked.
+- Fix prepared after RED: await only the synchronous installer in `Task.detached`, then retain existing alert/refresh work on MainActor. Add actual failure-alert content/dismissal and selection-preservation regression with a blocking fake. GREEN pending GitHub; no local test/build/formatter/syntax execution, commit or push.
+
+## APP-20261016-MANUAL-MODEL-IDENTITY — Preserve explicit model forwarding
+
+- [ ] Owner: crash_guard_audit; update the configuration-forwarding regression's obsolete default expectation to Faber while retaining complete option equality, literal speaker/language, flags, 8–9 bounds and unchanged playback assertions. The original test asserted the old default, not an explicit user selection. No new production model-selection API is needed.
+- Separate regression: use the existing `inheritedPreferences` seam with explicit `pt_BR-edresson-low` and `usesPreferences=true`; hold the fake executor pending, change the form preferences, and verify the job retained its complete original options and strict policy snapshot.
+- Red evidence: GitHub `38880891520` / `116907086297`, `ConvertViewModelTests.testManualFormForwardsConfigurationAndDoesNotMutatePlayback`, failed complete option equality against the legacy expected payload. Expected schema now includes the strict typed selection and bundled eSpeak path. GREEN pending GitHub; no local execution.
+
+## RUST-20261016-FABER-CONTRACT-UNION — Preserve conversion contracts during preference integration
+
+- [ ] Owner: github_monitor_plan; acceptance: integrate typed Faber preferences without losing prepared-model content identity, explicit per-job override precedence, execution options, cancellation persistence, source totals, strict MPEG integrity, portable encoder count normalization, or refreshed espeak source assets.
+- Source implementation: retain prepared defaults only for requests without explicit selections; invalid overrides cannot fall back to the prepared default. Preserve legacy manifest wire shape while modern manifests explicitly persist policy resets, including zero. Retry the primary for each segment and retain the three-consecutive-failure stop.
+- Regression coverage authored: legacy prepared selection plus raw/typed overrides and cache identity, invalid override rejection, portable encoder frame counts, metadata round trips, and nonzero policy to successful persisted reset to uncached resumed fallback. Existing cancellation, primary recovery, persistent failure, MPEG payload identity and truncation assertions remain intact.
+- Verification pending: all formatting, compilation, workspace tests, portable/browser and Android cross-target checks run only on GitHub Actions. No local test, build, formatter or native execution; prerequisite CI recovery remains an explicit delivery dependency.
+- GitHub coverage prepared: `faber-integration.yml` adds independent JNI-feature contract tests, rebuilt Android ARM64 APK/JNI/dependency/phonemizer audits and Kotlin tests, real macOS UnitTests preference/installer checks, and real dev/production browser inference with freshly built Rust WASM and explicitly checksum-pinned model inputs. Existing CI owns full Rust, Flutter and Web suites; no duplicate lint or unit suite is added. Workflow source review and exact-head execution remain pending.
+- macOS XCTest uses explicit ad hoc signing for its hosted app/test launch, with no team/profile credentials, serialized compilation and the UnitTests-only macOS destination. CodeQL's unsigned build-for-testing is not runtime evidence; hosted launch/signature acceptance remains pending GitHub execution.
+- Initial draft GitHub RED: Ruby/Rust run `38878958307` on `be057cbe111bf3f48518a6ce5414668df6530d9d` reports 167 core tests passed, two Piper codec regressions failed and one pre-existing manual cache benchmark ignored. Source fix retains legacy source-rate encoding and rejection of unsupported 12345 Hz, while typed multi-provider Piper normalizes WAV to 24 kHz before concatenation. Original atomic-output and sample-rate assertions are unchanged; added source-rate decoder regression awaits GitHub verification. GitHub formatting artifact for this head was applied verbatim; subsequent source changes still require hosted formatting verification.
+- Workspace RED: CI run `38878958274` reached test compilation and found a CLI-only test fixture missing `source_chapters_total` (`E0063`, `converter-cli/src/main.rs`). Fixture now explicitly retains the legacy unknown total with `None`; assertions remain unchanged and GitHub recompilation is pending. Focused JNI-feature contract job passed on the initial draft head.
+
+## FLUTTER-20261016-DISPOSED-MODEL-ROOT — Reject stale Listen preparation
+
+- [ ] Owner: crash_workflow_audit; acceptance: dispose the book screen while the application-support directory lookup is pending, then resolve it; no conversion job may be persisted, no converter invoked, and no audio queued or played.
+- Source evidence: the Faber integration awaits model-root lookup after its generation check, then creates a persisted job before the next check. The same window exists in `b612f6f29e`; it belongs to the feature awaiting delivery, not a new merge conflict.
+- Clean GitHub RED: CI `38880891513`, head `3f688999`, Flutter job `116907148132` reached model-root lookup and failed only because a pending job was persisted after dispose (`book_open_screen_test.dart:208`, expected null); the earlier fixture timeout is absent. Both worker-handshake responsiveness cases passed. Added the minimal generation guard immediately after directory lookup; the unchanged regression passed in CI `38883201836`, head `ee4c7174`, Flutter job `116914670668` (450 passed, three skipped; analyzer clean). This is GitHub widget/runtime evidence, not device acceptance. No local test/build/analyzer/formatter execution.
+
+## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
+
+- [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
+- Source fix removes only the global expanded signing identity. The iOS dylib bundler uses local ad hoc signing only when signing is explicitly disabled and no identity was supplied; enabled device signing still requires an identity, and explicit identities remain unchanged. Embedded binary validation and all seven Swift coverage categories remain enabled.
+- GitHub-only executable regressions cover copied dylib identity, paths with spaces, local ad hoc signing without changing the host setting, enabled signing without identity, and preserved explicit identities in both modes. Temporary fixtures replace verification/signing commands and do not certify Mach-O or Apple runtime behavior; the real CodeQL build remains required. No local tests/builds/formatters were executed.
+
+## APP-20261016-ESPEAK-VENDOR-ASSETS — Restore required phoneme compiler inputs
+
+- [ ] Owner: crash_guard_audit; restore the 203 upstream WAV inputs omitted by the global audio ignore rule, with package and per-file SHA-256 provenance. Refresh the copied CMake source after a restored Cargo cache; retain phoneme compilation and actual Faber inference assertions.
+- Red evidence: GitHub CI `38872056702`, head `1ac744af4b`, passed workspace Rust tests but failed the embedded Piper smoke with 1,067 missing phoneme-source errors. Published `espeak-rs-sys` 0.2.0 contains all missing inputs; the package checksum matches the official registry and existing runtime lockfile.
+- Acceptance pending: GitHub-only embedded Piper smoke compiles phoneme data and produces validated Faber audio. No local tests, builds, formatters, syntax checks, native apps or Simulator actions executed.
+- GitHub additionally verifies the upstream WAV checksum inventory and executes the actual source-copy helper against temporary directories, covering changed/new/removed inputs, repeated refresh, literal paths with spaces, preserved sibling build output and fatal nonzero copy status. Windows copy status semantics remain `0..=7`; the Ubuntu gate does not certify Windows CMake output caches.
+
+## APP-20261016-EDGE-ADAPTATION-FIXTURES — Restore valid local Edge protocol fixtures
+
+- [ ] Update both adaptive TTS WebSocket fixtures to emit length-prefixed `Path:audio`/`Content-Type:audio/mpeg` headers while preserving adaptive size, ordering, retry and cancellation assertions.
+- Owner: Rust fixture specialist; isolated `feature/fix-edge-adaptation-fixtures`.
+- Red evidence: GitHub CI run `38870071189` on `a87337fbc19f1901eddb6e4d5c6b1522f40b9c66` passed 149 core unit tests, 10 embedded-audio and 3 in-process-audio cases, then failed 7 of 8 adaptive TTS cases because obsolete zero-length fixture headers violated the production parser's required audio path.
+- Acceptance: no production protocol relaxation; a real local WebSocket negative regression must still reject binary audio with a missing path. Verification/formatting runs only on GitHub; no local test, build, probe or formatter executed.
+
+## CI-20261016-DESKTOP-AUDIO-PREREQUISITES — Preserve desktop codec coverage
+
+- [ ] Owner: crash_workflow_audit; install explicit ffmpeg/ffprobe prerequisites before the Ruby/Rust integration suite. Keep the ADPCM sample-rate and validation assertions mandatory, with actionable failure diagnostics; preserve the isolated native-audio test with external tools disabled.
+- Red evidence: GitHub Ruby Rust Integration run `38870071032`, head `a87337fbc1`, failed `unsupported_native_wave_codec_preserves_external_capability` at external `ffprobe` spawn with `Io(NotFound)`; the two other integration cases passed. This workflow omitted the desktop audio package already installed by the main Rust CI job.
+- Acceptance pending: GitHub-only Ruby/Rust integration passes the unchanged ADPCM capability assertions and native isolation cases. No local tests, builds, formatter, syntax checks or audio tools were executed.
+
+
+## APP-20261016-FFI-CANCEL-STATE — Persist controlled cancellation after cached playback
+
+- [ ] Owner: crash_guard_audit; restore the valid `Running -> Cancelling -> Cancelled` sequence for control-token cancellation and propagate job-store failures instead of leaving a running record behind.
+- [ ] Exercise token-only cancellation, an already durable cancellation request and a missing job record at the core seam. Seed the existing FFI priority/handle-release/cancellation tests through actual offline system-fixture conversion and verified receipts; assert replay performs no synthesis and preserves audio/receipt bytes.
+- Red evidence: GitHub portability run `38870071388`, job `116871820752`, failed one of 18 FFI tests because persisted state was `running` rather than `cancelled`. The fixture also attempted Edge synthesis because raw WAV files lacked completion receipts. Source prepared; GitHub verification pending. No local tests, builds, formatters, syntax checks or native/device actions executed.
+
+## APP-20261016-CI-LEGACY-GUARDS — Reconcile legacy guard regression contracts
+
+- [ ] Owner: crash_guard_audit; acceptance: replace references to removed private resource APIs with the documented compatibility, lease and oldest-runtime selection contracts. Preserve canonical Ruby Intel quarantine independently in PR #804.
+- [ ] Cover a real fixture child's held lease, literal argument identity, release after success/failure/spawn error, and preserved contention-holder record. Selector cases must use supplied JSON or mocked service failures, never a real Simulator.
+- Evidence: master Actions run `38862909247`, Python job `116849117822`, reported nine stale guard/selector failures. Source changes prepared; GitHub-only execution pending. No local tests, syntax checks, native tools or devices were executed for this slice. External Edge HTTP 403 failures are a separate atomic task.
+
+## CI-20261016-OFFLINE-AUDIO — Separate decoded-audio regressions from live Edge availability
+
+- [ ] Replace implicit network audio fixtures with deterministic local PCM/MP3 checks covering real decoding, title/body pause, sample rate and retained active audio.
+- [ ] Keep actual Edge synthesis behind explicit `RUN_LIVE_EDGE_AUDIO_TESTS=1`; HTTP 403, timeout and empty payload remain fatal in the manual-only GitHub live workflow.
+- [ ] Verify default collection avoids network, disabled synthesis never imports/calls Edge, explicit opt-in is literal, and live provider errors propagate. Execute checks only on GitHub under the current user instruction.
+- Owner: crash_workflow_audit specialist; branch `feature/ci-offline-audio-fixtures`. Baseline: master CI run `38862909247`, Python job `116849117822` has one Edge fingerprint failure and three audio-fixture setup errors from HTTP 403. No production/provider code changes or live provider probes.
+- Status: implementation pending GitHub verification; no local tests or syntax checks executed. Preserve user books/models and unrelated work.
+- Follow-up evidence: full GitHub CI `38867253856` passed Python tests and lint, then the legacy CLI smoke failed on live Edge HTTP 403. Default CLI and external-pool smokes now explicitly install checksum-pinned Faber medium into the disposable runner and synthesize offline with fallback disabled, separate outputs and fresh processing. Existing live Edge CLI/pool checks move to the explicit manual workflow; their provider failures remain fatal. No production provider or user model-install behavior changes.
+
+## APP-20261016-CI-LIBRARY-ACTIONS — Exercise visible library actions
+
+- [ ] Owner: crash_guard_audit; acceptance: scroll the selected book title into the hit-testable viewport before long-pressing, retain action assertions, and exercise localized tag-editor entry/dismissal without changing book identity or unsaved tags.
+- Evidence: master Actions run `38862909247`, Flutter job `116849117924`, missed the gesture at `(77.3, 754.0)` outside its `800x600` viewport. This is a CI test interaction correction, not a claimed product UI fix. GitHub-only tests pending; no local Flutter tests, analysis, builds or devices executed.
+
+## APP-20261016-RUST-EXECUTION-CONTRACT — Restore worker execution contracts
+
+- [ ] Restore scoped cache refresh, forced transactional audio replacement, bounded performance options and pinned explicit Piper model identity without replacing current streaming/receipt behavior.
+- Owner: Rust contract specialist; isolated `feature/restore-worker-execution-contract`.
+- Red evidence: GitHub Actions master `915e9c` failed compiling `worker_execution_flags` and the server resume regression because production APIs/request fields diverged.
+- Verification: GitHub-only Rust tests; local tests and native execution are suspended. Preserve cancellation, prior artifacts on failure and selected chapter boundaries.
+- Formatting also runs only on GitHub. A read-only formatting-preview job retains the exact source SHA and a patch for source review; it cannot push or modify a PR. Existing CI still requires a clean formatting check.
+- Run feature-branch full CI through PR events (including the synthetic merge revision), avoiding redundant source-only push runs. Preserve all PR checks and default/develop/release/hotfix push coverage with separate concurrency groups. Review and apply only Rust formatting output from GitHub; exclude unrelated LFS normalization from formatting patches.
+
+## APP-20261016-MPEG-INTEGRITY — Validate segmented MPEG metadata and frame counts
+
+- [ ] Reject whole-frame truncation against declared Info/Xing counts and exclude binary midstream ID3 payloads from audio decoding while preserving exact concatenated durations.
+- Owner: Rust audio specialist; isolated `feature/fix-embedded-mpeg-integrity`.
+- Red evidence: GitHub run `38864616556` passed 141 core unit tests but failed existing `embedded_audio` cases `child_explicit_mpeg_counts` (line 208, accepted missing frame) and `child_binary_midstream_id3` (line 247, incorrect summed duration).
+- Follow-up red: GitHub run `38867253795` on integration `1750299` exposed fresh `rusty_mp3` output declaring metadata-inclusive frame totals. Normalize only typed finished-encoder output after checking actual packet sizes, physical frame totals and byte counts; keep foreign-input truncation checks strict. Both system PCM and Piper use the shared collector.
+- Verification pending: unchanged existing fixtures/assertions plus focused bounded-stream/parser regressions on GitHub only. No local tests, builds, probes or formatter execution.
+
+## CORE-20261016-SOURCE-TOTAL — Restore full-source chapter metadata
+
+- [ ] Restore the optional `OutputManifest.source_chapters_total` contract from `68f8b12ad2`: emit the parsed book's full count before selection, while selected chapter counts and source indexes keep their existing meaning.
+- [ ] Preserve legacy JSON decoding with unknown source total (`None`) and omit that absent field on serialization. Verify explicit counts round-trip and invalid negative counts fail.
+- [ ] Verify actual selected-one-of-two conversion and persisted manifest metadata through the existing offline worker/receipt/archive regression; execute checks only on GitHub. Add the required optional fields to server test fixtures; keep the CLI fixture's meaningful `None` unchanged.
+- Owner: crash_workflow_audit specialist; branch `feature/restore-manifest-source-total`. Status: implementation pending GitHub verification. Baseline: recovery CI `38867253856`, Rust job `116863046347`, reports CLI `E0560` at the orphan field initializer. No local tests/builds/formatter, root dirty worker edits, audio changes, journal resurrection or native-client/progressive-session claims.
+
+## CI-20261016-CODEQL-APPLE — Restore real Apple source coverage
+
+- [ ] Preserve the existing production macOS CodeQL category and restore the historical macOS unit, iOS unit and iOS UI compile categories with their real schemes.
+- [ ] Build actual SDK-correct Rust FFI prerequisites before project generation; compile iOS app, ShareExtension and Widget through the production dependency graph. Use generic device destinations; no Simulator boot or fake empty dylibs.
+- [ ] Verify all seven Swift analyses on GitHub, including real historical combined/platform-only app builds. Compilation and analysis are not app execution, native test success or proof of driver stability.
+- Owner: crash_workflow_audit specialist; branch `feature/codeql-apple-coverage`. Status: source prepared; no local tests/builds/syntax or remote configuration mutations. Preserve unrelated macOS/other-language jobs and the strict merge gate.
+- Baseline evidence: PR805 CodeQL check `116849734709` reported seven missing Swift configurations while its macOS Swift analysis was still pending. Three retired test categories last had successful master analyses on 2026-09-28. Current workflow omitted real UIKit/iOS extension extraction.
+- GitHub master run `38862918459`, Swift job `116849100230`, completed its Swift build but exceeded the 40-minute job limit during TRAP finalization. Raise only that job budget to 90 minutes; preserve extraction, queries, coverage and single-job builds. Analysis success remains pending.
+- Restore `/language:swift` with both macOS and iOS app builds in one traced database, and each platform-only category with its own actual app build. All uploads retain job identity `.github/workflows/codeql.yml:swift`; historical uploads use the exact original matrix environment, without filtering or relabeling unrelated coverage. Source evidence: successful master analyses `1620733555` (`78df918cf2`, combined, environment `{}`), `1621861648` (macOS) and `1621863231` (iOS), both platform analyses at `00073d5210`. The original/default query policy remains unchanged; no analyses, alerts or security configurations are deleted.
+- Limit Swift matrix concurrency to two hosted runners after the observed Mac capacity warning; preserve single-job native compilation and the 90-minute per-job timeout. GitHub extraction, SARIF processing and configuration reconciliation remain unverified until their actual jobs finish.
+
+## APP-20261016-RUSTLS-SECURITY — Patch confirmed rustls advisories
+
+- [ ] Resolve issue #791's GitHub cargo-audit findings by upgrading locked rustls 0.23.45 to 0.23.46, without unrelated dependency updates.
+- Owner: security dependency specialist; isolated `feature/security-rustls-patch`.
+- Evidence: GitHub run `38835537607` on c173556 reports RUSTSEC-2026-0346/0347/0348/0349; master `915e9c672b273d8ea63b189d0a2b12b3adc72847` retains the same vulnerable lock entry.
+- Source review: official crates.io sparse-index 0.23.45/0.23.46 records have identical dependencies, features and Rust 1.71 minimum; the patch is not yanked. New checksum: `48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf`.
+- Verification pending: GitHub-only locked dependency resolution, cargo-audit JSON artifact and existing Rust regression suites. No local scanner/test/build executed; no issue closure or successful remediation claimed.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
@@ -20,6 +192,8 @@ Current ownership: native Apple development and verification happen on this Mac;
 Historical Arch assignments below are superseded.
 
 ## Active requests — 2026-10-10
+
+- [x] **APP-20261014-05 — Repair page-turn animations and settings cell layout.** Verified; delivered with this focused slice. Fixed missing reader-settings sliders after content configuration and page-fold direction/destination at pages and chapter boundaries; preserved viewport glyph masks and Reduce Motion. Xcode16.4/exact SE15.5: 17 focused native/GUI tests plus 2 actual LOTR default/small-text pagination/chrome tests passed, zero failures/skips, `clippedLineCount=0`; latest result `.reports/simulator-smoke-F36D447A-D5C1-4914-9243-D02BBE225130/tests.xcresult`. Mac: 3 focused native tests and 1 shipping-window Settings/LOTR key-event round-trip passed; normal app built/launched then exited. Final isolated Mac test passed 1/1 with a valid xcresult (`16-02-34`), after correcting preference restoration order; earlier result serialization failed. Settings bitmap background capture is limited, so acceptance uses real-window geometry assertions. Only exact SE/app left open on LOTR (`/tmp/page-turn-settings-se-delivery.png`). No audio, remote CI monitoring, PR or merge. Plan and exact evidence: `docs/plans/2026-10-14-page-turn-settings.md`.
 
 - [x] **APP-20261014-04 — Correct all native screens against Apple HIG on SE, Pro Max and Mac.** Verified and delivered in commit `77044c4058`, [PR #794](https://github.com/pietro1704/Epub-to-Mp3/pull/794). User confirmed navigation changes when necessary and sequential execution. Acceptance: inventory all screens/secondary states; responsive native controls, readable localized text, accessibility, light/dark appearance; actual SE/iOS15.5, Pro Max and Mac verification with reader/player invariants preserved. Plan: `.hermes/plans/2026-10-14-apple-ui-hig.md`. Verification: Mac 10 focused native tests and actual resized app; Pro Max 10 native tests and English/PT-BR GUI navigation; SE 10 native tests, English/PT-BR accessibility XXXL GUI and five real LOTR reader regressions passed. Final cell-traits regression plus forms/responsive tests passed 10/10 on SE; coverage limits and logs in plan.
 
@@ -1516,3 +1690,57 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+## APP-20261014-16E — Launch on physical iPhone 16e
+
+- [x] Stop the iPhone SE Simulator and launch the existing signed app on the paired iPhone 16e.
+- Verification: `mise run ios:device:run` under the shared heavy-job guard installed and launched `com.pietrocode.epubtomp3` successfully on 2026-10-14. Simulator shutdown confirmed. Existing Debug device artifact reused; no source changes or new build.
+
+## APP-20261014-TTS — Lightweight TTS research and five-model benchmark
+
+- [x] Research and shortlist five lightweight TTS models suitable for the native Apple app, prioritizing Portuguese, first playable audio, resource use, licensing, and Rust/native integration.
+- [x] Run an isolated, reproducible benchmark for the five candidates; record exact model artifacts, hardware, corpus, latency, synthesis speed, peak memory, disk size, audio outputs, and compatibility blockers. Do not treat published metrics as local measurements.
+- Verification: physical iPhone 16e/iOS 27.0.1, two pt-BR fixtures, three attempts each. All five offline checkpoints completed 6/6 synthesis/full-decode checks. Production Rust Edge completed 5/6; its final attempt hit the benchmark's 45-second deadline. Thirty-five audio outputs validated. Edresson logged skipped nasal phonemes; Pocket used about 1.16 GiB peak RSS. No English, blind quality, battery, thermal or end-to-end product verification. Results: `docs/research/2026-10-14-tts-phone-benchmark.md`, detailed evidence `.reports/tts-six/20261014/`. Production provider selection remains unchanged.
+- User correction: include Edge as the sixth online baseline. Downloads and isolated benchmark execution are explicitly authorized; delete newly downloaded test dependencies and weights after finishing, preserving pre-existing models and benchmark evidence.
+- Cleanup verified: `tts:phone:cleanup` removed 2.25 GiB/4,339 files and confirmed the isolated tree absent. Test app uninstalled from the iPhone; pre-existing models retained. Production app relaunched with its live process confirmed; Simulator remained shut down. `tts:phone:summary`, Ruby syntax checks and repository `preflight` passed; no remote CI monitoring.
+## APP-20261015-ANDROID-DEVICE — Verify Faber on the attached Samsung
+
+- [x] Install the verified ARM64 APK and exercise TTS preferences/manual conversion on the physical Android through Arch ADB; keep builds on the Mac.
+- Authorization: user reported the Android connected to Arch and explicitly requested continuation. Preserve existing app data, books and voices; remove only task-owned temporary inputs/downloads.
+- Acceptance: verify real Faber synthesis, first playable audio, complete valid artifact, actual voice/fallback metadata, and preference/override behavior. Use the existing short two-chapter fixture; no whole-book benchmark.
+- Preflight: Samsung SM-A530F, Android9/API28, ARM64, unlocked. USB/ADB interface and ACL valid; restarting the user-owned idle ADB server restored discovery. Device `52008714b40355ad`.
+- Verified: isolated APK installed; catalog Faber download completed with expected model/config hashes. Edge primary/Faber secondary persisted across process restart; strict manual Faber override produced source indices0,1 with no secondary/fallback. UI showed actual Faber voice. Three audio artifacts (initial snapshot and two complete chapters) fully decoded/non-silent; complete receipts matched sizes/hashes. One cold run: touch-to-first-valid-MP3 snapshot8.559s, touch-to-manifest25.763s;0.2s observation interval, no loudspeaker-onset measurement. Evidence: `.reports/tts-preferences/android-device/runtime-evidence.json`, `manual-faber-complete.xml`.
+- Checks: final APK build/audit passed; replaced-runtime APK negative audit rejected stale ONNX; Flutter74/74 and Android JVM17/17 passed. Ruby syntax, focused vendor rustfmt, repository preflight and diff checks passed. Workspace-wide rustfmt reports an existing unrelated import-order issue in `embedded_edge_probe.rs`; left unchanged. Apple/Linux/Windows runtime checks were not repeated for these Android-only changes; no CI/PR monitoring.
+- Cleanup verified: isolated package/model, uploaded fixture/probes, remote task directory, local downloaded AAR/duplicate runtime/probe binaries removed. Production package remains build2 with original2026-10-08 update timestamp; original Faber hash unchanged. Retained approved product runtime/build assets and scoped evidence/audio. All Apple Simulators remain shut down; no Mac app active.
+- Installation compatibility: existing build2 uses a different signer; update attempts were rejected without replacing it. Use opt-in debug `.verification` application ID for isolated runtime checks, then remove that task-owned installation.
+- Fixed device regression: the previous APK passed packaging checks but failed actual Android9 `dlopen` with GNU C++ symbol `_ZTTNSt7__cxx1119basic_ostringstreamIcSt11char_traitsIcESaIcEEE`; the Pyke static ONNX archive supplied incompatible GNU ABI imports. Replaced it with checksum-pinned official Microsoft Android1.23.2 runtime, required resolved linker symbols and shared-runtime packaging. Evidence: `.reports/tts-preferences/android-device/dlopen-before.log`; final physical synthesis passed.
+- Second device regression: once the ONNX ABI was corrected, JNI loading exposed a startup SIGSEGV. The eSpeak vendor's explicit NDK archive-directory search preceded the API-specific shared-library directory, embedding static Bionic in the JNI library (no `libc.so` DT_NEEDED). Remove that search override, use NDK shared C++, and reject JNI artifacts without shared Bionic before packaging. Evidence: `android-device/crash-after.log`.
+- Fixed third device regression: real manual conversion reached Rust but its default temporary directory `/data/local/tmp` was denied to the app UID. Configured `TMPDIR` to the app cache in the shared foreground/WorkManager TTS preparation seam. Evidence: `android-device/conversion-native.log`; final manual conversion passed. Actual WorkManager device execution was not separately exercised.
+
+## APP-20261014-TTS-SELECTION — Shared TTS preferences and conversion overrides
+
+- [x] Deliver Rust-owned preferences and immutable overrides across CLI, web, Flutter, iOS and macOS; default Piper `pt_BR-faber-medium`, optional explicitly consented Edge secondary.
+- Acceptance: preserve existing explicit choices; strict manual overrides; retry primary each segment and stop persistent failures; installed/language/capability validation; actual provider metadata; cache/resume voice consistency. No implicit voice downloads or external browser converter dependency.
+- Authorization: user chose Faber and explicitly reactivated Piper, then invoked `$goal-plan-execute` for all clients. Branch `feature/faber-tts-preferences`, baseline `3992c084c5`; standing commit/push permission, no CI/PR monitoring or merge.
+- Runtime correction: stopped full ONNX source build; Mac uses checksum-pinned compatible prebuilt, iOS reuses existing iOS15 runtime. Preserve original voices/books and useful build artifacts.
+- Rust latest62/62 passed (core47/FFI4/CLI9/HTTP2), including atomic first receipt actual voice/fallback; `.reports/tts-preferences/checks/rust-final-audit.log`.
+- CLI final signed/relocated package: fresh exact positions0,1, real Faber7.3445s excluding build, no loader/phonemizer overrides, no fallback, both MP3s fully decoded/non-silent; `cli-golden-evidence.json`. Earlier loaded-host30.746s report retained separately; not a controlled comparison or phone latency.
+- Web latest lint/173 tests/build passed. Actual production offline synthesis, full decode, persisted reload/immutable options passed; first playable24.8773s/total95.7042s on loaded Intel Mac (`browser-production/`), not phone latency. Browser Edge unavailable and indicated explicitly.
+- Flutter analysis/full449 tests passed; final selected Android Flutter74/74 and JVM17/17 passed zero skips (`checks/android-final-tests.log`, `android-jvm-final/`). Includes immutable background payload, prepared cancellation, native receipt and distinct-voice regressions.
+- Android ARM64 Piper/JNI release, ELF/export/assets package and debug APK passed; actual APK library architecture/Piper/background JNI exports checked (`android-apk-final.json`). Actual Android inference remains unverified. Missing-assets direct build rejection and official automatic restoration/final APK audit passed; APK restricted to ARM64 (`android-missing-assets-evidence.json`, `checks/android-fresh-assets-arm64-rebuild.log`). Ubuntu CI was not run.
+- macOS latest Debug build passed; final manual VM/modal2/2 passed zero skips (`mac-final-manual-summary.json`). Earlier real Faber streaming/full decode, settings/Listen/playerbar/LOTR passed across focused retries. Playerbar retry xcresult save failed; raw3/3 stdout retained. Cached-display screenshots omit button text and do not prove visual rendering.
+- iOS exact SE1/iOS15.5: final manual2/2 and real LOTR pagination/chrome/player dismissal1/1 passed zero skips (`se-final-manual-summary.json`, `se-final-reader-summary.json`). Earlier17 scenarios passed across runs, including real Faber streaming/full two-chapter decode1/1 zero skips. Stale eSpeak header/path buffer fixed and compiled1024bytes verified. Final Simulator/device ARM64 artifacts refreshed; ABI/platform/signed packaging passed (`checks/ios-arm-final-refresh.log`). No physical-device action.
+- Cleanup:12 owned temporary paths removed; original63,201,294-byte Faber and product/build assets retained (`owned-test-cleanup.json`).
+- Delivery: source commit `bdb7bee57d` pushed to `origin/feature/faber-tts-preferences`. Final owned diff reviewed; only SE/seeded LOTR is open. No CI/PR monitoring, PR or merge. Linux/Windows execution unavailable on this Mac; report explicitly.
+
+## APP-20261014-PIPER-AUDITION — Compare low/medium playback onset
+
+- [x] Play the existing synthetic Piper Edresson low and Faber medium short fixtures locally and measure play-command to audio onset.
+- Acceptance: identify the synthetic fixtures before audible playback, show the player GUI, report actual timing scope and distinguish renderer/device estimates from acoustic measurement. Preserve the production app and existing models.
+- Verification: visible standalone AppKit player played both existing short WAVs on the built-in Mac speakers. First non-zero rendered output after play: low 49.60 ms, medium 77.10 ms. Microphone threshold crossing: medium 135.54 ms; low 5,262.49 ms is not a reliable first-sound estimate because the detector required high sustained RMS. No ambient PCM saved. Evidence: `.reports/piper-audition/20261014/report.json`. These are file playback measurements, not synthesis or iPhone pipeline latency.
+- User preference: Pietro preferred Faber medium's sound and asked whether Piper high exists. Research found community pt-BR Miro high and Dii high packages; no high synthesis or audition performed.
+## APP-20261014-PIPER-HIGH — Terminal high-voice comparison
+
+- [x] Test Portuguese Miro high and Dii high against the existing Faber medium sample through a terminal-native runtime. Measure synthesis and playback onset separately; identify host hardware and acoustic timing limits. Remove newly downloaded test assets after collection.
+- Verification: native Intel Mac CLI, same short pt-BR fixture, three fresh processes per voice; all nine outputs passed full decode/non-silence checks. Median synthesis command: Faber 2.002 s, Miro 2.259 s, Dii 2.258 s. Both high voices audibly played via terminal: first non-zero render 54.66/86.95 ms; microphone threshold estimates 164.06/231.07 ms. Playback used ready WAVs and excludes synthesis. Evidence: `.reports/piper-high/20261014/`; report `docs/research/2026-10-14-piper-high-terminal.md`. This does not reactivate Piper in production.
+- Cleanup: removed 541,273,587 bytes/1,117 newly downloaded files and confirmed the isolated tree absent; original models retained. Ruby syntax, final diff whitespace and local repository preflight passed. No CI/PR monitoring.
+- Final listening decision: user explicitly preferred Faber medium after the final Faber/Miro/Dii playback and selected it for the product design. Keep high variants outside the initial implementation scope.

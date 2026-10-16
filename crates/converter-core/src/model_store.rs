@@ -243,6 +243,51 @@ impl ModelStore {
         result
     }
 
+    /// Installation is complete only when every declared artifact matches its checksum.
+    /// This does not claim that inference has been tested on the current device.
+    pub fn is_manifest_installed(&self, manifest: &ModelManifest) -> Result<bool, ModelStoreError> {
+        use std::io::Read;
+        if manifest.artifacts.is_empty() {
+            return Err(ModelStoreError::EmptyManifest);
+        }
+        for artifact in &manifest.artifacts {
+            let path = Path::new(&artifact.name);
+            if artifact.name.is_empty()
+                || path.is_absolute()
+                || path.components().any(|component| {
+                    matches!(
+                        component,
+                        std::path::Component::ParentDir | std::path::Component::Prefix(_)
+                    )
+                })
+            {
+                return Err(ModelStoreError::InvalidArtifactName(artifact.name.clone()));
+            }
+            if artifact.sha256.is_empty() {
+                return Err(ModelStoreError::MissingChecksum);
+            }
+            let mut file = match std::fs::File::open(self.root.join(&manifest.model_id).join(path))
+            {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                Err(error) => return Err(error.into()),
+            };
+            let mut digest = Sha256::new();
+            let mut buffer = [0u8; 8192];
+            loop {
+                let count = file.read(&mut buffer)?;
+                if count == 0 {
+                    break;
+                }
+                digest.update(&buffer[..count]);
+            }
+            if hex::encode(digest.finalize()) != artifact.sha256.to_ascii_lowercase() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     pub async fn installed_metadata(
         &self,
         model_id: &str,
@@ -431,10 +476,110 @@ mod tests {
     }
 
     #[test]
+    fn a_voice_is_installed_only_with_both_verified_artifacts() {
+        let root = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(root.path());
+        let directory = root.path().join("test-piper");
+        std::fs::create_dir_all(&directory).unwrap();
+        let model = b"test model artifact";
+        let config = b"{\"audio\":{\"sample_rate\":22050}}";
+        let manifest = ModelManifest {
+            model_id: "test-piper".into(),
+            artifacts: vec![
+                ModelArtifact {
+                    name: "model.onnx".into(),
+                    url: "https://example.invalid/model".into(),
+                    sha256: hex::encode(Sha256::digest(model)),
+                },
+                ModelArtifact {
+                    name: "model.onnx.json".into(),
+                    url: "https://example.invalid/config".into(),
+                    sha256: hex::encode(Sha256::digest(config)),
+                },
+            ],
+        };
+        std::fs::write(directory.join("model.onnx"), model).unwrap();
+        assert!(!store.is_manifest_installed(&manifest).unwrap());
+        std::fs::write(directory.join("model.onnx.json"), config).unwrap();
+        assert!(store.is_manifest_installed(&manifest).unwrap());
+        std::fs::write(
+            directory.join("model.onnx.json"),
+            b"corrupted configuration",
+        )
+        .unwrap();
+        assert!(!store.is_manifest_installed(&manifest).unwrap());
+    }
+
+    #[test]
     fn builds_verified_manifest_from_catalog() {
         let manifest = ModelStore::catalog_manifest("kokoro-82m").unwrap();
         assert_eq!(manifest.artifacts.len(), 1);
         assert_eq!(manifest.artifacts[0].sha256.len(), 64);
+    }
+
+    #[test]
+    fn piper_catalog_manifests_use_one_immutable_snapshot() {
+        let snapshot = "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/";
+        for (model_id, folder) in [
+            ("pt_BR-faber-medium", "pt/pt_BR/faber/medium"),
+            ("pt_BR-edresson-low", "pt/pt_BR/edresson/low"),
+            ("en_US-lessac-low", "en/en_US/lessac/low"),
+        ] {
+            let manifest = ModelStore::catalog_manifest(model_id).unwrap();
+            assert_eq!(manifest.model_id, model_id);
+            assert_eq!(manifest.artifacts.len(), 2);
+            for artifact in &manifest.artifacts {
+                let extension = if artifact.name.ends_with(".json") {
+                    "onnx.json"
+                } else {
+                    "onnx"
+                };
+                assert_eq!(
+                    artifact.url,
+                    format!("{snapshot}{folder}/{model_id}.{extension}?download=true")
+                );
+                assert_eq!(artifact.sha256.len(), 64);
+            }
+            assert_eq!(manifest.artifacts[0].name, "model.onnx");
+            assert_eq!(manifest.artifacts[1].name, "model.onnx.json");
+        }
+    }
+
+    #[test]
+    fn pinned_piper_manifests_preserve_verified_voice_identity() {
+        for (model_id, expected_bytes, expected_hashes) in [
+            (
+                "pt_BR-faber-medium",
+                [63_201_294, 4_855],
+                [
+                    "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7",
+                    "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f",
+                ],
+            ),
+            (
+                "pt_BR-edresson-low",
+                [63_104_526, 4_168],
+                [
+                    "de4cecee38b30bb1a6378a337af605d59f0c377df702c6a6752870db8991cd84",
+                    "f138992d2e777d1e3aa0bbb14c2d324307b0f342c1bcf20978765b3bea506c56",
+                ],
+            ),
+            (
+                "en_US-lessac-low",
+                [63_201_294, 4_882],
+                [
+                    "f7d01dde371555732c4c314111ac79672b1a5ce2fc19266ab42178fd8df7f375",
+                    "45754dfdebb3b8661c3fc564713772deec6e064feeb5b4e9594857dc7305193a",
+                ],
+            ),
+        ] {
+            let manifest = ModelStore::catalog_manifest(model_id).unwrap();
+            let descriptor = MODELS.iter().find(|model| model.id == model_id).unwrap();
+            for (index, artifact) in manifest.artifacts.iter().enumerate() {
+                assert_eq!(artifact.sha256, expected_hashes[index]);
+                assert_eq!(descriptor.artifacts[index].bytes, expected_bytes[index]);
+            }
+        }
     }
 
     #[test]

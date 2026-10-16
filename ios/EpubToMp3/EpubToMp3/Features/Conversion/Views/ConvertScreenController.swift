@@ -58,7 +58,8 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        viewModel.engine = settings.audioEngine.rawValue
+        viewModel.inheritedPreferences = settings.ttsPreferences
+        if viewModel.usesPreferences { viewModel.engine = settings.audioEngine.rawValue }
         viewModel.modelsRoot = AppSettings.ttsModelsRoot()?.path
         tableView.cellLayoutMarginsFollowReadableWidth = true
         tableView.rowHeight = UITableView.automaticDimension
@@ -74,7 +75,8 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        viewModel.engine = settings.audioEngine.rawValue
+        viewModel.inheritedPreferences = settings.ttsPreferences
+        if viewModel.usesPreferences { viewModel.engine = settings.audioEngine.rawValue }
         viewModel.modelsRoot = AppSettings.ttsModelsRoot()?.path
         tableView.reloadSections(IndexSet(integer: Section.engine.rawValue), with: .none)
     }
@@ -94,7 +96,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         case .file:
             return 2
         case .engine:
-            return 3
+            return 4
         case .chapters:
             return 1
         case .flags:
@@ -157,6 +159,24 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             }
         case .action:
             submit()
+        case .engine where indexPath.row == 0:
+            let alert = UIAlertController(title: L10n.string("settings.audioEngineChoice"), message: nil, preferredStyle: .actionSheet)
+            alert.addAction(UIAlertAction(title: L10n.string("convert.usePreferences"), style: .default) { [weak self] _ in
+                self?.viewModel.usesPreferences = true
+                self?.reloadData()
+            })
+            for engine in AudioEnginePreference.supportedPreferences {
+                alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
+                    self?.viewModel.usesPreferences = false
+                    self?.viewModel.engine = engine.rawValue
+                    self?.viewModel.allowSecondary = false
+                    self?.reloadData()
+                })
+            }
+            alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+            alert.popoverPresentationController?.sourceView = tableView
+            alert.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
+            present(alert, animated: true)
         case .engine, .chapters, .flags:
             break
         }
@@ -193,10 +213,21 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
             var content = cell.defaultContentConfiguration()
             content.text = L10n.string("settings.audioEngineChoice")
-            content.secondaryText = settings.audioEngine.displayName
+            content.secondaryText = viewModel.usesPreferences ? L10n.string("convert.usePreferences") : AudioEnginePreference(rawValue: viewModel.engine)?.displayName
+            cell.accessibilityIdentifier = "convert.tts.primary"
+            cell.accessibilityValue = content.secondaryText
             cell.contentConfiguration = content
-            cell.accessoryType = .none
-            cell.selectionStyle = .none
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+            return cell
+        }
+        if indexPath.row == 3 {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+            let canSelectSecondary = !viewModel.usesPreferences && viewModel.distinctManualSecondary != nil
+            cell.configure(title: L10n.string("convert.allowSecondary"), subtitle: L10n.string("convert.allowSecondaryDescription"), isOn: viewModel.usesPreferences ? viewModel.inheritedPreferences?.secondary != nil : canSelectSecondary && viewModel.allowSecondary, accessibilityIdentifier: "convert.tts.useSecondary")
+            cell.isUserInteractionEnabled = canSelectSecondary
+            cell.toggleSwitch.isEnabled = canSelectSecondary
+            cell.onValueChanged = { [weak self] in self?.viewModel.allowSecondary = $0 }
             return cell
         }
 
@@ -207,7 +238,17 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
                 value: viewModel.voice,
                 placeholder: L10n.string("convert.voiceOptional")
             )
-            cell.onTextChanged = { [weak self] text in self?.viewModel.voice = text }
+            cell.onTextChanged = { [weak self] text in
+                guard let self else { return }
+                if self.viewModel.usesPreferences {
+                    self.viewModel.engine = self.viewModel.inheritedPreferences?.primary.engine ?? self.settings.audioEngine.rawValue
+                    self.viewModel.allowSecondary = false
+                }
+                self.viewModel.voice = text
+                self.viewModel.usesPreferences = false
+                self.tableView.reloadRows(at: [IndexPath(row: 0, section: Section.engine.rawValue),
+                                              IndexPath(row: 3, section: Section.engine.rawValue)], with: .none)
+            }
         } else {
             cell.configure(
                 title: L10n.string("convert.languageOptional"),

@@ -88,6 +88,7 @@ final class ReaderSettingsScreenController: UITableViewController {
             .forEach { $0.removeFromSuperview() }
         cell.accessibilityIdentifier = nil
         var content = cell.defaultContentConfiguration()
+        var installSlider: (() -> Void)?
         cell.accessoryType = .none
         guard let section = Section(rawValue: indexPath.section) else { return cell }
 
@@ -106,7 +107,9 @@ final class ReaderSettingsScreenController: UITableViewController {
             } else {
                 content.text = L10n.string("readerSettings.size")
                 content.secondaryText = "\(Int(settings.readerPointSize))pt"
-                configureSlider(in: cell, value: Float(settings.readerFontSize), min: 0, max: 4, step: 1, identifier: "reader.settings.fontSize")
+                installSlider = {
+                    self.configureSlider(in: cell, value: Float(self.settings.readerFontSize), min: 0, max: 4, step: 1, identifier: "reader.settings.fontSize")
+                }
                 cell.accessoryType = .none
             }
         case .layout:
@@ -126,7 +129,10 @@ final class ReaderSettingsScreenController: UITableViewController {
                         ReaderLayoutMetrics.maximumHorizontalMargin
                     )
                 }
-                configureSlider(in: cell, value: Float(value), min: Float(range.0), max: Float(range.1), step: indexPath.row == (settings.readerLayout == .paginated ? 4 : 2) ? 2 : 4, identifier: indexPath.row == (settings.readerLayout == .paginated ? 4 : 2) ? "reader.settings.lineSpacing" : "reader.settings.margin")
+                let lineSpacing = indexPath.row == (settings.readerLayout == .paginated ? 4 : 2)
+                installSlider = {
+                    self.configureSlider(in: cell, value: Float(value), min: Float(range.0), max: Float(range.1), step: lineSpacing ? 2 : 4, identifier: lineSpacing ? "reader.settings.lineSpacing" : "reader.settings.margin")
+                }
                 cell.accessoryType = .none
             }
             if isToggleLayoutRow(indexPath.row) {
@@ -134,13 +140,16 @@ final class ReaderSettingsScreenController: UITableViewController {
             }
         }
 
-        if let slider = cell.contentView.subviews.first(where: { $0 is CompactSlider }) {
+        if installSlider != nil {
             // The content view sizes its text above the reserved slider row,
             // including multiline labels at accessibility text sizes.
             content.directionalLayoutMargins.bottom = CompactSlider.minimumTouchHeight + 16
-            slider.accessibilityLabel = content.text
         }
         cell.contentConfiguration = content
+        // Installing a content configuration can replace the content view's
+        // children. Attach the slider only after the text surface exists.
+        installSlider?()
+        cell.contentView.subviews.first(where: { $0 is CompactSlider })?.accessibilityLabel = content.text
         cell.accessibilityLabel = content.text
         cell.accessibilityValue = content.secondaryText ?? (section == .theme ? themeAccessibilityValue(indexPath.row) : nil)
         cell.accessibilityHint = isToggleLayoutRow(indexPath.row)

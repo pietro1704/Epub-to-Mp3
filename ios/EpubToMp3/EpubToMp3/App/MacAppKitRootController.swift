@@ -394,6 +394,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               let book = library.books.first(where: { $0.id == bookID }) else { return }
         isStartingLocalPlayback = true
+        let conversionOptions = settings.conversionOptions
         Task { [weak self] in
             guard let self else { return }
             defer { isStartingLocalPlayback = false }
@@ -438,7 +439,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                     chapterStart: chapterStart,
                     chapterEnd: -1,
                     control: playbackControl,
-                    options: .selectedEngine(settings.audioEngine, modelsRoot: AppSettings.ttsModelsRoot()),
+                    options: conversionOptions,
                     onProgress: { [weak self] event in
                         guard let self,
                               self.localPlaybackGeneration == jobID,
@@ -753,7 +754,12 @@ private final class MacPlayerBarViewController: NSViewController {
             button.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
         view = background
-        cancellable = player.objectWillChange.sink { [weak self] _ in self?.refresh() }
+        // objectWillChange fires before @Published stores its new value.
+        // Read transport state on the next main-loop turn so an external
+        // pause/resume updates the displayed action to the committed state.
+        cancellable = player.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refresh() }
         refresh()
     }
 

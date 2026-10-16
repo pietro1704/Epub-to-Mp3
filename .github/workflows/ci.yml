@@ -8,7 +8,8 @@ on:
     branches:
       - master
       - develop
-      - 'feature/**'
+      # Feature branches are validated through pull_request below, including
+      # the synthetic merge revision. Avoid a duplicate source-only push run.
       - 'hotfix/**'
       - 'release/**'
   pull_request:
@@ -106,27 +107,38 @@ jobs:
       - name: Run Python lint
         run: mise exec -- ruff check python_app tests
 
-      - name: Run sample conversion smoke
-        env:
-          R2_OPTIONAL: "true"
-          EDGE_CHUNK_CHARS: "4000"
-          EDGE_MAX_CONCURRENCY: "1"
-          EDGE_ENABLE_PARALLEL: "false"
-          EDGE_AUTO_TUNE: "false"
+      - name: Install explicit pinned Faber model for offline CLI smoke
         run: |
-          mise exec -- python -m python_app.main convert web/public/sample.epub --engine edge --chapter 1 --no-parallel --verbose
+          model_dir="$RUNNER_TEMP/legacy-piper-model"
+          mkdir -p "$model_dir"
+          model_base="https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium"
+          curl --fail --location --retry 3 "$model_base/pt_BR-faber-medium.onnx" -o "$model_dir/pt_BR-faber-medium.onnx"
+          curl --fail --location --retry 3 "$model_base/pt_BR-faber-medium.onnx.json" -o "$model_dir/pt_BR-faber-medium.onnx.json"
+          printf '%s  %s\n' \
+            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$model_dir/pt_BR-faber-medium.onnx" \
+            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$model_dir/pt_BR-faber-medium.onnx.json" \
+            | sha256sum --check --status
+          echo "PIPER_MODEL_DIR=$model_dir" >> "$GITHUB_ENV"
 
-      - name: Run external worker pool E2E smoke
+      - name: Run offline sample conversion smoke
         env:
           R2_OPTIONAL: "true"
-          EDGE_MAX_CONCURRENCY: "1"
-          EDGE_ENABLE_PARALLEL: "false"
-          EDGE_AUTO_TUNE: "false"
+          PIPER_MAX_PROCS: "1"
+        run: |
+          mise exec -- python -m python_app.main convert web/public/sample.epub \
+            --engine piper --model "$PIPER_MODEL_DIR/pt_BR-faber-medium.onnx" \
+            --fallback-engine none --chapter 1 --no-parallel --force-reprocess \
+            --output-dir "$RUNNER_TEMP/legacy-piper-smoke" --verbose
+
+      - name: Run offline external worker pool E2E smoke
+        env:
+          R2_OPTIONAL: "true"
+          PIPER_MAX_PROCS: "1"
           CHAPTER_PARALLEL_COUNT: "1"
         run: |
           mise exec -- python scripts/external_worker_pool.py web/public/sample.epub \
             --workers 1 \
-            --forward-args "--engine edge --chapter 1 --no-parallel --no-validate-text --no-validate-audio --stage-pipeline"
+            --forward-args "--engine piper --model $PIPER_MODEL_DIR/pt_BR-faber-medium.onnx --fallback-engine none --chapter 1 --no-parallel --force-reprocess --output-dir $RUNNER_TEMP/legacy-piper-pool-smoke --stage-pipeline"
 
   rust:
     name: Rust
@@ -141,6 +153,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+      - name: Verify vendored phoneme source assets
+        working-directory: native/vendor/espeak-rs-sys
+        run: sha256sum --check phsource-wav.sha256
       - name: Install mise
         uses: jdx/mise-action@v5
         with:
@@ -157,6 +172,10 @@ jobs:
           '
       - name: Install Rust toolchain
         run: mise install
+      - name: Test vendored source cache refresh
+        run: |
+          mise exec -- rustc --edition=2021 --test native/vendor/espeak-rs-sys/source_copy.rs -o "$RUNNER_TEMP/espeak-source-copy-tests"
+          "$RUNNER_TEMP/espeak-source-copy-tests"
       - name: Install ONNX Runtime smoke-test library
         run: |
           archive="$RUNNER_TEMP/onnxruntime-linux-x64-1.24.4.tgz"

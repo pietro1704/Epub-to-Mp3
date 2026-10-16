@@ -19,6 +19,7 @@ version = "0.1.0"
 [workspace.dependencies]
 
 [patch.crates-io]
+piper-rs = { path = "native/vendor/piper-rs" }
 espeak-rs = { path = "native/vendor/espeak-rs" }
 espeak-rs-sys = { path = "native/vendor/espeak-rs-sys" }
 

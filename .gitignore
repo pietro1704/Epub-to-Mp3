@@ -104,6 +104,7 @@ Thumbs.db
 *.mp3
 !tests/fixtures/audio/mono-24000-48k.mp3
 *.wav
+!native/vendor/espeak-rs-sys/espeak-ng/phsource/**/*.wav
 *.flac
 *.m4a
 *.ogg
@@ -199,3 +200,11 @@ target/
 # Local Hermes QA artifacts
 .hermes-run/
 .qa/
+
+# Generated browser speech runtime assets
+/web/public/tts/
+
+# Generated Android phonemizer assets, prepared by the native packaging task
+/flutter_app/android/app/src/main/assets/espeak-ng-data/
+/flutter_app/android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so
+/flutter_app/android/app/src/main/jniLibs/arm64-v8a/libc++_shared.so

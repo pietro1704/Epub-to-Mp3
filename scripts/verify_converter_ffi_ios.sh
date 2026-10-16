@@ -36,4 +36,15 @@ grep -A4 "LC_BUILD_VERSION" <<<"$BUILD_COMMANDS" | grep -Eq "platform[[:space:]]
   exit 2
 }
 
+# The default offline provider must be compiled in; old compatibility artifacts
+# still expose the generic conversion ABI and cannot satisfy this requirement.
+if [[ "${CONVERTER_FFI_ENABLE_PIPER:-1}" != 0 ]]; then
+  for SYMBOL in piper_runtime_register_embedded piper_runtime_register_core; do
+    grep -q "_$SYMBOL$" <<<"$SYMBOLS" || {
+      echo "converter-ffi iOS verification error: stale artifact has no embedded Piper ($SYMBOL); explicitly rebuild converter-ffi:ios-device or converter-ffi:ios-simulator before packaging" >&2
+      exit 2
+    }
+  done
+fi
+
 echo "converter-ffi iOS verification passed: $ARTIFACT"

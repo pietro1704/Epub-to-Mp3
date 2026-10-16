@@ -76,6 +76,9 @@ final class RustConversionCoordinator {
         let chaptersCompleted: Int
         let percent: Double
         let engine: String?
+        var modelId: String? = nil
+        var voice: String? = nil
+        var fallbackUsed: Bool? = nil
         let message: String
 
         func updating(_ snapshot: JobSnapshot) -> JobSnapshot {
@@ -87,7 +90,7 @@ final class RustConversionCoordinator {
                 coverUrl: snapshot.coverUrl,
                 coverMimeType: snapshot.coverMimeType,
                 engine: engine ?? snapshot.engine,
-                voice: snapshot.voice,
+                voice: modelId ?? voice ?? snapshot.voice,
                 language: snapshot.language,
                 progressPercent: percent,
                 chaptersTotal: chaptersTotal,
@@ -206,8 +209,8 @@ final class RustConversionCoordinator {
                 bookAuthor: envelope.manifest.author,
                 coverUrl: envelope.manifest.cover.map { outputDirectory.appendingPathComponent($0).path },
                 coverMimeType: nil,
-                engine: nil,
-                voice: nil,
+                engine: envelope.manifest.usedSelections.map { Array(Set($0.map(\.engine))).sorted().joined(separator: " + ") },
+                voice: envelope.manifest.usedSelections.map { $0.compactMap { $0.modelID ?? $0.voice }.joined(separator: " + ") },
                 language: nil,
                 progressPercent: 100,
                 chaptersTotal: chapters.count,
@@ -230,6 +233,8 @@ final class RustConversionCoordinator {
         let author: String
         let chapters: [Chapter]
         let cover: String?
+        let ttsPreferences: TtsPreferences?
+        let usedSelections: [TtsSelection]?
     }
     private struct Chapter: Decodable {
         let title: String?

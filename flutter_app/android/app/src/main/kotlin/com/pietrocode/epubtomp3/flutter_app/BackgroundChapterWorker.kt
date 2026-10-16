@@ -7,15 +7,12 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import java.io.File
-import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import androidx.work.Data
 import org.json.JSONObject
 
 
@@ -30,68 +27,42 @@ class BackgroundChapterWorker(
         } catch (_: Exception) {
             return Result.failure()
         }
-        val text = payload.optString("text")
-        val voice = payload.optString("voice")
+        val inputPath = payload.optString("inputPath")
+        val chapterIndex = payload.optInt("chapterIndex", -1)
         val outputPath = payload.optString("outputPath")
-        if (text.isBlank() || voice.isBlank() || outputPath.isBlank()) return Result.failure()
+        val optionsJson = payload.optString("optionsJson")
+        if (inputPath.isBlank() || chapterIndex < 0 || outputPath.isBlank() || optionsJson.isBlank()) return Result.failure()
         return try {
+            var nativeResultPath: String? = null
             setForeground(createForegroundInfo())
-            withContext(Dispatchers.IO) { convertChapter(text, voice, outputPath) }
-            Result.success()
+            watchBackgroundNativeCancellation(nativeExecution) {
+                withContext(Dispatchers.IO) {
+                    coroutineContext.ensureActive()
+                    System.loadLibrary("converter_ffi")
+                    val preparedOptions = NativeTtsOptions.prepare(applicationContext, optionsJson)
+                    val result = nativeExecution.run(outputPath, { coroutineContext.ensureActive() }) {
+                        nativeConvertWithOptions(inputPath, outputPath, chapterIndex, chapterIndex, preparedOptions, false)
+                            ?: throw IllegalStateException("Embedded Rust conversion failed")
+                    }
+                    coroutineContext.ensureActive()
+                    // Preserve the complete native receipt, including actual voices and opaque policy state.
+                    val resultDirectory = File(outputPath).apply { mkdirs() }
+                    nativeResultPath = BackgroundPayloadStore.persist(resultDirectory, "background-result-$id", result).absolutePath
+                }
+            }
+            Result.success(Data.Builder().putString(KEY_NATIVE_RESULT_PATH, nativeResultPath).build())
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            nativeExecution.stop()
             throw cancelled
-        } catch (_: Exception) {
-            Result.failure()
-        }
+        } catch (_: Exception) { Result.failure() }
     }
 
-    /** Calls the configured Rust HTTP backend and writes its MP3 result. */
-    private suspend fun convertChapter(text: String, voice: String, outputPath: String) {
-        val backendUrl = applicationContext
-            .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .getString(KEY_BACKEND_URL, null)
-            ?.trim()
-            ?.trimEnd('/')
-            ?: throw IllegalStateException("Backend URL is not configured")
-        if (!backendUrl.startsWith("http://") && !backendUrl.startsWith("https://")) {
-            throw IllegalArgumentException("Backend URL must use HTTP or HTTPS")
-        }
-        val payload = listOf(
-            "text=${URLEncoder.encode(text, "UTF-8")}",
-            "voice=${URLEncoder.encode(voice, "UTF-8")}",
-            "output_path=${URLEncoder.encode(outputPath, "UTF-8")}",
-        ).joinToString("&")
-        val connection = (URL("$backendUrl/api/convert_chapter").openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            doOutput = true
-            connectTimeout = REQUEST_TIMEOUT_MS
-            readTimeout = REQUEST_TIMEOUT_MS
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-        }
-        try {
-            // Keep cancellation cooperative while the worker performs network
-            // and file I/O; CoroutineWorker's context owns the lifecycle.
-            coroutineContext.ensureActive()
-            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-            if (connection.responseCode !in 200..299) {
-                throw IllegalStateException("Backend returned HTTP ${connection.responseCode}")
-            }
-            val bytes = connection.inputStream.use { it.readBytes() }
-            coroutineContext.ensureActive()
-            if (bytes.isEmpty()) throw IllegalStateException("Backend returned an empty result")
-            val target = File(outputPath).apply {
-                parentFile?.mkdirs()
-            }
-            val temp = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
-            try {
-                temp.writeBytes(bytes)
-                coroutineContext.ensureActive()
-                if (!temp.renameTo(target)) throw IOException("Could not atomically publish chapter audio")
-            } finally { temp.delete() }
-        } finally {
-            connection.disconnect()
-        }
+    private val nativeExecution by lazy {
+        BackgroundNativeExecution(::nativePrepareConversion, ::nativeCancelConversion)
     }
+    private external fun nativePrepareConversion(outputPath: String)
+    private external fun nativeConvertWithOptions(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int, optionsJson: String, streaming: Boolean): String?
+    private external fun nativeCancelConversion(outputPath: String): Boolean
 
     private fun createForegroundInfo(): ForegroundInfo {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -111,6 +82,7 @@ class BackgroundChapterWorker(
 
     companion object {
         const val KEY_PAYLOAD = "payloadPath"
+        const val KEY_NATIVE_RESULT_PATH = "nativeResultPath"
         const val KEY_BACKEND_URL = "backendUrl"
         const val PREFERENCES = "flutter_epub_to_mp3"
         const val REQUEST_TIMEOUT_MS = 120_000
