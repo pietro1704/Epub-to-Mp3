@@ -131,6 +131,104 @@ class ArchiveSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(archive.Blocked, "reserve"):
                 self.inspector.download_monitor()
 
+    def http_command(self, method, headers, body=b"", status=0, missing_headers=False):
+        def command(arguments, **options):
+            self.assertEqual(arguments[-1], archive.URL)
+            self.assertEqual("--head" in arguments, method == "HEAD")
+            self.assertEqual(arguments[arguments.index("--proto") + 1], "=https")
+            self.assertEqual(arguments[arguments.index("--max-redirs") + 1], "0")
+            self.assertTrue(options["allow_failure"])
+            if not missing_headers:
+                Path(arguments[arguments.index("--dump-header") + 1]).write_bytes(headers)
+            Path(arguments[arguments.index("--output") + 1]).write_bytes(body)
+            code = 206 if b"HTTP/2 206" in headers else 200
+            return f"\nhttp_code={code}\nurl_effective={archive.URL}\n".encode(), status
+        return command
+
+    def test_http_receipt_uses_final_block_and_never_keeps_cookie_or_unlisted_headers(self):
+        headers = (b"HTTP/1.1 200 Connection established\r\nProxy-Agent: fixture\r\n\r\n"
+                   b"HTTP/2 206\r\nContent-Length: 16\r\nContent-Range: bytes 0-15/5430783739\r\n"
+                   b"Content-Type: application/octet-stream\r\nSet-Cookie: never-retain-fixture\r\n\r\n")
+        self.inspector.command = self.http_command("HEAD", headers)
+        with patch.object(archive.shutil, "which", return_value="/fixture/curl"):
+            receipt = self.inspector.http_transfer("HEAD")
+        self.assertEqual(receipt["http_status"], 206)
+        self.assertEqual(receipt["content_length"], 16)
+        self.assertEqual(receipt["content_range"], "bytes 0-15/5430783739")
+        self.assertEqual(receipt["expected_archive_bytes"], archive.SIZE)
+        self.assertNotIn("never-retain-fixture", json.dumps(receipt))
+        self.assertNotIn("Proxy-Agent", json.dumps(receipt))
+        self.assertFalse(self.inspector.archive.exists())
+
+    def test_http_ambiguous_or_incomplete_metadata_is_blocked(self):
+        for headers in [
+            b"HTTP/2 200\r\nContent-Length: 16\r\nContent-Length: 16\r\n\r\n",
+            b"HTTP/2 200\r\n Content-Length: 16\r\n\r\n",
+            b"HTTP/2 200\r\nContent-Length: 16\r\n",
+            b"HTTP/2 200\r\nContent-Length: 1,2\r\n\r\n",
+            b"HTTP/2 200\r\nX-Large: " + b"x" * archive.MAX_HEADERS + b"\r\n\r\n"
+        ]:
+            with self.subTest(headers=headers[:80]):
+                self.inspector.command = self.http_command("HEAD", headers)
+                with patch.object(archive.shutil, "which", return_value="/fixture/curl"):
+                    with self.assertRaises(archive.Blocked):
+                        self.inspector.http_transfer("HEAD")
+
+    def test_http_failed_redirect_and_missing_header_receipts_remain_blocked(self):
+        headers = b"HTTP/2 200\r\nContent-Length: 0\r\n\r\n"
+        for status, missing in [(47, False), (0, True)]:
+            with self.subTest(status=status, missing=missing):
+                (self.inspector.root / "http-head.headers").unlink(missing_ok=True)
+                self.inspector.command = self.http_command("HEAD", headers, status=status, missing_headers=missing)
+                with patch.object(archive.shutil, "which", return_value="/fixture/curl"):
+                    with self.assertRaises(archive.Blocked):
+                        self.inspector.http_transfer("HEAD")
+                self.assertFalse(self.inspector.archive.exists())
+
+    def test_future_get_records_actual_bytes_before_size_gate_or_transport_error(self):
+        headers = b"HTTP/2 200\r\nContent-Length: 5\r\nContent-Type: application/octet-stream\r\n\r\n"
+        self.inspector.check_capabilities = lambda: None
+        for status, body in [(0, b"short"), (56, b"cut")]:
+            with self.subTest(status=status):
+                self.inspector.command = self.http_command("GET", headers, body=body, status=status)
+                with patch.object(archive.shutil, "which", return_value="/fixture/curl"):
+                    with self.assertRaises(archive.Blocked):
+                        self.inspector.download_archive()
+                receipt = self.inspector.report["http_get"]
+                self.assertEqual(receipt["actual_archive_bytes"], len(body))
+                self.assertEqual(receipt["content_length"], 5)
+                self.assertEqual(receipt["curl_exit"], status)
+                self.assertFalse(self.inspector.report["signature_verified"])
+
+    def test_metadata_only_mode_never_calls_probe_download_or_apple_extraction(self):
+        entry = {"identifier": "com.apple.pkg.iPhoneSimulatorSDK15_5", "fileSize": archive.SIZE,
+                 "source": archive.URL, "contentType": "package",
+                 "simulatorVersion": {"buildUpdate": "19F70", "version": "15.5"}}
+        class Response:
+            url = archive.CATALOG
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+            def read(self, _limit):
+                return plistlib.dumps({"downloadables": [entry]})
+        calls = []
+        self.inspector.command = lambda arguments, **_: b"VirtualMac2,1\n" if arguments == ["/usr/sbin/sysctl", "-n", "hw.model"] else self.fail("Unexpected native command")
+        self.inspector.http_transfer = lambda method: calls.append(method)
+        self.inspector.download_archive = lambda: self.fail("Metadata-only mode invoked GET/probe")
+        with patch.dict(os.environ, {"INVENTORY_RUNNER_ENVIRONMENT": "github-hosted", "INVENTORY_RUNNER_ARCH": "ARM64",
+                                     "INVENTORY_WORKFLOW_SHA": "a" * 40, "INVENTORY_EVENT_SHA": "a" * 40}), \
+                patch.object(archive.platform, "system", return_value="Darwin"), \
+                patch.object(archive.platform, "machine", return_value="arm64"), \
+                patch.object(archive, "read_plist", return_value={"ProductVersion": "16.4", "ProductBuildVersion": "16F6"}), \
+                patch.object(archive, "disk_gate", return_value=40 * archive.GIB), \
+                patch.object(archive.urllib.request, "urlopen", return_value=Response()):
+            self.inspector.inspect(http_metadata_only=True)
+        self.assertEqual(calls, ["HEAD"])
+        self.assertEqual(self.inspector.report["state"], "http_metadata_only_not_archive_verified")
+        self.assertFalse(self.inspector.report["download_attempted"])
+        self.assertFalse(self.inspector.archive.exists())
+
     def test_failed_signature_never_lists_or_expands_payload(self):
         calls = []
         def command(arguments, **_):

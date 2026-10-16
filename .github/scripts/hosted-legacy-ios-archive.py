@@ -25,11 +25,52 @@ GIB = 1024**3
 RESERVE = 8 * GIB
 MAX_PAYLOAD = 24 * GIB
 MAX_LOG = 16 * 1024**2
+MAX_HEADERS = 64 * 1024
 MARKER = "legacy-ios-archive-owned-v1\n"
 
 
 class Blocked(RuntimeError):
     pass
+
+
+def http_headers(payload):
+    """Keep only diagnostic fields from the final complete HTTP response block."""
+    if len(payload) > MAX_HEADERS:
+        raise Blocked("HTTP headers exceed 64 KiB")
+    blocks = []
+    current = None
+    for line in payload.decode("iso-8859-1").split("\r\n"):
+        if line.startswith("HTTP/"):
+            if current is not None:
+                raise Blocked("HTTP response blocks are not separated")
+            match = re.fullmatch(r"HTTP/(?:1\.[01]|2|3) ([1-5]\d\d)(?: [^\x00-\x1f\x7f]*)?", line)
+            if not match:
+                raise Blocked("Unrecognized HTTP status line")
+            current = {"status": int(match[1]), "headers": {}}
+            blocks.append(current)
+        elif not line:
+            current = None
+        elif current is None or line[0].isspace() or ":" not in line:
+            raise Blocked("Ambiguous HTTP header framing")
+        else:
+            name, value = line.split(":", 1)
+            if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name):
+                raise Blocked("Invalid HTTP header name")
+            key = name.lower()
+            if key in ("content-length", "content-range", "content-type"):
+                value = value.strip()
+                if key in current["headers"] or re.search(r"[\x00-\x1f\x7f]", value):
+                    raise Blocked("Ambiguous allowlisted HTTP header")
+                current["headers"][key] = value
+    if not blocks or current is not None:
+        raise Blocked("Final HTTP response headers are missing or incomplete")
+    final = blocks[-1]
+    length = final["headers"].get("content-length")
+    if length is not None and not re.fullmatch(r"\d{1,20}", length):
+        raise Blocked("HTTP Content-Length is not an unambiguous byte count")
+    return {"http_status": final["status"], "content_length": int(length) if length is not None else None,
+            "content_range": final["headers"].get("content-range"),
+            "content_type": final["headers"].get("content-type")}
 
 
 def within(root, candidate):
@@ -161,6 +202,7 @@ class Inspector:
         self.device = None
         self.sequence = 0
         self.report = {"phase": "archive_only", "state": "blocked", "blockers": [],
+                       "download_attempted": False,
                        "runtime_installed": False, "device_created": False, "simulator_started": False,
                        "runtime_launchability": "unverified", "app_acceptance": "unverified",
                        "signature_verified": False, "archive_arm_evidence": "unverified", "cleanup": "pending"}
@@ -185,7 +227,7 @@ class Inspector:
             pass
         process.wait(timeout=2)
 
-    def command(self, arguments, timeout=60, monitor=None):
+    def command(self, arguments, timeout=60, monitor=None, allow_failure=False):
         self.sequence += 1
         log = self.reports / f"{self.sequence:02d}-{Path(arguments[0]).name}.log"
         deadline = time.monotonic() + timeout
@@ -202,14 +244,15 @@ class Inspector:
                     if monitor:
                         monitor()
                     time.sleep(0.1)
-                if process.returncode != 0:
+                if process.returncode != 0 and not allow_failure:
                     raise Blocked(f"{Path(arguments[0]).name} failed; see {log.name}")
             finally:
                 self.stop(process)
                 active.unlink(missing_ok=True)
         if log.stat().st_size > MAX_LOG:
             raise Blocked("Command output exceeded the metadata budget")
-        return log.read_bytes()
+        result = log.read_bytes()
+        return (result, process.returncode) if allow_failure else result
 
     def download_monitor(self):
         disk_gate(self.root)
@@ -269,18 +312,79 @@ class Inspector:
 
     def download_archive(self):
         self.check_capabilities()
-        curl = shutil.which("curl")
-        if not curl:
-            raise Blocked("Preinstalled curl unavailable")
-        # Use curl here because its protocol/redirect bounds are explicit;
-        # preferred aria2/xcodes must not weaken the exact Apple HTTPS origin.
-        self.command([curl, "--disable", "--fail", "--show-error", "--silent", "--proto", "=https",
-                      "--proto-redir", "=https", "--max-redirs", "0", "--location",
-                      "--connect-timeout", "15", "--max-time", "900", "--max-filesize", str(SIZE),
-                      "--output", str(self.archive), URL], timeout=910, monitor=self.download_monitor)
+        self.report["download_attempted"] = True
+        self.http_transfer("GET")
         self.download_monitor()
         if self.archive.stat().st_size != SIZE:
             raise Blocked("Downloaded archive size differs from Apple metadata")
+
+    def http_transfer(self, method):
+        if method not in ("HEAD", "GET"):
+            raise Blocked("Unsupported HTTP diagnostic method")
+        curl = shutil.which("curl")
+        if not curl:
+            raise Blocked("Preinstalled curl unavailable")
+        headers = self.root / f"http-{method.lower()}.headers"
+        output = self.root / "head-response.txt" if method == "HEAD" else self.archive
+        receipt = {"method": method, "expected_archive_bytes": SIZE, "effective_url": None,
+                   "curl_exit": None, "archive_authenticity": "unverified", "get_size_verified_by_head": False}
+        self.report[f"http_{method.lower()}"] = receipt
+        duration = 30 if method == "HEAD" else 900
+        # Use curl here because its protocol/redirect bounds are explicit;
+        # preferred aria2/xcodes must not weaken the exact Apple HTTPS origin.
+        arguments = [curl, "--disable", "--fail", "--show-error", "--silent", "--proto", "=https",
+                     "--proto-redir", "=https", "--max-redirs", "0", "--location",
+                     "--connect-timeout", "15", "--max-time", str(duration), "--max-filesize", str(SIZE),
+                     "--dump-header", str(headers), "--output", str(output),
+                     "--write-out", "\nhttp_code=%{http_code}\nurl_effective=%{url_effective}\n"]
+        if method == "HEAD":
+            arguments.append("--head")
+        arguments.append(URL)
+        def monitor():
+            self.download_monitor()
+            if headers.exists():
+                within(self.root, headers)
+                if headers.stat().st_size > MAX_HEADERS:
+                    raise Blocked("HTTP headers exceed 64 KiB")
+            if method == "HEAD" and output.exists() and output.stat().st_size > MAX_HEADERS:
+                raise Blocked("HEAD output exceeds its metadata budget")
+        error = None
+        try:
+            stdout, status = self.command(arguments, timeout=duration + 10, monitor=monitor, allow_failure=True)
+            receipt["curl_exit"] = status
+            monitor()
+            statuses = re.findall(r"^http_code=(\d{3})$", stdout.decode(), re.M)
+            urls = re.findall(r"^url_effective=([^\r\n]+)$", stdout.decode(), re.M)
+            if len(statuses) != 1 or len(urls) != 1 or urls[0] != URL:
+                raise Blocked("HTTP transfer receipt has missing or unexpected identity")
+            receipt["effective_url"] = urls[0]
+            receipt["curl_http_status"] = int(statuses[0])
+            if status != 0:
+                raise Blocked("Curl transport/HTTP/redirect failed; no retry or URL fallback")
+        except (Blocked, OSError) as caught:
+            error = caught
+        finally:
+            if method == "GET":
+                receipt["actual_archive_bytes"] = self.archive.stat().st_size if self.archive.exists() else 0
+            if headers.exists():
+                try:
+                    within(self.root, headers)
+                    if headers.stat().st_size > MAX_HEADERS:
+                        raise Blocked("HTTP headers exceed 64 KiB")
+                    receipt.update(http_headers(headers.read_bytes()))
+                except (Blocked, OSError) as caught:
+                    receipt["header_metadata_blocker"] = str(caught)
+                    error = error or caught
+            else:
+                error = error or Blocked("HTTP response header receipt is missing")
+            if receipt.get("curl_http_status") != receipt.get("http_status"):
+                error = error or Blocked("HTTP status receipts disagree")
+            if receipt.get("content_length") is None:
+                error = error or Blocked("HTTP Content-Length receipt is missing")
+            receipt["declared_length_matches_catalog"] = receipt.get("content_length") == SIZE
+        if error:
+            raise Blocked(str(error)) from error
+        return receipt
 
     def verify_and_expand(self, package):
         output = self.command(["/usr/sbin/pkgutil", "--check-signature", str(package)], timeout=90)
@@ -417,7 +521,10 @@ class Inspector:
         inspector.report = {"cleanup": "pending"}
         inspector.cleanup()
 
-    def inspect(self):
+    def inspect(self, http_metadata_only=False):
+        if http_metadata_only:
+            self.report["phase"] = "http_metadata_only_not_archive_acceptance"
+            self.report["download_attempted"] = False
         self.report.update({"workflow_sha": os.environ.get("INVENTORY_WORKFLOW_SHA"),
                             "event_sha": os.environ.get("INVENTORY_EVENT_SHA"),
                             "run_id": os.environ.get("GITHUB_RUN_ID"),
@@ -452,6 +559,10 @@ class Inspector:
         self.report["catalog_entry"] = {key: entries[0].get(key) for key in (
             "identifier", "contentType", "fileSize", "source", "simulatorVersion", "hostRequirements"
         )}
+        if http_metadata_only:
+            self.http_transfer("HEAD")
+            self.report["state"] = "http_metadata_only_not_archive_verified"
+            return
         self.download_archive()
         digest = hashlib.sha256()
         deadline = time.monotonic() + 180
@@ -492,11 +603,11 @@ def main():
         (reports / "cleanup-recovery.json").write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result))
         return 2 if result["state"].startswith("blocked") else 0
-    if sys.argv[1:]:
+    if sys.argv[1:] not in ([], ["--http-metadata-only"]):
         raise Blocked("Unknown archive inspection arguments")
     inspector = Inspector(os.environ["RUNNER_TEMP"], Path(os.environ["RUNNER_TEMP"]) / "legacy-ios-archive-report")
     try:
-        inspector.inspect()
+        inspector.inspect(http_metadata_only=sys.argv[1:] == ["--http-metadata-only"])
     except Exception as error:
         inspector.report["blockers"].append(f"{type(error).__name__}: {error}")
     finally:

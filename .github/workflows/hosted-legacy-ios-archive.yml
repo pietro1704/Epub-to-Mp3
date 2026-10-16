@@ -1,4 +1,4 @@
-name: Hosted legacy iOS signed archive metadata
+name: Hosted legacy iOS HTTP metadata ONLY - NOT archive acceptance
 
 on:
   push:
@@ -64,13 +64,13 @@ jobs:
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
-      - name: Inspect only the signed Apple archive and extracted metadata
+      - name: Read HTTP HEAD metadata ONLY - no archive download or acceptance
         env:
           INVENTORY_RUNNER_ENVIRONMENT: ${{ runner.environment }}
           INVENTORY_RUNNER_ARCH: ${{ runner.arch }}
           INVENTORY_WORKFLOW_SHA: ${{ github.workflow_sha }}
           INVENTORY_EVENT_SHA: ${{ github.sha }}
-        run: mise exec -- python .github/scripts/hosted-legacy-ios-archive.py
+        run: mise exec -- python .github/scripts/hosted-legacy-ios-archive.py --http-metadata-only
       - name: Recover only this job's owned mount and temporary tree
         if: always()
         run: mise exec -- python .github/scripts/hosted-legacy-ios-archive.py --cleanup-owned
@@ -78,7 +78,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: hosted-legacy-ios-signed-archive-metadata
+          name: hosted-legacy-ios-http-metadata-only-not-archive-acceptance
           path: |
             ${{ runner.temp }}/legacy-ios-archive-report/*.json
             ${{ runner.temp }}/legacy-ios-archive-report/*.log
