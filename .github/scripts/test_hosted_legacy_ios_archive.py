@@ -104,6 +104,74 @@ class ArchiveSafetyTests(unittest.TestCase):
         self.assertEqual(calls[0][1], "--check-signature")
         self.assertFalse(self.inspector.report["signature_verified"])
 
+    def capability_command(self, mode, calls):
+        def command(arguments, **_):
+            calls.append(arguments)
+            if arguments == ["/usr/sbin/pkgutil", "--help"]:
+                return b"--check-signature --payload-files --expand\n"
+            if arguments == ["/usr/bin/hdiutil", "attach", "-help"]:
+                return b"-readonly -nobrowse -noautoopen -mountpoint -plist\n"
+            if arguments[0] == "/usr/bin/pkgbuild":
+                source = Path(arguments[arguments.index("--root") + 1])
+                self.assertEqual([item.name for item in source.iterdir()], ["legacy-archive-probe.txt"])
+                self.assertFalse((source / "legacy-archive-probe.txt").stat().st_mode & 0o111)
+                self.assertNotIn("--scripts", arguments)
+                self.assertEqual(arguments[arguments.index("--install-location") + 1], "/")
+                Path(arguments[-1]).write_bytes(b"owned unsigned package fixture")
+                return b""
+            if arguments[:2] == ["/usr/sbin/pkgutil", "--expand-full"]:
+                if mode == "unsupported":
+                    raise archive.Blocked("Fixture tool rejects expand-full")
+                output = Path(arguments[-1])
+                payload = output / "Payload"
+                payload.mkdir(parents=True)
+                filename = payload / "legacy-archive-probe.txt"
+                if mode == "symlink":
+                    filename.symlink_to(output.parent / "source/legacy-archive-probe.txt")
+                else:
+                    filename.write_bytes(b"wrong bytes" if mode == "wrong-bytes" else b"Legacy archive extraction capability probe.\n")
+                if mode == "extra-path":
+                    (payload / "unexpected.txt").write_bytes(b"unexpected")
+                return b""
+            self.fail(f"Unexpected command or download reached: {arguments}")
+        return command
+
+    def test_inert_expand_full_probe_succeeds_without_apple_trust_or_download(self):
+        calls = []
+        self.inspector.command = self.capability_command("success", calls)
+        self.inspector.check_capabilities()
+        self.assertTrue(self.inspector.report["expand_full_probe"]["exact_bytes"])
+        self.assertFalse(self.inspector.report["signature_verified"])
+        self.assertEqual(len(calls), 4)
+        self.assertFalse(self.inspector.archive.exists())
+        self.assertFalse((self.inspector.root / "capability-probe").exists())
+
+    def test_unsupported_expand_full_probe_blocks_before_any_download(self):
+        calls = []
+        self.inspector.command = self.capability_command("unsupported", calls)
+        with self.assertRaisesRegex(archive.Blocked, "rejects expand-full"):
+            self.inspector.download_archive()
+        self.assertFalse(self.inspector.archive.exists())
+        self.assertFalse((self.inspector.root / "capability-probe").exists())
+
+    def test_incorrect_probe_bytes_or_payload_path_block_before_any_download(self):
+        for mode in ("wrong-bytes", "extra-path"):
+            with self.subTest(mode=mode):
+                calls = []
+                self.inspector.command = self.capability_command(mode, calls)
+                with self.assertRaisesRegex(archive.Blocked, "bytes/path differ"):
+                    self.inspector.download_archive()
+                self.assertFalse(self.inspector.archive.exists())
+                self.assertFalse((self.inspector.root / "capability-probe").exists())
+
+    def test_symlink_probe_payload_blocks_before_any_download(self):
+        calls = []
+        self.inspector.command = self.capability_command("symlink", calls)
+        with self.assertRaisesRegex(archive.Blocked, "symlink"):
+            self.inspector.download_archive()
+        self.assertFalse(self.inspector.archive.exists())
+        self.assertFalse((self.inspector.root / "capability-probe").exists())
+
     def test_nonzero_pkgutil_is_fatal_even_if_its_text_looks_trusted(self):
         self.inspector.command = lambda *_args, **_kwargs: (_ for _ in ()).throw(archive.Blocked("pkgutil failed"))
         with self.assertRaisesRegex(archive.Blocked, "pkgutil failed"):

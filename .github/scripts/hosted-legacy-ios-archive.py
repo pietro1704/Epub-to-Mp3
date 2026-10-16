@@ -218,6 +218,60 @@ class Inspector:
             if self.archive.stat().st_size > SIZE:
                 raise Blocked("Download exceeds the exact Apple archive size")
 
+    def check_capabilities(self):
+        help_pkg = self.command(["/usr/sbin/pkgutil", "--help"]).decode()
+        help_mount = self.command(["/usr/bin/hdiutil", "attach", "-help"]).decode()
+        if not all(flag in help_pkg for flag in ("--check-signature", "--payload-files", "--expand")) or not all(flag in help_mount for flag in ("-readonly", "-nobrowse", "-noautoopen", "-mountpoint", "-plist")):
+            raise Blocked("Required inspection flags are not documented by the runner tools")
+        # --expand-full is not advertised by pkgutil --help on the hosted image.
+        # Prove the API with an unsigned, owned, inert fixture, never Apple data.
+        probe = self.root / "capability-probe"
+        probe.mkdir()
+        try:
+            source = probe / "source"
+            source.mkdir()
+            filename = "legacy-archive-probe.txt"
+            expected = b"Legacy archive extraction capability probe.\n"
+            text = source / filename
+            text.write_bytes(expected)
+            text.chmod(0o600)
+            package, output = probe / "probe.pkg", probe / "expanded"
+            # install-location is package metadata only. No installer is called.
+            self.command(["/usr/bin/pkgbuild", "--root", str(source), "--identifier",
+                          "com.pietrocode.epubtomp3.archive-capability", "--version", "1",
+                          "--install-location", "/", str(package)], timeout=30,
+                         monitor=lambda: disk_gate(self.root))
+            self.command(["/usr/sbin/pkgutil", "--expand-full", str(package), str(output)],
+                         timeout=30, monitor=lambda: disk_gate(self.root))
+            payload = output / "Payload"
+            result = payload / filename
+            within(probe, result)
+            if (output.is_symlink() or payload.is_symlink() or not payload.is_dir() or
+                    list(payload.iterdir()) != [result] or not result.is_file() or
+                    result.stat().st_mode & 0o111 or result.stat().st_size != len(expected) or
+                    result.read_bytes() != expected):
+                raise Blocked("Inert expand-full capability probe bytes/path differ")
+            self.report["expand_full_probe"] = {"scope": "owned_unsigned_plain_text_only",
+                                                "payload_path": f"Payload/{filename}", "exact_bytes": True}
+        finally:
+            if not (self.reports / "active-command.json").exists():
+                shutil.rmtree(within(self.root, probe))
+
+    def download_archive(self):
+        self.check_capabilities()
+        curl = shutil.which("curl")
+        if not curl:
+            raise Blocked("Preinstalled curl unavailable")
+        # Use curl here because its protocol/redirect bounds are explicit;
+        # preferred aria2/xcodes must not weaken the exact Apple HTTPS origin.
+        self.command([curl, "--disable", "--fail", "--show-error", "--silent", "--proto", "=https",
+                      "--proto-redir", "=https", "--max-redirs", "0", "--location",
+                      "--connect-timeout", "15", "--max-time", "900", "--max-filesize", str(SIZE),
+                      "--output", str(self.archive), URL], timeout=910, monitor=self.download_monitor)
+        self.download_monitor()
+        if self.archive.stat().st_size != SIZE:
+            raise Blocked("Downloaded archive size differs from Apple metadata")
+
     def verify_and_expand(self, package):
         output = self.command(["/usr/sbin/pkgutil", "--check-signature", str(package)], timeout=90)
         self.report["certificate_sha256"] = signature_gate(output.decode())
@@ -388,22 +442,7 @@ class Inspector:
         self.report["catalog_entry"] = {key: entries[0].get(key) for key in (
             "identifier", "contentType", "fileSize", "source", "simulatorVersion", "hostRequirements"
         )}
-        help_pkg = self.command(["/usr/sbin/pkgutil", "--help"]).decode()
-        help_mount = self.command(["/usr/bin/hdiutil", "help", "attach"]).decode()
-        if not all(flag in help_pkg for flag in ("--check-signature", "--payload-files", "--expand-full", "--expand")) or not all(flag in help_mount for flag in ("-readonly", "-nobrowse", "-noautoopen", "-mountpoint", "-plist")):
-            raise Blocked("Required inspection flags are not documented by the runner tools")
-        curl = shutil.which("curl")
-        if not curl:
-            raise Blocked("Preinstalled curl unavailable")
-        # Use curl here because its protocol/redirect bounds are explicit;
-        # preferred aria2/xcodes must not weaken the exact Apple HTTPS origin.
-        self.command([curl, "--disable", "--fail", "--show-error", "--silent", "--proto", "=https",
-                      "--proto-redir", "=https", "--max-redirs", "0", "--location",
-                      "--connect-timeout", "15", "--max-time", "900", "--max-filesize", str(SIZE),
-                      "--output", str(self.archive), URL], timeout=910, monitor=self.download_monitor)
-        self.download_monitor()
-        if self.archive.stat().st_size != SIZE:
-            raise Blocked("Downloaded archive size differs from Apple metadata")
+        self.download_archive()
         digest = hashlib.sha256()
         deadline = time.monotonic() + 180
         with self.archive.open("rb") as handle:
