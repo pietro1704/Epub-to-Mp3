@@ -626,10 +626,12 @@ class AndroidEmbeddedConverter
   Future<String> synthesizePiper({
     required String text,
     required String output,
+    String? optionsJson,
   }) async {
     final value = await _channel.invokeMethod<String>('piperSynthesize', {
       'text': text,
       'output': output,
+      'optionsJson': ?optionsJson,
     });
     if (value == null || value.isEmpty) throw EmbeddedConverterUnavailable();
     return value;
