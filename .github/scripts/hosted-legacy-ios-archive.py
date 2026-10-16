@@ -1,6 +1,7 @@
 """Hosted ARM archive inspection only. Importing this module performs no work."""
 
 import hashlib
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -103,16 +104,40 @@ def disk_gate(directory, additional=0, usage=shutil.disk_usage):
 def signature_gate(output):
     # pkgutil performs cryptographic/trust verification. Text/fingerprints do
     # not replace it: the caller must also require its successful exit status.
-    if "Status: signed by a certificate trusted by" not in output:
+    statuses = re.findall(r"^\s*Status: (.+)$", output, re.M)
+    if len(statuses) != 1 or statuses[0] not in (
+            "signed by a certificate trusted by macOS", "signed Apple Software (Development)"):
         raise Blocked("Package is not reported as trusted by pkgutil")
     if re.search(r"expired|revoked|invalid|untrusted|unsigned", output, re.I):
         raise Blocked("Package trust status is not acceptable")
-    if "Apple Software Update Certificate Authority" not in output:
+    # Observed Apple pkgutil output from run38909806259; Apple documents this
+    # intermediate's exact pin at https://support.apple.com/en-au/102130.
+    # Associate each fingerprint with its numbered certificate, not global text.
+    blocks = list(re.finditer(r"^\s*(\d+)\. ([^\r\n]+)\r?\n(.*?)(?=^\s*\d+\. |\Z)", output, re.M | re.S))
+    if [block[1] for block in blocks] != ["1", "2", "3"]:
+        raise Blocked("Expected exactly three ordered certificate blocks")
+    names = [block[2] for block in blocks]
+    if names[1] not in ("Apple Software Update Certificate Authority", "Apple Software Update Certification Authority") or names[2] != "Apple Root CA":
         raise Blocked("Expected Apple software-update chain is absent")
+    if statuses[0] == "signed Apple Software (Development)":
+        if names[0] != "Development Update":
+            raise Blocked("Unexpected Apple development-update signer")
+        timestamps = re.findall(r"^\s*Signed with a trusted timestamp on: (.+)$", output, re.M)
+        if len(timestamps) != 1:
+            raise Blocked("Missing or ambiguous trusted signing timestamp")
+        try:
+            signed_at = datetime.strptime(timestamps[0], "%Y-%m-%d %H:%M:%S %z")
+        except ValueError as error:
+            raise Blocked("Malformed trusted signing timestamp") from error
+        if signed_at > datetime.now(timezone.utc):
+            raise Blocked("Trusted signing timestamp is in the future")
     fingerprints = []
-    for value in re.findall(r"SHA256 Fingerprint:\s*((?:[0-9a-fA-F]{2}[\s:]*){32})", output):
-        fingerprints.append(re.sub(r"[^0-9a-fA-F]", "", value).lower())
-    if APPLE_CA not in fingerprints:
+    for block in blocks:
+        values = re.findall(r"SHA256 Fingerprint:\s*((?:[0-9a-fA-F]{2}[\s:]*){32})", block[3])
+        if len(values) != 1:
+            raise Blocked("Certificate fingerprint is missing or ambiguous")
+        fingerprints.append(re.sub(r"[^0-9a-fA-F]", "", values[0]).lower())
+    if fingerprints[1] != APPLE_CA:
         raise Blocked("Pinned Apple update CA fingerprint was not verified")
     return fingerprints
 

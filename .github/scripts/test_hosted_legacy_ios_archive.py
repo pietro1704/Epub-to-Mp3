@@ -59,6 +59,33 @@ Usage:\thdiutil attach <image>
 """
 
 
+# Entire real pkgutil receipt, run38909806259/66ce7ec, 10-pkgutil.log.
+# This fixture validates parsing only, never cryptographic authenticity.
+REAL_APPLE_SIGNATURE = """Package "iPhoneSimulatorSDK15_5.pkg":
+   Status: signed Apple Software (Development)
+   Signed with a trusted timestamp on: 2022-05-26 01:15:02 +0000
+   Certificate Chain:
+    1. Development Update
+       Expires: 2029-04-14 21:28:23 +0000
+       SHA256 Fingerprint:
+           D8 F1 22 D9 79 88 EB 12 D7 13 7B BD 53 74 E5 5A 9C 4B 38 F5 3D 25 
+           56 62 27 74 E2 3D DD 55 D3 6A
+       ------------------------------------------------------------------------
+    2. Apple Software Update Certification Authority
+       Expires: 2031-10-15 00:00:00 +0000
+       SHA256 Fingerprint:
+           12 99 E9 BF E7 76 A2 9F F4 52 F8 C4 F5 E5 5F 3B 4D FD 29 34 34 9D 
+           D1 85 0B 82 74 F3 5C 71 74 5C
+       ------------------------------------------------------------------------
+    3. Apple Root CA
+       Expires: 2035-02-09 21:40:36 +0000
+       SHA256 Fingerprint:
+           B0 B1 73 0E CB C7 FF 45 05 14 2C 49 F1 29 5E 6E DA 6B CA ED 7E 2C 
+           68 C5 BE 91 B5 A1 10 01 F0 24
+
+"""
+
+
 class ArchiveSafetyTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="archive-safety-fixture-")
@@ -385,15 +412,21 @@ class ArchiveSafetyTests(unittest.TestCase):
         self.assertFalse((self.inspector.root / "capability-probe").exists())
 
     def test_nonzero_pkgutil_is_fatal_even_if_its_text_looks_trusted(self):
-        self.inspector.command = lambda *_args, **_kwargs: (_ for _ in ()).throw(archive.Blocked("pkgutil failed"))
+        calls = []
+        def command(arguments, **_):
+            calls.append(arguments[1])
+            # The command supervisor rejects nonzero before returning stdout;
+            # even the complete real-looking receipt cannot authorize expansion.
+            raise archive.Blocked("pkgutil failed: " + REAL_APPLE_SIGNATURE)
+        self.inspector.command = command
         with self.assertRaisesRegex(archive.Blocked, "pkgutil failed"):
             self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
+        self.assertEqual(calls, ["--check-signature"])
         self.assertFalse(self.inspector.report["signature_verified"])
 
     def test_payload_expansion_follows_successful_trust_and_declared_disk_budget(self):
         calls = []
-        fingerprint = " ".join(archive.APPLE_CA[index:index + 2] for index in range(0, 64, 2))
-        trusted = f"Status: signed by a certificate trusted by macOS\nApple Software Update Certificate Authority\nSHA256 Fingerprint: {fingerprint}\n".encode()
+        trusted = REAL_APPLE_SIGNATURE.encode()
         def command(arguments, **_):
             calls.append(arguments[1])
             if arguments[1] == "--check-signature":
@@ -415,12 +448,40 @@ class ArchiveSafetyTests(unittest.TestCase):
         self.assertFalse((self.inspector.root / "flat").exists())
 
     def test_trust_text_requires_the_exact_apple_ca_and_rejects_expired_chain(self):
-        fingerprint = " ".join(archive.APPLE_CA[index:index + 2] for index in range(0, 64, 2))
-        output = f"Status: signed by a certificate trusted by macOS\nApple Software Update Certificate Authority\nSHA256 Fingerprint: {fingerprint}\n"
-        self.assertEqual(archive.signature_gate(output), [archive.APPLE_CA])
-        for invalid in [output.replace(archive.APPLE_CA[:2], "00", 1), output + "expired", output.replace("Apple Software Update Certificate Authority", "Other Authority")]:
+        output = REAL_APPLE_SIGNATURE
+        self.assertEqual(archive.signature_gate(output)[1], archive.APPLE_CA)
+        legacy = output.replace("signed Apple Software (Development)", "signed by a certificate trusted by macOS").replace("Update Certification Authority", "Update Certificate Authority")
+        self.assertEqual(archive.signature_gate(legacy)[1], archive.APPLE_CA)
+        for invalid in [output.replace("12 99 E9 BF", "00 99 E9 BF"), output + "expired", output.replace("Apple Software Update Certification Authority", "Other Authority")]:
             with self.assertRaises(archive.Blocked):
                 archive.signature_gate(invalid)
+
+    def test_real_signature_mutations_never_reach_payload_listing_or_expansion(self):
+        output = REAL_APPLE_SIGNATURE
+        intermediate = output.split("    2. ")[1].split("    3. ")[0]
+        moved_pin = output.replace(intermediate, intermediate.replace("12 99 E9 BF", "00 99 E9 BF"))
+        moved_pin = moved_pin.replace("D8 F1 22 D9 79 88 EB 12 D7 13 7B BD 53 74 E5 5A 9C 4B 38 F5 3D 25 \n           56 62 27 74 E2 3D DD 55 D3 6A", "12 99 E9 BF E7 76 A2 9F F4 52 F8 C4 F5 E5 5F 3B 4D FD 29 34 34 9D \n           D1 85 0B 82 74 F3 5C 71 74 5C")
+        invalid_outputs = [
+            output.replace("signed Apple Software (Development)", "signed by a developer certificate issued by Apple (Development)"),
+            output.replace("Development Update", "Arbitrary Developer"),
+            output.replace("Apple Root CA", "Other Root CA"), moved_pin,
+            output + "   Status: signed Apple Software (Development)\n",
+            output.replace("   Signed with a trusted timestamp on: 2022-05-26 01:15:02 +0000\n", ""),
+            output.replace("2022-05-26 01:15:02 +0000", "malformed"),
+            output.replace("2022-05-26 01:15:02 +0000", "2999-05-26 01:15:02 +0000"),
+            output + "revoked", output + "invalid", output + "untrusted", output + "unsigned",
+        ]
+        for receipt in invalid_outputs:
+            with self.subTest(receipt=receipt):
+                calls = []
+                def command(arguments, **_):
+                    calls.append(arguments[1])
+                    return receipt.encode()
+                self.inspector.command = command
+                with self.assertRaises(archive.Blocked):
+                    self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
+                self.assertEqual(calls, ["--check-signature"])
+                self.assertFalse(self.inspector.report["signature_verified"])
 
     def test_unsafe_or_unknown_payload_layout_is_not_expanded(self):
         self.assertEqual(archive.safe_payload_listing("./Library/runtime/file\nLibrary/other\n"), 2)
