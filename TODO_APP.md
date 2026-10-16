@@ -3519,3 +3519,10 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+
+## SAFE-20261016-ANDROID-ARM64-EMU — Run actual ARM64 Piper inference on hosted Android
+
+- Status: workflow now uses the API 35 Google APIs x86_64 guest and must prove the image's ARM64 secondary ABI, `libndk_translation.so`, and ARM64 ISA bridge before running the ARM64-only app; exact-head GitHub Actions pending.
+- Scope: preserve an actual packaged Flutter/JNI Piper inference and missing-model failure test without asking x86_64 QEMU to boot an ARM64 guest.
+- Acceptance: GitHub Actions proves API 35, guest x86_64, secondary `arm64-v8a`, `libndk_translation.so`, and `ro.dalvik.vm.isa.arm64=x86_64`; APK includes ARM64-only JNI runtime; integration test installs Faber explicitly, synthesizes valid MP3 via JNI with no fallback, and fails with a fresh missing-model root. Report this as ARM64 ABI-translation execution, not native ARM CPU performance. Physical Android acceptance for this source head remains separate.
+- Evidence: Google API 35 `google_apis/x86_64` image build properties advertise `x86_64,arm64-v8a` and `libndk_translation.so`; Android's official emulator docs require accelerated guest architecture to match host CPU; specialist review rejected x86-host/ARM64-guest and hosted macOS ARM nested virtualization as invalid.

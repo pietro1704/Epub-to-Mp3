@@ -56,7 +56,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'Android installs Faber explicitly, synthesizes through JNI, and fails offline without the model',
+    'Android runs ARM64 Faber through JNI translation, and fails offline without the model',
     (tester) async {
       await app.main();
       await tester.pump();
@@ -155,7 +155,7 @@ void main() {
         expect(missingAudio, isEmpty);
 
         // ignore: avoid_print
-        print('ANDROID_FABER_NATIVE: model=$_modelId sha256=$_modelSha256 chapter=0 fallback=false missingModel=failed');
+        print('ANDROID_FABER_ABI_TRANSLATION: model=$_modelId sha256=$_modelSha256 chapter=0 fallback=false missingModel=failed');
       } finally {
         if (await sandbox.exists()) await sandbox.delete(recursive: true);
       }
