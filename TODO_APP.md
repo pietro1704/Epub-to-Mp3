@@ -43,6 +43,17 @@
 - [ ] Verify actual selected-one-of-two conversion and persisted manifest metadata through the existing offline worker/receipt/archive regression; execute checks only on GitHub. Add the required optional fields to server test fixtures; keep the CLI fixture's meaningful `None` unchanged.
 - Owner: crash_workflow_audit specialist; branch `feature/restore-manifest-source-total`. Status: implementation pending GitHub verification. Baseline: recovery CI `38867253856`, Rust job `116863046347`, reports CLI `E0560` at the orphan field initializer. No local tests/builds/formatter, root dirty worker edits, audio changes, journal resurrection or native-client/progressive-session claims.
 
+## CI-20261016-CODEQL-APPLE — Restore real Apple source coverage
+
+- [ ] Preserve the existing production macOS CodeQL category and restore the historical macOS unit, iOS unit and iOS UI compile categories with their real schemes.
+- [ ] Build actual SDK-correct Rust FFI prerequisites before project generation; compile iOS app, ShareExtension and Widget through the production dependency graph. Use generic device destinations; no Simulator boot or fake empty dylibs.
+- [ ] Verify all seven Swift analyses on GitHub, including real historical combined/platform-only app builds. Compilation and analysis are not app execution, native test success or proof of driver stability.
+- Owner: crash_workflow_audit specialist; branch `feature/codeql-apple-coverage`. Status: source prepared; no local tests/builds/syntax or remote configuration mutations. Preserve unrelated macOS/other-language jobs and the strict merge gate.
+- Baseline evidence: PR805 CodeQL check `116849734709` reported seven missing Swift configurations while its macOS Swift analysis was still pending. Three retired test categories last had successful master analyses on 2026-09-28. Current workflow omitted real UIKit/iOS extension extraction.
+- GitHub master run `38862918459`, Swift job `116849100230`, completed its Swift build but exceeded the 40-minute job limit during TRAP finalization. Raise only that job budget to 90 minutes; preserve extraction, queries, coverage and single-job builds. Analysis success remains pending.
+- Restore `/language:swift` with both macOS and iOS app builds in one traced database, and each platform-only category with its own actual app build. All uploads retain job identity `.github/workflows/codeql.yml:swift`; historical uploads use the exact original matrix environment, without filtering or relabeling unrelated coverage. Source evidence: successful master analyses `1620733555` (`78df918cf2`, combined, environment `{}`), `1621861648` (macOS) and `1621863231` (iOS), both platform analyses at `00073d5210`. The original/default query policy remains unchanged; no analyses, alerts or security configurations are deleted.
+- Limit Swift matrix concurrency to two hosted runners after the observed Mac capacity warning; preserve single-job native compilation and the 90-minute per-job timeout. GitHub extraction, SARIF processing and configuration reconciliation remain unverified until their actual jobs finish.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
