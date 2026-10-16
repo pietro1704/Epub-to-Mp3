@@ -18,6 +18,14 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 SIZE = 5_430_783_739
+# Reviewed observed exception: HEAD run 38908787295 at f84c2d32 reported this
+# exact length. Catalog SIZE remains the ceiling/disk budget, not an estimate.
+# xcodes 2.0.3 delegates to XcodesKit 1.0.4: fileSize is display metadata,
+# not a published checksum or an archive byte-equality check in its download path.
+# https://github.com/XcodesOrg/xcodes/blob/2.0.3/Package.resolved
+# https://github.com/XcodesOrg/XcodesKit/blob/a9e5d7d701f20f1385071851319cdaecccc9f1e8/Sources/XcodesKit/Models/Runtimes/Runtimes.swift
+# https://github.com/XcodesOrg/XcodesKit/blob/a9e5d7d701f20f1385071851319cdaecccc9f1e8/Sources/XcodesKit/Services/RuntimeArchiveService.swift
+OBSERVED_ARCHIVE_BYTES = 5_415_504_705
 URL = "https://devimages-cdn.apple.com/downloads/xcode/simulators/com.apple.pkg.iPhoneSimulatorSDK15_5-15.5.1.1653527639.dmg"
 CATALOG = "https://devimages-cdn.apple.com/downloads/xcode/simulators/index2.dvtdownloadableindex"
 APPLE_CA = "1299e9bfe776a29ff452f8c4f5e55f3b4dfd2934349dd1850b8274f35c71745c"
@@ -261,7 +269,7 @@ class Inspector:
         if self.archive.exists():
             within(self.root, self.archive)
             if self.archive.stat().st_size > SIZE:
-                raise Blocked("Download exceeds the exact Apple archive size")
+                raise Blocked("Download exceeds the pinned catalog ceiling")
 
     def check_capabilities(self):
         help_pkg = self.command(["/usr/sbin/pkgutil", "--help"]).decode()
@@ -317,8 +325,8 @@ class Inspector:
         self.report["download_attempted"] = True
         self.http_transfer("GET")
         self.download_monitor()
-        if self.archive.stat().st_size != SIZE:
-            raise Blocked("Downloaded archive size differs from Apple metadata")
+        if self.archive.stat().st_size != OBSERVED_ARCHIVE_BYTES:
+            raise Blocked("Downloaded archive size differs from the reviewed observed exception")
 
     def http_transfer(self, method):
         if method not in ("HEAD", "GET"):
@@ -330,6 +338,8 @@ class Inspector:
         output = self.root / "head-response.txt" if method == "HEAD" else self.archive
         receipt = {"method": method, "expected_archive_bytes": SIZE, "effective_url": None,
                    "curl_exit": None, "archive_authenticity": "unverified", "get_size_verified_by_head": False}
+        receipt["observed_exception_bytes"] = OBSERVED_ARCHIVE_BYTES
+        receipt["observed_exception_evidence_run"] = "38908787295"
         self.report[f"http_{method.lower()}"] = receipt
         duration = 30 if method == "HEAD" else 900
         # Use curl here because its protocol/redirect bounds are explicit;
@@ -384,6 +394,12 @@ class Inspector:
             if receipt.get("content_length") is None:
                 error = error or Blocked("HTTP Content-Length receipt is missing")
             receipt["declared_length_matches_catalog"] = receipt.get("content_length") == SIZE
+            if method == "GET":
+                receipt["catalog_size_mismatch"] = receipt.get("content_length") != SIZE
+                if (receipt.get("http_status") != 200 or receipt.get("content_range") is not None or
+                        receipt.get("content_length") != OBSERVED_ARCHIVE_BYTES or
+                        receipt.get("actual_archive_bytes") != OBSERVED_ARCHIVE_BYTES):
+                    error = error or Blocked("GET must match the reviewed exact 200/no-range/byte-length exception")
         if error:
             raise Blocked(str(error)) from error
         return receipt

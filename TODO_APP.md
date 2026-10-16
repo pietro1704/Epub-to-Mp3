@@ -1669,6 +1669,15 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 - [ ] Enable a30-minute GitHub-native watchdog for current-head Actions failures and actionable issue triage; verify its regression workflow and first live scan after merge.
 - Use builtin token only, bounded metadata reads, deduplicated bot-owned issue and explicit incomplete-coverage/recovery reporting. Treat issue content as untrusted data.
 - Repairs remain agent work; the watchdog does not claim unattended code repair, paid AI, deployments, retries or merge authority. All tests execute only on GitHub.
+# LEGACY-ARCHIVE-OBSERVED-SIZE — Reviewed transport exception, archive inspection only
+
+- Status: prepared source; GitHub host regressions and real archive inspection pending. No local execution or new download performed.
+- Evidence: HEAD-only run 38908787295 at f84c2d32 returned HTTP 200, identical literal Apple URL, no Content-Range, and Content-Length 5,415,504,705; catalog still declares 5,430,783,739. This proves a declared-size divergence, not its cause or publisher checksum.
+- Approved contract: catalog size remains the unchanged download ceiling/disk budget. GET must use the exact Apple URL with HTTP 200, no range, and declared/actual bytes exactly equal to the literal reviewed exception 5,415,504,705. HEAD cannot update that pin. No arbitrary size, redirect, alternate URL or transport fallback is accepted.
+- Primary source context: [xcodes 2.0.3 dependency pin](https://github.com/XcodesOrg/xcodes/blob/2.0.3/Package.resolved), [XcodesKit model](https://github.com/XcodesOrg/XcodesKit/blob/a9e5d7d701f20f1385071851319cdaecccc9f1e8/Sources/XcodesKit/Models/Runtimes/Runtimes.swift), and [archive service](https://github.com/XcodesOrg/XcodesKit/blob/a9e5d7d701f20f1385071851319cdaecccc9f1e8/Sources/XcodesKit/Services/RuntimeArchiveService.swift) use fileSize for display and do not enforce it as byte equality in the examined download path. They do not establish that Apple's value is an estimate.
+- Authenticity remains independent: streaming SHA256 is an observed receipt, never an Apple-published checksum; DMG verification and trusted Apple package signature/CA pin must pass before Apple payload expansion, followed by exact runtime 15.5/19F70 identity and architecture metadata. Owned bounds/cleanup and unconditional Intel Simulator quarantine are unchanged. No installation, runtime registration, Simulator/device creation, boot or app acceptance.
+- GitHub-only prerequisite: preserve existing negative signature/cleanup tests and add exact observed-pin acceptance, status/range/URL/declared/actual-length rejection and HEAD-does-not-change-pin cases before the real archive job. Workflow/artifact names explicitly describe archive inspection only, not installation or boot.
+
 # PR-REPAIR-SAFETY — Prepared autonomous PR repair safety
 
 - Status: source preparation; writers remain disabled by default. Missing LLM credentials must report `blocked_credentials`, never simulated repair readiness.

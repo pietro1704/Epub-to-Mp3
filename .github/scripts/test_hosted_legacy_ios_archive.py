@@ -200,6 +200,58 @@ class ArchiveSafetyTests(unittest.TestCase):
                 self.assertEqual(receipt["curl_exit"], status)
                 self.assertFalse(self.inspector.report["signature_verified"])
 
+    def test_reviewed_get_exception_requires_literal_status_url_length_and_actual_bytes(self):
+        self.assertEqual(archive.SIZE, 5_430_783_739)
+        self.assertEqual(archive.OBSERVED_ARCHIVE_BYTES, 5_415_504_705)
+        self.inspector.check_capabilities = lambda: None
+        cases = [
+            (200, archive.URL, archive.OBSERVED_ARCHIVE_BYTES, archive.OBSERVED_ARCHIVE_BYTES, None, True),
+            (206, archive.URL, archive.OBSERVED_ARCHIVE_BYTES, archive.OBSERVED_ARCHIVE_BYTES, None, False),
+            (200, archive.URL, archive.OBSERVED_ARCHIVE_BYTES, archive.OBSERVED_ARCHIVE_BYTES,
+             "bytes 0-5415504704/5415504705", False),
+            (200, archive.URL + "?different", archive.OBSERVED_ARCHIVE_BYTES, archive.OBSERVED_ARCHIVE_BYTES, None, False),
+            (200, archive.URL, archive.SIZE, archive.OBSERVED_ARCHIVE_BYTES, None, False),
+            (200, archive.URL, archive.OBSERVED_ARCHIVE_BYTES - 1, archive.OBSERVED_ARCHIVE_BYTES - 1, None, False),
+            (200, archive.URL, archive.OBSERVED_ARCHIVE_BYTES, archive.OBSERVED_ARCHIVE_BYTES - 1, None, False),
+        ]
+        for code, url, declared, actual, content_range, accepted in cases:
+            with self.subTest(code=code, url=url, declared=declared, actual=actual, content_range=content_range):
+                headers = f"HTTP/2 {code}\r\nContent-Length: {declared}\r\n"
+                if content_range is not None:
+                    headers += f"Content-Range: {content_range}\r\n"
+                headers += "\r\n"
+                base_command = self.http_command("GET", headers.encode())
+
+                def command(arguments, **options):
+                    base_command(arguments, **options)
+                    # Sparse owned fixture: no multi-GB allocation or network traffic.
+                    with self.inspector.archive.open("r+b") as handle:
+                        handle.truncate(actual)
+                    return f"\nhttp_code={code}\nurl_effective={url}\n".encode(), 0
+
+                self.inspector.command = command
+                with patch.object(archive.shutil, "which", return_value="/fixture/curl"):
+                    if accepted:
+                        self.inspector.download_archive()
+                    else:
+                        with self.assertRaises(archive.Blocked):
+                            self.inspector.download_archive()
+                receipt = self.inspector.report["http_get"]
+                self.assertEqual(receipt["actual_archive_bytes"], actual)
+                self.assertEqual(receipt["observed_exception_bytes"], 5_415_504_705)
+                self.assertEqual(receipt["archive_authenticity"], "unverified")
+                self.assertFalse(self.inspector.report["signature_verified"])
+
+    def test_head_cannot_change_reviewed_get_exception(self):
+        headers = b"HTTP/2 200\r\nContent-Length: 123\r\n\r\n"
+        self.inspector.command = self.http_command("HEAD", headers)
+        with patch.object(archive.shutil, "which", return_value="/fixture/curl"):
+            receipt = self.inspector.http_transfer("HEAD")
+        self.assertEqual(receipt["content_length"], 123)
+        self.assertEqual(archive.OBSERVED_ARCHIVE_BYTES, 5_415_504_705)
+        self.assertFalse(receipt["declared_length_matches_catalog"])
+        self.assertFalse(receipt["get_size_verified_by_head"])
+
     def test_metadata_only_mode_never_calls_probe_download_or_apple_extraction(self):
         entry = {"identifier": "com.apple.pkg.iPhoneSimulatorSDK15_5", "fileSize": archive.SIZE,
                  "source": archive.URL, "contentType": "package",
