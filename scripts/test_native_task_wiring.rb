@@ -22,19 +22,20 @@ class NativeTaskWiringTest < Minitest::Test
     @dir = Dir.mktmpdir("native-task-wiring-")
     @bin = File.join(@dir, "bin")
     @events = File.join(@dir, "events")
-    FileUtils.mkdir_p([@bin, File.join(@dir, "scripts"), File.join(@dir, "ios/EpubToMp3"), File.join(@dir, "target/debug")])
+    @target_dir = File.join(@dir, "custom-target")
+    FileUtils.mkdir_p([@bin, File.join(@dir, "scripts"), File.join(@dir, "ios/EpubToMp3"), File.join(@target_dir, "debug")])
     %w[native_job.rb native_build_preflight.rb native_build_command.rb].each do |file|
       FileUtils.cp(File.join(__dir__, file), File.join(@dir, "scripts", file))
     end
     FileUtils.cp(File.join(__dir__, "dev_backend.sh"), File.join(@dir, "scripts", "dev_backend.sh"))
     wasm_build = File.join(@dir, "scripts/build_web_wasm.sh")
     File.write(wasm_build, "#!/bin/bash\nset -euo pipefail\nmise exec -- cargo build -p converter-wasm --target wasm32-unknown-unknown --release\n")
-    server = File.join(@dir, "target/debug/converter-server")
+    server = File.join(@target_dir, "debug/converter-server")
     File.write(server, <<~'SH')
       #!/bin/bash
       set -euo pipefail
       "$FIXTURE_RUBY" -e 'f=File.open(ARGV[0], "a+"); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 0 : 97)' "$FIXTURE_LOCK"
-      echo "server $* $HOST:$PORT" >> "$FIXTURE_EVENTS"
+      echo "server $* $HOST:$PORT piper=${PIPER_BINARY:-} model=${PIPER_MODEL:-}" >> "$FIXTURE_EVENTS"
       exit "${FIXTURE_SERVER_STATUS:-0}"
     SH
     File.chmod(0o755, server)
@@ -94,7 +95,7 @@ class NativeTaskWiringTest < Minitest::Test
       esac
     SH
     @env = {
-      "PATH" => "#{@bin}:#{ENV.fetch('PATH')}", "MISE_PROJECT_ROOT" => @dir,
+      "PATH" => "#{@bin}:#{ENV.fetch('PATH')}", "MISE_PROJECT_ROOT" => @dir, "CARGO_TARGET_DIR" => @target_dir,
       "FIXTURE_RUBY" => RbConfig.ruby, "FIXTURE_EVENTS" => @events,
       "FIXTURE_LOCK" => File.join(@dir, "lease"), "TMPDIR" => @dir,
       "IOS_SIMULATOR_UDID" => "00000000-0000-0000-0000-000000000001",
@@ -187,6 +188,23 @@ class NativeTaskWiringTest < Minitest::Test
     assert_equal ["cargo", "server"], events.map { |event| event.split.first }
     assert_match(/server --reload 127.0.0.2:8123/, events.last)
     assert_unlocked
+  end
+
+  def test_rust_server_preserves_piper_environment_and_releases_lease_before_launch
+    _, error, status = run_task("rust:server", "FIXTURE_SIM_STATE" => "Shutdown", "FIXTURE_CARGO_STATUS" => "0")
+    assert status.success?, error
+    assert_equal ["cargo", "server"], events.map { |event| event.split.first }
+    assert_match(/server 127\.0\.0\.1:8000/, events.last)
+    assert_includes events.last, "piper=#{@dir}/.venv/bin/piper"
+    assert_includes events.last, "model=#{@dir}/models/piper/en_US-lessac-medium.onnx"
+    assert_unlocked
+  end
+
+  def test_dev_backend_default_reload_does_not_require_nonempty_array
+    _, error, status = run_dev_backend("FIXTURE_SIM_STATE" => "Shutdown", "FIXTURE_CARGO_STATUS" => "0")
+    assert status.success?, error
+    assert_equal ["cargo", "server"], events.map { |event| event.split.first }
+    assert_equal "server 127.0.0.1:8000 piper= model=", events.last
   end
 
   def test_blocked_preflight_never_invokes_compiler_or_task_body
