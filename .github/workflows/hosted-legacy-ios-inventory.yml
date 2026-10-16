@@ -1,0 +1,168 @@
+name: Hosted legacy iOS inventory
+
+# Phase 0 only: no checkout, compilation, runtime installation, device creation
+# or Simulator launch. The Intel quarantine is unchanged.
+on:
+  push:
+    branches: ['feature/hosted-legacy-ios-inventory']
+    paths: ['.github/workflows/hosted-legacy-ios-inventory.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-legacy-ios-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    name: Inspect hosted ARM64 legacy iOS metadata
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - name: Refuse any execution outside the literal hosted ARM64 job
+        if: runner.environment != 'github-hosted' || runner.os != 'macOS' || runner.arch != 'ARM64'
+        run: |
+          echo '::error::This metadata inventory is restricted to GitHub-hosted macOS ARM64 runners.'
+          exit 1
+      - name: Record bounded read-only host and Apple catalog metadata
+        env:
+          INVENTORY_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          INVENTORY_EVENT_SHA: ${{ github.sha }}
+          INVENTORY_WORKFLOW_REF: ${{ github.workflow_ref }}
+          INVENTORY_RUN_ID: ${{ github.run_id }}
+          INVENTORY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          INVENTORY_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          INVENTORY_RUNNER_ARCH: ${{ runner.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import platform
+          import pathlib
+          import plistlib
+          import re
+          import shutil
+          import subprocess
+          import urllib.parse
+          import urllib.request
+
+          destination = pathlib.Path(os.environ["RUNNER_TEMP"]) / "legacy-ios-inventory.json"
+          report = {
+              "phase": "inventory_only",
+              "state": "blocked",
+              "workflow_sha": os.environ["INVENTORY_WORKFLOW_SHA"],
+              "event_sha": os.environ["INVENTORY_EVENT_SHA"],
+              "workflow_ref": os.environ["INVENTORY_WORKFLOW_REF"],
+              "run_id": os.environ["INVENTORY_RUN_ID"],
+              "run_attempt": os.environ["INVENTORY_RUN_ATTEMPT"],
+              "runner_environment": os.environ["INVENTORY_RUNNER_ENVIRONMENT"],
+              "runner_arch": os.environ["INVENTORY_RUNNER_ARCH"],
+              "actual_machine": platform.machine(),
+              "metadata_collection": "incomplete",
+              "provisioning_readiness": "blocked",
+              "runtime_installed_by_job": False,
+              "device_created_by_job": False,
+              "simulator_started_by_job": False,
+              "runtime_launchability": "unverified",
+              "app_acceptance": "unverified",
+              "blockers": [],
+              "provisioning_blockers": [],
+          }
+          blockers = report["blockers"]
+          provisioning = report["provisioning_blockers"]
+          try:
+              if (report["runner_environment"] != "github-hosted"
+                      or report["runner_arch"] != "ARM64" or report["actual_machine"] != "arm64"
+                      or platform.system() != "Darwin"):
+                  raise RuntimeError("Hosted macOS ARM64 execution context was not established")
+              if not all(re.fullmatch(r"[0-9a-f]{40}", report[key]) for key in ("workflow_sha", "event_sha")):
+                  raise RuntimeError("Missing immutable workflow/event SHA evidence")
+              model = subprocess.run(
+                  ["/usr/sbin/sysctl", "-n", "hw.model"], check=True,
+                  capture_output=True, text=True, timeout=5,
+              ).stdout.strip()
+              report["host_model"] = model
+              if not model or model == "MacBookPro15,2":
+                  raise RuntimeError("Physical incident host or unknown model refused")
+              report["hosted_origin_limit"] = "Workflow context is not a local quarantine bypass or GPU stability proof"
+              report["required_free_disk_bytes"] = 30 * 1024**3
+              try:
+                  disk = shutil.disk_usage(os.environ["RUNNER_TEMP"])
+                  report["free_disk_bytes"] = disk.free
+                  if disk.free < report["required_free_disk_bytes"]:
+                      provisioning.append("Less than 30 GiB free; no provisioning, cleanup or paid-runner substitution attempted")
+              except OSError as error:
+                  provisioning.append(f"Disk metadata unavailable: {type(error).__name__}: {error}")
+              try:
+                  xcode = pathlib.Path("/Applications/Xcode_16.4.app/Contents/version.plist")
+                  with xcode.open("rb") as handle:
+                      version = plistlib.load(handle)
+                  report["xcode_version"] = version.get("CFBundleShortVersionString") or version.get("ProductVersion")
+                  report["xcode_build"] = version.get("ProductBuildVersion")
+                  if report["xcode_version"] not in ("16.4", "16.4.0") or report["xcode_build"] != "16F6":
+                      provisioning.append("Exact Xcode 16.4/16F6 metadata was not verified")
+              except (OSError, ValueError, TypeError, AttributeError, plistlib.InvalidFileException) as error:
+                  provisioning.append(f"Xcode metadata unavailable: {type(error).__name__}: {error}")
+              report["xcodes_path"] = shutil.which("xcodes")
+              report["aria2_path"] = shutil.which("aria2c")
+              if not report["xcodes_path"] or not report["aria2_path"]:
+                  provisioning.append("Preinstalled xcodes and aria2 are required for later provisioning; no tool installation attempted")
+              # Disk/tool/Xcode constraints must not suppress the independent
+              # bounded catalog evidence. Host identity has already passed.
+              catalog_url = "https://devimages-cdn.apple.com/downloads/xcode/simulators/index2.dvtdownloadableindex"
+              with urllib.request.urlopen(catalog_url, timeout=15) as response:
+                  parsed = urllib.parse.urlparse(response.url)
+                  if parsed.scheme != "https" or parsed.hostname != "devimages-cdn.apple.com" or response.url != catalog_url:
+                      raise RuntimeError("Unexpected Apple catalog origin")
+                  payload = response.read(2 * 1024**2 + 1)
+              if len(payload) > 2 * 1024**2:
+                  raise RuntimeError("Apple catalog exceeds bounded metadata budget")
+              report["catalog_sha256"] = hashlib.sha256(payload).hexdigest()
+              catalog = plistlib.loads(payload)
+              matches = [entry for entry in catalog["downloadables"]
+                         if entry.get("identifier") == "com.apple.pkg.iPhoneSimulatorSDK15_5"]
+              if len(matches) != 1:
+                  raise RuntimeError("Exact iOS 15.5 catalog entry is missing or ambiguous")
+              entry = matches[0]
+              expected_url = "https://devimages-cdn.apple.com/downloads/xcode/simulators/com.apple.pkg.iPhoneSimulatorSDK15_5-15.5.1.1653527639.dmg"
+              if (entry.get("contentType") != "package"
+                      or entry.get("fileSize") != 5430783739
+                      or entry.get("source") != expected_url
+                      or entry.get("simulatorVersion") != {"buildUpdate": "19F70", "version": "15.5"}):
+                  raise RuntimeError("Apple runtime metadata differs from the reviewed version/build/size/source")
+              report["runtime_catalog_entry"] = {
+                  key: entry.get(key) for key in (
+                      "identifier", "contentType", "fileSize", "source", "simulatorVersion", "hostRequirements"
+                  )
+              }
+              report["metadata_collection"] = "complete"
+              report["provisioning_readiness"] = "blocked" if provisioning else "ready_for_review"
+              report["state"] = "metadata_collected_provisioning_blocked" if provisioning else "metadata_ready_for_review"
+              report["remaining_gates"] = [
+                  "Runtime archive integrity and Apple package signature not inspected",
+                  "Runtime installation and exact SE1 device availability not verified",
+                  "Hosted execution and cleanup design requires review; Intel quarantine remains in force",
+                  "Private book/model delivery and exact-app acceptance remain separate",
+                  "ARM64 metadata does not establish exact iOS 15.5 runtime or SE1 compatibility",
+              ]
+          except Exception as error:
+              blockers.append(f"Inventory could not establish prerequisites: {type(error).__name__}: {error}")
+          finally:
+              destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+              print(json.dumps({"state": report["state"], "blockers": blockers,
+                                "provisioning_blockers": provisioning, "report": str(destination)}))
+          if blockers or provisioning:
+              raise SystemExit(2)
+          PY
+      - name: Preserve metadata only
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: hosted-legacy-ios-inventory
+          path: ${{ runner.temp }}/legacy-ios-inventory.json
+          if-no-files-found: warn

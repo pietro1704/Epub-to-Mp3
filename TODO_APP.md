@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## TOOL-20261016-HOSTED-SE-INVENTORY — Inspect exact legacy iOS prerequisites remotely
+
+- [ ] Run the phase-0 workflow on literal GitHub-hosted `macos-15` ARM64, preserving immutable workflow/event SHA receipts and fail-closed hosted-context/actual-machine identity. Scoped push on `feature/hosted-legacy-ios-inventory` watches only the workflow so the initial inventory can run before default-branch workflow registration; manual dispatch remains available after registration.
+- [ ] Independently collect disk, Xcode16.4/16F6, preinstalled xcodes/aria2 and bounded official Apple iOS15.5/19F70 catalog metadata (5,430,783,739-byte package metadata only). Provisioning needs 30 GiB free and exact tools/Xcode; unmet constraints do not suppress catalog collection after valid host identity. Metadata failure or provisioning blockers produce a blocked result with retained evidence, never app acceptance.
+- Owner: crash_workflow_audit specialist; branch `feature/hosted-legacy-ios-inventory`. Status: source prepared, remote inventory not executed. No local execution, runtime/archive download, installation, compilation, app/Simulator launch, device creation, private seed/model transfer, system cleanup or paid-runner substitution is included.
+- Evidence scope: metadata only; runtime installation, package signature, exact SE1 destination, ARM runtime compatibility and launchability remain unverified. Existing unconditional Intel NativeJob quarantine remains untouched, with no environment exception. Current user authorization places tests on GitHub; selecting ARM64 for inventory does not authorize provisioning/boot or certify app behavior or GPU stability.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
