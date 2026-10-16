@@ -1199,7 +1199,20 @@ final class AudioPlayer: ObservableObject {
             self.snapshot = newSnapshot
             if !newSnapshot.playableChapters.isEmpty {
                 let startIndex = pendingSnapshotStartIndex ?? currentChapterIndex
+                let pendingReaderPage = pendingProportionalSeek
                 play(snapshot: newSnapshot, startingAt: startIndex, restoreAutoplay: false)
+                // This automatic first queue continues the reader's existing
+                // intent. Explicit loads and stop still discard it in teardown.
+                // The synchronous MainActor load restores ownership before its
+                // queued duration observers can consume the request.
+                if let pendingReaderPage,
+                   player != nil,
+                   pendingReaderPage.jobID == newSnapshot.jobId,
+                   pendingReaderPage.jobID == snapshot?.jobId,
+                   pendingReaderPage.forChapterIndex == currentChapterIndex {
+                    pendingProportionalSeek = pendingReaderPage
+                    applyPendingProportionalSeek()
+                }
             }
             return
         }
@@ -1894,11 +1907,11 @@ final class AudioPlayer: ObservableObject {
                 seek(to: max(0, min(1, ratio)) * durationSeconds)
                 pendingProportionalSeek = nil
             } else {
-                // Bind the pending seek to the chapter we just loaded.
+                // Bind the pending seek to the job and chapter we just loaded.
                 // The time observer will only apply it when the player
                 // is still on that exact chapter — protecting against
                 // an auto-advance racing the duration publish.
-                pendingProportionalSeek = .init(ratio: ratio, forChapterIndex: target)
+                pendingProportionalSeek = .init(ratio: ratio, jobID: snapshot.jobId, forChapterIndex: target)
             }
             resume()
             return
@@ -1920,11 +1933,11 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Pending fractional-position seek waiting for `durationSeconds`.
-    /// to be published by the asset prepare. Tagged with the chapter
-    /// index it was queued for so the time observer doesn't apply it
-    /// against an unrelated chapter on auto-advance.
+    /// to be published by the asset prepare. Scoped to its job and chapter
+    /// so a late duration cannot apply it to another book or chapter.
     private struct PendingProportionalSeek {
         let ratio: Double
+        let jobID: String
         let forChapterIndex: Int
     }
     private var pendingProportionalSeek: PendingProportionalSeek?
@@ -1934,14 +1947,14 @@ final class AudioPlayer: ObservableObject {
     /// is still on the chapter the seek was queued for; otherwise the
     /// pending seek is dropped (the queue advanced past it).
     func applyPendingProportionalSeek() {
-        guard let pending = pendingProportionalSeek, durationSeconds > 0 else { return }
-        guard pending.forChapterIndex == currentChapterIndex else {
-            // Auto-advance happened between queuing and the duration
-            // landing — drop the stale seek rather than applying it
-            // to the wrong chapter.
+        guard let pending = pendingProportionalSeek else { return }
+        guard pending.jobID == snapshot?.jobId,
+              pending.forChapterIndex == currentChapterIndex else {
+            // Discard invalid ownership before waiting for asset duration.
             pendingProportionalSeek = nil
             return
         }
+        guard durationSeconds > 0 else { return }
         seek(to: max(0, min(1, pending.ratio)) * durationSeconds)
         pendingProportionalSeek = nil
     }
@@ -3126,6 +3139,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func teardownPlayer() {
+        pendingProportionalSeek = nil
         lastPlaybackRetentionRequest = nil
         remotePlaybackGeneration = UUID()
         for operation in segmentPersistenceTasks.values { operation.cancel() }
@@ -3830,9 +3844,10 @@ final class AudioPlayer: ObservableObject {
     func testHook_setDurationSeconds(_ value: Double) { self.durationSeconds = value }
     func testHook_playbackChapterCount() -> Int { playbackChapters.count }
     func testHook_setPendingProportionalSeek(_ ratio: Double?) {
-        if let ratio {
+        if let ratio, let jobID = snapshot?.jobId {
             self.pendingProportionalSeek = .init(
                 ratio: ratio,
+                jobID: jobID,
                 forChapterIndex: currentChapterIndex
             )
         } else {
