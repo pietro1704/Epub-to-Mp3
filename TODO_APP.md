@@ -8,6 +8,14 @@
 - GitHub run `38890824673`, head `d3a5ddd0`, Flutter job `116939690356`: 471 passed, two failed, three skipped. Both new file-read widgets reached their history assertions but failed the retained no-exception assertion because the Android platform-voice EventChannel had no fixture handler during real I/O turns. Added a scoped listen/cancel mock with cleanup; no production behavior or assertions were weakened. GitHub rerun/analyzer remain pending.
 - Verification pending exclusively on GitHub: projection/identity/source-index/path/receipt/refused-write tests, manual success/warning/zero-HTTP/in-flight-preferences widgets, existing Faber cancellation/Jobs regressions, full Flutter tests and analyzer. No local tests, builds, formatter or analyzer execution.
 
+## APP-20261016-WEB-LOCAL-HELP — Keep embedded diagnostics local
+
+- GitHub RED `38890892219`, Web job `116939943517`: 183/185 tests passed; both new close-button queries matched the overlay and drawer button. Scope only those queries to the Help complementary region; retain all HTTP-abort, reopening, URL and local-content assertions. Follow-up GitHub verification pending.
+
+- [ ] Owner: crash_guard_audit; show useful localized runtime/job/progress help without backend probes, downloads or restart controls in the embedded client. Preserve explicitly selected HTTP diagnostics, abort polling when Help closes, and avoid duplicate API prefixes.
+- Preserve Faber preflight cancellation/identity and strict provider preferences. Offer CLI reproduction only when every explicit setting has a real Rust CLI representation; typed `tts_preferences` remains unsupported by that guide.
+- Verification pending GitHub `mise run test:web`; no local tests, formatter, build or native execution. Desktop log delivery is outside this slice.
+
 ## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
 
 - [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.

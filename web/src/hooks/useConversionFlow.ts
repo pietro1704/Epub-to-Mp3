@@ -236,73 +236,60 @@ const isNetworkError = (error: unknown): boolean => {
   );
 };
 
-function buildCliCommand(values: ConversionFormValues): string {
-  const parts = ["python python_app/convert"];
-  const displayFileName = values.file?.name || values.fileName;
-  if (displayFileName) {
-    parts.push(displayFileName);
-  }
+function buildCliCommand(values: ConversionFormValues): string | undefined {
+  // Only offer a reproduction command when every explicit setting is representable.
+  const supportedFields = new Set([
+    'file',
+    'fileName',
+    'localPath',
+    'uploadId',
+    'bookTitle',
+    'bookAuthor',
+    'coverUrl',
+    'uiLanguage',
+    'engine',
+    'voice',
+    'model',
+    'chapters',
+    'sections',
+    'noParallel',
+    'clearCache',
+    'footnoteMode',
+  ]);
+  if (
+    values.footnoteMode !== 'inline' ||
+    Object.entries(values).some(
+      ([key, value]) => value !== undefined && !supportedFields.has(key),
+    ) ||
+    !['piper', 'edge', 'system', 'auto'].includes(values.engine) ||
+    (values.model && !['piper', 'auto'].includes(values.engine))
+  )
+    return undefined;
 
-  if (values.engine) {
-    parts.push("--engine", values.engine);
+  const source = values.localPath || values.file?.name || values.fileName;
+  if (!source || source.startsWith('-')) return undefined;
+  const quote = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
+  const parts = [
+    'converter-cli',
+    'convert',
+    quote(source),
+    '--engine',
+    quote(values.engine),
+    '--fallback-engine',
+    quote('none'),
+  ];
+  const optionalArguments: [string, string | undefined][] = [
+    ['--voice', values.voice],
+    ['--model', values.model],
+    ['--chapter', values.chapters],
+    ['--section', values.sections],
+  ];
+  for (const [flag, value] of optionalArguments) {
+    if (value) parts.push(flag, quote(value));
   }
-
-  if (values.voice) {
-    parts.push("--voice", values.voice);
-  }
-  if (values.model) {
-    parts.push("--model", values.model);
-  }
-
-  if (values.chapters) {
-    parts.push("--chapter", values.chapters);
-  }
-  if (values.sections) {
-    parts.push("--section", values.sections);
-  }
-  if (values.priority) {
-    parts.push("--priority", values.priority);
-  }
-
-  if (typeof values.verbose === "boolean") {
-    parts.push(values.verbose ? "--verbose" : "--no-verbose");
-  }
-
-  if (typeof values.formattingCues === "boolean") {
-    parts.push(
-      values.formattingCues ? "--formatting-cues" : "--no-formatting-cues",
-    );
-  }
-
-  if (values.noParallel) {
-    parts.push("--no-parallel");
-  }
-
-  if (values.multiEngineParallel) {
-    parts.push("--multi-engine");
-  }
-
-  if (values.filterChapters) {
-    parts.push("--filter-chapters");
-  }
-
-  if (values.clearCache) {
-    parts.push("--clear-cache");
-  }
-
-  if (values.footnoteMode && values.footnoteMode !== "inline") {
-    if (values.footnoteMode === "skip") {
-      parts.push("--no-footnote");
-    } else if (values.footnoteMode === "chapter_end") {
-      parts.push("--footnote-chapter-end");
-    }
-  }
-
-  if (values.language) {
-    parts.push("--language", values.language);
-  }
-
-  return parts.join(" ");
+  if (values.noParallel) parts.push('--no-parallel');
+  if (values.clearCache) parts.push('--clear-cache');
+  return parts.join(' ');
 }
 
 type Action =
@@ -310,7 +297,7 @@ type Action =
   | {
       type: "start";
       entry: StatusEntry;
-      cliCommand: string;
+      cliCommand?: string;
       startedAt?: string;
     }
   | { type: "job-created"; entry: StatusEntry; jobId: string }

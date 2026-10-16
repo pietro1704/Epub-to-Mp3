@@ -420,6 +420,7 @@ async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export class HttpConversionClient implements ConversionClient {
+  readonly mode = "http" as const;
   private resumableEndpointAvailable = true;
 
   constructor(private readonly baseUrl: string = API_BASE_URL) {}
