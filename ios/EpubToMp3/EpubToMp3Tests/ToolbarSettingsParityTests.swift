@@ -94,12 +94,24 @@ final class ToolbarSettingsParityTests: XCTestCase {
     func testEdgeSecondaryRequiresConsentAndRevocationClearsPreference() throws {
         let (settings, defaults) = make()
         XCTAssertFalse(settings.selectableSecondaryAudioEngines.contains(.edge))
-        settings.secondaryAudioEngine = .piper
-        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "piper")
         settings.secondaryAudioEngine = .edge
         XCTAssertNil(settings.secondaryAudioEngine, "Unconsented Edge must not be saved.")
         XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
         XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary, "Unconsented Edge must never reach conversion preferences.")
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
+
+        settings.audioEngine = .edge
+        settings.allowOnlineAudioFallback = true
+        settings.secondaryAudioEngine = .piper
+        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "piper")
+
+        settings.allowOnlineAudioFallback = false
+        XCTAssertEqual(settings.secondaryAudioEngine, .piper, "Revocation may retain a non-Edge secondary.")
+        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "piper")
+        settings.secondaryAudioEngine = .edge
+        XCTAssertNil(settings.secondaryAudioEngine, "Unconsented Edge must not be saved.")
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"), "Rejected assignment must clear the previous persisted secondary.")
+        XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary)
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
 
         settings.audioEngine = .piper
