@@ -4,6 +4,12 @@ Reply in concise Brazilian Portuguese. Keep code, comments, logs, and technical
 documentation in English; preserve literal identifiers, locale strings, and fixtures.
 Current explicit user instructions override older workflow defaults.
 
+Task-specific correction, 2026-10-16: Pietro confirmed this Mac is stable and
+authorized the TTS comparison in its local terminal. Run isolated CPU benchmark
+preparation/inference serially; retain measured evidence. Simulator execution
+remains quarantined. This exception does not resume unrelated local test suites
+or native app/device verification.
+
 ## Runtime
 
 Apple clients use native Swift (UIKit/AppKit) and the embedded Rust

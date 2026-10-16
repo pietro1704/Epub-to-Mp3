@@ -1,0 +1,42 @@
+[
+  {
+    "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/portuguese/bundle.json",
+    "bytes": 24371,
+    "sha256": "389ab9d942f044a6a71d04e86ba89b100dee21ed91ca9d099b19ac45b122d242"
+  },
+  {
+    "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/portuguese/tokenizer.model",
+    "bytes": 60995,
+    "sha256": "3aa51309c55f114771c156aaeb86f6fc325991364aa3c38af74aecf1cbd0fade"
+  },
+  {
+    "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/portuguese/bos_before_voice.npy",
+    "bytes": 4224,
+    "sha256": "9396378d581d63554cc30f2861e5d5b825650ff3dd3594a9ddc73d18df0973f1"
+  },
+  {
+    "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/portuguese/mimi_encoder.onnx",
+    "bytes": 39768446,
+    "sha256": "189d737f150a3d72be0818235c2b42f921cb1ad39107d11bb2e7f605fbdc7bc5"
+  },
+  {
+    "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/portuguese/text_conditioner.onnx",
+    "bytes": 16388344,
+    "sha256": "693523a9b8e8853a7130676fd0e8189939255411700f0207664715226a26c409"
+  },
+  {
+    "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/portuguese/flow_lm_main_int8.onnx",
+    "bytes": 76341079,
+    "sha256": "119e5ce926cadc273508565143c86a7a9cd86450fa99cad6a37a79ba50f9db02"
+  },
+  {
+    "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/portuguese/flow_lm_flow_int8.onnx",
+    "bytes": 9962530,
+    "sha256": "53c50fc75f892687920c316513715bfbefbdb3b7642786e287c7971df53edb26"
+  },
+  {
+    "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/portuguese/mimi_decoder_int8.onnx",
+    "bytes": 22684077,
+    "sha256": "691f89f074585c828914cecd5396e30e0e2a14dbfa4890bd1b5806d303daeb4e"
+  }
+]

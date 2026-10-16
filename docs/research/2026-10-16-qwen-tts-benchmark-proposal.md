@@ -1,7 +1,10 @@
 # Qwen TTS candidates and benchmark proposal
 
 Date: 2026-10-16. Task: APP-20261016-TTS-BENCHMARK-CONSENSUS.
-Status: draft for discussion with Pietro; no agreed protocol or benchmark execution.
+Status: initial proposal retained for discussion. Pietro subsequently authorized
+the [first Mac terminal benchmark](2026-10-16-tts-mac-benchmark.md); app/voice
+selection remains open. The execution authorization supersedes this draft's
+earlier preparation/benchmark approval statements.
 
 ## Scope and latest Qwen releases
 

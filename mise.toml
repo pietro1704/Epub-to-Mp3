@@ -1465,3 +1465,11 @@ run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
 [tasks."piper:build-runtime"]
 description = "Build the native Piper Embedded runtime without external executable fallback"
 run = "mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"
+
+[tasks."tts:mac:benchmark"]
+description = "Run the explicitly authorized isolated CPU TTS benchmark on this Mac without Simulator"
+run = "mise exec -- ruby docs/research/tts-mac-20261016/run.rb"
+
+[tasks."tts:mac:prepare"]
+description = "Download explicitly authorized isolated CPU runtimes and compact TTS models"
+run = "mise exec -- ruby docs/research/tts-mac-20261016/setup.rb"

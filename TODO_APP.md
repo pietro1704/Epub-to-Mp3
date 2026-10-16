@@ -1,12 +1,19 @@
 # App delivery backlog
 
+## APP-20261016-TTS-MAC-RERUN — Execute the agreed TTS comparison locally
+
+- [ ] Owner: Codex; host measurements verified, PR delivery pending CI. User explicitly authorized a local Mac terminal benchmark and confirmed host stability; Simulator remains quarantined.
+- Acceptance: rerun identical Portuguese fixtures, include Qwen where executable, retain raw timings/audio, and report speed, first-output latency, timeouts/failures, memory and a clearly qualified app-suitability score.
+- Keep model/dependency preparation separate from inference time, serialize synthesis through the shared heavy-job lease, preserve the dirty main checkout, and distinguish host measurements from mobile acceptance and listening quality.
+- Evidence: `docs/research/2026-10-16-tts-mac-benchmark.md`; 54 unique attempts, 46 fully decoded/non-silent artifacts with rechecked hashes, 8 supervisor timeouts, no other failures. Persistent audio/logs: `ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/`. Host load ranged 4.45–308.33; voice quality and app/mobile acceptance are unverified. No production defaults or imported data changed.
+
 ## APP-20261016-TTS-BENCHMARK-CONSENSUS — Agree on a free TTS comparison including Qwen
 
-- [ ] Owner: Codex; status: research and user discussion, benchmark not executed.
+- [ ] Owner: Codex; status: user discussion; first authorized Mac benchmark completed. Final app/voice selection remains open.
 - Request: investigate the latest Qwen-team TTS, include eligible Qwen checkpoints in the benchmark candidate list, present candidates before execution, and iterate with Pietro on the protocol.
 - Acceptance: agree on target hardware, Portuguese/Brazilian pronunciation, eligibility/cost, quality versus latency/resource priorities, corpus, repetitions, failure handling and runtime evidence before implementation or synthesis.
 - Draft/source inventory: `docs/research/2026-10-16-qwen-tts-benchmark-proposal.md`. Qwen3-TTS open weights and paid Qwen-Audio hosted models are separate entries. Qwen4 architecture preview is not a TTS checkpoint.
-- Verification: official-source research only. No model download, synthesis, app/device/Simulator action or local test/build. Physical runtime acceptance remains blocked by host safety; GitHub runners cannot establish phone performance.
+- Verification: initial official-source research followed by APP-20261016-TTS-MAC-RERUN under explicit local authorization. No app/device/Simulator action or local test suite/build. Physical runtime acceptance remains blocked by host safety; GitHub runners cannot establish phone performance.
 
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
