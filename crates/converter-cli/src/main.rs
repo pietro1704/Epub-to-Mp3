@@ -1035,7 +1035,9 @@ mod tests {
             ["--no-online-fallback", "--allow-online-fallback"],
         ] {
             let args = ["convert", "book.epub", flags[0], flags[1]].map(str::to_owned);
-            assert!(parse_args(&args).unwrap_err().contains("mutually exclusive"));
+            assert!(parse_args(&args)
+                .unwrap_err()
+                .contains("mutually exclusive"));
         }
     }
 
@@ -1059,8 +1061,14 @@ mod tests {
         };
         converter_core::cache::atomic_write_json(preference_path(&config), &saved).unwrap();
         let stored = fs::read(preference_path(&config)).unwrap();
-        let inherited = ["convert", "book.epub", "--engine", "piper", "--use-secondary"]
-            .map(str::to_owned);
+        let inherited = [
+            "convert",
+            "book.epub",
+            "--engine",
+            "piper",
+            "--use-secondary",
+        ]
+        .map(str::to_owned);
         assert_eq!(
             effective_preferences(&config, &parse_args(&inherited).unwrap(), &inherited).unwrap(),
             saved
@@ -1120,8 +1128,7 @@ mod tests {
         .to_vec();
         assert!(effective_preferences(&config, &parse_args(&args).unwrap(), &args).is_err());
         args.push("--allow-online-fallback".into());
-        let effective =
-            effective_preferences(&config, &parse_args(&args).unwrap(), &args).unwrap();
+        let effective = effective_preferences(&config, &parse_args(&args).unwrap(), &args).unwrap();
         assert!(effective.allow_online_fallback);
         assert_eq!(effective.secondary.unwrap().engine, "edge");
         assert_eq!(saved_preferences(&config).unwrap(), saved);
