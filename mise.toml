@@ -768,8 +768,9 @@ fi
 xcodegen generate
 # Slice 18 preflight: widget must be embedded in the app bundle.
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
-# Hold the single-heavy-job lock around xcodebuild (CPU CATERR / PCIe panic
-# guard on constrained Intel Macs — never let it race another heavy job).
+# NativeJob holds the shared lease and checks for active Simulators,
+# SimMetalHost and Simulator.app before any project generation or compilation.
+# These checks limit exposure but cannot establish hardware stability.
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
