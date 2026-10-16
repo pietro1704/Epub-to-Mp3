@@ -666,9 +666,12 @@ class ArchiveSafetyTests(unittest.TestCase):
             "os.replace(p+'.tmp',p); time.sleep(30)"
         )
         try:
-            with patch.object(archive.subprocess, "Popen", side_effect=capture), \\
-                    patch.object(archive.selectors, "DefaultSelector",
-                                 side_effect=fail_selector):
+            with (
+                patch.object(archive.subprocess, "Popen", side_effect=capture),
+                patch.object(
+                    archive.selectors, "DefaultSelector", side_effect=fail_selector
+                ),
+            ):
                 with self.assertRaisesRegex(OSError, "selector fixture failure"):
                     self.inspector.command(
                         [sys.executable, "-c", script],

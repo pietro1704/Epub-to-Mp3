@@ -1694,3 +1694,9 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 - Final adversarial follow-up: autonomous source repair now requires every observed trusted exact-SHA CI run to be terminal failure; any historical success, queued/running attempt or other terminal result requires human/active diagnosis. Authentication-shaped files/directories are denied before staging and publication. Codex installation is separated into a step without LLM/metadata credentials; current failure is revalidated before installation and immediately before inference. These added regressions remain pending on GitHub; prior 27/27 proof applies only to revision 1bea1ec.
 - Coverage limit: the run-list API replaces earlier attempts; any `run_attempt != 1` is conservatively blocked because previous success/failure outcomes were not observed. This preparation does not claim complete rerun-history recovery or infer a code defect from CI metadata.
 
+
+## CI-20261016-ARCHIVE-SELECTOR-FIXTURE — Restore hosted safety regression import
+
+- Status: syntax correction prepared; GitHub-only rerun pending.
+- Evidence: exact-head manual archive inspection run `38949478581`, host-safety job `117151152368`, failed while importing the selector-cleanup regression because a doubled continuation backslash at line669 was invalid Python. Archive inspection was skipped before any native/archive action.
+- Correction: use parenthesized context managers; preserve the started-child cleanup, registry removal and missing-final-receipt assertions. Acceptance requires the hosted safety suite and authorized archive-metadata run to pass on the new head. No local command, build, test, download or Simulator action was performed.
