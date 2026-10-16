@@ -1,0 +1,108 @@
+name: Flutter real Rust Faber
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, 'feature/**']
+    paths:
+      - '.github/workflows/flutter-rust-faber.yml'
+      - 'flutter_app/test/desktop_faber_integration_test.dart'
+      - 'flutter_app/lib/services/desktop_embedded_converter.dart'
+  pull_request:
+    paths:
+      - '.github/workflows/flutter-rust-faber.yml'
+      - 'flutter_app/test/desktop_faber_integration_test.dart'
+      - 'flutter_app/lib/services/desktop_embedded_converter.dart'
+      - 'crates/converter-ffi/**'
+      - 'crates/converter-core/**'
+      - 'native/piper-runtime/**'
+      - 'native/vendor/**'
+      - 'mise.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dart-rust-faber-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  dart-rust-faber:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby,flutter
+      MISE_YES: '1'
+      ORT_PREFER_DYNAMIC_LINK: '1'
+      ORT_SKIP_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install scoped project tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Install native build and audio verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg
+      - name: Explicitly provision checksum-pinned offline runtime and model
+        run: |
+          set -euo pipefail
+          owned="$RUNNER_TEMP/ah13-dart-faber"
+          mkdir -p "$owned/ort" "$owned/models/pt_BR-faber-medium"
+          archive="$owned/onnxruntime-linux-x64-1.24.4.tgz"
+          curl --fail --location --retry 3 --max-time 180 \
+            https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz -o "$archive"
+          echo '3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747  '"$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$owned/ort"
+          runtime="$owned/ort/onnxruntime-linux-x64-1.24.4/lib"
+          test -f "$runtime/libonnxruntime.so"
+          echo "ORT_LIB_LOCATION=$runtime" >> "$GITHUB_ENV"
+          echo "ORT_DYLIB_PATH=$runtime/libonnxruntime.so" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$runtime" >> "$GITHUB_ENV"
+          base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
+          curl --fail --location --retry 3 --max-time 180 "$base/pt_BR-faber-medium.onnx" -o "$owned/models/pt_BR-faber-medium/model.onnx"
+          curl --fail --location --retry 3 --max-time 60 "$base/pt_BR-faber-medium.onnx.json" -o "$owned/models/pt_BR-faber-medium/model.onnx.json"
+          printf '%s  %s\n' \
+            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$owned/models/pt_BR-faber-medium/model.onnx" \
+            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$owned/models/pt_BR-faber-medium/model.onnx.json" \
+            | sha256sum --check --status
+          echo "EPUB_DART_FABER_MODELS=$owned/models" >> "$GITHUB_ENV"
+      - name: Build the real Piper-enabled Rust FFI and phoneme data
+        run: mise run converter-ffi:build
+      - name: Resolve the actual phoneme data and Rust library
+        run: |
+          set -euo pipefail
+          phontab=$(find "$GITHUB_WORKSPACE/target/espeak-data" -path '*/out/build/espeak-ng-data/phontab' -type f -print -quit)
+          test -n "$phontab"
+          data=$(dirname "$phontab")
+          test -f "$data/phondata"
+          echo "PIPER_ESPEAKNG_DATA_DIRECTORY=$(dirname "$data")" >> "$GITHUB_ENV"
+          test -f "$GITHUB_WORKSPACE/target/release/libconverter_ffi.so"
+          echo "EPUB_DART_FABER_LIBRARY=$GITHUB_WORKSPACE/target/release/libconverter_ffi.so" >> "$GITHUB_ENV"
+      - name: Convert exactly two public chapters through Dart and real Rust FFI
+        env:
+          EPUB_DART_FABER_INTEGRATION: '1'
+          EPUB_DART_FABER_REPORT: ${{ github.workspace }}/.reports/desktop-faber/evidence.json
+        run: |
+          set -o pipefail
+          mkdir -p .reports/desktop-faber
+          cd flutter_app
+          mise exec -- flutter test test/desktop_faber_integration_test.dart --reporter expanded \
+            2>&1 | tee ../.reports/desktop-faber/runtime.log
+          test -s ../.reports/desktop-faber/evidence.json
+          grep -F 'DART_FABER_NATIVE: model=pt_BR-faber-medium chapters=2' ../.reports/desktop-faber/runtime.log
+      - name: Retain metadata and logs only
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dart-rust-faber-linux
+          path: .reports/desktop-faber
+          if-no-files-found: warn
+      - name: Remove only the owned temporary runtime and model
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ah13-dart-faber"
