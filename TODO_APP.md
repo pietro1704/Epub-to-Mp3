@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## APP-20261016-WATCHDOG-PR-CHECKS — Separate PR regression from the metadata monitor
+
+- [ ] Owner: crash_guard_audit; keep actual read-only watchdog regression coverage on PRs in a dedicated workflow. Remove the PR trigger from the privileged metadata monitor, retaining its schedule, manual, workflow-completion and issue events and trusted default-branch checkout.
+- Evidence: PR #806 run `38864736033` completed its regression successfully but published a skipped `monitor` check (`116856468581`). The exact-green merge gate in #805 correctly rejects that skipped check. Do not relax the gate or turn a non-executed monitor into a successful no-op.
+- Acceptance pending: GitHub executes the PR regression without scheduling the monitor on that PR; monitor runtime and wiring regressions remain mandatory before operational writes. Preserve watchdog JS behavior and all five disabled writers. No local tests, builds, syntax checks, commit, push or external writes executed for this slice.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
