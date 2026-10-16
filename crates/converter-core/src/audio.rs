@@ -210,14 +210,6 @@ fn invalid_audio(message: impl Into<String>) -> AudioError {
 }
 
 fn native_audio_info(path: &Path) -> Result<Option<NativeAudioInfo>, AudioError> {
-    use symphonia::core::{
-        codecs::DecoderOptions,
-        errors::Error,
-        formats::FormatOptions,
-        io::{MediaSourceStream, MediaSourceStreamOptions},
-        meta::MetadataOptions,
-        probe::Hint,
-    };
     let mut file = File::open(path)?;
     let mut prefix = [0u8; 12];
     let count = file.read(&mut prefix)?;
@@ -265,11 +257,44 @@ fn native_audio_info(path: &Path) -> Result<Option<NativeAudioInfo>, AudioError>
     }
     if is_wave {
         validate_wave_bounds(&mut file)?;
-    } else {
-        validate_mpeg_bounds(&mut file)?;
+        file.seek(SeekFrom::Start(0))?;
+        return decode_native_audio(Box::new(file));
     }
-    file.seek(SeekFrom::Start(0))?;
-    let source = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
+    let segments = validate_mpeg_bounds(&mut file)?;
+    let mut combined: Option<NativeAudioInfo> = None;
+    for segment in segments {
+        // The decoder must never resynchronize into binary ID3 payloads or
+        // interpret another segment's metadata as part of the current stream.
+        // Reuse the validated inode even if the path is atomically replaced.
+        // Segments decode sequentially, so cloned descriptors may share a cursor.
+        let source = AudioSegmentSource::new(file.try_clone()?, segment)?;
+        let Some(info) = decode_native_audio(Box::new(source))? else {
+            return Ok(None);
+        };
+        if let Some(total) = combined.as_mut() {
+            if total.sample_rate != info.sample_rate {
+                return Err(invalid_audio("audio changes sample rate"));
+            }
+            total.duration += info.duration;
+        } else {
+            combined = Some(info);
+        }
+    }
+    Ok(combined)
+}
+
+fn decode_native_audio(
+    source: Box<dyn symphonia::core::io::MediaSource>,
+) -> Result<Option<NativeAudioInfo>, AudioError> {
+    use symphonia::core::{
+        codecs::DecoderOptions,
+        errors::Error,
+        formats::FormatOptions,
+        io::{MediaSourceStream, MediaSourceStreamOptions},
+        meta::MetadataOptions,
+        probe::Hint,
+    };
+    let source = MediaSourceStream::new(source, MediaSourceStreamOptions::default());
     let mut format = match symphonia::default::get_probe().format(
         &Hint::new(),
         source,
@@ -380,7 +405,129 @@ fn validate_wave_bounds(file: &mut File) -> Result<(), AudioError> {
     Ok(())
 }
 
-fn validate_mpeg_bounds(file: &mut File) -> Result<(), AudioError> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MpegSegment {
+    start: u64,
+    length: u64,
+}
+
+/// A file-backed logical stream that cannot expose neighboring ID3/audio bytes.
+struct AudioSegmentSource {
+    file: File,
+    segment: MpegSegment,
+    position: u64,
+}
+
+impl AudioSegmentSource {
+    fn new(mut file: File, segment: MpegSegment) -> io::Result<Self> {
+        let end = segment.start.checked_add(segment.length)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "audio extent overflow"))?;
+        if end > file.metadata()?.len() {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "truncated audio extent"));
+        }
+        file.seek(SeekFrom::Start(segment.start))?;
+        Ok(Self { file, segment, position: 0 })
+    }
+}
+
+impl Read for AudioSegmentSource {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let remaining = self.segment.length - self.position;
+        let length = buffer.len().min(usize::try_from(remaining).unwrap_or(usize::MAX));
+        let count = self.file.read(&mut buffer[..length])?;
+        self.position += count as u64;
+        Ok(count)
+    }
+}
+
+impl Seek for AudioSegmentSource {
+    fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+        let target = match from {
+            SeekFrom::Start(offset) => i128::from(offset),
+            SeekFrom::Current(offset) => i128::from(self.position) + i128::from(offset),
+            SeekFrom::End(offset) => i128::from(self.segment.length) + i128::from(offset),
+        };
+        if target < 0 || target > i128::from(self.segment.length) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek outside audio extent"));
+        }
+        let target = target as u64;
+        self.file.seek(SeekFrom::Start(self.segment.start + target))?;
+        self.position = target;
+        Ok(target)
+    }
+}
+
+impl symphonia::core::io::MediaSource for AudioSegmentSource {
+    fn is_seekable(&self) -> bool { true }
+    fn byte_len(&self) -> Option<u64> { Some(self.segment.length) }
+}
+
+#[derive(Default)]
+struct MpegFrameCount {
+    frames: u64,
+    metadata: bool,
+    expected_frames: Option<u64>,
+    expected_bytes: Option<u64>,
+}
+
+impl MpegFrameCount {
+    fn finish(&self, start: u64, end: u64) -> Result<MpegSegment, AudioError> {
+        let audio_frames = self.frames.saturating_sub(u64::from(self.metadata));
+        if audio_frames == 0 {
+            return Err(invalid_audio("MPEG segment has no audio frames"));
+        }
+        if self.expected_frames.is_some_and(|expected| expected != audio_frames) {
+            return Err(invalid_audio("MPEG frame count does not match Info/Xing declaration"));
+        }
+        if self.expected_bytes.is_some_and(|expected| expected != end - start) {
+            return Err(invalid_audio("MPEG byte count does not match Info/Xing declaration"));
+        }
+        Ok(MpegSegment { start, length: end - start })
+    }
+}
+
+fn mpeg_info_counts(
+    file: &mut File,
+    offset: u64,
+    length: u64,
+    bits: u32,
+) -> Result<Option<MpegFrameCount>, AudioError> {
+    let mpeg1 = (bits >> 19) & 3 == 3;
+    let mono = (bits >> 6) & 3 == 3;
+    let side = match (mpeg1, mono) {
+        (true, true) => 17,
+        (true, false) => 32,
+        (false, true) => 9,
+        (false, false) => 17,
+    };
+    // LAME retains its Info/Xing offset when CRC is present; also accept
+    // encoders that place the optional two CRC bytes before side information.
+    for position in [4 + side, 6 + side] {
+        if position == 6 + side && (bits >> 16) & 1 != 0 { continue; }
+        if position + 8 > length { continue; }
+        file.seek(SeekFrom::Start(offset + position))?;
+        let mut header = [0u8; 8];
+        file.read_exact(&mut header)?;
+        if &header[..4] != b"Info" && &header[..4] != b"Xing" { continue; }
+        let flags = u32::from_be_bytes(header[4..].try_into().unwrap());
+        let fields = u64::from(flags & 1 != 0) + u64::from(flags & 2 != 0);
+        if position + 8 + fields * 4 > length {
+            return Err(invalid_audio("truncated Info/Xing frame counts"));
+        }
+        let mut count = MpegFrameCount { metadata: true, ..MpegFrameCount::default() };
+        for (flag, target) in [(1, &mut count.expected_frames), (2, &mut count.expected_bytes)] {
+            if flags & flag != 0 {
+                let mut value = [0u8; 4];
+                file.read_exact(&mut value)?;
+                *target = Some(u64::from(u32::from_be_bytes(value)));
+            }
+        }
+        return Ok(Some(count));
+    }
+    Ok(None)
+}
+
+fn validate_mpeg_bounds(file: &mut File) -> Result<Vec<MpegSegment>, AudioError> {
     let mut end = file.metadata()?.len();
     if end >= 128 {
         file.seek(SeekFrom::Start(end - 128))?;
@@ -411,7 +558,9 @@ fn validate_mpeg_bounds(file: &mut File) -> Result<(), AudioError> {
         }
     }
     let mut offset = 0u64;
-    let mut frames = 0u64;
+    let mut segments = Vec::new();
+    let mut segment_start = 0;
+    let mut count = MpegFrameCount::default();
     while offset < end {
         if end - offset < 4 {
             return Err(invalid_audio("truncated MPEG frame header"));
@@ -420,6 +569,10 @@ fn validate_mpeg_bounds(file: &mut File) -> Result<(), AudioError> {
         let mut header = [0u8; 4];
         file.read_exact(&mut header)?;
         if &header[..3] == b"ID3" {
+            if count.frames != 0 {
+                segments.push(count.finish(segment_start, offset)?);
+                count = MpegFrameCount::default();
+            }
             if end - offset < 10 {
                 return Err(invalid_audio("truncated ID3 header"));
             }
@@ -440,6 +593,7 @@ fn validate_mpeg_bounds(file: &mut File) -> Result<(), AudioError> {
             if offset > end {
                 return Err(invalid_audio("truncated ID3 tag"));
             }
+            segment_start = offset;
             continue;
         }
         let bits = u32::from_be_bytes(header);
@@ -476,16 +630,26 @@ fn validate_mpeg_bounds(file: &mut File) -> Result<(), AudioError> {
         };
         let length = (if version == 3 { 144000 } else { 72000 }) * bitrate / rate
             + u64::from((bits >> 9) & 1);
-        offset += length;
-        if offset > end {
+        if length > end - offset {
             return Err(invalid_audio("truncated MPEG frame payload"));
         }
-        frames += 1;
+        if let Some(metadata) = mpeg_info_counts(file, offset, length, bits)? {
+            if count.frames != 0 {
+                segments.push(count.finish(segment_start, offset)?);
+            }
+            segment_start = offset;
+            count = metadata;
+        }
+        offset += length;
+        count.frames += 1;
     }
-    if frames == 0 {
+    if count.frames != 0 {
+        segments.push(count.finish(segment_start, offset)?);
+    }
+    if segments.is_empty() {
         return Err(invalid_audio("MPEG audio has no frames"));
     }
-    Ok(())
+    Ok(segments)
 }
 
 fn validate_cover_container(bytes: &[u8], format: image::ImageFormat) -> Result<(), AudioError> {
@@ -922,6 +1086,110 @@ fn embed_cover_external(input: &Path, cover: &Path) -> Result<(), AudioError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_audio_source_preserves_logical_identity_and_hides_adjacent_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("segments.bin");
+        fs::write(&path, b"beforePAYLOADafter").unwrap();
+        let mut source = AudioSegmentSource::new(
+            File::open(&path).unwrap(),
+            MpegSegment { start: 6, length: 7 },
+        ).unwrap();
+        let mut payload = Vec::new();
+        source.read_to_end(&mut payload).unwrap();
+        assert_eq!(payload, b"PAYLOAD");
+        assert_eq!(source.seek(SeekFrom::End(-3)).unwrap(), 4);
+        let mut tail = [0; 3];
+        source.read_exact(&mut tail).unwrap();
+        assert_eq!(&tail, b"OAD");
+        assert!(source.seek(SeekFrom::Start(8)).is_err());
+        assert!(source.seek(SeekFrom::End(-8)).is_err());
+        assert_eq!(source.seek(SeekFrom::Start(0)).unwrap(), 0);
+        let mut first = [0; 1];
+        source.read_exact(&mut first).unwrap();
+        assert_eq!(&first, b"P");
+        assert!(AudioSegmentSource::new(
+            File::open(&path).unwrap(),
+            MpegSegment { start: 6, length: 99 },
+        ).is_err());
+        assert!(AudioSegmentSource::new(
+            File::open(&path).unwrap(),
+            MpegSegment { start: u64::MAX, length: 1 },
+        ).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_segments_retain_validated_file_identity_after_path_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("audio.bin");
+        fs::write(&path, b"FIRSTSECOND").unwrap();
+        let validated = File::open(&path).unwrap();
+        let replacement = root.path().join("replacement.bin");
+        fs::write(&replacement, b"OTHERVALUES").unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        for (segment, expected) in [
+            (MpegSegment { start: 0, length: 5 }, &b"FIRST"[..]),
+            (MpegSegment { start: 5, length: 6 }, &b"SECOND"[..]),
+        ] {
+            let mut source = AudioSegmentSource::new(validated.try_clone().unwrap(), segment).unwrap();
+            let mut bytes = Vec::new();
+            source.read_to_end(&mut bytes).unwrap();
+            assert_eq!(bytes, expected);
+        }
+        assert_eq!(fs::read(path).unwrap(), b"OTHERVALUES");
+    }
+
+    #[test]
+    fn mpeg_segments_exclude_id3_payloads_and_split_direct_info_concatenation() {
+        const AUDIO: &[u8] = include_bytes!("../../../tests/fixtures/audio/mono-24000-48k-info.mp3");
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("segments.mp3");
+        fs::write(&path, [AUDIO, AUDIO].concat()).unwrap();
+        let segments = validate_mpeg_bounds(&mut File::open(&path).unwrap()).unwrap();
+        assert_eq!(segments, vec![
+            MpegSegment { start: 0, length: AUDIO.len() as u64 },
+            MpegSegment { start: AUDIO.len() as u64, length: AUDIO.len() as u64 },
+        ]);
+        // A complete MPEG file inside private ID3 data must never become audio.
+        let mut tag = vec![b'I', b'D', b'3', 4, 0, 0];
+        let size = AUDIO.len();
+        tag.extend_from_slice(&[
+            ((size >> 21) & 127) as u8, ((size >> 14) & 127) as u8,
+            ((size >> 7) & 127) as u8, (size & 127) as u8,
+        ]);
+        tag.extend_from_slice(AUDIO);
+        fs::write(&path, [AUDIO, tag.as_slice(), AUDIO].concat()).unwrap();
+        let segments = validate_mpeg_bounds(&mut File::open(&path).unwrap()).unwrap();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].length, AUDIO.len() as u64);
+        assert_eq!(segments[1].start, (AUDIO.len() + tag.len()) as u64);
+        assert_eq!(segments[1].length, AUDIO.len() as u64);
+        // An ID3 envelope claiming bytes beyond EOF is not a partial success.
+        fs::write(&path, [AUDIO, &tag[..tag.len() - 1]].concat()).unwrap();
+        assert!(validate_mpeg_bounds(&mut File::open(path).unwrap()).is_err());
+    }
+
+    #[test]
+    fn mpeg_explicit_counts_reject_inconsistent_frames_bytes_and_short_metadata() {
+        const AUDIO: &[u8] = include_bytes!("../../../tests/fixtures/audio/mono-24000-48k-info.mp3");
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("counts.mp3");
+        let marker = AUDIO.windows(4).position(|bytes| bytes == b"Info").unwrap();
+        for field in [marker + 8, marker + 12] {
+            let mut bytes = AUDIO.to_vec();
+            let declared = u32::from_be_bytes(bytes[field..field + 4].try_into().unwrap());
+            bytes[field..field + 4].copy_from_slice(&(declared + 1).to_be_bytes());
+            fs::write(&path, bytes).unwrap();
+            assert!(validate_mpeg_bounds(&mut File::open(&path).unwrap()).is_err());
+        }
+        fs::write(&path, AUDIO).unwrap();
+        let bits = u32::from_be_bytes(AUDIO[..4].try_into().unwrap());
+        // The flags declare frame and byte counts, but this extent ends before them.
+        assert!(mpeg_info_counts(&mut File::open(path).unwrap(), 0, (marker + 8) as u64, bits).is_err());
+    }
+
     #[test]
     fn concurrent_archives_publish_a_complete_zip_without_staging_collisions() {
         let root = tempfile::tempdir().unwrap();

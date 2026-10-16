@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## APP-20261016-MPEG-INTEGRITY — Validate segmented MPEG metadata and frame counts
+
+- [ ] Reject whole-frame truncation against declared Info/Xing counts and exclude binary midstream ID3 payloads from audio decoding while preserving exact concatenated durations.
+- Owner: Rust audio specialist; isolated `feature/fix-embedded-mpeg-integrity`.
+- Red evidence: GitHub run `38864616556` passed 141 core unit tests but failed existing `embedded_audio` cases `child_explicit_mpeg_counts` (line 208, accepted missing frame) and `child_binary_midstream_id3` (line 247, incorrect summed duration).
+- Verification pending: unchanged existing fixtures/assertions plus focused bounded-stream/parser regressions on GitHub only. No local tests, builds, probes or formatter execution.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
