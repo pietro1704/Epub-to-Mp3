@@ -117,7 +117,7 @@ void main() {
           'jobId': jobId, 'input': 'web/public/sample.epub',
           'chapterStart': 0, 'chapterEnd': 1,
           'modelId': 'pt_BR-faber-medium', 'fallbackUsed': false,
-          if (ortVersion != null) 'ortVersion': ortVersion,
+          'ortVersion': ?ortVersion,
           'elapsedMs': elapsed.elapsedMilliseconds,
           'timingScope': Platform.isWindows
               ? 'GitHub-hosted Windows full conversion; no phone or first-playable latency claim'
