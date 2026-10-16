@@ -4,16 +4,15 @@
 //! transition before replacing the JSON document, so a restart observes either
 //! the old record or the complete new record, never a partial write.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 const JOB_FILE_SUFFIX: &str = ".json";
-const TEMP_FILE_SUFFIX: &str = ".tmp";
 const DEFAULT_TTL: Duration = Duration::from_secs(48 * 60 * 60);
 
 /// Durable lifecycle states for a conversion job.
@@ -142,10 +141,13 @@ impl From<InvalidTransition> for JobError {
     }
 }
 
-/// Thread-safe, file-backed job manager.
+/// File-backed job manager with serialized mutations across its clones.
+/// Resuming the same job through an independent manager still requires its
+/// previous worker to have stopped, as documented by `restart`.
 #[derive(Clone)]
 pub struct JobManager {
     jobs_dir: Arc<PathBuf>,
+    mutations: Arc<Mutex<()>>,
     ttl: Duration,
 }
 
@@ -159,6 +161,7 @@ impl JobManager {
         fs::create_dir_all(&jobs_dir)?;
         Ok(Self {
             jobs_dir: Arc::new(jobs_dir),
+            mutations: Arc::new(Mutex::new(())),
             ttl,
         })
     }
@@ -168,6 +171,7 @@ impl JobManager {
     }
 
     pub fn create(&self, record: JobRecord) -> Result<JobRecord, JobError> {
+        let _mutation = self.mutation_guard()?;
         validate_job_id(&record.job_id)?;
         let path = self.job_path(&record.job_id);
         if path.exists() {
@@ -215,6 +219,7 @@ impl JobManager {
     }
 
     pub fn transition(&self, job_id: &str, state: JobState) -> Result<JobRecord, JobError> {
+        let _mutation = self.mutation_guard()?;
         let mut record = self.load(job_id)?;
         record.transition(state)?;
         self.persist(&record)?;
@@ -224,6 +229,7 @@ impl JobManager {
     /// Reset a recoverable job for another attempt. The caller must ensure no
     /// worker is still running for this job, including after process recovery.
     pub fn restart(&self, job_id: &str) -> Result<JobRecord, JobError> {
+        let _mutation = self.mutation_guard()?;
         let mut record = self.load(job_id)?;
         if record.state == JobState::Completed {
             return Err(JobError::InvalidTransition(InvalidTransition {
@@ -243,6 +249,7 @@ impl JobManager {
         job_id: &str,
         progress: serde_json::Value,
     ) -> Result<JobRecord, JobError> {
+        let _mutation = self.mutation_guard()?;
         let mut record = self.load(job_id)?;
         if !record.state.is_active() {
             return Err(JobError::InvalidTransition(InvalidTransition {
@@ -267,6 +274,11 @@ impl JobManager {
     }
 
     pub fn delete(&self, job_id: &str) -> Result<(), JobError> {
+        let _mutation = self.mutation_guard()?;
+        self.delete_record(job_id)
+    }
+
+    fn delete_record(&self, job_id: &str) -> Result<(), JobError> {
         validate_job_id(job_id)?;
         match fs::remove_file(self.job_path(job_id)) {
             Ok(()) => Ok(()),
@@ -291,11 +303,12 @@ impl JobManager {
 
     /// Remove expired terminal jobs. Active jobs are never deleted by TTL.
     pub fn cleanup_stale(&self) -> Result<usize, JobError> {
+        let _mutation = self.mutation_guard()?;
         let cutoff = unix_now().saturating_sub(self.ttl.as_secs());
         let mut deleted = 0;
         for record in self.list()? {
             if !record.state.is_active() && record.updated_at < cutoff {
-                self.delete(&record.job_id)?;
+                self.delete_record(&record.job_id)?;
                 deleted += 1;
             }
         }
@@ -306,31 +319,24 @@ impl JobManager {
         self.jobs_dir.join(format!("{job_id}{JOB_FILE_SUFFIX}"))
     }
 
+    fn mutation_guard(&self) -> Result<MutexGuard<'_, ()>, JobError> {
+        self.mutations
+            .lock()
+            .map_err(|_| JobError::Io(io::Error::other("job mutation lock poisoned")))
+    }
+
     fn persist(&self, record: &JobRecord) -> Result<(), JobError> {
         validate_job_id(&record.job_id)?;
         let target = self.job_path(&record.job_id);
-        let temp = self.jobs_dir.join(format!(
-            ".{0}.{1}{TEMP_FILE_SUFFIX}",
-            record.job_id,
-            std::process::id()
-        ));
         let bytes = serde_json::to_vec_pretty(record)?;
-        let result = (|| -> Result<(), JobError> {
-            let mut file = OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(&temp)?;
-            file.write_all(&bytes)?;
-            file.sync_all()?;
-            fs::rename(&temp, &target)?;
-            sync_directory(self.jobs_dir())?;
-            Ok(())
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temp);
-        }
-        result
+        let mut staging = tempfile::Builder::new()
+            .prefix(".job-")
+            .tempfile_in(self.jobs_dir())?;
+        staging.write_all(&bytes)?;
+        staging.as_file().sync_all()?;
+        staging.persist(&target).map_err(|error| error.error)?;
+        sync_directory(self.jobs_dir())?;
+        Ok(())
     }
 }
 
@@ -389,6 +395,113 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let manager = JobManager::with_ttl(directory.path(), Duration::from_secs(60)).unwrap();
         (directory, manager)
+    }
+
+    #[test]
+    fn progress_after_cancellation_preserves_state_and_terminal_records() {
+        let (_directory, manager) = manager();
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("source".into(), serde_json::json!("original-book"));
+        manager.create(JobRecord::new("cancelled", metadata)).unwrap();
+        manager.transition("cancelled", JobState::Running).unwrap();
+        let cancelling = manager.request_cancellation("cancelled").unwrap();
+        let progress = serde_json::json!({"completed": 2});
+        let clone = manager.clone();
+        let updated = clone
+            .update_progress("cancelled", progress.clone())
+            .unwrap();
+        assert_eq!(updated.state, JobState::Cancelling);
+        assert_eq!(updated.progress, progress);
+        assert_eq!(updated.metadata, cancelling.metadata);
+        assert_eq!(manager.load("cancelled").unwrap(), updated);
+
+        let terminal = manager
+            .transition("cancelled", JobState::Cancelled)
+            .unwrap();
+        let stored = fs::read(manager.job_path("cancelled")).unwrap();
+        assert!(matches!(
+            clone.update_progress("cancelled", serde_json::json!({"completed": 3})),
+            Err(JobError::InvalidTransition(_))
+        ));
+        assert_eq!(manager.load("cancelled").unwrap(), terminal);
+        assert_eq!(fs::read(manager.job_path("cancelled")).unwrap(), stored);
+    }
+
+    #[test]
+    fn concurrent_progress_updates_preserve_a_valid_running_job() {
+        let (_directory, manager) = manager();
+        manager
+            .create(JobRecord::new("shared", serde_json::Map::new()))
+            .unwrap();
+        manager.transition("shared", JobState::Running).unwrap();
+        let barrier = Arc::new(std::sync::Barrier::new(16));
+        let writers: Vec<_> = (0..16)
+            .map(|writer| {
+                let manager = manager.clone();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for step in 0..8 {
+                        manager.update_progress(
+                            "shared",
+                            serde_json::json!({"writer":writer,"step":step}),
+                        )?;
+                    }
+                    Ok::<_, JobError>(())
+                })
+            })
+            .collect();
+        let failures: Vec<_> = writers
+            .into_iter()
+            .filter_map(|writer| writer.join().expect("writer must not panic").err())
+            .collect();
+        assert!(
+            failures.is_empty(),
+            "Concurrent public progress updates failed: {failures:?}"
+        );
+        assert_eq!(manager.load("shared").unwrap().state, JobState::Running);
+    }
+
+    #[test]
+    fn concurrent_progress_cannot_erase_durable_cancellation() {
+        let (_directory, manager) = manager();
+        for round in 0..4 {
+            let id = format!("cancel-race-{round}");
+            manager
+                .create(JobRecord::new(&id, serde_json::Map::new()))
+                .unwrap();
+            manager.transition(&id, JobState::Running).unwrap();
+            let barrier = Arc::new(std::sync::Barrier::new(9));
+            let writers: Vec<_> = (0..9)
+                .map(|writer| {
+                    let manager = manager.clone();
+                    let id = id.clone();
+                    let barrier = Arc::clone(&barrier);
+                    std::thread::spawn(move || -> Result<(), JobError> {
+                        barrier.wait();
+                        if writer == 8 {
+                            manager.request_cancellation(&id)?;
+                        } else {
+                            for step in 0..4 {
+                                manager.update_progress(
+                                    &id,
+                                    serde_json::json!({"writer":writer,"step":step}),
+                                )?;
+                            }
+                        }
+                        Ok(())
+                    })
+                })
+                .collect();
+            for writer in writers {
+                writer.join().unwrap().unwrap();
+            }
+            assert_eq!(
+                manager.load(&id).unwrap().state,
+                JobState::Cancelling,
+                "A completed cancellation request must survive concurrent progress (round {round})"
+            );
+        }
     }
 
     #[test]
@@ -459,6 +572,44 @@ mod tests {
             .unwrap();
         manager.request_cancellation("job-2").unwrap();
         assert!(manager.is_cancellation_requested("job-2").unwrap());
+        assert_eq!(manager.cleanup_stale().unwrap(), 0);
+    }
+
+    #[test]
+    fn cleanup_removes_expired_terminal_jobs_without_relocking() {
+        let (_directory, manager) = manager();
+        for (id, state) in [
+            ("expired-completed", JobState::Completed),
+            ("expired-cancelled", JobState::Cancelled),
+            ("expired-failed", JobState::Failed),
+            ("old-running", JobState::Running),
+        ] {
+            let mut record = JobRecord::new(id, serde_json::Map::new());
+            record.state = state;
+            record.updated_at = 0;
+            manager.persist(&record).unwrap();
+        }
+        let mut recent = JobRecord::new("recent-completed", serde_json::Map::new());
+        recent.state = JobState::Completed;
+        manager.persist(&recent).unwrap();
+
+        let worker = manager.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let cleanup = std::thread::spawn(move || {
+            sender.send(worker.cleanup_stale()).unwrap();
+        });
+        let deleted = receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("cleanup must not recursively acquire the mutation lock")
+            .unwrap();
+        cleanup.join().unwrap();
+        assert_eq!(deleted, 3);
+        for id in ["expired-completed", "expired-cancelled", "expired-failed"] {
+            assert!(matches!(manager.load(id), Err(JobError::NotFound(_))));
+        }
+        assert_eq!(manager.load("old-running").unwrap().state, JobState::Running);
+        assert_eq!(manager.load("recent-completed").unwrap(), recent);
+        assert_eq!(manager.list().unwrap().len(), 2);
         assert_eq!(manager.cleanup_stale().unwrap(), 0);
     }
 }
