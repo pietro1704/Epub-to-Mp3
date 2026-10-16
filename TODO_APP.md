@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## AH-12 — Preserve durable job state during concurrent updates
+
+- [ ] Owner: root; isolate the existing architecture-campaign job mutation repair. Cloned managers currently share a predictable staging path and may overwrite a completed cancellation with a stale progress snapshot. Preserve complete JSON publication and serialize read/modify/write mutations across clones; independent managers/processes remain outside this lock contract.
+- Acceptance: concurrent public progress updates succeed and leave a readable Running record; concurrent cancellation remains Cancelling; a later progress update preserves completed cancellation, and terminal progress updates fail without changing the record. Existing restart/recovery/TTL/identity cases remain covered. Test only on GitHub; no local execution or service/device actions.
+- Delivery depends on recovery811/current master reconciliation and GitHub regression/required-check results. Keep original dirty source untouched; retain actual RED evidence separately from predicted races. No delivery or interprocess-lock claim yet.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
