@@ -27,6 +27,13 @@
 - Verification: GitHub-only Rust tests; local tests and native execution are suspended. Preserve cancellation, prior artifacts on failure and selected chapter boundaries.
 - Formatting also runs only on GitHub. A read-only formatting-preview job retains the exact source SHA and a patch for source review; it cannot push or modify a PR. Existing CI still requires a clean formatting check.
 
+## APP-20261016-MPEG-INTEGRITY — Validate segmented MPEG metadata and frame counts
+
+- [ ] Reject whole-frame truncation against declared Info/Xing counts and exclude binary midstream ID3 payloads from audio decoding while preserving exact concatenated durations.
+- Owner: Rust audio specialist; isolated `feature/fix-embedded-mpeg-integrity`.
+- Red evidence: GitHub run `38864616556` passed 141 core unit tests but failed existing `embedded_audio` cases `child_explicit_mpeg_counts` (line 208, accepted missing frame) and `child_binary_midstream_id3` (line 247, incorrect summed duration).
+- Verification pending: unchanged existing fixtures/assertions plus focused bounded-stream/parser regressions on GitHub only. No local tests, builds, probes or formatter execution.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
