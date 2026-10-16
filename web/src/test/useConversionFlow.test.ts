@@ -21,6 +21,66 @@ describe("useConversionFlow", () => {
     footnoteMode: "inline",
   };
 
+  it('offers a shell-safe Rust CLI command for supported conversion settings', async () => {
+    const client: ConversionClient = {
+      mode: 'embedded',
+      submit: vi.fn().mockResolvedValue({ jobId: 'cli-example' }),
+      fetch: vi.fn(),
+      poll: vi.fn().mockResolvedValue({ jobId: 'cli-example', state: 'finished' }),
+    };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper('en'),
+    });
+    await act(async () => {
+      await result.current.submit({
+        file: new File(['data'], "Jane's book.epub"),
+        engine: 'piper',
+        voice: 'voice name',
+        model: 'pt_BR-faber-medium',
+        chapters: '1,2',
+        sections: '3',
+        noParallel: true,
+        clearCache: true,
+        footnoteMode: 'inline',
+      });
+    });
+
+    expect(result.current.state.cliCommand).toBe(
+      "converter-cli convert 'Jane'\\''s book.epub' --engine 'piper' --fallback-engine 'none' --voice 'voice name' --model 'pt_BR-faber-medium' --chapter '1,2' --section '3' --no-parallel --clear-cache",
+    );
+  });
+
+  it.each<{ label: string; settings: Partial<ConversionFormValues> }>([
+    { label: "an option-like source path", settings: { localPath: "--help.epub" } },
+    { label: "footnotes", settings: { footnoteMode: "skip" } },
+    { label: "priority", settings: { priority: "3" } },
+    { label: "language", settings: { language: "pt-BR" } },
+    { label: "explicit formatting", settings: { formattingCues: false } },
+    { label: "verbose logging", settings: { verbose: true } },
+    { label: "an incompatible Edge model", settings: { engine: "edge", model: "pt_BR-faber-medium" } },
+    { label: "provider preferences", settings: { tts_preferences: {
+      primary: { engine: "piper", model_id: "pt_BR-faber-medium", voice: null },
+      secondary: null,
+      allow_online_fallback: false,
+    } } },
+  ])("omits CLI reproduction when $label cannot be represented faithfully", async ({ settings }) => {
+    const client: ConversionClient = {
+      mode: "embedded",
+      submit: vi.fn().mockResolvedValue({ jobId: "unsupported-cli" }),
+      fetch: vi.fn(),
+      poll: vi.fn().mockResolvedValue({ jobId: "unsupported-cli", state: "finished" }),
+    };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+    await act(async () => {
+      await result.current.submit({ ...request, engine: "piper", ...settings });
+    });
+
+    expect(result.current.state.phase).toBe("success");
+    expect(result.current.state.cliCommand).toBeUndefined();
+  });
+
   it("completes conversion successfully and records events", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "123" });
     const poll = vi

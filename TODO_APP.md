@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## APP-20261016-WEB-LOCAL-HELP — Keep embedded diagnostics local
+
+- [ ] Owner: crash_guard_audit; show useful localized runtime/job/progress help without backend probes, downloads or restart controls in the embedded client. Preserve explicitly selected HTTP diagnostics, abort polling when Help closes, and avoid duplicate API prefixes.
+- Preserve Faber preflight cancellation/identity and strict provider preferences. Offer CLI reproduction only when every explicit setting has a real Rust CLI representation; typed `tts_preferences` remains unsupported by that guide.
+- Verification pending GitHub `mise run test:web`; no local tests, formatter, build or native execution. Desktop log delivery is outside this slice.
+
 ## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
 
 - [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.

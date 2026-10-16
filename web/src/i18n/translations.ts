@@ -583,6 +583,8 @@ export interface LayoutText {
   helpToggle: string;
   helpTitle: string;
   helpClose: string;
+  localRuntime: string;
+  localInstallHelp: string;
   statsTitle: string;
   statsLoading: string;
   statsUptime: string;
@@ -1407,6 +1409,8 @@ export const translations: Record<Locale, Translations> = {
         "Falha ao reiniciar automaticamente. Reinicie o backend manualmente.",
       helpToggle: "Ajuda & Sistema",
       helpTitle: "Ajuda e monitoramento",
+      localRuntime: "Conversão local",
+      localInstallHelp: "Para preparar a voz offline, use “Instalar Faber medium” no formulário.",
       helpClose: "Fechar painel",
       statsTitle: "Monitoramento do sistema",
       statsLoading: "Coletando métricas…",
@@ -2240,6 +2244,8 @@ export const translations: Record<Locale, Translations> = {
         "Failed to restart automatically. Please restart the backend manually.",
       helpToggle: "Help & System",
       helpTitle: "Help and monitoring",
+      localRuntime: "Local conversion",
+      localInstallHelp: "To prepare the offline voice, choose “Install Faber medium” in the form.",
       helpClose: "Close panel",
       statsTitle: "System monitoring",
       statsLoading: "Collecting metrics…",

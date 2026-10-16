@@ -1,9 +1,9 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { renderWithProviders } from "./testUtils";
-import type { ConversionClient } from "../services/ConversionService";
+import { HttpConversionClient, type ConversionClient } from "../services/ConversionService";
 import type { JobSnapshot } from "../types/conversion";
 
 function setTauriGlobal(value: unknown) {
@@ -19,6 +19,87 @@ afterEach(() => {
 });
 
 describe("App integration", () => {
+  it('opens embedded help without backend requests or restart controls', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('No backend is available in the embedded browser runtime'));
+    try {
+      await act(async () => {
+        renderWithProviders(<App />, { locale: 'en' });
+      });
+      await user.click(screen.getByRole('button', { name: 'Help & System' }));
+      expect(screen.getByRole('button', { name: 'Help & System' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.getByRole('region', { name: 'Local conversion' })).toBeVisible();
+      expect(screen.getByText('To prepare the offline voice, choose “Install Faber medium” in the form.')).toBeVisible();
+      await user.click(screen.getByRole('button', { name: 'Close panel' }));
+      expect(screen.queryByRole('region', { name: 'Local conversion' })).not.toBeInTheDocument();
+
+      const backendRequests = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('/api/'),
+      );
+      expect(backendRequests).toEqual([]);
+      expect(screen.queryByTestId('telemetry-panel')).not.toBeInTheDocument();
+      expect(screen.queryByText('Restart Python backend')).not.toBeInTheDocument();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("loads explicit HTTP help diagnostics without duplicating the API prefix", async () => {
+    const user = userEvent.setup();
+    const diagnosticSignals: AbortSignal[] = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (/\/api\/(telemetry|system\/stats)/.test(url) && init?.signal) {
+        diagnosticSignals.push(init.signal);
+      }
+      const data = url.endsWith("/summary")
+        ? { engines: {}, ranked: [], totalSamples: 0 }
+        : url.includes("/timeline") ? { points: [], count: 0 } : {};
+      return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const client = new HttpConversionClient();
+    try {
+      await act(async () => {
+        renderWithProviders(<App client={client} />, { locale: "en" });
+      });
+      expect(screen.queryByTestId("telemetry-panel")).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Help & System" }));
+      expect(await screen.findByTestId("telemetry-panel")).toBeInTheDocument();
+      expect(screen.getByText("Restart Python backend")).toBeInTheDocument();
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map(([input]) => String(input));
+        expect(urls).toContain("/api/telemetry/summary");
+        expect(urls).toContain("/api/telemetry/timeline?limit=30");
+        expect(urls).toContain("/api/system/stats");
+        expect(urls.some((url) => url.includes("/api/api/"))).toBe(false);
+      });
+      expect(diagnosticSignals.length).toBeGreaterThanOrEqual(3);
+      await user.click(screen.getByRole("button", { name: "Close panel" }));
+      expect(screen.queryByTestId("telemetry-panel")).not.toBeInTheDocument();
+      expect(diagnosticSignals.every((signal) => signal.aborted)).toBe(true);
+      const closedSignals = [...diagnosticSignals];
+      await user.click(screen.getByRole("button", { name: "Help & System" }));
+      expect(await screen.findByTestId("telemetry-panel")).toBeInTheDocument();
+      await waitFor(() => expect(diagnosticSignals.length).toBeGreaterThan(closedSignals.length));
+      expect(closedSignals.every((signal) => signal.aborted)).toBe(true);
+      expect(diagnosticSignals.slice(closedSignals.length).some((signal) => !signal.aborted)).toBe(true);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("runs full conversion flow with a custom client", async () => {
     const user = userEvent.setup();
     const submit = vi.fn().mockResolvedValue({ jobId: "job-777" });
@@ -92,6 +173,10 @@ describe("App integration", () => {
     await waitFor(() =>
       expect(poll).toHaveBeenCalledWith("job-777", expect.any(Object)),
     );
+    await user.click(screen.getByRole("button", { name: "Ajuda & Sistema" }));
+    const diagnostics = within(screen.getByRole("region", { name: "Conversão local" }));
+    expect(await diagnostics.findByText("Código do pedido: job-777")).toBeVisible();
+    expect(await diagnostics.findByText("Progresso geral: 100%")).toBeVisible();
   }, 10_000);
 
   it("reuses automatic upload and avoids resending the file", async () => {
