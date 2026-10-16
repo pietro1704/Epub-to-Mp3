@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## AH-04 — Read durable local Flutter conversion history
+
+- [ ] Owner: crash_workflow_audit; dependency: reviewed Faber integration `2082ae5417` (local branch fast-forwarded from master `915e9c672b`, no published delivery). Replace Jobs HTTP sessions with existing persisted local jobs, exact job identity, recorded status/errors/artifact paths, damaged-record visibility and refresh on entry/background writes.
+- Acceptance: valid records survive reopening; mismatched/unknown-status/damaged records and records with missing or invalid timestamps remain stored and are reported unreadable; Jobs does not access HTTP; supported Android log identity remains literal. Preserve Faber selections/policy, disposal guard, worker responsiveness and existing saved data.
+- Scope excludes manual-manifest projection (AH-05), desktop output identity (AH-13) and desktop log repair (AH-14). Preserve existing save failure semantics until the write-side callers receive their own complete failure-handling slice.
+- Prepared pull-to-refresh regressions perform a real drag from both empty and recoverable-error lists after a job is saved while mounted; both states remain always scrollable. Verification pending: GitHub-only focused store/Jobs/root-tab regressions, existing cancellation/Faber tests, full Flutter tests and analyzer. Historical local passes are not current acceptance; no local tests/builds/analyzer/formatter execution.
+
 ## CI-20261016-CODEQL-ANDROID-SDK — Resolve the hosted SDK manager explicitly
 
 - [ ] Owner: github_monitor_plan; CodeQL run `38884593082`, Java/Kotlin job `116919152162`, head `765e57495f69d82bec20852ab1d121345c6f02cb` failed before Android compilation because `sdkmanager` was absent from PATH. The Ubuntu runner image installs it under `ANDROID_HOME/cmdline-tools/latest/bin`, confirmed against the official runner image installation script.
