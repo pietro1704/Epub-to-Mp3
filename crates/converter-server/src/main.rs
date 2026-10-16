@@ -1010,7 +1010,7 @@ fn server_bind_address(
     host: Option<&str>,
     port: Option<&str>,
 ) -> Result<SocketAddr, std::net::AddrParseError> {
-    let host = host.unwrap_or("0.0.0.0");
+    let host = host.unwrap_or("127.0.0.1");
     let port = port
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(8000);

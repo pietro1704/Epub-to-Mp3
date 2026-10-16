@@ -4,6 +4,7 @@
 
 - [ ] Owner: root; isolate the existing architecture-campaign change without copying unrelated TTS/client edits. The server currently binds all interfaces when HOST is absent; default only to 127.0.0.1 while preserving explicit HOST/PORT and existing invalid-port fallback.
 - Acceptance: actual ephemeral listener is loopback by default; explicit wildcard binding remains supported; invalid host fails and invalid port retains8000. Rust regression tests belong beside main. Prepare the unchanged-default regression first for GitHub RED, then change only the default for GREEN. No local tests/builds or service launch.
+- Observed RED: manual GitHub CI38889285845, Rust job116934636405, head3c019d0, server23 passed/1 failed only default_server_listener_is_loopback_only at main.rs1048. Explicit wildcard/configuration passed. Change only the absent-HOST default to127.0.0.1; unchanged assertions plus all required final-head checks must now pass on GitHub. Formatting comes only from the matching-SHA GitHub patch already reviewed; no local execution.
 - Delivery depends on recovery811 reaching master. The candidate retains that recovery revision as a dependency for manual GitHub-only regression validation before PR delivery; no native or local test execution. Full current-head checks and PR merge remain required. Original dirty architecture worktree stays untouched.
 
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
