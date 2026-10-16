@@ -333,7 +333,12 @@ impl ConversionWorker {
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0)
                 .unwrap_or(8);
-            self.execution_options.chapter_parallelism(request.no_parallel, configured, self.config.max_parallel, cap)
+            self.execution_options.chapter_parallelism(
+                request.no_parallel,
+                configured,
+                self.config.max_parallel,
+                cap,
+            )
         };
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(parallelism)
@@ -365,7 +370,10 @@ impl ConversionWorker {
             let language = detected_language;
             let engine = select_engine(request.engine.as_deref(), &self.config);
             let language = request.language.as_deref().or(language);
-            let prepared_identity = self.piper_model.as_ref().map(|model| model.cache_identity());
+            let prepared_identity = self
+                .piper_model
+                .as_ref()
+                .map(|model| model.cache_identity());
             let request_key = chapter_audio_request_key(
                 &book_key,
                 &chapter.index,
@@ -407,48 +415,53 @@ impl ConversionWorker {
                 }
             }
             let stale_window_cancelled = std::sync::atomic::AtomicBool::new(false);
-            let audio_result = ensure_chapter_audio_with_options(&mp3, &request_key, self.execution_options.force_reprocess, |pending| {
-                eprintln!("synthesizing chapter {}/{}", position + 1, total);
-                let synthesis = if self.platform_tts.is_some()
-                    && matches!(engine.as_str(), "edge" | "system")
-                {
-                    self.synthesize_platform_policy(
-                        &engine,
-                        &text,
-                        pending,
-                        source_index,
-                        request.voice.as_deref(),
-                        language,
-                        &stale_window_cancelled,
-                        &system_notice_emitted,
-                        &request.job_id,
-                        total,
-                        completed.load(Ordering::Acquire),
-                    )
-                } else {
-                    self.synthesize_with_timeout(
-                        &engine,
-                        &text,
-                        pending,
-                        source_index,
-                        request.voice.as_deref(),
-                        language,
-                        request.piper_model.as_deref(),
-                        request.piper_config.as_deref(),
-                        &stale_window_cancelled,
-                    )
-                };
-                if stale_window_cancelled.load(Ordering::Acquire) {
-                    return Err(WorkerError::PlaybackWindowChanged);
-                }
-                synthesis?;
-                if self.cancel.is_cancelled()
-                    || self.jobs.is_cancellation_requested(&request.job_id)?
-                {
-                    return Err(WorkerError::Cancelled);
-                }
-                Ok(())
-            });
+            let audio_result = ensure_chapter_audio_with_options(
+                &mp3,
+                &request_key,
+                self.execution_options.force_reprocess,
+                |pending| {
+                    eprintln!("synthesizing chapter {}/{}", position + 1, total);
+                    let synthesis = if self.platform_tts.is_some()
+                        && matches!(engine.as_str(), "edge" | "system")
+                    {
+                        self.synthesize_platform_policy(
+                            &engine,
+                            &text,
+                            pending,
+                            source_index,
+                            request.voice.as_deref(),
+                            language,
+                            &stale_window_cancelled,
+                            &system_notice_emitted,
+                            &request.job_id,
+                            total,
+                            completed.load(Ordering::Acquire),
+                        )
+                    } else {
+                        self.synthesize_with_timeout(
+                            &engine,
+                            &text,
+                            pending,
+                            source_index,
+                            request.voice.as_deref(),
+                            language,
+                            request.piper_model.as_deref(),
+                            request.piper_config.as_deref(),
+                            &stale_window_cancelled,
+                        )
+                    };
+                    if stale_window_cancelled.load(Ordering::Acquire) {
+                        return Err(WorkerError::PlaybackWindowChanged);
+                    }
+                    synthesis?;
+                    if self.cancel.is_cancelled()
+                        || self.jobs.is_cancellation_requested(&request.job_id)?
+                    {
+                        return Err(WorkerError::Cancelled);
+                    }
+                    Ok(())
+                },
+            );
             match audio_result {
                 Err(WorkerError::PlaybackWindowChanged) => {
                     self.control
@@ -1286,8 +1299,14 @@ mod tests {
 
     #[test]
     fn performance_override_still_respects_configuration_and_platform_caps() {
-        let fast = ExecutionOptions { max_performance: true, ..ExecutionOptions::default() };
-        assert_eq!(ExecutionOptions::default().chapter_parallelism(true, 8, 8, 2), 1);
+        let fast = ExecutionOptions {
+            max_performance: true,
+            ..ExecutionOptions::default()
+        };
+        assert_eq!(
+            ExecutionOptions::default().chapter_parallelism(true, 8, 8, 2),
+            1
+        );
         assert_eq!(fast.chapter_parallelism(true, 8, 8, 2), 2);
         assert_eq!(fast.chapter_parallelism(true, 1, 8, 2), 1);
         assert_eq!(fast.chapter_parallelism(true, 8, 1, 2), 1);
@@ -1301,22 +1320,31 @@ mod tests {
         ensure_chapter_audio(&output, "identity", |pending| {
             fs::write(pending, test_system_wav())?;
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         let prior = fs::read(&output).unwrap();
         let receipt = fs::read(chapter_audio_receipt_path(&output)).unwrap();
         for cancel in [false, true] {
             let result = ensure_chapter_audio_with_options(&output, "identity", true, |pending| {
                 fs::write(pending, b"partial invalid audio")?;
-                if cancel { Err(WorkerError::Cancelled) } else { Ok(()) }
+                if cancel {
+                    Err(WorkerError::Cancelled)
+                } else {
+                    Ok(())
+                }
             });
             assert!(result.is_err());
             assert_eq!(fs::read(&output).unwrap(), prior);
-            assert_eq!(fs::read(chapter_audio_receipt_path(&output)).unwrap(), receipt);
+            assert_eq!(
+                fs::read(chapter_audio_receipt_path(&output)).unwrap(),
+                receipt
+            );
         }
         ensure_chapter_audio_with_options(&output, "identity", true, |pending| {
             fs::write(pending, test_system_wav_at_rate(16_000))?;
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         assert_ne!(fs::read(&output).unwrap(), prior);
         assert!(chapter_audio_is_complete(&output, "identity"));
         assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 2);

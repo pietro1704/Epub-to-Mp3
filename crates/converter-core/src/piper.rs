@@ -256,8 +256,8 @@ impl PreparedPiperModel {
             ));
         }
         // Hash once during explicit preparation, not once for every chapter.
-        let model_hash = crate::cache::sha256_file(&model)
-            .map_err(|error| PiperError::Io(error.to_string()))?;
+        let model_hash =
+            crate::cache::sha256_file(&model).map_err(|error| PiperError::Io(error.to_string()))?;
         let config_hash = crate::cache::sha256_file(&config)
             .map_err(|error| PiperError::Io(error.to_string()))?;
         let cache_identity = format!("piper:{model:?}:{config:?}:{model_hash}:{config_hash}");
@@ -770,10 +770,20 @@ mod tests {
     #[test]
     fn cancelled_explicit_model_preserves_existing_audio_and_model_identity_is_distinct() {
         let fixture = tempfile::tempdir().unwrap();
-        for id in ["one", "two"] { installed_fixture(fixture.path(), id); }
+        for id in ["one", "two"] {
+            installed_fixture(fixture.path(), id);
+        }
         let runtime = scoped_runtime(true, false);
-        let prepare = |id| PreparedPiperModel::prepare(fixture.path(), id,
-            Path::new("voice.onnx"), Path::new("voice.config.json"), runtime.clone()).unwrap();
+        let prepare = |id| {
+            PreparedPiperModel::prepare(
+                fixture.path(),
+                id,
+                Path::new("voice.onnx"),
+                Path::new("voice.config.json"),
+                runtime.clone(),
+            )
+            .unwrap()
+        };
         let first = prepare("one");
         let second = prepare("two");
         assert_ne!(first.cache_identity(), second.cache_identity());
@@ -781,7 +791,10 @@ mod tests {
         fs::write(&output, b"previous audio").unwrap();
         let cancel = CancellationToken::default();
         cancel.cancel();
-        assert_eq!(first.synthesize("cancelled", &output, &cancel), Err(PiperError::Cancelled));
+        assert_eq!(
+            first.synthesize("cancelled", &output, &cancel),
+            Err(PiperError::Cancelled)
+        );
         assert_eq!(fs::read(output).unwrap(), b"previous audio");
         assert!(runtime.calls.lock().unwrap().is_empty());
     }
@@ -791,20 +804,34 @@ mod tests {
         let fixture = tempfile::tempdir().unwrap();
         installed_fixture(fixture.path(), "selected");
         let runtime = scoped_runtime(true, false);
-        let prepare = || PreparedPiperModel::prepare(
-            fixture.path(),
-            "selected",
-            Path::new("voice.onnx"),
-            Path::new("voice.config.json"),
-            runtime.clone(),
-        ).unwrap();
+        let prepare = || {
+            PreparedPiperModel::prepare(
+                fixture.path(),
+                "selected",
+                Path::new("voice.onnx"),
+                Path::new("voice.config.json"),
+                runtime.clone(),
+            )
+            .unwrap()
+        };
         let original = prepare();
-        fs::write(fixture.path().join("selected/voice.onnx"), b"replacement model").unwrap();
+        fs::write(
+            fixture.path().join("selected/voice.onnx"),
+            b"replacement model",
+        )
+        .unwrap();
         let changed_model = prepare();
         assert_ne!(original.cache_identity(), changed_model.cache_identity());
-        fs::write(fixture.path().join("selected/voice.config.json"), b"{\"new\":true}").unwrap();
+        fs::write(
+            fixture.path().join("selected/voice.config.json"),
+            b"{\"new\":true}",
+        )
+        .unwrap();
         let changed_config = prepare();
-        assert_ne!(changed_model.cache_identity(), changed_config.cache_identity());
+        assert_ne!(
+            changed_model.cache_identity(),
+            changed_config.cache_identity()
+        );
     }
 
     fn write_test_wav(path: &Path) {

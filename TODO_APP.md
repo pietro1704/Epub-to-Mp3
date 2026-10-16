@@ -26,6 +26,7 @@
 - Red evidence: GitHub Actions master `915e9c` failed compiling `worker_execution_flags` and the server resume regression because production APIs/request fields diverged.
 - Verification: GitHub-only Rust tests; local tests and native execution are suspended. Preserve cancellation, prior artifacts on failure and selected chapter boundaries.
 - Formatting also runs only on GitHub. A read-only formatting-preview job retains the exact source SHA and a patch for source review; it cannot push or modify a PR. Existing CI still requires a clean formatting check.
+- Run feature-branch full CI through PR events (including the synthetic merge revision), avoiding redundant source-only push runs. Preserve all PR checks and default/develop/release/hotfix push coverage with separate concurrency groups. Review and apply only Rust formatting output from GitHub; exclude unrelated LFS normalization from formatting patches.
 
 ## APP-20261016-MPEG-INTEGRITY — Validate segmented MPEG metadata and frame counts
 

@@ -147,11 +147,19 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
         let output = paths.output_dir.join(job);
         fs::create_dir_all(&output).unwrap();
         let baseline = ConversionWorker::new(AppConfig::from_paths(paths.clone())).unwrap();
-        baseline.run(ConversionRequest {
-            input: input.clone(), job_id: job.into(), engine: Some("piper".into()),
-            voice: None, language: None, piper_model: None, piper_config: None,
-            chapter_indices: Some(vec!["position:1".into()]), no_parallel: true,
-        }).unwrap();
+        baseline
+            .run(ConversionRequest {
+                input: input.clone(),
+                job_id: job.into(),
+                engine: Some("piper".into()),
+                voice: None,
+                language: None,
+                piper_model: None,
+                piper_config: None,
+                chapter_indices: Some(vec!["position:1".into()]),
+                no_parallel: true,
+            })
+            .unwrap();
         calls.lock().unwrap().clear();
         baseline.jobs.delete(job).unwrap();
         let selected_audio = output.join("0001-b.mp3");
@@ -188,7 +196,9 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
         assert_eq!(calls.lock().unwrap().len(), usize::from(enabled));
         let resulting_audio = fs::read(&selected_audio).unwrap();
         assert!(!resulting_audio.is_empty());
-        if !enabled { assert_eq!(resulting_audio, prior_audio); }
+        if !enabled {
+            assert_eq!(resulting_audio, prior_audio);
+        }
         assert_eq!(
             cache::read_json::<String>(&selected_cache).unwrap(),
             parsed.chapters[1].text

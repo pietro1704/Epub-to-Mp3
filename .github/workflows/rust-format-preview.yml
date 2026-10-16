@@ -31,8 +31,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/rust-format-preview"
           git rev-parse HEAD > "$RUNNER_TEMP/rust-format-preview/source-sha.txt"
           cargo +stable fmt --all
-          git diff --binary > "$RUNNER_TEMP/rust-format-preview/rustfmt.patch"
-          git diff --exit-code
+          git diff --binary -- ':(glob)**/*.rs' > "$RUNNER_TEMP/rust-format-preview/rustfmt.patch"
+          git diff --exit-code -- ':(glob)**/*.rs'
       - name: Retain source identity and formatting patch
         if: always()
         uses: actions/upload-artifact@v6

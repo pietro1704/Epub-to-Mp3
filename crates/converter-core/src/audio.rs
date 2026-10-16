@@ -420,20 +420,31 @@ struct AudioSegmentSource {
 
 impl AudioSegmentSource {
     fn new(mut file: File, segment: MpegSegment) -> io::Result<Self> {
-        let end = segment.start.checked_add(segment.length)
+        let end = segment
+            .start
+            .checked_add(segment.length)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "audio extent overflow"))?;
         if end > file.metadata()?.len() {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "truncated audio extent"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "truncated audio extent",
+            ));
         }
         file.seek(SeekFrom::Start(segment.start))?;
-        Ok(Self { file, segment, position: 0 })
+        Ok(Self {
+            file,
+            segment,
+            position: 0,
+        })
     }
 }
 
 impl Read for AudioSegmentSource {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let remaining = self.segment.length - self.position;
-        let length = buffer.len().min(usize::try_from(remaining).unwrap_or(usize::MAX));
+        let length = buffer
+            .len()
+            .min(usize::try_from(remaining).unwrap_or(usize::MAX));
         let count = self.file.read(&mut buffer[..length])?;
         self.position += count as u64;
         Ok(count)
@@ -448,18 +459,26 @@ impl Seek for AudioSegmentSource {
             SeekFrom::End(offset) => i128::from(self.segment.length) + i128::from(offset),
         };
         if target < 0 || target > i128::from(self.segment.length) {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek outside audio extent"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "seek outside audio extent",
+            ));
         }
         let target = target as u64;
-        self.file.seek(SeekFrom::Start(self.segment.start + target))?;
+        self.file
+            .seek(SeekFrom::Start(self.segment.start + target))?;
         self.position = target;
         Ok(target)
     }
 }
 
 impl symphonia::core::io::MediaSource for AudioSegmentSource {
-    fn is_seekable(&self) -> bool { true }
-    fn byte_len(&self) -> Option<u64> { Some(self.segment.length) }
+    fn is_seekable(&self) -> bool {
+        true
+    }
+    fn byte_len(&self) -> Option<u64> {
+        Some(self.segment.length)
+    }
 }
 
 #[derive(Default)]
@@ -476,13 +495,26 @@ impl MpegFrameCount {
         if audio_frames == 0 {
             return Err(invalid_audio("MPEG segment has no audio frames"));
         }
-        if self.expected_frames.is_some_and(|expected| expected != audio_frames) {
-            return Err(invalid_audio("MPEG frame count does not match Info/Xing declaration"));
+        if self
+            .expected_frames
+            .is_some_and(|expected| expected != audio_frames)
+        {
+            return Err(invalid_audio(
+                "MPEG frame count does not match Info/Xing declaration",
+            ));
         }
-        if self.expected_bytes.is_some_and(|expected| expected != end - start) {
-            return Err(invalid_audio("MPEG byte count does not match Info/Xing declaration"));
+        if self
+            .expected_bytes
+            .is_some_and(|expected| expected != end - start)
+        {
+            return Err(invalid_audio(
+                "MPEG byte count does not match Info/Xing declaration",
+            ));
         }
-        Ok(MpegSegment { start, length: end - start })
+        Ok(MpegSegment {
+            start,
+            length: end - start,
+        })
     }
 }
 
@@ -503,19 +535,31 @@ fn mpeg_info_counts(
     // LAME retains its Info/Xing offset when CRC is present; also accept
     // encoders that place the optional two CRC bytes before side information.
     for position in [4 + side, 6 + side] {
-        if position == 6 + side && (bits >> 16) & 1 != 0 { continue; }
-        if position + 8 > length { continue; }
+        if position == 6 + side && (bits >> 16) & 1 != 0 {
+            continue;
+        }
+        if position + 8 > length {
+            continue;
+        }
         file.seek(SeekFrom::Start(offset + position))?;
         let mut header = [0u8; 8];
         file.read_exact(&mut header)?;
-        if &header[..4] != b"Info" && &header[..4] != b"Xing" { continue; }
+        if &header[..4] != b"Info" && &header[..4] != b"Xing" {
+            continue;
+        }
         let flags = u32::from_be_bytes(header[4..].try_into().unwrap());
         let fields = u64::from(flags & 1 != 0) + u64::from(flags & 2 != 0);
         if position + 8 + fields * 4 > length {
             return Err(invalid_audio("truncated Info/Xing frame counts"));
         }
-        let mut count = MpegFrameCount { metadata: true, ..MpegFrameCount::default() };
-        for (flag, target) in [(1, &mut count.expected_frames), (2, &mut count.expected_bytes)] {
+        let mut count = MpegFrameCount {
+            metadata: true,
+            ..MpegFrameCount::default()
+        };
+        for (flag, target) in [
+            (1, &mut count.expected_frames),
+            (2, &mut count.expected_bytes),
+        ] {
             if flags & flag != 0 {
                 let mut value = [0u8; 4];
                 file.read_exact(&mut value)?;
@@ -1094,8 +1138,12 @@ mod tests {
         fs::write(&path, b"beforePAYLOADafter").unwrap();
         let mut source = AudioSegmentSource::new(
             File::open(&path).unwrap(),
-            MpegSegment { start: 6, length: 7 },
-        ).unwrap();
+            MpegSegment {
+                start: 6,
+                length: 7,
+            },
+        )
+        .unwrap();
         let mut payload = Vec::new();
         source.read_to_end(&mut payload).unwrap();
         assert_eq!(payload, b"PAYLOAD");
@@ -1111,12 +1159,20 @@ mod tests {
         assert_eq!(&first, b"P");
         assert!(AudioSegmentSource::new(
             File::open(&path).unwrap(),
-            MpegSegment { start: 6, length: 99 },
-        ).is_err());
+            MpegSegment {
+                start: 6,
+                length: 99
+            },
+        )
+        .is_err());
         assert!(AudioSegmentSource::new(
             File::open(&path).unwrap(),
-            MpegSegment { start: u64::MAX, length: 1 },
-        ).is_err());
+            MpegSegment {
+                start: u64::MAX,
+                length: 1
+            },
+        )
+        .is_err());
     }
 
     #[cfg(unix)]
@@ -1130,10 +1186,23 @@ mod tests {
         fs::write(&replacement, b"OTHERVALUES").unwrap();
         fs::rename(&replacement, &path).unwrap();
         for (segment, expected) in [
-            (MpegSegment { start: 0, length: 5 }, &b"FIRST"[..]),
-            (MpegSegment { start: 5, length: 6 }, &b"SECOND"[..]),
+            (
+                MpegSegment {
+                    start: 0,
+                    length: 5,
+                },
+                &b"FIRST"[..],
+            ),
+            (
+                MpegSegment {
+                    start: 5,
+                    length: 6,
+                },
+                &b"SECOND"[..],
+            ),
         ] {
-            let mut source = AudioSegmentSource::new(validated.try_clone().unwrap(), segment).unwrap();
+            let mut source =
+                AudioSegmentSource::new(validated.try_clone().unwrap(), segment).unwrap();
             let mut bytes = Vec::new();
             source.read_to_end(&mut bytes).unwrap();
             assert_eq!(bytes, expected);
@@ -1143,21 +1212,33 @@ mod tests {
 
     #[test]
     fn mpeg_segments_exclude_id3_payloads_and_split_direct_info_concatenation() {
-        const AUDIO: &[u8] = include_bytes!("../../../tests/fixtures/audio/mono-24000-48k-info.mp3");
+        const AUDIO: &[u8] =
+            include_bytes!("../../../tests/fixtures/audio/mono-24000-48k-info.mp3");
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("segments.mp3");
         fs::write(&path, [AUDIO, AUDIO].concat()).unwrap();
         let segments = validate_mpeg_bounds(&mut File::open(&path).unwrap()).unwrap();
-        assert_eq!(segments, vec![
-            MpegSegment { start: 0, length: AUDIO.len() as u64 },
-            MpegSegment { start: AUDIO.len() as u64, length: AUDIO.len() as u64 },
-        ]);
+        assert_eq!(
+            segments,
+            vec![
+                MpegSegment {
+                    start: 0,
+                    length: AUDIO.len() as u64
+                },
+                MpegSegment {
+                    start: AUDIO.len() as u64,
+                    length: AUDIO.len() as u64
+                },
+            ]
+        );
         // A complete MPEG file inside private ID3 data must never become audio.
         let mut tag = vec![b'I', b'D', b'3', 4, 0, 0];
         let size = AUDIO.len();
         tag.extend_from_slice(&[
-            ((size >> 21) & 127) as u8, ((size >> 14) & 127) as u8,
-            ((size >> 7) & 127) as u8, (size & 127) as u8,
+            ((size >> 21) & 127) as u8,
+            ((size >> 14) & 127) as u8,
+            ((size >> 7) & 127) as u8,
+            (size & 127) as u8,
         ]);
         tag.extend_from_slice(AUDIO);
         fs::write(&path, [AUDIO, tag.as_slice(), AUDIO].concat()).unwrap();
@@ -1173,7 +1254,8 @@ mod tests {
 
     #[test]
     fn mpeg_explicit_counts_reject_inconsistent_frames_bytes_and_short_metadata() {
-        const AUDIO: &[u8] = include_bytes!("../../../tests/fixtures/audio/mono-24000-48k-info.mp3");
+        const AUDIO: &[u8] =
+            include_bytes!("../../../tests/fixtures/audio/mono-24000-48k-info.mp3");
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("counts.mp3");
         let marker = AUDIO.windows(4).position(|bytes| bytes == b"Info").unwrap();
@@ -1187,7 +1269,9 @@ mod tests {
         fs::write(&path, AUDIO).unwrap();
         let bits = u32::from_be_bytes(AUDIO[..4].try_into().unwrap());
         // The flags declare frame and byte counts, but this extent ends before them.
-        assert!(mpeg_info_counts(&mut File::open(path).unwrap(), 0, (marker + 8) as u64, bits).is_err());
+        assert!(
+            mpeg_info_counts(&mut File::open(path).unwrap(), 0, (marker + 8) as u64, bits).is_err()
+        );
     }
 
     #[test]
