@@ -35,7 +35,7 @@ jobs:
           docker run --detach --name server-bind-regression --publish 127.0.0.1:17860:7860 server-bind-regression
           ready=0
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/server-bind-health.json"; then
+            if curl --fail --silent --show-error --connect-timeout 2 --max-time 3 http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/server-bind-health.json"; then
               ready=1
               break
             fi
@@ -49,4 +49,15 @@ jobs:
         run: docker logs --tail 100 server-bind-regression 2>&1 || true
       - name: Remove the task-owned container
         if: always()
-        run: docker rm --force server-bind-regression >/dev/null 2>&1 || true
+        shell: bash
+        run: |
+          set -euo pipefail
+          containers="$(docker container ls --all --format '{{.Names}}')"
+          if grep -Fxq server-bind-regression <<< "$containers"; then
+            docker rm --force server-bind-regression
+          fi
+          containers="$(docker container ls --all --format '{{.Names}}')"
+          if grep -Fxq server-bind-regression <<< "$containers"; then
+            echo "::error::The task-owned container still exists after cleanup"
+            exit 1
+          fi

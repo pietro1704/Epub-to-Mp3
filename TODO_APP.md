@@ -3,7 +3,7 @@
 ## AH-08 — Default the optional server to loopback
 
 - Owner: root; recover only the server listener change from preserved branch `feature/server-loopback-default` (`71f9cdd`) onto master `cc2ed618`. The original branch and dirty architecture checkout remain untouched.
-- Status: actual listener regressions and production container route prepared; GitHub verification pending.
+- Status: actual listener regressions and production container route prepared; GitHub verification pending. Each HTTP probe has a finite timeout and cleanup checks container absence instead of suppressing removal errors.
 - Acceptance: absent HOST binds an actual ephemeral listener to127.0.0.1; explicit HOST/PORT and wildcard binding remain supported; invalid host fails and invalid port retains8000. Docker explicitly opts into HOST=0.0.0.0 and its published host port must answer /api/health.
 - Confirmed predecessor RED: run `38889285845`, Rust job `116934636405`, reported23 passed/1 failed: `default_server_listener_is_loopback_only` failed its actual listener assertion; explicit configuration passed. This is not evidence of recovered-head GREEN.
 - Packaging dependency: retain the native/benches workspace inputs and locked Docker build already prepared by #828 so the container build can exercise the bind behavior. No Space deployment or model installation.
