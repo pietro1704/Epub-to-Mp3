@@ -46,7 +46,9 @@ jobs:
           mise run hf:snapshot -- "$GITHUB_WORKSPACE" "$snapshot_root/source"
           git init --bare --initial-branch=master "$snapshot_root/transport.git"
           bash scripts/hf_push.sh "$snapshot_root/source" "file://$snapshot_root/transport.git"
-          git clone "file://$snapshot_root/transport.git" "$snapshot_root/reconstructed"
+          git clone --no-checkout "file://$snapshot_root/transport.git" "$snapshot_root/reconstructed"
+          git -C "$snapshot_root/reconstructed" lfs install --local
+          git -C "$snapshot_root/reconstructed" checkout master
           cmp web/src/wasm/converter_wasm_bg.wasm "$snapshot_root/reconstructed/web/src/wasm/converter_wasm_bg.wasm"
           cmp web/public/sample.epub "$snapshot_root/reconstructed/web/public/sample.epub"
       - name: Build Docker from the reconstructed snapshot
