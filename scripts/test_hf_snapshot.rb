@@ -51,7 +51,9 @@ class HfSnapshotTest < Minitest::Test
     pointer = git!('show', 'master:web/src/wasm/converter_wasm_bg.wasm', chdir: @remote)
     assert_match(/\Aversion https:\/\/git-lfs.github.com\/spec\/v1\n/, pointer)
     clone = File.join(@directory, 'fresh clone')
-    git!('clone', "file://#{@remote}", clone, chdir: @directory)
+    git!('clone', '--no-checkout', "file://#{@remote}", clone, chdir: @directory)
+    git!('lfs', 'install', '--local', chdir: clone)
+    git!('checkout', 'master', chdir: clone)
     @inputs.each { |path, bytes| assert_equal bytes, File.binread(File.join(clone, path)), path }
     %w[.env ios pretrained_models docs].each { |path| refute File.exist?(File.join(clone, path)), path }
     assert_equal git!('rev-parse', 'master', chdir: @remote), git!('rev-parse', 'main', chdir: @remote)
