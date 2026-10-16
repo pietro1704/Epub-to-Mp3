@@ -64,7 +64,7 @@ description = "Build and verify the direct Rust EPUB WASM adapter under the nati
 run = "mise exec -- ruby scripts/native_build_command.rb -- bash scripts/build_web_wasm.sh"
 
 [tasks."migration:product-boundary-audit"]
-description = "Audit remaining web and Flutter HTTP/Python product boundaries"
+description = "Exercise embedded Web and Flutter runtime contracts"
 run = "bash scripts/check_direct_runtime_boundary.sh"
 
 [tasks."branches:cleanup-preview"]

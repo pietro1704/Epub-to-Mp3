@@ -1,7 +1,17 @@
 # App delivery backlog
 
+## AH-07 — Exercise direct-runtime behavior and synchronize playback fixture
+
+- [ ] Owner: root; dependency: recovered AH-04/AH-05/Help and Rust predecessor integration `d26823e2`. Minimal port from `52e17b32` plus `fcc5084`; preserve original cumulative branch and all unrelated work.
+- Acceptance: replace source-name grep heuristics with explicit Web/Flutter/all test selections, literal root/cwd/argv and propagated errors. Runner regressions must use actual Bash subprocesses with isolated tool doubles, proving missing tools/projects and invalid input fail without false PASS.
+- Keep full Web/Flutter CI suites and scoped toolchains. Install Flutter dependencies explicitly before its focused `--no-pub` contracts. No product Ruby dependency, implicit model install or native/device verification is introduced.
+- Recover the moving-window regression's committed chapter-seven callback synchronization instead of closing its stream after an arbitrary20ms. Preserve selection/options/completed-index assertions and independent cancellation regressions. Historical GitHub RED38892875007 job116946415185 observed [2,3,6] instead of [2,3,6,7]; current source still had that same delay.
+- GitHub-only verification pending: actual runner subprocess regression; focused Web/Flutter contracts; full suites/analyzer/lint/build; existing Rust Faber inference/packaging/native gates separately. Web uses session doubles; Dart tests include adapter doubles and a C FFI fixture. They do not establish real Rust/Piper inference, installation, performance or Apple/Android GUI acceptance.
+- No local process/build/test/device/Simulator action. Original ancestry remains unmerged and must be preserved.
+
 ## AH-09 — Recover identity-checked predecessor chapter audio
 
+- Verified predecessor evidence: GitHub general CI38979524904 on d26823e2 passed; Rust job117237153210 passed175 core tests (one unrelated ignored) and32 FFI tests, including staged/recovered-cache cancellation, actual fallback role/policy, equal-length MP3 hash tampering, source/model identity, force and symlinks. Final delivery and the new current-head checks remain pending.
 - [ ] Owner: root (sole Rust editing owner); dependency: reviewed Faber/manual history integration `16fea0c5`. Recover only the scoped worker/worker-regression/FFI-test delta from preserved `98a533bf...ec1bc0a2`; do not import cumulative branches or edit `jobs.rs`.
 - Acceptance: reuse only direct-sibling regular audio/receipt pairs whose effective source/text/provider/model hashes match. Revalidate the staged copy, preserve predecessor bytes/receipt/job/manifest, retain source chapter identity across filename renumbering, and bypass recovery under force.
 - Actual used selections, fallback role (including primary/secondary resolving to the same voice) and explicit policy failure state must survive reuse without additional synthesis. Reject malformed receipt, equal-length hash tampering, different source/model and directory/audio/receipt symlinks.
