@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## CLI-20261016-LINUX-ORT-PACKAGE — Include the selected linked runtime
+
+- [ ] Owner: github_monitor_plan; actual RED at head `260a784`, workflow `38895194283`, job `116953882501`: packaging succeeded but the public CLI exited 127 because `libonnxruntime.so.1` was missing. The explicit `ORT_LIB_LOCATION` build does not copy that library into `target/release`.
+- Package the selected Linux shared ORT under the executable's exact ELF NEEDED/SONAME identity only after successful metadata inspection and matching ELF class, byte order and machine. Missing, ambiguous or mismatched dependencies must fail packaging before publication. Preserve static builds, Apple/Windows packaging and the strict package-only golden loader.
+- GitHub-only acceptance: real ELF fixture compilation/loading covers successful relocation, absent runtime, incompatible SONAME/architecture and static dependency absence; the unchanged public two-chapter Faber golden must then pass. No local tests/builds/syntax/formatters executed; source review required before commit or push.
+
 - CLI golden pre-publication review found a likely Linux packaging gap: explicit ORT_LIB_LOCATION may link without copying its runtime to target/release, while the packager only copies that directory. Keep the standalone harness strict (package/bin only; no development loader paths) and establish the actual GitHub result before changing production. Cached residual libraries are not proof of packaging identity. No local runtime/test executed.
 
 ## CLI-20261016-FABER-GOLDEN — Exercise the packaged public CLI with real Faber

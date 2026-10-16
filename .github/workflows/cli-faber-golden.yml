@@ -8,6 +8,8 @@ on:
       - 'scripts/verify_cli_faber.rb'
       - 'scripts/test_verify_cli_faber.rb'
       - 'scripts/package_rust_cli.rb'
+      - 'scripts/package_linux_onnxruntime.rb'
+      - 'scripts/test_package_linux_onnxruntime.rb'
       - 'crates/converter-cli/**'
   pull_request:
     paths:
@@ -15,6 +17,8 @@ on:
       - 'scripts/verify_cli_faber.rb'
       - 'scripts/test_verify_cli_faber.rb'
       - 'scripts/package_rust_cli.rb'
+      - 'scripts/package_linux_onnxruntime.rb'
+      - 'scripts/test_package_linux_onnxruntime.rb'
       - 'crates/converter-cli/**'
       - 'crates/converter-core/**'
       - 'crates/converter-ffi/**'
@@ -61,7 +65,11 @@ jobs:
       - name: Install native build and full audio decoding prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg unzip
+          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg unzip binutils
+      - name: Test real ELF dependency relocation and rejection boundaries
+        run: |
+          set -o pipefail
+          mise exec -- ruby scripts/test_package_linux_onnxruntime.rb 2>&1 | tee .reports/cli-faber/linux-package-tests.log
       - name: Install the checksum-pinned host ONNX Runtime
         run: |
           archive="$RUNNER_TEMP/cli-onnxruntime-linux-x64-1.24.4.tgz"
