@@ -11,7 +11,7 @@ require "rbconfig"
 # Apple service, Python runtime, Simulator, app, or device is invoked.
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
-  TASKS = %w[ios:build ios:simulator:test mac:build converter-ffi:ios-packaging:test].to_h do |name|
+  TASKS = %w[ios:build ios:device:build ios:simulator:test mac:build converter-ffi:ios-packaging:test].to_h do |name|
     output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: ROOT)
     raise "Cannot read mise task #{name}: #{error}" unless status.success?
     [name, JSON.parse(output).fetch("run").join("\n")]
@@ -110,6 +110,15 @@ class NativeTaskWiringTest < Minitest::Test
   def test_mac_build_preflight_precedes_generation_and_ignores_legacy_override
     skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
     _, error, status = run_task("mac:build", "FIXTURE_SIM_STATE" => "Booted", "HEAVY_JOB_GUARD_DISABLE" => "1")
+    assert_equal 75, status.exitstatus, error
+    assert_match(/Shut down all Simulators/, error)
+    assert_empty events
+    assert_unlocked
+  end
+
+  def test_ios_device_build_preflight_precedes_generation_and_device_resolution
+    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    _, error, status = run_task("ios:device:build", "FIXTURE_SIM_STATE" => "Booted")
     assert_equal 75, status.exitstatus, error
     assert_match(/Shut down all Simulators/, error)
     assert_empty events
