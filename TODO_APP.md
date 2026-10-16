@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## CI-20261016-MACOS14 — Move FFI artifact builds off the deprecated runner
+
+- [ ] Owner: root; three FFI artifact jobs remain queued without a runner on `macos-14` (for example #828 run38954682813 and #821 run38969588034). The upstream runner-images announcement schedules a macOS 14 brownout on October 16, 14:00 UTC through October 17, 00:00 UTC, with retirement November 2: https://github.com/actions/runner-images/issues/13518.
+- Change: move only those three matrix entries to supported ARM64 `macos-15`; verify actual runner architecture and both Apple SDKs before toolchain work. Preserve all Rust target triples, existing artifact checks and the explicit unsupported direct iOS-device skip. No Simulator launch, runtime install, or native-device action.
+- Acceptance: hosted ARM64 preflight succeeds and existing simulator-target compilation/artifact checks complete on the exact candidate head. Device skip remains an unverified device-build limitation. These build-only checks do not establish SE/iOS 15.5 acceptance or lift local Intel/host quarantine.
+- Verification: specialist inspected all 29 master workflows; only converter-ffi.yml contains macos-14. Candidate runtime/required checks and integration into affected campaign branches remain pending. GitHub-only execution; preserve queued runs and unmerged work.
+
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
 - [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
