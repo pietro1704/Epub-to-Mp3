@@ -203,12 +203,68 @@ class LocalConversionJob {
 DateTime? _date(Object? value) =>
     value == null ? null : DateTime.tryParse(value as String);
 
+class LocalConversionHistory {
+  const LocalConversionHistory({
+    required this.jobs,
+    required this.unreadableKeys,
+  });
+
+  final List<LocalConversionJob> jobs;
+  final List<String> unreadableKeys;
+}
+
 class LocalConversionJobStore {
   LocalConversionJobStore(this._prefs, {this.prefix = 'local-conversion.v1'});
   final SharedPreferences _prefs;
   final String prefix;
 
   String key(String bookId, String jobId) => '$prefix:$bookId:$jobId';
+
+  /// Reads the existing per-job records without migrating or deleting them.
+  /// Damaged entries remain on disk and are reported alongside usable history.
+  Future<LocalConversionHistory> loadHistory() async {
+    await _prefs.reload();
+    final jobs = <LocalConversionJob>[];
+    final unreadableKeys = <String>[];
+    final keys =
+        _prefs.getKeys().where((key) => key.startsWith('$prefix:')).toList()
+          ..sort();
+    for (final key in keys) {
+      try {
+        final raw = _prefs.getString(key);
+        if (raw == null) throw const FormatException('Missing job record');
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        if (!LocalConversionJobStatus.values.any(
+          (status) => status.name == decoded['status'],
+        )) {
+          throw const FormatException('Unknown recorded job status');
+        }
+        for (final field in ['createdAt', 'updatedAt']) {
+          final value = decoded[field];
+          if (value is! String || DateTime.tryParse(value) == null) {
+            throw FormatException('Invalid recorded job timestamp: $field');
+          }
+        }
+        final job = LocalConversionJob.fromJson(decoded);
+        if (job.bookId.isEmpty ||
+            job.jobId.isEmpty ||
+            key != this.key(job.bookId, job.jobId)) {
+          throw const FormatException('Job record identity mismatch');
+        }
+        jobs.add(job);
+      } catch (_) {
+        unreadableKeys.add(key);
+      }
+    }
+    jobs.sort((left, right) {
+      final byDate = right.updatedAt.compareTo(left.updatedAt);
+      return byDate != 0 ? byDate : left.jobId.compareTo(right.jobId);
+    });
+    return LocalConversionHistory(
+      jobs: List.unmodifiable(jobs),
+      unreadableKeys: List.unmodifiable(unreadableKeys),
+    );
+  }
 
   Future<LocalConversionJob?> load(String bookId, String jobId) async {
     final raw = _prefs.getString(key(bookId, jobId));

@@ -39,6 +39,57 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noJobs => 'No conversions yet';
 
   @override
+  String get conversionLogTitle => 'Conversion log';
+
+  @override
+  String get conversionJobLabel => 'Job';
+
+  @override
+  String get conversionLastRecordedState => 'Last recorded state';
+
+  @override
+  String conversionLastRecordedStateValue(String state) {
+    return 'Last recorded state: $state';
+  }
+
+  @override
+  String get conversionLastUpdated => 'Last updated';
+
+  @override
+  String conversionRecordedAudioPath(String path) {
+    return 'Recorded audio path: $path';
+  }
+
+  @override
+  String conversionUnreadableRecords(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count saved conversion records could not be read.',
+      one: '1 saved conversion record could not be read.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversionStatusPending => 'Pending';
+
+  @override
+  String get conversionStatusRunning => 'Converting';
+
+  @override
+  String get conversionStatusCompleted => 'Completed';
+
+  @override
+  String get conversionStatusFailed => 'Failed';
+
+  @override
+  String get conversionStatusCancelled => 'Cancelled';
+
+  @override
+  String get conversionStatusUnknown => 'Unknown';
+
+  @override
   String get refresh => 'Refresh';
 
   @override
