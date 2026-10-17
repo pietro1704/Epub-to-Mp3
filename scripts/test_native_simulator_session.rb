@@ -8,6 +8,7 @@ require "digest"
 require "open3"
 require "rbconfig"
 require "timeout"
+require "stringio"
 
 # The process contract runs only fake Ruby tools. No Apple service is queried.
 class NativeSimulatorSessionTest < Minitest::Test
@@ -60,10 +61,11 @@ class NativeSimulatorSessionTest < Minitest::Test
         acknowledged = false
         loop do
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          sample_started = mode == "old_collection_start" ? now - [100.0, now / 2].min : now
           denied = mode == "cleanup_resource_deny" && File.exist?(File.join(directory, "deny-requested"))
           puts JSON.generate("event" => "sample", "decision" => denied ? "deny" : "allow",
             "reasons" => denied ? ["available disk space below minimum"] : [],
-            "sample" => { "started_monotonic" => now, "collected_monotonic" => now,
+            "sample" => { "started_monotonic" => sample_started, "collected_monotonic" => now,
               "collection_seconds" => 0.0, "memory_bytes" => 8 * 1024**3,
               "logical_cpus" => 8, "memory_free_percent" => 58,
               "disk_free_bytes" => (denied ? 4 : 12) * 1024**3, "swap_used_bytes" => 0,
@@ -339,5 +341,49 @@ class NativeSimulatorSessionTest < Minitest::Test
       assert_match(/owner disappeared or cancelled/, report.fetch("reason"))
       assert_workers_stopped_and_lease_released(worker)
     end
+  end
+
+  {
+    "old_start_with_fresh_finish_and_zero_duration" => [-100.0, 0.0],
+    "actual_collection_exceeds_budget" => [-6.0, 5.0],
+    "declared_duration_disagrees_with_elapsed_collection" => [-0.25, 0.0],
+    "collection_starts_after_its_finish" => [1.0, 0.0]
+  }.each do |name, (start_offset, declared_duration)|
+    define_method("test_monitor_rejects_#{name}") do
+      load_subject
+      reader, writer = IO.pipe
+      monitor = NativeSimulatorSession::Monitor.new(reader, StringIO.new, 15.0)
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      started = start_offset == -100.0 ? now - [100.0, now / 2].min : now + start_offset
+      policy = { "event" => "policy", "limits" => NativeSimulatorSession::Monitor::LIMITS,
+                 "load1_limit" => "min(6.0, 0.75 * logical_cpus)",
+                 "duration_seconds" => 15.0, "interval_seconds" => 0.1 }
+      sample = { "event" => "sample", "decision" => "allow", "reasons" => [],
+                 "sample" => { "started_monotonic" => started,
+                   "collected_monotonic" => now, "collection_seconds" => declared_duration,
+                   "memory_bytes" => 8 * 1024**3, "logical_cpus" => 8,
+                   "memory_free_percent" => 58, "disk_free_bytes" => 12 * 1024**3,
+                   "swap_used_bytes" => 0, "load_averages" => [1.0, 1.0, 1.0],
+                   "panic_identities" => [] } }
+      writer.write(JSON.generate(policy) + "\n" + JSON.generate(sample) + "\n")
+      writer.flush
+      # Keep the producer open: EOF must not accidentally satisfy this denial.
+      error = assert_raises(NativeSimulatorSession::Stop) { monitor.check! }
+      assert_match(/Invalid or replayed resource sample/, error.message)
+    ensure
+      reader&.close
+      writer&.close
+    end
+  end
+
+  def test_old_collection_start_prevents_any_session_phase_from_launching
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    result = run_session(mode: "old_collection_start")
+    assert_equal 75, result, failure_diagnostics
+    assert_empty operations
+    report = read_fixture_json(@report)
+    assert_equal "deny", report.fetch("decision")
+    assert_equal false, report.fetch("cleanup_verified")
+    assert_match(/Invalid or replayed resource sample/, report.fetch("reason"))
   end
 end
