@@ -13,6 +13,9 @@ on:
       - 'scripts/test_native_build_preflight.rb'
       - 'scripts/test_native_job.rb'
       - 'scripts/test_native_hook_safety.rb'
+      - 'scripts/guard_ios_simulator_resources.py'
+      - 'scripts/test_guard_ios_simulator_resources.py'
+      - 'mise.toml'
       - '.github/workflows/native-hook-safety.yml'
   pull_request:
     paths:
@@ -23,6 +26,9 @@ on:
       - 'scripts/test_native_build_preflight.rb'
       - 'scripts/test_native_job.rb'
       - 'scripts/test_native_hook_safety.rb'
+      - 'scripts/guard_ios_simulator_resources.py'
+      - 'scripts/test_guard_ios_simulator_resources.py'
+      - 'mise.toml'
       - '.github/workflows/native-hook-safety.yml'
 
 permissions:
@@ -55,3 +61,27 @@ jobs:
         run: ruby scripts/test_native_job.rb
       - name: Verify hooks with isolated compiler fixtures
         run: ruby scripts/test_native_hook_safety.rb
+
+  simulator-resources:
+    name: Simulator resource monitor host contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      MISE_ENABLE_TOOLS: python
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - name: Install the repository-pinned formatter
+        run: mise exec -- python -m pip install --disable-pip-version-check ruff==0.6.9
+      - name: Check monitor style
+        run: |
+          mise exec -- ruff check scripts/guard_ios_simulator_resources.py scripts/test_guard_ios_simulator_resources.py
+          mise exec -- ruff format --check scripts/guard_ios_simulator_resources.py scripts/test_guard_ios_simulator_resources.py
+      - name: Verify monitor runtime contracts without Apple execution
+        run: mise run host:simulator-resources:test
