@@ -9,7 +9,7 @@ require 'tmpdir'
 
 class CodeqlSwiftBuildTest < Minitest::Test
   def setup
-    @root = Dir.mktmpdir('codeql build ')
+    @root = File.realpath(Dir.mktmpdir('codeql build '))
     @bin = File.join(@root, 'bin')
     FileUtils.mkdir_p([@bin, File.join(@root, 'scripts'), File.join(@root, 'ios/EpubToMp3')])
     @script = File.join(@root, 'scripts/codeql_swift_build.sh')
