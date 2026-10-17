@@ -41,8 +41,18 @@ class CodeqlSwiftBuildTest < Minitest::Test
   end
 
   def invoke(destination, **environment)
-    Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'TEST_CALLS' => @calls }.merge(environment),
+    Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'TEST_CALLS' => @calls,
+                    'GITHUB_ACTIONS' => nil, 'RUNNER_ARCH' => nil }.merge(environment),
                    'bash', @script, destination, 'EpubToMp3-UnitTests', '.build-codeql', 'build-for-testing')
+  end
+
+  def test_actions_arm64_runner_uses_native_artifacts_when_uname_disagrees
+    _output, error, status = invoke('platform=macOS', 'GITHUB_ACTIONS' => 'true', 'RUNNER_ARCH' => 'ARM64',
+                                    'TEST_HOST_ARCH' => 'x86_64', 'TEST_FFI_ARCH' => 'arm64', 'TEST_ORT_ARCH' => 'arm64')
+    assert status.success?, error
+    arguments = JSON.parse(File.read(@calls)).fetch('argv')
+    assert_includes arguments, 'platform=macOS,arch=arm64'
+    assert_includes arguments, 'ARCHS=arm64'
   end
 
   def test_macos_build_uses_matching_host_artifacts_and_destination
