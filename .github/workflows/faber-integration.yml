@@ -30,6 +30,8 @@ jobs:
       - run: mise install
       - name: Test Apple runtime packaging with owned process fixtures
         run: mise exec -- ruby scripts/test_bundle_onnxruntime_apple.rb
+      - name: Test Android inference runner shell and failure propagation
+        run: mise exec -- ruby scripts/test_verify_android_piper_inference.rb
       - name: Test JNI-enabled preference and streaming contracts
         run: |
           set -o pipefail
@@ -54,6 +56,18 @@ jobs:
       MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
     steps:
       - uses: actions/checkout@v7
+      - name: Enable and require hosted Linux KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle --timeout=10
+          id
+          stat -c '%F %a %U:%G %n' /dev/kvm
+          if ! { test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm; }; then
+            echo '::error::Hosted Android inference requires readable/writable /dev/kvm.'
+            exit 1
+          fi
       - uses: jdx/mise-action@v5
         with:
           version: 2026.9.14
@@ -93,23 +107,9 @@ jobs:
           avd-name: faber-arm64-abi-translation
           force-avd-creation: true
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim
-          script: |
-            set -euo pipefail
-            api_level="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
-            abi_list="$(adb shell getprop ro.product.cpu.abilist | tr -d '\r')"
-            native_bridge="$(adb shell getprop ro.dalvik.vm.native.bridge | tr -d '\r')"
-            arm64_isa="$(adb shell getprop ro.dalvik.vm.isa.arm64 | tr -d '\r')"
-            test "$api_level" = "35"
-            case ",$abi_list," in *,arm64-v8a,*) ;; *) echo "ARM64 ABI is unavailable: $abi_list" >&2; exit 1 ;; esac
-            test "$native_bridge" = "libndk_translation.so"
-            test "$arm64_isa" = "x86_64"
-            printf 'ANDROID_ARM64_ABI_TRANSLATION: api=%s guest=%s arm64Bridge=%s arm64Isa=%s\n' \
-              "$api_level" "$(adb shell getprop ro.product.cpu.abi | tr -d '\r')" "$native_bridge" "$arm64_isa"
-            mkdir -p .reports/tts-preferences
-            cd flutter_app
-            mise exec -- flutter drive --use-application-binary=build/app/outputs/flutter-apk/app-debug.apk --driver=test_driver/integration_test.dart --target=integration_test/android_piper_inference_test.dart -d emulator-5554 2>&1 | tee ../.reports/tts-preferences/android-inference.log
-            grep -F 'ANDROID_FABER_ABI_TRANSLATION: model=pt_BR-faber-medium' ../.reports/tts-preferences/android-inference.log
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -no-audio -no-boot-anim -accel on
+          script: bash scripts/verify_android_piper_inference.sh
       - name: Retain APK, native identity and Android test results
         if: always()
         uses: actions/upload-artifact@v6
@@ -209,6 +209,8 @@ jobs:
             -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests \
             -only-testing:EpubToMp3Tests/ConvertViewModelTests \
             -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests \
+            -only-testing:EpubToMp3Tests/PlatformSpeechSynthesizerTests \
+            -only-testing:EpubToMp3Tests/ReaderProgressiveListeningTests \
             -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests \
             | tee ../../.reports/tts-preferences/macos-prefs.log
           grep -F 'FABER_NATIVE firstChunkSeconds=' ../../.reports/tts-preferences/macos-prefs.log

@@ -22,7 +22,7 @@ class ConversionRequest {
     required this.engine,
     required this.voice,
     required this.language,
-    this.ttsPreferences = const TtsPreferences(),
+    this.ttsPreferences = const TtsPreferences.appDefaults(),
     this.chapterStart,
     this.chapterEnd,
     this.includeCover = true,
@@ -196,6 +196,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
                   ? saved.secondary
                   : null,
               allowOnlineFallback: _allowSecondary && saved.allowOnlineFallback,
+              policyVersion: saved.policyVersion,
             );
       final request = ConversionRequest(
         filePath: path,

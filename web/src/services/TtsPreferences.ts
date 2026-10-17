@@ -1,16 +1,17 @@
 import type { TtsPreferences, TtsSelection } from "../types/conversion";
 const key = "ebook-tts.preferences.v1";
 export const faber: TtsSelection = { engine: "piper", model_id: "pt_BR-faber-medium", voice: null };
+export const system: TtsSelection = { engine: "system", model_id: null, voice: null };
 export const edge: TtsSelection = { engine: "edge", model_id: null, voice: null };
 export function loadTtsPreferences(): TtsPreferences {
   try {
     const stored = localStorage.getItem(key);
     if (stored) {
       const value = JSON.parse(stored) as TtsPreferences;
-      if (["piper", "edge"].includes(value.primary.engine)) return value;
+      if (["piper", "edge", "system"].includes(value.primary.engine)) return value;
     }
   } catch { /* An inaccessible store uses fresh defaults. */ }
-  return { primary: { ...faber }, secondary: null, allow_online_fallback: false };
+  return { policy_version: 2, primary: { ...faber }, secondary: { ...system }, allow_online_fallback: false };
 }
 export function saveTtsPreferences(value: TtsPreferences): void {
   localStorage.setItem(key, JSON.stringify(value));
@@ -24,6 +25,7 @@ export function effectiveTtsPreferences(saved: TtsPreferences, override: TtsSele
     (override.voice ?? null) === (saved.secondary.voice ?? null)
   ) ? saved.secondary : null;
   return structuredClone(override ? {
+    ...(secondary && saved.policy_version !== undefined ? { policy_version: saved.policy_version } : {}),
     primary: override,
     secondary,
     allow_online_fallback: secondary !== null && saved.allow_online_fallback,

@@ -28,9 +28,55 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
     }
 
     func testFaberIsAvailableAsAnExplicitOfflineProvider() {
-        XCTAssertEqual(AudioEnginePreference.supportedPreferences, [.piper, .edge])
+        XCTAssertEqual(AudioEnginePreference.supportedPreferences, [.piper, .system, .edge])
         XCTAssertEqual(ConversionOptions.selectedEngine(.piper).engine, "piper")
         XCTAssertEqual(ConversionOptions.selectedEngine(.piper).modelID, "pt_BR-faber-medium")
+    }
+
+    func testLucianaIsPreferredEvenWhenOnlyEnhancedVersionIsInstalled() {
+        let voices: [InstalledSpeechVoicePolicy.Voice] = [
+            .init(identifier: "compact.other", name: "Other", language: "pt-BR", isCompact: true),
+            .init(identifier: "enhanced.luciana", name: "Luciana", language: "pt-BR", isCompact: false),
+            .init(identifier: "portugal", name: "Luciana", language: "pt-PT", isCompact: true),
+        ]
+        XCTAssertEqual(InstalledSpeechVoicePolicy.select(language: "pt_BR", voices: voices), "enhanced.luciana")
+        XCTAssertEqual(InstalledSpeechVoicePolicy.select(language: "pt", voices: voices), "enhanced.luciana")
+        XCTAssertEqual(InstalledSpeechVoicePolicy.select(language: "pt-PT", voices: voices), "portugal")
+        XCTAssertNil(InstalledSpeechVoicePolicy.select(language: "es-ES", voices: voices))
+    }
+
+    func testInstalledVoiceFallbackIsDeterministicAndNeverCrossesExplicitRegion() {
+        let voices: [InstalledSpeechVoicePolicy.Voice] = [
+            .init(identifier: "z.voice", name: "Other", language: "pt-BR", isCompact: true),
+            .init(identifier: "a.voice", name: "Another", language: "pt-BR", isCompact: true),
+            .init(identifier: "first", name: "Portugal", language: "pt-PT", isCompact: true),
+        ]
+        XCTAssertEqual(InstalledSpeechVoicePolicy.select(language: "pt", voices: voices), "a.voice")
+        XCTAssertEqual(InstalledSpeechVoicePolicy.select(language: "PT-br", voices: Array(voices.reversed())), "a.voice")
+        XCTAssertNil(InstalledSpeechVoicePolicy.select(language: "pt-BR", voices: [voices[2]]))
+        XCTAssertNil(InstalledSpeechVoicePolicy.select(language: "pt-BR", voices: []))
+    }
+
+    func testLegacyPreferenceSnapshotRetainsAbsentPolicyAndExplicitNoFallback() throws {
+        let data = Data(#"{"primary":{"engine":"piper","model_id":"pt_BR-faber-medium"},"secondary":null,"allow_online_fallback":false}"#.utf8)
+        let preferences = try JSONDecoder().decode(TtsPreferences.self, from: data)
+        XCTAssertNil(preferences.secondary)
+        XCTAssertNil(preferences.policyVersion)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(preferences)) as? [String: Any])
+        XCTAssertNil(object["policy_version"])
+    }
+
+    func testNativeFallbackPolicyRoundTripsWithoutChangingPrimaryIdentity() throws {
+        let preferences = TtsPreferences(primary: .selected(.piper), secondary: .selected(.system),
+                                         allowOnlineFallback: false, policyVersion: 2)
+        let data = try JSONEncoder().encode(preferences)
+        XCTAssertEqual(try JSONDecoder().decode(TtsPreferences.self, from: data), preferences)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["policy_version"] as? Int, 2)
+        XCTAssertEqual(ConversionOptions.selectedEngine(.system).engine, "system")
+        XCTAssertNil(ConversionOptions.selectedEngine(.system).modelID)
+        XCTAssertEqual(preferences.primary.modelID, "pt_BR-faber-medium")
+        XCTAssertFalse(preferences.allowOnlineFallback)
     }
 
     @MainActor

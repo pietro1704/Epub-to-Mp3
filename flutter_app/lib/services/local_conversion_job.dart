@@ -421,7 +421,7 @@ class ConversionJobCoordinator {
       bookId: bookId,
       jobId: jobId,
       conversionOptionsJson:
-          conversionOptionsJson ?? const TtsPreferences().optionsJson(),
+          conversionOptionsJson ?? const TtsPreferences.appDefaults().optionsJson(),
       chapters: chapters
           .map((c) => LocalConversionChapter(index: c.index, name: c.name))
           .toList(),

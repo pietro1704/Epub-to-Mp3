@@ -194,11 +194,13 @@
   "ttsFaberOffline": "Faber medium · Offline",
   "ttsEdgeOnline": "Edge · Online",
   "ttsNoSecondary": "None",
+  "ttsSystemOffline": "System voice · Offline fallback",
+  "ttsUseRecommendedDefaults": "Use Faber with system voice fallback",
   "ttsAllowOnlineSecondary": "Allow online secondary",
   "ttsOnlineSecondaryDescription": "Send failed segments to Edge only when enabled.",
   "ttsUsePreferences": "Use audio preferences",
   "ttsAllowJobSecondary": "Allow configured secondary for this conversion",
   "ttsActualVoices": "Used voice: {voices}",
   "@ttsActualVoices": {"placeholders": {"voices": {"type": "String"}}},
-  "ttsSecondaryUsedNotice": "Secondary voice used for an isolated segment. The primary voice will be retried."
+  "ttsSecondaryUsedNotice": "Using the secondary voice. The primary voice will be retried periodically."
 }

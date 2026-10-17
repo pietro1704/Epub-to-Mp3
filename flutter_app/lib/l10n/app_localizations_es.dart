@@ -492,6 +492,13 @@ class AppLocalizationsEs extends AppLocalizations {
   String get ttsNoSecondary => 'Ninguna';
 
   @override
+  String get ttsSystemOffline => 'Voz del sistema · Alternativa sin conexión';
+
+  @override
+  String get ttsUseRecommendedDefaults =>
+      'Usar Faber con voz del sistema como alternativa';
+
+  @override
   String get ttsAllowOnlineSecondary => 'Permitir voz secundaria en línea';
 
   @override
@@ -512,5 +519,5 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get ttsSecondaryUsedNotice =>
-      'Se usó una voz secundaria en este fragmento. Se volverá a intentar la voz principal.';
+      'Usando la voz secundaria. Se volverá a intentar la voz principal periódicamente.';
 }

@@ -3,12 +3,19 @@ import Foundation
 enum AudioEnginePreference: String, CaseIterable, Identifiable {
     case edge
     case piper
+    case system
 
     var id: String { rawValue }
-    var displayName: String { rawValue == "edge" ? "Edge" : "Faber medium" }
+    var displayName: String {
+        switch self {
+        case .edge: return "Edge"
+        case .piper: return "Faber medium"
+        case .system: return L10n.string("settings.systemTts")
+        }
+    }
 
     static var supportedPreferences: [AudioEnginePreference] {
-        [.piper, .edge]
+        [.piper, .system, .edge]
     }
 }
 
@@ -28,8 +35,11 @@ struct TtsPreferences: Codable, Sendable, Equatable {
     var primary: TtsSelection
     var secondary: TtsSelection?
     var allowOnlineFallback: Bool
+    /// Absent in legacy job snapshots, which must retain their original policy.
+    var policyVersion: UInt32? = nil
     enum CodingKeys: String, CodingKey {
         case primary, secondary
         case allowOnlineFallback = "allow_online_fallback"
+        case policyVersion = "policy_version"
     }
 }

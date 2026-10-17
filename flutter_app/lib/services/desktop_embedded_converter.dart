@@ -186,7 +186,7 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
       outputPath: output,
       chapterStart: start,
       chapterEnd: end,
-      optionsJson: options ?? const TtsPreferences().optionsJson(),
+      optionsJson: options ?? const TtsPreferences.appDefaults().optionsJson(),
       controlAddress: control.address,
       streaming: onChunk != null,
     );
@@ -497,6 +497,27 @@ String _convertOnWorker(DesktopConversionRequest request) {
     final session = open(request.inputPath.toNativeUtf8(allocator: arena));
     if (session == ffi.nullptr) return readOwned(ffi.nullptr);
     try {
+      final preferences = options['tts_preferences'];
+      if (preferences is Map &&
+          ((preferences['primary'] is Map &&
+                  preferences['primary']['engine'] == 'system') ||
+              (preferences['secondary'] is Map &&
+                  preferences['secondary']['engine'] == 'system'))) {
+        final _PlatformTtsDart install;
+        try {
+          install = library.lookupFunction<_PlatformTtsNative, _PlatformTtsDart>(
+            'converter_session_set_desktop_platform_tts_v1',
+          );
+        } on ArgumentError {
+          throw EmbeddedConversionFailure(
+            'NATIVE_TTS_ABI_UNAVAILABLE',
+            'The installed converter does not support native speech fallback',
+          );
+        }
+        if (!install(session)) {
+          return readOwned(ffi.nullptr);
+        }
+      }
       final output = request.outputPath.toNativeUtf8(allocator: arena);
       // The explicit Rust FFI owns the directory named by this exact job ID.
       final jobId = Directory(request.outputPath)
@@ -569,6 +590,8 @@ Future<String> runDesktopModelInstallWorker(
 );
 
 typedef _ControlChunkEnableNative = ffi.Bool Function(ffi.Pointer<ffi.Void>);
+typedef _PlatformTtsNative = ffi.Bool Function(ffi.Pointer<_NativeSession>);
+typedef _PlatformTtsDart = bool Function(ffi.Pointer<_NativeSession>);
 typedef _ControlChunkEnableDart = bool Function(ffi.Pointer<ffi.Void>);
 typedef _ControlChunkTakeNative =
     ffi.Pointer<Utf8> Function(ffi.Pointer<ffi.Void>);

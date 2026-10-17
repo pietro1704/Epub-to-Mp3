@@ -17,7 +17,7 @@ import {
 } from "../types/conversion";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, resolveApiUrl } from "../config";
 import { conversionClient, type UploadResponse } from "../services/ConversionService";
-import { loadTtsPreferences, saveTtsPreferences, effectiveTtsPreferences, faber, edge } from "../services/TtsPreferences";
+import { loadTtsPreferences, saveTtsPreferences, effectiveTtsPreferences, faber, edge, system } from "../services/TtsPreferences";
 import { installBrowserFaber, installedBrowserVoices, browserVoiceId } from "../services/BrowserConversionClient";
 import { openTauriBooks, isTauri, listenTauri } from "../lib/tauri";
 
@@ -236,7 +236,7 @@ export default function ConversionForm({
   const [modelStatus, setModelStatus] = useState<"idle" | "installing" | "installed" | "error">("idle");
   const [modelError, setModelError] = useState("");
   const labels = t.form.ttsPreferences;
-  const updatePreferences = (next: typeof preferences) => { saveTtsPreferences(next); setPreferences(next); };
+  const updatePreferences = (next: typeof preferences) => { saveTtsPreferences({ ...next, policy_version: 2 }); setPreferences({ ...next, policy_version: 2 }); };
   const installModel = async () => { setModelStatus("installing"); try { await installBrowserFaber(); setModelStatus("installed"); } catch (error) { setModelError(String(error)); setModelStatus("error"); } };
   useEffect(() => { void installedBrowserVoices().then(voices => { if (voices.includes(browserVoiceId)) setModelStatus("installed"); }).catch(() => undefined); }, []);
   const unavailableVoiceLabel = labels.unavailable;
@@ -1323,8 +1323,9 @@ export default function ConversionForm({
         <label>{labels.primary}<select aria-label={labels.primary} value={preferences.primary.engine} onChange={e => updatePreferences({ ...preferences, primary: e.target.value === "piper" ? { ...faber } : { ...edge }, secondary: null })}>
           <option value="piper">Faber medium</option><option value="edge" disabled>Edge — {unavailableVoiceLabel}</option>
         </select></label>
-        <label>{labels.secondary}<select aria-label={labels.secondary} value={preferences.secondary?.engine ?? "none"} onChange={e => updatePreferences({ ...preferences, secondary: e.target.value === "none" ? null : e.target.value === "edge" ? { ...edge } : { ...faber } })}>
+        <label>{labels.secondary}<select aria-label={labels.secondary} value={preferences.secondary?.engine ?? "none"} onChange={e => updatePreferences({ ...preferences, secondary: e.target.value === "none" ? null : e.target.value === "system" ? { ...system } : e.target.value === "edge" ? { ...edge } : { ...faber } })}>
           <option value="none">{labels.none}</option>
+          <option value="system">{labels.system}</option>
           <option value={preferences.primary.engine === "piper" ? "edge" : "piper"} disabled={preferences.primary.engine === "piper"}>{preferences.primary.engine === "piper" ? `Edge — ${unavailableVoiceLabel}` : "Faber medium"}</option>
         </select></label>
         <label><input type="checkbox" checked={preferences.allow_online_fallback} onChange={e => updatePreferences({ ...preferences, allow_online_fallback: e.target.checked })} />{labels.online}</label>

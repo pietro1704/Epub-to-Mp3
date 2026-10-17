@@ -404,7 +404,8 @@ void main() {
                   request.ttsPreferences.primary.modelId,
                   'pt_BR-faber-medium',
                 );
-                expect(request.ttsPreferences.secondary, isNull);
+                expect(request.ttsPreferences.secondary!.engine, 'system');
+                expect(request.ttsPreferences.policyVersion, 2);
                 submittedPath = request.filePath;
                 return 'job-1';
               },
@@ -442,7 +443,8 @@ void main() {
     final job = (await LocalConversionJobStore(prefs).loadHistory()).jobs.single;
     final options = jsonDecode(job.conversionOptionsJson!);
     expect(options['tts_preferences']['primary']['model_id'], 'pt_BR-faber-medium');
-    expect(options['tts_preferences']['secondary'], isNull);
+    expect(options['tts_preferences']['secondary']['engine'], 'system');
+    expect(options['tts_preferences']['policy_version'], 2);
     expect(options['tts_preferences']['allow_online_fallback'], false);
     expect(container.read(settingsProvider).ttsPreferences.primary.engine, 'edge');
   });

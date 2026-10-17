@@ -1,0 +1,80 @@
+name: Piper native fallback
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-fallback-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      MISE_ENABLE_TOOLS: rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - name: Install explicit native speech and decoder fixtures
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends espeak-ng ffmpeg
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: native-fallback-linux-${{ hashFiles('Cargo.lock') }}
+      - name: Verify shared policy and real FFI callbacks
+        run: mise exec -- cargo test --locked -p converter-core -p converter-ffi --features converter-ffi/android-jni
+      - name: Verify installed pt-BR eSpeak output
+        env:
+          EPUB_TEST_NATIVE_TTS: '1'
+          EPUB_TEST_NATIVE_LANGUAGE: pt-BR
+        run: mise exec -- cargo test --locked -p converter-core installed_native_speech_produces_valid_audio -- --nocapture
+      - name: Verify format
+        run: mise exec -- cargo fmt --all -- --check
+
+  windows-native:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      MISE_ENABLE_TOOLS: rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: native-fallback-windows-${{ hashFiles('Cargo.lock') }}
+      - name: Verify policy and subprocess supervision
+        shell: pwsh
+        run: |
+          foreach ($contract in @('tts_preferences', 'desktop_tts')) {
+            mise exec -- cargo test --locked -p converter-core --lib $contract
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Record installed SAPI voices
+        shell: pwsh
+        run: |
+          $voice = New-Object -ComObject SAPI.SpVoice
+          try { $voice.GetVoices() | ForEach-Object { Write-Output "$($_.Id) Language=$($_.GetAttribute('Language'))" } }
+          finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($voice) | Out-Null }
+      - name: Verify installed English SAPI output (not pt-BR acceptance)
+        env:
+          EPUB_TEST_NATIVE_TTS: '1'
+          EPUB_TEST_NATIVE_LANGUAGE: en-US
+        run: mise exec -- cargo test --locked -p converter-core installed_native_speech_produces_valid_audio -- --nocapture

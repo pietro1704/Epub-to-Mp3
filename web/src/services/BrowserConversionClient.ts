@@ -252,7 +252,8 @@ export class BrowserConversionClient implements ConversionClient {
         try { mp3 = await this.runtime.synthesize(segment.text, segment.selection); }
         catch (primaryError) {
           if (this.isCancelled(job)) return;
-          if (!preferences.secondary) throw primaryError;
+          job.snapshot.errorCategory = "tts_provider";
+          if (!preferences.secondary || preferences.secondary.engine === "system") throw primaryError;
           try { job.session.provider_failed(); }
           catch (policyError) { throw new Error(`${String(primaryError)}; ${String(policyError)}`); }
           const fallback = JSON.parse(job.session.next_segment()) as Segment;
@@ -321,6 +322,7 @@ export class BrowserConversionClient implements ConversionClient {
     }
     job.snapshot.state = "queued";
     job.snapshot.error = undefined;
+    job.snapshot.errorCategory = undefined;
     job.snapshot.completedAt = undefined;
     job.snapshot.completedSegments = 0;
     job.snapshot.totalSegments = undefined;
@@ -329,6 +331,12 @@ export class BrowserConversionClient implements ConversionClient {
     job.done = this.queue.then(() => this.execute(job));
     this.queue = job.done.catch(() => undefined);
     return { status: "queued" };
+  }
+  async getNativePlaybackPolicy(jobId: string): Promise<{ language: string; voice: string | null } | null> {
+    await this.ensureRestored();
+    const job = this.job(jobId);
+    if (job.snapshot.state !== "failed" || job.snapshot.errorCategory !== "tts_provider" || job.preferences.secondary?.engine !== "system") return null;
+    return { language: job.language, voice: job.preferences.secondary.voice };
   }
   async getJobFullText(jobId: string): Promise<BookTextDocument> { await this.ensureRestored(); return structuredClone(this.job(jobId).document); }
   async getJobFullTextResult(jobId: string) { return { kind: "ok" as const, document: await this.getJobFullText(jobId) }; }

@@ -58,12 +58,39 @@ impl TtsSelection {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsPreferences {
+    /// Missing means the original strict job policy. Version 2 opts into native recovery.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_version: Option<u8>,
     pub primary: TtsSelection,
     pub secondary: Option<TtsSelection>,
     pub allow_online_fallback: bool,
 }
 impl TtsPreferences {
+    /// Fresh app settings only. Headless defaults and saved explicit choices stay strict.
+    pub fn app_default(system_audio_available: bool) -> Self {
+        Self {
+            policy_version: Some(2),
+            secondary: system_audio_available.then(|| TtsSelection {
+                engine: "system".into(),
+                model_id: None,
+                voice: None,
+            }),
+            ..Self::default()
+        }
+    }
+    pub fn continues_native(&self) -> bool {
+        self.policy_version == Some(2)
+            && self.primary.engine == "piper"
+            && self
+                .secondary
+                .as_ref()
+                .is_some_and(|s| s.engine == "system")
+    }
+
     pub fn validate(&self, language: Option<&str>) -> Result<(), String> {
+        if self.policy_version.is_some_and(|v| v != 2) {
+            return Err("Unsupported TTS policy version".into());
+        }
         self.primary.validate(language)?;
         if let Some(secondary) = &self.secondary {
             secondary.validate(language)?;
@@ -82,6 +109,7 @@ impl TtsPreferences {
         use_secondary: bool,
     ) -> Self {
         Self {
+            policy_version: self.policy_version,
             primary: override_selection.unwrap_or_else(|| self.primary.clone()),
             secondary: if use_secondary {
                 self.secondary.clone()
@@ -101,30 +129,67 @@ impl TtsPreferences {
 #[serde(try_from = "SegmentPolicyState")]
 pub struct SegmentPolicy {
     consecutive_failures: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    recovery_remaining: usize,
 }
+fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SegmentPolicyState {
     consecutive_failures: usize,
+    #[serde(default)]
+    recovery_remaining: usize,
 }
 impl TryFrom<SegmentPolicyState> for SegmentPolicy {
     type Error = String;
     fn try_from(state: SegmentPolicyState) -> Result<Self, Self::Error> {
-        if state.consecutive_failures > 2 {
+        if state.consecutive_failures > 2 || state.recovery_remaining > 8 {
             return Err("TTS policy state must contain zero to two consecutive failures".into());
         }
         Ok(Self {
             consecutive_failures: state.consecutive_failures,
+            recovery_remaining: state.recovery_remaining,
         })
     }
 }
 impl SegmentPolicy {
     pub fn is_initial(&self) -> bool {
-        self.consecutive_failures == 0
+        self.consecutive_failures == 0 && self.recovery_remaining == 0
     }
 
     pub fn primary_succeeded(&mut self) {
         self.consecutive_failures = 0;
+        self.recovery_remaining = 0;
+    }
+    /// Recovery counters are persisted with the job; cancellation never consumes a retry.
+    pub fn should_try_primary(&mut self, preferences: &TtsPreferences) -> bool {
+        if preferences.continues_native() && self.recovery_remaining > 0 {
+            self.recovery_remaining -= 1;
+            false
+        } else {
+            true
+        }
+    }
+    pub fn provider_failed(
+        &mut self,
+        cancelled: bool,
+        preferences: &TtsPreferences,
+    ) -> Result<(), String> {
+        if cancelled {
+            return Err("Conversion cancelled".into());
+        }
+        if preferences.continues_native() {
+            self.consecutive_failures = (self.consecutive_failures + 1).min(2);
+            if self.consecutive_failures >= 2 {
+                self.recovery_remaining = 8;
+            }
+            Ok(())
+        } else {
+            self.primary_failed(false, preferences.secondary.is_some())
+        }
     }
     pub fn primary_failed(&mut self, cancelled: bool, has_secondary: bool) -> Result<(), String> {
         if cancelled {
@@ -146,6 +211,46 @@ impl SegmentPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn app_policy_is_opt_in_and_legacy_snapshot_is_unchanged() {
+        let app = TtsPreferences::app_default(true);
+        assert!(app.continues_native());
+        assert_eq!(app.primary.model_id.as_deref(), Some(FABER_MODEL_ID));
+        assert!(!app.allow_online_fallback);
+        assert!(TtsPreferences::app_default(false).secondary.is_none());
+        let legacy: TtsPreferences = serde_json::from_str(r#"{"primary":{"engine":"piper","model_id":"pt_BR-faber-medium"},"secondary":{"engine":"system"}}"#).unwrap();
+        assert!(!legacy.continues_native());
+        assert!(serde_json::to_value(&legacy)
+            .unwrap()
+            .get("policy_version")
+            .is_none());
+        assert!(app.effective_selection(None, false).secondary.is_none());
+        assert!(app.validate(Some("en-US")).is_err());
+    }
+    #[test]
+    fn native_continuation_is_bounded_resumable_and_cancellation_safe() {
+        let preferences = TtsPreferences::app_default(true);
+        let mut policy = SegmentPolicy::default();
+        assert!(policy.should_try_primary(&preferences));
+        policy.provider_failed(false, &preferences).unwrap();
+        assert!(policy.should_try_primary(&preferences));
+        policy.provider_failed(false, &preferences).unwrap();
+        let snapshot = serde_json::to_string(&policy).unwrap();
+        assert!(policy.provider_failed(true, &preferences).is_err());
+        assert_eq!(snapshot, serde_json::to_string(&policy).unwrap());
+        let mut resumed: SegmentPolicy = serde_json::from_str(&snapshot).unwrap();
+        for _ in 0..8 {
+            assert!(!resumed.should_try_primary(&preferences));
+        }
+        assert!(resumed.should_try_primary(&preferences));
+        resumed.provider_failed(false, &preferences).unwrap();
+        resumed.primary_succeeded();
+        assert!(resumed.is_initial());
+        assert!(resumed.should_try_primary(&preferences));
+        let mut unsupported = preferences;
+        unsupported.policy_version = Some(9);
+        assert!(unsupported.validate(Some("pt-BR")).is_err());
+    }
     #[test]
     fn local_voice_identifiers_are_rejected_instead_of_silently_ignored() {
         let mut faber = TtsSelection::default();

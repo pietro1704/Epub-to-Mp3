@@ -166,7 +166,11 @@ class MirrorAppSettings {
         primary: TtsSelection(engine: 'edge', voice: _prefs.getString('voice')),
       );
     }
-    return const TtsPreferences();
+    // A recorded legacy provider is an explicit preference, even without a
+    // secondary key. New defaults never mutate that earlier choice.
+    return engine == null
+        ? const TtsPreferences.appDefaults()
+        : const TtsPreferences();
   }
 
   Future<void> setTtsPreferences(TtsPreferences value) async {

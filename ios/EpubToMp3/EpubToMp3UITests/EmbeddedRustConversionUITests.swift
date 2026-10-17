@@ -78,6 +78,12 @@ final class TtsPreferencesUITests: XCTestCase {
         reveal(online, in: app)
         XCTAssertEqual(online.value as? String, "0")
 
+        choose("System voice (Luciana when available)", row: secondary, app: app)
+        reveal(secondary, in: app)
+        XCTAssertEqual(secondary.value as? String, "System voice (Luciana when available)")
+        reveal(primary, in: app)
+        XCTAssertEqual(primary.value as? String, "Faber medium")
+
         choose("Edge", row: secondary, app: app)
         setSwitch(online, on: true, app: app)
         app.tabBars.buttons["Convert"].tap()

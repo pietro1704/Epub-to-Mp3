@@ -41,7 +41,13 @@ static int matches_job_directory(const char* output, const char* job) {
   strncmp(output + start, job, end - start) == 0;
 }
 typedef struct { atomic_int cancelled; atomic_int queued; char* chunk_path; } FixtureControl;
-void* converter_session_open(const char* path) { return strdup(path); }
+static atomic_int native_speech_registered;
+void* converter_session_open(const char* path) { atomic_store(&native_speech_registered, 0); return strdup(path); }
+_Bool converter_session_set_desktop_platform_tts_v1(void* session) {
+ if (strcmp((const char*)session, "/native-unavailable.epub") == 0) return 0;
+ atomic_store(&native_speech_registered, 1);
+ return 1;
+}
 void converter_session_free(void* session) { free(session); }
 char* converter_session_metadata_json(void* session) { if (!wait_for_ui_heartbeat((const char*)session)) return NULL; return strdup("{\"bookTitle\":\"Native fixture\",\"chapters\":[{\"index\":0,\"name\":\"Native chapter\",\"text\":\"Metadata text\"}]}"); }
 void converter_string_free(char* value) { free(value); }
@@ -61,6 +67,7 @@ char* converter_session_convert_streaming_job_options_json_v1(void* session,
  const char* output, const char* job, const char* options, int start, int end,
  void* progress, void* chapter, void* chunk, void* context, FixtureControl* control) {
  if (!matches_job_directory(output, job)) return NULL;
+ if (strstr(options, "system") && !atomic_load(&native_speech_registered)) return NULL;
  mkdir(output, 0700);
  char path[2048];
  snprintf(path, sizeof(path), "%s/chunk-0.mp3", output);
@@ -91,6 +98,7 @@ char* converter_session_convert_controlled_job_options_json_v1(void* session,
  const char* output, const char* job, const char* options, int start, int end,
  void* progress, void* chapter, void* context, atomic_int* control) {
  if (!matches_job_directory(output, job)) return NULL;
+ if (strstr(options, "system") && !atomic_load(&native_speech_registered)) return NULL;
  if (!strstr(options, "pt_BR-faber-medium") || start != 2 || end != 3) return NULL;
  for (int i=0; i<100; i++) {
    if (atomic_load(control)) return NULL;
@@ -149,6 +157,30 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stderr}');
   });
   tearDownAll(() async => directory.delete(recursive: true));
+
+  test('new defaults register native speech inside the conversion worker', () async {
+    final converter = DesktopEmbeddedConverter(libraryPath: library);
+    final manifest = await converter.convert(
+      inputPath: '/fixture.epub',
+      outputPath: '${directory.path}/native-defaults',
+      chapterStart: 2,
+      chapterEnd: 3,
+    );
+    expect(manifest, '{"chapters":[]}');
+  });
+
+  test('native registration failure stops conversion with the actual error', () async {
+    final converter = DesktopEmbeddedConverter(libraryPath: library);
+    await expectLater(
+      converter.convert(
+        inputPath: '/native-unavailable.epub',
+        outputPath: '${directory.path}/native-error',
+        chapterStart: 2,
+        chapterEnd: 3,
+      ),
+      throwsA(isA<EmbeddedConversionFailure>()),
+    );
+  });
 
   for (final basename in ['manual-real-job', 'manual %20#identity']) {
     for (final trailing in ['', '/']) {

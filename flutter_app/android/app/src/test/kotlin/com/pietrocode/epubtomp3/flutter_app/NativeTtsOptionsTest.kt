@@ -5,8 +5,24 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
+import java.util.concurrent.CancellationException
 
 class NativeTtsOptionsTest {
+    @Test fun unavailableAssetsAllowOnlyOptedInNativeFallback() {
+        assertNull(NativeTtsOptions.installedPiperAssets(true) { throw java.io.IOException("Missing packaged assets") })
+        assertFailsWith<java.io.IOException> {
+            NativeTtsOptions.installedPiperAssets(false) { throw java.io.IOException("Missing packaged assets") }
+        }
+        assertFailsWith<CancellationException> {
+            NativeTtsOptions.installedPiperAssets(true) { throw CancellationException("Stopped") }
+        }
+    }
+    @Test fun successfulAssetPreparationPreservesTheActualRoot() {
+        val root = java.io.File("/test/native-assets")
+        assertEquals(root, NativeTtsOptions.installedPiperAssets(true) { root })
+    }
     @Test fun extractsCompleteTreeAndReturnsEspeakParent() {
         val parent = Files.createTempDirectory("espeak-assets-").toFile()
         val assets = mapOf(

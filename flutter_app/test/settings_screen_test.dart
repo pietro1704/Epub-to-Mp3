@@ -31,6 +31,35 @@ Future<void> _pump(
 
 void main() {
   group('SettingsScreen M3', () {
+    testWidgets('fresh speech defaults choose Faber and offline native fallback', (t) async {
+      await _pump(t);
+      final saved = AppSettings(await SharedPreferences.getInstance()).ttsPreferences;
+      expect(saved.primary.modelId, 'pt_BR-faber-medium');
+      expect(saved.secondary!.engine, 'system');
+      expect(saved.policyVersion, 2);
+      expect(saved.allowOnlineFallback, false);
+      expect(find.text('Faber medium · Offline'), findsOneWidget);
+      expect(find.text('System voice · Offline fallback'), findsOneWidget);
+    });
+
+    testWidgets('existing no-fallback policy adopts new defaults only on action', (t) async {
+      await _pump(t, prefsData: {
+        'ttsPreferences': jsonEncode(const TtsPreferences().toJson()),
+      });
+      final settings = AppSettings(await SharedPreferences.getInstance());
+      expect(settings.ttsPreferences.secondary, isNull);
+      await t.scrollUntilVisible(
+        find.byKey(const ValueKey('tts-use-recommended-defaults')),
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await t.tap(find.byKey(const ValueKey('tts-use-recommended-defaults')));
+      await t.pumpAndSettle();
+      expect(settings.ttsPreferences.primary.engine, 'piper');
+      expect(settings.ttsPreferences.secondary!.engine, 'system');
+      expect(settings.ttsPreferences.policyVersion, 2);
+    });
+
     testWidgets(
       'valid same-engine voices remain distinct settings selections',
       (t) async {
@@ -128,16 +157,16 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(AppSettings(prefs).ttsPreferences.allowOnlineFallback, true);
       await t.scrollUntilVisible(
-        find.text('None'),
+        find.text('System voice · Offline fallback'),
         -150,
         scrollable: find.byType(Scrollable).first,
       );
       await Scrollable.ensureVisible(
-        t.element(find.text('None')),
+        t.element(find.text('System voice · Offline fallback')),
         alignment: 0.5,
       );
       await t.pumpAndSettle();
-      await t.tap(find.text('None'));
+      await t.tap(find.text('System voice · Offline fallback'));
       await t.pumpAndSettle();
       await t.tap(find.text('Edge · Online').last);
       await t.pumpAndSettle();

@@ -123,7 +123,7 @@ class RustPlaybackConversionService {
               jobId: jobId,
               chapters: specs,
               conversionOptionsJson:
-                  optionsJson ?? const TtsPreferences().optionsJson(),
+                  optionsJson ?? const TtsPreferences.appDefaults().optionsJson(),
             )
           : await coordinator.reconcileChapters(restored, specs);
 
@@ -137,7 +137,7 @@ class RustPlaybackConversionService {
         }
         job = job.copyWith(
           conversionOptionsJson:
-              optionsJson ?? const TtsPreferences().optionsJson(),
+              optionsJson ?? const TtsPreferences.appDefaults().optionsJson(),
         );
         await coordinator.store.save(job);
       }

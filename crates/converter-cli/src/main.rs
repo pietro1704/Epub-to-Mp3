@@ -288,6 +288,8 @@ impl CapturedTtsSelection {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CapturedTtsPreferences {
+    #[serde(default)]
+    policy_version: Option<u8>,
     primary: CapturedTtsSelection,
     secondary: Option<CapturedTtsSelection>,
     allow_online_fallback: bool,
@@ -299,6 +301,7 @@ fn parse_captured_preferences(
     let captured: CapturedTtsPreferences = serde_json::from_str(json)
         .map_err(|error| format!("Invalid --tts-preferences-json: {error}"))?;
     let preferences = converter_core::tts_preferences::TtsPreferences {
+        policy_version: captured.policy_version,
         primary: captured.primary.into_selection(),
         secondary: captured.secondary.map(CapturedTtsSelection::into_selection),
         allow_online_fallback: captured.allow_online_fallback,
@@ -995,6 +998,7 @@ mod tests {
         assert!(explicit.primary.model_id.is_none());
         assert!(explicit.secondary.is_none());
         let saved = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "edge".into(),
                 model_id: None,
@@ -1026,6 +1030,7 @@ mod tests {
         );
         let config = converter_core::config::AppConfig::from_paths(paths);
         let saved = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection::default(),
             secondary: Some(TtsSelection {
                 engine: "edge".into(),
@@ -1120,6 +1125,7 @@ mod tests {
         );
         let config = converter_core::config::AppConfig::from_paths(paths);
         let saved = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection::default(),
             secondary: Some(TtsSelection {
                 engine: "edge".into(),
@@ -1215,6 +1221,7 @@ mod tests {
         );
         let config = converter_core::config::AppConfig::from_paths(paths);
         let saved = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "edge".into(),
                 model_id: None,
@@ -1226,6 +1233,7 @@ mod tests {
         converter_core::cache::atomic_write_json(preference_path(&config), &saved).unwrap();
         let stored = fs::read(preference_path(&config)).unwrap();
         let captured = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "edge".into(),
                 model_id: None,
@@ -1271,6 +1279,7 @@ mod tests {
     fn captured_preferences_reject_invalid_schema_policy_and_duplicate_arguments() {
         use converter_core::tts_preferences::{TtsPreferences, TtsSelection};
         let approved = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection::default(),
             secondary: Some(TtsSelection {
                 engine: "edge".into(),
