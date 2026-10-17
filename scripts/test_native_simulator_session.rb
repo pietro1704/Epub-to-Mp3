@@ -151,16 +151,19 @@ class NativeSimulatorSessionTest < Minitest::Test
   end
 
   def test_success_orders_fixed_phases_and_confirms_cleanup_before_releasing_lease
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
     assert_equal 0, run_session
-    assert_equal %w[inspect boot install test terminate shutdown quit verify],
-                 operations.map { |row| row.fetch("phase") }
+    phases = operations.map { |row| row.fetch("phase") }
+    assert_equal %w[boot install test terminate shutdown quit verify], phases.reject { |phase| phase == "inspect" }
+    assert_equal 8, phases.count("inspect"), "Target identity must be inspected again before every phase"
     report = JSON.parse(File.read(@report))
     assert_equal "allow", report.fetch("decision")
     assert_equal true, report.fetch("cleanup_verified")
     assert_equal 2, report.fetch("process_groups").length
-    assert_equal operations[1].fetch("pgid"), operations[3].fetch("pgid")
-    assert_equal operations[4].fetch("pgid"), operations[-1].fetch("pgid")
-    refute_equal operations[3].fetch("pgid"), operations[-1].fetch("pgid")
+    group = ->(phase) { operations.find { |row| row["phase"] == phase }.fetch("pgid") }
+    assert_equal group.call("boot"), group.call("test")
+    assert_equal group.call("terminate"), group.call("verify")
+    refute_equal group.call("test"), group.call("verify")
     File.open(@lease, "a+") { |lease| assert lease.flock(File::LOCK_EX | File::LOCK_NB) }
   end
 end
