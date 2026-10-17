@@ -206,10 +206,13 @@ module NativeSimulatorSession
         end
         load = sample["load_averages"]
         panics = sample["panic_identities"]
+        elapsed = sample["collected_monotonic"] - sample["started_monotonic"]
+        # Allow only floating-point round-trip noise in the producer's subtraction.
+        consistent_duration = (sample["collection_seconds"] - elapsed).abs <= 1e-6
         unless load.is_a?(Array) && load.length == 3 && load.all? { |value| value.is_a?(Numeric) && value.finite? && value >= 0 } &&
                panics.is_a?(Array) && panics.length <= 4096 && panics.all? { |value| value.is_a?(String) && value.bytesize <= 4096 } &&
                sample["logical_cpus"].positive? && sample["memory_bytes"].positive? && sample["memory_free_percent"] <= 100 &&
-               sample["started_monotonic"] <= sample["collected_monotonic"] && sample["collection_seconds"] <= 5 &&
+               elapsed.between?(0, 5) && consistent_duration && sample["collection_seconds"] <= 5 &&
                (!@sample || sample["collected_monotonic"] > @sample["collected_monotonic"])
           raise Stop, "Invalid or replayed resource sample"
         end
