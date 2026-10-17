@@ -216,6 +216,9 @@ jobs:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: arch -arm64 brew install xcodegen
 
+      - name: Test Swift build architecture and failure propagation
+        run: mise exec -- ruby scripts/test_codeql_swift_build.rb
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -269,17 +272,8 @@ jobs:
             if [[ '${{ matrix.platform }}' == 'macOS+iOS' ]]; then
               derived_data="${derived_data}-${destination##*=}"
             fi
-            xcodebuild \
-              -project EpubToMp3.xcodeproj \
-              -scheme '${{ matrix.scheme }}' \
-              -destination "$destination" \
-              -configuration Debug \
-              -derivedDataPath "$derived_data" \
-              -jobs 1 \
-              -parallel-testing-enabled NO \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              ${{ matrix.action }}
+            bash ../../scripts/codeql_swift_build.sh \
+              "$destination" '${{ matrix.scheme }}' "$derived_data" '${{ matrix.action }}'
           done
 
       - name: Analyze
@@ -320,6 +314,10 @@ jobs:
           set -o pipefail
           mkdir -p .reports/ios-bundle-signing
           mise exec -- ruby scripts/test_ios_bundle_signing.rb | tee .reports/ios-bundle-signing/contracts.log
+      - name: Exercise Swift build architecture and failure propagation
+        run: |
+          set -o pipefail
+          mise exec -- ruby scripts/test_codeql_swift_build.rb | tee .reports/ios-bundle-signing/swift-build.log
       - name: Retain signing contract evidence
         if: always()
         uses: actions/upload-artifact@v6
