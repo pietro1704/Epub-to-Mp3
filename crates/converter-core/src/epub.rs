@@ -503,23 +503,33 @@ mod tests {
         assert_eq!(book.chapters[0].text, "Chapter Readable content.");
     }
 
-    fn zip_compatibility_book(compression: zip::CompressionMethod, include_chapter: bool) -> Vec<u8> {
+    fn zip_compatibility_book(
+        compression: zip::CompressionMethod,
+        include_chapter: bool,
+    ) -> Vec<u8> {
         let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(compression);
-        archive.start_file("META-INF/container.xml", options).unwrap();
+        archive
+            .start_file("META-INF/container.xml", options)
+            .unwrap();
         archive.write_all(br#"<container><rootfiles><rootfile full-path="OPS/package.opf"/></rootfiles></container>"#).unwrap();
         archive.start_file("OPS/package.opf", options).unwrap();
         archive.write_all(br#"<package><metadata><title>ZIP compatibility</title></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#).unwrap();
         if include_chapter {
             archive.start_file("OPS/chapter.xhtml", options).unwrap();
-            archive.write_all(b"<html><body><h1>Opening</h1><p>Preserved content.</p></body></html>").unwrap();
+            archive
+                .write_all(b"<html><body><h1>Opening</h1><p>Preserved content.</p></body></html>")
+                .unwrap();
         }
         archive.finish().unwrap().into_inner()
     }
 
     #[test]
     fn zip_upgrade_preserves_stored_and_deflated_epub_identity() {
-        for compression in [zip::CompressionMethod::Stored, zip::CompressionMethod::Deflated] {
+        for compression in [
+            zip::CompressionMethod::Stored,
+            zip::CompressionMethod::Deflated,
+        ] {
             let book = parse_epub(Cursor::new(zip_compatibility_book(compression, true))).unwrap();
             assert_eq!(book.title, "ZIP compatibility");
             assert_eq!(book.chapters.len(), 1);
