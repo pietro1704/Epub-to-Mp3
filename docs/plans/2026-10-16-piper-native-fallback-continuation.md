@@ -54,6 +54,15 @@ passing. The next fix suspends the120s budget while paused, resumes remaining
 time and drains paused cancellation. Inspect its current-head Web tests/lint/
 build before claiming GREEN. Exact resolved native voice metadata in Rust
 manifests remains a documented partial plan item despite safe cache rejection.
+Checkpoint9fbf579 passed general CI38993480871 (Web216+41tests/lint/build),
+native fallback38993480858 and real Rust Flutter Linux/Windows38993480891.
+Android117280893763 passed build/Kotlin/packaging/emulator boot but failed
+before Flutter because the action splits script lines into separate POSIX
+shells and rejects pipefail. The next correction moves the same checks into
+scripts/verify_android_piper_inference.sh, called as one explicit Bash command;
+scripts/test_verify_android_piper_inference.rb exercises actual shell success,
+Flutter pipeline failure, missing success marker and unsupported ABI with
+owned subprocess doubles. Recheck its new head and actual packaged inference.
 Apple jobs remain queued; inspect current runner/check status separately.
 If the temporary worktree is gone, fetch and create an isolated checkout of the
 remote feature branch. Preserve the original heavily dirty workspace at

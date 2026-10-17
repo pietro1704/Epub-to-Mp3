@@ -30,6 +30,8 @@ jobs:
       - run: mise install
       - name: Test Apple runtime packaging with owned process fixtures
         run: mise exec -- ruby scripts/test_bundle_onnxruntime_apple.rb
+      - name: Test Android inference runner shell and failure propagation
+        run: mise exec -- ruby scripts/test_verify_android_piper_inference.rb
       - name: Test JNI-enabled preference and streaming contracts
         run: |
           set -o pipefail
@@ -107,22 +109,7 @@ jobs:
           disable-animations: true
           disable-linux-hw-accel: false
           emulator-options: -no-window -no-audio -no-boot-anim -accel on
-          script: |
-            set -euo pipefail
-            api_level="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
-            abi_list="$(adb shell getprop ro.product.cpu.abilist | tr -d '\r')"
-            native_bridge="$(adb shell getprop ro.dalvik.vm.native.bridge | tr -d '\r')"
-            arm64_isa="$(adb shell getprop ro.dalvik.vm.isa.arm64 | tr -d '\r')"
-            test "$api_level" = "35"
-            case ",$abi_list," in *,arm64-v8a,*) ;; *) echo "ARM64 ABI is unavailable: $abi_list" >&2; exit 1 ;; esac
-            test "$native_bridge" = "libndk_translation.so"
-            test "$arm64_isa" = "x86_64"
-            printf 'ANDROID_ARM64_ABI_TRANSLATION: api=%s guest=%s arm64Bridge=%s arm64Isa=%s\n' \
-              "$api_level" "$(adb shell getprop ro.product.cpu.abi | tr -d '\r')" "$native_bridge" "$arm64_isa"
-            mkdir -p .reports/tts-preferences
-            cd flutter_app
-            mise exec -- flutter drive --use-application-binary=build/app/outputs/flutter-apk/app-debug.apk --driver=test_driver/integration_test.dart --target=integration_test/android_piper_inference_test.dart -d emulator-5554 2>&1 | tee ../.reports/tts-preferences/android-inference.log
-            grep -F 'ANDROID_FABER_ABI_TRANSLATION: model=pt_BR-faber-medium' ../.reports/tts-preferences/android-inference.log
+          script: bash scripts/verify_android_piper_inference.sh
       - name: Retain APK, native identity and Android test results
         if: always()
         uses: actions/upload-artifact@v6
