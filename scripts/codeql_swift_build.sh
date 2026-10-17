@@ -8,7 +8,15 @@ derived_data="${3:?derived data required}"
 action="${4:?action required}"
 build_settings=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
 if [[ "$destination" == *macOS* ]]; then
-  host_arch="$(uname -m)"
+  if [[ "${GITHUB_ACTIONS:-}" == 'true' ]]; then
+    case "${RUNNER_ARCH:-}" in
+      ARM64) host_arch=arm64 ;;
+      X64) host_arch=x86_64 ;;
+      *) echo "Unsupported GitHub runner architecture: ${RUNNER_ARCH:-missing}" >&2; exit 2 ;;
+    esac
+  else
+    host_arch="$(uname -m)"
+  fi
   case "$host_arch" in
     arm64|x86_64) ;;
     *) echo "Unsupported macOS host architecture: $host_arch" >&2; exit 2 ;;

@@ -41,8 +41,55 @@ class CodeqlSwiftBuildTest < Minitest::Test
   end
 
   def invoke(destination, **environment)
-    Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'TEST_CALLS' => @calls }.merge(environment),
+    Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'TEST_CALLS' => @calls,
+                    'GITHUB_ACTIONS' => nil, 'RUNNER_ARCH' => nil }.merge(environment),
                    'bash', @script, destination, 'EpubToMp3-UnitTests', '.build-codeql', 'build-for-testing')
+  end
+
+  def test_actions_arm64_runner_uses_native_artifacts_when_uname_disagrees
+    _output, error, status = invoke('platform=macOS', 'GITHUB_ACTIONS' => 'true', 'RUNNER_ARCH' => 'ARM64',
+                                    'TEST_HOST_ARCH' => 'x86_64', 'TEST_FFI_ARCH' => 'arm64', 'TEST_ORT_ARCH' => 'arm64')
+    assert status.success?, error
+    arguments = JSON.parse(File.read(@calls)).fetch('argv')
+    assert_includes arguments, 'platform=macOS,arch=arm64'
+    assert_includes arguments, 'ARCHS=arm64'
+  end
+
+  def test_actions_x64_runner_uses_native_artifacts_when_uname_disagrees
+    _output, error, status = invoke('platform=macOS', 'GITHUB_ACTIONS' => 'true', 'RUNNER_ARCH' => 'X64',
+                                    'TEST_HOST_ARCH' => 'arm64', 'TEST_FFI_ARCH' => 'x86_64', 'TEST_ORT_ARCH' => 'x86_64')
+    assert status.success?, error
+    arguments = JSON.parse(File.read(@calls)).fetch('argv')
+    assert_includes arguments, 'platform=macOS,arch=x86_64'
+    assert_includes arguments, 'ARCHS=x86_64'
+  end
+
+  def test_actions_missing_or_unsupported_runner_architecture_prevents_inspection_and_build
+    [nil, '', 'ARM', 'X86', 'arm64', 'unknown'].each do |arch|
+      _output, error, status = invoke('platform=macOS', 'GITHUB_ACTIONS' => 'true', 'RUNNER_ARCH' => arch,
+                                      'TEST_LIPO_STATUS' => '9')
+      assert_equal 2, status.exitstatus
+      assert_includes error, 'Unsupported GitHub runner architecture'
+      refute File.exist?(@calls)
+    end
+  end
+
+  def test_outside_actions_uses_uname_despite_inherited_runner_architecture
+    _output, error, status = invoke('platform=macOS', 'GITHUB_ACTIONS' => 'false', 'RUNNER_ARCH' => 'X64')
+    assert status.success?, error
+    arguments = JSON.parse(File.read(@calls)).fetch('argv')
+    assert_includes arguments, 'platform=macOS,arch=arm64'
+    assert_includes arguments, 'ARCHS=arm64'
+  end
+
+  def test_actions_artifacts_must_match_runner_architecture
+    %w[TEST_FFI_ARCH TEST_ORT_ARCH].each do |artifact|
+      _output, error, status = invoke('platform=macOS', 'GITHUB_ACTIONS' => 'true', 'RUNNER_ARCH' => 'ARM64',
+                                      artifact => 'x86_64')
+      assert_equal 2, status.exitstatus
+      assert_includes error, 'Architecture mismatch'
+      refute File.exist?(@calls)
+    end
   end
 
   def test_macos_build_uses_matching_host_artifacts_and_destination
@@ -70,7 +117,8 @@ class CodeqlSwiftBuildTest < Minitest::Test
   end
 
   def test_ios_does_not_require_macos_artifacts_or_override_architecture
-    _output, error, status = invoke('generic/platform=iOS', 'TEST_LIPO_STATUS' => '9')
+    _output, error, status = invoke('generic/platform=iOS', 'TEST_LIPO_STATUS' => '9',
+                                    'GITHUB_ACTIONS' => 'true', 'RUNNER_ARCH' => 'unknown')
     assert status.success?, error
     arguments = JSON.parse(File.read(@calls)).fetch('argv')
     assert_includes arguments, 'generic/platform=iOS'
