@@ -29,6 +29,8 @@ impl ConversionSession {
     ) -> Result<Self, JsValue> {
         let preferences: TtsPreferences = serde_json::from_str(preferences_json).map_err(error)?;
         preferences.validate(Some(language)).map_err(error)?;
+        // Browser system speech is listening-only and cannot supply MP3 bytes.
+        preferences.primary.validate(Some(language)).map_err(error)?;
         let chapters: Vec<Value> = serde_json::from_str(chapters_json).map_err(error)?;
         let mut segments = Vec::new();
         for chapter in chapters {

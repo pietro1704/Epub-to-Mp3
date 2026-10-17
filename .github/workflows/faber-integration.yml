@@ -245,6 +245,8 @@ jobs:
         run: |
           mise exec -- rustup target add wasm32-unknown-unknown
           mise run web:wasm-build
+      - name: Verify fresh WASM voice and locale contracts
+        run: mise run web:wasm-contract:test
       - name: Install browser prerequisites and build production assets
         working-directory: web
         run: |

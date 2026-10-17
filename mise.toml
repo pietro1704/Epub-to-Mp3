@@ -63,6 +63,10 @@ run = "mise exec -- ruby scripts/package_rust_cli.rb --package-only"
 description = "Build and verify the direct Rust EPUB WASM adapter under the native build supervisor"
 run = "mise exec -- ruby scripts/native_build_command.rb -- bash scripts/build_web_wasm.sh"
 
+[tasks."web:wasm-contract:test"]
+description = "Test the current generated WASM export voice and locale contracts without synthesis"
+run = "mise exec -- node --test web/scripts/wasm-locale.node-tests.mjs"
+
 [tasks."migration:product-boundary-audit"]
 description = "Exercise embedded Web and Flutter runtime contracts"
 run = "bash scripts/check_direct_runtime_boundary.sh"

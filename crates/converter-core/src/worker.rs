@@ -1260,6 +1260,7 @@ impl ConversionWorker {
                     if stale.load(Ordering::Acquire) {
                         return Err(WorkerError::PlaybackWindowChanged);
                     }
+                    selection.validate(language).map_err(WorkerError::Piper)?;
                     if selection.engine == "system" {
                         let adapter = self.platform_tts.as_ref().ok_or_else(|| {
                             WorkerError::PlatformTts("No installed system speech adapter".into())

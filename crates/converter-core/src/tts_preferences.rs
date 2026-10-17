@@ -91,7 +91,11 @@ impl TtsPreferences {
         if self.policy_version.is_some_and(|v| v != 2) {
             return Err("Unsupported TTS policy version".into());
         }
-        self.primary.validate(language)?;
+        // App policy may recover through a compatible installed system voice.
+        // Validate language eligibility at synthesis; captured strict jobs still
+        // reject an incompatible primary before conversion starts.
+        let primary_language = if self.continues_native() { None } else { language };
+        self.primary.validate(primary_language)?;
         if let Some(secondary) = &self.secondary {
             secondary.validate(language)?;
             if secondary == &self.primary {
