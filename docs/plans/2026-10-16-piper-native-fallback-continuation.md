@@ -35,6 +35,15 @@ real browser Piper job117260593698. Flutter job117260819409 failed three stale
 test expectations: fresh-secondary null twice and the old fallback message.
 The later correction updates those tests, preserving strict/legacy assertions;
 recheck current-head Flutter execution before calling the issue resolved.
+Checkpoint 873dbb12312c96b0a9cf2915bbc39aebb42fe87d passed general CI38987421264
+(Rust/Web/Python/Flutter: 492 Flutter tests passed, 5 skipped), native fallback
+38987421294, real Rust Flutter Linux/Windows38987421276 and browser Piper
+inference. Android job117262187793 failed before app installation: /dev/kvm
+permission denied, action selected -accel off, boot timed out after600s.
+The subsequent workflow-only correction enables documented hosted Linux KVM
+permissions and requires acceleration; inspect its actual Actions run before
+claiming Android inference passed. A specialist reviewed this correction.
+Apple jobs remain queued; inspect current runner/check status separately.
 If the temporary worktree is gone, fetch and create an isolated checkout of the
 remote feature branch. Preserve the original heavily dirty workspace at
 /Users/pips/Developer/epubtomp3 and every unrelated branch/worktree.
