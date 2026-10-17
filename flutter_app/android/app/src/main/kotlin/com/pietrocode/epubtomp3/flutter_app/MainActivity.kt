@@ -706,15 +706,13 @@ class MainActivity : AudioServiceActivity() {
                                     // the watchdog finite, but do not abort a valid long-running
                                     // conversion after the old one-chapter timeout.
                                     val (native, nativeError) = try {
-                                        nativeFuture.get(900, TimeUnit.SECONDS)
+                                        NativeConversionAwait.await(nativeFuture, outputPath, ::nativeCancelConversion)
                                     } catch (_: TimeoutException) {
-                                        nativeCancelConversion(outputPath)
-                                        nativeFuture.cancel(true)
-                                        Log.e(embeddedLogTag, "embedded conversion timed out after 900 seconds")
+                                        Log.e(embeddedLogTag, "embedded conversion timed out after ${NativeConversionAwait.TIMEOUT_SECONDS} seconds")
                                         runOnUiThread {
                                             result.error(
                                                 "EMBEDDED_CONVERSION_TIMEOUT",
-                                                "Embedded conversion timed out after 900 seconds",
+                                                "Embedded conversion timed out after ${NativeConversionAwait.TIMEOUT_SECONDS} seconds",
                                                 null
                                             )
                                         }
