@@ -94,7 +94,11 @@ impl TtsPreferences {
         // App policy may recover through a compatible installed system voice.
         // Validate language eligibility at synthesis; captured strict jobs still
         // reject an incompatible primary before conversion starts.
-        let primary_language = if self.continues_native() { None } else { language };
+        let primary_language = if self.continues_native() {
+            None
+        } else {
+            language
+        };
         self.primary.validate(primary_language)?;
         if let Some(secondary) = &self.secondary {
             secondary.validate(language)?;

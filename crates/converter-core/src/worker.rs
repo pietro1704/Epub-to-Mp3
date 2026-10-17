@@ -2960,14 +2960,20 @@ mod tests {
                     assert_eq!(manifest.tts_preferences, Some(preferences));
                     assert!(manifest.fallback_used);
                     assert!(!manifest.used_selections.is_empty());
-                    assert!(manifest.used_selections.iter().all(|voice| voice.engine == "system"));
+                    assert!(manifest
+                        .used_selections
+                        .iter()
+                        .all(|voice| voice.engine == "system"));
                     let audio = fs::read(output.join(&manifest.chapters[0].filename)).unwrap();
                     assert!(platform_tts::validate_mp3(&audio).is_ok());
                     let spoken = spoken.lock().unwrap();
                     assert!(!spoken.is_empty());
                     assert!(spoken.iter().all(|actual| actual == language));
                 } else {
-                    assert!(result.unwrap_err().to_string().contains("supports Portuguese"));
+                    assert!(result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("supports Portuguese"));
                     assert!(spoken.lock().unwrap().is_empty());
                     assert!(!output.join("manifest.json").exists());
                 }
