@@ -56,6 +56,18 @@ jobs:
       MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
     steps:
       - uses: actions/checkout@v7
+      - name: Enable and require hosted Linux KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle --timeout=10
+          id
+          stat -c '%F %a %U:%G %n' /dev/kvm
+          if ! { test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm; }; then
+            echo '::error::Hosted Android inference requires readable/writable /dev/kvm.'
+            exit 1
+          fi
       - uses: jdx/mise-action@v5
         with:
           version: 2026.9.14
@@ -95,7 +107,8 @@ jobs:
           avd-name: faber-arm64-abi-translation
           force-avd-creation: true
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -no-audio -no-boot-anim -accel on
           script: bash scripts/verify_android_piper_inference.sh
       - name: Retain APK, native identity and Android test results
         if: always()

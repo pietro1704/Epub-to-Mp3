@@ -1223,7 +1223,7 @@ impl ConversionWorker {
     ) -> Result<(), WorkerError> {
         use std::io::Write;
         preferences.validate(language).map_err(WorkerError::Piper)?;
-        let staging = tempfile::tempdir()?;
+        let staging = tempfile::tempdir_in(out.parent().unwrap_or(Path::new(".")))?;
         let mut output = fs::File::create(out)?;
         let mut policy = self.segment_policy.lock().expect("segment policy lock");
         // The first short utterance becomes playable before the rest of the chapter.
