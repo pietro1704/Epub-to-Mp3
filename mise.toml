@@ -1603,3 +1603,7 @@ run = "mise exec -- python scripts/simulator_resource_monitor.py --observe 15"
 [tasks."host:simulator-resources:test"]
 description = "Test the resource monitor with host-free fixtures and no Apple processes"
 run = "mise exec -- python scripts/test_simulator_resource_monitor.py -v"
+
+[tasks."host:simulator-session:test"]
+description = "Test quarantined session ownership and bounded cleanup without Apple execution"
+run = "mise exec -- ruby scripts/test_native_simulator_session.rb"

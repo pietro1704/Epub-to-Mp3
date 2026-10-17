@@ -13,6 +13,8 @@ on:
       - 'scripts/test_native_build_preflight.rb'
       - 'scripts/test_native_job.rb'
       - 'scripts/test_native_hook_safety.rb'
+      - 'scripts/native_simulator_session.rb'
+      - 'scripts/test_native_simulator_session.rb'
       - 'scripts/simulator_resource_monitor.py'
       - 'scripts/test_simulator_resource_monitor.py'
       - 'mise.toml'
@@ -26,6 +28,8 @@ on:
       - 'scripts/test_native_build_preflight.rb'
       - 'scripts/test_native_job.rb'
       - 'scripts/test_native_hook_safety.rb'
+      - 'scripts/native_simulator_session.rb'
+      - 'scripts/test_native_simulator_session.rb'
       - 'scripts/simulator_resource_monitor.py'
       - 'scripts/test_simulator_resource_monitor.py'
       - 'mise.toml'
@@ -61,6 +65,8 @@ jobs:
         run: ruby scripts/test_native_job.rb
       - name: Verify hooks with isolated compiler fixtures
         run: ruby scripts/test_native_hook_safety.rb
+      - name: Verify quarantined session ownership and cleanup with host fixtures
+        run: ruby scripts/test_native_simulator_session.rb
 
   simulator-resources:
     name: Simulator resource monitor host contracts
