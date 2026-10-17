@@ -43,6 +43,9 @@ permission denied, action selected -accel off, boot timed out after600s.
 The subsequent workflow-only correction enables documented hosted Linux KVM
 permissions and requires acceleration; inspect its actual Actions run before
 claiming Android inference passed. A specialist reviewed this correction.
+First correction1c251d5 failed KVM preflight in job117279150124 before builds;
+the next correction waits for udev settling and logs device ownership/access.
+This is diagnostic evidence collection, not proof that the runner is repaired.
 Apple jobs remain queued; inspect current runner/check status separately.
 If the temporary worktree is gone, fetch and create an isolated checkout of the
 remote feature branch. Preserve the original heavily dirty workspace at
