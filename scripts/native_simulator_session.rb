@@ -280,7 +280,7 @@ module NativeSimulatorSession
       end
       env = { "PATH" => ENV.fetch("PATH"), "LC_ALL" => "C" }.merge(environment).merge(
         NativeJob::FD_ENV => NativeJob::CHILD_FD.to_s, NativeJob::PATH_ENV => @lock_path)
-      pid = Process.spawn(env, *argv, { pgroup: group, out: out, err: err, close_others: true, NativeJob::CHILD_FD => @lease })
+      pid = Process.spawn(env, [argv.first, argv.first], *argv.drop(1), { pgroup: group, out: out, err: err, close_others: true, NativeJob::CHILD_FD => @lease })
       @children << pid
       pid
     end
