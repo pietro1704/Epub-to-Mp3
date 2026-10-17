@@ -1594,12 +1594,12 @@ run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo b
 
 [tasks."ios:resources:preflight"]
 description = "Check actual macOS resource headroom without launching Apple tools"
-run = "mise exec -- python scripts/guard_ios_simulator_resources.py"
+run = "mise exec -- python scripts/simulator_resource_monitor.py"
 
 [tasks."ios:resources:observe"]
 description = "Observe macOS resources for 15 seconds without authorizing or starting Simulator"
-run = "mise exec -- python scripts/guard_ios_simulator_resources.py --observe 15"
+run = "mise exec -- python scripts/simulator_resource_monitor.py --observe 15"
 
 [tasks."host:simulator-resources:test"]
 description = "Test the resource monitor with host-free fixtures and no Apple processes"
-run = "mise exec -- python scripts/test_guard_ios_simulator_resources.py -v"
+run = "mise exec -- python scripts/test_simulator_resource_monitor.py -v"
