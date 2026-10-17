@@ -121,7 +121,11 @@ class NativeSimulatorSessionTest < Minitest::Test
   end
 
   def teardown
-    FileUtils.remove_entry(@directory)
+    if passed?
+      FileUtils.remove_entry(@directory)
+    else
+      warn "Retained fake session evidence: #{@directory}"
+    end
   end
 
   def load_subject
@@ -139,6 +143,21 @@ class NativeSimulatorSessionTest < Minitest::Test
     File.exist?(@marker) ? File.readlines(@marker).map { |line| JSON.parse(line) } : []
   end
 
+  def failure_diagnostics
+    # These files contain only the owned fake process fixture, never host queries.
+    paths = [@report, @marker] + Dir.glob(File.join(@directory, ".session-logs-*", "*"))
+    paths.first(16).filter_map do |path|
+      next unless File.file?(path) && !File.symlink?(path)
+      next unless File.realpath(path).start_with?(File.realpath(@directory) + File::SEPARATOR)
+
+      tail = File.open(path, "rb") do |file|
+        file.seek([file.size - 2048, 0].max)
+        file.read(2048)
+      end
+      "#{path}:\n#{tail.force_encoding(Encoding::UTF_8).scrub}"
+    end.join("\n")
+  end
+
   def test_production_entry_is_quarantined_before_any_child_even_with_environment_override
     output, error, status = Open3.capture3(
       { "EPUB2MP3_ALLOW_INTEL_SIMULATOR" => "1", "SESSION_FIXTURE" => @directory },
@@ -152,7 +171,8 @@ class NativeSimulatorSessionTest < Minitest::Test
 
   def test_success_orders_fixed_phases_and_confirms_cleanup_before_releasing_lease
     skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
-    assert_equal 0, run_session
+    result = run_session
+    assert_equal 0, result, failure_diagnostics
     phases = operations.map { |row| row.fetch("phase") }
     assert_equal %w[boot install test terminate shutdown quit verify], phases.reject { |phase| phase == "inspect" }
     assert_equal 8, phases.count("inspect"), "Target identity must be inspected again before every phase"
