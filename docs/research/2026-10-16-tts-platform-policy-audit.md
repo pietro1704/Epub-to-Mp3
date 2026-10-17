@@ -1,6 +1,9 @@
 # Piper primary and native fallback: implementation audit
 
-Date: 2026-10-16. Scope: inspected current local working tree, including existing
+Date: 2026-10-16. Historical baseline before the native-fallback implementation.
+For implementation and remaining acceptance, see the corresponding plan and
+PR #837. The table below describes the inspected pre-change state.
+Scope: inspected current local working tree, including existing
 uncommitted changes; not a claim about master, shipped binaries or live behavior.
 
 ## Accepted policy

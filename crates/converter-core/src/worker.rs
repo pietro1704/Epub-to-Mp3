@@ -1248,6 +1248,9 @@ impl ConversionWorker {
             if stale.load(Ordering::Acquire) {
                 return Err(WorkerError::PlaybackWindowChanged);
             }
+            // Commit policy changes only for a validated, accepted segment.
+            // A cancelled/stale secondary must not consume recovery counters.
+            let mut pending_policy = policy.clone();
             let path = staging.path().join(format!("{index}.mp3"));
             let synthesize_unvalidated =
                 |selection: &crate::tts_preferences::TtsSelection| -> Result<Vec<u8>, WorkerError> {
@@ -1325,7 +1328,7 @@ impl ConversionWorker {
                 };
             let synthesize =
                 |selection: &crate::tts_preferences::TtsSelection| -> Result<Vec<u8>, WorkerError> {
-                    let bytes = synthesize_unvalidated(selection)?;
+                    let result = synthesize_unvalidated(selection);
                     // Native inference may finish after cancellation was requested.
                     // Never deliver those bytes or start a secondary provider afterward.
                     if self.cancel.is_cancelled() {
@@ -1334,10 +1337,11 @@ impl ConversionWorker {
                     if stale.load(Ordering::Acquire) {
                         return Err(WorkerError::PlaybackWindowChanged);
                     }
+                    let bytes = result?;
                     platform_tts::validate_mp3(&bytes).map_err(WorkerError::PlatformTts)?;
                     Ok(bytes)
                 };
-            let attempt = if policy.should_try_primary(preferences) {
+            let attempt = if pending_policy.should_try_primary(preferences) {
                 synthesize(&preferences.primary)
             } else {
                 Err(WorkerError::Piper("Primary recovery cooldown".into()))
@@ -1345,7 +1349,7 @@ impl ConversionWorker {
             let cooling_down = matches!(&attempt, Err(WorkerError::Piper(message)) if message == "Primary recovery cooldown");
             let (selection, bytes, fallback_used) = match attempt {
                 Ok(bytes) => {
-                    policy.primary_succeeded();
+                    pending_policy.primary_succeeded();
                     (&preferences.primary, bytes, false)
                 }
                 Err(error) => {
@@ -1363,11 +1367,9 @@ impl ConversionWorker {
                         return Err(WorkerError::Cancelled);
                     }
                     if !cooling_down {
-                        policy
-                            .provider_failed(false, preferences)
-                            .map_err(|policy_error| {
-                                WorkerError::Piper(format!("{policy_error}: {error}"))
-                            })?;
+                        pending_policy.provider_failed(false, preferences).map_err(
+                            |policy_error| WorkerError::Piper(format!("{policy_error}: {error}")),
+                        )?;
                     }
                     let secondary = preferences.secondary.as_ref().expect("checked secondary");
                     (secondary, synthesize(secondary)?, true)
@@ -1388,6 +1390,7 @@ impl ConversionWorker {
                 });
             }
             output.write_all(&bytes)?;
+            *policy = pending_policy;
             if fallback_used {
                 self.fallback_chapters
                     .lock()
@@ -2218,6 +2221,76 @@ mod tests {
         ));
         assert_eq!(spoken.lock().unwrap().len(), count);
         assert_eq!(*worker.segment_policy.lock().unwrap(), snapshot);
+    }
+    #[test]
+    fn in_flight_native_cancellation_and_stale_results_do_not_commit_policy() {
+        struct InterruptedSystem {
+            cancel: CancellationToken,
+            stale: Arc<std::sync::atomic::AtomicBool>,
+            mark_stale: bool,
+        }
+        impl PlatformTts for InterruptedSystem {
+            fn synthesize_wav(
+                &self,
+                _: &str,
+                _: &str,
+                output: &Path,
+                _: &(dyn Fn() -> bool + Sync),
+            ) -> Result<(), String> {
+                fs::write(output, test_system_wav()).unwrap();
+                if self.mark_stale {
+                    self.stale.store(true, Ordering::Release);
+                } else {
+                    self.cancel.cancel();
+                }
+                Err("native operation interrupted in flight".into())
+            }
+        }
+        for cooldown in [false, true] {
+            for mark_stale in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+                    std::iter::empty::<(String, String)>(),
+                    temp.path().to_path_buf(),
+                ));
+                let initial: crate::tts_preferences::SegmentPolicy = if cooldown {
+                    serde_json::from_value(
+                        serde_json::json!({"consecutive_failures":2,"recovery_remaining":5}),
+                    )
+                    .unwrap()
+                } else {
+                    Default::default()
+                };
+                let stale = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let mut worker = ConversionWorker::new(config)
+                    .unwrap()
+                    .with_tts_policy_state(initial.clone());
+                let cancel = worker.cancel.clone();
+                worker = worker.with_platform_tts(Arc::new(InterruptedSystem {
+                    cancel,
+                    stale: stale.clone(),
+                    mark_stale,
+                }));
+                let result = worker.synthesize_preferences(
+                    &preference_test_request(),
+                    &crate::tts_preferences::TtsPreferences::app_default(true),
+                    "Uma frase curta.",
+                    &temp.path().join("interrupted.mp3"),
+                    0,
+                    Some("pt-BR"),
+                    &stale,
+                    &Mutex::new(Vec::new()),
+                    1,
+                );
+                if mark_stale {
+                    assert!(matches!(result, Err(WorkerError::PlaybackWindowChanged)));
+                } else {
+                    assert!(matches!(result, Err(WorkerError::Cancelled)));
+                }
+                assert_eq!(*worker.segment_policy.lock().unwrap(), initial);
+                assert!(worker.fallback_chapters.lock().unwrap().is_empty());
+            }
+        }
     }
     #[test]
     fn typed_playback_window_change_does_not_count_as_provider_failure() {

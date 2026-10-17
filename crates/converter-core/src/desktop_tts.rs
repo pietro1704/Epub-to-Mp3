@@ -73,7 +73,7 @@ impl PlatformTts for DesktopPlatformTts {
         if bytes.len() > 64 * 1024 * 1024 {
             return Err("System speech exceeded output limit".into());
         }
-        crate::platform_tts::encode_wav(&bytes)?;
+        // The worker validates PCM and encodes once before publication.
         if expired() {
             return Err("System speech cancelled or timed out".into());
         }
@@ -136,6 +136,7 @@ fn backend_command(language: &str, input: &Path, wav: &Path) -> Result<Command, 
 
 #[cfg(target_os = "windows")]
 fn backend_command(language: &str, input: &Path, wav: &Path) -> Result<Command, String> {
+    use std::os::windows::process::CommandExt;
     // Fixed script only: user data passes via environment/files, never interpolation.
     // SAPI stream synthesis stays in the owned child COM apartment.
     const SCRIPT: &str = r#"
@@ -159,6 +160,7 @@ try {
 }
 "#;
     let mut command = Command::new("powershell.exe");
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     command
         .args([
             "-NoLogo",

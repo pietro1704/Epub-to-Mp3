@@ -19,7 +19,7 @@ Dirty working-tree architecture work remains untouched. Implementation should
 start on isolated feature branches from current master after reconciling which
 existing changes are prerequisite PRs. Do not copy the dirty worktree wholesale.
 
-## Facts established by inspection
+## Historical baseline established before implementation
 
 1. All inspected app preference defaults already use Faber but omit secondary.
 2. Rust accepts engine `system`; native WAV is encoded/published by Rust. Apple
@@ -229,3 +229,43 @@ implementation proceeds in an isolated feature worktree depending on Faber
 PR #821; the original dirty workspace is preserved. Runtime acceptance is not
 established by code presence. Exact verification and delivery status will be
 recorded below and in the continuation prompt.
+
+## Implementation and delivery evidence
+
+- Isolated branch `feature/piper-native-fallback`; PR https://github.com/pietro1704/Epub-to-Mp3/pull/837
+  is stacked on `feature/faber-integration` / #821, because master lacks the typed
+  policy. Scoped delta only; original dirty worktree remains untouched.
+- Implemented optional policy_version:2; absent stays legacy. New app settings
+  use Faber + system. Existing preferences, strict jobs and no-secondary overrides
+  remain captured. Existing users can explicitly adopt new defaults/settings.
+- Persistent recovery: after two consecutive failures, use native for eight
+  segments before retrying Piper. Recovery state is staged per segment and only
+  committed after validated audio, accepted dispatch and write. Cancellation and
+  stale results cannot consume a retry or start/publish late fallback.
+- Model absence and Android packaged-asset failure do not preempt opted-in native
+  fallback. Invalid IDs/paths/languages still fail. Omitted desktop model roots
+  resolve through AppConfig's managed directory; no implicit installation.
+- Apple chooses installed locale-compatible Luciana before compact alternatives.
+  Android foreground and WorkManager supply offline WAV with cancellation. Linux
+  uses installed eSpeak NG in a bounded child; Windows uses installed SAPI via a
+  fixed PowerShell child with no console window or user-script interpolation.
+- Browser native speech is offered by an explicit reader action after Piper
+  synthesis failure, using captured job policy and installed local voices. It
+  has playback controls and generation-safe cancellation, without updating MP3
+  completion/export. The user retries Piper explicitly in this listening mode.
+- Preserve healthy Piper cache/recovery; reject opaque native artifacts for v2
+  reuse rather than guessing voice identity. Callback ABI v1 does not expose the
+  actual Apple/Android voice ID. Backend/system use is reported, but exact native
+  voice identity in Rust manifests remains a limitation until metadata ABI work.
+- Added Rust/FFI, Swift XCTest, Kotlin, Dart and Vitest regressions; specialist
+  reviews found and corrected preference migration, stale UI callbacks, Android
+  background callback, native cancellation state and neutral Windows locales.
+- Executed locally: source inspection, source formatting and git diff --check.
+  No local test suites, build, app/device/Simulator launch or model download.
+  GitHub checks started on initial implementation 1945c19; fixes require current
+  exact-head results. New native-fallback CI explicitly exercises pt-BR eSpeak and
+  en-US SAPI; English Windows smoke does not establish pt-BR availability.
+- No merge performed. Required Apple SE1/iOS15.5 remains quarantined. Apple GUI,
+  physical Samsung, real Linux GUI, Windows pt-BR and browser-native audible
+  acceptance remain unverified. A successful compile/fake does not replace them.
+- Fresh-context prompt: `2026-10-16-piper-native-fallback-continuation.md`.

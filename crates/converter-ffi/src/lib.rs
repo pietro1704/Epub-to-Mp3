@@ -234,7 +234,13 @@ pub unsafe extern "C" fn converter_conversion_options_validate_json_v1(
         return fail("language contains control characters".to_owned());
     }
     if engine == "piper" {
-        if options.models_root.is_none() || options.model_id.is_none() {
+        if (options.models_root.is_none()
+            && !options
+                .tts_preferences
+                .as_ref()
+                .is_some_and(|p| p.continues_native()))
+            || options.model_id.is_none()
+        {
             return fail("Piper requires an explicitly installed local model.".to_owned());
         }
         if let Err(error) = resolve_piper_model_paths(&options) {
@@ -940,6 +946,14 @@ unsafe fn convert_job_json(
             .as_ref()
             .and_then(|p| p.secondary.as_ref())
             .is_some_and(|s| s.engine == "piper");
+    if options.models_root.is_none()
+        && options
+            .tts_preferences
+            .as_ref()
+            .is_some_and(|p| p.continues_native())
+    {
+        options.models_root = Some(config.paths.piper_models_dir.to_string_lossy().into_owned());
+    }
     let (piper_model, piper_config) = if requires_piper {
         if engine != "piper" {
             options.model_id = options
@@ -1176,10 +1190,21 @@ fn embedded_engine_from_value(value: Option<&str>) -> String {
 fn resolve_piper_model_paths(
     options: &EmbeddedConversionOptionsV1,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
-    let (Some(root), Some(model_id)) =
-        (options.models_root.as_deref(), options.model_id.as_deref())
-    else {
+    let Some(model_id) = options.model_id.as_deref() else {
         return Err("Piper requires an explicitly installed local model.".to_owned());
+    };
+    // Validation may run before the session supplies its managed model root.
+    // Actual conversion fills that root from AppConfig before resolving paths.
+    let root = match options.models_root.as_deref() {
+        Some(root) => root,
+        None if options
+            .tts_preferences
+            .as_ref()
+            .is_some_and(|p| p.continues_native()) =>
+        {
+            "."
+        }
+        None => return Err("Piper requires an explicitly installed local model.".into()),
     };
     for value in [
         model_id,
@@ -3517,6 +3542,8 @@ mod tests {
         let (model, config) = resolve_piper_model_paths(&options).unwrap();
         assert!(!model.exists());
         assert!(!config.exists());
+        options.models_root = None;
+        assert!(resolve_piper_model_paths(&options).is_ok());
         options.tts_preferences.as_mut().unwrap().policy_version = None;
         assert!(resolve_piper_model_paths(&options).is_err());
         options.tts_preferences.as_mut().unwrap().policy_version = Some(2);
@@ -3532,7 +3559,7 @@ mod tests {
         let output = CString::new(root.path().join("fallback-job").to_str().unwrap()).unwrap();
         let job = CString::new("fallback-job").unwrap();
         let options = CString::new(serde_json::json!({
-            "language":"pt-BR", "models_root": root.path().join("absent-models"),
+            "language":"pt-BR",
             "tts_preferences": converter_core::tts_preferences::TtsPreferences::app_default(true)
         }).to_string()).unwrap();
         let calls = std::sync::atomic::AtomicUsize::new(0);
