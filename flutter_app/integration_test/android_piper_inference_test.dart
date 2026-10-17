@@ -203,8 +203,9 @@ void main() {
           } on EmbeddedConversionFailure catch (error) {
             if (!error.message.contains(
               'No installed offline speech voice for pt-BR',
-            ))
+            )) {
               rethrow;
+            }
             // Keep missing installed voices visible without installing anything.
             // ignore: avoid_print
             print(
