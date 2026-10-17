@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'android_piper_inference_test.dart' as smoke;
+import 'support/android_conversion_output.dart';
 
 const _fixtureManifest = String.fromEnvironment('REAL_BOOK_FIXTURE_MANIFEST');
 const _smokeFixtureDirectory = String.fromEnvironment(
@@ -67,11 +68,19 @@ void main() {
   // when its explicit fixture is supplied. Run it before the longer book cases.
   smoke.main();
 
+  var previousBookFailed = false;
   for (final id in ['christie', 'akita', 'lotr']) {
     final entry = MapEntry(id, _books[id]!);
     testWidgets(
       'Android converts two narrative chapters of ${entry.key} offline',
       (tester) async {
+        if (previousBookFailed) {
+          markTestSkipped(
+            'A previous book failed; preserve its evidence first',
+          );
+          return;
+        }
+        previousBookFailed = true;
         expect(_fixtureManifest, isNotEmpty);
         await app.main();
         await tester.pump();
@@ -148,11 +157,9 @@ void main() {
           chapterEnd: end,
           optionsJson: options,
         );
-        final manifest = jsonDecode(converted) as Map;
-        final persisted = jsonDecode(
-          await File('${output.path}/manifest.json').readAsString(),
-        );
-        expect(persisted, manifest);
+        final manifest = jsonDecode(converted) as Map<String, dynamic>;
+        final retained = await readAndroidConversionOutput(output, manifest);
+        expect(retained.manifest, manifest);
         expect(manifest['title'], book['title']);
         expect(manifest['sourceChaptersTotal'], source.length);
         final preferences = manifest['ttsPreferences'] as Map;
@@ -180,11 +187,7 @@ void main() {
           final chapter = chapters[offset];
           expect(chapter['sourceIndex'], start + offset);
           expect(chapter['title'], selected[offset]['name']);
-          final audioPath = await _privatePath(
-            '${output.path}/${chapter['filename']}',
-            await output.resolveSymbolicLinks(),
-          );
-          final audio = File(audioPath);
+          final audio = await retained.audioFile(chapter['filename'] as String);
           expect(await audio.length(), greaterThan(1024));
           final stream = await audio.open();
           try {
@@ -198,7 +201,9 @@ void main() {
           }
         }
         // Retain only this test's artifacts for host-side ffprobe/decode checks.
-        await File('${output.path}/verification.json').writeAsString(
+        await File(
+          '${retained.directory.path}/verification.json',
+        ).writeAsString(
           jsonEncode({
             'bookId': entry.key,
             'inputSha256': expected.sha256,
@@ -210,7 +215,11 @@ void main() {
           }),
         );
         // ignore: avoid_print
-        print('ANDROID_REAL_BOOK_VERIFIED: ${entry.key} output=${output.path}');
+        print(
+          'ANDROID_REAL_BOOK_VERIFIED: ${entry.key} '
+          'output=${retained.directory.path}',
+        );
+        previousBookFailed = false;
       },
       timeout: const Timeout(Duration(hours: 2)),
     );
