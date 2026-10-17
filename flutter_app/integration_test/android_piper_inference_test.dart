@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/main.dart' as app;
 import 'package:flutter_app/models/tts_preferences.dart';
@@ -11,8 +12,19 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 const _modelId = 'pt_BR-faber-medium';
-const _modelSha256 = '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7';
-const _configSha256 = '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f';
+const _modelSha256 =
+    '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7';
+const _configSha256 =
+    '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f';
+const _fixtureDirectory = String.fromEnvironment('FABER_FIXTURE_DIRECTORY');
+
+Future<void> _expectMp3(String path) async {
+  final audio = await File(path).readAsBytes();
+  expect(audio.length, greaterThan(1024));
+  final hasId3 = audio[0] == 0x49 && audio[1] == 0x44 && audio[2] == 0x33;
+  final hasMpegSync = audio[0] == 0xff && (audio[1] & 0xe0) == 0xe0;
+  expect(hasId3 || hasMpegSync, isTrue);
+}
 
 Uint8List _oneChapterEpub() {
   final mimetype = ArchiveFile.string('mimetype', 'application/epub+zip')
@@ -56,7 +68,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'Android runs ARM64 Faber through JNI translation, and fails offline without the model',
+    'Android runs ARM64 Faber through JNI, and fails offline without the model',
     (tester) async {
       await app.main();
       await tester.pump();
@@ -88,23 +100,39 @@ void main() {
             .toList();
         expect(catalog, contains(_modelId));
 
-        final installResult = await converter.installTtsModelFromCatalog(
-          modelId: _modelId,
-          root: modelsRoot.path,
-        );
-        expect(installResult, isNotEmpty);
-        final metadataRaw = await converter.ttsModelMetadata(
-          modelId: _modelId,
-          root: modelsRoot.path,
-        );
-        expect(metadataRaw, isNotNull);
-        final metadata = jsonDecode(metadataRaw!) as Map<String, dynamic>;
-        expect(metadata['id'], _modelId);
-        final artifacts = (metadata['artifacts'] as List).cast<Map>();
-        expect(
-          artifacts.map((artifact) => artifact['sha256']),
-          containsAll([_modelSha256, _configSha256]),
-        );
+        if (_fixtureDirectory.isNotEmpty) {
+          // An explicit device-private fixture avoids any model download.
+          final installed = Directory('${modelsRoot.path}/$_modelId');
+          await installed.create(recursive: true);
+          for (final artifact in {
+            'model.onnx': _modelSha256,
+            'model.onnx.json': _configSha256,
+          }.entries) {
+            final bytes = await File(
+              '$_fixtureDirectory/${artifact.key}',
+            ).readAsBytes();
+            expect(sha256.convert(bytes).toString(), artifact.value);
+            await File('${installed.path}/${artifact.key}').writeAsBytes(bytes);
+          }
+        } else {
+          final installResult = await converter.installTtsModelFromCatalog(
+            modelId: _modelId,
+            root: modelsRoot.path,
+          );
+          expect(installResult, isNotEmpty);
+          final metadataRaw = await converter.ttsModelMetadata(
+            modelId: _modelId,
+            root: modelsRoot.path,
+          );
+          expect(metadataRaw, isNotNull);
+          final metadata = jsonDecode(metadataRaw!) as Map<String, dynamic>;
+          expect(metadata['id'], _modelId);
+          final artifacts = (metadata['artifacts'] as List).cast<Map>();
+          expect(
+            artifacts.map((artifact) => artifact['sha256']),
+            containsAll([_modelSha256, _configSha256]),
+          );
+        }
 
         final options = const TtsPreferences().optionsJson(
           modelsRoot: modelsRoot.path,
@@ -120,16 +148,7 @@ void main() {
         expect(converted.usedSelections.single.engine, 'piper');
         expect(converted.usedSelections.single.modelId, _modelId);
         expect(converted.fallbackUsed, isFalse);
-        final audio = await File(converted.path).readAsBytes();
-        expect(audio.length, greaterThan(1024));
-        final hasId3 = audio.length >= 3 &&
-            audio[0] == 0x49 &&
-            audio[1] == 0x44 &&
-            audio[2] == 0x33;
-        final hasMpegSync = audio.length >= 2 &&
-            audio[0] == 0xff &&
-            (audio[1] & 0xe0) == 0xe0;
-        expect(hasId3 || hasMpegSync, isTrue);
+        await _expectMp3(converted.path);
 
         await expectLater(
           converter.convertChapter(
@@ -142,22 +161,65 @@ void main() {
             ),
           ),
           throwsA(
-            isA<EmbeddedConversionFailure>()
-                .having((error) => error.message, 'message', contains('Piper model or voice config is not installed')),
+            isA<EmbeddedConversionFailure>().having(
+              (error) => error.message,
+              'message',
+              contains('Piper model or voice config is not installed'),
+            ),
           ),
         );
         final missingAudio = Directory(missingOutput.path).existsSync()
             ? Directory(missingOutput.path)
-                .listSync(recursive: true)
-                .whereType<File>()
-                .where((file) => file.path.toLowerCase().endsWith('.mp3'))
+                  .listSync(recursive: true)
+                  .whereType<File>()
+                  .where((file) => file.path.toLowerCase().endsWith('.mp3'))
             : const <File>[];
         expect(missingAudio, isEmpty);
 
+        if (_fixtureDirectory.isNotEmpty) {
+          try {
+            final fallback = await converter.convertChapter(
+              inputPath: input.path,
+              outputPath: '${sandbox.path}/native-fallback',
+              chapterIndex: 0,
+              optionsJson: const TtsPreferences.appDefaults().optionsJson(
+                modelsRoot: missingModelsRoot.path,
+                language: 'pt-BR',
+              ),
+            );
+            expect(fallback.fallbackUsed, isTrue);
+            expect(fallback.usedSelections, isNotEmpty);
+            expect(
+              fallback.usedSelections.every(
+                (voice) => voice.engine == 'system',
+              ),
+              isTrue,
+            );
+            await _expectMp3(fallback.path);
+            // ignore: avoid_print
+            print(
+              'ANDROID_NATIVE_FALLBACK: language=pt-BR provider=system edge=false',
+            );
+          } on EmbeddedConversionFailure catch (error) {
+            if (!error.message.contains(
+              'No installed offline speech voice for pt-BR',
+            ))
+              rethrow;
+            // Keep missing installed voices visible without installing anything.
+            // ignore: avoid_print
+            print(
+              'ANDROID_NATIVE_FALLBACK_BLOCKED: no installed offline pt-BR voice',
+            );
+          }
+        }
+
         // ignore: avoid_print
-        print('ANDROID_FABER_ABI_TRANSLATION: model=$_modelId sha256=$_modelSha256 chapter=0 fallback=false missingModel=failed');
+        print(
+          '${_fixtureDirectory.isEmpty ? 'ANDROID_FABER_ABI_TRANSLATION' : 'ANDROID_FABER_DEVICE_FIXTURE'}: model=$_modelId sha256=$_modelSha256 chapter=0 fallback=false missingModel=failed',
+        );
       } finally {
         if (await sandbox.exists()) await sandbox.delete(recursive: true);
+        expect(await sandbox.exists(), isFalse);
       }
     },
     timeout: const Timeout(Duration(minutes: 12)),
