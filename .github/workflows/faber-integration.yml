@@ -56,6 +56,8 @@ jobs:
       MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Enable and require hosted Linux KVM access
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -122,6 +124,65 @@ jobs:
             flutter_app/build/app/test-results
             .reports/tts-preferences/android-inference.log
           if-no-files-found: warn
+
+      - name: Build the private-fixture APK for physical Android verification
+        id: device-fixture-apk
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feature/piper-native-fallback'
+        working-directory: flutter_app
+        env:
+          EPUB2MP3_ANDROID_VERIFICATION: "1"
+          FIXTURE_PACKAGE: com.pietrocode.epubtomp3.flutter_app.verification
+          FIXTURE_DIRECTORY: /data/user/0/com.pietrocode.epubtomp3.flutter_app.verification/files/test-fixtures
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          connected_devices="$(adb devices)"
+          if printf '%s\n' "$connected_devices" | awk 'NR > 1 && $1 == "emulator-5554" { found = 1 } END { exit !found }'; then
+            echo '::error::The inference emulator must be stopped before building the device fixture APK.'
+            exit 1
+          fi
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk \
+            --debug --no-pub --target-platform android-arm64 \
+            --target integration_test/android_real_books_inference_test.dart \
+            --dart-define="REAL_BOOK_FIXTURE_MANIFEST=$FIXTURE_DIRECTORY/manifest.json" \
+            --dart-define="FABER_FIXTURE_DIRECTORY=$FIXTURE_DIRECTORY/tts-models/pt_BR-faber-medium"
+          apk="$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- ruby ../scripts/package_converter_ffi_android.rb --audit --apk "$apk"
+          application_id="$(mise exec -- apkanalyzer manifest application-id "$apk")"
+          test "$application_id" = "$FIXTURE_PACKAGE"
+          evidence="$GITHUB_WORKSPACE/.reports/android-device-fixture"
+          mkdir -p "$evidence"
+          cp "$apk" "$evidence/app-debug-verification.apk"
+          cp "$GITHUB_WORKSPACE/target/piper-android/aarch64-linux-android/release/libconverter_ffi.so.runtime.json" "$evidence/"
+          mise exec -- ruby -rjson -rdigest -e '
+            root = ENV.fetch("GITHUB_WORKSPACE")
+            evidence = File.join(root, ".reports/android-device-fixture")
+            source = IO.popen(%w[git rev-parse HEAD], chdir: root, &:read).strip
+            abort "Source identity differs from the requested head" unless source == ENV.fetch("PR_HEAD_SHA")
+            driver = "flutter_app/integration_test/android_real_books_inference_test.dart"
+            runtime = JSON.parse(File.read(File.join(evidence, "libconverter_ffi.so.runtime.json")))
+            metadata = {
+              sourceCommit: source,
+              runId: ENV.fetch("GITHUB_RUN_ID"),
+              runAttempt: ENV.fetch("GITHUB_RUN_ATTEMPT"),
+              target: "integration_test/android_real_books_inference_test.dart",
+              driverSha256: Digest::SHA256.file(File.join(root, driver)).hexdigest,
+              applicationId: ENV.fetch("FIXTURE_PACKAGE"),
+              fixtureManifest: "#{ENV.fetch("FIXTURE_DIRECTORY")}/manifest.json",
+              faberFixtureDirectory: "#{ENV.fetch("FIXTURE_DIRECTORY")}/tts-models/pt_BR-faber-medium",
+              apkSha256: Digest::SHA256.file(File.join(evidence, "app-debug-verification.apk")).hexdigest,
+              nativeRuntime: runtime,
+              physicalDeviceTestExecuted: false
+            }
+            File.write(File.join(evidence, "build-identity.json"), JSON.pretty_generate(metadata))
+          '
+      - name: Retain the physical-device fixture APK and build identity
+        if: success() && steps.device-fixture-apk.outcome == 'success'
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-android-device-fixture
+          path: .reports/android-device-fixture
+          if-no-files-found: error
 
   macos-preferences:
     name: Faber macOS preferences and installation (${{ matrix.arch }})
