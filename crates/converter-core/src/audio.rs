@@ -1432,9 +1432,10 @@ mod tests {
         let mut archive = zip::ZipArchive::new(File::open(output).unwrap()).unwrap();
         assert_eq!(archive.len(), 1);
         let mut chapter = archive.by_index(0).unwrap();
+        let chapter_name = chapter.name().unwrap();
         let index = sources
             .iter()
-            .position(|(_, name)| name == chapter.name())
+            .position(|(_, name)| name == chapter_name.as_ref())
             .unwrap();
         let mut bytes = Vec::new();
         chapter.read_to_end(&mut bytes).unwrap();

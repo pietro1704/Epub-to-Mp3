@@ -41,9 +41,10 @@ pub fn list_members<R: Read + Seek>(reader: R) -> Result<Vec<ArchiveMember>, Arc
         if entry.is_dir() {
             continue;
         }
-        validate_member_name(entry.name())?;
+        let name = entry.name()?;
+        validate_member_name(&name)?;
         members.push(ArchiveMember {
-            name: entry.name().to_owned(),
+            name: name.into_owned(),
             size: entry.size(),
         });
     }
