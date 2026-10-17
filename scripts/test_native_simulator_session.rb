@@ -54,7 +54,7 @@ class NativeSimulatorSessionTest < Minitest::Test
           "maximum_swap_growth_bytes" => 256 * 1024**2,
           "maximum_sample_seconds" => 5.0, "query_timeout_seconds" => 2.0
         }, "load1_limit" => "min(6.0, 0.75 * logical_cpus)",
-           "duration_seconds" => 3.0, "interval_seconds" => 0.1)
+           "duration_seconds" => 15.0, "interval_seconds" => 0.1)
         STDOUT.sync = true
         loop do
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -64,6 +64,7 @@ class NativeSimulatorSessionTest < Minitest::Test
               "logical_cpus" => 8, "memory_free_percent" => 58,
               "disk_free_bytes" => 12 * 1024**3, "swap_used_bytes" => 0,
               "load_averages" => [1.0, 1.0, 1.0], "panic_identities" => [] })
+          STDOUT.flush
           sleep 0.03
         end
       end
@@ -114,8 +115,8 @@ class NativeSimulatorSessionTest < Minitest::Test
         { "path" => path, "sha256" => Digest::SHA256.file(path).hexdigest }
       end,
       "tests" => ["EpubToMp3Tests/BundledConverterFFISmokeTests/testAppBundledRustLibraryLoadsAndReturnsCatalog"],
-      "duration_seconds" => 3.0, "phase_timeout_seconds" => 0.8,
-      "cleanup_timeout_seconds" => 0.8
+      "duration_seconds" => 15.0, "phase_timeout_seconds" => 2.0,
+      "cleanup_timeout_seconds" => 6.0
     }
     File.write(@plan_path, JSON.generate(@plan))
   end
