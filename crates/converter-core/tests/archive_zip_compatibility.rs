@@ -54,7 +54,10 @@ fn traversal_members_are_rejected_before_output_is_created() {
 fn legacy_cp437_member_names_remain_addressable_by_their_unicode_name() {
     let mut archive = fixture(CompressionMethod::Stored, "x.txt");
     use_cp437_name(&mut archive, b"x.txt");
-    assert_eq!(list_members(Cursor::new(&archive)).unwrap()[0].name, "é.txt");
+    assert_eq!(
+        list_members(Cursor::new(&archive)).unwrap()[0].name,
+        "é.txt"
+    );
     let directory = tempfile::tempdir().unwrap();
     let output = directory.path().join("chapter.txt");
     extract_member(Cursor::new(&archive), "é.txt", &output).unwrap();
@@ -87,10 +90,9 @@ fn epub_resources_with_legacy_names_follow_unicode_manifest_references() {
 fn use_cp437_name(archive: &mut [u8], target: &[u8]) {
     // ZIP filename bytes are outside the payload CRC. CP437 0x82 decodes to é.
     let mut replacements = 0;
-    for (signature, flags_offset, length_offset, name_offset) in [
-        (b"PK\x03\x04", 6, 26, 30),
-        (b"PK\x01\x02", 8, 28, 46),
-    ] {
+    for (signature, flags_offset, length_offset, name_offset) in
+        [(b"PK\x03\x04", 6, 26, 30), (b"PK\x01\x02", 8, 28, 46)]
+    {
         let starts: Vec<_> = archive
             .windows(4)
             .enumerate()
