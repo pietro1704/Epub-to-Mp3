@@ -81,6 +81,8 @@ describe("installed browser narration", () => {
     expect(synthesis.cancel).toHaveBeenCalledTimes(1);
     service.resume();
     service.resume();
+    expect(synthesis.pause).toHaveBeenCalledOnce();
+    expect(synthesis.resume).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(89_999);
     expect(settled).toBe(false);
     const assertion = expect(done).rejects.toThrow("timed out");
@@ -91,7 +93,7 @@ describe("installed browser narration", () => {
   });
   it("completes after resuming a long pause and still drains cancellation while paused", async () => {
     vi.useFakeTimers();
-    const { service, utterances } = fixture();
+    const { service, synthesis, utterances } = fixture();
     const done = service.speak("Texto", "pt-BR", null, vi.fn());
     void done.catch(() => undefined);
     service.pause();
@@ -104,8 +106,12 @@ describe("installed browser narration", () => {
     const assertion = expect(cancelled).rejects.toMatchObject({ name: "AbortError" });
     service.cancel();
     await assertion;
+    expect(synthesis.resume).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(180_000);
     expect(vi.getTimerCount()).toBe(0);
+    const next = service.speak("Novo capítulo", "pt-BR", null, vi.fn());
+    utterances[2].onend?.({} as SpeechSynthesisEvent);
+    await next;
   });
   it("drains pending voice readiness on cancellation", async () => {
     const { service, synthesis } = fixture([]);

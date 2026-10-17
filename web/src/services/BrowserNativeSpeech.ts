@@ -4,6 +4,8 @@ export class BrowserNativeSpeech {
   private rejectPending?: (error: Error) => void;
   private utteranceCleanup?: () => void;
   private voiceWaitCleanup?: () => void;
+  private deadline?: { pause: () => void; resume: () => void };
+  private paused = false;
   constructor(
     private readonly synthesis: SpeechSynthesis,
     private readonly utterance: (text: string) => SpeechSynthesisUtterance = text => new SpeechSynthesisUtterance(text),
@@ -15,13 +17,26 @@ export class BrowserNativeSpeech {
     this.voiceWaitCleanup = undefined;
     this.utteranceCleanup?.();
     this.utteranceCleanup = undefined;
+    this.deadline = undefined;
     this.synthesis.cancel();
+    if (this.paused) this.synthesis.resume();
+    this.paused = false;
     this.rejectPending?.(new DOMException("Native playback cancelled", "AbortError"));
     this.rejectPending = undefined;
   }
 
-  pause(): void { this.synthesis.pause(); }
-  resume(): void { this.synthesis.resume(); }
+  pause(): void {
+    if (this.paused) return;
+    this.paused = true;
+    this.deadline?.pause();
+    this.synthesis.pause();
+  }
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    this.synthesis.resume();
+    this.deadline?.resume();
+  }
 
   async speak(text: string, language: string, requestedVoice: string | null, onVoice: (name: string) => void): Promise<void> {
     this.cancel();
@@ -63,12 +78,36 @@ export class BrowserNativeSpeech {
           const utterance = this.utterance(chunk);
           utterance.voice = voice;
           utterance.lang = voice.lang;
-          const timer = setTimeout(() => { if (generation === this.generation) { this.rejectPending = undefined; this.cancel(); reject(new Error("Native playback timed out")); } }, 120_000);
-          this.utteranceCleanup = () => clearTimeout(timer);
+          let remaining = 120_000;
+          let started = Date.now();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const clear = () => { clearTimeout(timer); timer = undefined; };
+          const arm = () => {
+            if (timer !== undefined || this.paused) return;
+            started = Date.now();
+            timer = setTimeout(() => {
+              if (generation === this.generation) {
+                this.rejectPending = undefined;
+                this.cancel();
+                reject(new Error("Native playback timed out"));
+              }
+            }, remaining);
+          };
+          this.deadline = {
+            pause: () => {
+              if (timer === undefined) return;
+              remaining = Math.max(0, remaining - (Date.now() - started));
+              clear();
+            },
+            resume: arm,
+          };
+          this.utteranceCleanup = clear;
+          arm();
           const done = (error?: Error) => {
-            clearTimeout(timer);
+            clear();
             if (generation !== this.generation) return;
             this.utteranceCleanup = undefined;
+            this.deadline = undefined;
             this.rejectPending = undefined;
             if (error) reject(error); else resolve();
           };

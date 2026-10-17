@@ -10,6 +10,10 @@ during user pauses. Long-pause/resume regressions and an active-playback budget
 are required before acceptance. Exact resolved native voice metadata remains
 partial: callbackv1 cannot return it. Rejecting unknown native cache reuse is
 safe compatibility behavior, not completion of active-voice manifest reporting.
+GitHub regression RED: CI38993112309/job117279924791 on760bcd7 failed both
+long-pause tests;214 others passed. Specialist reviewed the active-playback
+budget fix, repeated-control idempotency and cancellation cleanup. Its current
+head must pass the same suite before the browser finding is resolved.
 
 ## Accepted scope and boundaries
 

@@ -46,6 +46,14 @@ claiming Android inference passed. A specialist reviewed this correction.
 First correction1c251d5 failed KVM preflight in job117279150124 before builds;
 the next correction waits for udev settling and logs device ownership/access.
 This is diagnostic evidence collection, not proof that the runner is repaired.
+KVM settling preflight subsequently passed on5e14ba6/job117279456597 and
+760bcd7/job117279757237; actual packaged inference still needs its completed job.
+Specialist review found a browser long-pause timeout defect. Regression-only
+760bcd7 failed both new tests in CI38993112309/Web117279924791, with214 others
+passing. The next fix suspends the120s budget while paused, resumes remaining
+time and drains paused cancellation. Inspect its current-head Web tests/lint/
+build before claiming GREEN. Exact resolved native voice metadata in Rust
+manifests remains a documented partial plan item despite safe cache rejection.
 Apple jobs remain queued; inspect current runner/check status separately.
 If the temporary worktree is gone, fetch and create an isolated checkout of the
 remote feature branch. Preserve the original heavily dirty workspace at
