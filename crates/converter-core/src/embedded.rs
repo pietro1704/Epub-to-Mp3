@@ -126,6 +126,27 @@ impl EmbeddedConversionSession {
             .clone()
             .unwrap_or_else(|| format!("embedded-{}", std::process::id()));
         let worker = ConversionWorker::new(self.config.clone())?;
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        let worker = {
+            // Adapter presence also affects legacy Edge routing; require an explicit selection.
+            let system_requested = self.options.tts_preferences.as_ref().map_or(
+                self.options.engine.as_deref() == Some("system"),
+                |preferences| {
+                    preferences.primary.engine == "system"
+                        || preferences
+                            .secondary
+                            .as_ref()
+                            .is_some_and(|secondary| secondary.engine == "system")
+                },
+            );
+            if system_requested {
+                worker.with_platform_tts(std::sync::Arc::new(
+                    crate::desktop_tts::DesktopPlatformTts::default(),
+                ))
+            } else {
+                worker
+            }
+        };
         worker
             .run(ConversionRequest {
                 input: self.input.clone(),
