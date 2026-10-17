@@ -54,6 +54,7 @@ export interface ConversionClient {
     jobId: string,
     chapterIndex: number,
   ): Promise<ChapterStreamManifest | null>;
+  getNativePlaybackPolicy?(jobId: string): Promise<{ language: string; voice: string | null } | null>;
   getJobFullText?(jobId: string): Promise<BookTextDocument | null>;
   getJobFullTextResult?(jobId: string): Promise<FullTextResult>;
   cancel?(jobId: string): Promise<{ status: string }>;

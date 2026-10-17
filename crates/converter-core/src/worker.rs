@@ -514,6 +514,11 @@ impl ConversionWorker {
                                 .model_id
                                 .as_deref()
                                 .unwrap_or(crate::tts_preferences::FABER_MODEL_ID);
+                            if preferences.continues_native() && selection == &preferences.primary {
+                                // Missing readiness is not a verified model content identity.
+                                identities.push(format!("missing:{id}"));
+                                continue;
+                            }
                             return Err(WorkerError::Piper(format!("Piper model {id} is not installed. Install it in Models or run models install {id}.")));
                         }
                         identities.push(cache::sha256_file(model)?);
@@ -531,6 +536,10 @@ impl ConversionWorker {
             } else {
                 base_request_key
             };
+            let reject_opaque_native = request
+                .tts_preferences
+                .as_ref()
+                .is_some_and(|p| p.policy_version == Some(2));
             // Recover only after computing the effective provider/model identity.
             // Legacy unprepared Piper requests still lack a content fingerprint.
             let recovery_has_model_identity = engine != "piper"
@@ -539,18 +548,19 @@ impl ConversionWorker {
                 || prepared_identity.is_some();
             if !self.execution_options.force_reprocess
                 && recovery_has_model_identity
-                && !chapter_audio_is_complete(&mp3, &request_key)
+                && !chapter_audio_is_reusable(&mp3, &request_key, reject_opaque_native)
             {
                 if let Some(predecessor) = self
                     .control
                     .as_ref()
                     .and_then(|control| control.recover_job())
                 {
-                    recover_chapter_audio(
+                    recover_chapter_audio_with_native_policy(
                         &self.config.paths.output_dir,
                         &predecessor,
                         &mp3,
                         &request_key,
+                        reject_opaque_native,
                         &|| {
                             if self.cancel.is_cancelled()
                                 || self.jobs.is_cancellation_requested(&request.job_id)?
@@ -563,7 +573,7 @@ impl ConversionWorker {
                 }
             }
             let cached = !self.execution_options.force_reprocess
-                && chapter_audio_is_complete(&mp3, &request_key);
+                && chapter_audio_is_reusable(&mp3, &request_key, reject_opaque_native);
 
             if cached {
                 if let Ok(receipt) =
@@ -597,7 +607,10 @@ impl ConversionWorker {
             let audio_result = ensure_chapter_audio_with_options(
                 &mp3,
                 &request_key,
-                self.execution_options.force_reprocess,
+                self.execution_options.force_reprocess
+                    || (reject_opaque_native
+                        && !cached
+                        && chapter_audio_is_complete(&mp3, &request_key)),
                 |pending| {
                     eprintln!("synthesizing chapter {}/{}", position + 1, total);
                     let synthesis = if let Some(preferences) = &request.tts_preferences {
@@ -1248,12 +1261,41 @@ impl ConversionWorker {
                         let adapter = self.platform_tts.as_ref().ok_or_else(|| {
                             WorkerError::PlatformTts("No installed system speech adapter".into())
                         })?;
+                        let _guard = loop {
+                            if self.cancel.is_cancelled() {
+                                return Err(WorkerError::Cancelled);
+                            }
+                            if stale.load(Ordering::Acquire) {
+                                return Err(WorkerError::PlaybackWindowChanged);
+                            }
+                            match self.platform_gate.try_lock() {
+                                Ok(guard) => break guard,
+                                Err(std::sync::TryLockError::Poisoned(_)) => {
+                                    return Err(WorkerError::PlatformTts(
+                                        "system speech lock poisoned".into(),
+                                    ))
+                                }
+                                Err(std::sync::TryLockError::WouldBlock) => {
+                                    std::thread::sleep(std::time::Duration::from_millis(25))
+                                }
+                            }
+                        };
+                        let started = std::time::Instant::now();
+                        let deadline = std::time::Duration::from_secs(30);
                         let wav = path.with_extension("wav");
-                        let cancelled =
-                            || self.cancel.is_cancelled() || stale.load(Ordering::Acquire);
+                        let cancelled = || {
+                            self.cancel.is_cancelled()
+                                || stale.load(Ordering::Acquire)
+                                || started.elapsed() >= deadline
+                        };
                         adapter
                             .synthesize_wav(segment, language.unwrap_or("pt-BR"), &wav, &cancelled)
                             .map_err(WorkerError::PlatformTts)?;
+                        if started.elapsed() >= deadline {
+                            return Err(WorkerError::PlatformTts(
+                                "System speech deadline exceeded".into(),
+                            ));
+                        }
                         return platform_tts::encode_wav(&fs::read(wav)?)
                             .map_err(WorkerError::PlatformTts);
                     }
@@ -1295,7 +1337,13 @@ impl ConversionWorker {
                     platform_tts::validate_mp3(&bytes).map_err(WorkerError::PlatformTts)?;
                     Ok(bytes)
                 };
-            let (selection, bytes, fallback_used) = match synthesize(&preferences.primary) {
+            let attempt = if policy.should_try_primary(preferences) {
+                synthesize(&preferences.primary)
+            } else {
+                Err(WorkerError::Piper("Primary recovery cooldown".into()))
+            };
+            let cooling_down = matches!(&attempt, Err(WorkerError::Piper(message)) if message == "Primary recovery cooldown");
+            let (selection, bytes, fallback_used) = match attempt {
                 Ok(bytes) => {
                     policy.primary_succeeded();
                     (&preferences.primary, bytes, false)
@@ -1314,11 +1362,13 @@ impl ConversionWorker {
                     {
                         return Err(WorkerError::Cancelled);
                     }
-                    policy
-                        .primary_failed(false, preferences.secondary.is_some())
-                        .map_err(|policy_error| {
-                            WorkerError::Piper(format!("{policy_error}: {error}"))
-                        })?;
+                    if !cooling_down {
+                        policy
+                            .provider_failed(false, preferences)
+                            .map_err(|policy_error| {
+                                WorkerError::Piper(format!("{policy_error}: {error}"))
+                            })?;
+                    }
                     let secondary = preferences.secondary.as_ref().expect("checked secondary");
                     (secondary, synthesize(secondary)?, true)
                 }
@@ -1363,7 +1413,18 @@ impl ConversionWorker {
                 model_id: selection.model_id.clone(),
                 voice: actual_selection.voice.clone(),
                 fallback_used,
-                message: format!("Using {} for segment {}", selection.engine, index + 1),
+                message: format!(
+                    "Using {} for segment {}",
+                    if selection.engine == "system" {
+                        self.platform_tts
+                            .as_ref()
+                            .map(|p| p.backend_name())
+                            .unwrap_or("system")
+                    } else {
+                        &selection.engine
+                    },
+                    index + 1
+                ),
             });
         }
         output.sync_all()?;
@@ -1577,14 +1638,54 @@ fn chapter_audio_is_complete(output: &Path, request_key: &str) -> bool {
         && cache::sha256_file(output).is_ok_and(|hash| hash == receipt.audio_sha256)
 }
 
+/// A requested fallback does not invalidate healthy Piper audio. Unknown native
+/// voice identities prevent reuse only when native synthesis actually occurred.
+fn chapter_audio_is_reusable(output: &Path, key: &str, reject_opaque_native: bool) -> bool {
+    if !chapter_audio_is_complete(output, key) {
+        return false;
+    }
+    if !reject_opaque_native {
+        return true;
+    }
+    cache::read_json::<ChapterAudioReceipt>(chapter_audio_receipt_path(output)).is_ok_and(
+        |receipt| {
+            !receipt.used_selections.is_empty()
+                && receipt.used_selections.iter().all(|s| s.engine != "system")
+                && !receipt
+                    .provider
+                    .as_deref()
+                    .is_some_and(|p| p.contains("system"))
+        },
+    )
+}
+
 /// Import only a complete, identity-matched chapter from a direct sibling job.
 /// The predecessor remains immutable; untrusted or unavailable artifacts simply
 /// fall through to normal synthesis without weakening completion receipts.
+#[cfg(test)]
 fn recover_chapter_audio(
     output_root: &Path,
     predecessor: &str,
     output: &Path,
     request_key: &str,
+    check_cancelled: &impl Fn() -> Result<(), WorkerError>,
+) -> Result<(), WorkerError> {
+    recover_chapter_audio_with_native_policy(
+        output_root,
+        predecessor,
+        output,
+        request_key,
+        false,
+        check_cancelled,
+    )
+}
+
+fn recover_chapter_audio_with_native_policy(
+    output_root: &Path,
+    predecessor: &str,
+    output: &Path,
+    request_key: &str,
+    reject_opaque_native: bool,
     check_cancelled: &impl Fn() -> Result<(), WorkerError>,
 ) -> Result<(), WorkerError> {
     check_cancelled()?;
@@ -1619,7 +1720,7 @@ fn recover_chapter_audio(
     let is_matching_source = |path: &Path| {
         is_plain_file(path)
             && is_plain_file(&chapter_audio_receipt_path(path))
-            && chapter_audio_is_complete(path, request_key)
+            && chapter_audio_is_reusable(path, request_key, reject_opaque_native)
     };
     let expected_source = source_directory.join(filename);
     let source = if is_matching_source(&expected_source) {
@@ -1656,7 +1757,7 @@ fn recover_chapter_audio(
     }
     // Revalidate the copied pair so a concurrently replaced source cannot
     // publish bytes that disagree with the accepted completion receipt.
-    if !chapter_audio_is_complete(&pending, request_key) {
+    if !chapter_audio_is_reusable(&pending, request_key, reject_opaque_native) {
         return Ok(());
     }
     check_cancelled()?;
@@ -2018,6 +2119,107 @@ mod tests {
         }
     }
     #[test]
+    fn native_policy_reuses_pure_piper_but_rejects_opaque_native_receipts_and_recovery() {
+        use crate::tts_preferences::TtsSelection;
+        for native in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let source_dir = temp.path().join("source");
+            let target_dir = temp.path().join("target");
+            fs::create_dir_all(&source_dir).unwrap();
+            fs::create_dir_all(&target_dir).unwrap();
+            let source = source_dir.join("chapter.mp3");
+            let selection = if native {
+                TtsSelection {
+                    engine: "system".into(),
+                    model_id: None,
+                    voice: None,
+                }
+            } else {
+                TtsSelection::default()
+            };
+            ensure_chapter_audio(&source, "stable-v2-key", |pending| {
+                fs::write(
+                    pending,
+                    platform_tts::encode_wav(&test_system_wav()).unwrap(),
+                )?;
+                cache::atomic_write_json(
+                    pending.with_extension("tts-usage.json"),
+                    &(vec![selection.clone()], native),
+                )?;
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(
+                chapter_audio_is_reusable(&source, "stable-v2-key", true),
+                !native
+            );
+            assert!(chapter_audio_is_reusable(&source, "stable-v2-key", false));
+            let target = target_dir.join("chapter.mp3");
+            recover_chapter_audio_with_native_policy(
+                temp.path(),
+                "source",
+                &target,
+                "stable-v2-key",
+                true,
+                &|| Ok(()),
+            )
+            .unwrap();
+            assert_eq!(target.exists(), !native);
+            assert!(source.exists());
+        }
+    }
+    #[test]
+    fn missing_piper_continues_native_beyond_three_segments_and_cancellation_stops() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: spoken.clone(),
+            }));
+        let preferences = crate::tts_preferences::TtsPreferences::app_default(true);
+        let text = "Uma frase com ação e coração. ".repeat(130);
+        let out = temp.path().join("native-fallback.mp3");
+        worker
+            .synthesize_preferences(
+                &preference_test_request(),
+                &preferences,
+                &text,
+                &out,
+                0,
+                Some("pt-BR"),
+                &std::sync::atomic::AtomicBool::new(false),
+                &Mutex::new(Vec::new()),
+                1,
+            )
+            .unwrap();
+        assert!(spoken.lock().unwrap().len() > 3);
+        platform_tts::validate_mp3(&fs::read(out).unwrap()).unwrap();
+        let snapshot = worker.segment_policy.lock().unwrap().clone();
+        worker.cancel.cancel();
+        let count = spoken.lock().unwrap().len();
+        assert!(matches!(
+            worker.synthesize_preferences(
+                &preference_test_request(),
+                &preferences,
+                "Outra frase.",
+                &temp.path().join("cancelled.mp3"),
+                0,
+                Some("pt-BR"),
+                &std::sync::atomic::AtomicBool::new(false),
+                &Mutex::new(Vec::new()),
+                1
+            ),
+            Err(WorkerError::Cancelled)
+        ));
+        assert_eq!(spoken.lock().unwrap().len(), count);
+        assert_eq!(*worker.segment_policy.lock().unwrap(), snapshot);
+    }
+    #[test]
     fn typed_playback_window_change_does_not_count_as_provider_failure() {
         let temp = tempfile::tempdir().unwrap();
         let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
@@ -2076,6 +2278,7 @@ mod tests {
             panic!("cancelled audio must not be delivered")
         }));
         let preferences = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "edge".into(),
                 model_id: None,
@@ -2119,6 +2322,7 @@ mod tests {
             }));
         worker.test_edge = Some(Arc::new(|_| Err(WorkerError::Edge(EdgeError::Timeout))));
         let preferences = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "edge".into(),
                 model_id: None,
@@ -2188,6 +2392,7 @@ mod tests {
             }
         }));
         let preferences = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "edge".into(),
                 model_id: None,
@@ -2247,6 +2452,7 @@ mod tests {
             Err(WorkerError::Piper("fixture voice failed".into()))
         }));
         let preferences = TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "edge".into(),
                 model_id: None,
@@ -2583,6 +2789,7 @@ mod tests {
             let mut request = preference_test_request();
             request.input = input;
             request.tts_preferences = Some(TtsPreferences {
+                policy_version: None,
                 primary: TtsSelection {
                     engine: "edge".into(),
                     model_id: None,
@@ -2704,6 +2911,7 @@ mod tests {
         request.input = input;
         request.job_id = "recovered-primary".into();
         request.tts_preferences = Some(TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "system".into(),
                 model_id: None,
@@ -2745,6 +2953,7 @@ mod tests {
         next.input = next_input;
         next.job_id = "next-resumed".into();
         next.tts_preferences = Some(TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "edge".into(),
                 model_id: None,
@@ -2793,6 +3002,7 @@ mod tests {
             request.input = input;
             request.job_id = format!("separate-chapter-{chapter}");
             request.tts_preferences = Some(TtsPreferences {
+                policy_version: None,
                 primary: TtsSelection {
                     engine: "edge".into(),
                     model_id: None,
@@ -3540,6 +3750,7 @@ mod tests {
         request.input = input;
         request.job_id = "cancel-predecessor".into();
         request.tts_preferences = Some(TtsPreferences {
+            policy_version: None,
             primary: TtsSelection {
                 engine: "system".into(),
                 model_id: None,

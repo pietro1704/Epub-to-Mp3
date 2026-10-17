@@ -92,7 +92,8 @@ final class ConvertViewModel {
                 options.ttsPreferences = TtsPreferences(
                     primary: TtsSelection(engine: engine, modelID: options.modelID, voice: options.voice),
                     secondary: allowSecondary ? distinctManualSecondary : nil,
-                    allowOnlineFallback: allowSecondary && distinctManualSecondary != nil && (inheritedPreferences?.allowOnlineFallback ?? false))
+                    allowOnlineFallback: allowSecondary && distinctManualSecondary != nil && (inheritedPreferences?.allowOnlineFallback ?? false),
+                    policyVersion: allowSecondary ? inheritedPreferences?.policyVersion : nil)
             }
             let result = try await converter(file, chapterRange.start, chapterRange.end, options)
             submittedJobId = result.jobID

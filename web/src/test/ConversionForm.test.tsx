@@ -185,7 +185,7 @@ describe("ConversionForm", () => {
     expect(screen.queryByLabelText(/voz do narrador/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/voz dos personagens/i)).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Voz principal" })).toHaveValue("piper");
-    expect(screen.getByRole("combobox", { name: "Voz secundária" })).toHaveValue("none");
+    expect(screen.getByRole("combobox", { name: "Voz secundária" })).toHaveValue("system");
 
     await user.click(screen.getByRole("button", { name: /converter agora/i }));
 
@@ -196,7 +196,8 @@ describe("ConversionForm", () => {
       formattingCues: false,
       tts_preferences: {
         primary: { engine: "piper", model_id: "pt_BR-faber-medium", voice: null },
-        secondary: null,
+        secondary: { engine: "system", model_id: null, voice: null },
+        policy_version: 2,
         allow_online_fallback: false,
       },
     });

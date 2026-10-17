@@ -1,3 +1,4 @@
+import { browserNativeSpeech } from "../services/BrowserNativeSpeech";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { conversionClient } from "../services/ConversionService";
 import { latencyObservations } from "../services/LatencyObservation";
@@ -254,6 +255,7 @@ export default function StreamingAudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
 
+    browserNativeSpeech()?.cancel();
     audio.src = src;
     audio.play().catch((err) => {
       console.error("[StreamingPlayer] Playback failed:", err);

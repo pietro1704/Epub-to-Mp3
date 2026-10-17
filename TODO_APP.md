@@ -1,5 +1,14 @@
 # App delivery backlog
 
+## APP-20261016-TTS-NATIVE-FALLBACK — Deliver reviewed native fallback policy
+
+- [x] User accepted P1 browser listening-only, P2 native continuation with bounded Piper recovery, P3 installed eSpeak NG on Linux. User subsequently explicitly authorized implementation and requested a fresh-session continuation prompt after the work.
+- [x] Reviewed plan and source audit: `docs/plans/2026-10-16-piper-native-fallback.md` and `docs/research/2026-10-16-tts-platform-policy-audit.md`. Two specialists reviewed the actual plan; implementation has disjoint Rust, Apple, web and Flutter ownership.
+- [ ] Implement Faber default primary + native secondary, versioned policy/migration, missing-model fallback and bounded recovery; Apple installed Luciana; Android foreground/background; Linux eSpeak NG and Windows SAPI; browser listening-only with no invented artifacts.
+- [ ] Verify success, unavailable provider, strict/legacy policy, cache/resume identity, timeout/cancellation and late results in owning-runtime tests on GitHub. Local suites/builds and Simulator remain suspended. Live platform acceptance remains explicit and separate from compilation/fakes.
+- [ ] Inspect final diff, commit scoped change, push/open reviewable PR; report exact-head checks and unresolved platform limits. Write a self-contained continuation prompt with branch/SHA, paths, PR, executed evidence and pending work.
+- Owner: root; native_fallback_rust sole Rust owner, native_fallback_apple Apple owner, native_fallback_web web owner; root Flutter/Android wiring/CI/docs. Isolated worktree `/private/tmp/epub-piper-native-fallback`, branch `feature/piper-native-fallback`, dependent on unmerged Faber PR #821 at `b55244e0d59166472916cc6b684cb33937038846`. Preserve original dirty workspace; no unrelated changes imported into this scoped delta.
+
 ## AH-07 — Exercise direct-runtime behavior and synchronize playback fixture
 
 - [ ] Owner: root; dependency: recovered AH-04/AH-05/Help and Rust predecessor integration `d26823e2`. Minimal port from `52e17b32` plus `fcc5084`; preserve original cumulative branch and all unrelated work.

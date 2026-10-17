@@ -497,7 +497,7 @@ final class NativeResponsiveScreenTests: XCTestCase {
         let online = try XCTUnwrap(controls.compactMap { $0 as? NSButton }
             .first { $0.accessibilityIdentifier() == "settings.tts.onlineConsent" })
         XCTAssertEqual(primary.titleOfSelectedItem, "Faber medium")
-        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
+        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.systemTts"))
         XCTAssertEqual(online.state, .off)
         XCTAssertNotNil(primary.window)
 

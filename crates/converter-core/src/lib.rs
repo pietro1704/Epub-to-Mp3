@@ -13,6 +13,8 @@ pub mod config;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod conversion_control;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod desktop_tts;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod embedded;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod engine;

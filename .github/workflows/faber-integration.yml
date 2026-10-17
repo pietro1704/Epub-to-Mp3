@@ -209,6 +209,8 @@ jobs:
             -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests \
             -only-testing:EpubToMp3Tests/ConvertViewModelTests \
             -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests \
+            -only-testing:EpubToMp3Tests/PlatformSpeechSynthesizerTests \
+            -only-testing:EpubToMp3Tests/ReaderProgressiveListeningTests \
             -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests \
             | tee ../../.reports/tts-preferences/macos-prefs.log
           grep -F 'FABER_NATIVE firstChunkSeconds=' ../../.reports/tts-preferences/macos-prefs.log

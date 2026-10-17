@@ -138,6 +138,30 @@ pub unsafe extern "C" fn converter_session_set_platform_tts_v1(
     true
 }
 
+/// Registers the owned installed desktop backend; no synchronous Dart callback.
+/// Configure only while no conversion is active. No package is installed.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_set_desktop_platform_tts_v1(
+    handle: *mut ConverterSession,
+) -> bool {
+    clear_last_error();
+    let Some(session) = handle.as_mut() else {
+        return fail("invalid null session handle".into());
+    };
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        session.platform_tts = Some(Arc::new(
+            converter_core::desktop_tts::DesktopPlatformTts::default(),
+        ));
+        true
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = session;
+        fail("This platform requires its app-provided speech adapter".into())
+    }
+}
+
 /// A thread-safe conversion control owned independently of the book session.
 /// Conversion clones the shared state before starting its worker. The caller
 /// must synchronize handle operations with free; the worker never keeps this pointer.
@@ -931,7 +955,13 @@ unsafe fn convert_job_json(
         #[cfg(feature = "piper-runtime")]
         if let Some(directory) = options.espeak_data_directory.as_deref() {
             if let Err(error) = piper_runtime::set_espeak_data_directory(Path::new(directory)) {
-                return fail(error);
+                if !options
+                    .tts_preferences
+                    .as_ref()
+                    .is_some_and(|p| p.continues_native())
+                {
+                    return fail(error);
+                }
             }
         }
         #[cfg(feature = "piper-runtime")]
@@ -1182,7 +1212,12 @@ fn resolve_piper_model_paths(
             .as_deref()
             .unwrap_or("model.onnx.json"),
     );
-    if !model.is_file() || !config.is_file() {
+    if (!model.is_file() || !config.is_file())
+        && !options
+            .tts_preferences
+            .as_ref()
+            .is_some_and(|p| p.continues_native())
+    {
         return Err(format!(
             "Piper model or voice config is not installed: {}",
             model.display()
@@ -2023,6 +2058,17 @@ mod android_jni {
         }
         let cancellation = &*(context as *const BorrowedCancellation<'_>);
         (cancellation.0)() as jboolean
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativePlatformSpeechCancelled(
+        env: JNIEnv<'_>,
+        worker: JObject<'_>,
+        context: jlong,
+    ) -> jboolean {
+        Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePlatformSpeechCancelled(
+            env, worker, context,
+        )
     }
 
     fn read_string(env: &mut JNIEnv<'_>, value: JString<'_>) -> Result<String, String> {
@@ -3455,6 +3501,81 @@ mod tests {
         ] {
             let options = format!(r#"{{"tts_policy_state":{state}}}"#);
             assert!(serde_json::from_str::<EmbeddedConversionOptionsV1>(&options).is_err());
+        }
+    }
+    #[test]
+    fn missing_model_preflight_only_allows_versioned_native_continuation() {
+        let root = tempfile::tempdir().unwrap();
+        let mut options = EmbeddedConversionOptionsV1 {
+            models_root: Some(root.path().to_string_lossy().into_owned()),
+            model_id: Some(converter_core::tts_preferences::FABER_MODEL_ID.into()),
+            tts_preferences: Some(
+                converter_core::tts_preferences::TtsPreferences::app_default(true),
+            ),
+            ..Default::default()
+        };
+        let (model, config) = resolve_piper_model_paths(&options).unwrap();
+        assert!(!model.exists());
+        assert!(!config.exists());
+        options.tts_preferences.as_mut().unwrap().policy_version = None;
+        assert!(resolve_piper_model_paths(&options).is_err());
+        options.tts_preferences.as_mut().unwrap().policy_version = Some(2);
+        options.model_path = Some("../escape.onnx".into());
+        assert!(resolve_piper_model_paths(&options).is_err());
+    }
+
+    #[test]
+    fn versioned_missing_piper_converts_through_registered_native_callback() {
+        let book = fixture_chapters_with_text(1, &"Uma frase com ação e coração. ".repeat(100));
+        let root = tempfile::tempdir().unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let output = CString::new(root.path().join("fallback-job").to_str().unwrap()).unwrap();
+        let job = CString::new("fallback-job").unwrap();
+        let options = CString::new(serde_json::json!({
+            "language":"pt-BR", "models_root": root.path().join("absent-models"),
+            "tts_preferences": converter_core::tts_preferences::TtsPreferences::app_default(true)
+        }).to_string()).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            assert!(converter_conversion_options_validate_json_v1(
+                options.as_ptr()
+            ));
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast()
+            ));
+            let control = converter_job_control_create();
+            let response = converter_session_convert_controlled_job_options_json_v1(
+                session,
+                output.as_ptr(),
+                job.as_ptr(),
+                options.as_ptr(),
+                0,
+                0,
+                None,
+                None,
+                ptr::null_mut(),
+                control,
+            );
+            if response.is_null() {
+                let error = converter_last_error();
+                let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+                converter_string_free(error);
+                panic!("versioned native fallback failed: {message}");
+            }
+            let value: serde_json::Value =
+                serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
+            converter_string_free(response);
+            assert!(calls.load(std::sync::atomic::Ordering::Acquire) > 3);
+            assert_eq!(value["manifest"]["fallbackUsed"], true);
+            assert_eq!(value["manifest"]["usedSelections"][0]["engine"], "system");
+            converter_session_free(session);
+            converter_job_control_free(control);
         }
     }
 

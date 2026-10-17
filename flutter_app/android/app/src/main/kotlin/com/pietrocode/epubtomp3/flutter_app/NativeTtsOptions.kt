@@ -13,16 +13,37 @@ object NativeTtsOptions {
         val temporaryDirectory = context.cacheDir
         check(temporaryDirectory.isDirectory || temporaryDirectory.mkdirs()) { "Cannot create native temporary directory" }
         Os.setenv("TMPDIR", temporaryDirectory.absolutePath, true)
-        val options = JSONObject(raw ?: "{\"tts_preferences\":{\"primary\":{\"engine\":\"piper\",\"model_id\":\"pt_BR-faber-medium\"},\"secondary\":null,\"allow_online_fallback\":false}}")
+        val options = JSONObject(raw ?: "{\"tts_preferences\":{\"primary\":{\"engine\":\"piper\",\"model_id\":\"pt_BR-faber-medium\"},\"secondary\":{\"engine\":\"system\"},\"allow_online_fallback\":false,\"policy_version\":2}}")
         val preferences = options.optJSONObject("tts_preferences")
         val needsPiper = preferences?.optJSONObject("primary")?.optString("engine") == "piper" || preferences?.optJSONObject("secondary")?.optString("engine") == "piper"
         if (needsPiper) {
-            val dataParent = installEspeakAssets(context.filesDir,
-                { path -> context.assets.list(path) ?: emptyArray() },
-                { path -> context.assets.open(path) })
-            options.put("espeak_data_directory", dataParent.absolutePath)
+            preparePiperAssets(options) {
+                installEspeakAssets(context.filesDir,
+                    { path -> context.assets.list(path) ?: emptyArray() },
+                    { path -> context.assets.open(path) })
+            }
         }
         return options.toString()
+    }
+
+    /** Unavailable packaged Piper assets must not preempt an opted-in native fallback. */
+    internal fun preparePiperAssets(options: JSONObject, install: () -> File) {
+        val policy = options.optJSONObject("tts_preferences")
+        val mayFallback = policy?.optInt("policy_version", 1) == 2 &&
+            policy.optJSONObject("primary")?.optString("engine") == "piper" &&
+            policy.optJSONObject("secondary")?.optString("engine") == "system"
+        val installed = installedPiperAssets(mayFallback, install)
+        if (installed == null) options.remove("espeak_data_directory")
+        else options.put("espeak_data_directory", installed.absolutePath)
+    }
+
+    internal fun installedPiperAssets(allowNativeFallback: Boolean, install: () -> File): File? {
+        try {
+            return install()
+        } catch (failure: Exception) {
+            if (failure is java.util.concurrent.CancellationException || !allowNativeFallback) throw failure
+            return null
+        }
     }
 
     /** eSpeak receives the parent containing espeak-ng-data, not the data folder itself. */

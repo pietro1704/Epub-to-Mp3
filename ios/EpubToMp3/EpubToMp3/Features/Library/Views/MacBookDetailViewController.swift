@@ -282,7 +282,8 @@ final class MacBookDetailViewController: NSViewController {
             let distinctSecondary = settings.ttsPreferences.secondary.flatMap { $0 == .selected(engine) ? nil : $0 }
             options.ttsPreferences = TtsPreferences(primary: .selected(engine),
                 secondary: secondary.state == .on ? distinctSecondary : nil,
-                allowOnlineFallback: secondary.state == .on && distinctSecondary != nil && settings.allowOnlineAudioFallback)
+                allowOnlineFallback: secondary.state == .on && distinctSecondary != nil && settings.allowOnlineAudioFallback,
+                policyVersion: secondary.state == .on ? settings.ttsPreferences.policyVersion : nil)
             options.modelsRoot = AppSettings.ttsModelsRoot()?.path
             options.espeakDataDirectory = Bundle.main.resourceURL?.path
         }

@@ -190,11 +190,13 @@
   "ttsFaberOffline": "Faber medium · Sin conexión",
   "ttsEdgeOnline": "Edge · En línea",
   "ttsNoSecondary": "Ninguna",
+  "ttsSystemOffline": "Voz del sistema · Alternativa sin conexión",
+  "ttsUseRecommendedDefaults": "Usar Faber con voz del sistema como alternativa",
   "ttsAllowOnlineSecondary": "Permitir voz secundaria en línea",
   "ttsOnlineSecondaryDescription": "Envía los fragmentos que fallen a Edge solo cuando esta opción esté activada.",
   "ttsUsePreferences": "Usar preferencias de audio",
   "ttsAllowJobSecondary": "Permitir la voz secundaria configurada en esta conversión",
   "ttsActualVoices": "Voz utilizada: {voices}",
   "@ttsActualVoices": {"placeholders": {"voices": {"type": "String"}}},
-  "ttsSecondaryUsedNotice": "Se usó una voz secundaria en este fragmento. Se volverá a intentar la voz principal."
+  "ttsSecondaryUsedNotice": "Usando la voz secundaria. Se volverá a intentar la voz principal periódicamente."
 }

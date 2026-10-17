@@ -45,7 +45,7 @@ struct ConversionOptions: Codable, Sendable, Equatable {
     }
 
     static func selectedEngine(_ engine: AudioEnginePreference, modelsRoot: URL? = nil) -> ConversionOptions {
-        let resolvedEngine = AudioEnginePreference.supportedPreferences.contains(engine) ? engine : .edge
+        let resolvedEngine = AudioEnginePreference.supportedPreferences.contains(engine) ? engine : .piper
         return ConversionOptions(
             engine: resolvedEngine.rawValue,
             language: nil,

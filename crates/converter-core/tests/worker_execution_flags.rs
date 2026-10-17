@@ -519,6 +519,7 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
     for typed in [false, true] {
         let job = if typed { "typed-B" } else { "paths-B" };
         let preferences = typed.then(|| converter_core::tts_preferences::TtsPreferences {
+            policy_version: None,
             primary: converter_core::tts_preferences::TtsSelection {
                 engine: "piper".into(),
                 model_id: Some("selected-B".into()),

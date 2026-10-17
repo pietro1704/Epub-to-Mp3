@@ -82,7 +82,8 @@ private final class ProgressiveListeningFixture {
             guard let self else { throw CancellationError() }
             XCTAssertEqual(options?.engine, "piper")
             XCTAssertEqual(options?.ttsPreferences?.primary.modelID, "pt_BR-faber-medium")
-            XCTAssertNil(options?.ttsPreferences?.secondary)
+            XCTAssertEqual(options?.ttsPreferences?.secondary?.engine, "system")
+            XCTAssertEqual(options?.ttsPreferences?.policyVersion, 2)
             XCTAssertEqual(options?.ttsPreferences?.allowOnlineFallback, false)
             control.updatePlaybackWindow(currentChapter: Int(start), chaptersAhead: 1)
             self.playbackControl = control

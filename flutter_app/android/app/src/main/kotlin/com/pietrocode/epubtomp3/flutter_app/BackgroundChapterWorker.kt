@@ -55,11 +55,21 @@ class BackgroundChapterWorker(
             nativeExecution.stop()
             throw cancelled
         } catch (_: Exception) { Result.failure() }
+        finally { platformSpeech.close() }
     }
 
     private val nativeExecution by lazy {
         BackgroundNativeExecution(::nativePrepareConversion, ::nativeCancelConversion)
     }
+    private val platformSpeech by lazy { PlatformSpeechProvider(applicationContext) }
+
+    // JNI uses the same offline WAV seam in foreground and WorkManager jobs.
+    @Suppress("unused")
+    fun synthesizeNativeSpeech(text: String, language: String, path: String, inputPath: String, cancelContext: Long): Boolean {
+        platformSpeech.synthesize(text, language, path, { nativePlatformSpeechCancelled(cancelContext) }) {}
+        return true
+    }
+    private external fun nativePlatformSpeechCancelled(cancelContext: Long): Boolean
     private external fun nativePrepareConversion(outputPath: String)
     private external fun nativeConvertWithOptions(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int, optionsJson: String, streaming: Boolean): String?
     private external fun nativeCancelConversion(outputPath: String): Boolean

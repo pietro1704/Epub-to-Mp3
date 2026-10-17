@@ -994,6 +994,12 @@ abstract class AppLocalizations {
   /// **'None'**
   String get ttsNoSecondary;
 
+  /// Installed system speech used when the primary provider is unavailable.
+  String get ttsSystemOffline;
+
+  /// Explicit adoption of the app's current recommended voice policy.
+  String get ttsUseRecommendedDefaults;
+
   /// No description provided for @ttsAllowOnlineSecondary.
   ///
   /// In en, this message translates to:
@@ -1027,7 +1033,7 @@ abstract class AppLocalizations {
   /// No description provided for @ttsSecondaryUsedNotice.
   ///
   /// In en, this message translates to:
-  /// **'Secondary voice used for an isolated segment. The primary voice will be retried.'**
+  /// **'Using the secondary voice. The primary voice will be retried periodically.'**
   String get ttsSecondaryUsedNotice;
 }
 

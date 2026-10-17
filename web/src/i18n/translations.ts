@@ -112,6 +112,14 @@ export interface TtsPreferenceText {
   installed: string;
   installing: string;
   capability: string;
+  system: string;
+  nativeNotice: string;
+  nativeListen: string;
+  nativePause: string;
+  nativeResume: string;
+  nativeStop: string;
+  nativeRetry: string;
+  nativeUnavailable: string;
   unavailable: string;
   manualVoice: string;
 }
@@ -813,6 +821,14 @@ export const translations: Record<Locale, Translations> = {
         install: "Instalar Faber medium",
         installed: "Faber medium instalado",
         installing: "Instalando…",
+        system: "TTS do sistema — só para ouvir; MP3 exige Piper",
+        nativeNotice: "Piper indisponível. A voz do sistema serve apenas para ouvir; exportar MP3 exige Piper.",
+        nativeListen: "Ouvir com voz instalada do sistema",
+        nativePause: "Pausar",
+        nativeResume: "Continuar",
+        nativeStop: "Parar",
+        nativeRetry: "Tentar conversão com Piper novamente",
+        nativeUnavailable: "A voz do sistema não está disponível neste navegador.",
         capability: "Faber medium funciona localmente após a instalação. Edge não está disponível neste navegador.",
         unavailable: "indisponível neste navegador",
         manualVoice: "Voz desta conversão",
@@ -1664,6 +1680,14 @@ export const translations: Record<Locale, Translations> = {
         install: "Install Faber medium",
         installed: "Faber medium installed",
         installing: "Installing…",
+        system: "System TTS — listening only; MP3 requires Piper",
+        nativeNotice: "Piper unavailable. System narration is for listening only; MP3 export requires Piper.",
+        nativeListen: "Listen with installed system voice",
+        nativePause: "Pause",
+        nativeResume: "Resume",
+        nativeStop: "Stop",
+        nativeRetry: "Retry Piper conversion",
+        nativeUnavailable: "System speech is unavailable in this browser.",
         capability: "Faber medium runs locally after installation. Edge is unavailable in this browser.",
         unavailable: "unavailable in this browser",
         manualVoice: "Voice for this conversion",

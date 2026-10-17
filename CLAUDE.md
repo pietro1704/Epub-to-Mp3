@@ -14,11 +14,16 @@ Product CLI, web, and Flutter integrations use Rust binaries, WASM, or bindings.
 Python/FastAPI remains legacy compatibility material, not an Apple sidecar or
 a product runtime dependency. Shared conversion features belong in Rust first.
 
-Current TTS policy: Piper `pt_BR-faber-medium` is the default primary provider.
-The user may select a primary and optional secondary provider; online Edge
-fallback requires explicit consent and is disabled by default. Manual conversion
-may inherit preferences or capture a strict per-job selection. Retry the primary
-on each segment and stop persistent failures instead of switching a whole book.
+Current TTS policy (user decision 2026-10-16): Piper `pt_BR-faber-medium` is
+the default app primary; installed system TTS is the default fallback. Prefer
+installed Apple Luciana for pt-BR; Linux may use installed eSpeak NG. Native
+browser speech is listening-only; MP3 conversion/export requires Piper. Continue
+working native fallback through missing/persistently failing Piper and retry
+Piper at bounded recovery points; keep it configured as primary and report
+native use. This supersedes the old three-failure stop rule for new opted-in
+app policies. Preserve explicit choices, strict old jobs and manual overrides.
+Online Edge fallback requires explicit consent and remains off by default.
+See `docs/plans/2026-10-16-piper-native-fallback.md` for acceptance and limits.
 Prioritize first playable audio on weak phones. Install models only through an
 explicit user action; never download implicitly or require a paid provider.
 

@@ -2,6 +2,10 @@
 use std::path::Path;
 
 pub trait PlatformTts: Send + Sync {
+    /// Backend display identity, never a claim about a resolved voice/cache key.
+    fn backend_name(&self) -> &'static str {
+        "installed system speech"
+    }
     /// Write mono signed 16-bit PCM WAV. Poll cancellation while waiting for speech.
     fn synthesize_wav(
         &self,

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../wasm/converter_wasm", () => ({ default: vi.fn(), ConversionSession: vi.fn(), inspect_epub: vi.fn() }));
 import { BrowserConversionClient, createBrowserSynthesis, type BrowserRuntime } from "./BrowserConversionClient";
 import { cancelPiper } from "./BrowserPiper";
-import { faber, edge } from "./TtsPreferences";
+import { faber, edge, system } from "./TtsPreferences";
 import { MemoryBrowserJobStore } from "./BrowserJobStore";
 import type { ConversionFormValues } from "../types/conversion";
 const request = (): ConversionFormValues => ({ file: new File(["fixture"], "fixture.epub"), engine: "piper", footnoteMode: "inline", tts_preferences: { primary: { ...faber }, secondary: null, allow_online_fallback: false } });
@@ -26,7 +26,30 @@ beforeEach(() => {
   URL.revokeObjectURL = vi.fn();
 });
 afterEach(() => { cancelPiper(); vi.unstubAllGlobals(); });
-describe("browser conversion boundary", () => {
+describe("browser conversion boundary", () => {  it("exposes captured native listening policy after Piper failure without accepting fake audio", async () => {
+    const { client, runtime, session } = fixture();
+    vi.mocked(runtime.synthesize).mockRejectedValue(new Error("Faber model missing"));
+    const values = request();
+    values.tts_preferences = { policy_version: 2, primary: faber, secondary: system, allow_online_fallback: false };
+    const { jobId } = await client.submit(values);
+    values.tts_preferences.secondary = null;
+    const failed = await client.poll(jobId, { intervalMs: 1 });
+    expect(failed.state).toBe("failed");
+    expect(failed.outputs).toEqual([]);
+    expect(session.accept_audio).not.toHaveBeenCalled();
+    expect(session.provider_failed).not.toHaveBeenCalled();
+    expect(runtime.synthesize).toHaveBeenCalledOnce();
+    expect(await client.getNativePlaybackPolicy(jobId)).toEqual({ language: "pt-BR", voice: null });
+    expect(await client.getChapterManifest(jobId, 1)).toBeNull();
+  });
+  it("never enables native listening for an explicitly strict job", async () => {
+    const { client, runtime } = fixture();
+    vi.mocked(runtime.synthesize).mockRejectedValue(new Error("Faber model missing"));
+    const { jobId } = await client.submit(request());
+    await client.poll(jobId, { intervalMs: 1 });
+    expect(await client.getNativePlaybackPolicy(jobId)).toBeNull();
+  });
+
   it("does not start inference after cancellation during model preflight or contaminate a new job", async () => {
     let release!: () => void;
     let entered!: () => void;

@@ -45,6 +45,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       for (final selection in [
         TtsSelection.faber,
         TtsSelection.edge,
+        TtsSelection.system,
         preferences.primary,
       ])
         jsonEncode(selection.toJson()): selection,
@@ -53,6 +54,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       for (final selection in [
         TtsSelection.faber,
         TtsSelection.edge,
+        TtsSelection.system,
         ?preferences.secondary,
       ])
         if (jsonEncode(selection.toJson()) !=
@@ -68,6 +70,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           jsonEncode(TtsSelection.edge.toJson())) {
         return t.ttsEdgeOnline;
       }
+      if (selection.engine == 'system') return t.ttsSystemOffline;
       return selection.displayName;
     }
 
@@ -106,6 +109,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ? null
                             : preferences.secondary,
                         allowOnlineFallback: preferences.allowOnlineFallback,
+                        policyVersion: preferences.policyVersion,
                       ),
                     );
                   },
@@ -141,6 +145,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         primary: preferences.primary,
                         secondary: secondaryOptions[key],
                         allowOnlineFallback: preferences.allowOnlineFallback,
+                        policyVersion: 2,
                       ),
                     );
                   },
@@ -158,12 +163,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ? null
                             : prefs.secondary,
                         allowOnlineFallback: value,
+                        policyVersion: prefs.policyVersion,
                       ),
                     );
                   },
                 ),
               ],
             ),
+          ),
+          TextButton(
+            key: const ValueKey('tts-use-recommended-defaults'),
+            onPressed: () => notifier.setTtsPreferences(
+              const TtsPreferences.appDefaults(),
+            ),
+            child: Text(t.ttsUseRecommendedDefaults),
           ),
           const _TtsModelManagerCard(),
           const SizedBox(height: 20),

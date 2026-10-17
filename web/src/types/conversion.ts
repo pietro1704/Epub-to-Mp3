@@ -1,8 +1,8 @@
 export type CliShell = "Bash/Zsh" | "PowerShell";
 export type EngineOption = "edge" | "piper" | string;
 export type FootnoteMode = "inline" | "chapter_end" | "skip";
-export interface TtsSelection { engine: "piper" | "edge"; model_id: string | null; voice: string | null; }
-export interface TtsPreferences { primary: TtsSelection; secondary: TtsSelection | null; allow_online_fallback: boolean; }
+export interface TtsSelection { engine: "piper" | "edge" | "system"; model_id: string | null; voice: string | null; }
+export interface TtsPreferences { policy_version?: number; primary: TtsSelection; secondary: TtsSelection | null; allow_online_fallback: boolean; }
 
 export interface ConversionFormValues {
   file: File | null;
