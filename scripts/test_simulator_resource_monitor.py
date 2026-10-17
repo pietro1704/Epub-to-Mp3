@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import guard_ios_simulator_resources as monitor
+import simulator_resource_monitor as monitor
 
 
 class Clock:
@@ -320,7 +320,7 @@ class CommandLineTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform.startswith("linux"), "Linux proves fail-closed host handling")
     def test_default_preflight_rejects_unsupported_host_with_final_record(self):
         result = subprocess.run(
-            [sys.executable, str(Path(__file__).with_name("guard_ios_simulator_resources.py"))],
+            [sys.executable, str(Path(__file__).with_name("simulator_resource_monitor.py"))],
             capture_output=True,
             text=True,
             timeout=5,
@@ -333,7 +333,7 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("unsupported host", records[-1]["reasons"][0])
 
     def test_cli_accepts_neither_arbitrary_children_nor_threshold_overrides(self):
-        script = str(Path(__file__).with_name("guard_ios_simulator_resources.py"))
+        script = str(Path(__file__).with_name("simulator_resource_monitor.py"))
         for arguments in [
             ["--", "ignored-command"],
             ["--minimum-disk-bytes", "0"],
@@ -356,7 +356,7 @@ class CommandLineTests(unittest.TestCase):
         process = subprocess.Popen(
             [
                 sys.executable,
-                str(Path(__file__).with_name("guard_ios_simulator_resources.py")),
+                str(Path(__file__).with_name("simulator_resource_monitor.py")),
                 "--observe",
                 "30",
                 "--interval",

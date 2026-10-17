@@ -13,8 +13,8 @@ on:
       - 'scripts/test_native_build_preflight.rb'
       - 'scripts/test_native_job.rb'
       - 'scripts/test_native_hook_safety.rb'
-      - 'scripts/guard_ios_simulator_resources.py'
-      - 'scripts/test_guard_ios_simulator_resources.py'
+      - 'scripts/simulator_resource_monitor.py'
+      - 'scripts/test_simulator_resource_monitor.py'
       - 'mise.toml'
       - '.github/workflows/native-hook-safety.yml'
   pull_request:
@@ -26,8 +26,8 @@ on:
       - 'scripts/test_native_build_preflight.rb'
       - 'scripts/test_native_job.rb'
       - 'scripts/test_native_hook_safety.rb'
-      - 'scripts/guard_ios_simulator_resources.py'
-      - 'scripts/test_guard_ios_simulator_resources.py'
+      - 'scripts/simulator_resource_monitor.py'
+      - 'scripts/test_simulator_resource_monitor.py'
       - 'mise.toml'
       - '.github/workflows/native-hook-safety.yml'
 
@@ -81,7 +81,7 @@ jobs:
         run: mise exec -- python -m pip install --disable-pip-version-check ruff==0.6.9
       - name: Check monitor style
         run: |
-          mise exec -- ruff check scripts/guard_ios_simulator_resources.py scripts/test_guard_ios_simulator_resources.py
-          mise exec -- ruff format --check scripts/guard_ios_simulator_resources.py scripts/test_guard_ios_simulator_resources.py
+          mise exec -- ruff check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
+          mise exec -- ruff format --check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
       - name: Verify monitor runtime contracts without Apple execution
         run: mise run host:simulator-resources:test
