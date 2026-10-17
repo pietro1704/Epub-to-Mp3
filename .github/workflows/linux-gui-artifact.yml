@@ -63,6 +63,34 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang libclang-dev cmake ninja-build pkg-config libgtk-3-dev liblzma-dev binutils
+      - name: Snapshot tracked generated-source provenance before building
+        run: |
+          mise exec -- python - <<'PY'
+          import hashlib
+          import json
+          import subprocess
+          from pathlib import Path
+
+          paths = ['flutter_app/lib/l10n/app_localizations.dart',
+                   'flutter_app/lib/l10n/app_localizations_en.dart',
+                   'voice_samples/README.md']
+          changed = subprocess.check_output(['git', 'diff', '--name-only', '-z', 'HEAD']).decode().split('\0')
+          if set(filter(None, changed)) - set(paths):
+              raise RuntimeError('Unexpected tracked changes before building')
+          records = {}
+          for name in paths:
+              path = Path(name)
+              if path.is_symlink() or not path.is_file():
+                  raise RuntimeError(f'Expected regular provenance input: {name}')
+              head = subprocess.check_output(['git', 'show', f'HEAD:{name}'])
+              records[name] = {'headSha256': hashlib.sha256(head).hexdigest(),
+                               'rawBeforeSha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+          evidence = Path('.reports/linux-gui')
+          evidence.mkdir(parents=True, exist_ok=True)
+          snapshot = {'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip(),
+                      'files': records}
+          (evidence / 'source-before.json').write_text(json.dumps(snapshot, indent=2))
+          PY
       - name: Build the normal lib/main.dart app once through its guarded task
         run: |
           set -euo pipefail
@@ -105,6 +133,32 @@ jobs:
           source = command(['git', 'rev-parse', 'HEAD']).strip()
           if source != os.environ['EVENT_HEAD_SHA'] or not re.fullmatch('[0-9a-f]{40}', source):
               raise RuntimeError('Checked-out source differs from the requested head')
+          before_path = evidence / 'source-before.json'
+          provenance = json.loads(before_path.read_text())
+          if provenance['sourceCommit'] != source:
+              raise RuntimeError('Pre-build source identity differs from the audited head')
+          generated_paths = ['flutter_app/lib/l10n/app_localizations.dart',
+                             'flutter_app/lib/l10n/app_localizations_en.dart']
+          allowed_paths = {*generated_paths, 'voice_samples/README.md'}
+          if set(provenance['files']) != allowed_paths:
+              raise RuntimeError('Unexpected pre-build provenance inputs')
+          changed_paths = command(['git', 'diff', '--name-only', '-z', 'HEAD']).split('\0')
+          tracked_changes = list(filter(None, changed_paths))
+          if set(tracked_changes) - allowed_paths:
+              raise RuntimeError('Unexpected tracked changes after building')
+          for name, record in provenance['files'].items():
+              path = root / name
+              if path.is_symlink() or not path.is_file():
+                  raise RuntimeError(f'Expected regular provenance output: {name}')
+              record['rawAfterSha256'] = digest(path)
+          patch = product / 'generated-localizations.patch'
+          patch.write_bytes(subprocess.check_output(
+              ['git', 'diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD', '--', *generated_paths]))
+          provenance.update(sourceDescription='HEAD plus recorded generated-localizations patch',
+                            generatedPatch=patch.name, generatedPatchSha256=digest(patch),
+                            beforeSnapshotSha256=digest(before_path))
+          provenance_path = product / 'generated-source-provenance.json'
+          provenance_path.write_text(json.dumps(provenance, indent=2))
           records = []
           paths = [bundle, *sorted(bundle.rglob('*'))]
           for path in paths:
@@ -202,7 +256,11 @@ jobs:
               'archive': archive.name, 'archiveSha256': archive_hash,
               'filesManifestSha256': digest(product / 'files.json'), 'elfAudit': elf_audit,
               'dependencyAuditLibraryPath': str(bundle / 'lib'),
-              'trackedChangesAfterBuild': command(['git', 'diff', '--name-only']).splitlines(),
+              'trackedChangesAfterBuild': tracked_changes,
+              'sourceDescription': provenance['sourceDescription'],
+              'generatedSourceProvenance': provenance_path.name,
+              'generatedSourceProvenanceSha256': digest(provenance_path),
+              'generatedSourcePatch': patch.name, 'generatedSourcePatchSha256': digest(patch),
               'modelsIncluded': False, 'applicationLaunched': False,
               'guiAcceptancePerformed': False, 'privateBookTestsExecuted': False,
           }
