@@ -269,3 +269,21 @@ recorded below and in the continuation prompt.
   physical Samsung, real Linux GUI, Windows pt-BR and browser-native audible
   acceptance remain unverified. A successful compile/fake does not replace them.
 - Fresh-context prompt: `2026-10-16-piper-native-fallback-continuation.md`.
+
+### Observed hosted verification
+
+GitHub run https://github.com/pietro1704/Epub-to-Mp3/actions/runs/38986578934
+passed both jobs on `df6a2fb63bb2b4a0839663ee635a6c5fc5c9e05c`:
+
+- Linux: 185 core unit tests passed, 1 ignored; 26 integration tests passed;
+  36 JNI-enabled FFI tests passed; the separately enabled installed pt-BR eSpeak
+  synthesis smoke passed. In-flight cancellation/stale-policy and missing-model
+  FFI conversion regressions passed. Rust formatting passed.
+- Windows: focused policy/desktop tests and installed en-US SAPI synthesis smoke
+  passed. Enumerated voices were David and Zira, Language=409; no pt-BR voice
+  was evidenced. This verifies the Windows backend, not pt-BR voice availability.
+
+This is historical evidence for that exact SHA. A subsequent test-only native
+expectation correction and documentation require checking the new head; never
+label all current-head CI green from the earlier run. General Web/Flutter/Rust,
+native packaging and CodeQL were still pending/in progress at this checkpoint.

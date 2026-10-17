@@ -24,6 +24,11 @@ the typed Faber preferences, so #837 is stacked on that branch for review.
 Inspect current branch/head, PR base, diff and exact-head checks before acting.
 Initial implementation was 1945c19da736b5a5e736c123b4a03d882e781ac5; later fixes
 must be read from current Git history. Never assume an old green run verifies HEAD.
+Hosted native fallback run38986578934 passed on
+df6a2fb63bb2b4a0839663ee635a6c5fc5c9e05c: 185 core unit tests (1 ignored),
+26 integration tests, 36 JNI FFI tests, actual pt-BR eSpeak synthesis and actual
+en-US Windows SAPI synthesis. Windows exposed David/Zira, not pt-BR. Later
+Swift test-only expectation corrections and documentation need current-head CI.
 If the temporary worktree is gone, fetch and create an isolated checkout of the
 remote feature branch. Preserve the original heavily dirty workspace at
 /Users/pips/Developer/epubtomp3 and every unrelated branch/worktree.

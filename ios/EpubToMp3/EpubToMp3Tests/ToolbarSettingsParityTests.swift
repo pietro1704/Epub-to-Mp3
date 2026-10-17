@@ -200,7 +200,8 @@ final class ToolbarSettingsParityTests: XCTestCase {
 
         XCTAssertEqual(settings.audioEngine, .edge)
         XCTAssertFalse(settings.allowOnlineAudioFallback)
-        XCTAssertNil(settings.ttsPreferences.secondary)
+        XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
+        XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.primary.engine, "edge")
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
     }
@@ -232,7 +233,8 @@ final class ToolbarSettingsParityTests: XCTestCase {
     func testFaberDefaultsAndExplicitEdgeChoicePersist() throws {
         let (settings, defaults) = make()
         XCTAssertEqual(settings.audioEngine, .piper)
-        XCTAssertNil(settings.ttsPreferences.secondary)
+        XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
+        XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
         XCTAssertFalse(settings.ttsPreferences.allowOnlineFallback)
         settings.audioEngine = .edge
         settings.secondaryAudioEngine = .piper

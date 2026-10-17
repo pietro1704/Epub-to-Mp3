@@ -9,6 +9,7 @@
 - [ ] Inspect final diff, commit scoped change, push/open reviewable PR; report exact-head checks and unresolved platform limits. Write a self-contained continuation prompt with branch/SHA, paths, PR, executed evidence and pending work.
 - Owner: root; native_fallback_rust sole Rust owner, native_fallback_apple Apple owner, native_fallback_web web owner; root Flutter/Android wiring/CI/docs. Isolated worktree `/private/tmp/epub-piper-native-fallback`, branch `feature/piper-native-fallback`, dependent on unmerged Faber PR #821 at `b55244e0d59166472916cc6b684cb33937038846`. Preserve original dirty workspace; no unrelated changes imported into this scoped delta.
 - Draft PR #837 targets the prerequisite Faber branch for a scoped review; retarget to master after #821 integration. Initial source commit `1945c19da736b5a5e736c123b4a03d882e781ac5`; current corrections and exact-head checks must be inspected before delivery. No merge or destructive cleanup.
+- Historical verified checkpoint `df6a2fb63bb2b4a0839663ee635a6c5fc5c9e05c`: native-fallback Actions run38986578934 green on Linux/Windows. Linux185 core +26integration +36JNI-FFI tests passed (1core ignored), actual pt-BR eSpeak passed; Windows focused policy/backend tests and actual en-US SAPI passed. Windows pt-BR absent from enumerated David/Zira voices. Later test/documentation commit still needs exact-head gates; broad Web/Flutter/native acceptance pending.
 
 ## AH-07 — Exercise direct-runtime behavior and synchronize playback fixture
 
