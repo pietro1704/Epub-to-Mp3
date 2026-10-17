@@ -162,8 +162,10 @@ fn cover_image<R: Read + Seek>(
         let name = href.to_ascii_lowercase();
         if media.starts_with("image/") && (name.contains("cover") || name.contains("capa")) {
             let path = resolve_resource_path(base, href);
+            let index = crate::zip_names::member_index(archive, &path)?
+                .ok_or_else(|| EpubError::MissingResource(path.clone()))?;
             let mut file = archive
-                .by_name(&path)
+                .by_index(index)
                 .map_err(|_| EpubError::MissingResource(path.clone()))?;
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes)?;
@@ -244,8 +246,10 @@ fn read_entry<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     path: &str,
 ) -> Result<String, EpubError> {
+    let index = crate::zip_names::member_index(archive, path)?
+        .ok_or_else(|| EpubError::MissingResource(path.into()))?;
     let mut f = archive
-        .by_name(path)
+        .by_index(index)
         .map_err(|_| EpubError::MissingResource(path.into()))?;
     let mut s = String::new();
     f.read_to_string(&mut s)?;

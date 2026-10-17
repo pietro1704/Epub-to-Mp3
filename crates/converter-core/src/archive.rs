@@ -77,8 +77,10 @@ pub fn extract_member<R: Read + Seek>(
 ) -> Result<(), ArchiveError> {
     validate_member_name(member_name)?;
     let mut archive = ZipArchive::new(reader)?;
+    let index = crate::zip_names::member_index(&archive, member_name)?
+        .ok_or_else(|| ArchiveError::MissingMember(member_name.to_owned()))?;
     let mut input = archive
-        .by_name(member_name)
+        .by_index(index)
         .map_err(|_| ArchiveError::MissingMember(member_name.to_owned()))?;
     let output = output.as_ref();
     if let Some(parent) = output.parent() {
