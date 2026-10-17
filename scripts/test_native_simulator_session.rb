@@ -48,6 +48,7 @@ class NativeSimulatorSessionTest < Minitest::Test
       directory = ENV.fetch("SESSION_FIXTURE")
       phase = ARGV.fetch(0)
       mode = ENV.fetch("SESSION_MODE")
+      require "socket" if mode == "cleanup_resource_deny"
       if phase == "monitor"
         puts JSON.generate("event" => "policy", "limits" => {
           "minimum_free_percent" => 20, "minimum_disk_bytes" => 8 * 1024**3,
@@ -56,15 +57,22 @@ class NativeSimulatorSessionTest < Minitest::Test
         }, "load1_limit" => "min(6.0, 0.75 * logical_cpus)",
            "duration_seconds" => 15.0, "interval_seconds" => 0.1)
         STDOUT.sync = true
+        acknowledged = false
         loop do
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          puts JSON.generate("event" => "sample", "decision" => "allow", "reasons" => [],
+          denied = mode == "cleanup_resource_deny" && File.exist?(File.join(directory, "deny-requested"))
+          puts JSON.generate("event" => "sample", "decision" => denied ? "deny" : "allow",
+            "reasons" => denied ? ["available disk space below minimum"] : [],
             "sample" => { "started_monotonic" => now, "collected_monotonic" => now,
               "collection_seconds" => 0.0, "memory_bytes" => 8 * 1024**3,
               "logical_cpus" => 8, "memory_free_percent" => 58,
-              "disk_free_bytes" => 12 * 1024**3, "swap_used_bytes" => 0,
+              "disk_free_bytes" => (denied ? 4 : 12) * 1024**3, "swap_used_bytes" => 0,
               "load_averages" => [1.0, 1.0, 1.0], "panic_identities" => [] })
           STDOUT.flush
+          if denied && !acknowledged
+            UNIXSocket.open(File.join(directory, "deny.socket")) { |socket| socket.write("sample flushed") }
+            acknowledged = true
+          end
           sleep 0.03
         end
       end
@@ -83,6 +91,17 @@ class NativeSimulatorSessionTest < Minitest::Test
         File.write(File.join(directory, "booted"), "yes")
       when "test"
         sleep 0.06
+      when "terminate"
+        if mode == "cleanup_resource_deny"
+          # The first denial is emitted only after cleanup starts, with an
+          # acknowledgement rather than a race against the monitor interval.
+          server = UNIXServer.new(File.join(directory, "deny.socket"))
+          File.write(File.join(directory, "deny-requested"), "cleanup started")
+          client = server.accept
+          abort "missing resource denial acknowledgement" unless client.read == "sample flushed"
+          client.close
+          server.close
+        end
       when "shutdown"
         # Cleanup still owns the same lease while the target is shutting down.
         File.open(File.join(directory, "heavy.lease"), "a+") do |lease|
@@ -196,6 +215,17 @@ class NativeSimulatorSessionTest < Minitest::Test
     assert_equal group.call("boot"), group.call("test")
     assert_equal group.call("terminate"), group.call("verify")
     refute_equal group.call("test"), group.call("verify")
+    File.open(@lease, "a+") { |lease| assert lease.flock(File::LOCK_EX | File::LOCK_NB) }
+  end
+
+  def test_resource_denial_first_received_during_cleanup_preserves_denied_outcome
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    result = run_session(mode: "cleanup_resource_deny")
+    report = JSON.parse(File.read(@report))
+    assert_equal true, report.fetch("cleanup_verified"), failure_diagnostics
+    assert_includes operations.map { |row| row.fetch("phase") }, "verify"
+    assert_equal 75, result, failure_diagnostics
+    assert_equal "deny", report.fetch("decision")
     File.open(@lease, "a+") { |lease| assert lease.flock(File::LOCK_EX | File::LOCK_NB) }
   end
 end
