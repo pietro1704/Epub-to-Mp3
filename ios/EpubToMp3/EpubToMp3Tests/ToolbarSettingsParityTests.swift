@@ -80,14 +80,180 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(s.pageTurnStyle, .flip)
     }
 
-    func testAudioEngineDefaultsToEdgeAndOldPiperSelectionRestoresAsEdge() {
+    func testIncompleteFaberInstallIsNotAdvertisedAsInstalled() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let directory = root.appendingPathComponent("pt_BR-faber-medium")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data([1]).write(to: directory.appendingPathComponent("model.onnx"))
+        XCTAssertFalse(AppSettings.isFaberInstalled(modelsRoot: root), "An ONNX file alone is not a complete voice installation.")
+        try Data([1]).write(to: directory.appendingPathComponent("model.onnx.json"))
+        XCTAssertFalse(AppSettings.isFaberInstalled(modelsRoot: root), "Unverified files must not claim a catalog installation.")
+    }
+
+    func testEdgeSecondaryRequiresConsentAndRevocationClearsPreference() throws {
         let (settings, defaults) = make()
-        XCTAssertEqual(settings.audioEngine, .edge)
+        XCTAssertFalse(settings.selectableSecondaryAudioEngines.contains(.edge))
+        defaults.set("edge", forKey: "secondaryAudioEngine")
+        settings.secondaryAudioEngine = .edge
+        XCTAssertNil(settings.secondaryAudioEngine, "Unconsented Edge must not be saved.")
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"), "Rejected assignment must clear a stale Edge preference.")
+        XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary, "Unconsented Edge must never reach conversion preferences.")
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
+
+        settings.audioEngine = .edge
+        settings.allowOnlineAudioFallback = true
+        settings.secondaryAudioEngine = .piper
+        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "piper")
+
+        settings.allowOnlineAudioFallback = false
+        XCTAssertEqual(settings.secondaryAudioEngine, .piper, "Revocation may retain a non-Edge secondary.")
+        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "piper")
+
         settings.audioEngine = .piper
-        let expected: AudioEnginePreference = AudioEnginePreference.supportedPreferences.contains(.piper)
-            ? .piper
-            : .edge
-        XCTAssertEqual(AppSettings(defaults: defaults).audioEngine, expected)
+        settings.allowOnlineAudioFallback = true
+        XCTAssertTrue(settings.selectableSecondaryAudioEngines.contains(.edge))
+        settings.secondaryAudioEngine = .edge
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.secondary?.engine, "edge")
+        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "edge")
+
+        settings.allowOnlineAudioFallback = false
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary)
+    }
+
+    func testSecondaryAudioEngineCannotDuplicatePrimary() {
+        let (settings, defaults) = make()
+        settings.allowOnlineAudioFallback = true
+
+        settings.secondaryAudioEngine = .piper
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+
+        settings.audioEngine = .edge
+        settings.secondaryAudioEngine = .edge
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+    }
+
+    func testLegacyUnconsentedEdgeSecondaryIsMigratedOnLoad() {
+        let suite = "Toolbar.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("edge", forKey: "secondaryAudioEngine")
+        defaults.set(false, forKey: "allowOnlineAudioFallback")
+
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        XCTAssertNil(settings.ttsPreferences.secondary)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testEdgePrimaryRemainsAvailableWithoutFallbackConsent() throws {
+        let (settings, _) = make()
+        settings.audioEngine = .edge
+
+        XCTAssertEqual(settings.audioEngine, .edge)
+        XCTAssertFalse(settings.allowOnlineAudioFallback)
+        XCTAssertNil(settings.ttsPreferences.secondary)
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.primary.engine, "edge")
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
+    }
+
+    @MainActor
+    func testManualEdgePrimaryWithoutConsentKeepsSavedPreferences() async throws {
+        let (settings, _) = make()
+        let originalPreferences = settings.ttsPreferences
+        var captured: ConversionOptions?
+        let model = ConvertViewModel(converter: { _, _, _, options in
+            captured = options
+            return .init(jobID: "manual-edge-primary", manifestJSON: Data(),
+                         outputDirectory: URL(fileURLWithPath: "/unused-fixture"))
+        })
+        model.selectedFile = URL(fileURLWithPath: "/unused-fixture.epub")
+        model.engine = "edge"
+        model.voice = "pt-BR-AntonioNeural"
+        model.usesPreferences = false
+        model.allowSecondary = false
+
+        await model.submit()
+
+        XCTAssertEqual(captured?.ttsPreferences?.primary.engine, "edge")
+        XCTAssertNil(captured?.ttsPreferences?.secondary)
+        XCTAssertEqual(captured?.ttsPreferences?.allowOnlineFallback, false)
+        XCTAssertEqual(settings.ttsPreferences, originalPreferences)
+    }
+
+    func testFaberDefaultsAndExplicitEdgeChoicePersist() throws {
+        let (settings, defaults) = make()
+        XCTAssertEqual(settings.audioEngine, .piper)
+        XCTAssertNil(settings.ttsPreferences.secondary)
+        XCTAssertFalse(settings.ttsPreferences.allowOnlineFallback)
+        settings.audioEngine = .edge
+        settings.secondaryAudioEngine = .piper
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertEqual(restored.audioEngine, .edge)
+        XCTAssertEqual(restored.secondaryAudioEngine, .piper)
+        let captured = restored.conversionOptions
+        restored.audioEngine = .piper
+        XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(captured.encodedJSON().utf8)) as? [String: Any])
+        let policy = try XCTUnwrap(fields["tts_preferences"] as? [String: Any])
+        XCTAssertEqual(policy["allow_online_fallback"] as? Bool, false)
+        XCTAssertEqual((policy["secondary"] as? [String: Any])?["model_id"] as? String, "pt_BR-faber-medium")
+    }
+
+    @MainActor
+    func testManualOverrideIsStrictAndDoesNotChangePreferences() async throws {
+        let (settings, _) = make()
+        settings.allowOnlineAudioFallback = true
+        settings.secondaryAudioEngine = .edge
+        var captured: ConversionOptions?
+        let model = ConvertViewModel(converter: { _, _, _, options in
+            captured = options
+            return .init(jobID: "manual-fixture", manifestJSON: Data(),
+                         outputDirectory: URL(fileURLWithPath: "/unused-fixture"))
+        })
+        model.selectedFile = URL(fileURLWithPath: "/unused-fixture.epub")
+        model.inheritedPreferences = settings.ttsPreferences
+        model.engine = "piper"
+        model.usesPreferences = false
+        await model.submit()
+        XCTAssertEqual(model.submittedJobId, "manual-fixture")
+        XCTAssertEqual(captured?.ttsPreferences?.primary.modelID, "pt_BR-faber-medium")
+        XCTAssertNil(captured?.ttsPreferences?.secondary)
+        XCTAssertEqual(captured?.ttsPreferences?.allowOnlineFallback, false)
+        XCTAssertEqual(settings.secondaryAudioEngine, .edge)
+        model.allowSecondary = true
+        await model.submit()
+        XCTAssertEqual(captured?.ttsPreferences?.secondary?.engine, "edge")
+        XCTAssertEqual(captured?.ttsPreferences?.allowOnlineFallback, true)
+        model.usesPreferences = true
+        await model.submit()
+        XCTAssertEqual(captured?.ttsPreferences, settings.ttsPreferences)
+        model.usesPreferences = false
+        model.allowSecondary = false
+        model.engine = "edge"
+        model.voice = ""
+        model.allowSecondary = true
+        XCTAssertNil(model.distinctManualSecondary)
+        await model.submit()
+        XCTAssertNil(captured?.ttsPreferences?.secondary)
+        XCTAssertEqual(captured?.ttsPreferences?.allowOnlineFallback, false)
+        model.voice = "pt-BR-AntonioNeural"
+        XCTAssertNotNil(model.distinctManualSecondary, "Different Edge voices remain valid selections.")
+        await model.submit()
+        XCTAssertEqual(captured?.ttsPreferences?.secondary?.engine, "edge")
+        model.allowSecondary = false
+        await model.submit()
+        XCTAssertEqual(captured?.ttsPreferences?.primary.voice, "pt-BR-AntonioNeural")
+        XCTAssertNil(captured?.ttsPreferences?.primary.modelID)
+        XCTAssertNil(captured?.ttsPreferences?.secondary)
+        XCTAssertEqual(settings.audioEngine, .piper)
     }
 
     func testAutoScrollTogglesBackAndForth() {

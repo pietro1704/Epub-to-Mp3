@@ -111,13 +111,16 @@ final class IOSSwitchCell: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(title: String, subtitle: String? = nil, isOn: Bool, tintColor: UIColor? = nil) {
+    func configure(title: String, subtitle: String? = nil, isOn: Bool, tintColor: UIColor? = nil, accessibilityIdentifier: String? = nil) {
         var content = defaultContentConfiguration()
         content.text = title
         content.secondaryText = subtitle
         content.secondaryTextProperties.numberOfLines = 0
         contentConfiguration = content
+        isUserInteractionEnabled = true
         toggleSwitch.isOn = isOn
+        toggleSwitch.isEnabled = true
+        toggleSwitch.accessibilityIdentifier = accessibilityIdentifier
         toggleSwitch.accessibilityLabel = title
         toggleSwitch.accessibilityHint = subtitle
         if let tintColor {

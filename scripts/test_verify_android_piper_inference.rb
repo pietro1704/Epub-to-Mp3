@@ -1,0 +1,85 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'fileutils'
+require 'json'
+require 'minitest/autorun'
+require 'open3'
+require 'rbconfig'
+require 'shellwords'
+require 'tmpdir'
+
+class AndroidInferenceRunnerTest < Minitest::Test
+  def setup
+    @directory = Dir.mktmpdir('android runner ')
+    @root = File.join(@directory, 'project with spaces')
+    @bin = File.join(@directory, 'bin')
+    FileUtils.mkdir_p([File.join(@root, 'scripts'), File.join(@root, 'flutter_app'), @bin])
+    @script = File.join(@root, 'scripts', 'verify_android_piper_inference.sh')
+    FileUtils.cp(File.join(__dir__, 'verify_android_piper_inference.sh'), @script)
+    @calls = File.join(@directory, 'calls.json')
+    File.write(File.join(@bin, 'adb'), <<~RUBY)
+      #!#{RbConfig.ruby}
+      properties = {
+        'ro.build.version.sdk' => '35',
+        'ro.product.cpu.abilist' => ENV.fetch('TEST_ANDROID_ABIS', 'x86_64,arm64-v8a'),
+        'ro.dalvik.vm.native.bridge' => ENV.fetch('TEST_ANDROID_BRIDGE', 'libndk_translation.so'),
+        'ro.dalvik.vm.isa.arm64' => 'x86_64',
+        'ro.product.cpu.abi' => 'x86_64'
+      }
+      puts properties.fetch(ARGV.last)
+    RUBY
+    File.write(File.join(@bin, 'mise'), <<~RUBY)
+      #!#{RbConfig.ruby}
+      require 'json'
+      File.write(ENV.fetch('TEST_ANDROID_CALLS'), JSON.generate({cwd: Dir.pwd, argv: ARGV}))
+      puts ENV.fetch('TEST_ANDROID_MARKER', 'ANDROID_FABER_ABI_TRANSLATION: model=pt_BR-faber-medium')
+      exit Integer(ENV.fetch('TEST_ANDROID_EXIT', '0'))
+    RUBY
+    FileUtils.chmod(0o755, Dir.glob(File.join(@bin, '*')))
+  end
+
+  def teardown
+    FileUtils.remove_entry(@directory)
+  end
+
+  def invoke(**environment)
+    # The emulator action invokes each input line through sh -c, not Bash.
+    Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'TEST_ANDROID_CALLS' => @calls }.merge(environment),
+                   '/bin/sh', '-c', ['bash', @script].shelljoin, chdir: @directory)
+  end
+
+  def test_action_shell_preserves_bash_state_and_the_flutter_project
+    output, error, status = invoke
+    assert status.success?, error
+    assert_includes output, 'ANDROID_ARM64_ABI_TRANSLATION: api=35'
+    call = JSON.parse(File.read(@calls))
+    assert_equal File.join(@root, 'flutter_app'), call.fetch('cwd')
+    assert_equal %w[exec -- flutter drive], call.fetch('argv').first(4)
+    assert_includes call.fetch('argv'), '--use-application-binary=build/app/outputs/flutter-apk/app-debug.apk'
+    assert File.exist?(File.join(@root, '.reports/tts-preferences/android-inference.log'))
+  end
+
+  def test_flutter_failure_propagates_through_tee_even_with_a_success_marker
+    _output, _error, status = invoke('TEST_ANDROID_EXIT' => '23')
+    assert_equal 23, status.exitstatus
+  end
+
+  def test_missing_success_marker_cannot_report_success
+    _output, _error, status = invoke('TEST_ANDROID_MARKER' => 'No inference result')
+    refute status.success?
+  end
+
+  def test_unsupported_abi_stops_before_flutter
+    _output, error, status = invoke('TEST_ANDROID_ABIS' => 'x86_64')
+    refute status.success?
+    assert_includes error, 'ARM64 ABI is unavailable'
+    refute File.exist?(@calls)
+  end
+
+  def test_wrong_translation_bridge_stops_before_flutter
+    _output, _error, status = invoke('TEST_ANDROID_BRIDGE' => 'unexpected.so')
+    refute status.success?
+    refute File.exist?(@calls)
+  end
+end

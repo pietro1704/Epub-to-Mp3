@@ -79,11 +79,32 @@ jobs:
           printf 'Kotlin source files compiled by the Android app target: '
           find flutter_app/android/app/src -type f -name '*.kt' | wc -l
 
-      - name: Build Android app
-        working-directory: flutter_app
+      - name: Set up Rust Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Set up native build tools
+        uses: jdx/mise-action@v5
+        env:
+          MISE_ENABLE_TOOLS: ruby,ninja
+        with:
+          experimental: true
+
+      - name: Install native Android prerequisites
         run: |
-          flutter pub get
-          flutter build apk --debug
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev cmake pkg-config
+          sdk_manager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdk_manager"
+          "$sdk_manager" --install "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Build Android app
+        env:
+          MISE_ENABLE_TOOLS: ruby,ninja
+          MISE_EXPERIMENTAL: "1"
+        run: mise run flutter:build-apk-debug
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
@@ -93,6 +114,10 @@ jobs:
   swift:
     name: CodeQL · swift (${{ matrix.coverage }} · ${{ matrix.platform }})
     runs-on: macos-latest
+    env:
+      # Nested mise exec calls in Xcode build phases must not install XcodeGen.
+      # The project generator is installed separately through Homebrew below.
+      MISE_ENABLE_TOOLS: python,rust,ruby
     # The observed 40-minute cap canceled successful Swift extraction during
     # TRAP finalization. Keep real builds and analysis within a bounded budget.
     timeout-minutes: 90
@@ -170,12 +195,29 @@ jobs:
           install: false
 
       - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
+
+      - name: Verify nested Apple toolchain scope
+        working-directory: ios/EpubToMp3
+        run: |
+          set -o pipefail
+          mise ls --current --json | mise exec -- python -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          if tools != {"python", "rust", "ruby"}:
+              sys.exit(f"Unexpected Swift CodeQL tools: {sorted(tools)}")
+          print("Swift CodeQL nested tools: python, rust, ruby")
+          '
 
       - name: Install XcodeGen
         env:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: arch -arm64 brew install xcodegen
+
+      - name: Test Swift build architecture and failure propagation
+        run: mise exec -- ruby scripts/test_codeql_swift_build.rb
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -230,17 +272,8 @@ jobs:
             if [[ '${{ matrix.platform }}' == 'macOS+iOS' ]]; then
               derived_data="${derived_data}-${destination##*=}"
             fi
-            xcodebuild \
-              -project EpubToMp3.xcodeproj \
-              -scheme '${{ matrix.scheme }}' \
-              -destination "$destination" \
-              -configuration Debug \
-              -derivedDataPath "$derived_data" \
-              -jobs 1 \
-              -parallel-testing-enabled NO \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              ${{ matrix.action }}
+            bash ../../scripts/codeql_swift_build.sh \
+              "$destination" '${{ matrix.scheme }}' "$derived_data" '${{ matrix.action }}'
           done
 
       - name: Analyze
@@ -281,6 +314,10 @@ jobs:
           set -o pipefail
           mkdir -p .reports/ios-bundle-signing
           mise exec -- ruby scripts/test_ios_bundle_signing.rb | tee .reports/ios-bundle-signing/contracts.log
+      - name: Exercise Swift build architecture and failure propagation
+        run: |
+          set -o pipefail
+          mise exec -- ruby scripts/test_codeql_swift_build.rb | tee .reports/ios-bundle-signing/swift-build.log
       - name: Retain signing contract evidence
         if: always()
         uses: actions/upload-artifact@v6

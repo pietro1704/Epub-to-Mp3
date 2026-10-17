@@ -21,6 +21,7 @@ interface DownloadsPanelProps {
   onReset: () => void;
   isBusy: boolean;
   cliCommand?: string;
+  cliShell?: ConversionState["cliShell"];
   log: StatusEntry[];
   rawLog?: string[] | null;
   showRawLog?: boolean;
@@ -34,6 +35,7 @@ export default function DownloadsPanel({
   onReset,
   isBusy,
   cliCommand,
+  cliShell,
   log,
   rawLog,
   showRawLog = false,
@@ -261,7 +263,8 @@ export default function DownloadsPanel({
 
       {cliCommand && (
         <div className="downloads-panel__command-section">
-          <h3>Executed command</h3>
+          <h3>{t.downloads.cliReproduction}</h3>
+          {cliShell && <small>{cliShell}</small>}
           <code className="downloads-panel__command">{cliCommand}</code>
         </div>
       )}

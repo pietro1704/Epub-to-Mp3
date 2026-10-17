@@ -31,28 +31,40 @@ _.python.venv = { path = ".venv", create = true }
 description = "Install and verify the mise-managed Python used by Simulator helper scripts"
 run = "mise install python && mise exec -- python --version"
 
+[tasks."hf:snapshot"]
+description = "Prepare an allowlisted Space snapshot with snapshot-local Git LFS"
+run = "ruby scripts/hf_snapshot.rb"
+
+[tasks."hf:snapshot:test"]
+description = "Exercise actual offline Git/LFS transport and snapshot rejection"
+run = "ruby scripts/test_hf_snapshot.rb"
+
 [tasks.dev]
 description = "Start the Rust converter server and frontend (Vite) together"
 run = "./scripts/dev.sh"
 
 [tasks."rust:health"]
 description = "Run the Rust health-only CLI"
-run = "mise exec -- cargo run -p converter-cli"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo run -p converter-cli"
 
 [tasks."rust:server"]
 description = "Run the Rust Axum health and metadata server"
-run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_PROJECT_ROOT/models/piper/en_US-lessac-medium.onnx\" mise exec -- cargo run -p converter-server"
+run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_PROJECT_ROOT/models/piper/en_US-lessac-medium.onnx\" bash scripts/dev_backend.sh"
 
 [tasks.convert]
-description = "Run the canonical Rust conversion CLI"
-run = "mise exec -- cargo run --release -p converter-cli --bin converter-cli --"
+description = "Build/package and run the native Rust CLI with its own runtime and phonemizer assets"
+run = "mise exec -- ruby scripts/package_rust_cli.rb --run --"
+
+[tasks."cli:package"]
+description = "Package the native Rust CLI; macOS preserves deployment target 12 and needs no Python runtime"
+run = "mise exec -- ruby scripts/package_rust_cli.rb --package-only"
 
 [tasks."web:wasm-build"]
-description = "Build and verify the direct Rust EPUB WASM adapter"
-run = "bash scripts/build_web_wasm.sh"
+description = "Build and verify the direct Rust EPUB WASM adapter under the native build supervisor"
+run = "mise exec -- ruby scripts/native_build_command.rb -- bash scripts/build_web_wasm.sh"
 
 [tasks."migration:product-boundary-audit"]
-description = "Audit remaining web and Flutter HTTP/Python product boundaries"
+description = "Exercise embedded Web and Flutter runtime contracts"
 run = "bash scripts/check_direct_runtime_boundary.sh"
 
 [tasks."branches:cleanup-preview"]
@@ -65,7 +77,7 @@ run = "bash scripts/guard_no_python_production.sh"
 
 [tasks."migration:build-and-gate"]
 description = "Build Rust production artifacts and run the migration readiness gate"
-run = "mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run migration:gate"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run migration:gate"
 
 [tasks."migration:gate"]
 description = "Report Rust migration readiness, packaging artifacts, and remaining blockers"
@@ -85,14 +97,36 @@ run = "mise exec -- python scripts/build_converter_ffi.py --list"
 
 [tasks."converter-ffi:build"]
 description = "Build the shared converter-ffi Rust library for the host"
-run = "mise exec -- cargo build -p converter-ffi --release"
+depends = ["onnxruntime:host"]
+run = '''
+mise exec -- ruby scripts/native_build_command.rb -- mise exec -- ruby -r ./scripts/native_job.rb -e '
+if RUBY_PLATFORM.include?("darwin")
+  runtime = IO.popen(["mise", "exec", "--", "ruby", "scripts/prepare_onnxruntime_macos.rb"], NativeJob.child_options, &:read).strip
+  abort "Failed to prepare Intel ONNX Runtime" unless $?.success? && runtime.start_with?("/")
+  ENV["ORT_LIB_LOCATION"] = runtime
+  ENV["ORT_PREFER_DYNAMIC_LINK"] = "1"
+  ENV["MACOSX_DEPLOYMENT_TARGET"] = "12.0"
+  ENV.delete("SDKROOT")
+end
+commands = [
+  ["cargo", "build", "-p", "espeak-rs-sys", "--features", "compile-espeak-intonations", "--target-dir", "target/espeak-data", "--jobs", "1"],
+  ["cargo", "build", "-p", "converter-ffi", "--release", "--features", "piper-runtime", "--jobs", "1"]
+]
+commands.each { |command| exit($?.exitstatus || 1) unless system("mise", "exec", "--", *command) }
+if RUBY_PLATFORM.include?("darwin")
+  require "rubygems/version"
+  load_commands = IO.popen(["xcrun", "otool", "-l", "target/release/libconverter_ffi.dylib"], &:read)
+  minimum = load_commands[/\bminos\s+(\S+)/, 1] || load_commands[/LC_VERSION_MIN_MACOSX\s+cmdsize\s+\d+\s+version\s+(\S+)/m, 1]
+  abort "converter-ffi exceeds the macOS 12 deployment target: #{minimum.inspect}" unless minimum && Gem::Version.new(minimum) <= Gem::Version.new("12.0")
+end
+
+'
+'''
 
 [tasks."native-tts:rust:test"]
 description = "Verify platform speech policy, native PCM encoding and C callback under the shared lease"
 run = '''
-mise exec -- ruby -e '
-lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
-abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+mise exec -- ruby scripts/native_build_command.rb -- mise exec -- ruby -e '
 commands = [
   ["cargo", "test", "-p", "converter-core", "--lib", "platform_tts", "--jobs", "1"],
   ["cargo", "test", "-p", "converter-core", "--lib", "worker::tests", "--jobs", "1"],
@@ -104,13 +138,58 @@ commands.each { |command| exit($?.exitstatus || 1) unless system("mise", "exec",
 '
 '''
 
+[tasks."tts:preferences:test"]
+description = "Verify shared TTS selection, provider policy, CLI and FFI regressions serially"
+depends = ["onnxruntime:host"]
+run = "mise exec -- ruby scripts/verify_tts_preferences.rb"
+
+[tasks."onnxruntime:macos12"]
+description = "Explicit source-build fallback for the CPU inference runtime on macOS 12"
+run = "mise exec -- bash scripts/build_onnxruntime_macos.sh"
+
+[tasks."onnxruntime:host"]
+description = "Install the verified prebuilt host inference runtime without compiling ONNX"
+run = "mise exec -- ruby -r ./scripts/native_job.rb -e 'exit(0) unless RUBY_PLATFORM.include?(\"darwin\"); exit NativeJob.run(phase: \"build\", command: [RbConfig.ruby, \"scripts/fetch_onnxruntime_macos.rb\"])'"
+
+[tasks."tts:web:verify"]
+description = "Verify actual browser Piper synthesis and local Rust/WASM chapters serially"
+run = '''
+mise exec -- ruby scripts/native_build_command.rb -- mise exec -- ruby -e '
+exit($?.exitstatus || 1) unless system("mise", "exec", "--", "node", "web/scripts/verify-browser-tts.mjs")
+'
+'''
+
+[tasks."tts:portable:test"]
+description = "Verify portable Rust audio, WASM, web and Flutter paths with retained logs"
+run = "mise exec -- ruby scripts/verify_portable_tts.rb"
+
 [tasks."converter-ffi:android-arm64"]
-description = "Build converter-ffi for Android arm64 with mise-managed Rust and NDK"
-run = "case \"$(uname -s)\" in Linux) NDK_HOST_TAG=\"linux-x86_64\" ;; Darwin) NDK_HOST_TAG=\"darwin-x86_64\" ;; *) echo \"Unsupported Android NDK build host\" >&2; exit 1 ;; esac; NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/$NDK_HOST_TAG/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/$NDK_HOST_TAG/sysroot\"; NINJA=\"$(command -v ninja)\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.cargo/bin:$PATH\"; export CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable; cargo build -p converter-ffi --features android-jni --release --target aarch64-linux-android --target-dir target/edge-android"
+description = "Build embedded Piper and JNI for Android ARM64 under the native lease"
+run = "mise exec -- ruby scripts/build_converter_ffi_android.rb"
 
 [tasks."converter-ffi:ios-device"]
 description = "Build converter-ffi for iOS device with the Xcode SDK deployment target"
-run = '''MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path) && HOST_CLANG=$(xcrun --sdk macosx --find clang) && SDK=$(xcrun --sdk iphoneos --show-sdk-path) && CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)") && CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh" IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" RUSTC=$(mise exec -- rustup which --toolchain stable rustc) BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" PATH="$CLANG_DIR:$PATH" mise exec -- cargo --config 'target.aarch64-apple-ios.linker="clang"' --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" build -p converter-ffi --release --target aarch64-apple-ios'''
+run = '''
+exec mise exec -- ruby scripts/native_job.rb build -- bash -euo pipefail <<'NATIVE_BUILD'
+# Build architecture-independent phonemizer assets with the host SDK, before
+# configuring any device compiler variables. Preserve the device build below.
+MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path)
+HOST_CLANG=$(xcrun --sdk macosx --find clang)
+HOST_CLANGXX=$(xcrun --sdk macosx --find clang++)
+env -u SDKROOT -u IPHONEOS_DEPLOYMENT_TARGET -u CARGO_BUILD_TARGET \
+  -u RUSTFLAGS -u CARGO_ENCODED_RUSTFLAGS -u CMAKE_TOOLCHAIN_FILE \
+  -u EPUB2MP3_APPLE_SDK -u EPUB2MP3_APPLE_CLANG_TARGET \
+  -u BINDGEN_EXTRA_CLANG_ARGS -u BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios \
+  SDKROOT="$MACOS_SDK" MACOSX_DEPLOYMENT_TARGET=12.0 \
+  CC="$HOST_CLANG" CXX="$HOST_CLANGXX" CFLAGS="-isysroot $MACOS_SDK" CXXFLAGS="-isysroot $MACOS_SDK" \
+  CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" \
+  CC_aarch64_apple_darwin="$HOST_CLANG" CFLAGS_aarch64_apple_darwin="-isysroot $MACOS_SDK" \
+  RUSTC=$(mise exec -- rustup which --toolchain stable rustc) \
+  mise exec -- cargo build -p espeak-rs-sys --features compile-espeak-intonations \
+  --target-dir "$MISE_PROJECT_ROOT/target/espeak-data" --jobs 1 || exit $?
+MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path) && HOST_CLANG=$(xcrun --sdk macosx --find clang) && SDK=$(xcrun --sdk iphoneos --show-sdk-path) && CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)") && CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh" IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" RUSTC=$(mise exec -- rustup which --toolchain stable rustc) BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" PATH="$CLANG_DIR:$PATH" mise exec -- cargo --config 'target.aarch64-apple-ios.linker="clang"' --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" build -p converter-ffi --release --features piper-runtime --target aarch64-apple-ios --jobs 1
+NATIVE_BUILD
+'''
 
 [tasks."converter-ffi:ios-device:verify"]
 description = "Verify the iOS converter-ffi Mach-O architecture, platform, and exported ABI"
@@ -121,12 +200,9 @@ description = "Build host iOS Simulator Rust under shared lease; Debug by defaul
 run = '''
 # Xcode exports its selected iOS Simulator SDK as SDKROOT to build phases.
 # This driver is a host-side Swift script; let Swift select the macOS SDK.
-env -u SDKROOT xcrun swift -e '
+mise exec -- ruby scripts/native_job.rb build -- env -u SDKROOT xcrun swift -e '
 import Foundation
 import Darwin
-let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
-guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
-defer { close(lease) }
 let simulator = Process()
 simulator.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
 simulator.arguments = ["simctl", "list", "devices", "booted", "-j"]
@@ -148,7 +224,7 @@ let target = "aarch64-apple-ios-sim"
 let child = Process()
 child.executableURL = URL(fileURLWithPath: "/usr/bin/env")
 child.arguments = ["mise", "exec", "--", "rustup", "run", "stable", "cargo", "build", "--locked", "-p", "converter-ffi", "--target", target, "--jobs", "1"]
-if ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] == "1" {
+if ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] != "0" {
     child.arguments?.insert(contentsOf: ["--features", "piper-runtime"], at: 8)
 }
 var environment = ProcessInfo.processInfo.environment
@@ -168,7 +244,7 @@ guard compiler.terminationStatus == 0 && compilerPath.hasPrefix("/") else { exit
 environment["RUSTC"] = compilerPath
 environment["IPHONEOS_DEPLOYMENT_TARGET"] = "15.0"
 let root = ProcessInfo.processInfo.environment["MISE_PROJECT_ROOT"] ?? FileManager.default.currentDirectoryPath
-if ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] == "1" {
+if ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] != "0" {
     let dataBuilder = Process()
     dataBuilder.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     dataBuilder.arguments = ["mise", "-C", root, "exec", "--", "cargo", "build", "-p", "espeak-rs-sys", "--features", "compile-espeak-intonations", "--target-dir", root + "/target/espeak-data"]
@@ -178,7 +254,7 @@ if ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] == "1" {
     try dataBuilder.run(); dataBuilder.waitUntilExit()
     guard dataBuilder.terminationStatus == 0 else { exit(dataBuilder.terminationStatus) }
 }
-if target == "x86_64-apple-ios" && ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] == "1" {
+if target == "x86_64-apple-ios" && ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] != "0" {
     let runtimeBuilder = Process()
     runtimeBuilder.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     runtimeBuilder.arguments = ["bash", root + "/scripts/build_onnxruntime_ios_simulator.sh"]
@@ -187,8 +263,10 @@ if target == "x86_64-apple-ios" && ProcessInfo.processInfo.environment["CONVERTE
     let runtimePath = String(data: runtimePipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     runtimeBuilder.waitUntilExit()
     guard runtimeBuilder.terminationStatus == 0 && runtimePath.hasPrefix("/") else { exit(2) }
-    environment["ORT_LIB_PATH"] = runtimePath
-    environment["ORT_LIB_PROFILE"] = "Release-iphonesimulator"
+    // ort-sys rc11 expects the directory containing the shared library itself.
+    environment["ORT_LIB_LOCATION"] = runtimePath + "/Release-iphonesimulator"
+    environment["ORT_PREFER_DYNAMIC_LINK"] = "1"
+    environment["ORT_SKIP_DOWNLOAD"] = "1"
 }
 let sdk = Process()
 sdk.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
@@ -223,12 +301,9 @@ try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 [tasks."apple:chapter-callback:test"]
 description = "Run focused native macOS chapter-event path/delivery regressions, one job under the shared lease"
 run = '''
-xcrun swift -e '
+mise exec -- ruby scripts/native_job.rb build -- xcrun swift -e '
 import Foundation
 import Darwin
-let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
-guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
-defer { close(lease) }
 let child = Process()
 child.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
 child.arguments = ["xcodebuild", "-quiet", "-project", "ios/EpubToMp3/EpubToMp3.xcodeproj",
@@ -251,33 +326,43 @@ if ProcessInfo.processInfo.environment["APP_FOUNDATION_LIVE_EDGE"] == "1",
 if ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" {
     child.arguments?.insert("EPUB2MP3_NATIVE_TTS_TEST=1", at: child.arguments!.count - 1)
 }
+for key in ["EPUB2MP3_PIPER_TEST_MODEL_ROOT", "APP_FOUNDATION_FFI_LIBRARY"] {
+    if let value = ProcessInfo.processInfo.environment[key], !value.isEmpty {
+        child.arguments?.insert("\(key)=\(value)", at: child.arguments!.count - 1)
+    }
+}
 try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 '
 '''
 
 [tasks."converter-ffi:ios-packaging:test"]
-description = "Verify real device/Simulator artifacts, reject wrong platforms and exercise signed bundling"
-run = "bash scripts/test_converter_ffi_ios_packaging.sh"
+description = "Verify real device/Simulator artifacts, reject wrong platforms and exercise signed bundling under native host safeguards"
+run = """
+#!/bin/bash
+set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash "${MISE_PROJECT_ROOT:-.}/scripts/test_converter_ffi_ios_packaging.sh"
+"""
 
 [tasks."converter-ffi:android-check"]
-description = "Check Android converter-ffi without linking unsupported Piper inference dependencies"
-run = "env -u CC -u CFLAGS -u CXX -u AR -u CMAKE_TOOLCHAIN_FILE -u CMAKE_GENERATOR -u CMAKE_MAKE_PROGRAM mise exec -- cargo check -p converter-ffi --features android-jni"
+description = "Check JNI and embedded Piper adapter on the host; Android ELF validation is a separate packaging gate"
+run = "mise exec -- ruby scripts/native_build_command.rb -- env -u CC -u CFLAGS -u CXX -u AR -u CMAKE_TOOLCHAIN_FILE -u CMAKE_GENERATOR -u CMAKE_MAKE_PROGRAM mise exec -- cargo check -p converter-ffi --features android-jni,piper-runtime --jobs 1"
 
 [tasks."converter-ffi:android-install"]
-description = "Install the cached Android arm64 converter-ffi artifact into the APK source tree"
-run = "mkdir -p flutter_app/android/app/src/main/jniLibs/arm64-v8a && cp target/edge-android/aarch64-linux-android/release/libconverter_ffi.so flutter_app/android/app/src/main/jniLibs/arm64-v8a/libconverter_ffi.so"
+depends = ["converter-ffi:android-arm64"]
+description = "Validate and package the actual Piper/JNI Android ELF, shared dependencies and eSpeak assets"
+run = "mise exec -- ruby scripts/package_converter_ffi_android.rb"
 
 [tasks."android:embedded-deps"]
 description = "Install Android NDK dependencies through mise-managed sdkmanager"
 run = "SDKMANAGER=\"$HOME/.local/share/mise/installs/android-sdk/11.0/cmdline-tools/11.0/bin/sdkmanager\"; test -x \"$SDKMANAGER\"; \"$SDKMANAGER\" \"platform-tools\" \"platforms;android-35\" \"build-tools;35.0.0\" \"ndk;28.2.13676358\"; mise install ninja@latest"
 
 [tasks."android:runtime-audit"]
-description = "Audit the optional embedded Piper Android runtime"
-run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"optional Piper runtime present\"; else echo \"Piper runtime absent: Edge-only Android artifact is active\"; fi'"
+description = "Verify packaged ARM64 ELF, actual Piper/JNI exports, dependent libraries and phonemizer assets"
+run = "mise exec -- ruby scripts/package_converter_ffi_android.rb --audit"
 
 [tasks."piper:android-arm64"]
-description = "Build Piper Embedded runtime for Android arm64 with the mise-managed NDK"
-run = "case \"$(uname -s)\" in Linux) NDK_HOST_TAG=\"linux-x86_64\" ;; Darwin) NDK_HOST_TAG=\"darwin-x86_64\" ;; *) echo \"Unsupported Android NDK build host\" >&2; exit 1 ;; esac; NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/$NDK_HOST_TAG/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/$NDK_HOST_TAG/sysroot\"; NINJA=\"$(command -v ninja)\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.cargo/bin:$PATH\"; export CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable; cargo build -p piper-runtime --features onnxruntime,piper-inference --release --target aarch64-linux-android --target-dir target/piper-android"
+description = "Build the shared Android Piper/JNI converter with the mise-managed NDK"
+run = "mise exec -- ruby scripts/build_converter_ffi_android.rb"
 
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
@@ -653,7 +738,7 @@ run = """
 #!/bin/bash
 set -euo pipefail
 mkdir -p dist
-mise exec -- cargo build --release -p converter-server
+mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build --release -p converter-server
 cp target/release/converter-server dist/epub-to-mp3-server
 chmod 755 dist/epub-to-mp3-server
 echo "Built Rust sidecar: dist/epub-to-mp3-server"
@@ -665,6 +750,7 @@ depends = ["converter-ffi:build"]
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 # Default stays Release so this task keeps producing the same distributable
 # artifact release-desktop.yml expects. Debug (wholemodule/-O/ThinLTO/dSYM
@@ -682,9 +768,9 @@ fi
 xcodegen generate
 # Slice 18 preflight: widget must be embedded in the app bundle.
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
-# Hold the single-heavy-job lock around xcodebuild (CPU CATERR / PCIe panic
-# guard on constrained Intel Macs — never let it race another heavy job).
-python3 "${MISE_PROJECT_ROOT:-../..}/scripts/heavy_job_guard.py" mac:build -- \\
+# NativeJob holds the shared lease and checks for active Simulators,
+# SimMetalHost and Simulator.app before any project generation or compilation.
+# These checks limit exposure but cannot establish hardware stability.
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
@@ -708,6 +794,7 @@ else
   echo "error: build did not produce $APP_OUT"
   exit 1
 fi
+NATIVE_JOB
 """
 
 [tasks."mac:build:dev"]
@@ -746,6 +833,7 @@ description = "Build native UIKit iOS app on the best installed iOS Simulator"
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -826,6 +914,7 @@ if ! xcodebuild \\
   exit 65
 fi
 tail -20 "${BUILD_LOG}"
+NATIVE_JOB
 """
 
 [tasks."ios:device:run"]
@@ -912,6 +1001,10 @@ description = "Build the native iOS app for a connected physical device using pe
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
+#!/bin/bash
+set -euo pipefail
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -961,6 +1054,7 @@ if ! xcodebuild \\
   exit 65
 fi
 tail -20 "${BUILD_LOG}"
+NATIVE_JOB
 """
 
 [tasks."ios:run"]
@@ -988,17 +1082,18 @@ esac
 
 [tasks."ios:simulator:smoke:build"]
 description = "Build only bundled-FFI and library-search smoke tests with Simulator stopped; no Python"
-run = "xcrun swift scripts/ios_simulator_smoke.swift build"
+run = "mise exec -- ruby scripts/native_job.rb build -- xcrun swift scripts/ios_simulator_smoke.swift build"
 
 [tasks."ios:simulator:smoke:test"]
 description = "Run existing focused Simulator smoke build, no compilation or Python"
-run = "xcrun swift scripts/ios_simulator_smoke.swift test"
+run = "mise exec -- ruby scripts/native_job.rb simulator -- xcrun swift scripts/ios_simulator_smoke.swift test"
 
 [tasks."ios:simulator:run"]
 description = "Install and launch an existing iphonesimulator EpubToMp3.app; never builds or downloads runtimes"
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 
 # This task intentionally launches only an existing artifact. Use
 # `mise run ios:build` separately when a new simulator build is required.
@@ -1063,6 +1158,7 @@ if [[ "$SEED_LAUNCH" == "1" ]]; then
 else
   xcrun simctl launch "$UDID" com.pietrocode.epubtomp3
 fi
+NATIVE_JOB
 """
 
 [tasks."ios:simulator:resume"]
@@ -1070,6 +1166,7 @@ description = "Launch the EpubToMp3 app already installed in a selected Simulato
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 
 # This task is deliberately distinct from `ios:run`: it is useful when a
 # legacy simulator can boot an already-installed build but the selected Xcode
@@ -1110,6 +1207,7 @@ if [[ -n "$BUILT_WITH_XCODE" ]]; then
 fi
 open -a Simulator
 xcrun simctl launch "$UDID" "$BUNDLE_ID"
+NATIVE_JOB
 """
 
 [tasks."ios:simulator:test"]
@@ -1118,6 +1216,7 @@ depends = ["vendor:python"]
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
@@ -1159,8 +1258,8 @@ run_simulator_tests() {
     done
   fi
   if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
-    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
-      -destination "$DEST" -derivedDataPath "$DD" "${test_settings[@]}" build-for-testing
+    mise exec -- ruby ../../scripts/native_job.rb build -- xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+      -destination "$DEST" -derivedDataPath "$DD" -jobs 1 -parallel-testing-enabled NO "${test_settings[@]}" build-for-testing
   fi
   # The bundled Rust Simulator build must run with every Simulator shut down.
   # Build first; boot only for the XCTest execution phase.
@@ -1232,7 +1331,8 @@ run_simulator_tests() {
 
 export DEST DD IOS_SKIP_BUILD UDID
 export -f run_simulator_tests
-python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -e -c run_simulator_tests
+run_simulator_tests
+NATIVE_JOB
 """
 
 [tasks."ios:device:test"]
@@ -1242,6 +1342,34 @@ run = "bash scripts/device-workflow.sh test"
 [tasks."ios:device:preflight"]
 description = "Check physical device readiness once; fail immediately when locked"
 run = "bash scripts/device-workflow.sh preflight"
+
+[tasks."tts:phone:benchmark"]
+description = "Run the isolated six-candidate TTS research harness on the authorized iPhone 16e"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/run.rb"
+
+[tasks."tts:phone:download"]
+description = "Download the explicitly authorized isolated TTS benchmark dependencies and model assets"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/download.rb"
+
+[tasks."tts:phone:build-pocket"]
+description = "Build the isolated Portuguese Pocket C++ adapter for iOS under the shared lease"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/build-pocket.rb"
+
+[tasks."tts:phone:build-edge"]
+description = "Build an isolated C entrypoint for the production Rust Edge client on iOS"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/build-edge.rb"
+
+[tasks."tts:phone:cleanup"]
+description = "Delete only newly downloaded isolated TTS test assets after native jobs finish"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/cleanup.rb"
+
+[tasks."tts:phone:summary"]
+description = "Validate the six phone benchmark reports and summarize comparable measured fixtures"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/summarize.rb"
+
+[tasks."tts:piper-high:benchmark"]
+description = "Measure isolated native Mac CLI synthesis for Faber medium, Miro high and Dii high"
+run = "mise exec -- ruby docs/research/piper-high-terminal-benchmark.rb"
 
 [tasks."ios:device:benchmark"]
 description = "Benchmark explicit EPUB/ranges on iPhone; --case BOOK START END, at most two chapters unless --whole-book"
@@ -1258,12 +1386,9 @@ run = "bash scripts/device-workflow.sh host-tests"
 [tasks."apple:foundation:test"]
 description = "Run focused XCTest on the app's actual Foundation production files without launching an app"
 run = '''
-xcrun swift -e '
+mise exec -- ruby scripts/native_job.rb build -- xcrun swift -e '
 import Foundation
 import Darwin
-let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
-guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
-defer { close(lease) }
 let taskRoot = ProcessInfo.processInfo.environment["MISE_PROJECT_ROOT"] ?? FileManager.default.currentDirectoryPath
 let ffiEnabled = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_TESTS"] == "1"
 if ffiEnabled {
@@ -1416,11 +1541,9 @@ run = "cd flutter_app && flutter test"
 [tasks."native-tts:android:test"]
 description = "Verify native speech notices, cancellation and Android voice selection under the shared lease"
 run = '''
-mise exec -- ruby -e '
-lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
-abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+mise exec -- ruby scripts/native_build_command.rb -- mise exec -- ruby -e '
 Dir.chdir("flutter_app") do
-  command = ["mise", "exec", "--", "flutter", "test", "test/platform_voice_notice_test.dart", "test/embedded_converter_test.dart", "test/convert_screen_test.dart", "test/rust_playback_conversion_test.dart", "test/android_chapter_stream_test.dart", "test/growing_chapter_audio_source_test.dart", "test/growing_chapter_player_test.dart", "test/rust_streaming_window_test.dart", "test/reader_playback_startup_test.dart", "test/audio_player_service_test.dart", "test/book_open_screen_test.dart", "test/resume_restoration_guard_test.dart"]
+  command = ["mise", "exec", "--", "flutter", "test", "test/platform_voice_notice_test.dart", "test/background_conversion_lifecycle_test.dart", "test/background_conversion_preferences_test.dart", "test/embedded_converter_test.dart", "test/convert_screen_test.dart", "test/rust_playback_conversion_test.dart", "test/android_chapter_stream_test.dart", "test/growing_chapter_audio_source_test.dart", "test/growing_chapter_player_test.dart", "test/rust_streaming_window_test.dart", "test/reader_playback_startup_test.dart", "test/audio_player_service_test.dart", "test/book_open_screen_test.dart", "test/resume_restoration_guard_test.dart"]
   exit($?.exitstatus || 1) unless system(*command)
   Dir.chdir("android") { exit($?.exitstatus || 1) unless system("mise", "exec", "--", "./gradlew", ":app:testDebugUnitTest", "--max-workers=1") }
 end
@@ -1432,24 +1555,27 @@ description = "Static analysis of the Flutter app (lints + type errors)"
 run = "cd flutter_app && flutter analyze"
 
 [tasks."flutter:build-apk-debug"]
+depends = ["converter-ffi:android-install"]
 description = "Build a debug APK for Android using Flutter's incremental build cache"
-run = "cd flutter_app && flutter build apk --debug --build-number=${FLUTTER_BUILD_NUMBER:-1} --no-pub"
+run = "mise exec -- ruby scripts/build_flutter_android.rb debug"
 
 [tasks."flutter:build-linux"]
 description = "Build the Flutter Linux desktop app (release)"
-run = "cd flutter_app && flutter build linux --release"
+run = "mise exec -- ruby scripts/build_flutter_desktop.rb linux"
 
 [tasks."flutter:build-windows"]
 description = "Build the Flutter Windows desktop app (release)"
-run = "cd flutter_app && flutter build windows --release"
+run = "mise exec -- ruby scripts/build_flutter_desktop.rb windows"
 
 [tasks."flutter:build-apk"]
+depends = ["converter-ffi:android-install"]
 description = "Build the Flutter Android APK (release)"
-run = "cd flutter_app && flutter build apk --release --no-pub"
+run = "mise exec -- ruby scripts/build_flutter_android.rb release"
 
 [tasks."flutter:build-apk-debug:clean"]
+depends = ["converter-ffi:android-install"]
 description = "Explicitly clean Flutter Android artifacts before a debug build"
-run = "cd flutter_app && flutter clean && flutter build apk --debug --build-number=${FLUTTER_BUILD_NUMBER:-1}"
+run = "mise exec -- ruby scripts/build_flutter_android.rb debug --clean"
 
 [tasks."android:bootstrap-python"]
 description = "Sync python_app/src into the Flutter Android Chaquopy source set"
@@ -1464,4 +1590,4 @@ description = "Run the Flutter desktop app on the host platform (Linux/Windows o
 run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
 [tasks."piper:build-runtime"]
 description = "Build the native Piper Embedded runtime without external executable fallback"
-run = "mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"

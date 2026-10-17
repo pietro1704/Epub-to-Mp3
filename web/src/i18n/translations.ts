@@ -101,7 +101,23 @@ export interface ActiveConversionText {
   languageLabel: string;
 }
 
+export interface TtsPreferenceText {
+  primary: string;
+  secondary: string;
+  none: string;
+  online: string;
+  inherit: string;
+  reserve: string;
+  install: string;
+  installed: string;
+  installing: string;
+  capability: string;
+  unavailable: string;
+  manualVoice: string;
+}
+
 export interface FormText {
+  ttsPreferences: TtsPreferenceText;
   fileLabel: string;
   fileHint: string;
   fileQueueLabel: string;
@@ -491,6 +507,7 @@ export interface RecentJobsText {
 }
 
 export interface DownloadsText {
+  cliReproduction: string;
   placeholder: string;
   noDownloadsAfterSuccess: string;
   resetWithDownloads: string;
@@ -567,6 +584,8 @@ export interface LayoutText {
   helpToggle: string;
   helpTitle: string;
   helpClose: string;
+  localRuntime: string;
+  localInstallHelp: string;
   statsTitle: string;
   statsLoading: string;
   statsUptime: string;
@@ -784,6 +803,20 @@ export const translations: Record<Locale, Translations> = {
       languageLabel: "Idioma",
     },
     form: {
+      ttsPreferences: {
+        primary: "Voz principal",
+        secondary: "Voz secundária",
+        none: "Nenhuma",
+        online: "Permitir reserva online",
+        inherit: "Usar preferências",
+        reserve: "Permitir secundário nesta conversão",
+        install: "Instalar Faber medium",
+        installed: "Faber medium instalado",
+        installing: "Instalando…",
+        capability: "Faber medium funciona localmente após a instalação. Edge não está disponível neste navegador.",
+        unavailable: "indisponível neste navegador",
+        manualVoice: "Voz desta conversão",
+      },
       fileLabel: "Arquivo do livro (EPUB ou PDF)",
       fileHint:
         "Selecione um ou mais arquivos do seu computador. Todos usarão as mesmas configurações abaixo.",
@@ -1288,6 +1321,7 @@ export const translations: Record<Locale, Translations> = {
         "Assim que a conversão terminar, os áudios ficam disponíveis aqui para ouvir ou baixar.",
       noDownloadsAfterSuccess:
         "Conversão concluída, mas os arquivos não puderam ser carregados. Verifique as conversões recentes ou inicie uma nova.",
+      cliReproduction: "Reproduzir pela CLI",
       resetWithDownloads: "Começar uma nova conversão",
       resetWithoutDownloads: "Limpar tudo",
       audioNotSupported: "Seu navegador não suporta reprodução de áudio.",
@@ -1377,6 +1411,8 @@ export const translations: Record<Locale, Translations> = {
         "Falha ao reiniciar automaticamente. Reinicie o backend manualmente.",
       helpToggle: "Ajuda & Sistema",
       helpTitle: "Ajuda e monitoramento",
+      localRuntime: "Conversão local",
+      localInstallHelp: "Para preparar a voz offline, use “Instalar Faber medium” no formulário.",
       helpClose: "Fechar painel",
       statsTitle: "Monitoramento do sistema",
       statsLoading: "Coletando métricas…",
@@ -1618,6 +1654,20 @@ export const translations: Record<Locale, Translations> = {
       languageLabel: "Language",
     },
     form: {
+      ttsPreferences: {
+        primary: "Primary voice",
+        secondary: "Secondary voice",
+        none: "None",
+        online: "Allow online fallback",
+        inherit: "Use preferences",
+        reserve: "Allow secondary for this conversion",
+        install: "Install Faber medium",
+        installed: "Faber medium installed",
+        installing: "Installing…",
+        capability: "Faber medium runs locally after installation. Edge is unavailable in this browser.",
+        unavailable: "unavailable in this browser",
+        manualVoice: "Voice for this conversion",
+      },
       fileLabel: "Book file (EPUB or PDF)",
       fileHint:
         "Select one or more files from your computer. Every book will reuse the same settings below.",
@@ -2108,6 +2158,7 @@ export const translations: Record<Locale, Translations> = {
         "When the conversion finishes, the audio files will show up here to play or download.",
       noDownloadsAfterSuccess:
         "Conversion finished, but the files could not be loaded. Check recent conversions or start a new one.",
+      cliReproduction: "Reproduce with CLI",
       resetWithDownloads: "Start another conversion",
       resetWithoutDownloads: "Clear form",
       audioNotSupported: "Your browser does not support audio playback.",
@@ -2196,6 +2247,8 @@ export const translations: Record<Locale, Translations> = {
         "Failed to restart automatically. Please restart the backend manually.",
       helpToggle: "Help & System",
       helpTitle: "Help and monitoring",
+      localRuntime: "Local conversion",
+      localInstallHelp: "To prepare the offline voice, choose “Install Faber medium” in the form.",
       helpClose: "Close panel",
       statsTitle: "System monitoring",
       statsLoading: "Collecting metrics…",

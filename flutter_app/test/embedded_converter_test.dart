@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_app/services/embedded_converter.dart';
+import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 
 class FakeConverter implements EmbeddedConverter {
@@ -35,6 +36,7 @@ class FakeConverter implements EmbeddedConverter {
     required String outputPath,
     int? chapterStart,
     int? chapterEnd,
+    String? optionsJson,
   }) async {
     calls++;
     return outputPath;
@@ -45,6 +47,7 @@ class FakeConverter implements EmbeddedConverter {
     required String inputPath,
     required String outputPath,
     required int chapterIndex,
+    String? optionsJson,
   }) async => ConvertedChapterAudio(
     chapterIndex: chapterIndex,
     path: outputPath,
@@ -98,6 +101,35 @@ class FakeConverter implements EmbeddedConverter {
 }
 
 void main() {
+  test(
+    'native chapter decoding retains actual voice and opaque Rust policy state',
+    () {
+      final chapter = ConvertedChapterAudio.fromNativeResult(
+        jsonEncode({
+          'audioPath': '/chapter.mp3',
+          'manifest': {
+            'chapters': [
+              {'sourceIndex': 5, 'title': 'Chapter 5'},
+            ],
+            'usedSelections': [
+              {
+                'engine': 'edge',
+                'model_id': null,
+                'voice': 'pt-BR-FranciscaNeural',
+              },
+            ],
+            'ttsPolicyState': {'consecutive_failures': 2},
+            'fallbackUsed': true,
+          },
+        }),
+        expectedChapterIndex: 5,
+      );
+      expect(chapter.usedSelections.single.voice, 'pt-BR-FranciscaNeural');
+      expect(chapter.fallbackUsed, true);
+      expect(chapter.ttsPolicyState, {'consecutive_failures': 2});
+    },
+  );
+
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
     'owned output cancellation leaves other conversions of the same input alone',
@@ -325,4 +357,62 @@ void main() {
       expect(source, isNot(contains('httpFallback')));
     },
   );
+
+  test('Android Piper synthesis forwards the captured options unchanged', () async {
+    const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
+    final options = const TtsPreferences().optionsJson(
+      modelsRoot: '/models',
+      language: 'pt-BR',
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'piperSynthesize');
+          expect(call.arguments, {
+            'text': 'Olá, mundo.',
+            'output': '/tmp/chapter.mp3',
+            'optionsJson': options,
+          });
+          return '/tmp/chapter.mp3';
+        });
+
+    final result = await AndroidEmbeddedConverter(channel: channel).synthesizePiper(
+      text: 'Olá, mundo.',
+      output: '/tmp/chapter.mp3',
+      optionsJson: options,
+    );
+
+    expect(result, '/tmp/chapter.mp3');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
+
+  test('Android Piper synthesis preserves native model errors', () async {
+    const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'piperSynthesize');
+          throw PlatformException(
+            code: 'EMBEDDED_CONVERTER_UNAVAILABLE',
+            message: 'Piper model or voice config is not installed: /models/pt_BR-faber-medium/model.onnx',
+          );
+        });
+
+    await expectLater(
+      AndroidEmbeddedConverter(channel: channel).synthesizePiper(
+        text: 'Olá.',
+        output: '/tmp/chapter.mp3',
+        optionsJson: const TtsPreferences().optionsJson(
+          modelsRoot: '/models',
+          language: 'pt-BR',
+        ),
+      ),
+      throwsA(
+        isA<PlatformException>()
+            .having((error) => error.code, 'code', 'EMBEDDED_CONVERTER_UNAVAILABLE')
+            .having((error) => error.message, 'native message', contains('Piper model or voice config is not installed')),
+      ),
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
 }

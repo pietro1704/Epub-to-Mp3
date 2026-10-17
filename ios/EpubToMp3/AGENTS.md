@@ -49,3 +49,19 @@ the reader seam; do not parse Swift source as a substitute for runtime
 evidence. Changes under the reader production surface require a corresponding
 native test change in the same commit. The repository pre-commit hook checks
 this pairing.
+
+## Highest-priority execution correction (2026-10-16)
+
+All tests and CI execute only on GitHub Actions. Intel Simulator execution is
+quarantined after recurrent IGGuC/SimMetalHost kernel panics; no direct tool,
+environment flag or inherited lease may bypass it. Continue independent safe
+work and report required SE runtime acceptance blocked. Read the canonical
+[GPU safety procedure](../../docs/agents/intel-gpu-safety.md) before native tooling.
+Edit/Stop hooks notify only; they start no native compilation.
+
+Final campaign delivery retains only master: merge coherent branches through
+PRs after exact-head GitHub checks pass, confirm merge, then delete only
+confirmed-merged branches/worktrees. Preserve dirty and unmerged work. Periodic
+GitHub Actions/issues monitoring and prioritized repairs are authorized. This
+correction supersedes earlier local-test/no-monitoring defaults; it does not
+establish a GPU driver fix or authorize a new Simulator attempt.

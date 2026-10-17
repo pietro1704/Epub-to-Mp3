@@ -152,11 +152,17 @@ final class ReaderModesUITests: XCTestCase {
         try chooseLayout("Paginated", in: app)
 
         let marginRow = app.cells["reader.settings.margin.row"].firstMatch
-        let slider = app.sliders["reader.settings.margin"].firstMatch
+        let slider = app.descendants(matching: .any)["reader.settings.margin"].firstMatch
         let viewport = app.scrollViews["reader.viewport"].firstMatch
         let content = app.textViews["reader.content"].firstMatch
         XCTAssertTrue(marginRow.waitForExistence(timeout: 3), "Margin must remain a visible setting row.")
         XCTAssertTrue(slider.waitForExistence(timeout: 3), "Margin must use the native continuous slider.")
+        for _ in 0..<8 where !slider.isHittable { app.tables.firstMatch.swipeUp() }
+        XCTAssertTrue(slider.isHittable, "The margin slider must remain reachable in the compact settings sheet.")
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "Reader settings slider layout"
+        attachment.lifetime = .keepAlways
+        add(attachment)
         XCTAssertTrue(viewport.exists && content.exists, "The open reader must remain mounted behind its settings sheet.")
         XCTAssertGreaterThanOrEqual(
             slider.frame.width,
@@ -164,7 +170,7 @@ final class ReaderModesUITests: XCTestCase {
             "The slider must use the row's available width rather than sit in a narrow middle column."
         )
 
-        slider.adjust(toNormalizedSliderPosition: 0)
+        dragReaderSlider(slider, to: 0)
         sleep(1)
         let minimum = content.frame
         XCTAssertEqual(
@@ -180,7 +186,7 @@ final class ReaderModesUITests: XCTestCase {
             "The minimum reader margin must be symmetric."
         )
 
-        slider.adjust(toNormalizedSliderPosition: 0.5)
+        dragReaderSlider(slider, to: 0.5)
         sleep(1)
         let expanded = content.frame
         XCTAssertGreaterThan(
@@ -194,7 +200,7 @@ final class ReaderModesUITests: XCTestCase {
             "A larger margin must immediately narrow the visible text viewport."
         )
 
-        slider.adjust(toNormalizedSliderPosition: 0)
+        dragReaderSlider(slider, to: 0)
         sleep(1)
         XCTAssertEqual(
             content.frame.minX,
@@ -202,6 +208,14 @@ final class ReaderModesUITests: XCTestCase {
             accuracy: 1,
             "Returning the slider to its minimum must restore the 8 pt viewport immediately."
         )
+    }
+
+    private func dragReaderSlider(_ slider: XCUIElement, to fraction: CGFloat) {
+        let inset = 9 / slider.frame.width
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: slider.coordinate(
+                withNormalizedOffset: CGVector(dx: inset + fraction * (1 - 2 * inset), dy: 0.5)
+            ))
     }
 
     // MARK: - 1) Paginated, chrome hidden
@@ -531,7 +545,7 @@ final class ReaderModesUITests: XCTestCase {
         )
     }
 
-    func testHorizontalCurlAppearsForForwardAndBackwardTurns() throws {
+    func testAnimatedForwardAndBackwardTurnsRestoreThePage() throws {
         let app = launch(
             layout: "paginated",
             showsPageTurnOverlay: true,
@@ -543,17 +557,22 @@ final class ReaderModesUITests: XCTestCase {
         XCTAssertTrue(right.waitForExistence(timeout: 5))
         XCTAssertTrue(left.waitForExistence(timeout: 5))
 
+        let before = try XCTUnwrap(indicator(app)?.page)
+        // XCTest waits for animation idleness after tap. The direct native
+        // animation test inspects the transient fold while it is still active.
         right.tap()
-        XCTAssertTrue(
-            app.otherElements["reader.pageCurl"].firstMatch.waitForExistence(timeout: 0.2),
-            "Forward pagination must present the horizontal page-curl overlay."
-        )
-        sleep(1)
+        let advanced = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.indicator(app)?.page == before + 1
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 5), .completed)
+        XCTAssertEqual(paginationMetrics(app)["clippedLineCount"], 0)
         left.tap()
-        XCTAssertTrue(
-            app.otherElements["reader.pageCurl"].firstMatch.waitForExistence(timeout: 0.2),
-            "Backward pagination must present the horizontal page-curl overlay."
-        )
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.indicator(app)?.page == before
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
+        XCTAssertEqual(paginationMetrics(app)["clippedLineCount"], 0)
+        XCTAssertFalse(app.otherElements["reader.pageCurl"].firstMatch.exists)
     }
 
     func testReduceMotionSkipsThePageCurl() throws {

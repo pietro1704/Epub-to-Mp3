@@ -201,11 +201,13 @@ final class BookDetailScreenController: UIViewController {
         let bookID = book.id
         let jobID = UUID().uuidString
         playbackGeneration = jobID
+        let conversionOptions = settings.conversionOptions
         Task { [weak self] in
             guard let self else { return }
             do {
                 let url = try await self.bookFileOpener(bookID)
-                try await self.startStreaming(url: url, bookID: bookID, chapterStart: priorityChapterIndex, jobID: jobID)
+                try await self.startStreaming(url: url, bookID: bookID, chapterStart: priorityChapterIndex,
+                                              jobID: jobID, conversionOptions: conversionOptions)
             } catch {
                 guard self.playbackGeneration == jobID else { return }
                 self.playbackGeneration = nil
@@ -214,7 +216,8 @@ final class BookDetailScreenController: UIViewController {
         }
     }
 
-    private func startStreaming(url: URL, bookID: String, chapterStart: Int, jobID: String) async throws {
+    private func startStreaming(url: URL, bookID: String, chapterStart: Int, jobID: String,
+                                conversionOptions: ConversionOptions) async throws {
         playbackControl?.cancel()
         let control = try RustConversionCoordinator.makePlaybackControl()
         control.updatePlaybackWindow(currentChapter: chapterStart, chaptersAhead: 1)
@@ -226,7 +229,7 @@ final class BookDetailScreenController: UIViewController {
         let pending = JobSnapshot(
             jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
             bookAuthor: book.author, coverUrl: nil, coverMimeType: nil,
-            engine: settings.audioEngine.rawValue, voice: nil, language: nil,
+            engine: conversionOptions.engine, voice: conversionOptions.voice, language: conversionOptions.language,
             progressPercent: 0, chaptersTotal: nil, chaptersCompleted: 0,
             chapterProgress: [], outputs: nil, logUrl: nil, error: nil,
             lastActivityAt: Date().timeIntervalSince1970
@@ -244,7 +247,7 @@ final class BookDetailScreenController: UIViewController {
         do {
             let result = try await streamingExecutor(
                 url, jobID, Int32(chapterStart), -1, control,
-                .selectedEngine(settings.audioEngine, modelsRoot: AppSettings.ttsModelsRoot()),
+                conversionOptions,
                 { [weak self] event in
                     guard let self, self.playbackGeneration == jobID,
                           let snapshot = self.player.snapshot, snapshot.jobId == jobID else { return }
@@ -346,13 +349,14 @@ final class BookDetailScreenController: UIViewController {
 
     @objc private func tapDownload() {
         let bookID = book.id
+        let conversionOptions = settings.conversionOptions
         Task { [weak self] in
             guard let self else { return }
             if let url = try? await self.bookFileOpener(bookID) {
                 do {
                     let result = try await self.conversionExecutor(
                         url, UUID().uuidString, -1, -1,
-                        .selectedEngine(self.settings.audioEngine, modelsRoot: AppSettings.ttsModelsRoot()),
+                        conversionOptions,
                         nil, nil
                     )
                     _ = try result.snapshot()

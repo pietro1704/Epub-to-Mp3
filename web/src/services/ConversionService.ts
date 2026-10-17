@@ -1,3 +1,4 @@
+import { BrowserConversionClient } from "./BrowserConversionClient";
 import { API_BASE_URL, ENABLE_SSE, POLL_INTERVAL_MS } from "../config";
 import {
   ConversionFormValues,
@@ -43,6 +44,7 @@ export type FullTextResult =
   | { kind: "network-error" };
 
 export interface ConversionClient {
+  readonly mode?: "embedded" | "http";
   submit(request: ConversionFormValues): Promise<{ jobId: string }>;
   fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot>;
   poll(jobId: string, options?: PollOptions): Promise<JobSnapshot>;
@@ -418,6 +420,7 @@ async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export class HttpConversionClient implements ConversionClient {
+  readonly mode = "http" as const;
   private resumableEndpointAvailable = true;
 
   constructor(private readonly baseUrl: string = API_BASE_URL) {}
@@ -1349,5 +1352,5 @@ Note: In production, this would be a real ZIP with all MP3 files.
   }
 }
 
-export const conversionClient = new HttpConversionClient();
+export const conversionClient: ConversionClient = new BrowserConversionClient();
 export const mockConversionClient = new MockConversionClient();

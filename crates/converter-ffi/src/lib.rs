@@ -144,11 +144,24 @@ pub unsafe extern "C" fn converter_session_set_platform_tts_v1(
 #[repr(C)]
 pub struct ConverterJobControl {
     control: ConversionControl,
+    audio_chunks: Arc<std::sync::Mutex<AudioChunkQueue>>,
 }
+
+#[derive(Default)]
+struct AudioChunkQueue {
+    enabled: bool,
+    events: std::collections::VecDeque<serde_json::Value>,
+    error: Option<String>,
+}
+const AUDIO_CHUNK_QUEUE_CAPACITY: usize = 64;
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct EmbeddedConversionOptionsV1 {
+    #[serde(skip)]
+    audio_chunks: Option<Arc<std::sync::Mutex<AudioChunkQueue>>>,
+    tts_policy_state: Option<converter_core::tts_preferences::SegmentPolicy>,
+    tts_preferences: Option<converter_core::tts_preferences::TtsPreferences>,
     engine: Option<String>,
     voice: Option<String>,
     language: Option<String>,
@@ -172,6 +185,15 @@ pub unsafe extern "C" fn converter_conversion_options_validate_json_v1(
         Ok(options) => options,
         Err(error) => return fail(format!("invalid conversion options: {error}")),
     };
+    let mut options = options;
+    if let Some(preferences) = &options.tts_preferences {
+        if let Err(error) = preferences.validate(options.language.as_deref()) {
+            return fail(error);
+        }
+        options.engine = Some(preferences.primary.engine.clone());
+        options.voice = preferences.primary.voice.clone();
+        options.model_id = preferences.primary.model_id.clone();
+    }
     let engine = options
         .engine
         .as_deref()
@@ -208,7 +230,50 @@ pub extern "C" fn converter_job_control_create() -> *mut ConverterJobControl {
     clear_last_error();
     Box::into_raw(Box::new(ConverterJobControl {
         control: ConversionControl::new(),
+        audio_chunks: Default::default(),
     }))
+}
+
+/// Enable bounded file-backed audio events before starting conversion. Keep the
+/// handle alive until the worker has finished and all queued events are drained.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_enable_audio_chunks(
+    control: *const ConverterJobControl,
+) -> bool {
+    let Some(control) = control.as_ref() else {
+        return false;
+    };
+    let Ok(mut queue) = control.audio_chunks.lock() else {
+        return false;
+    };
+    if queue.enabled {
+        return false;
+    }
+    queue.enabled = true;
+    true
+}
+
+/// Nonblocking poll. Returns an owned JSON string, or null when no event is ready.
+/// Payload is {chapterIndex,chunkIndex,path}; an overflow returns {error} and
+/// cancels conversion. Release each string with converter_string_free.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_take_audio_chunk_json(
+    control: *const ConverterJobControl,
+) -> *mut c_char {
+    let Some(control) = control.as_ref() else {
+        return ptr::null_mut();
+    };
+    let Ok(mut queue) = control.audio_chunks.try_lock() else {
+        return ptr::null_mut();
+    };
+    let event = queue
+        .error
+        .take()
+        .map(|error| json!({"error":error}))
+        .or_else(|| queue.events.pop_front());
+    event
+        .and_then(|event| CString::new(event.to_string()).ok())
+        .map_or(ptr::null_mut(), CString::into_raw)
 }
 
 #[no_mangle]
@@ -471,6 +536,8 @@ pub unsafe extern "C" fn converter_session_convert_json(
     let job = format!("embedded-{}", std::process::id());
     let generated_output_dir = output.join(&job);
     let request = converter_core::worker::ConversionRequest {
+        tts_preferences: None,
+        models_root: None,
         input: session.session.input_path().to_path_buf(),
         job_id: job,
         engine: Some("edge".to_owned()),
@@ -613,7 +680,10 @@ pub unsafe extern "C" fn converter_session_convert_controlled_job_json(
         context,
         Some(owned_control),
         None,
-        EmbeddedConversionOptionsV1::default(),
+        EmbeddedConversionOptionsV1 {
+            audio_chunks: Some(control.audio_chunks.clone()),
+            ..Default::default()
+        },
     )
 }
 
@@ -646,7 +716,10 @@ pub unsafe extern "C" fn converter_session_convert_streaming_job_json(
         context,
         Some(control.control.clone()),
         chunk_callback,
-        EmbeddedConversionOptionsV1::default(),
+        EmbeddedConversionOptionsV1 {
+            audio_chunks: Some(control.audio_chunks.clone()),
+            ..Default::default()
+        },
     )
 }
 
@@ -689,7 +762,10 @@ pub unsafe extern "C" fn converter_session_convert_streaming_job_options_json_v1
         context,
         Some(control.control.clone()),
         chunk_callback,
-        options,
+        EmbeddedConversionOptionsV1 {
+            audio_chunks: Some(control.audio_chunks.clone()),
+            ..options
+        },
     )
 }
 
@@ -726,6 +802,50 @@ pub unsafe extern "C" fn converter_session_convert_job_options_json_v1(
         None,
         None,
         options,
+    )
+}
+
+/// Conversion with immutable per-job voice options and an independently cancellable control.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_convert_controlled_job_options_json_v1(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    options_json: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    chapter_callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+    control: *const ConverterJobControl,
+) -> *mut c_char {
+    clear_last_error();
+    let Some(control) = control.as_ref() else {
+        return fail("invalid null job control".to_owned());
+    };
+    let options_json = match c_string(options_json, "conversion options") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let options: EmbeddedConversionOptionsV1 = match serde_json::from_str(&options_json) {
+        Ok(value) => value,
+        Err(error) => return fail(format!("invalid conversion options JSON: {error}")),
+    };
+    convert_job_json(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        chapter_callback,
+        context,
+        Some(control.control.clone()),
+        None,
+        EmbeddedConversionOptionsV1 {
+            audio_chunks: Some(control.audio_chunks.clone()),
+            ..options
+        },
     )
 }
 
@@ -772,8 +892,38 @@ unsafe fn convert_job_json(
         output_parent.to_path_buf(),
     ));
     config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
+    let mut options = options;
+    if let Some(preferences) = &options.tts_preferences {
+        if let Err(error) = preferences.validate(options.language.as_deref()) {
+            return fail(error);
+        }
+        options.engine = Some(preferences.primary.engine.clone());
+        options.voice = preferences.primary.voice.clone();
+        options.model_id = preferences.primary.model_id.clone();
+    }
+    if options
+        .engine
+        .as_deref()
+        .is_some_and(|engine| !matches!(engine, "piper" | "edge" | "system"))
+    {
+        return fail("Unsupported conversion engine".to_owned());
+    }
     let engine = embedded_engine_from_value(options.engine.as_deref());
-    let (piper_model, piper_config) = if engine == "piper" {
+
+    let requires_piper = engine == "piper"
+        || options
+            .tts_preferences
+            .as_ref()
+            .and_then(|p| p.secondary.as_ref())
+            .is_some_and(|s| s.engine == "piper");
+    let (piper_model, piper_config) = if requires_piper {
+        if engine != "piper" {
+            options.model_id = options
+                .tts_preferences
+                .as_ref()
+                .and_then(|p| p.secondary.as_ref())
+                .and_then(|s| s.model_id.clone());
+        }
         let (model, config) = match resolve_piper_model_paths(&options) {
             Ok(paths) => paths,
             Err(error) => return fail(error),
@@ -792,7 +942,10 @@ unsafe fn convert_job_json(
     } else {
         (None, None)
     };
+    let queued_audio = options.audio_chunks.clone();
     let request = converter_core::worker::ConversionRequest {
+        tts_preferences: options.tts_preferences,
+        models_root: options.models_root.map(std::path::PathBuf::from),
         input: session.session.input_path().to_path_buf(),
         job_id: job_id.clone(),
         engine: Some(engine),
@@ -843,13 +996,78 @@ unsafe fn convert_job_json(
         let Ok(json) = CString::new(json) else { return };
         unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
     }));
+    let worker = worker.with_tts_policy_state(options.tts_policy_state.clone().unwrap_or_default());
     let chunk_context_address = context as usize;
     let worker = if let Some(provider) = session.platform_tts.clone() {
         worker.with_platform_tts(provider)
     } else {
         worker
     };
-    let worker = if let Some(chunk_callback) = chunk_callback {
+    let queue_control = control.clone();
+    let queue_root = output_dir.join(".streaming").join(format!(
+        "run-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let worker = if let Some(queue) =
+        queued_audio.filter(|queue| queue.lock().is_ok_and(|queue| queue.enabled))
+    {
+        worker.with_streaming_chunks(Arc::new(move |chapter_index, chunk_index, audio| {
+            if queue_control
+                .as_ref()
+                .is_some_and(|control| control.cancellation_token().is_cancelled())
+            {
+                return false;
+            }
+            let path = queue_root.join(format!("chapter-{chapter_index}-chunk-{chunk_index}.mp3"));
+            let publish = || -> Result<(), String> {
+                std::fs::create_dir_all(&queue_root).map_err(|error| error.to_string())?;
+                // Every chapter/chunk pair is immutable within this conversion.
+                use std::io::Write;
+                let mut file = std::fs::OpenOptions::new()
+                    .create_new(true)
+                    .write(true)
+                    .open(&path)
+                    .map_err(|error| error.to_string())?;
+                file.write_all(audio).map_err(|error| error.to_string())?;
+                file.sync_all().map_err(|error| error.to_string())?;
+                Ok(())
+            };
+            let failure = publish().err();
+            let Ok(mut queue) = queue.lock() else {
+                return false;
+            };
+            if let Some(error) = failure {
+                queue.error = Some(format!("Streaming audio publication failed: {error}"));
+                if let Some(control) = queue_control.as_ref() {
+                    control.cancel();
+                }
+                return false;
+            }
+            if queue_control
+                .as_ref()
+                .is_some_and(|control| control.cancellation_token().is_cancelled())
+            {
+                let _ = std::fs::remove_file(&path);
+                return false;
+            }
+            if queue.events.len() >= AUDIO_CHUNK_QUEUE_CAPACITY {
+                queue.error = Some("Streaming audio queue capacity exceeded".into());
+                if let Some(control) = queue_control.as_ref() {
+                    control.cancel();
+                }
+                let _ = std::fs::remove_file(&path);
+                return false;
+            }
+            queue.events.push_back(
+                json!({"chapterIndex":chapter_index,"chunkIndex":chunk_index,"path":path}),
+            );
+            true
+        }))
+    } else if let Some(chunk_callback) = chunk_callback {
         worker.with_streaming_chunks(Arc::new(move |chapter_index, chunk_index, audio| unsafe {
             chunk_callback(
                 chapter_index,
@@ -933,6 +1151,28 @@ fn resolve_piper_model_paths(
     else {
         return Err("Piper requires an explicitly installed local model.".to_owned());
     };
+    for value in [
+        model_id,
+        options.model_path.as_deref().unwrap_or("model.onnx"),
+        options
+            .model_config_path
+            .as_deref()
+            .unwrap_or("model.onnx.json"),
+    ] {
+        if value.is_empty()
+            || Path::new(value)
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)))
+            || value.contains(char::from(92))
+        {
+            return Err(
+                "Piper model paths must remain inside the installed model directory".into(),
+            );
+        }
+    }
+    if Path::new(model_id).components().count() != 1 {
+        return Err("Invalid Piper model ID".into());
+    }
     let model = Path::new(root)
         .join(model_id)
         .join(options.model_path.as_deref().unwrap_or("model.onnx"));
@@ -1489,13 +1729,27 @@ pub extern "C" fn piper_runtime_shutdown() {
 /// Registers the platform runtime through a conservative status-only bridge.
 #[no_mangle]
 pub extern "C" fn piper_runtime_register_unavailable() {
-    piper::register_runtime(std::sync::Arc::new(
-        converter_core::piper::RegisteredPiperRuntime::new(|_, _| {
-            Err(converter_core::piper::PiperError::RuntimeUnavailable(
-                "native Piper implementation is not linked".into(),
-            ))
-        }),
-    ));
+    piper::register_runtime(Arc::new(UnavailablePiperRuntime));
+}
+struct UnavailablePiperRuntime;
+impl piper::PiperRuntime for UnavailablePiperRuntime {
+    fn status(&self) -> piper::PiperRuntimeStatus {
+        piper::PiperRuntimeStatus {
+            runtime_loaded: false,
+            model_available: false,
+            abi_compatible: false,
+            engine_ready: false,
+        }
+    }
+    fn init(&self, _: &Path, _: &Path) -> Result<(), piper::PiperError> {
+        Err(piper::PiperError::RuntimeUnavailable(
+            "Native Piper implementation is not linked".into(),
+        ))
+    }
+    fn synthesize(&self, _: &str, _: &Path) -> Result<(), piper::PiperError> {
+        self.init(Path::new(""), Path::new(""))
+    }
+    fn shutdown(&self) {}
 }
 
 #[cfg(feature = "piper-runtime")]
@@ -1504,17 +1758,24 @@ pub extern "C" fn piper_runtime_register_embedded() {
     piper::register_runtime(Arc::new(EmbeddedPiperRuntime));
 }
 
+/// Configure the native phonemizer for Rust hosts using the same embedded provider.
+#[cfg(feature = "piper-runtime")]
+pub fn configure_piper_data_directory(path: &Path) -> Result<(), String> {
+    piper_runtime::set_espeak_data_directory(path)
+}
+
 #[cfg(feature = "piper-runtime")]
 struct EmbeddedPiperRuntime;
 
 #[cfg(feature = "piper-runtime")]
 impl converter_core::piper::PiperRuntime for EmbeddedPiperRuntime {
     fn status(&self) -> converter_core::piper::PiperRuntimeStatus {
+        let native = piper_runtime::piper_runtime_status();
         converter_core::piper::PiperRuntimeStatus {
-            runtime_loaded: true,
-            model_available: true,
-            abi_compatible: true,
-            engine_ready: true,
+            runtime_loaded: native.runtime_loaded != 0,
+            model_available: native.model_available != 0,
+            abi_compatible: native.abi_compatible != 0,
+            engine_ready: native.engine_ready != 0,
         }
     }
 
@@ -1805,6 +2066,51 @@ mod android_jni {
     }
 
     #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePiperSynthesizeWithOptions(
+        mut env: JNIEnv<'_>,
+        _class: JClass<'_>,
+        text: JString<'_>,
+        output: JString<'_>,
+        options_json: JString<'_>,
+    ) -> jboolean {
+        let result = (|| -> Result<(), String> {
+            let text = read_string(&mut env, text)?;
+            let output = read_string(&mut env, output)?;
+            let json = read_string(&mut env, options_json)?;
+            let mut options: EmbeddedConversionOptionsV1 =
+                serde_json::from_str(&json).map_err(|e| e.to_string())?;
+            if let Some(preferences) = &options.tts_preferences {
+                preferences.validate(options.language.as_deref())?;
+                if preferences.primary.engine != "piper" {
+                    return Err("Piper sample requires a Piper primary".into());
+                }
+                options.model_id = preferences.primary.model_id.clone();
+            }
+            let (model, config) = resolve_piper_model_paths(&options)?;
+            #[cfg(feature = "piper-runtime")]
+            {
+                if let Some(directory) = options.espeak_data_directory.as_deref() {
+                    configure_piper_data_directory(Path::new(directory))?;
+                }
+                piper_runtime_register_embedded();
+            }
+            let config = converter_core::piper::PiperConfig::new(model, config);
+            converter_core::piper::synthesize(
+                &config,
+                &text,
+                Path::new(&output),
+                &converter_core::piper::CancellationToken::default(),
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => 1,
+            Err(error) => fail::<jboolean>(error),
+        }
+    }
+
+    #[no_mangle]
     pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePiperSynthesize(
         mut env: JNIEnv<'_>,
         _class: JClass<'_>,
@@ -2073,6 +2379,7 @@ mod android_jni {
             chapter_start,
             chapter_end,
             false,
+            None,
         )
     }
 
@@ -2093,7 +2400,96 @@ mod android_jni {
             chapter_start,
             chapter_end,
             true,
+            None,
         )
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertWithOptions(
+        mut env: JNIEnv<'_>,
+        activity: JObject<'_>,
+        path: JString<'_>,
+        output: JString<'_>,
+        chapter_start: jint,
+        chapter_end: jint,
+        options_json: JString<'_>,
+        streaming: jboolean,
+    ) -> jstring {
+        let options = match read_string(&mut env, options_json).and_then(|value| {
+            serde_json::from_str::<EmbeddedConversionOptionsV1>(&value).map_err(|e| e.to_string())
+        }) {
+            Ok(options) => options,
+            Err(error) => {
+                fail::<()>(format!("Invalid Android conversion options: {error}"));
+                return std::ptr::null_mut();
+            }
+        };
+        convert_android(
+            env,
+            activity,
+            path,
+            output,
+            chapter_start,
+            chapter_end,
+            streaming != 0,
+            Some(options),
+        )
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativePrepareConversion(
+        env: JNIEnv<'_>,
+        worker: JObject<'_>,
+        request: JString<'_>,
+    ) {
+        Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePrepareConversion(
+            env, worker, request,
+        )
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativeConvertWithOptions(
+        env: JNIEnv<'_>,
+        worker: JObject<'_>,
+        path: JString<'_>,
+        output: JString<'_>,
+        chapter_start: jint,
+        chapter_end: jint,
+        options_json: JString<'_>,
+        streaming: jboolean,
+    ) -> jstring {
+        Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertWithOptions(
+            env,
+            worker,
+            path,
+            output,
+            chapter_start,
+            chapter_end,
+            options_json,
+            streaming,
+        )
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativeCancelConversion(
+        mut env: JNIEnv<'_>,
+        worker: JObject<'_>,
+        request: JString<'_>,
+    ) -> jboolean {
+        let active = env
+            .get_string(&request)
+            .ok()
+            .map(String::from)
+            .is_some_and(|request| {
+                android_controls()
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .contains_key(&request)
+            });
+        Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeCancelConversion(
+            env, worker, request,
+        );
+        active as jboolean
     }
 
     fn convert_android(
@@ -2104,6 +2500,7 @@ mod android_jni {
         chapter_start: jint,
         chapter_end: jint,
         streaming: bool,
+        options: Option<EmbeddedConversionOptionsV1>,
     ) -> jstring {
         eprintln!("converter-ffi: nativeConvert entered");
         #[cfg(feature = "piper-runtime")]
@@ -2194,34 +2591,32 @@ mod android_jni {
         } else {
             None
         };
-        let control = ConverterJobControl { control };
+        let control = ConverterJobControl {
+            control,
+            audio_chunks: Default::default(),
+        };
         let result = unsafe {
-            if let Some(context) = &chunk_context {
-                converter_session_convert_streaming_job_json(
-                    handle,
-                    output.as_ptr(),
-                    job.as_ptr(),
-                    chapter_start,
-                    chapter_end,
-                    None,
-                    None,
-                    Some(android_audio_chunk),
-                    (context as *const AndroidAudioChunks).cast_mut().cast(),
-                    &control,
-                )
-            } else {
-                converter_session_convert_controlled_job_json(
-                    handle,
-                    output.as_ptr(),
-                    job.as_ptr(),
-                    chapter_start,
-                    chapter_end,
-                    None,
-                    None,
-                    std::ptr::null_mut(),
-                    &control,
-                )
-            }
+            convert_job_json(
+                handle,
+                output.as_ptr(),
+                job.as_ptr(),
+                chapter_start,
+                chapter_end,
+                None,
+                None,
+                chunk_context
+                    .as_ref()
+                    .map_or(std::ptr::null_mut(), |context| {
+                        (context as *const AndroidAudioChunks).cast_mut().cast()
+                    }),
+                Some(control.control.clone()),
+                if streaming {
+                    Some(android_audio_chunk)
+                } else {
+                    None
+                },
+                options.unwrap_or_default(),
+            )
         };
         eprintln!(
             "converter-ffi: conversion returned result={}",
@@ -2649,6 +3044,16 @@ mod tests {
     }
 
     #[test]
+    fn typed_preferences_are_authoritative_and_online_fallback_is_explicit() {
+        let options = CString::new(r#"{"engine":"piper","tts_preferences":{"primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},"secondary":null,"allow_online_fallback":false}}"#).unwrap();
+        assert!(unsafe { converter_conversion_options_validate_json_v1(options.as_ptr()) });
+        let denied = CString::new(r#"{"tts_preferences":{"primary":{"engine":"piper","model_id":"pt_BR-faber-medium","voice":null},"secondary":{"engine":"edge","model_id":null,"voice":null},"allow_online_fallback":false}}"#).unwrap();
+        assert!(!unsafe { converter_conversion_options_validate_json_v1(denied.as_ptr()) });
+        let invalid = CString::new(r#"{"engine":"invented"}"#).unwrap();
+        assert!(!unsafe { converter_conversion_options_validate_json_v1(invalid.as_ptr()) });
+    }
+
+    #[test]
     fn platform_callback_synthesizes_a_validated_job_without_network_or_piper() {
         let book = fixture();
         let root = tempfile::tempdir().unwrap();
@@ -2758,6 +3163,10 @@ mod tests {
     }
 
     fn fixture_chapters(count: usize) -> tempfile::NamedTempFile {
+        fixture_chapters_with_text(count, "Hello world.")
+    }
+
+    fn fixture_chapters_with_text(count: usize, text: &str) -> tempfile::NamedTempFile {
         let file = tempfile::Builder::new()
             .suffix(".epub")
             .tempfile()
@@ -2779,7 +3188,7 @@ mod tests {
             zip.start_file(format!("OEBPS/chapter{index}.xhtml"), options)
                 .unwrap();
             zip.write_all(
-                format!("<html><body><h1>Chapter {index}</h1><p>Hello world.</p></body></html>")
+                format!("<html><body><h1>Chapter {index}</h1><p>{text}</p></body></html>")
                     .as_bytes(),
             )
             .unwrap();
@@ -2915,6 +3324,773 @@ mod tests {
             );
             converter_job_control_free(successor);
             converter_job_control_free(predecessor);
+        }
+    }
+
+    unsafe extern "C" fn queued_test_speech(
+        text: *const c_char,
+        language: *const c_char,
+        output: *const c_char,
+        cancelled: ConverterPlatformCancelled,
+        cancel_context: *const c_void,
+        error: *mut c_char,
+        error_length: u32,
+        context: *mut c_void,
+    ) -> bool {
+        let calls = &*context.cast::<std::sync::atomic::AtomicUsize>();
+        if calls.load(std::sync::atomic::Ordering::Acquire) > 0 {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !cancelled(cancel_context) && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            return false;
+        }
+        platform_test_speech(
+            text,
+            language,
+            output,
+            cancelled,
+            cancel_context,
+            error,
+            error_length,
+            context,
+        )
+    }
+
+    #[test]
+    fn queued_streaming_publishes_a_real_segment_before_chapter_completion_and_cancels() {
+        let book =
+            fixture_chapters_with_text(1, &"A long sentence for progressive audio. ".repeat(80));
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("queued-stream");
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let output = CString::new(directory.to_str().unwrap()).unwrap();
+        let job = CString::new("queued-stream").unwrap();
+        let options = CString::new(r#"{"language":"pt-BR","tts_preferences":{"primary":{"engine":"system","model_id":null,"voice":null}}}"#).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(queued_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast()
+            ));
+            let control = converter_job_control_create();
+            assert!(converter_job_control_enable_audio_chunks(control));
+            let session_address = session as usize;
+            let control_address = control as usize;
+            std::thread::scope(|scope| {
+                let worker = scope.spawn(move || {
+                    let result = converter_session_convert_streaming_job_options_json_v1(
+                        session_address as *const ConverterSession,
+                        output.as_ptr(),
+                        job.as_ptr(),
+                        options.as_ptr(),
+                        0,
+                        0,
+                        None,
+                        None,
+                        None,
+                        ptr::null_mut(),
+                        control_address as *const ConverterJobControl,
+                    );
+                    let cancelled = result.is_null();
+                    converter_string_free(result);
+                    cancelled
+                });
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                let event = loop {
+                    let event = converter_job_control_take_audio_chunk_json(control);
+                    if !event.is_null() {
+                        break event;
+                    }
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "first playable segment must arrive while conversion runs"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                };
+                let value: serde_json::Value =
+                    serde_json::from_str(CStr::from_ptr(event).to_str().unwrap()).unwrap();
+                converter_string_free(event);
+                assert_eq!(value["chapterIndex"], 0);
+                assert_eq!(value["chunkIndex"], 0);
+                let path = Path::new(value["path"].as_str().unwrap());
+                assert!(path.starts_with(directory.join(".streaming")));
+                converter_core::pcm::validate_mp3(&std::fs::read(path).unwrap()).unwrap();
+                assert!(!directory.join("manifest.json").exists());
+                assert!(!worker.is_finished());
+                converter_job_control_cancel(control);
+                assert!(worker.join().unwrap());
+            });
+            assert!(converter_job_control_take_audio_chunk_json(control).is_null());
+            assert!(!directory.join("manifest.json").exists());
+            assert_eq!(
+                std::fs::read_dir(directory.join(".streaming"))
+                    .unwrap()
+                    .count(),
+                1
+            );
+            assert_eq!(calls.load(std::sync::atomic::Ordering::Acquire), 1);
+            converter_session_free(session);
+            converter_job_control_free(control);
+        }
+    }
+
+    #[test]
+    fn opaque_tts_policy_state_rejects_invalid_or_exhausted_counters() {
+        for failures in [0, 1, 2] {
+            let options =
+                format!(r#"{{"tts_policy_state":{{"consecutive_failures":{failures}}}}}"#);
+            assert!(serde_json::from_str::<EmbeddedConversionOptionsV1>(&options).is_ok());
+        }
+        for state in [
+            r#"{"consecutive_failures":3}"#,
+            r#"{"consecutive_failures":-1}"#,
+            r#"{"other":0}"#,
+            r#""invalid""#,
+        ] {
+            let options = format!(r#"{{"tts_policy_state":{state}}}"#);
+            assert!(serde_json::from_str::<EmbeddedConversionOptionsV1>(&options).is_err());
+        }
+    }
+
+    #[test]
+    fn controlled_typed_options_honor_voice_and_cancel_after_first_real_chapter() {
+        let book = fixture_chapters(3);
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("typed-controlled-job");
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let output = CString::new(directory.to_str().unwrap()).unwrap();
+        let job = CString::new("typed-controlled-job").unwrap();
+        // Conflicting legacy engine proves that immutable typed options win.
+        let options = CString::new(r#"{"engine":"edge","language":"pt-BR","tts_preferences":{"primary":{"engine":"system","model_id":null,"voice":null},"secondary":null,"allow_online_fallback":false}}"#).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast()
+            ));
+            let control = converter_job_control_create();
+            assert!(converter_job_control_prioritize(control, 2));
+            let mut fixture = ControlCallbackFixture {
+                handle: control,
+                chapters: Vec::new(),
+                cancel_on_first: true,
+                freed: false,
+                recovery_rejected: false,
+            };
+            let response = converter_session_convert_controlled_job_options_json_v1(
+                session,
+                output.as_ptr(),
+                job.as_ptr(),
+                options.as_ptr(),
+                0,
+                -1,
+                None,
+                Some(controlled_chapter_callback),
+                (&mut fixture as *mut ControlCallbackFixture).cast(),
+                control,
+            );
+            assert!(response.is_null());
+            let error = converter_last_error();
+            assert!(!error.is_null());
+            let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+            converter_string_free(error);
+            assert!(message.contains("cancelled"), "{message}");
+            assert_eq!(fixture.chapters, [2]);
+            assert!(fixture.freed);
+            assert!(calls.load(std::sync::atomic::Ordering::Acquire) > 0);
+            assert!(!directory.join("manifest.json").exists());
+            let completed: Vec<_> = std::fs::read_dir(&directory)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().extension().is_some_and(|value| value == "mp3"))
+                .collect();
+            assert_eq!(
+                completed.len(),
+                1,
+                "Cancellation must prevent synthesis of later chapters"
+            );
+            let jobs = converter_core::jobs::JobManager::new(root.path().join(".jobs"))
+                .unwrap()
+                .list()
+                .unwrap();
+            assert_eq!(jobs.len(), 1);
+            assert_eq!(
+                jobs[0].metadata["tts_preferences"]["primary"]["engine"],
+                "system"
+            );
+            converter_session_free(session);
+        }
+    }
+
+    #[test]
+    fn controlled_ffi_recovery_preserves_explicit_zero_and_nonzero_policy_without_synthesis() {
+        let book = fixture();
+        let root = tempfile::tempdir().unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast(),
+            ));
+            let convert = |job: &str, predecessor: Option<&str>, failures: usize| {
+                let output = CString::new(root.path().join(job).to_str().unwrap()).unwrap();
+                let job = CString::new(job).unwrap();
+                let options = CString::new(
+                    serde_json::json!({
+                        "language": "pt-BR",
+                        "tts_preferences": {
+                            "primary": {"engine":"system", "model_id":null, "voice":null},
+                            "secondary": null, "allow_online_fallback": false
+                        },
+                        "tts_policy_state": {"consecutive_failures": failures}
+                    })
+                    .to_string(),
+                )
+                .unwrap();
+                let control = converter_job_control_create();
+                assert!(!control.is_null());
+                if let Some(predecessor) = predecessor {
+                    let source = CString::new(predecessor).unwrap();
+                    assert!(converter_job_control_set_recovery_job(
+                        control,
+                        source.as_ptr()
+                    ));
+                }
+                let response = converter_session_convert_controlled_job_options_json_v1(
+                    session,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                    control,
+                );
+                converter_job_control_free(control);
+                if response.is_null() {
+                    let error = converter_last_error();
+                    let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+                    converter_string_free(error);
+                    panic!("actual policy recovery failed: {message}");
+                }
+                let result: serde_json::Value =
+                    serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
+                converter_string_free(response);
+                result
+            };
+            let original = convert("policy-predecessor", None, 2);
+            let original_calls = calls.load(std::sync::atomic::Ordering::Acquire);
+            assert!(original_calls > 0);
+            assert_eq!(
+                original["manifest"]["ttsPolicyState"]["consecutive_failures"],
+                0
+            );
+            let original_audio = Path::new(original["audioPath"].as_str().unwrap());
+            let audio_bytes = std::fs::read(original_audio).unwrap();
+            let receipt_path = original_audio.with_extension("mp3.complete.json");
+            let receipt_bytes = std::fs::read(&receipt_path).unwrap();
+            let state_path = root.path().join(".jobs/policy-predecessor.json");
+            let predecessor_state = std::fs::read(&state_path).unwrap();
+            for failures in [0, 2] {
+                let job = format!("policy-recovered-{failures}");
+                let recovered = convert(&job, Some("policy-predecessor"), failures);
+                assert_eq!(
+                    calls.load(std::sync::atomic::Ordering::Acquire),
+                    original_calls
+                );
+                assert_eq!(
+                    recovered["manifest"]["ttsPolicyState"]["consecutive_failures"],
+                    failures
+                );
+                assert_eq!(
+                    recovered["manifest"]["usedSelections"],
+                    original["manifest"]["usedSelections"]
+                );
+                assert_eq!(
+                    recovered["manifest"]["fallbackUsed"],
+                    original["manifest"]["fallbackUsed"]
+                );
+                let persisted: serde_json::Value = serde_json::from_slice(
+                    &std::fs::read(root.path().join(&job).join("manifest.json")).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    persisted["ttsPolicyState"]["consecutive_failures"],
+                    failures
+                );
+                let recovered_audio = Path::new(recovered["audioPath"].as_str().unwrap());
+                assert_eq!(std::fs::read(recovered_audio).unwrap(), audio_bytes);
+                assert_eq!(
+                    std::fs::read(recovered_audio.with_extension("mp3.complete.json")).unwrap(),
+                    receipt_bytes
+                );
+            }
+            assert_eq!(std::fs::read(original_audio).unwrap(), audio_bytes);
+            assert_eq!(std::fs::read(receipt_path).unwrap(), receipt_bytes);
+            assert_eq!(std::fs::read(state_path).unwrap(), predecessor_state);
+            converter_session_free(session);
+        }
+    }
+
+    #[test]
+    fn controlled_ffi_recovery_reuses_validated_predecessor_without_synthesis() {
+        let book = fixture();
+        let root = tempfile::tempdir().unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let options = CString::new(r#"{"language":"pt-BR","tts_preferences":{"primary":{"engine":"system","model_id":null,"voice":null},"secondary":null,"allow_online_fallback":false}}"#).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast(),
+            ));
+            let convert = |job: &str, predecessor: Option<&str>| {
+                let output = CString::new(root.path().join(job).to_str().unwrap()).unwrap();
+                let job = CString::new(job).unwrap();
+                let control = converter_job_control_create();
+                assert!(!control.is_null());
+                if let Some(predecessor) = predecessor {
+                    let source = CString::new(predecessor).unwrap();
+                    assert!(converter_job_control_set_recovery_job(
+                        control,
+                        source.as_ptr()
+                    ));
+                }
+                let response = converter_session_convert_controlled_job_options_json_v1(
+                    session,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                    control,
+                );
+                converter_job_control_free(control);
+                if response.is_null() {
+                    let error = converter_last_error();
+                    let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+                    converter_string_free(error);
+                    panic!("actual recovery conversion failed: {message}");
+                }
+                let manifest: serde_json::Value =
+                    serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
+                converter_string_free(response);
+                manifest
+            };
+            let original = convert("recovery-predecessor", None);
+            let original_calls = calls.load(std::sync::atomic::Ordering::Acquire);
+            assert!(
+                original_calls > 0,
+                "Predecessor must synthesize through the actual FFI provider"
+            );
+            assert!(!original["manifest"]["usedSelections"]
+                .as_array()
+                .unwrap()
+                .is_empty());
+            let original_audio = Path::new(original["audioPath"].as_str().unwrap());
+            let original_bytes = std::fs::read(original_audio).unwrap();
+            converter_core::pcm::validate_mp3(&original_bytes).unwrap();
+            let original_receipt_path = original_audio.with_extension("mp3.complete.json");
+            let original_receipt = std::fs::read(&original_receipt_path).unwrap();
+            let original_manifest =
+                std::fs::read(root.path().join("recovery-predecessor/manifest.json")).unwrap();
+            let original_state =
+                std::fs::read(root.path().join(".jobs/recovery-predecessor.json")).unwrap();
+
+            let recovered = convert("recovery-successor", Some("recovery-predecessor"));
+            converter_session_free(session);
+            assert_eq!(
+                calls.load(std::sync::atomic::Ordering::Acquire),
+                original_calls,
+                "A matching durable predecessor must avoid synthesizing its completed chapter again",
+            );
+            assert_eq!(recovered["manifest"]["jobId"], "recovery-successor");
+            let recovered_audio = Path::new(recovered["audioPath"].as_str().unwrap());
+            assert!(recovered_audio.starts_with(root.path().join("recovery-successor")));
+            assert_eq!(std::fs::read(recovered_audio).unwrap(), original_bytes);
+            assert_eq!(
+                std::fs::read(recovered_audio.with_extension("mp3.complete.json")).unwrap(),
+                original_receipt
+            );
+            assert_eq!(
+                recovered["manifest"]["usedSelections"],
+                original["manifest"]["usedSelections"]
+            );
+            assert_eq!(
+                recovered["manifest"]["fallbackUsed"],
+                original["manifest"]["fallbackUsed"]
+            );
+            assert_eq!(std::fs::read(original_audio).unwrap(), original_bytes);
+            assert_eq!(
+                std::fs::read(original_receipt_path).unwrap(),
+                original_receipt
+            );
+            assert_eq!(
+                std::fs::read(root.path().join("recovery-predecessor/manifest.json")).unwrap(),
+                original_manifest
+            );
+            assert_eq!(
+                std::fs::read(root.path().join(".jobs/recovery-predecessor.json")).unwrap(),
+                original_state
+            );
+        }
+    }
+
+    #[test]
+    fn controlled_ffi_recovery_reuses_a_chapter_after_selection_renumbers_its_filename() {
+        let book = fixture_chapters(2);
+        let root = tempfile::tempdir().unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let options = CString::new(r#"{"language":"pt-BR","tts_preferences":{"primary":{"engine":"system","model_id":null,"voice":null},"secondary":null,"allow_online_fallback":false}}"#).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast(),
+            ));
+            let convert = |job: &str, start: i32| {
+                let output = CString::new(root.path().join(job).to_str().unwrap()).unwrap();
+                let job_id = CString::new(job).unwrap();
+                let control = converter_job_control_create();
+                if start == 1 {
+                    let source = CString::new("selection-predecessor").unwrap();
+                    assert!(converter_job_control_set_recovery_job(
+                        control,
+                        source.as_ptr()
+                    ));
+                }
+                let response = converter_session_convert_controlled_job_options_json_v1(
+                    session,
+                    output.as_ptr(),
+                    job_id.as_ptr(),
+                    options.as_ptr(),
+                    start,
+                    1,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                    control,
+                );
+                converter_job_control_free(control);
+                if response.is_null() {
+                    let error = converter_last_error();
+                    let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+                    converter_string_free(error);
+                    panic!("Selection fixture {job} failed: {message}");
+                }
+                let value: serde_json::Value =
+                    serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
+                converter_string_free(response);
+                value
+            };
+            let original = convert("selection-predecessor", 0);
+            let original_calls = calls.load(std::sync::atomic::Ordering::Acquire);
+            assert_eq!(
+                original_calls, 2,
+                "Both source chapters must really synthesize"
+            );
+            let chapter = &original["manifest"]["chapters"][1];
+            let source_audio = root
+                .path()
+                .join("selection-predecessor")
+                .join(chapter["filename"].as_str().unwrap());
+            let source_bytes = std::fs::read(&source_audio).unwrap();
+            let source_receipt =
+                std::fs::read(source_audio.with_extension("mp3.complete.json")).unwrap();
+
+            let recovered = convert("selection-successor", 1);
+            converter_session_free(session);
+
+            assert_eq!(
+                calls.load(std::sync::atomic::Ordering::Acquire),
+                original_calls,
+                "A matching source chapter must survive selection-dependent filename renumbering"
+            );
+            let destination = Path::new(recovered["audioPath"].as_str().unwrap());
+            assert_ne!(destination.file_name(), source_audio.file_name());
+            assert_eq!(
+                recovered["manifest"]["chapters"].as_array().unwrap().len(),
+                1
+            );
+            assert_eq!(recovered["manifest"]["chapters"][0]["sourceIndex"], 1);
+            assert_eq!(std::fs::read(destination).unwrap(), source_bytes);
+            assert_eq!(
+                std::fs::read(destination.with_extension("mp3.complete.json")).unwrap(),
+                source_receipt
+            );
+        }
+    }
+
+    #[test]
+    fn controlled_ffi_recovery_does_not_reuse_a_different_source() {
+        let book = fixture();
+        let changed_book = fixture_chapters_with_text(1, "This is a different source book.");
+        let root = tempfile::tempdir().unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let mut predecessor_receipt = Vec::new();
+            let mut predecessor_state = Vec::new();
+            let mut predecessor_audio = std::path::PathBuf::new();
+            let mut predecessor_calls = 0;
+            for (job, source) in [
+                ("source-predecessor", book.path()),
+                ("source-successor", changed_book.path()),
+            ] {
+                let input = CString::new(source.to_str().unwrap()).unwrap();
+                let session = converter_session_open(input.as_ptr());
+                assert!(!session.is_null());
+                assert!(converter_session_set_platform_tts_v1(
+                    session,
+                    Some(platform_test_speech),
+                    (&calls as *const std::sync::atomic::AtomicUsize)
+                        .cast_mut()
+                        .cast(),
+                ));
+                let output = CString::new(root.path().join(job).to_str().unwrap()).unwrap();
+                let job_id = CString::new(job).unwrap();
+                let options = CString::new(
+                    serde_json::json!({
+                        "language": "pt-BR",
+                        "tts_preferences": {
+                            "primary": {"engine": "system", "model_id": null, "voice": null},
+                            "secondary": null, "allow_online_fallback": false
+                        }
+                    })
+                    .to_string(),
+                )
+                .unwrap();
+                let control = converter_job_control_create();
+                if job == "source-successor" {
+                    let source = CString::new("source-predecessor").unwrap();
+                    assert!(converter_job_control_set_recovery_job(
+                        control,
+                        source.as_ptr()
+                    ));
+                }
+                let response = converter_session_convert_controlled_job_options_json_v1(
+                    session,
+                    output.as_ptr(),
+                    job_id.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                    control,
+                );
+                converter_job_control_free(control);
+                converter_session_free(session);
+                if response.is_null() {
+                    let error = converter_last_error();
+                    let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+                    converter_string_free(error);
+                    panic!("Local fixture conversion {job} failed: {message}");
+                }
+                let value: serde_json::Value =
+                    serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
+                converter_string_free(response);
+                let audio = Path::new(value["audioPath"].as_str().unwrap());
+                let receipt = std::fs::read(audio.with_extension("mp3.complete.json")).unwrap();
+                let metadata: serde_json::Value = serde_json::from_slice(&receipt).unwrap();
+                assert_eq!(metadata["used_selections"][0]["engine"], "system");
+                if job == "source-predecessor" {
+                    predecessor_calls = calls.load(std::sync::atomic::Ordering::Acquire);
+                    assert!(predecessor_calls > 0);
+                    predecessor_audio = audio.to_path_buf();
+                    predecessor_receipt = receipt;
+                    predecessor_state =
+                        std::fs::read(root.path().join(".jobs/source-predecessor.json")).unwrap();
+                } else {
+                    assert!(
+                        calls.load(std::sync::atomic::Ordering::Acquire) > predecessor_calls,
+                        "A different source must synthesize instead of adopting predecessor audio"
+                    );
+                    let original: serde_json::Value =
+                        serde_json::from_slice(&predecessor_receipt).unwrap();
+                    assert_ne!(metadata["request_key"], original["request_key"]);
+                }
+            }
+            assert_eq!(
+                std::fs::read(predecessor_audio.with_extension("mp3.complete.json")).unwrap(),
+                predecessor_receipt
+            );
+            assert_eq!(
+                std::fs::read(root.path().join(".jobs/source-predecessor.json")).unwrap(),
+                predecessor_state
+            );
+        }
+    }
+
+    #[test]
+    fn controlled_ffi_recovery_resynthesizes_when_predecessor_audio_hash_differs() {
+        assert_recovery_resynthesizes_after_tampering(|audio| {
+            let receipt = audio.with_extension("mp3.complete.json");
+            let original_receipt = std::fs::read(&receipt).unwrap();
+            let mut bytes = std::fs::read(audio).unwrap();
+            let original_len = bytes.len();
+            *bytes
+                .last_mut()
+                .expect("predecessor contains actual MP3 bytes") ^= 1;
+            std::fs::write(audio, &bytes).unwrap();
+            assert_eq!(std::fs::metadata(audio).unwrap().len(), original_len as u64);
+            assert_eq!(std::fs::read(receipt).unwrap(), original_receipt);
+        });
+    }
+
+    #[test]
+    fn controlled_ffi_recovery_resynthesizes_when_predecessor_receipt_is_corrupt() {
+        assert_recovery_resynthesizes_after_tampering(|audio| {
+            std::fs::write(
+                audio.with_extension("mp3.complete.json"),
+                b"corrupt receipt",
+            )
+            .unwrap();
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn controlled_ffi_recovery_does_not_follow_a_predecessor_directory_symlink() {
+        let outside = tempfile::tempdir().unwrap();
+        assert_recovery_resynthesizes_after_tampering(|audio| {
+            let directory = audio.parent().unwrap();
+            let external = outside.path().join("external-job");
+            std::fs::rename(directory, &external).unwrap();
+            std::os::unix::fs::symlink(external, directory).unwrap();
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn controlled_ffi_recovery_does_not_follow_a_predecessor_audio_symlink() {
+        let outside = tempfile::tempdir().unwrap();
+        assert_recovery_resynthesizes_after_tampering(|audio| {
+            let external = outside.path().join("external.mp3");
+            std::fs::rename(audio, &external).unwrap();
+            std::os::unix::fs::symlink(external, audio).unwrap();
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn controlled_ffi_recovery_does_not_follow_a_predecessor_receipt_symlink() {
+        let outside = tempfile::tempdir().unwrap();
+        assert_recovery_resynthesizes_after_tampering(|audio| {
+            let receipt = audio.with_extension("mp3.complete.json");
+            let external = outside.path().join("external-receipt.json");
+            std::fs::rename(&receipt, &external).unwrap();
+            std::os::unix::fs::symlink(external, receipt).unwrap();
+        });
+    }
+
+    fn assert_recovery_resynthesizes_after_tampering(tamper: impl FnOnce(&Path)) {
+        let book = fixture();
+        let root = tempfile::tempdir().unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let options = CString::new(r#"{"language":"pt-BR","tts_preferences":{"primary":{"engine":"system","model_id":null,"voice":null},"secondary":null,"allow_online_fallback":false}}"#).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast(),
+            ));
+            let convert = |job: &str, recover: bool| {
+                let output = CString::new(root.path().join(job).to_str().unwrap()).unwrap();
+                let job_id = CString::new(job).unwrap();
+                let control = converter_job_control_create();
+                assert!(!control.is_null());
+                if recover {
+                    let source = CString::new("tampered-predecessor").unwrap();
+                    assert!(converter_job_control_set_recovery_job(
+                        control,
+                        source.as_ptr()
+                    ));
+                }
+                let response = converter_session_convert_controlled_job_options_json_v1(
+                    session,
+                    output.as_ptr(),
+                    job_id.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                    control,
+                );
+                converter_job_control_free(control);
+                if response.is_null() {
+                    let error = converter_last_error();
+                    let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+                    converter_string_free(error);
+                    panic!("Local tampering fixture {job} failed: {message}");
+                }
+                let value: serde_json::Value =
+                    serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
+                converter_string_free(response);
+                value
+            };
+            let original = convert("tampered-predecessor", false);
+            let original_calls = calls.load(std::sync::atomic::Ordering::Acquire);
+            assert!(original_calls > 0);
+            let audio = Path::new(original["audioPath"].as_str().unwrap());
+            tamper(audio);
+            let predecessor_audio = std::fs::read(audio).unwrap();
+            let receipt = audio.with_extension("mp3.complete.json");
+            let predecessor_receipt = std::fs::read(&receipt).unwrap();
+            let job_path = root.path().join(".jobs/tampered-predecessor.json");
+            let predecessor_state = std::fs::read(&job_path).unwrap();
+
+            let recovered = convert("tampered-successor", true);
+            converter_session_free(session);
+            assert!(
+                calls.load(std::sync::atomic::Ordering::Acquire) > original_calls,
+                "Untrusted predecessor artifacts must fall back to fresh synthesis"
+            );
+            let recovered_audio = Path::new(recovered["audioPath"].as_str().unwrap());
+            assert!(recovered_audio.starts_with(root.path().join("tampered-successor")));
+            converter_core::pcm::validate_mp3(&std::fs::read(recovered_audio).unwrap()).unwrap();
+            assert_eq!(std::fs::read(audio).unwrap(), predecessor_audio);
+            assert_eq!(std::fs::read(receipt).unwrap(), predecessor_receipt);
+            assert_eq!(std::fs::read(job_path).unwrap(), predecessor_state);
         }
     }
 
@@ -3123,6 +4299,9 @@ mod tests {
         let started = std::time::Instant::now();
         let previous = std::sync::Mutex::new(started);
         let event = converter_core::worker::ProgressEvent {
+            model_id: None,
+            voice: None,
+            fallback_used: false,
             job_id: "timing-test".into(),
             state: "running".into(),
             chapter_index: Some(3),

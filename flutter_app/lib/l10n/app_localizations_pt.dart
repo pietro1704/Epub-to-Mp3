@@ -39,6 +39,62 @@ class AppLocalizationsPt extends AppLocalizations {
   String get noJobs => 'Nenhuma conversão ainda';
 
   @override
+  String get conversionLogTitle => 'Registro da conversão';
+
+  @override
+  String get conversionJobLabel => 'Conversão';
+
+  @override
+  String get conversionLastRecordedState => 'Último estado registrado';
+
+  @override
+  String conversionLastRecordedStateValue(String state) {
+    return 'Último estado registrado: $state';
+  }
+
+  @override
+  String get conversionLastUpdated => 'Última atualização';
+
+  @override
+  String conversionRecordedAudioPath(String path) {
+    return 'Caminho registrado do áudio: $path';
+  }
+
+  @override
+  String conversionUnreadableRecords(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Não foi possível ler $count registros de conversão salvos.',
+      one: 'Não foi possível ler 1 registro de conversão salvo.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversionStatusPending => 'Pendente';
+
+  @override
+  String get conversionStatusRunning => 'Convertendo';
+
+  @override
+  String get conversionStatusCompleted => 'Concluída';
+
+  @override
+  String get conversionStatusFailed => 'Falhou';
+
+  @override
+  String get conversionStatusCancelled => 'Cancelada';
+
+  @override
+  String get conversionStatusUnknown => 'Desconhecido';
+
+  @override
+  String conversionHistorySaveWarning(String error) {
+    return 'Conversão concluída, mas não foi possível salvar o histórico: $error';
+  }
+
+  @override
   String get refresh => 'Atualizar';
 
   @override
@@ -418,4 +474,42 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get off => 'Desligado';
+
+  @override
+  String get ttsPrimaryNarration => 'Narração principal';
+
+  @override
+  String get ttsSecondaryNarration => 'Narração secundária';
+
+  @override
+  String get ttsFaberOffline => 'Faber medium · Sem internet';
+
+  @override
+  String get ttsEdgeOnline => 'Edge · Online';
+
+  @override
+  String get ttsNoSecondary => 'Nenhuma';
+
+  @override
+  String get ttsAllowOnlineSecondary => 'Permitir voz secundária online';
+
+  @override
+  String get ttsOnlineSecondaryDescription =>
+      'Envie os trechos que falharem ao Edge somente quando esta opção estiver ativada.';
+
+  @override
+  String get ttsUsePreferences => 'Usar preferências de áudio';
+
+  @override
+  String get ttsAllowJobSecondary =>
+      'Permitir a voz secundária configurada nesta conversão';
+
+  @override
+  String ttsActualVoices(String voices) {
+    return 'Voz utilizada: $voices';
+  }
+
+  @override
+  String get ttsSecondaryUsedNotice =>
+      'Uma voz secundária foi usada neste trecho. A voz principal será tentada novamente.';
 }

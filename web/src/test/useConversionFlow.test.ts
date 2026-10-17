@@ -21,6 +21,38 @@ describe("useConversionFlow", () => {
     footnoteMode: "inline",
   };
 
+  it("keeps the failed job recipe and clears it for a new browser-only source", async () => {
+    const client: ConversionClient = {
+      mode: "embedded",
+      submit: vi.fn().mockResolvedValueOnce({ jobId: "local-failed" }).mockResolvedValueOnce({ jobId: "browser-next" }),
+      fetch: vi.fn(),
+      poll: vi.fn().mockResolvedValueOnce({
+        jobId: "local-failed", state: "failed", error: "Model missing",
+      }).mockResolvedValueOnce({ jobId: "browser-next", state: "finished" }),
+    };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+    await act(async () => {
+      await result.current.submit({
+        ...request, localPath: "/books/local.epub", engine: "piper",
+        tts_preferences: {
+          primary: { engine: "piper", model_id: "pt_BR-faber-medium", voice: null },
+          secondary: null, allow_online_fallback: false,
+        },
+      });
+    });
+    expect(result.current.state.phase).toBe("error");
+    expect(result.current.state.jobId).toBe("local-failed");
+    expect(result.current.state.cliCommand).toContain("--tts-preferences-json");
+    expect(result.current.state.cliShell).toBe("Bash/Zsh");
+    expect(result.current.state.cliCommand).not.toContain("python");
+    await act(async () => { await result.current.submit(request); });
+    expect(result.current.state.jobId).toBe("browser-next");
+    expect(result.current.state.cliCommand).toBeUndefined();
+    expect(result.current.state.cliShell).toBeUndefined();
+  });
+
   it("completes conversion successfully and records events", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "123" });
     const poll = vi

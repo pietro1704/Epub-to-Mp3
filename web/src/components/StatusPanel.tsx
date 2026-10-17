@@ -26,6 +26,7 @@ interface StatusPanelProps {
   onToggleRawLog: () => void;
   summary?: ConversionSummary;
   cliCommand?: string;
+  cliShell?: ConversionState["cliShell"];
   onCancel?: () => void;
   onSkip?: () => void;
   canCancel?: boolean;
@@ -49,6 +50,7 @@ export default function StatusPanel({
   onToggleRawLog,
   summary,
   cliCommand,
+  cliShell,
   onCancel,
   onSkip,
   canCancel,
@@ -162,9 +164,12 @@ export default function StatusPanel({
           {toggleLabel}
         </button>
         {cliCommand && (
-          <code className="status-panel__cli" title={cliCommand}>
-            {cliCommand}
-          </code>
+          <>
+            {cliShell && <small>{cliShell}</small>}
+            <code className="status-panel__cli" title={cliCommand}>
+              {cliCommand}
+            </code>
+          </>
         )}
         <div className="status-panel__eta">
           <span className="status-panel__eta-label">{t.status.etaLabel}</span>

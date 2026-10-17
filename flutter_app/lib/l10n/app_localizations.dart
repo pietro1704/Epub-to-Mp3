@@ -160,6 +160,90 @@ abstract class AppLocalizations {
   /// **'No conversions yet'**
   String get noJobs;
 
+  /// No description provided for @conversionLogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversion log'**
+  String get conversionLogTitle;
+
+  /// No description provided for @conversionJobLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Job'**
+  String get conversionJobLabel;
+
+  /// No description provided for @conversionLastRecordedState.
+  ///
+  /// In en, this message translates to:
+  /// **'Last recorded state'**
+  String get conversionLastRecordedState;
+
+  /// No description provided for @conversionLastRecordedStateValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Last recorded state: {state}'**
+  String conversionLastRecordedStateValue(String state);
+
+  /// No description provided for @conversionLastUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Last updated'**
+  String get conversionLastUpdated;
+
+  /// No description provided for @conversionRecordedAudioPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Recorded audio path: {path}'**
+  String conversionRecordedAudioPath(String path);
+
+  /// No description provided for @conversionUnreadableRecords.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 saved conversion record could not be read.} other{{count} saved conversion records could not be read.}}'**
+  String conversionUnreadableRecords(int count);
+
+  /// No description provided for @conversionStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get conversionStatusPending;
+
+  /// No description provided for @conversionStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Converting'**
+  String get conversionStatusRunning;
+
+  /// No description provided for @conversionStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get conversionStatusCompleted;
+
+  /// No description provided for @conversionStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get conversionStatusFailed;
+
+  /// No description provided for @conversionStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get conversionStatusCancelled;
+
+  /// No description provided for @conversionStatusUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get conversionStatusUnknown;
+
+  /// No description provided for @conversionHistorySaveWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversion completed, but its history could not be saved: {error}'**
+  String conversionHistorySaveWarning(String error);
+
   /// No description provided for @refresh.
   ///
   /// In en, this message translates to:
@@ -879,6 +963,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Off'**
   String get off;
+
+  /// No description provided for @ttsPrimaryNarration.
+  ///
+  /// In en, this message translates to:
+  /// **'Primary narration'**
+  String get ttsPrimaryNarration;
+
+  /// No description provided for @ttsSecondaryNarration.
+  ///
+  /// In en, this message translates to:
+  /// **'Secondary narration'**
+  String get ttsSecondaryNarration;
+
+  /// No description provided for @ttsFaberOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Faber medium · Offline'**
+  String get ttsFaberOffline;
+
+  /// No description provided for @ttsEdgeOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Edge · Online'**
+  String get ttsEdgeOnline;
+
+  /// No description provided for @ttsNoSecondary.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get ttsNoSecondary;
+
+  /// No description provided for @ttsAllowOnlineSecondary.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow online secondary'**
+  String get ttsAllowOnlineSecondary;
+
+  /// No description provided for @ttsOnlineSecondaryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Send failed segments to Edge only when enabled.'**
+  String get ttsOnlineSecondaryDescription;
+
+  /// No description provided for @ttsUsePreferences.
+  ///
+  /// In en, this message translates to:
+  /// **'Use audio preferences'**
+  String get ttsUsePreferences;
+
+  /// No description provided for @ttsAllowJobSecondary.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow configured secondary for this conversion'**
+  String get ttsAllowJobSecondary;
+
+  /// No description provided for @ttsActualVoices.
+  ///
+  /// In en, this message translates to:
+  /// **'Used voice: {voices}'**
+  String ttsActualVoices(String voices);
+
+  /// No description provided for @ttsSecondaryUsedNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Secondary voice used for an isolated segment. The primary voice will be retried.'**
+  String get ttsSecondaryUsedNotice;
 }
 
 class _AppLocalizationsDelegate

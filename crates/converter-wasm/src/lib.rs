@@ -3,6 +3,14 @@ use std::io::{BufReader, Cursor};
 use converter_core::epub::parse_epub;
 use serde_json::json;
 use wasm_bindgen::prelude::*;
+mod session;
+pub use session::ConversionSession;
+
+/// The browser provider supplies bounded PCM WAV; the shared Rust codec owns MP3.
+#[wasm_bindgen]
+pub fn encode_wav_mp3(bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
+    converter_core::pcm::encode_wav_mp3(bytes).map_err(|error| JsValue::from_str(&error))
+}
 
 #[wasm_bindgen]
 pub fn health() -> String {

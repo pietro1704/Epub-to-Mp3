@@ -29,6 +29,7 @@ jobs:
         with:
           fetch-depth: 2
           lfs: false
+          persist-credentials: false
           # Check out the exact successful CI revision, not whichever commit
           # happens to be current on master when this workflow starts.
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
@@ -77,79 +78,62 @@ jobs:
           fetch-depth: 0
           # Avoid LFS fetch (budget exceeded)
           lfs: false
+          persist-credentials: false
           # The job only syncs the exact trusted revision after successful CI.
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Build HF-only repo snapshot
+      - uses: jdx/mise-action@v5
+        env:
+          MISE_ENABLE_TOOLS: ruby
+        with:
+          version: 2026.9.14
+          install: false
+
+      - name: Install managed Ruby
+        env:
+          MISE_ENABLE_TOOLS: ruby
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise install ruby
+
+      - name: Build HF-only repo snapshot with local LFS
+        env:
+          MISE_ENABLE_TOOLS: ruby
         run: |
           set -euo pipefail
-          HF_SYNC_DIR="$(mktemp -d)"
+          HF_SYNC_DIR="$(mktemp -d "$RUNNER_TEMP/hf-snapshot.XXXXXX")"
           echo "HF_SYNC_DIR=$HF_SYNC_DIR" >> "$GITHUB_ENV"
-          rsync -a --delete ./ "$HF_SYNC_DIR/" \
-            --exclude ".git" \
-            --exclude "pretrained_models" \
-            --exclude "voice_samples" \
-            --exclude "python_app" \
-            --exclude "hf_app.py" \
-            --exclude "requirements.txt" \
-            --exclude "paths.py" \
-            --exclude "pyproject.toml" \
-            --exclude "pytest.ini" \
-            --exclude "output" \
-            --exclude "node_modules" \
-            --exclude "web/node_modules" \
-            --exclude "__pycache__" \
-            --exclude ".pytest_cache" \
-            --exclude ".mypy_cache" \
-            --exclude ".ruff_cache" \
-            --exclude ".cache" \
-            --exclude "desktop" \
-            --exclude "flutter_app" \
-            --exclude "ios" \
-            --exclude ".hermes" \
-            --exclude ".qa" \
-            --exclude "*.png" \
-            --exclude "*.jpg" \
-            --exclude "*.jpeg" \
-            --exclude "*.gif" \
-            --exclude "*.webp" \
-            --exclude "*.bin" \
-            --exclude "*.so" \
-            --exclude "*.dylib" \
-            --exclude "*.dll" \
-            --exclude "*.a" \
-            --exclude "*.o" \
-            --exclude "*.onnx" \
-            --exclude "target"
-          cd "$HF_SYNC_DIR"
-          git init
-          git config user.name "hf-sync-bot"
-          git config user.email "hf-sync-bot@users.noreply.github.com"
-          git add -A
-          git commit -m "HF snapshot"
+          mise run hf:snapshot -- "$GITHUB_WORKSPACE" "$HF_SYNC_DIR"
 
       - name: Push to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           set -euo pipefail
-          TARGET_BRANCH="master"
-          cd "$HF_SYNC_DIR"
-
           if [ -z "${HF_TOKEN:-}" ]; then
             echo "::error::HF_TOKEN secret not configured; cannot push."
             exit 1
           fi
 
-          # Use HTTPS with token (most reliable in CI environments)
-          git config --global url."https://user:${HF_TOKEN}@huggingface.co/".insteadOf "https://huggingface.co/"
-          REMOTE_URL="https://huggingface.co/spaces/pi1704/epub-to-mp3"
-          git remote add hf "$REMOTE_URL" 2>/dev/null || git remote set-url hf "$REMOTE_URL"
+          auth_dir="$(mktemp -d)"
+          trap 'rm -rf "$auth_dir"' EXIT
+          cat > "$auth_dir/askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' user ;;
+            *Password*) printf '%s\n' "$HF_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "$auth_dir/askpass"
+          export GIT_ASKPASS="$auth_dir/askpass" GIT_TERMINAL_PROMPT=0
+          bash scripts/hf_push.sh "$HF_SYNC_DIR" https://huggingface.co/spaces/pi1704/epub-to-mp3
 
-          echo "Pushing to Hugging Face via HTTPS..."
-          git push --force hf "HEAD:refs/heads/${TARGET_BRANCH}"
-          git push --force hf "HEAD:refs/heads/main" || true
-          echo "Push to Hugging Face completed successfully."
+      - name: Remove owned snapshot
+        if: always()
+        run: |
+          if [[ -n "${HF_SYNC_DIR:-}" && "$HF_SYNC_DIR" == "$RUNNER_TEMP/"* ]]; then
+            rm -rf -- "$HF_SYNC_DIR"
+          fi
 
       - name: Wait for HF Space rebuild
         run: sleep 30
