@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import '../services/manual_conversion_output.dart';
 import '../services/platform_voice_notice.dart';
 import '../services/embedded_converter.dart';
 import '../services/desktop_embedded_converter.dart';
@@ -274,13 +275,20 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           nativeFallbackUsed = completedManifest['fallbackUsed'] == true;
           actual = (completedManifest['usedSelections'] as List? ?? const [])
               .whereType<Map>()
-              .map((value) => TtsSelection.fromJson(Map<String, dynamic>.from(value)))
+              .map(
+                (value) =>
+                    TtsSelection.fromJson(Map<String, dynamic>.from(value)),
+              )
               .toList();
           await jobStore.saveCompletedManifest(
             manifest: completedManifest,
             bookId: bookId,
             startedAt: startedAt,
-            outputDirectory: _activeNativeOutputPath,
+            outputDirectory: manualConversionOutputDirectory(
+              requestOutputDirectory: _activeNativeOutputPath,
+              jobId: jobId,
+              android: _activeAndroidConverter != null,
+            ),
             conversionOptionsJson: request.ttsPreferences.optionsJson(
               language: request.language,
             ),
