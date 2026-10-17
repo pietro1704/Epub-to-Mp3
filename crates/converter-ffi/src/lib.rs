@@ -3529,6 +3529,29 @@ mod tests {
         }
     }
     #[test]
+    fn incompatible_book_language_preflight_only_allows_versioned_native_continuation() {
+        let root = tempfile::tempdir().unwrap();
+        let mut preferences = converter_core::tts_preferences::TtsPreferences::app_default(true);
+        let mut options = serde_json::json!({
+            "language": "en",
+            "models_root": root.path(),
+            "tts_preferences": preferences,
+        });
+        let validate = |options: &serde_json::Value| {
+            let json = CString::new(options.to_string()).unwrap();
+            unsafe { converter_conversion_options_validate_json_v1(json.as_ptr()) }
+        };
+        assert!(validate(&options));
+        assert!(root.path().read_dir().unwrap().next().is_none());
+        preferences.policy_version = None;
+        options["tts_preferences"] = serde_json::to_value(&preferences).unwrap();
+        assert!(!validate(&options));
+        preferences.policy_version = Some(2);
+        preferences.secondary = None;
+        options["tts_preferences"] = serde_json::to_value(&preferences).unwrap();
+        assert!(!validate(&options));
+    }
+    #[test]
     fn missing_model_preflight_only_allows_versioned_native_continuation() {
         let root = tempfile::tempdir().unwrap();
         let mut options = EmbeddedConversionOptionsV1 {

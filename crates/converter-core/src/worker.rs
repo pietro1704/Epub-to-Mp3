@@ -2910,17 +2910,85 @@ mod tests {
         wav.pop();
         assert!(platform_tts::encode_wav(&wav).is_err());
     }
+    #[test]
+    fn incompatible_book_language_keeps_piper_configured_and_uses_native_only_when_enabled() {
+        use crate::tts_preferences::TtsPreferences;
+        struct LanguageRecorder(Arc<Mutex<Vec<String>>>);
+        impl PlatformTts for LanguageRecorder {
+            fn synthesize_wav(
+                &self,
+                _: &str,
+                language: &str,
+                output: &Path,
+                _: &(dyn Fn() -> bool + Sync),
+            ) -> Result<(), String> {
+                self.0.lock().unwrap().push(language.into());
+                fs::write(output, test_system_wav()).map_err(|error| error.to_string())
+            }
+        }
+        for language in ["en", "en-US"] {
+            let app = TtsPreferences::app_default(true);
+            let mut legacy = app.clone();
+            legacy.policy_version = None;
+            for (preferences, uses_native) in [
+                (app.clone(), true),
+                (legacy, false),
+                (app.effective_selection(None, false), false),
+                (TtsPreferences::app_default(false), false),
+            ] {
+                let temp = tempfile::tempdir().unwrap();
+                let input = temp.path().join("english.epub");
+                platform_test_book_in_language(&input, "A short English sentence.", language);
+                let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+                    std::iter::empty::<(String, String)>(),
+                    temp.path().to_path_buf(),
+                ));
+                let output = config.paths.output_dir.join("english");
+                let spoken = Arc::new(Mutex::new(Vec::new()));
+                let worker = ConversionWorker::new(config)
+                    .unwrap()
+                    .with_platform_tts(Arc::new(LanguageRecorder(Arc::clone(&spoken))));
+                let mut request = preference_test_request();
+                request.input = input;
+                request.job_id = "english".into();
+                request.language = None;
+                request.tts_preferences = Some(preferences.clone());
+                let result = worker.run(request);
+                if uses_native {
+                    let manifest = result.unwrap();
+                    assert_eq!(manifest.tts_preferences, Some(preferences));
+                    assert!(manifest.fallback_used);
+                    assert!(!manifest.used_selections.is_empty());
+                    assert!(manifest.used_selections.iter().all(|voice| voice.engine == "system"));
+                    let audio = fs::read(output.join(&manifest.chapters[0].filename)).unwrap();
+                    assert!(platform_tts::validate_mp3(&audio).is_ok());
+                    let spoken = spoken.lock().unwrap();
+                    assert!(!spoken.is_empty());
+                    assert!(spoken.iter().all(|actual| actual == language));
+                } else {
+                    assert!(result.unwrap_err().to_string().contains("supports Portuguese"));
+                    assert!(spoken.lock().unwrap().is_empty());
+                    assert!(!output.join("manifest.json").exists());
+                }
+            }
+        }
+    }
+
     fn platform_test_book(path: &Path) {
         platform_test_book_with_text(path, "Uma frase para testar a voz offline.");
     }
     fn platform_test_book_with_text(path: &Path, text: &str) {
+        platform_test_book_in_language(path, text, "pt-BR");
+    }
+    fn platform_test_book_in_language(path: &Path, text: &str, language: &str) {
         use std::io::Write;
         let body = format!("<html><body><h1>Chapter</h1><p>{text}</p></body></html>");
+        let package = format!("<package xmlns:dc=\"x\"><metadata><dc:title>System speech</dc:title><dc:language>{language}</dc:language></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/></spine></package>");
         let mut archive = zip::ZipWriter::new(fs::File::create(path).unwrap());
         let options = zip::write::SimpleFileOptions::default();
         for (name, content) in [
             ("META-INF/container.xml", "<container><rootfiles><rootfile full-path=\"content.opf\"/></rootfiles></container>"),
-            ("content.opf", "<package xmlns:dc=\"x\"><metadata><dc:title>System speech</dc:title><dc:language>pt-BR</dc:language></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/></spine></package>"),
+            ("content.opf", package.as_str()),
             ("a.xhtml", body.as_str()),
         ] {
             archive.start_file(name, options).unwrap(); archive.write_all(content.as_bytes()).unwrap();

@@ -225,7 +225,26 @@ mod tests {
             .get("policy_version")
             .is_none());
         assert!(app.effective_selection(None, false).secondary.is_none());
-        assert!(app.validate(Some("en-US")).is_err());
+        assert!(app.primary.validate(Some("en-US")).is_err());
+    }
+    #[test]
+    fn incompatible_book_language_can_use_only_versioned_native_continuation() {
+        let preferences = TtsPreferences::app_default(true);
+        assert!(preferences.validate(Some("en")).is_ok());
+        assert!(preferences.primary.validate(Some("en")).is_err());
+        let mut legacy = preferences.clone();
+        legacy.policy_version = None;
+        assert!(legacy.validate(Some("en")).is_err());
+        assert!(preferences
+            .effective_selection(None, false)
+            .validate(Some("en"))
+            .is_err());
+        assert!(TtsPreferences::app_default(false)
+            .validate(Some("en"))
+            .is_err());
+        let mut malformed = preferences;
+        malformed.primary.model_id = Some("../invalid-model".into());
+        assert!(malformed.validate(Some("en")).is_err());
     }
     #[test]
     fn native_continuation_is_bounded_resumable_and_cancellation_safe() {
