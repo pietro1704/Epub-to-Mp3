@@ -91,7 +91,39 @@ jobs:
           mise run android:embedded-deps
           mise exec -- rustup target add aarch64-linux-android
       - name: Build fresh Piper JNI and audited ARM64 APK
-        run: mise run flutter:build-apk-debug
+        id: main-ui-apk
+        env:
+          EPUB2MP3_ANDROID_VERIFICATION: "1"
+          UI_PACKAGE: com.pietrocode.epubtomp3.flutter_app.verification
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mise run flutter:build-apk-debug
+          apk="$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
+          application_id="$(mise exec -- apkanalyzer manifest application-id "$apk")"
+          test "$application_id" = "$UI_PACKAGE"
+          evidence="$GITHUB_WORKSPACE/.reports/android-ui"
+          mkdir -p "$evidence"
+          cp "$apk" "$evidence/app-debug-ui-verification.apk"
+          cp "$GITHUB_WORKSPACE/target/piper-android/aarch64-linux-android/release/libconverter_ffi.so.runtime.json" "$evidence/"
+          mise exec -- ruby -rjson -rdigest -e '
+            root = ENV.fetch("GITHUB_WORKSPACE")
+            evidence = File.join(root, ".reports/android-ui")
+            source = IO.popen(%w[git rev-parse HEAD], chdir: root, &:read).strip
+            abort "Source identity differs from the requested head" unless source == ENV.fetch("PR_HEAD_SHA")
+            runtime = JSON.parse(File.read(File.join(evidence, "libconverter_ffi.so.runtime.json")))
+            metadata = {
+              sourceCommit: source,
+              runId: ENV.fetch("GITHUB_RUN_ID"),
+              runAttempt: ENV.fetch("GITHUB_RUN_ATTEMPT"),
+              target: "lib/main.dart",
+              applicationId: ENV.fetch("UI_PACKAGE"),
+              apkSha256: Digest::SHA256.file(File.join(evidence, "app-debug-ui-verification.apk")).hexdigest,
+              nativeRuntime: runtime,
+              physicalDeviceTestExecuted: false
+            }
+            File.write(File.join(evidence, "build-identity.json"), JSON.pretty_generate(metadata))
+          '
       - name: Test Android background and selection adapters
         working-directory: flutter_app/android
         run: mise exec -- ./gradlew :app:testDebugUnitTest
@@ -185,6 +217,14 @@ jobs:
         with:
           name: faber-android-device-fixture
           path: .reports/android-device-fixture
+          if-no-files-found: error
+
+      - name: Retain the normal Android UI APK and build identity
+        if: success() && steps.main-ui-apk.outcome == 'success'
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-android-ui
+          path: .reports/android-ui
           if-no-files-found: error
 
   macos-preferences:
