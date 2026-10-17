@@ -287,3 +287,13 @@ This is historical evidence for that exact SHA. A subsequent test-only native
 expectation correction and documentation require checking the new head; never
 label all current-head CI green from the earlier run. General Web/Flutter/Rust,
 native packaging and CodeQL were still pending/in progress at this checkpoint.
+
+On `b98151b4253696b1c02c0e31c6d7e76c6455d249`, native fallback run38986916045
+passed both jobs again; Web job117260819423 passed the full Vitest suite,
+TypeScript/build and lint. Real browser Piper job117260593698 also passed;
+this is not browser-native voice playback acceptance. Flutter job117260819409
+failed three stale expectations (fresh secondary:null twice and the old isolated
+segment message), which were updated to system/version2 and the current notice.
+Strict/legacy no-fallback expectations were retained. The corrected head needs
+its own Flutter/full CI rerun; do not treat that earlier failure as resolved
+until the executable tests pass.

@@ -29,6 +29,12 @@ df6a2fb63bb2b4a0839663ee635a6c5fc5c9e05c: 185 core unit tests (1 ignored),
 26 integration tests, 36 JNI FFI tests, actual pt-BR eSpeak synthesis and actual
 en-US Windows SAPI synthesis. Windows exposed David/Zira, not pt-BR. Later
 Swift test-only expectation corrections and documentation need current-head CI.
+Checkpoint b98151b4253696b1c02c0e31c6d7e76c6455d249 subsequently passed native
+fallback run38986916045 and Web job117260819423 (full suite/build/lint), plus
+real browser Piper job117260593698. Flutter job117260819409 failed three stale
+test expectations: fresh-secondary null twice and the old fallback message.
+The later correction updates those tests, preserving strict/legacy assertions;
+recheck current-head Flutter execution before calling the issue resolved.
 If the temporary worktree is gone, fetch and create an isolated checkout of the
 remote feature branch. Preserve the original heavily dirty workspace at
 /Users/pips/Developer/epubtomp3 and every unrelated branch/worktree.

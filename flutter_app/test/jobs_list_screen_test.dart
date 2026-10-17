@@ -258,7 +258,7 @@ void main() {
     expect(find.textContaining('Used voice: Piper'), findsOneWidget);
     expect(find.textContaining('pt_BR-faber-medium'), findsOneWidget);
     expect(find.textContaining('Edge'), findsOneWidget);
-    expect(find.textContaining('Secondary voice used for an isolated segment.'), findsOneWidget);
+    expect(find.textContaining('Using the secondary voice.'), findsOneWidget);
   });
 
 }
