@@ -58,20 +58,23 @@ class NativeSimulatorSessionTest < Minitest::Test
         }, "load1_limit" => "min(6.0, 0.75 * logical_cpus)",
            "duration_seconds" => 15.0, "interval_seconds" => 0.1)
         STDOUT.sync = true
+        exit 0 if mode == "monitor_eof"
         acknowledged = false
         loop do
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           sample_started = mode == "old_collection_start" ? now - [100.0, now / 2].min : now
-          denied = mode == "cleanup_resource_deny" && File.exist?(File.join(directory, "deny-requested"))
+          denied = mode == "initial_resource_deny" ||
+            (mode == "cleanup_resource_deny" && File.exist?(File.join(directory, "deny-requested")))
+          panics = File.exist?(File.join(directory, "new-panic")) ? ["new-owned-panic-report"] : []
           puts JSON.generate("event" => "sample", "decision" => denied ? "deny" : "allow",
             "reasons" => denied ? ["available disk space below minimum"] : [],
             "sample" => { "started_monotonic" => sample_started, "collected_monotonic" => now,
               "collection_seconds" => 0.0, "memory_bytes" => 8 * 1024**3,
               "logical_cpus" => 8, "memory_free_percent" => 58,
               "disk_free_bytes" => (denied ? 4 : 12) * 1024**3, "swap_used_bytes" => 0,
-              "load_averages" => [1.0, 1.0, 1.0], "panic_identities" => [] })
+              "load_averages" => [1.0, 1.0, 1.0], "panic_identities" => panics })
           STDOUT.flush
-          if denied && !acknowledged
+          if mode == "cleanup_resource_deny" && denied && !acknowledged
             UNIXSocket.open(File.join(directory, "deny.socket")) { |socket| socket.write("sample flushed") }
             acknowledged = true
           end
@@ -91,11 +94,18 @@ class NativeSimulatorSessionTest < Minitest::Test
         }, "xcode_version" => "16.4")
       when "boot"
         File.write(File.join(directory, "booted"), "yes")
+      when "install"
+        if mode == "replace_artifact"
+          source = File.join(directory, "source.swift")
+          File.write(source + ".replacement", File.read(source))
+          File.rename(source + ".replacement", source)
+        end
       when "test"
-        if mode == "hold_test"
+        if %w[hold_test panic_during_test].include?(mode)
           descendant = fork { sleep 60 }
           File.write(File.join(directory, "worker-ready.json"), JSON.generate(
             "pid" => Process.pid, "descendant" => descendant, "pgid" => Process.getpgrp))
+          File.write(File.join(directory, "new-panic"), "owned panic fixture") if mode == "panic_during_test"
           sleep 60
         else
           sleep 0.06
@@ -112,6 +122,13 @@ class NativeSimulatorSessionTest < Minitest::Test
           server.close
         end
       when "shutdown"
+        exit 19 if mode == "cleanup_failure"
+        if mode == "cleanup_timeout"
+          descendant = fork { sleep 60 }
+          File.write(File.join(directory, "cleanup-worker.json"), JSON.generate(
+            "pid" => Process.pid, "descendant" => descendant, "pgid" => Process.getpgrp))
+          sleep 60
+        end
         # Cleanup still owns the same lease while the target is shutting down.
         File.open(File.join(directory, "heavy.lease"), "a+") do |lease|
           abort "lease was released before cleanup" if lease.flock(File::LOCK_EX | File::LOCK_NB)
@@ -227,6 +244,27 @@ class NativeSimulatorSessionTest < Minitest::Test
       File.open(@lease, "a+") { |lease| lease.flock(File::LOCK_EX | File::LOCK_NB) }
     end
     assert available
+  end
+
+  def with_monitor_fixture(policy_changes: {}, sample_changes: {})
+    load_subject
+    reader, writer = IO.pipe
+    now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    policy = { "event" => "policy", "limits" => NativeSimulatorSession::Monitor::LIMITS,
+               "load1_limit" => "min(6.0, 0.75 * logical_cpus)",
+               "duration_seconds" => 15.0, "interval_seconds" => 0.1 }.merge(policy_changes)
+    sample = { "started_monotonic" => now, "collected_monotonic" => now,
+               "collection_seconds" => 0.0, "memory_bytes" => 8 * 1024**3,
+               "logical_cpus" => 8, "memory_free_percent" => 58,
+               "disk_free_bytes" => 12 * 1024**3, "swap_used_bytes" => 0,
+               "load_averages" => [1.0, 1.0, 1.0], "panic_identities" => [] }.merge(sample_changes)
+    writer.write(JSON.generate(policy) + "\n" + JSON.generate(
+      "event" => "sample", "decision" => "allow", "reasons" => [], "sample" => sample) + "\n")
+    writer.flush
+    yield NativeSimulatorSession::Monitor.new(reader, StringIO.new, 15.0)
+  ensure
+    reader&.close
+    writer&.close
   end
 
   def failure_diagnostics
@@ -385,5 +423,80 @@ class NativeSimulatorSessionTest < Minitest::Test
     assert_equal "deny", report.fetch("decision")
     assert_equal false, report.fetch("cleanup_verified")
     assert_match(/Invalid or replayed resource sample/, report.fetch("reason"))
+  end
+
+  def test_monitor_rejects_changed_resource_policy
+    with_monitor_fixture(policy_changes: { "limits" => {} }) do |monitor|
+      error = assert_raises(NativeSimulatorSession::Stop) { monitor.check! }
+      assert_match(/policy mismatch/, error.message)
+    end
+  end
+
+  def test_monitor_rejects_stale_sample_even_when_collection_duration_is_valid
+    finished = Process.clock_gettime(Process::CLOCK_MONOTONIC) - 6
+    with_monitor_fixture(sample_changes: { "started_monotonic" => finished, "collected_monotonic" => finished }) do |monitor|
+      error = assert_raises(NativeSimulatorSession::Stop) { monitor.check! }
+      assert_match(/sample is stale/, error.message)
+    end
+  end
+
+  { "monitor_eof" => /ended unexpectedly/, "initial_resource_deny" => /denied session/ }.each do |mode, reason|
+    define_method("test_#{mode}_prevents_any_owned_phase") do
+      skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+      assert_equal 75, run_session(mode: mode), failure_diagnostics
+      assert_empty operations
+      report = read_fixture_json(@report)
+      assert_equal "deny", report.fetch("decision")
+      assert_equal false, report.fetch("cleanup_verified")
+      assert_match reason, report.fetch("reason")
+    end
+  end
+
+  def test_new_panic_stops_owned_groups_without_starting_fresh_cleanup_commands
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    assert_equal 75, run_session(mode: "panic_during_test"), failure_diagnostics
+    report = read_fixture_json(@report)
+    assert_equal "deny", report.fetch("decision")
+    assert_equal true, report.fetch("fatal_panic")
+    assert_equal false, report.fetch("cleanup_verified")
+    assert_match(/New panic report detected/, report.fetch("reason"))
+    phases = operations.map { |row| row.fetch("phase") }
+    assert_equal "test", phases.last
+    %w[terminate shutdown quit verify].each { |phase| refute_includes phases, phase }
+    worker = read_fixture_json(File.join(@directory, "worker-ready.json"))
+    assert_equal report.fetch("process_groups").first, worker.fetch("pgid")
+    assert_workers_stopped_and_lease_released(worker)
+  end
+
+  def test_same_content_artifact_replacement_prevents_next_phase_and_cleanup_claim
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    assert_equal 75, run_session(mode: "replace_artifact"), failure_diagnostics
+    report = read_fixture_json(@report)
+    assert_equal "deny", report.fetch("decision")
+    assert_equal false, report.fetch("cleanup_verified")
+    assert_match(/Artifact identity changed/, report.fetch("reason"))
+    assert_match(/Artifact identity changed/, report.fetch("cleanup_error"))
+    assert_equal "install", operations.last.fetch("phase")
+    refute_includes operations.map { |row| row.fetch("phase") }, "test"
+  end
+
+  { "cleanup_failure" => /shutdown failed with status 19/,
+    "cleanup_timeout" => /Session deadline exceeded/ }.each do |mode, reason|
+    define_method("test_#{mode}_reports_incomplete_cleanup_and_bounded_failure") do
+      skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      assert_equal 75, run_session(mode: mode), failure_diagnostics
+      assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 16.5
+      report = read_fixture_json(@report)
+      assert_equal "deny", report.fetch("decision")
+      assert_equal false, report.fetch("cleanup_verified")
+      assert_match reason, report.fetch("cleanup_error")
+      refute_includes operations.map { |row| row.fetch("phase") }, "verify"
+      if mode == "cleanup_timeout"
+        worker = read_fixture_json(File.join(@directory, "cleanup-worker.json"))
+        assert_equal report.fetch("process_groups").last, worker.fetch("pgid")
+        assert_workers_stopped_and_lease_released(worker)
+      end
+    end
   end
 end
