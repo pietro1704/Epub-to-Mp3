@@ -9,6 +9,7 @@ require "open3"
 require "rbconfig"
 require "timeout"
 require "stringio"
+require "shellwords"
 
 # The process contract runs only fake Ruby tools. No Apple service is queried.
 class NativeSimulatorSessionTest < Minitest::Test
@@ -430,6 +431,46 @@ class NativeSimulatorSessionTest < Minitest::Test
       error = assert_raises(NativeSimulatorSession::Stop) { monitor.check! }
       assert_match(/policy mismatch/, error.message)
     end
+  end
+
+  def test_singleton_backend_command_is_a_literal_executable_without_shell_expansion
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    load_subject
+    marker = File.join(@directory, "shell-expanded")
+    command = "printf owned > #{Shellwords.escape(marker)}"
+    backend = FakeBackend.new(@directory)
+    backend.define_singleton_method(:argv) { |_phase, _plan| [command] }
+    lease, inherited = NativeJob.lease(@lease)
+    caretaker = NativeSimulatorSession::Caretaker.new(
+      NativeSimulatorSession::Plan.new(@plan_path), backend, lease, @lease,
+      [], nil, NativeSimulatorSession::Report.new(@report), NativeSimulatorSession.now)
+    rejected = nil
+    spawned = false
+    child = nil
+    begin
+      File.open(File::NULL, "w") do |sink|
+        child = caretaker.spawn_operation(:test, true, out: sink, err: sink)
+        spawned = true
+        wait_for_fixture { Process.waitpid(child, Process::WNOHANG) }
+      end
+    rescue Errno::ENOENT => error
+      rejected = error
+    end
+    refute File.exist?(marker), "The singleton executable string must never be interpreted by a shell"
+    refute spawned, "No shell child may be accepted for a missing literal executable"
+    assert_instance_of Errno::ENOENT, rejected
+  ensure
+    if child
+      begin
+        if Process.waitpid(child, Process::WNOHANG).nil?
+          Process.kill("KILL", -child)
+          Process.waitpid(child)
+        end
+      rescue Errno::ECHILD
+        nil
+      end
+    end
+    lease&.close unless inherited
   end
 
   def test_monitor_rejects_stale_sample_even_when_collection_duration_is_valid
