@@ -1,6 +1,9 @@
 name: Faber runtime integration
 
 on:
+  push:
+    branches:
+      - feature/piper-native-fallback
   pull_request:
   workflow_dispatch:
 
@@ -127,7 +130,7 @@ jobs:
 
       - name: Build the private-fixture APK for physical Android verification
         id: device-fixture-apk
-        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feature/piper-native-fallback'
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feature/piper-native-fallback' || github.ref == 'refs/heads/feature/piper-native-fallback'
         working-directory: flutter_app
         env:
           EPUB2MP3_ANDROID_VERIFICATION: "1"
