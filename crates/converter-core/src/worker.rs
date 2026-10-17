@@ -1236,7 +1236,7 @@ impl ConversionWorker {
     ) -> Result<(), WorkerError> {
         use std::io::Write;
         preferences.validate(language).map_err(WorkerError::Piper)?;
-        let staging = tempfile::tempdir()?;
+        let staging = tempfile::tempdir_in(out.parent().unwrap_or(Path::new(".")))?;
         let mut output = fs::File::create(out)?;
         let mut policy = self.segment_policy.lock().expect("segment policy lock");
         // The first short utterance becomes playable before the rest of the chapter.
@@ -2190,10 +2190,7 @@ mod tests {
                     path.starts_with(&job_output),
                     "speech staging must use app-owned job output: {path:?}"
                 );
-                assert!(
-                    !path.parent().unwrap().exists(),
-                    "staging must be removed"
-                );
+                assert!(!path.parent().unwrap().exists(), "staging must be removed");
             }
         }
     }

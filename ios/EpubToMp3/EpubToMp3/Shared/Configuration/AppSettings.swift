@@ -229,7 +229,8 @@ final class AppSettings: ObservableObject {
             defaults.set(2, forKey: "ttsPreferencesVersion")
         }
         self.allowOnlineAudioFallback = storedOnlineFallbackConsent
-        if !storedOnlineFallbackConsent && storedSecondaryAudioEngine == .edge {
+        if storedSecondaryAudioEngine == self.audioEngine
+            || (!storedOnlineFallbackConsent && storedSecondaryAudioEngine == .edge) {
             self.secondaryAudioEngine = nil
             defaults.removeObject(forKey: "secondaryAudioEngine")
         }
@@ -339,6 +340,7 @@ final class AppSettings: ObservableObject {
 
     @Published var audioEngine: AudioEnginePreference = .piper {
         didSet {
+            guard !loadingPersistedValues else { return }
             adoptCurrentSpeechPolicyIfEdited()
             defaults.set(audioEngine.rawValue, forKey: Self.audioEngineKey)
             if secondaryAudioEngine == audioEngine { secondaryAudioEngine = nil }
@@ -347,6 +349,7 @@ final class AppSettings: ObservableObject {
 
     @Published var secondaryAudioEngine: AudioEnginePreference? = nil {
         didSet {
+            guard !loadingPersistedValues else { return }
             adoptCurrentSpeechPolicyIfEdited()
             if secondaryAudioEngine == audioEngine
                 || (secondaryAudioEngine == .edge && !allowOnlineAudioFallback) {
@@ -359,6 +362,7 @@ final class AppSettings: ObservableObject {
     }
     @Published var allowOnlineAudioFallback = false {
         didSet {
+            guard !loadingPersistedValues else { return }
             adoptCurrentSpeechPolicyIfEdited()
             defaults.set(allowOnlineAudioFallback, forKey: "allowOnlineAudioFallback")
             if !allowOnlineAudioFallback && secondaryAudioEngine == .edge {
