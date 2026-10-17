@@ -152,7 +152,7 @@ class NativeSimulatorSessionTest < Minitest::Test
 
       tail = File.open(path, "rb") do |file|
         file.seek([file.size - 2048, 0].max)
-        file.read(2048) || ""
+        file.read(2048) || +""
       end
       "#{path}:\n#{tail.force_encoding(Encoding::UTF_8).scrub}"
     end.join("\n")
