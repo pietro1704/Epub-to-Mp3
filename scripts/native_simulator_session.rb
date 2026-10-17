@@ -308,7 +308,7 @@ module NativeSimulatorSession
       @children.delete(pid)
       raise Stop, "#{phase} failed with status #{status.exitstatus || status.termsig}" unless status.success?
       @report.event(phase, "finished")
-      File.binread(path, 65_537).tap { |output| raise Stop, "Operation output exceeds limit" if output.bytesize > 65_536 }
+      (File.binread(path, 65_537) || "").tap { |output| raise Stop, "Operation output exceeds limit" if output.bytesize > 65_536 }
     end
 
     def inspect_target!(cleanup: false, initial: false)

@@ -152,10 +152,21 @@ class NativeSimulatorSessionTest < Minitest::Test
 
       tail = File.open(path, "rb") do |file|
         file.seek([file.size - 2048, 0].max)
-        file.read(2048)
+        file.read(2048) || ""
       end
       "#{path}:\n#{tail.force_encoding(Encoding::UTF_8).scrub}"
     end.join("\n")
+  end
+
+  def test_failure_diagnostics_accepts_empty_owned_logs
+    logs = File.join(@directory, ".session-logs-empty")
+    FileUtils.mkdir_p(logs)
+    empty_log = File.join(logs, "1-boot.log")
+    File.write(empty_log, "")
+    File.write(@report, JSON.generate("decision" => "deny", "reason" => "fake failure"))
+    diagnostics = failure_diagnostics
+    assert_includes diagnostics, empty_log
+    assert_includes diagnostics, "fake failure"
   end
 
   def test_production_entry_is_quarantined_before_any_child_even_with_environment_override
