@@ -164,3 +164,59 @@ jobs:
           name: packaged-cli-faber-evidence
           path: .reports/cli-faber
           if-no-files-found: warn
+      - name: Archive only the verified Linux CLI product
+        if: success()
+        env:
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mise exec -- ruby -rjson -rdigest -rfileutils -rrbconfig -e '
+            root = Dir.pwd
+            package = File.join(root, "dist/epub-to-mp3-cli")
+            abort "CLI package must be a canonical directory" unless File.directory?(package) && File.realpath(package) == package
+            manifest_path = File.join(package, "package.json")
+            metadata = JSON.parse(File.read(manifest_path))
+            files = metadata.fetch("files")
+            abort "Unexpected CLI package identity" unless metadata["runtime"] == "native Rust/Piper" &&
+              metadata["model_weights_included"] == false && files.is_a?(Hash) && !files.empty?
+            inventory = Dir.glob(File.join(package, "**", "*"), File::FNM_DOTMATCH).reject { |path| %w[. ..].include?(File.basename(path)) }
+            abort "CLI package contains a symlink or special file" unless inventory.all? { |path| stat = File.lstat(path); stat.file? || stat.directory? }
+            actual_files = inventory.select { |path| File.file?(path) }.map { |path| path.delete_prefix(package + "/") }.sort
+            abort "CLI package inventory differs from its manifest" unless actual_files == (files.keys + ["package.json"]).sort
+            files.each do |name, digest|
+              abort "Unsafe CLI package member" unless name.is_a?(String) && name.start_with?("bin/") &&
+                !name.include?("\\") && !name.include?("\0") && name.split("/", -1).none? { |part| part.empty? || %w[. ..].include?(part) }
+              abort "Invalid CLI package checksum" unless digest.is_a?(String) && digest.match?(/\A[0-9a-f]{64}\z/) &&
+                Digest::SHA256.file(File.join(package, name)).hexdigest == digest
+            end
+            executable = File.join(package, "bin/converter-cli")
+            abort "Packaged CLI executable is missing" unless files.key?("bin/converter-cli") && File.executable?(executable)
+            abort "Unexpected Linux CLI build host" unless RUBY_PLATFORM.include?("linux") && RbConfig::CONFIG.fetch("host_cpu") == "x86_64" && metadata["host"] == RbConfig::CONFIG.fetch("host")
+            source = IO.popen(%w[git rev-parse HEAD], &:read).strip
+            abort "Cannot identify checked-out source" unless $?.success? && source.match?(/\A[0-9a-f]{40}\z/)
+            evidence = File.join(root, ".reports/cli-package")
+            FileUtils.mkdir_p(evidence)
+            archive_name = "epub-to-mp3-cli-linux-x86_64.tar.gz"
+            archive = File.join(evidence, archive_name)
+            abort "Cannot archive the verified CLI package" unless system("tar", "-czf", archive, "-C", File.join(root, "dist"), "epub-to-mp3-cli")
+            archive_hash = Digest::SHA256.file(archive).hexdigest
+            File.write(archive + ".sha256", "#{archive_hash}  #{archive_name}\n")
+            identity = {
+              sourceCommit: source, eventHeadCommit: ENV.fetch("EVENT_HEAD_SHA"),
+              eventName: ENV.fetch("GITHUB_EVENT_NAME"), runId: ENV.fetch("GITHUB_RUN_ID"),
+              runAttempt: ENV.fetch("GITHUB_RUN_ATTEMPT"), host: RbConfig::CONFIG.fetch("host"),
+              architecture: RbConfig::CONFIG.fetch("host_cpu"),
+              packageManifestSha256: Digest::SHA256.file(manifest_path).hexdigest,
+              executableSha256: files.fetch("bin/converter-cli"),
+              archive: archive_name, archiveSha256: archive_hash,
+              packagedOnnxruntime: files.select { |name, _| name.start_with?("bin/libonnxruntime.so") },
+              modelWeightsIncluded: false, privateBookTestsExecuted: false
+            }
+            File.write(File.join(evidence, "build-identity.json"), JSON.pretty_generate(identity))
+          '
+      - name: Retain the verified executable package separately from golden logs
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: packaged-cli-faber-linux-x86_64
+          path: .reports/cli-package
+          if-no-files-found: error
