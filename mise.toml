@@ -1591,3 +1591,19 @@ run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
 [tasks."piper:build-runtime"]
 description = "Build the native Piper Embedded runtime without external executable fallback"
 run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"
+
+[tasks."ios:resources:preflight"]
+description = "Check actual macOS resource headroom without launching Apple tools"
+run = "mise exec -- python scripts/simulator_resource_monitor.py"
+
+[tasks."ios:resources:observe"]
+description = "Observe macOS resources for 15 seconds without authorizing or starting Simulator"
+run = "mise exec -- python scripts/simulator_resource_monitor.py --observe 15"
+
+[tasks."host:simulator-resources:test"]
+description = "Test the resource monitor with host-free fixtures and no Apple processes"
+run = "mise exec -- python scripts/test_simulator_resource_monitor.py -v"
+
+[tasks."host:simulator-session:test"]
+description = "Test quarantined session ownership and bounded cleanup without Apple execution"
+run = "mise exec -- ruby scripts/test_native_simulator_session.rb"
