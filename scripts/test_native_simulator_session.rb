@@ -90,7 +90,14 @@ class NativeSimulatorSessionTest < Minitest::Test
       when "boot"
         File.write(File.join(directory, "booted"), "yes")
       when "test"
-        sleep 0.06
+        if mode == "hold_test"
+          descendant = fork { sleep 60 }
+          File.write(File.join(directory, "worker-ready.json"), JSON.generate(
+            "pid" => Process.pid, "descendant" => descendant, "pgid" => Process.getpgrp))
+          sleep 60
+        else
+          sleep 0.06
+        end
       when "terminate"
         if mode == "cleanup_resource_deny"
           # The first denial is emitted only after cleanup starts, with an
@@ -163,6 +170,63 @@ class NativeSimulatorSessionTest < Minitest::Test
     File.exist?(@marker) ? File.readlines(@marker).map { |line| JSON.parse(line) } : []
   end
 
+  def wait_for_fixture
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 12
+    loop do
+      result = yield
+      return result if result
+      flunk "Timed out waiting for owned fake fixture\n#{failure_diagnostics}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      sleep 0.01
+    end
+  end
+
+  def read_fixture_json(path)
+    JSON.parse(File.read(path)) if File.file?(path)
+  rescue JSON::ParserError
+    nil
+  end
+
+  def live_process?(pid)
+    # A killed grandchild may briefly await init's reaper; it cannot hold FDs.
+    stat = File.read("/proc/#{pid}/stat")
+    stat.sub(/\A.*\) /, "").split.first != "Z"
+  rescue Errno::ENOENT
+    false
+  end
+
+  def with_held_session
+    load_subject
+    result_path = File.join(@directory, "owner-result.json")
+    owner = fork do
+      result = run_session(mode: "hold_test")
+      File.write(result_path, JSON.generate("result" => result))
+      exit! 0
+    end
+    worker = wait_for_fixture { read_fixture_json(File.join(@directory, "worker-ready.json")) }
+    report = read_fixture_json(@report)
+    assert_equal report.fetch("process_groups").first, worker.fetch("pgid")
+    yield owner, report.fetch("caretaker_pid"), worker, result_path
+  ensure
+    if owner
+      begin
+        if Process.waitpid(owner, Process::WNOHANG).nil?
+          Process.kill("TERM", owner)
+          wait_for_fixture { Process.waitpid(owner, Process::WNOHANG) }
+        end
+      rescue Errno::ECHILD
+        nil
+      end
+    end
+  end
+
+  def assert_workers_stopped_and_lease_released(worker)
+    wait_for_fixture { !live_process?(worker.fetch("pid")) && !live_process?(worker.fetch("descendant")) }
+    available = wait_for_fixture do
+      File.open(@lease, "a+") { |lease| lease.flock(File::LOCK_EX | File::LOCK_NB) }
+    end
+    assert available
+  end
+
   def failure_diagnostics
     # These files contain only the owned fake process fixture, never host queries.
     paths = [@report, @marker] + Dir.glob(File.join(@directory, ".session-logs-*", "*"))
@@ -228,5 +292,52 @@ class NativeSimulatorSessionTest < Minitest::Test
     assert_equal "deny", report.fetch("decision")
     assert_equal "Resource monitor denied session", report.fetch("reason")
     File.open(@lease, "a+") { |lease| assert lease.flock(File::LOCK_EX | File::LOCK_NB) }
+  end
+
+  def test_owner_sigkill_leaves_caretaker_to_confirm_cleanup_and_release_descendant_lease
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    with_held_session do |owner, _caretaker, worker, _result_path|
+      Process.kill("KILL", owner)
+      Process.waitpid(owner)
+      report = wait_for_fixture do
+        value = read_fixture_json(@report)
+        value if value && value["cleanup_verified"] == true
+      end
+      assert_equal "deny", report.fetch("decision")
+      assert_match(/owner disappeared or cancelled/, report.fetch("reason"))
+      assert_includes operations.map { |row| row.fetch("phase") }, "verify"
+      assert_workers_stopped_and_lease_released(worker)
+    end
+  end
+
+  def test_caretaker_sigkill_terminates_owned_descendants_and_reports_incomplete_cleanup
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    with_held_session do |owner, caretaker, worker, result_path|
+      Process.kill("KILL", caretaker)
+      result = wait_for_fixture { read_fixture_json(result_path) }
+      Process.waitpid(owner)
+      assert_equal 75, result.fetch("result")
+      report = read_fixture_json(@report)
+      assert_equal "deny", report.fetch("decision")
+      assert_equal false, report.fetch("cleanup_verified")
+      assert_match(/Caretaker lost; cleanup incomplete/, report.fetch("reason"))
+      refute_includes operations.map { |row| row.fetch("phase") }, "shutdown"
+      assert_workers_stopped_and_lease_released(worker)
+    end
+  end
+
+  def test_owner_sigterm_cancels_work_and_confirms_cleanup_before_returning_signal_status
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    with_held_session do |owner, _caretaker, worker, result_path|
+      Process.kill("TERM", owner)
+      result = wait_for_fixture { read_fixture_json(result_path) }
+      Process.waitpid(owner)
+      assert_equal 143, result.fetch("result")
+      report = read_fixture_json(@report)
+      assert_equal "deny", report.fetch("decision")
+      assert_equal true, report.fetch("cleanup_verified"), failure_diagnostics
+      assert_match(/owner disappeared or cancelled/, report.fetch("reason"))
+      assert_workers_stopped_and_lease_released(worker)
+    end
   end
 end
