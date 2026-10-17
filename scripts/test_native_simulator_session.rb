@@ -226,6 +226,7 @@ class NativeSimulatorSessionTest < Minitest::Test
     assert_includes operations.map { |row| row.fetch("phase") }, "verify"
     assert_equal 75, result, failure_diagnostics
     assert_equal "deny", report.fetch("decision")
+    assert_equal "Resource monitor denied session", report.fetch("reason")
     File.open(@lease, "a+") { |lease| assert lease.flock(File::LOCK_EX | File::LOCK_NB) }
   end
 end

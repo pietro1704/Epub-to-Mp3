@@ -145,6 +145,8 @@ module NativeSimulatorSession
   end
 
   class Monitor
+    attr_reader :denial
+
     LIMITS = { "minimum_free_percent" => 20, "minimum_disk_bytes" => 8 * 1024**3,
                "maximum_swap_growth_bytes" => 256 * 1024**2,
                "maximum_sample_seconds" => 5.0, "query_timeout_seconds" => 2.0 }.freeze
@@ -369,6 +371,11 @@ module NativeSimulatorSession
             @report.data["cleanup_error"] = error.message
             @report.data["fatal_panic"] ||= error.is_a?(Stop) && error.fatal
           end
+        end
+        if (denial = @monitor&.denial)
+          code = 75
+          @report.data["reason"] ||= denial.message
+          @report.data["fatal_panic"] ||= denial.fatal
         end
         NativeSimulatorSession.stop_group(@groups[1])
         @children.each { |pid| Process.waitpid(pid) rescue Errno::ECHILD }
