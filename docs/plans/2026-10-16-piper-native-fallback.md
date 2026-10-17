@@ -4,6 +4,13 @@ Status: implementation authorized after reviewed planning; verification pending.
 Owner: Codex root. User accepted P1/P2/P3 and then explicitly requested implementation
 and a self-contained prompt for continuing in a fresh session.
 
+Review checkpoint (2026-10-16): the specialist confirmed conservative migration
+and staged cancellation, but found the browser utterance deadline continues
+during user pauses. Long-pause/resume regressions and an active-playback budget
+are required before acceptance. Exact resolved native voice metadata remains
+partial: callbackv1 cannot return it. Rejecting unknown native cache reuse is
+safe compatibility behavior, not completion of active-voice manifest reporting.
+
 ## Accepted scope and boundaries
 
 Default app primary is Piper `pt_BR-faber-medium`. Default secondary is installed

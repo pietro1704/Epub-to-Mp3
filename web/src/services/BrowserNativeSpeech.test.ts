@@ -67,6 +67,46 @@ describe("installed browser narration", () => {
     await assertion;
     expect(synthesis.cancel).toHaveBeenCalledTimes(2);
   });
+  it("keeps long pauses resumable without resetting the active playback deadline", async () => {
+    vi.useFakeTimers();
+    const { service, synthesis, utterances } = fixture();
+    let settled = false;
+    const done = service.speak("Texto", "pt-BR", null, vi.fn());
+    void done.then(() => { settled = true; }, () => { settled = true; });
+    await vi.advanceTimersByTimeAsync(30_000);
+    service.pause();
+    service.pause();
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(settled).toBe(false);
+    expect(synthesis.cancel).toHaveBeenCalledTimes(1);
+    service.resume();
+    service.resume();
+    await vi.advanceTimersByTimeAsync(89_999);
+    expect(settled).toBe(false);
+    const assertion = expect(done).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+    utterances[0].onend?.({} as SpeechSynthesisEvent);
+    expect(synthesis.cancel).toHaveBeenCalledTimes(2);
+  });
+  it("completes after resuming a long pause and still drains cancellation while paused", async () => {
+    vi.useFakeTimers();
+    const { service, utterances } = fixture();
+    const done = service.speak("Texto", "pt-BR", null, vi.fn());
+    void done.catch(() => undefined);
+    service.pause();
+    await vi.advanceTimersByTimeAsync(180_000);
+    service.resume();
+    utterances[0].onend?.({} as SpeechSynthesisEvent);
+    await done;
+    const cancelled = service.speak("Outro texto", "pt-BR", null, vi.fn());
+    service.pause();
+    const assertion = expect(cancelled).rejects.toMatchObject({ name: "AbortError" });
+    service.cancel();
+    await assertion;
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("drains pending voice readiness on cancellation", async () => {
     const { service, synthesis } = fixture([]);
     const done = service.speak("Texto", "pt-BR", null, vi.fn());
