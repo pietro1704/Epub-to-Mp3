@@ -1,9 +1,71 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { evaluate, guardedMerge } from './guarded_pr_merge.mjs';
 const repo = 'pietro1704/Epub-to-Mp3';
 const head = 'a'.repeat(40);
+
+for (const state of ['CLEAN', 'BEHIND']) {
+  test(`scheduled policy only inspects ${state} candidates without GitHub mutations`, () => {
+    const directory = mkdtempSync(join(tmpdir(), 'pr-policy-inspection-'));
+    try {
+      mkdirSync(join(directory, 'scripts'));
+      writeFileSync(join(directory, 'scripts/guarded_pr_merge.mjs'),
+        readFileSync(new URL('./guarded_pr_merge.mjs', import.meta.url)));
+      const data = fixture();
+      data.pr.mergeStateStatus = state;
+      writeFileSync(join(directory, 'fixture.json'), JSON.stringify({ ...data, candidates: [{
+        number: 802, isDraft: false, author: { login: 'pietro1704' },
+        headRepository: { nameWithOwner: repo }, headRefName: 'feature/example',
+        headRefOid: head, mergeStateStatus: state,
+      }] }));
+      const fakeGh = join(directory, 'gh');
+      writeFileSync(fakeGh, `#!${process.execPath}\n` + String.raw`
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const data = JSON.parse(fs.readFileSync('fixture.json', 'utf8'));
+fs.appendFileSync('calls.jsonl', JSON.stringify(args) + '\n');
+let response;
+if (args[0] === 'pr' && args[1] === 'list') response = data.candidates;
+else if (args[0] === 'pr' && args[1] === 'view') response = data.pr;
+else if (args[0] === 'pr' && args[1] === 'merge') response = {};
+else if (args[0] === 'workflow' && args[1] === 'run') response = {};
+else if (args[0] === 'api' && args.includes('--method')) response = {};
+else if (args[0] === 'api' && args.at(-1).includes('/compare/')) response = data.comparison;
+else if (args[0] === 'api' && args.at(-1).includes('/actions/workflows/')) {
+  response = [{ workflow_runs: args.at(-1).includes('codeql.yml') ? data.securityRuns : data.runs }];
+} else { console.error('Unexpected fake GitHub command'); process.exit(97); }
+process.stdout.write(JSON.stringify(response));
+`);
+      chmodSync(fakeGh, 0o700);
+      const workflow = readFileSync(new URL('../.github/workflows/auto-merge-dependabot.yml', import.meta.url), 'utf8');
+      const block = workflow.match(/^        run: \|\n((?:          .*\n|\n)+)/m);
+      assert.ok(block, 'scheduled workflow shell entry point must exist');
+      const script = block[1].replace(/^          /gm, '');
+      const result = spawnSync('bash', ['-c', script], {
+        cwd: directory, encoding: 'utf8', timeout: 15000, maxBuffer: 65536,
+        env: { PATH: `${directory}:${process.env.PATH}`, REPO: repo,
+          GITHUB_TOKEN: 'fake-token-only', GITHUB_RUN_ID: '90', HOME: directory },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.signal, null);
+      assert.equal(result.status, 0, result.stderr);
+      const calls = readFileSync(join(directory, 'calls.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+      assert.ok(calls.some(args => args[0] === 'pr' && args[1] === 'view'), 'real helper must inspect the candidate');
+      const mutations = calls.filter(args =>
+        (args[0] === 'pr' && args[1] === 'merge') ||
+        (args[0] === 'workflow' && args[1] === 'run') ||
+        (args[0] === 'api' && args.some(value => ['PUT', 'POST', 'PATCH', 'DELETE'].includes(value))));
+      assert.deepEqual(mutations, [], 'scheduled policy must not merge, update branches or dispatch workflows');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}
+
 function fixture() {
   return { repo, head, runId: '90', comparison: { status: 'ahead', behind_by: 0 }, pr: { state: 'OPEN', isDraft: false, baseRefName: 'master', headRefOid: head,
     isCrossRepository: false, reviewDecision: '', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [
@@ -121,13 +183,14 @@ test('argument injection and non-scalar identifiers fail before any command', ()
     assert.throws(() => guardedMerge({ repo, pr: '802', head, ...changed, invoke: () => assert.fail('must not run') }));
   }
 });
-test('both workflow merge writers run the same trusted-base gate and never raw merge', () => {
+test('workflow inspection and explicit merge use the same trusted-base gate', () => {
   for (const filename of ['auto-merge-dependabot.yml', 'pr-autofix-worker.yml']) {
     const text = readFileSync(new URL(`../.github/workflows/${filename}`, import.meta.url), 'utf8');
     assert.match(text, /ref: master/);
     assert.match(text, /persist-credentials: false/);
     assert.match(text, /node scripts\/guarded_pr_merge\.mjs/);
-    assert.match(text, /--merge/);
+    if (filename === 'pr-autofix-worker.yml') assert.match(text, /--merge/);
+    else assert.doesNotMatch(text, /--merge/);
     assert.doesNotMatch(text, /gh pr merge/);
   }
   const gate = readFileSync(new URL('../.github/workflows/merge-policy.yml', import.meta.url), 'utf8');
