@@ -273,6 +273,7 @@ def run_session(config, root, session_id):
                 owned = device.processes()
                 if not owned:
                     raise ValueError("Owned launch has no authenticated process")
+                admitted_child(directory, process, created_ns)
                 report.update(started=True, processes=owned)
                 write_json(directory / "lifecycle.json", report)
             time.sleep(0.1)
