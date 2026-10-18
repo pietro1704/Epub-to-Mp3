@@ -7,7 +7,7 @@ require 'digest'
 
 module HfSnapshot
   FILES = %w[Dockerfile .dockerignore README.md LICENSE Cargo.toml Cargo.lock].freeze
-  TREES = %w[web crates benches native/piper-runtime native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys].freeze
+  TREES = %w[web crates benches native/piper-runtime native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys native/vendor/sherpa-onnx-sys].freeze
 
   def self.command!(*argv, chdir:)
     output, status = Open3.capture2e(*argv, chdir: chdir)

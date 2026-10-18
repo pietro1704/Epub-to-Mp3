@@ -60,6 +60,35 @@ class HfSnapshotTest < Minitest::Test
     refute_includes File.read(File.join(@snapshot, '.git/config')), 'HF_TOKEN'
   end
 
+  def test_local_sherpa_patch_keeps_its_complete_tracked_source_and_manifest_bytes
+    vendor = 'native/vendor/sherpa-onnx-sys'
+    repository = File.expand_path('..', __dir__)
+    paths = git!('ls-files', '-z', '--', vendor, chdir: repository).split("\0")
+    refute_empty paths, 'the local Sherpa patch must have tracked source inputs'
+    %W[#{vendor}/Cargo.toml #{vendor}/build.rs #{vendor}/src/lib.rs #{vendor}/LICENSE].each do |path|
+      assert_includes paths, path
+    end
+    inputs = paths.to_h { |path| [path, File.binread(File.join(repository, path))] }
+    inputs.merge!(
+      'Cargo.toml' => "[workspace]\nmembers = []\n[patch.crates-io]\nsherpa-onnx-sys = { path = \"#{vendor}\" }\n",
+      'Cargo.lock' => "version = 4\n\n[[package]]\nname = \"sherpa-onnx-sys\"\nversion = \"1.13.8\"\n"
+    )
+    inputs.each { |path, bytes| write(path, bytes) }
+    git!('add', '-A', chdir: @source)
+    git!('commit', '-m', 'fixture local Sherpa patch', chdir: @source)
+
+    snapshot!
+
+    %w[Cargo.toml Cargo.lock].each do |path|
+      assert_equal inputs.fetch(path), File.binread(File.join(@snapshot, path)), path
+    end
+    assert_equal paths.sort, git!('ls-files', '-z', '--', vendor, chdir: @snapshot).split("\0").sort,
+                 'the snapshot must contain every tracked file of the local Sherpa patch'
+    inputs.each do |path, bytes|
+      assert_equal bytes, File.binread(File.join(@snapshot, path)), path
+    end
+  end
+
   def test_rejected_primary_push_propagates_failure
     snapshot!
     reject_push('all')
@@ -68,6 +97,36 @@ class HfSnapshotTest < Minitest::Test
     refute_includes output, 'completed successfully'
     _, master = capture('git', 'rev-parse', '--verify', 'master', chdir: @remote)
     refute master.success?
+  end
+
+  def test_tracked_sherpa_leaf_symlink_cannot_copy_private_fixture_bytes
+    path = 'native/vendor/sherpa-onnx-sys/src/private.rs'
+    sentinel = File.join(@directory, 'private-sentinel')
+    bytes = 'private-sentinel-must-not-enter-snapshot'
+    File.binwrite(sentinel, bytes)
+    FileUtils.mkdir_p(File.dirname(File.join(@source, path)))
+    File.symlink(sentinel, File.join(@source, path))
+    git!('add', '-A', chdir: @source)
+    git!('commit', '-m', 'fixture tracked Sherpa symlink', chdir: @source)
+
+    error = assert_raises(RuntimeError) { snapshot! }
+    assert_includes error.message, "Unsafe snapshot input: #{path}"
+    refute_includes error.message, bytes
+    refute File.exist?(File.join(@snapshot, path))
+    refute Dir.exist?(File.join(@snapshot, '.git')), 'rejection must precede snapshot commit preparation'
+    assert_equal bytes, File.binread(sentinel)
+  end
+
+  def test_tracked_sherpa_model_weights_cannot_enter_the_snapshot
+    path = 'native/vendor/sherpa-onnx-sys/model.ONNX'
+    write(path, "\0private-fixture-weights")
+    git!('add', '-A', chdir: @source)
+    git!('commit', '-m', 'fixture tracked Sherpa weights', chdir: @source)
+
+    error = assert_raises(RuntimeError) { snapshot! }
+    assert_includes error.message, "Model weights must not enter the snapshot: #{path}"
+    refute File.exist?(File.join(@snapshot, path))
+    refute Dir.exist?(File.join(@snapshot, '.git')), 'rejection must precede snapshot commit preparation'
   end
 
   def test_rejected_secondary_push_is_not_silently_successful
