@@ -297,3 +297,108 @@ test('npm findings require the vulnerability payload instead of metadata alone',
     assertRejected(result, directory, /Invalid scanner schema: npm-audit\.json/);
   });
 });
+
+function scannerWorkflowSteps() {
+  const source = fs.readFileSync(path.join(__dirname, '../workflows/dependency-vulnerability-remediation.yml'), 'utf8');
+  const scan = source.split('\n  remediate:')[0];
+  const steps = scan.split(/^      - /m).slice(1).flatMap(block => {
+    const id = block.match(/^        id: (cargo|pip|npm|result)\s*$/m)?.[1];
+    if (!id) return [];
+    const lines = block.split('\n');
+    const start = lines.findIndex(line => line.startsWith('        run: '));
+    assert.notEqual(start, -1, `workflow step ${id} must have an executable run block`);
+    const value = lines[start].slice('        run: '.length);
+    const script = value === '|'
+      ? lines.slice(start + 1).filter((line, index, rest) =>
+        line.startsWith('          ') && rest.slice(0, index).every(previous => previous === '' || previous.startsWith('          ')))
+        .map(line => line.slice(10)).join('\n')
+      : value;
+    assert.ok(script.trim(), `workflow step ${id} must not be empty`);
+    return [{ id, script, cwd: block.match(/^        working-directory: (\S+)\s*$/m)?.[1] ?? '.',
+      continueOnError: /^        continue-on-error: true\s*$/m.test(block) }];
+  });
+  assert.ok(JSON.stringify(steps.map(step => step.id)) === JSON.stringify(['cargo', 'pip', 'npm', 'result'])
+    || JSON.stringify(steps.map(step => step.id)) === JSON.stringify(['result']),
+  'scanner workflow must expose the legacy four steps or one consolidated result step');
+  return steps;
+}
+
+function withScannerWorkflow(cargoInstallStatus, check) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-workflow-contract-'));
+  try {
+    const bin = path.join(directory, 'bin');
+    const ledger = path.join(directory, 'calls.jsonl');
+    const githubOutput = path.join(directory, 'github-output');
+    const runnerTemp = path.join(directory, 'runner-temp');
+    fs.mkdirSync(bin);
+    fs.mkdirSync(runnerTemp);
+    fs.mkdirSync(path.join(directory, 'web'));
+    fs.mkdirSync(path.join(directory, '.github/scripts'), { recursive: true });
+    fs.copyFileSync(path.join(__dirname, 'dependency-audit-results.cjs'),
+      path.join(directory, '.github/scripts/dependency-audit-results.cjs'));
+    fs.writeFileSync(githubOutput, '');
+    const shim = `#!${process.execPath}
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const command = path.basename(process.argv[1]);
+const args = process.argv.slice(2);
+let operation;
+if (command === 'cargo' && args[0] === 'install') operation = 'cargoInstall';
+else if (command === 'cargo' && args[0] === 'audit') operation = 'cargoAudit';
+else if (command === 'python3' && args.slice(0, 3).join(' ') === '-m pip install') operation = 'pipInstall';
+else if (command === 'pip-audit') operation = 'pipAudit';
+else if (command === 'npm' && args[0] === 'audit') operation = 'npmAudit';
+else if (command === 'python3' && ['-', '-c'].includes(args[0])) {
+  const result = spawnSync('/usr/bin/python3', args, { stdio: 'inherit' });
+  if (result.error || result.signal) process.exit(98);
+  process.exit(result.status);
+} else { console.error('Unexpected fixture command'); process.exit(97); }
+fs.appendFileSync(process.env.FIXTURE_LEDGER, JSON.stringify({ operation, args }) + '\\n');
+if (operation === 'cargoInstall') process.exit(Number(process.env.FIXTURE_CARGO_INSTALL_STATUS));
+if (operation === 'pipInstall') process.exit(0);
+const names = { cargoAudit: 'cargo-audit.json', pipAudit: 'pip-audit.json', npmAudit: 'npm-audit.json' };
+console.log(JSON.stringify(JSON.parse(process.env.FIXTURE_REPORTS)[names[operation]]));
+`;
+    for (const name of ['cargo', 'python3', 'pip-audit', 'npm']) {
+      fs.writeFileSync(path.join(bin, name), shim, { mode: 0o755 });
+    }
+    const environment = { ...process.env,
+      PATH: `${bin}${path.delimiter}${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`,
+      FIXTURE_LEDGER: ledger, FIXTURE_REPORTS: JSON.stringify(validReports()),
+      FIXTURE_CARGO_INSTALL_STATUS: String(cargoInstallStatus), GITHUB_OUTPUT: githubOutput,
+      RUNNER_TEMP: runnerTemp, GITHUB_WORKSPACE: directory, GH_TOKEN: '', GITHUB_TOKEN: '' };
+    let status = 0;
+    for (const step of scannerWorkflowSteps()) {
+      const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', step.script],
+        { cwd: path.join(directory, step.cwd), env: environment, encoding: 'utf8', timeout: 10000 });
+      assert.ifError(result.error);
+      assert.equal(result.signal, null, result.stderr);
+      status = result.status;
+      if (status !== 0 && !step.continueOnError) break;
+    }
+    check({ status, calls: fs.readFileSync(ledger, 'utf8').trim().split('\n').map(line => JSON.parse(line).operation),
+      output: fs.readFileSync(githubOutput, 'utf8'), directory });
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+test('real scanner workflow shell publishes clean findings when all fake scanners succeed', () => {
+  withScannerWorkflow(0, ({ status, calls, output }) => {
+    assert.equal(status, 0);
+    assert.deepEqual(calls, ['cargoInstall', 'cargoAudit', 'pipInstall', 'pipAudit', 'npmAudit']);
+    assert.equal(output, 'findings=[]\n');
+  });
+});
+
+test('real scanner workflow stops after installation failure without later scanners or findings', () => {
+  withScannerWorkflow(23, ({ status, calls, output, directory }) => {
+    assert.deepEqual(calls, ['cargoInstall'],
+      `installation failure must prevent every later scanner; observed ${JSON.stringify({ status, calls, output })}`);
+    assert.equal(status, 23, 'installation failure must preserve the original command status');
+    assert.equal(output, '');
+    assert.equal(fs.existsSync(path.join(directory, 'vulnerability-findings.json')), false);
+  });
+});
