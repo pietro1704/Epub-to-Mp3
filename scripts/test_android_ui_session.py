@@ -74,6 +74,8 @@ elif a[:1]==['shell']:
    for i,pid in enumerate(s['pids']):print(pid,s['uid'],s.get('processNameOverride',s['package']+(':'+str(i) if i else '')))
  elif a[:1]==['cat']:
   stat=pathlib.Path(a[1]).read_text()
+  if s.get('invalidStarttime'):
+   cut=stat.rfind(')')+2;fields=stat[cut:].split();fields[19]='private-token-canary';stat=stat[:cut]+' '.join(fields)
   if s.get('reuse'):
    cut=stat.rfind(')')+2;fields=stat[cut:].split();fields[19]=str(int(fields[19])+1);stat=stat[:cut]+' '.join(fields)
   print(stat)
@@ -411,6 +413,7 @@ class SessionContracts(unittest.TestCase):
         self.assertEqual(state['stops'],0)
         self.assertTrue(self.state.with_suffix('.am-returned').exists())
         self.assertFalse(report['started'])
+        self.assertEqual(report.get('errorReason'),'Owned launch has no authenticated process')
         self.assertEqual(report['processes'],[])
         self.assertFalse(report['conversionAccepted'])
         self.assertTrue(report['deviceCleanupVerified'])
@@ -495,6 +498,7 @@ class SessionContracts(unittest.TestCase):
         self.start();self.active();self.mutate(processNameOverride='renamed-owned-process');self.finish()
         report=self.result(125)
         self.assertFalse(report['cleanupVerified'])
+        self.assertEqual(report.get('cleanupReason'),'Unexpected process identity for the package UID')
         state=json.loads(self.state.read_text())
         self.assertEqual(state['stops'],0)
         self.assertTrue(state['active'])
@@ -503,6 +507,21 @@ class SessionContracts(unittest.TestCase):
             env=self.env,capture_output=True,text=True,timeout=10)
         self.assertEqual(next_session.returncode,75,(next_session.stdout,next_session.stderr))
         self.assertFalse((self.sessions/'two').exists())
+
+    def test_untrusted_validation_detail_is_not_published(self):
+        self.mutate(invalidStarttime=True)
+        self.start();report=self.result(125)
+        self.assertEqual(report['error'],'ValueError')
+        self.assertEqual(report['cleanupError'],'ValueError')
+        self.assertEqual(report.get('errorReason'),'Unclassified validation failure')
+        self.assertEqual(report.get('cleanupReason'),'Unclassified validation failure')
+        self.assertFalse(report['started'])
+        self.assertFalse(report['cleanupVerified'])
+        self.assertFalse(report['conversionAccepted'])
+        self.assertEqual(report['processes'],[])
+        self.assertEqual(json.loads(self.state.read_text())['stops'],0)
+        self.assertNotIn('private-token-canary',self.stdout)
+        self.assertNotIn('private-token-canary',json.dumps(report))
 
     def test_prelaunch_same_uid_unknown_name_is_not_inactive_package(self):
         self.mutate(active=True,pids=[self.apps[0].pid],processNameOverride='renamed-owned-process')

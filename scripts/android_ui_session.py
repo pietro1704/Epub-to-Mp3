@@ -13,6 +13,36 @@ import time
 
 PACKAGE = "com.pietrocode.epubtomp3.flutter_app.verification"
 
+# Only these local, static validation messages may enter diagnostic reports.
+VALIDATION_REASONS = frozenset({
+    "Device is not attached", "Package UID changed", "Ambiguous APK path",
+    "APK or kernel identity changed", "Invalid process inventory header",
+    "Process inventory exceeds its bound", "Invalid process inventory row",
+    "Duplicate process identity", "Unexpected process identity for the package UID",
+    "Foreign package process UID", "Package process inventory exceeds its bound",
+    "Invalid package process identity", "Invalid serial", "Invalid app UID",
+    "Invalid identity digest", "Noncanonical dependency", "Dependency fingerprint changed",
+    "Missing absolute dependency", "Invalid session deadline", "Guard process is not live",
+    "Stale guard handshake", "Handshake must come from the guarded child",
+    "Guard child identity changed", "Guard ancestry ownership changed",
+    "Guard or child exited before launch", "Handshake is not from the guarded child",
+    "Invalid session ID", "Noncanonical state root", "State root must be private and owned",
+    "Unknown session state", "Previous cleanup is unproven",
+    "Verification package is already active", "Package became active before owned launch",
+    "Owned launch has no authenticated process",
+    "Package process identity changed before cleanup", "Package processes remain after cleanup",
+})
+
+
+def validation_reason(error):
+    if not isinstance(error, ValueError):
+        return None
+    if type(error) is ValueError and len(error.args) == 1 and type(error.args[0]) is str:
+        for reason in VALIDATION_REASONS:
+            if error.args[0] == reason:
+                return reason
+    return "Unclassified validation failure"
+
 
 def write_json(path, value):
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -285,7 +315,7 @@ def run_session(config, root, session_id):
         if stop[0]:
             report["status"] = 128 + stop[0]
     except Exception as error:
-        report.update(status=125, error=type(error).__name__)
+        report.update(status=125, error=type(error).__name__, errorReason=validation_reason(error))
         if isinstance(error, (subprocess.TimeoutExpired, subprocess.CalledProcessError)):
             report["errorCommand"] = error.cmd
         if isinstance(error, subprocess.TimeoutExpired):
@@ -314,7 +344,8 @@ def run_session(config, root, session_id):
                 raise ValueError("Package processes remain after cleanup")
             report["deviceCleanupVerified"] = True
         except Exception as error:
-            report.update(status=125, cleanupError=type(error).__name__)
+            report.update(status=125, cleanupError=type(error).__name__,
+                          cleanupReason=validation_reason(error))
         try:
             report["remainingHostGroupPids"] = remaining_groups(identities)
             report["hostGroupsAbsent"] = not report["remainingHostGroupPids"]
