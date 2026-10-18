@@ -484,7 +484,11 @@ class SessionContracts(unittest.TestCase):
 
     def test_invalid_inventory_is_not_empty(self):
         self.start();self.active();self.mutate(invalidPs=True);self.finish()
-        self.assertFalse(self.result(125)['cleanupVerified'])
+        report=self.result(125)
+        self.assertFalse(report['cleanupVerified'])
+        self.assertEqual(report['cleanupError'],'ValueError')
+        self.assertEqual(report.get('cleanupReason'),'Invalid process inventory header')
+        self.assertEqual(json.loads(self.state.read_text())['stops'],0)
 
     def test_cleanup_same_uid_unknown_name_is_not_empty_inventory(self):
         self.mutate(pids=[self.apps[0].pid])
