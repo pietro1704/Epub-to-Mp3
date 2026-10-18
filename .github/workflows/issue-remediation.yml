@@ -54,6 +54,14 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [[ -n "$OPENAI_API_KEY" ]]; then echo available=true >> "$GITHUB_OUTPUT"; else echo available=false >> "$GITHUB_OUTPUT"; fi
+      - name: Freeze trusted remediation publication guard
+        id: publication_guard
+        if: steps.codex_credentials.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          install -m 0444 scripts/guard_remediation_changes.py "${{ runner.temp }}/remediation-path-guard.py"
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "guard_sha256=$(sha256sum "${{ runner.temp }}/remediation-path-guard.py" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Repair issue with Codex
         if: steps.codex_credentials.outputs.available == 'true'
         env:
@@ -72,16 +80,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          TRUSTED_GUARD_PATH: ${{ runner.temp }}/remediation-path-guard.py
+          GUARD_BASE_SHA: ${{ steps.publication_guard.outputs.base_sha }}
+          GUARD_SHA256: ${{ steps.publication_guard.outputs.guard_sha256 }}
         run: |
           set -euo pipefail
-          git diff --check
-          test -n "$(git status --porcelain)" || { echo 'No safe code repair produced'; exit 1; }
-          if git status --porcelain | grep -E '(^|/)(\.github/|\.env|.*\.(pem|key)|.*credentials)'; then exit 1; fi
+          printf '%s  %s\n' "$GUARD_SHA256" "$TRUSTED_GUARD_PATH" | /usr/bin/sha256sum --check --status
+          /usr/bin/python3 -I "$TRUSTED_GUARD_PATH" --root "$GITHUB_WORKSPACE" --expected-head "$GUARD_BASE_SHA" --stage
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           BRANCH="bot/issue-${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
           git switch -c "$BRANCH"
-          git add -A && git commit -m "fix: resolve issue #${ISSUE_NUMBER}"
+          git commit -m "fix: resolve issue #${ISSUE_NUMBER}"
           git push origin "$BRANCH"
           PR=$(gh pr create --base master --head "$BRANCH" --title "fix: resolve #${ISSUE_NUMBER}" --body "Automated remediation for #${ISSUE_NUMBER}: ${ISSUE_TITLE}")
           gh pr comment "$ISSUE_NUMBER" --body "Automated remediation opened ${PR}; required checks must pass before merge."

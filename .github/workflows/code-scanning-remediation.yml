@@ -116,6 +116,15 @@ jobs:
           ref: master
           fetch-depth: 0
 
+      - name: Freeze trusted remediation publication guard
+        id: publication_guard
+        if: steps.remediation.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          install -m 0444 scripts/guard_remediation_changes.py "${{ runner.temp }}/remediation-path-guard.py"
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "guard_sha256=$(sha256sum "${{ runner.temp }}/remediation-path-guard.py" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
       - name: Repair alert with Codex
         if: steps.remediation.outputs.skip != 'true'
         env:
@@ -136,17 +145,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALERT: ${{ toJSON(matrix.alert) }}
+          TRUSTED_GUARD_PATH: ${{ runner.temp }}/remediation-path-guard.py
+          GUARD_BASE_SHA: ${{ steps.publication_guard.outputs.base_sha }}
+          GUARD_SHA256: ${{ steps.publication_guard.outputs.guard_sha256 }}
         run: |
           set -euo pipefail
           NUMBER=$(jq -r .number <<< "$ALERT")
           BRANCH="bot/code-scanning-${NUMBER}"
-          git diff --check
-          test -n "$(git status --porcelain)" || { echo 'No safe code repair produced.' >&2; exit 1; }
-          if git status --porcelain | grep -E '(^|/)(\.github/|\.env|.*\.pem|.*\.key|.*credentials)'; then exit 1; fi
+          printf '%s  %s\n' "$GUARD_SHA256" "$TRUSTED_GUARD_PATH" | /usr/bin/sha256sum --check --status
+          /usr/bin/python3 -I "$TRUSTED_GUARD_PATH" --root "$GITHUB_WORKSPACE" --expected-head "$GUARD_BASE_SHA" --stage
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$BRANCH"
-          git add -A && git commit -m "fix(security): remediate code scanning alert #${NUMBER}"
+          git commit -m "fix(security): remediate code scanning alert #${NUMBER}"
           git push --force-with-lease origin "$BRANCH"
           PR=$(gh pr create --base master --head "$BRANCH" --title "fix(security): remediate Code Scanning alert #${NUMBER}" --body "Automated remediation for alert #${NUMBER}.")
           echo "::notice::Auto-merge disabled for $PR. After exact-head CI and CodeQL are green and the base is current, use the trusted master scripts/guarded_pr_merge.mjs with --repo $GITHUB_REPOSITORY --pr NUMBER --head SHA --merge."
