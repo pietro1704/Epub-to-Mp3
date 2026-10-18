@@ -1,0 +1,42 @@
+name: Native safety regressions
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/native-safety.yml'
+      - 'scripts/test_native_*.rb'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-safety:
+    name: Native safety (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Install host test library
+        run: gem install minitest --version '~> 5.0' --no-document
+      - name: Verify preflight regression against the current source
+        run: ruby scripts/test_native_build_preflight.rb
+      - name: Verify supervisor regression against the current source
+        if: always()
+        run: ruby scripts/test_native_job.rb
+      - name: Verify entrypoint regression with fake native tools
+        if: always()
+        run: ruby scripts/test_native_entrypoint_safety.rb
+      - name: Verify both hooks with fake native tools
+        if: always()
+        run: ruby scripts/test_native_hook_safety.rb
