@@ -42,6 +42,8 @@ elif a[:1]==['shell']:
   else:sys.exit(28)
   print(digest+'  '+a[1])
  elif a[:1]==['ps']:
+  if s['active'] and s.get('slowFirstPostLaunchPs') and not s.get('postLaunchPsDelayed'):
+   s['postLaunchPsDelayed']=True;p.write_text(json.dumps(s));time.sleep(3.2)
   if s.get('invalidPs') and s['active']:print('INVALID');sys.exit(0)
   print('PID UID NAME')
   if s['active']:
@@ -55,7 +57,9 @@ elif a[:1]==['shell']:
   expected=s['package']+'/com.pietrocode.epubtomp3.flutter_app.MainActivity'
   if a!=['am','start','-W','-n',expected]:
    print('Error type 3\nError: Activity class does not exist');sys.exit(0)
-  s['active']=True;s['launches']+=1;p.write_text(json.dumps(s));print('Status: ok')
+  s['active']=True;s['launches']+=1;p.write_text(json.dumps(s))
+  if s.get('slowAmStart'):time.sleep(3.2)
+  print('Status: ok')
  elif a[:2]==['am','force-stop']:
   if s.get('failStop'):sys.exit(23)
   if a[2:]!=[s['package']]:sys.exit(24)
@@ -323,6 +327,32 @@ class SessionContracts(unittest.TestCase):
         self.assertLess(time.monotonic()-began,15)
         self.assertFalse(report['cleanupVerified'])
         self.assertEqual(json.loads(self.state.read_text())['stops'],0)
+
+    def test_am_start_timeout_records_the_exact_command_without_claiming_cleanup(self):
+        self.mutate(pids=[self.apps[0].pid],slowAmStart=True)
+        self.start();report=self.result(125)
+        self.assertEqual(report['error'],'TimeoutExpired')
+        self.assertFalse(report['cleanupVerified'])
+        self.assertFalse(report['conversionAccepted'])
+        state=json.loads(self.state.read_text())
+        self.assertEqual(state['stops'],0)
+        self.assertTrue(state['active'])
+        self.assertEqual(report.get('errorCommand'),[str(self.adb),'-s','fixture-serial',
+            'shell','am','start','-W','-n',
+            'com.pietrocode.epubtomp3.flutter_app.verification/com.pietrocode.epubtomp3.flutter_app.MainActivity'])
+
+    def test_first_postlaunch_ps_timeout_records_the_exact_command(self):
+        self.mutate(pids=[self.apps[0].pid],slowFirstPostLaunchPs=True)
+        self.start();report=self.result(125)
+        self.assertEqual(report['error'],'TimeoutExpired')
+        self.assertFalse(report['cleanupVerified'])
+        self.assertFalse(report['conversionAccepted'])
+        state=json.loads(self.state.read_text())
+        self.assertEqual(state['stops'],0)
+        self.assertTrue(state['active'])
+        self.assertTrue(state['postLaunchPsDelayed'])
+        self.assertEqual(report.get('errorCommand'),[str(self.adb),'-s','fixture-serial',
+            'shell','ps','-A','-o','PID,UID,NAME'])
 
     def test_foreign_uid_does_not_launch_or_stop(self):
         self.mutate(foreignUid=True);self.start();self.result(75)
