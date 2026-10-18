@@ -125,6 +125,68 @@ final class PlayerPlaybackClockTests: XCTestCase {
         }
     }
 
+    func testPlayerStateUpdatesPreserveSpeedMenusUntilRateChanges() async throws {
+        let player = AudioPlayer()
+        let snapshot = try makeSnapshot()
+        player.setSnapshot(snapshot)
+        let suiteName = "speed-menu-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let library = LibraryStore()
+        let full = FullPlayerScreenController(
+            player: player, playbackClock: player.playbackClock, library: library,
+            playerPresentation: PlayerPresentation(defaults: suite), settings: AppSettings(defaults: suite)
+        )
+        let compact = PlayerScreenController(
+            snapshot: snapshot, backendBaseURL: nil, player: player, playbackClock: player.playbackClock
+        )
+        full.loadViewIfNeeded()
+        compact.loadViewIfNeeded()
+        let mini = MiniPlayerBarUIKitView()
+        mini.configure(player: player, playbackClock: player.playbackClock, library: library, onTap: {})
+        let buttons = [
+            try XCTUnwrap(buttonsWithMenus(in: full.view).first),
+            try XCTUnwrap(buttonsWithMenus(in: compact.view).first),
+            try XCTUnwrap(buttonsWithMenus(in: mini).first),
+        ]
+        let menus = try buttons.map { try XCTUnwrap($0.menu) }
+        player.objectWillChange.send()
+        await waitForMainQueue()
+        mini.configure(player: player, playbackClock: player.playbackClock, library: library, onTap: {})
+        for (button, menu) in zip(buttons, menus) {
+            XCTAssertTrue(button.menu === menu, "Unrelated updates must preserve the presented speed menu.")
+        }
+        player.setRate(.x150)
+        await waitForMainQueue()
+        for button in buttons {
+            let actions = try XCTUnwrap(button.menu).children.compactMap { $0 as? UIAction }
+            XCTAssertEqual(actions.filter { $0.state == .on }.map(\.title), ["1.5x"])
+        }
+    }
+
+    func testMiniPlayerRateMenuTargetsReplacementPlayerAtSameRate() throws {
+        let original = AudioPlayer()
+        let replacement = AudioPlayer()
+        let snapshot = try makeSnapshot()
+        original.setSnapshot(snapshot)
+        replacement.setSnapshot(snapshot)
+        XCTAssertEqual(original.rate, replacement.rate)
+        let library = LibraryStore()
+        let mini = MiniPlayerBarUIKitView()
+        mini.configure(player: original, playbackClock: original.playbackClock, library: library, onTap: {})
+        let button = try XCTUnwrap(buttonsWithMenus(in: mini).first)
+        let originalMenu = try XCTUnwrap(button.menu)
+
+        mini.configure(player: replacement, playbackClock: replacement.playbackClock, library: library, onTap: {})
+        let replacementMenu = try XCTUnwrap(button.menu)
+        XCTAssertFalse(replacementMenu === originalMenu, "A new player must receive new menu actions even at the same rate.")
+        let action = try XCTUnwrap(replacementMenu.children.compactMap { $0 as? UIAction }.first { $0.title == "1.25x" })
+        button.sendAction(action)
+
+        XCTAssertEqual(replacement.rate, .x125)
+        XCTAssertEqual(original.rate, .x100, "Reconfiguring must not leave the menu targeting the previous player.")
+    }
+
     private func makeSnapshot() throws -> JobSnapshot {
         let data = Data(#"{"jobId":"playback-clock-test","state":"completed","bookTitle":"Clock Test"}"#.utf8)
         return try JSONDecoder().decode(JobSnapshot.self, from: data)

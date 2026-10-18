@@ -171,6 +171,42 @@ final class ReaderLoadingRegressionUITests: XCTestCase {
         close.tap()
     }
 
+    func testSpeedMenuShowsOnlyRequestedRatesAndKeepsSelection() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let app = launchFixture(delayMilliseconds: 0, includesPlaybackFixture: true)
+        defer { app.terminate() }
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.terminate()
+        app.launch()
+        let open = app.buttons["miniPlayer.open"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        open.tap()
+        let rate = app.buttons["fullPlayer.playbackRateButton"].firstMatch
+        XCTAssertTrue(rate.waitForExistence(timeout: 5))
+        let labels = ["0.75x", "1.25x", "1.5x", "1.75x", "2.5x", "3x"]
+        for selected in labels {
+            rate.tap()
+            for label in labels {
+                XCTAssertTrue(app.buttons[label].firstMatch.waitForExistence(timeout: 2))
+            }
+            XCTAssertFalse(app.buttons["1x"].exists)
+            XCTAssertFalse(app.buttons["2x"].exists)
+            Thread.sleep(forTimeInterval: 1)
+            XCTAssertTrue(app.buttons[selected].firstMatch.isHittable)
+            attach("speed-menu-\(selected)", app: app)
+            app.buttons[selected].firstMatch.tap()
+            XCTAssertTrue(rate.staticTexts[selected].exists)
+        }
+        app.buttons["fullPlayer.close"].tap()
+        let miniRate = app.buttons["miniPlayer.rate"].firstMatch
+        miniRate.tap()
+        for label in labels {
+            XCTAssertTrue(app.buttons[label].firstMatch.waitForExistence(timeout: 2))
+        }
+        app.buttons["0.75x"].firstMatch.tap()
+        XCTAssertTrue(miniRate.staticTexts["0.75x"].exists)
+    }
+
     private func launchFixture(delayMilliseconds: Int, includesPlaybackFixture: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
