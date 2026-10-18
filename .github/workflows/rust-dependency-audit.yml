@@ -39,6 +39,12 @@ jobs:
           install: false
       - name: Install Rust toolchain
         run: mise install
+      - name: Verify ZIP compatibility in the shared runtime
+        run: mise exec -- cargo test --locked -p converter-core --lib epub::tests
+      - name: Check optional Sherpa bindings without native downloads
+        env:
+          DOCS_RS: '1'
+        run: mise exec -- cargo check --locked -p converter-core --features kokoro-sherpa-runtime
       - name: Verify locked dependency resolution
         run: mise exec -- cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
       - name: Install pinned auditor

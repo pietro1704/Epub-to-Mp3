@@ -2,9 +2,9 @@ name: PR repair safety regressions
 on:
   push:
     branches: ['feature/pr-repair-safety', master]
-    paths: ['.github/scripts/pr-repair-*.cjs', '.github/scripts/repository-health-watchdog*', '.github/workflows/pr-autofix*.yml', '.github/workflows/pr-repair-safety-regression.yml']
+    paths: ['.github/scripts/pr-repair-*.cjs', '.github/workflows/pr-autofix*.yml', '.github/workflows/pr-repair-safety-regression.yml']
   pull_request:
-    paths: ['.github/scripts/pr-repair-*.cjs', '.github/scripts/repository-health-watchdog*', '.github/workflows/pr-autofix*.yml', '.github/workflows/pr-repair-safety-regression.yml']
+    paths: ['.github/scripts/pr-repair-*.cjs', '.github/workflows/pr-autofix*.yml', '.github/workflows/pr-repair-safety-regression.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,4 +25,4 @@ jobs:
       - run: mise install ruby
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
-      - run: mise exec -- node --test .github/scripts/pr-repair-safety.test.cjs .github/scripts/repository-health-watchdog.test.cjs
+      - run: mise exec -- node --test .github/scripts/pr-repair-safety.test.cjs

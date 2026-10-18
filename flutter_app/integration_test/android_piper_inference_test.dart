@@ -17,6 +17,7 @@ const _modelSha256 =
 const _configSha256 =
     '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f';
 const _fixtureDirectory = String.fromEnvironment('FABER_FIXTURE_DIRECTORY');
+const _identityOnly = bool.fromEnvironment('ANDROID_JOB_IDENTITY_ONLY');
 
 Future<void> _expectMp3(String path) async {
   final audio = await File(path).readAsBytes();
@@ -64,11 +65,76 @@ Uint8List _oneChapterEpub() {
   return Uint8List.fromList(ZipEncoder().encode(archive));
 }
 
+Future<void> _verifyDefaultJobIdentity(
+  AndroidEmbeddedConverter converter,
+  File input,
+  Directory output,
+) async {
+  final source = await input.readAsBytes();
+  final jobs = Directory('${output.path}/.jobs');
+  Future<List<File>> records() => jobs
+      .list(followLinks: false)
+      .where((entry) => entry is File && entry.path.endsWith('.json'))
+      .cast<File>()
+      .toList();
+  Future<void> rejectEmptyRange() => expectLater(
+    converter.convert(
+      inputPath: input.path,
+      outputPath: output.path,
+      chapterStart: 2147483647,
+      chapterEnd: 2147483647,
+      optionsJson: '{"engine":"system"}',
+    ),
+    throwsA(
+      isA<EmbeddedConversionFailure>().having(
+        (error) => error.message,
+        'message',
+        contains('selected chapters have no readable text'),
+      ),
+    ),
+  );
+
+  await rejectEmptyRange();
+  final firstRecords = await records();
+  expect(firstRecords, hasLength(1));
+  final firstRecord = firstRecords.single;
+  final firstBytes = await firstRecord.readAsBytes();
+  final first = jsonDecode(utf8.decode(firstBytes)) as Map<String, dynamic>;
+  expect(first['state'], 'failed');
+  expect((first['metadata'] as Map)['engine'], 'system');
+
+  await rejectEmptyRange();
+  final completedRecords = await records();
+  expect(completedRecords, hasLength(2));
+  final ids = <String>{};
+  for (final file in completedRecords) {
+    final record = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    final id = record['job_id'] as String;
+    expect(id, matches(RegExp(r'^embedded-[A-Za-z0-9_-]+$')));
+    expect(ids.add(id), isTrue);
+    expect(file.path, '${jobs.path}/$id.json');
+    expect(record['state'], 'failed');
+    expect((record['metadata'] as Map)['engine'], 'system');
+    expect(await Directory('${output.path}/$id').exists(), isTrue);
+  }
+  expect(await firstRecord.readAsBytes(), orderedEquals(firstBytes));
+  expect(await input.readAsBytes(), orderedEquals(source));
+  final audio = await output
+      .list(recursive: true, followLinks: false)
+      .where((entry) => entry is File && entry.path.toLowerCase().endsWith('.mp3'))
+      .toList();
+  expect(audio, isEmpty);
+  // ignore: avoid_print
+  print('ANDROID_JNI_JOB_IDENTITY: defaults=2 distinct=true state=failed audio=none');
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'Android runs ARM64 Faber through JNI, and fails offline without the model',
+    _identityOnly
+        ? 'Android JNI keeps default job identities distinct without synthesis'
+        : 'Android JNI keeps job identities distinct and runs ARM64 Faber offline',
     (tester) async {
       await app.main();
       await tester.pump();
@@ -93,6 +159,13 @@ void main() {
         expect(status['runtimeLoaded'], isTrue);
         expect(status['abiCompatible'], isTrue);
         expect(status['engineReady'], isTrue);
+
+        await _verifyDefaultJobIdentity(
+          converter,
+          input,
+          Directory('${sandbox.path}/identity-output'),
+        );
+        if (_identityOnly) return;
 
         final catalog = (jsonDecode(await converter.ttsModels()) as List)
             .whereType<Map>()

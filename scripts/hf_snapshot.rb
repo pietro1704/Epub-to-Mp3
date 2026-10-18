@@ -7,7 +7,7 @@ require 'digest'
 
 module HfSnapshot
   FILES = %w[Dockerfile .dockerignore README.md LICENSE Cargo.toml Cargo.lock].freeze
-  TREES = %w[web crates benches native/piper-runtime native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys].freeze
+  TREES = %w[web crates benches native/piper-runtime native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys native/vendor/sherpa-onnx-sys].freeze
 
   def self.command!(*argv, chdir:)
     output, status = Open3.capture2e(*argv, chdir: chdir)
@@ -43,7 +43,7 @@ module HfSnapshot
     command!('git', 'config', 'user.name', 'hf-sync-bot', chdir: destination)
     command!('git', 'config', 'user.email', 'hf-sync-bot@users.noreply.github.com', chdir: destination)
     command!('git', 'lfs', 'install', '--local', chdir: destination)
-    binaries.each { |path| command!('git', 'lfs', 'track', '--filename', path, chdir: destination) }
+    binaries.each_slice(128) { |batch| command!('git', 'lfs', 'track', '--filename', *batch, chdir: destination) }
     command!('git', 'add', '-A', chdir: destination)
     command!('git', 'commit', '-m', 'HF runtime snapshot', chdir: destination)
     binaries.each do |path|
