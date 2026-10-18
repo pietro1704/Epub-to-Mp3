@@ -323,7 +323,8 @@ function scannerWorkflowSteps() {
   return steps;
 }
 
-function withScannerWorkflow(cargoInstallStatus, check) {
+function withScannerWorkflow(options, check) {
+  if (typeof options === 'number') options = { statuses: { cargoInstall: options } };
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-workflow-contract-'));
   try {
     const bin = path.join(directory, 'bin');
@@ -337,6 +338,11 @@ function withScannerWorkflow(cargoInstallStatus, check) {
     fs.copyFileSync(path.join(__dirname, 'dependency-audit-results.cjs'),
       path.join(directory, '.github/scripts/dependency-audit-results.cjs'));
     fs.writeFileSync(githubOutput, '');
+    if (options.staleReports) {
+      for (const [name, report] of Object.entries(validReports())) {
+        fs.writeFileSync(path.join(directory, name), JSON.stringify(report));
+      }
+    }
     const shim = `#!${process.execPath}
 'use strict';
 const fs = require('node:fs');
@@ -356,30 +362,35 @@ else if (command === 'python3' && ['-', '-c'].includes(args[0])) {
   process.exit(result.status);
 } else { console.error('Unexpected fixture command'); process.exit(97); }
 fs.appendFileSync(process.env.FIXTURE_LEDGER, JSON.stringify({ operation, args }) + '\\n');
-if (operation === 'cargoInstall') process.exit(Number(process.env.FIXTURE_CARGO_INSTALL_STATUS));
-if (operation === 'pipInstall') process.exit(0);
+const status = JSON.parse(process.env.FIXTURE_STATUSES)[operation];
+if (operation.endsWith('Install')) process.exit(status);
 const names = { cargoAudit: 'cargo-audit.json', pipAudit: 'pip-audit.json', npmAudit: 'npm-audit.json' };
-console.log(JSON.stringify(JSON.parse(process.env.FIXTURE_REPORTS)[names[operation]]));
+const report = JSON.parse(process.env.FIXTURE_REPORTS)[names[operation]];
+if (report !== undefined) console.log(typeof report === 'string' ? report : JSON.stringify(report));
+process.exit(status);
 `;
     for (const name of ['cargo', 'python3', 'pip-audit', 'npm']) {
       fs.writeFileSync(path.join(bin, name), shim, { mode: 0o755 });
     }
     const environment = { ...process.env,
       PATH: `${bin}${path.delimiter}${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH}`,
-      FIXTURE_LEDGER: ledger, FIXTURE_REPORTS: JSON.stringify(validReports()),
-      FIXTURE_CARGO_INSTALL_STATUS: String(cargoInstallStatus), GITHUB_OUTPUT: githubOutput,
+      FIXTURE_LEDGER: ledger, FIXTURE_REPORTS: JSON.stringify({ ...validReports(), ...options.reports }),
+      FIXTURE_STATUSES: JSON.stringify({ ...validReports()['scanner-statuses.json'], ...options.statuses }),
+      GITHUB_OUTPUT: githubOutput,
       RUNNER_TEMP: runnerTemp, GITHUB_WORKSPACE: directory, GH_TOKEN: '', GITHUB_TOKEN: '' };
     let status = 0;
+    let stderr = '';
     for (const step of scannerWorkflowSteps()) {
       const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', step.script],
         { cwd: path.join(directory, step.cwd), env: environment, encoding: 'utf8', timeout: 10000 });
       assert.ifError(result.error);
       assert.equal(result.signal, null, result.stderr);
+      stderr += result.stderr;
       status = result.status;
       if (status !== 0 && !step.continueOnError) break;
     }
     check({ status, calls: fs.readFileSync(ledger, 'utf8').trim().split('\n').map(line => JSON.parse(line).operation),
-      output: fs.readFileSync(githubOutput, 'utf8'), directory });
+      output: fs.readFileSync(githubOutput, 'utf8'), stderr, directory, runnerTemp });
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -401,4 +412,81 @@ test('real scanner workflow stops after installation failure without later scann
     assert.equal(output, '');
     assert.equal(fs.existsSync(path.join(directory, 'vulnerability-findings.json')), false);
   });
+});
+
+test('real scanner workflow preserves valid findings from all audit exit-one results', () => {
+  const reports = {
+    'cargo-audit.json': { ...validReports()['cargo-audit.json'],
+      vulnerabilities: { found: true, count: 1, list: [{ advisory: { id: 'RUSTSEC-2099-0001' } }] } },
+    'pip-audit.json': { dependencies: [{ name: 'example', version: '1.0', vulns: [{ id: 'PYSEC-2099-1' }] }] },
+    'npm-audit.json': npmReport('moderate'),
+  };
+  withScannerWorkflow({ reports, statuses: { cargoAudit: 1, pipAudit: 1, npmAudit: 1 } }, ({ status, output, calls }) => {
+    assert.equal(status, 0);
+    assert.equal(calls.length, 5);
+    assert.deepEqual(JSON.parse(output.slice('findings='.length)),
+      Object.entries(reports).map(([source, data]) => ({ source, data })));
+  });
+});
+
+test('real scanner workflow retains low npm findings with audit exit zero', () => {
+  const report = npmReport('low');
+  withScannerWorkflow({ reports: { 'npm-audit.json': report } }, ({ status, output }) => {
+    assert.equal(status, 0);
+    assert.deepEqual(JSON.parse(output.slice('findings='.length)), [{ source: 'npm-audit.json', data: report }]);
+  });
+});
+
+const scannerOrder = ['cargoInstall', 'cargoAudit', 'pipInstall', 'pipAudit', 'npmAudit'];
+function assertNoWorkflowFindings(directory) {
+  assert.equal(fs.readdirSync(directory, { recursive: true })
+    .some(name => path.basename(name) === 'vulnerability-findings.json'), false);
+}
+
+for (const [operation, exit] of [
+  ['pipInstall', 23], ['cargoInstall', 130], ['pipInstall', 143],
+  ...['cargoAudit', 'pipAudit', 'npmAudit'].flatMap(operation => [2, 130, 143].map(exit => [operation, exit])),
+]) {
+  test(`real scanner workflow stops at ${operation} exit ${exit}`, () => {
+    withScannerWorkflow({ statuses: { [operation]: exit } }, ({ status, calls, output, directory }) => {
+      assert.equal(status, exit);
+      assert.deepEqual(calls, scannerOrder.slice(0, scannerOrder.indexOf(operation) + 1));
+      assert.equal(output, '');
+      assertNoWorkflowFindings(directory);
+    });
+  });
+}
+
+for (const [label, reports, cause] of [
+  ['malformed JSON', { 'npm-audit.json': '{' }, /Invalid scanner JSON: npm-audit\.json/],
+  ['missing report output', { 'npm-audit.json': undefined }, /Invalid scanner JSON: npm-audit\.json/],
+  ['embedded scanner error', { 'cargo-audit.json': { error: 'private fixture detail' } }, /Scanner reported an error: cargo-audit\.json/],
+  ['skipped dependency', { 'pip-audit.json': { dependencies: [{ name: 'example', skip_reason: 'private fixture detail' }] } },
+    /Incomplete scanner report: pip-audit\.json/],
+]) {
+  test(`real scanner workflow rejects ${label} without publishing findings`, () => {
+    withScannerWorkflow({ reports }, ({ status, calls, output, stderr, directory }) => {
+      assert.equal(status, 1);
+      assert.deepEqual(calls, scannerOrder);
+      assert.equal(output, '');
+      assert.match(stderr, cause);
+      assert.doesNotMatch(stderr, /private fixture detail/);
+      assertNoWorkflowFindings(directory);
+    });
+  });
+}
+
+test('real scanner workflow cannot reuse clean reports from the checkout', () => {
+  withScannerWorkflow({ staleReports: true, reports: { 'npm-audit.json': '{' } },
+    ({ status, output, stderr, directory, runnerTemp }) => {
+      assert.equal(status, 1);
+      assert.equal(output, '');
+      assert.match(stderr, /Invalid scanner JSON: npm-audit\.json/);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'npm-audit.json'), 'utf8')),
+        validReports()['npm-audit.json']);
+      const reportDirectories = fs.readdirSync(runnerTemp);
+      assert.equal(reportDirectories.length, 1);
+      assert.equal(fs.readFileSync(path.join(runnerTemp, reportDirectories[0], 'npm-audit.json'), 'utf8'), '{\n');
+      assert.equal(fs.existsSync(path.join(runnerTemp, reportDirectories[0], 'vulnerability-findings.json')), false);
+    });
 });

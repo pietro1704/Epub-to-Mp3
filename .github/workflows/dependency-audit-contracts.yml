@@ -1,6 +1,12 @@
 name: Dependency audit report contracts
 
 on:
+  pull_request:
+    paths:
+      - '.github/scripts/dependency-audit-results.cjs'
+      - '.github/scripts/dependency-audit-results.test.cjs'
+      - '.github/workflows/dependency-audit-contracts.yml'
+      - '.github/workflows/dependency-vulnerability-remediation.yml'
   push:
     paths:
       - .github/scripts/dependency-audit-results.cjs
