@@ -107,3 +107,83 @@ test('a failed cargo audit command must not publish clean findings from otherwis
     assertRejected(result, directory, /Unsuccessful scanner command: cargoAudit/);
   });
 });
+
+for (const [label, value, cause] of [
+  ['missing', undefined, /Missing required scanner report: scanner-statuses\.json/],
+  ['invalid JSON', '{', /Invalid scanner JSON: scanner-statuses\.json/],
+  ['non-object', [], /Invalid scanner schema: scanner-statuses\.json/],
+  ['missing fields', { cargoInstall: 0 }, /Invalid scanner schema: scanner-statuses\.json/],
+  ['string code', { ...validReports()['scanner-statuses.json'], cargoAudit: '0' }, /Invalid scanner schema: scanner-statuses\.json/],
+  ['fractional code', { ...validReports()['scanner-statuses.json'], cargoAudit: 0.5 }, /Invalid scanner schema: scanner-statuses\.json/],
+  ['negative code', { ...validReports()['scanner-statuses.json'], cargoAudit: -1 }, /Invalid scanner schema: scanner-statuses\.json/],
+  ['unexpected field', { ...validReports()['scanner-statuses.json'], unknown: 0 }, /Invalid scanner schema: scanner-statuses\.json/],
+]) {
+  test(`scanner statuses reject ${label} without findings`, () => {
+    withReports({ 'scanner-statuses.json': value }, (result, directory) => {
+      assertRejected(result, directory, cause);
+    });
+  });
+}
+
+for (const command of ['cargoInstall', 'pipInstall']) {
+  test(`${command} failure is rejected independently of clean audit reports`, () => {
+    const statuses = { ...validReports()['scanner-statuses.json'], [command]: 1 };
+    withReports({ 'scanner-statuses.json': statuses }, (result, directory) => {
+      assertRejected(result, directory, new RegExp(`Unsuccessful scanner command: ${command}`));
+    });
+  });
+}
+
+for (const [command, status] of [['cargoAudit', 130], ['pipAudit', 143], ['npmAudit', 127], ['pipAudit', 255]]) {
+  test(`${command} exit ${status} is rejected without findings`, () => {
+    const statuses = { ...validReports()['scanner-statuses.json'], [command]: status };
+    withReports({ 'scanner-statuses.json': statuses }, (result, directory) => {
+      assertRejected(result, directory, new RegExp(`Unsuccessful scanner command: ${command}`));
+      assert.equal(result.status, status === 130 || status === 143 ? status : 1);
+    });
+  });
+}
+
+function npmReport(severity) {
+  const counts = { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 1, [severity]: 1 };
+  return {
+    auditReportVersion: 2,
+    vulnerabilities: { example: { name: 'example', severity, via: ['fixture'] } },
+    metadata: { vulnerabilities: counts },
+  };
+}
+
+for (const [severity, status] of [['low', 0], ['moderate', 1]]) {
+  test(`npm ${severity} findings with exit ${status} preserve their payload`, () => {
+    const report = npmReport(severity);
+    const statuses = { ...validReports()['scanner-statuses.json'], npmAudit: status };
+    withReports({ 'npm-audit.json': report, 'scanner-statuses.json': statuses }, (result, directory) => {
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'vulnerability-findings.json'), 'utf8')),
+        [{ source: 'npm-audit.json', data: report }]);
+    });
+  });
+}
+
+for (const command of ['cargoAudit', 'pipAudit', 'npmAudit']) {
+  test(`${command} nonzero exit cannot contradict a clean report`, () => {
+    const statuses = { ...validReports()['scanner-statuses.json'], [command]: 1 };
+    withReports({ 'scanner-statuses.json': statuses }, (result, directory) => {
+      assertRejected(result, directory, new RegExp(`Unsuccessful scanner command: ${command}`));
+    });
+  });
+}
+
+test('npm moderate findings cannot have a successful scanner exit below the configured threshold', () => {
+  withReports({ 'npm-audit.json': npmReport('moderate') }, (result, directory) => {
+    assertRejected(result, directory, /Unsuccessful scanner command: npmAudit/);
+  });
+});
+
+test('an embedded cargo scanner error must not be accepted as a clean report', () => {
+  const report = { ...validReports()['cargo-audit.json'], error: { message: 'private fixture error detail' } };
+  withReports({ 'cargo-audit.json': report }, (result, directory) => {
+    assertRejected(result, directory, /Scanner reported an error: cargo-audit\.json/);
+    assert.doesNotMatch(result.stderr, /private fixture error detail/);
+  });
+});
