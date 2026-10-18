@@ -155,10 +155,40 @@ class CodeqlSwiftBuildTest < Minitest::Test
     FileUtils.chmod(0o755, path)
   end
 
-  def invoke(destination, **environment)
+  def invoke(destination, action: 'build-for-testing', **environment)
     Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'TEST_CALLS' => @calls,
                     'GITHUB_ACTIONS' => nil, 'RUNNER_ARCH' => nil }.merge(environment),
-                   'bash', @script, destination, 'EpubToMp3-UnitTests', '.build-codeql', 'build-for-testing')
+                   'bash', @script, destination, 'EpubToMp3-UnitTests', '.build-codeql', action)
+  end
+
+  def test_build_for_testing_uses_any_mac_without_requiring_a_runnable_host_destination
+    _output, error, status = invoke('platform=macOS')
+    assert status.success?, error
+    arguments = JSON.parse(File.read(@calls)).fetch('argv')
+    assert_equal 'generic/platform=macOS', arguments[arguments.index('-destination') + 1]
+    assert_includes arguments, 'ARCHS=arm64'
+    assert_includes arguments, 'ONLY_ACTIVE_ARCH=YES'
+    assert_equal 'build-for-testing', arguments.last
+  end
+
+  def test_explicit_destination_is_preserved_for_build_for_testing
+    destination = 'platform=macOS,arch=arm64'
+    _output, error, status = invoke(destination)
+    assert status.success?, error
+    arguments = JSON.parse(File.read(@calls)).fetch('argv')
+    assert_equal destination, arguments[arguments.index('-destination') + 1]
+    assert_includes arguments, 'ARCHS=arm64'
+  end
+
+  def test_execution_actions_keep_the_runnable_host_destination
+    %w[test test-without-building].each do |action|
+      _output, error, status = invoke('platform=macOS', action: action)
+      assert status.success?, error
+      arguments = JSON.parse(File.read(@calls)).fetch('argv')
+      assert_equal 'platform=macOS,arch=arm64', arguments[arguments.index('-destination') + 1]
+      assert_includes arguments, 'ARCHS=arm64'
+      assert_equal action, arguments.last
+    end
   end
 
   def test_actions_arm64_runner_uses_native_artifacts_when_uname_disagrees
