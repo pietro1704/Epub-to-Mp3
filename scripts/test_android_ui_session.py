@@ -247,7 +247,7 @@ class SessionContracts(unittest.TestCase):
             return [json.loads(line) for line in path.read_text().splitlines()
                     if json.loads(line)[2:5]==['shell','am','start']]
         self.wait(lambda: bool(launch_calls()))
-        self.assertEqual(launch_calls()[-1],['-s','fixture-serial','shell','am','start','-W','-n',
+        self.assertEqual(launch_calls()[-1],['-s','fixture-serial','shell','am','start','-n',
             'com.pietrocode.epubtomp3.flutter_app.verification/com.pietrocode.epubtomp3.flutter_app.MainActivity'])
         self.active();self.finish();self.assert_stopped(self.result(0))
 
@@ -353,7 +353,7 @@ class SessionContracts(unittest.TestCase):
         self.assertEqual(state['stops'],0)
         self.assertTrue(state['active'])
         self.assertEqual(report.get('errorCommand'),[str(self.adb),'-s','fixture-serial',
-            'shell','am','start','-W','-n',
+            'shell','am','start','-n',
             'com.pietrocode.epubtomp3.flutter_app.verification/com.pietrocode.epubtomp3.flutter_app.MainActivity'])
 
     def test_launch_ownership_does_not_wait_for_first_draw(self):

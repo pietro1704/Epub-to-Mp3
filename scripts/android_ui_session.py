@@ -266,7 +266,7 @@ def run_session(config, root, session_id):
                 report["launchAttempted"] = True
                 write_json(directory / "lifecycle.json", report)
                 device.call(
-                    "shell", "am", "start", "-W", "-n",
+                    "shell", "am", "start", "-n",
                     PACKAGE + "/com.pietrocode.epubtomp3.flutter_app.MainActivity",
                     timeout_seconds=10,
                 )
