@@ -23,9 +23,12 @@ void main() {
     documents = await Directory.systemTemp.createTemp('manual-range-test-');
     converterCalls = [];
     SharedPreferences.setMockInitialValues({});
-    final messenger = TestDefaultBinaryMessengerBinding
-        .instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(pathsChannel, (_) async => documents.path);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      pathsChannel,
+      (_) async => documents.path,
+    );
     messenger.setMockMethodCallHandler(noticesChannel, (_) async => null);
     messenger.setMockMethodCallHandler(converterChannel, (call) async {
       converterCalls.add(call);
@@ -41,8 +44,8 @@ void main() {
 
   tearDown(() async {
     debugDefaultTargetPlatformOverride = null;
-    final messenger = TestDefaultBinaryMessengerBinding
-        .instance.defaultBinaryMessenger;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     for (final channel in [converterChannel, pathsChannel, noticesChannel]) {
       messenger.setMockMethodCallHandler(channel, null);
     }
@@ -90,4 +93,52 @@ void main() {
     expect(find.text('range-result'), findsNothing);
     expect(find.textContaining('non-negative integers'), findsOneWidget);
   });
+
+  for (final (description, start, end, message) in [
+    ('negative From', '-1', '6', 'non-negative integers'),
+    ('negative To', '5', '-1', 'non-negative integers'),
+    ('invalid To', '5', 'NaN', 'non-negative integers'),
+    ('fractional From', '1.5', '6', 'non-negative integers'),
+    ('nondecimal From', '0x5', '6', 'non-negative integers'),
+    ('overflow From', '2147483648', '', 'non-negative integers'),
+    ('overflow To', '5', '2147483648', 'non-negative integers'),
+    ('inverted range', '6', '5', 'greater than or equal to From'),
+    ('To without From', '', '6', 'Enter From when specifying To'),
+  ]) {
+    testWidgets('$description is rejected before any native call', (
+      tester,
+    ) async {
+      await submitRange(tester, start, end);
+      expect(converterCalls, isEmpty);
+      expect(find.textContaining(message), findsOneWidget);
+      expect(find.text('range-result'), findsNothing);
+    });
+  }
+
+  for (final (description, start, end, expectedStart, expectedEnd) in [
+    ('zero-based range', '0', '1', 0, 1),
+    ('literal selected range', '5', '6', 5, 6),
+    ('single chapter', '5', '5', 5, 5),
+    ('empty range', '', '', -1, -1),
+    ('From without To', '5', '', 5, -1),
+    (
+      'native integer boundary',
+      '2147483647',
+      '2147483647',
+      2147483647,
+      2147483647,
+    ),
+  ]) {
+    testWidgets('$description reaches the Android adapter unchanged', (
+      tester,
+    ) async {
+      await submitRange(tester, start, end);
+      expect(converterCalls.map((call) => call.method), ['status', 'convert']);
+      final arguments = converterCalls.last.arguments as Map;
+      expect(arguments['inputPath'], '/owned/book.epub');
+      expect(arguments['chapterStart'], expectedStart);
+      expect(arguments['chapterEnd'], expectedEnd);
+      expect(find.text('Retry'), findsNothing);
+    });
+  }
 }
