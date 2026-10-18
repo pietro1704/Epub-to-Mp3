@@ -88,6 +88,8 @@ class Device:
             seen.add(pid)
             name = fields[2]
             if name != PACKAGE and not name.startswith(PACKAGE + ":"):
+                if uid == self.config["uid"]:
+                    raise ValueError("Unexpected process identity for the package UID")
                 continue
             if uid != self.config["uid"]:
                 raise ValueError("Foreign package process UID")
