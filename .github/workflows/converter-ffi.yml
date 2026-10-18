@@ -72,17 +72,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             logical_target: ios-device
             rust_target: aarch64-apple-ios
-          - os: macos-14
+          - os: macos-15
             logical_target: ios-simulator-arm64
             rust_target: aarch64-apple-ios-sim
-          - os: macos-14
+          - os: macos-15
             logical_target: ios-simulator-x64
             rust_target: x86_64-apple-ios
 
     steps:
+      - name: Verify hosted Apple build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ARCH" = ARM64
+          test "$(uname -m)" = arm64
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk iphonesimulator --show-sdk-path
+          echo "Hosted ARM64 build environment verified; no Simulator is started."
+
       - name: Checkout repository
         uses: actions/checkout@v7
 
