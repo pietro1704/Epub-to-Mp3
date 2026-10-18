@@ -61,6 +61,9 @@ function consolidate(directory) {
     }
     if (name === 'pip-audit.json') {
       const dependencies = Array.isArray(data) ? data : (data.dependencies ?? []);
+      if (dependencies.some(item => item && typeof item === 'object' && Object.hasOwn(item, 'skip_reason'))) {
+        throw new Error(`Incomplete scanner report: ${name}`);
+      }
       const found = dependencies.some(item => item && typeof item === 'object' && item.vulns?.length);
       if (statuses.pipAudit !== Number(found)) commandFailure('pipAudit', statuses.pipAudit);
       if (!found) continue;
