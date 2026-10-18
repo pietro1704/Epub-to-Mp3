@@ -12,17 +12,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  late Directory directory;
+  late SharedPreferences prefs;
+
+  setUp(() async {
+    directory = await Directory.systemTemp.createTemp('manual-options-');
+    SharedPreferences.setMockInitialValues({});
+    prefs = await SharedPreferences.getInstance();
+  });
+
+  tearDown(() async {
+    await directory.delete(recursive: true);
+  });
+
   testWidgets(
     'Android explains converter defaults instead of offering ignored options',
     (tester) async {
       const converterChannel = MethodChannel(AndroidEmbeddedConverter.channelName);
       const pathsChannel = MethodChannel('plugins.flutter.io/path_provider');
       const noticesChannel = MethodChannel('epub_to_mp3/platform_voice');
-      final directory = await Directory.systemTemp.createTemp('manual-options-');
       final calls = <MethodCall>[];
       final messenger = tester.binding.defaultBinaryMessenger;
-      SharedPreferences.setMockInitialValues({});
-      final prefs = await SharedPreferences.getInstance();
       messenger.setMockMethodCallHandler(pathsChannel, (_) async => directory.path);
       messenger.setMockMethodCallHandler(noticesChannel, (_) async => null);
       messenger.setMockMethodCallHandler(converterChannel, (call) async {
@@ -80,6 +90,9 @@ void main() {
             .text('Cover and audio processing options are managed by the local converter.')
             .evaluate()
             .isNotEmpty;
+        expect(offeredCover, isFalse, reason: 'Cover selection is not supported by this adapter');
+        expect(offeredNormalization, isFalse, reason: 'Audio normalization is not supported by this adapter');
+        expect(explainedDefaults, isTrue);
         await tester.tap(find.text('Start conversion'));
         await tester.pumpAndSettle();
 
@@ -95,18 +108,15 @@ void main() {
         expect(options['language'], 'pt');
         expect(options['models_root'], '${directory.path}/tts-models');
         expect(find.text('manual-options-result'), findsOneWidget);
-        expect(offeredCover, isFalse, reason: 'Cover selection is not supported by this adapter');
-        expect(offeredNormalization, isFalse, reason: 'Audio normalization is not supported by this adapter');
-        expect(explainedDefaults, isTrue);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
         for (final channel in [converterChannel, pathsChannel, noticesChannel]) {
           messenger.setMockMethodCallHandler(channel, null);
         }
-        await directory.delete(recursive: true);
       }
     },
     variant: TargetPlatformVariant.only(TargetPlatform.android),
+    timeout: const Timeout(Duration(seconds: 30)),
   );
 }
