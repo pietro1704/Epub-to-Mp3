@@ -110,7 +110,26 @@ run = "case \"$(uname -s)\" in Linux) NDK_HOST_TAG=\"linux-x86_64\" ;; Darwin) N
 
 [tasks."converter-ffi:ios-device"]
 description = "Build converter-ffi for iOS device with the Xcode SDK deployment target"
-run = '''MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path) && HOST_CLANG=$(xcrun --sdk macosx --find clang) && SDK=$(xcrun --sdk iphoneos --show-sdk-path) && CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)") && CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh" IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" RUSTC=$(mise exec -- rustup which --toolchain stable rustc) BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" PATH="$CLANG_DIR:$PATH" mise exec -- cargo --config 'target.aarch64-apple-ios.linker="clang"' --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" build -p converter-ffi --release --target aarch64-apple-ios'''
+run = '''
+set -euo pipefail
+MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path)
+HOST_CLANG=$(xcrun --sdk macosx --find clang)
+SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)")
+# Assign the wrapper before expanding the environment for the Cargo command.
+CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh"
+IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 \
+CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" \
+CC_aarch64_apple_darwin="$HOST_CLANG" CFLAGS_aarch64_apple_darwin="-isysroot $MACOS_SDK" \
+CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" \
+RUSTC="$(mise exec -- rustup which --toolchain stable rustc)" \
+BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" \
+BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" \
+PATH="$CLANG_DIR:$PATH" mise exec -- cargo \
+  --config 'target.aarch64-apple-ios.linker="clang"' \
+  --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" \
+  build -p converter-ffi --release --target aarch64-apple-ios
+'''
 
 [tasks."converter-ffi:ios-device:verify"]
 description = "Verify the iOS converter-ffi Mach-O architecture, platform, and exported ABI"

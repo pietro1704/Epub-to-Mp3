@@ -230,17 +230,8 @@ jobs:
             if [[ '${{ matrix.platform }}' == 'macOS+iOS' ]]; then
               derived_data="${derived_data}-${destination##*=}"
             fi
-            xcodebuild \
-              -project EpubToMp3.xcodeproj \
-              -scheme '${{ matrix.scheme }}' \
-              -destination "$destination" \
-              -configuration Debug \
-              -derivedDataPath "$derived_data" \
-              -jobs 1 \
-              -parallel-testing-enabled NO \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              ${{ matrix.action }}
+            bash ../../scripts/codeql_swift_build.sh \
+              "$destination" '${{ matrix.scheme }}' "$derived_data" '${{ matrix.action }}'
           done
 
       - name: Analyze
