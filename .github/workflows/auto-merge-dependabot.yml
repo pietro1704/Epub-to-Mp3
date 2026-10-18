@@ -1,4 +1,4 @@
-name: Auto-merge eligible pull requests
+name: Inspect pull request merge eligibility
 
 on:
   push:
@@ -14,9 +14,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+  contents: read
+  pull-requests: read
+  actions: read
 
 concurrency:
   group: auto-merge-queue
@@ -25,10 +25,16 @@ concurrency:
 jobs:
   auto-merge:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    name: Enable auto-merge after required checks
+    name: Inspect required checks without mutations
     runs-on: ubuntu-24.04
     steps:
-      - name: Enable auto-merge and refresh one outdated branch
+      - name: Checkout trusted merge policy
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          persist-credentials: false
+
+      - name: Inspect exact-head merge eligibility
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -38,16 +44,8 @@ jobs:
             --json number,isDraft,author,headRepository,headRefName,headRefOid,mergeStateStatus | \
             jq -c --arg owner "${REPO%%/*}" --arg repo "$REPO" \
               '[.[] | select(.isDraft | not) | select(.author.login == $owner or .author.login == "app/dependabot" or .author.login == "dependabot[bot]") | select(.headRepository.nameWithOwner == $repo)] | sort_by(.number)')
-          for pr in $(jq -r '.[].number' <<< "$prs"); do
-            gh pr merge "$pr" --repo "$REPO" --auto --squash --delete-branch || true
-          done
-          next=$(jq -r '[.[] | select(.mergeStateStatus == "BEHIND")][0] | if . == null then empty else [.number, .headRefOid, .headRefName] | @tsv end' <<< "$prs")
-          if [[ -n "$next" ]]; then
-            IFS=$'\t' read -r pr head_sha head_ref <<< "$next"
-            if gh api --method PUT "repos/$REPO/pulls/$pr/update-branch" -f expected_head_sha="$head_sha"; then
-              # GITHUB_TOKEN branch updates do not start unattended PR checks.
-              gh workflow run ci.yml --repo "$REPO" --ref "$head_ref"
-            else
-              echo "::warning::Could not refresh PR #$pr; retrying on the next event."
+          while IFS=$'\t' read -r pr head_sha; do
+            if ! node scripts/guarded_pr_merge.mjs --repo "$REPO" --pr "$pr" --head "$head_sha"; then
+              echo "PR #$pr is not verifiably green at the inspected head; left unchanged."
             fi
-          fi
+          done < <(jq -r '.[] | [.number, .headRefOid] | @tsv' <<< "$prs")

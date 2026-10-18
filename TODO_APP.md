@@ -1,12 +1,5 @@
 # App delivery backlog
 
-## AH-12 — Preserve durable job state during concurrent updates
-
-- [ ] Owner: root; recover the isolated Rust job mutation fix from preserved branch `feature/job-record-concurrency` (`4885482`) onto current master. Serialize read/modify/write operations across cloned managers and publish complete JSON through unique atomic staging files. Independent managers and processes remain outside this lock contract.
-- Acceptance: concurrent progress leaves a readable Running record; progress cannot erase durable cancellation; terminal progress fails without changing the stored record. Preserve restart/recovery and record metadata. Expired terminal cleanup must finish without recursive locking while retaining active and recent records.
-- Verification: specialist source review approved; regression coverage includes concurrent progress/cancellation and bounded expired-record cleanup. GitHub Actions only; no local tests, native tooling, or device actions. No observed pre-fix race failure or passing runtime result is claimed yet.
-- Delivery: recovery branch `feature/job-record-concurrency-recovery`, targeting master `cc2ed618`; required exact-head checks and merge reconciliation remain pending. Preserve the original branch and all local dirty work.
-
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
 - [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
