@@ -329,6 +329,33 @@ class NativeSimulatorSessionTest < Minitest::Test
     FileUtils.remove_entry(external) if external && File.directory?(external)
   end
 
+  def test_plan_accepts_testroot_bundle_and_rejects_symlink_escape_on_revalidation
+    load_subject
+    bundle = File.join(@directory, "OwnedTests.xctest")
+    FileUtils.mkdir_p(bundle)
+    external = Dir.mktmpdir("simulator-external-bundle-")
+    external_bundle = File.join(File.realpath(external), "ExternalTests.xctest")
+    FileUtils.mkdir_p(external_bundle)
+    xctestrun = @plan.fetch("files").fetch("xctestrun")
+    xml = File.read(xctestrun.fetch("path")).sub(
+      "</dict></dict></plist>",
+      "<key>TestBundlePath</key><string>__TESTROOT__/OwnedTests.xctest</string></dict></dict></plist>")
+    File.write(xctestrun.fetch("path"), xml)
+    xctestrun["sha256"] = Digest::SHA256.file(xctestrun.fetch("path")).hexdigest
+    File.write(@plan_path, JSON.generate(@plan))
+    plan = NativeSimulatorSession::Plan.new(@plan_path)
+    assert_instance_of NativeSimulatorSession::Plan, plan
+
+    Dir.rmdir(bundle)
+    File.symlink(external_bundle, bundle)
+    error = assert_raises(NativeSimulatorSession::Stop) { plan.verify! }
+    assert_match(/TestBundlePath/, error.message)
+    assert_empty operations
+    refute File.exist?(@lease)
+  ensure
+    FileUtils.remove_entry(external) if external && File.directory?(external)
+  end
+
   def test_success_orders_fixed_phases_and_confirms_cleanup_before_releasing_lease
     skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
     result = run_session
