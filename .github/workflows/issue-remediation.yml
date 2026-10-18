@@ -85,4 +85,4 @@ jobs:
           git push origin "$BRANCH"
           PR=$(gh pr create --base master --head "$BRANCH" --title "fix: resolve #${ISSUE_NUMBER}" --body "Automated remediation for #${ISSUE_NUMBER}: ${ISSUE_TITLE}")
           gh pr comment "$ISSUE_NUMBER" --body "Automated remediation opened ${PR}; required checks must pass before merge."
-          gh pr merge "$PR" --squash --auto --delete-branch
+          echo "::notice::Auto-merge disabled for $PR. After exact-head CI and CodeQL are green and the base is current, use the trusted master scripts/guarded_pr_merge.mjs with --repo $GITHUB_REPOSITORY --pr NUMBER --head SHA --merge."
