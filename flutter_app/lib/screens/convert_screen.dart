@@ -73,6 +73,12 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   DesktopEmbeddedConverter? _activeDesktopConverter;
   String? _activeNativeOutputPath;
 
+  bool get _usesEmbeddedConversion =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.windows);
+
   @override
   void initState() {
     super.initState();
@@ -212,10 +218,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       final starter =
           widget.startConversion ??
           (request) async {
-            if (!kIsWeb &&
-                (defaultTargetPlatform == TargetPlatform.android ||
-                    defaultTargetPlatform == TargetPlatform.linux ||
-                    defaultTargetPlatform == TargetPlatform.windows)) {
+            if (_usesEmbeddedConversion) {
               final root = await getApplicationDocumentsDirectory();
               final output =
                   '${root.path}/audiobooks/${DateTime.now().millisecondsSinceEpoch}';
@@ -418,16 +421,22 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           ),
           const SizedBox(height: 12),
           const Text('Options', style: TextStyle(fontWeight: FontWeight.bold)),
-          SwitchListTile(
-            title: const Text('Include cover'),
-            value: _includeCover,
-            onChanged: (v) => setState(() => _includeCover = v),
-          ),
-          SwitchListTile(
-            title: const Text('Normalize audio'),
-            value: _normalizeAudio,
-            onChanged: (v) => setState(() => _normalizeAudio = v),
-          ),
+          if (_usesEmbeddedConversion)
+            const Text(
+              'Cover and audio processing options are managed by the local converter.',
+            )
+          else ...[
+            SwitchListTile(
+              title: const Text('Include cover'),
+              value: _includeCover,
+              onChanged: (v) => setState(() => _includeCover = v),
+            ),
+            SwitchListTile(
+              title: const Text('Normalize audio'),
+              value: _normalizeAudio,
+              onChanged: (v) => setState(() => _normalizeAudio = v),
+            ),
+          ],
           if (_submitting) const LinearProgressIndicator(),
           if (jobId != null) ...[
             const SizedBox(height: 12),
