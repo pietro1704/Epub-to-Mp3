@@ -59,10 +59,14 @@ elif a[:1]==['shell']:
   print(stat)
  elif a[:2]==['am','start']:
   expected=s['package']+'/com.pietrocode.epubtomp3.flutter_app.MainActivity'
-  if a!=['am','start','-W','-n',expected]:
+  if a not in (['am','start','-W','-n',expected],['am','start','-n',expected]):
    print('Error type 3\nError: Activity class does not exist');sys.exit(0)
   s['active']=True;s['launches']+=1;save_state()
   if s.get('slowAmStart'):time.sleep(3.2)
+  if s.get('delayedFirstDraw'):
+   s['firstDrawPending']=True;save_state()
+   if '-W' in a:
+    time.sleep(3.2);s['firstDrawPending']=False;save_state()
   p.with_suffix('.am-returned').write_text('response')
   print('Status: ok')
  elif a[:2]==['am','force-stop']:
@@ -351,6 +355,18 @@ class SessionContracts(unittest.TestCase):
         self.assertEqual(report.get('errorCommand'),[str(self.adb),'-s','fixture-serial',
             'shell','am','start','-W','-n',
             'com.pietrocode.epubtomp3.flutter_app.verification/com.pietrocode.epubtomp3.flutter_app.MainActivity'])
+
+    def test_launch_ownership_does_not_wait_for_first_draw(self):
+        config=json.loads(self.config.read_text());config['seconds']=2;self.config.write_text(json.dumps(config))
+        self.mutate(delayedFirstDraw=True)
+        self.start();self.active()
+        self.assertTrue(json.loads(self.state.read_text())['firstDrawPending'])
+        self.assertTrue(self.state.with_suffix('.am-returned').exists())
+        calls=[json.loads(line) for line in self.state.with_suffix('.calls').read_text().splitlines()]
+        self.assertFalse(any(call[2:4]==['shell','input'] for call in calls))
+        self.finish();report=self.result(0)
+        self.assertTrue(report['started'])
+        self.assert_stopped(report)
 
     def test_slow_am_start_within_startup_budget_can_finish_and_cleanup(self):
         self.mutate(slowAmStart=True)
