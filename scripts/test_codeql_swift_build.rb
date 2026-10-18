@@ -7,6 +7,121 @@ require 'open3'
 require 'rbconfig'
 require 'tmpdir'
 
+class IosDeviceTaskEnvironmentTest < Minitest::Test
+  ROOT = File.expand_path('..', __dir__)
+
+  def setup
+    @root = File.realpath(Dir.mktmpdir('ios task environment '))
+    @bin = File.join(@root, 'bin')
+    @calls = File.join(@root, 'calls.jsonl')
+    @lease = File.join(@root, 'fixture.lease')
+    FileUtils.mkdir_p([@bin, File.join(@root, 'scripts')])
+    FileUtils.cp(File.join(ROOT, 'scripts/apple_target_clang.sh'), File.join(@root, 'scripts'))
+    File.write(File.join(@root, 'scripts/native_job.rb'), <<~'RUBY')
+      abort 'Unexpected fixture lease invocation' unless ARGV.shift(2) == ['build', '--']
+      File.open(ENV.fetch('FIXTURE_LEASE'), 'a+') do |file|
+        abort 'Fixture lease unavailable' unless file.flock(File::LOCK_EX | File::LOCK_NB)
+        exec(*ARGV, 9 => file)
+      end
+    RUBY
+    shim('xcrun', <<~'RUBY')
+      abort 'Unexpected SDK lookup' unless ARGV[0] == '--sdk' && %w[macosx iphoneos].include?(ARGV[1])
+      case ARGV[2..]
+      when ['--show-sdk-path'] then puts File.join(ENV.fetch('MISE_PROJECT_ROOT'), 'SDKs', "#{ARGV[1]}.sdk")
+      when ['--find', 'clang'], ['--find', 'clang++'] then puts File.join(ENV.fetch('FIXTURE_BIN'), ARGV.last)
+      else abort 'Unexpected SDK operation'
+      end
+    RUBY
+    shim('mise', <<~RUBY)
+      require 'json'
+      abort 'Unexpected mise operation' unless ARGV.shift(2) == ['exec', '--']
+      if ARGV.first == 'ruby'
+        ARGV.shift
+        exec #{RbConfig.ruby.inspect}, *ARGV
+      elsif ARGV == ['rustup', 'which', '--toolchain', 'stable', 'rustc']
+        puts File.join(ENV.fetch('FIXTURE_BIN'), 'rustc')
+        exit
+      end
+      abort 'Unexpected compiler operation' unless ARGV.first == 'cargo'
+      File.open(ENV.fetch('FIXTURE_LEASE'), 'a+') do |file|
+        abort 'Build escaped fixture lease' if file.flock(File::LOCK_EX | File::LOCK_NB)
+      end
+      keys = %w[SDKROOT MACOSX_DEPLOYMENT_TARGET IPHONEOS_DEPLOYMENT_TARGET
+                EPUB2MP3_APPLE_SDK EPUB2MP3_APPLE_CLANG_TARGET CC CXX CFLAGS CXXFLAGS
+                CC_x86_64_apple_darwin CC_aarch64_apple_ios CFLAGS_aarch64_apple_ios
+                RUSTC BINDGEN_EXTRA_CLANG_ARGS BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios
+                CODEQL_TRACER_CONFIGURATION]
+      File.open(ENV.fetch('FIXTURE_CALLS'), 'a') do |file|
+        file.puts(JSON.generate({ argv: ARGV, environment: ENV.to_h.slice(*keys) }))
+      end
+      exit Integer(ENV.fetch('FIXTURE_HOST_STATUS', '0')) if ARGV.include?('espeak-rs-sys')
+    RUBY
+  end
+
+  def teardown
+    FileUtils.remove_entry(@root)
+  end
+
+  def shim(name, body)
+    path = File.join(@bin, name)
+    File.write(path, "#!#{RbConfig.ruby}\n#{body}\n")
+    FileUtils.chmod(0o755, path)
+  end
+
+  def invoke(host_status: '0')
+    source = File.read(File.join(ROOT, 'mise.toml'))
+    task = source.match(/^\[tasks\."converter-ffi:ios-device"\]\n.*?^run = '''\n(.*?)^'''/m)
+    refute_nil task, 'real iOS device task must exist'
+    Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'MISE_PROJECT_ROOT' => @root,
+                    'FIXTURE_BIN' => @bin, 'FIXTURE_CALLS' => @calls, 'FIXTURE_LEASE' => @lease,
+                    'FIXTURE_HOST_STATUS' => host_status, 'CLANG_WRAPPER' => nil,
+                    'CODEQL_TRACER_CONFIGURATION' => 'fixture-codeql-tracing' },
+                  '/bin/bash', '-euo', 'pipefail', '-c', task[1], chdir: @root)
+  end
+
+  def test_real_ios_task_sets_wrapper_before_device_environment_expansion
+    output, error, status = invoke
+    assert status.success?, "#{output}#{error}"
+    calls = File.readlines(@calls).map { |line| JSON.parse(line) }
+    assert_equal 2, calls.length
+    host, device = calls
+    refute_nil device, 'device build must follow host phonemizer assets'
+    assert_equal %w[cargo build -p espeak-rs-sys --features compile-espeak-intonations --target-dir] +
+                 [File.join(@root, 'target/espeak-data'), '--jobs', '1'], host.fetch('argv')
+    host_env = host.fetch('environment')
+    assert_equal File.join(@root, 'SDKs/macosx.sdk'), host_env.fetch('SDKROOT')
+    assert_equal File.join(@bin, 'clang'), host_env.fetch('CC')
+    refute host_env.key?('EPUB2MP3_APPLE_SDK')
+    assert_equal 'fixture-codeql-tracing', host_env.fetch('CODEQL_TRACER_CONFIGURATION')
+    sdk = File.join(@root, 'SDKs/iphoneos.sdk')
+    assert_equal ['cargo', '--config', 'target.aarch64-apple-ios.linker="clang"', '--config',
+                  "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=#{sdk}\"]",
+                  'build', '-p', 'converter-ffi', '--release', '--features', 'piper-runtime',
+                  '--target', 'aarch64-apple-ios', '--jobs', '1'], device.fetch('argv')
+    environment = device.fetch('environment')
+    assert_equal File.join(@root, 'scripts/apple_target_clang.sh'), environment.fetch('CC_aarch64_apple_ios')
+    assert_equal '15.0', environment.fetch('IPHONEOS_DEPLOYMENT_TARGET')
+    assert_equal 'iphoneos', environment.fetch('EPUB2MP3_APPLE_SDK')
+    assert_equal 'arm64-apple-ios15.0', environment.fetch('EPUB2MP3_APPLE_CLANG_TARGET')
+    assert_equal "-target arm64-apple-ios15.0 -isysroot #{sdk}", environment.fetch('CFLAGS_aarch64_apple_ios')
+    %w[BINDGEN_EXTRA_CLANG_ARGS BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios].each do |key|
+      assert_equal "--target=arm64-apple-ios15.0 --sysroot=#{sdk} -include stdio.h", environment.fetch(key)
+    end
+    assert_equal File.join(@bin, 'rustc'), environment.fetch('RUSTC')
+    assert_equal 'fixture-codeql-tracing', environment.fetch('CODEQL_TRACER_CONFIGURATION')
+  end
+
+  def test_host_asset_failure_propagates_without_device_build
+    output, error, status = invoke(host_status: '23')
+    assert_equal 23, status.exitstatus, "#{output}#{error}"
+    calls = File.readlines(@calls).map { |line| JSON.parse(line) }
+    assert_equal 1, calls.length
+    assert_includes calls.first.fetch('argv'), 'espeak-rs-sys'
+    refute_includes calls.first.fetch('argv'), 'converter-ffi'
+    File.open(@lease, 'a+') { |file| assert file.flock(File::LOCK_EX | File::LOCK_NB) }
+  end
+end
+
 class CodeqlSwiftBuildTest < Minitest::Test
   def setup
     @root = File.realpath(Dir.mktmpdir('codeql build '))
