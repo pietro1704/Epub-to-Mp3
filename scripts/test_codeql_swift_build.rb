@@ -196,7 +196,7 @@ class CodeqlSwiftBuildTest < Minitest::Test
                                     'TEST_HOST_ARCH' => 'x86_64', 'TEST_FFI_ARCH' => 'arm64', 'TEST_ORT_ARCH' => 'arm64')
     assert status.success?, error
     arguments = JSON.parse(File.read(@calls)).fetch('argv')
-    assert_includes arguments, 'platform=macOS,arch=arm64'
+    assert_includes arguments, 'generic/platform=macOS'
     assert_includes arguments, 'ARCHS=arm64'
   end
 
@@ -205,7 +205,7 @@ class CodeqlSwiftBuildTest < Minitest::Test
                                     'TEST_HOST_ARCH' => 'arm64', 'TEST_FFI_ARCH' => 'x86_64', 'TEST_ORT_ARCH' => 'x86_64')
     assert status.success?, error
     arguments = JSON.parse(File.read(@calls)).fetch('argv')
-    assert_includes arguments, 'platform=macOS,arch=x86_64'
+    assert_includes arguments, 'generic/platform=macOS'
     assert_includes arguments, 'ARCHS=x86_64'
   end
 
@@ -223,7 +223,7 @@ class CodeqlSwiftBuildTest < Minitest::Test
     _output, error, status = invoke('platform=macOS', 'GITHUB_ACTIONS' => 'false', 'RUNNER_ARCH' => 'X64')
     assert status.success?, error
     arguments = JSON.parse(File.read(@calls)).fetch('argv')
-    assert_includes arguments, 'platform=macOS,arch=arm64'
+    assert_includes arguments, 'generic/platform=macOS'
     assert_includes arguments, 'ARCHS=arm64'
   end
 
@@ -244,7 +244,7 @@ class CodeqlSwiftBuildTest < Minitest::Test
       call = JSON.parse(File.read(@calls))
       assert_equal File.join(@root, 'ios/EpubToMp3'), call.fetch('cwd')
       arguments = call.fetch('argv')
-      assert_includes arguments, "platform=macOS,arch=#{arch}"
+      assert_includes arguments, 'generic/platform=macOS'
       assert_includes arguments, "ARCHS=#{arch}"
       assert_includes arguments, 'ONLY_ACTIVE_ARCH=YES'
       assert_includes arguments, 'EpubToMp3-UnitTests'

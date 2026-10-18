@@ -31,7 +31,11 @@ if [[ "$destination" == *macOS* ]]; then
   done
   build_settings+=("ARCHS=$host_arch" ONLY_ACTIVE_ARCH=YES)
   if [[ "$destination" == 'platform=macOS' ]]; then
-    destination="platform=macOS,arch=$host_arch"
+    if [[ "$action" == 'build-for-testing' ]]; then
+      destination='generic/platform=macOS'
+    else
+      destination="platform=macOS,arch=$host_arch"
+    fi
   fi
 fi
 cd "$root/ios/EpubToMp3"
