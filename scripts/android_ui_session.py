@@ -281,6 +281,8 @@ def run_session(config, root, session_id):
             report["status"] = 128 + stop[0]
     except Exception as error:
         report.update(status=125, error=type(error).__name__)
+        if isinstance(error, (subprocess.TimeoutExpired, subprocess.CalledProcessError)):
+            report["errorCommand"] = error.cmd
     finally:
         host_reaped = process is None
         if process is not None:
