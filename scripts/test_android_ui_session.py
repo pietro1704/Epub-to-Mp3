@@ -350,7 +350,7 @@ class SessionContracts(unittest.TestCase):
             'com.pietrocode.epubtomp3.flutter_app.verification/com.pietrocode.epubtomp3.flutter_app.MainActivity'])
 
     def test_slow_am_start_within_startup_budget_can_finish_and_cleanup(self):
-        self.mutate(pids=[self.apps[0].pid],slowAmStart=True)
+        self.mutate(slowAmStart=True)
         self.start();self.active()
         self.assertTrue(self.state.with_suffix('.am-returned').exists())
         self.finish();report=self.result(0)
@@ -358,7 +358,7 @@ class SessionContracts(unittest.TestCase):
         self.assert_stopped(report)
 
     def test_signal_during_slow_am_start_cleans_only_after_owned_response(self):
-        self.mutate(pids=[self.apps[0].pid],slowAmStart=True)
+        self.mutate(slowAmStart=True)
         self.start();self.wait(lambda:json.loads(self.state.read_text())['active'])
         self.assertFalse(self.state.with_suffix('.am-returned').exists())
         self.process.send_signal(signal.SIGTERM)
