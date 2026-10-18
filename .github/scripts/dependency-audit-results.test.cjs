@@ -215,3 +215,85 @@ test('a pip report without dependency results must not default to a clean audit'
     assertRejected(result, directory, /Invalid scanner schema: pip-audit\.json/);
   });
 });
+
+for (const vulnerable of [false, true]) {
+  test(`legacy pip dependency arrays preserve ${vulnerable ? 'vulnerable' : 'clean'} results`, () => {
+    const report = [{ name: 'example', version: '1.0', vulns: vulnerable ? [{ id: 'PYSEC-2099-1' }] : [] }];
+    const statuses = { ...validReports()['scanner-statuses.json'], pipAudit: Number(vulnerable) };
+    withReports({ 'pip-audit.json': report, 'scanner-statuses.json': statuses }, (result, directory) => {
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'vulnerability-findings.json'), 'utf8')),
+        vulnerable ? [{ source: 'pip-audit.json', data: report }] : []);
+    });
+  });
+}
+
+for (const report of [[], { dependencies: [] }]) {
+  test(`empty pip dependency ${Array.isArray(report) ? 'legacy array' : 'object'} is valid`, () => {
+    withReports({ 'pip-audit.json': report }, result => {
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, 'findings=[]\n');
+    });
+  });
+}
+
+const pipEntry = { name: 'example', version: '1.0', vulns: [] };
+for (const [label, report] of [
+  ['null container', null], ['string container', '"invalid"'], ['non-array dependencies', { dependencies: {} }],
+  ...[null, [], 'invalid', { version: '1.0', vulns: [] }, { ...pipEntry, name: 1 },
+    { ...pipEntry, name: '' }, { name: 'example', vulns: [] }, { ...pipEntry, version: 1 },
+    { ...pipEntry, version: '' }, { name: 'example', version: '1.0' }, { ...pipEntry, vulns: {} }]
+    .map((entry, index) => [`invalid entry ${index}`, { dependencies: [entry] }]),
+]) {
+  test(`pip schema rejects ${label}`, () => {
+    withReports({ 'pip-audit.json': report }, (result, directory) => {
+      assertRejected(result, directory, /Invalid scanner schema: pip-audit\.json/);
+    });
+  });
+}
+
+for (const entry of [{ name: 'example', skip_reason: null }, { ...pipEntry, skip_reason: '' }]) {
+  test(`pip skip marker takes precedence with ${Object.hasOwn(entry, 'vulns') ? 'complete' : 'incomplete'} fields`, () => {
+    withReports({ 'pip-audit.json': { dependencies: [entry] } }, (result, directory) => {
+      assertRejected(result, directory, /Incomplete scanner report: pip-audit\.json/);
+    });
+  });
+}
+
+for (const [label, vulnerabilities] of [
+  ['null results', null], ['array results', []], ['non-boolean found', { found: 0, count: 0, list: [] }],
+  ...[-1, 0.5, '0'].map(count => [`invalid count ${JSON.stringify(count)}`, { found: false, count, list: [] }]),
+  ['non-array list', { found: false, count: 0, list: {} }],
+  ['count mismatch', { found: true, count: 1, list: [] }],
+  ['found mismatch', { found: true, count: 0, list: [] }],
+]) {
+  test(`cargo schema rejects ${label}`, () => {
+    const report = { ...validReports()['cargo-audit.json'], vulnerabilities };
+    withReports({ 'cargo-audit.json': report }, (result, directory) => {
+      assertRejected(result, directory, /Invalid scanner schema: cargo-audit\.json/);
+    });
+  });
+}
+
+for (const [label, counts] of [
+  ['missing severity count', { total: 0 }],
+  ...[-1, 0.5, '0'].map(low => [`invalid severity count ${JSON.stringify(low)}`,
+    { ...validReports()['npm-audit.json'].metadata.vulnerabilities, low }]),
+  ['inconsistent total', { ...validReports()['npm-audit.json'].metadata.vulnerabilities, total: 1 }],
+]) {
+  test(`npm schema rejects ${label}`, () => {
+    const report = { ...validReports()['npm-audit.json'], metadata: { vulnerabilities: counts } };
+    withReports({ 'npm-audit.json': report }, (result, directory) => {
+      assertRejected(result, directory, /Invalid scanner schema: npm-audit\.json/);
+    });
+  });
+}
+
+test('npm findings require the vulnerability payload instead of metadata alone', () => {
+  const report = npmReport('moderate');
+  delete report.vulnerabilities;
+  const statuses = { ...validReports()['scanner-statuses.json'], npmAudit: 1 };
+  withReports({ 'npm-audit.json': report, 'scanner-statuses.json': statuses }, (result, directory) => {
+    assertRejected(result, directory, /Invalid scanner schema: npm-audit\.json/);
+  });
+});
