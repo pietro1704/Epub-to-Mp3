@@ -201,7 +201,7 @@ def safe_payload_listing(output):
     return listing.finish()
 
 
-def declared_payload(directory):
+def declared_payload(directory, metadata=None):
     infos = []
     for info in Path(directory).rglob("PackageInfo"):
         infos.append(info)
@@ -224,6 +224,13 @@ def declared_payload(directory):
         total += int(payloads[0].get("installKBytes")) * 1024
         if total > MAX_PAYLOAD:
             raise Blocked("Declared package payload exceeds 24 GiB")
+        if metadata is not None:
+            count = payloads[0].get("numberOfFiles")
+            if count is not None and not re.fullmatch(r"[0-9]{1,10}", count):
+                raise Blocked("Declared package file count is malformed")
+            metadata.append({"package_info_sha256": hashlib.sha256(data).hexdigest(),
+                             "install_bytes": int(payloads[0].get("installKBytes")) * 1024,
+                             "number_of_files": int(count) if count is not None else None})
     return total
 
 
@@ -526,15 +533,18 @@ class Inspector:
         output = self.command(["/usr/sbin/pkgutil", "--check-signature", str(package)], timeout=90)
         self.report["certificate_sha256"] = signature_gate(output.decode())
         self.report["signature_verified"] = True
-        self.report["payload_file_count"] = self.command(
-            ["/usr/sbin/pkgutil", "--payload-files", str(package)], timeout=90, consumer=PayloadListing())
         disk_gate(self.root, SIZE)
         flat = self.root / "flat"
         self.command(["/usr/sbin/pkgutil", "--expand", str(package), str(flat)],
                      timeout=180, monitor=lambda: disk_gate(self.root))
-        expected = declared_payload(flat)
+        # Read only bounded signed package metadata before listing. Preserve its
+        # declared count when the unchanged listing gate blocks this archive.
+        self.report["package_payload_metadata"] = []
+        expected = declared_payload(flat, self.report["package_payload_metadata"])
         self.report["declared_payload_bytes"] = expected
         shutil.rmtree(within(self.root, flat))
+        self.report["payload_file_count"] = self.command(
+            ["/usr/sbin/pkgutil", "--payload-files", str(package)], timeout=90, consumer=PayloadListing())
         disk_gate(self.root, expected + SIZE)
         expanded = self.root / "expanded"
         self.command(["/usr/sbin/pkgutil", "--expand-full", str(package), str(expanded)],

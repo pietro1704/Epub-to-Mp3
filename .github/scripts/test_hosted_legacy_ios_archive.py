@@ -149,6 +149,20 @@ class ArchiveSafetyTests(unittest.TestCase):
             with self.assertRaises(archive.Blocked):
                 archive.declared_payload(flat)
 
+    def test_signed_payload_count_metadata_is_bounded_and_absence_is_explicit(self):
+        flat = self.inspector.root / "flat"
+        flat.mkdir()
+        info = flat / "PackageInfo"
+        info.write_text('<pkg-info><payload installKBytes="1024"/></pkg-info>')
+        metadata = []
+        archive.declared_payload(flat, metadata)
+        self.assertIsNone(metadata[0]["number_of_files"])
+        for count in ["-1", "not-a-count", "9" * 11]:
+            with self.subTest(count=count):
+                info.write_text(f'<pkg-info><payload installKBytes="1024" numberOfFiles="{count}"/></pkg-info>')
+                with self.assertRaisesRegex(archive.Blocked, "file count is malformed"):
+                    archive.declared_payload(flat, [])
+
     def test_download_size_and_free_space_are_checked_while_child_is_active(self):
         with self.inspector.archive.open("wb") as handle:
             handle.truncate(archive.SIZE + 1)  # Sparse fixture, no actual multi-GB download.
@@ -439,16 +453,17 @@ class ArchiveSafetyTests(unittest.TestCase):
             destination = Path(arguments[-1])
             destination.mkdir()
             if arguments[1] == "--expand":
-                (destination / "PackageInfo").write_text('<pkg-info><payload installKBytes="1024"/></pkg-info>')
+                (destination / "PackageInfo").write_text('<pkg-info><payload installKBytes="1024" numberOfFiles="1"/></pkg-info>')
             return b""
         self.inspector.command = command
         with patch.object(archive, "disk_gate", return_value=100 * archive.GIB) as gate:
             expanded = self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
-        self.assertEqual(calls, ["--check-signature", "--payload-files", "--expand", "--expand-full"])
+        self.assertEqual(calls, ["--check-signature", "--expand", "--payload-files", "--expand-full"])
         self.assertEqual(gate.call_args_list[0].args, (self.inspector.root, archive.SIZE))
         self.assertEqual(gate.call_args_list[1].args, (self.inspector.root, 1024**2 + archive.SIZE))
         self.assertTrue(expanded.is_dir())
         self.assertFalse((self.inspector.root / "flat").exists())
+        self.assertEqual(self.inspector.report["package_payload_metadata"][0]["number_of_files"], 1)
 
     def test_trust_text_requires_the_exact_apple_ca_and_rejects_expired_chain(self):
         output = REAL_APPLE_SIGNATURE
@@ -740,22 +755,41 @@ class ArchiveSafetyTests(unittest.TestCase):
         self.assertFalse(self.inspector.report["payload_listing"]["complete"])
         self.assertFalse((self.inspector.reports / "active-command.json").exists())
 
-    def test_verified_signature_cannot_expand_after_real_listing_failure(self):
+    def test_signed_metadata_survives_real_listing_failure_overflow_and_timeout(self):
         original = self.inspector.command
-        calls = []
-        def command(arguments, **options):
-            calls.append(arguments[1])
-            if arguments[1] == "--check-signature":
-                return REAL_APPLE_SIGNATURE.encode()
-            if arguments[1] == "--payload-files":
-                return original([sys.executable, "-c", "print('../escape',flush=True)"], **options)
-            self.fail("Apple payload expansion was reached after rejected listing")
-        self.inspector.command = command
-        with self.assertRaises(archive.Blocked):
-            self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
-        self.assertEqual(calls, ["--check-signature", "--payload-files"])
-        self.assertTrue(self.inspector.report["signature_verified"])
-        self.assertFalse(self.inspector.report["payload_listing"]["complete"])
+        metadata = b'<pkg-info><payload installKBytes="1024" numberOfFiles="3"/></pkg-info>'
+        scripts = ["print('../escape',flush=True)", "print('a\\nb\\nc',flush=True)",
+                   "import time; print('valid',flush=True); time.sleep(30)"]
+        for script in scripts:
+            with self.subTest(script=script):
+                calls = []
+                def command(arguments, **options):
+                    calls.append(arguments[1])
+                    if arguments[1] == "--check-signature":
+                        return REAL_APPLE_SIGNATURE.encode()
+                    if arguments[1] == "--expand":
+                        destination = Path(arguments[-1])
+                        destination.mkdir()
+                        (destination / "PackageInfo").write_bytes(metadata)
+                        return b""
+                    if arguments[1] == "--payload-files":
+                        options["timeout"] = 1
+                        return original([sys.executable, "-c", script], **options)
+                    self.fail("Full payload extraction was reached after rejected listing")
+                self.inspector.command = command
+                with patch.object(archive, "disk_gate", return_value=100 * archive.GIB), \
+                        patch.object(archive, "MAX_LISTING_ENTRIES", 2):
+                    with self.assertRaises(archive.Blocked):
+                        self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
+                self.assertEqual(calls, ["--check-signature", "--expand", "--payload-files"])
+                self.assertEqual(self.inspector.report["package_payload_metadata"], [{
+                    "package_info_sha256": hashlib.sha256(metadata).hexdigest(),
+                    "install_bytes": 1024**2, "number_of_files": 3}])
+                self.assertEqual(self.inspector.report["declared_payload_bytes"], 1024**2)
+                self.assertTrue(self.inspector.report["signature_verified"])
+                self.assertFalse(self.inspector.report["payload_listing"]["complete"])
+                self.assertFalse((self.inspector.root / "flat").exists())
+                self.assertFalse((self.inspector.reports / "active-command.json").exists())
 
 
 if __name__ == "__main__":
