@@ -14,16 +14,11 @@ Product CLI, web, and Flutter integrations use Rust binaries, WASM, or bindings.
 Python/FastAPI remains legacy compatibility material, not an Apple sidecar or
 a product runtime dependency. Shared conversion features belong in Rust first.
 
-Current TTS policy (user decision 2026-10-16): Piper `pt_BR-faber-medium` is
-the default app primary; installed system TTS is the default fallback. Prefer
-installed Apple Luciana for pt-BR; Linux may use installed eSpeak NG. Native
-browser speech is listening-only; MP3 conversion/export requires Piper. Continue
-working native fallback through missing/persistently failing Piper and retry
-Piper at bounded recovery points; keep it configured as primary and report
-native use. This supersedes the old three-failure stop rule for new opted-in
-app policies. Preserve explicit choices, strict old jobs and manual overrides.
-Online Edge fallback requires explicit consent and remains off by default.
-See `docs/plans/2026-10-16-piper-native-fallback.md` for acceptance and limits.
+Current TTS policy: Piper `pt_BR-faber-medium` is the default primary provider.
+The user may select a primary and optional secondary provider; online Edge
+fallback requires explicit consent and is disabled by default. Manual conversion
+may inherit preferences or capture a strict per-job selection. Retry the primary
+on each segment and stop persistent failures instead of switching a whole book.
 Prioritize first playable audio on weak phones. Install models only through an
 explicit user action; never download implicitly or require a paid provider.
 
@@ -127,19 +122,3 @@ Current user preference: no CI or PR monitoring. Do not infer permission to merg
 publish, close issues, or expand verification into repository-wide remote audits.
 Completion means the authorized scope is implemented and its verification is reported;
 a plan, skipped test, or displayed 100% alone does not establish success.
-
-## Highest-priority execution correction (2026-10-16)
-
-All tests and CI execute only on GitHub Actions. Intel Simulator execution is
-quarantined after recurrent IGGuC/SimMetalHost kernel panics; no direct tool,
-environment flag or inherited lease may bypass it. Continue independent safe
-work and report required SE runtime acceptance blocked. Read the canonical
-[GPU safety procedure](docs/agents/intel-gpu-safety.md) before native tooling.
-Edit/Stop hooks notify only; they start no native compilation.
-
-Final campaign delivery retains only master: merge coherent branches through
-PRs after exact-head GitHub checks pass, confirm merge, then delete only
-confirmed-merged branches/worktrees. Preserve dirty and unmerged work. Periodic
-GitHub Actions/issues monitoring and prioritized repairs are authorized. This
-correction supersedes earlier local-test/no-monitoring defaults; it does not
-establish a GPU driver fix or authorize a new Simulator attempt.

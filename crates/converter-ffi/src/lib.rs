@@ -563,7 +563,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
     if let Err(error) = std::fs::create_dir_all(output) {
         return fail(format!("failed to create output directory: {error}"));
     }
-    let job = format!("embedded-{}", std::process::id());
+    let job = converter_core::embedded::fresh_embedded_job_id();
     let generated_output_dir = output.join(&job);
     let request = converter_core::worker::ConversionRequest {
         tts_preferences: None,
@@ -2630,7 +2630,7 @@ mod android_jni {
         unsafe {
             (*handle).platform_tts = Some(Arc::new(platform));
         }
-        let job = format!("embedded-{}", std::process::id());
+        let job = converter_core::embedded::fresh_embedded_job_id();
         let output = match CString::new(Path::new(&output).join(&job).to_string_lossy().as_bytes())
         {
             Ok(output) => output,
@@ -3231,6 +3231,80 @@ mod tests {
 
     fn fixture() -> tempfile::NamedTempFile {
         fixture_chapters(1)
+    }
+
+    #[test]
+    fn legacy_conversion_failures_keep_independent_default_job_identity() {
+        const GUARD: &str = "EPUB_LEGACY_JOB_IDENTITY_ISOLATED_TEST";
+        if std::env::var(GUARD).as_deref() != Ok("1") {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tests::legacy_conversion_failures_keep_independent_default_job_identity",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(GUARD, "1")
+                .env("PATH", "/no-tools")
+                .env("CONVERTER_AUDIO_DISABLE_EXTERNAL_TOOLS", "1")
+                .env("EDGE_PROXY", "blocked://no-network")
+                .env("NO_PROXY", "")
+                .env("no_proxy", "")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout)
+                .contains("LEGACY_JOB_IDENTITY_ASSERTIONS_COMPLETED"));
+            return;
+        }
+        struct SessionGuard(*mut ConverterSession);
+        impl Drop for SessionGuard {
+            fn drop(&mut self) {
+                unsafe { converter_session_free(self.0) };
+            }
+        }
+        let book = fixture();
+        let source = std::fs::read(book.path()).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let output = CString::new(root.path().to_str().unwrap()).unwrap();
+        let session = SessionGuard(unsafe { converter_session_open(input.as_ptr()) });
+        assert!(!session.0.is_null());
+        let mut errors = Vec::new();
+        for _ in 0..2 {
+            unsafe {
+                let response =
+                    converter_session_convert_json(session.0, output.as_ptr(), i32::MAX, i32::MAX);
+                if !response.is_null() {
+                    converter_string_free(response);
+                    panic!("an absent chapter must fail before synthesis");
+                }
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                errors.push(CStr::from_ptr(error).to_string_lossy().into_owned());
+                converter_string_free(error);
+            }
+        }
+        assert!(
+            errors.iter().all(|error| error.contains("selected chapters have no readable text")),
+            "each fresh legacy call must reach chapter validation without an ID collision: {errors:?}"
+        );
+        let jobs = converter_core::jobs::JobManager::new(root.path().join(".jobs"))
+            .unwrap()
+            .list()
+            .unwrap();
+        assert_eq!(jobs.len(), 2);
+        assert_ne!(jobs[0].job_id, jobs[1].job_id);
+        assert!(jobs
+            .iter()
+            .all(|job| job.state == converter_core::jobs::JobState::Failed));
+        assert_eq!(std::fs::read(book.path()).unwrap(), source);
+        println!("LEGACY_JOB_IDENTITY_ASSERTIONS_COMPLETED");
     }
 
     fn fixture_chapters(count: usize) -> tempfile::NamedTempFile {

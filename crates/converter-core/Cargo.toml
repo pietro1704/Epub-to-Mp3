@@ -20,7 +20,7 @@ percent-encoding = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 rusty_mp3 = "1.0.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
