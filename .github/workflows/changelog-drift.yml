@@ -16,24 +16,23 @@ on:
       - "web/package.json"
       - "CHANGELOG.md"
       - "cliff.toml"
+      - '.github/workflows/changelog-drift.yml'
+      - '.github/workflows/changelog-drift-contracts.yml'
+      - '.github/scripts/changelog-drift.test.cjs'
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   drift:
     runs-on: ubuntu-24.04
-    # Skip the workflow entirely on Dependabot PRs — they intentionally
-    # don't touch CHANGELOG.md, so flagging drift on every dependency
-    # bump is just noise that blocks auto-merge.
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
     # Informational only — never gate merges on this job.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install git-cliff
         uses: orhun/git-cliff-action@v4
@@ -49,24 +48,16 @@ jobs:
           if [ ! -f GENERATED_CHANGELOG.md ]; then
             echo "drift=skip" >> "$GITHUB_OUTPUT"
             echo "git-cliff did not produce output; skipping comparison."
+            echo "git-cliff did not produce output; skipping comparison. This check is informational." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if diff -q CHANGELOG.md GENERATED_CHANGELOG.md > /dev/null; then
             echo "drift=false" >> "$GITHUB_OUTPUT"
             echo "No CHANGELOG drift."
+            echo "No CHANGELOG drift." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "drift=true" >> "$GITHUB_OUTPUT"
             echo "::warning::CHANGELOG.md is out of sync with git-cliff output. Run 'mise run changelog' to regenerate."
+            echo "CHANGELOG.md is out of sync with git-cliff output. Run 'mise run changelog' to regenerate, or update CHANGELOG.md manually for the release entry. This check is informational." >> "$GITHUB_STEP_SUMMARY"
             diff -u CHANGELOG.md GENERATED_CHANGELOG.md | head -100 || true
           fi
-
-      - name: Comment on PR (only when drift)
-        if: steps.diff.outputs.drift == 'true' && github.event.pull_request.head.repo.full_name == github.repository
-        continue-on-error: true
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const body = "📋 **CHANGELOG drift detected** — `git-cliff` would generate a different `CHANGELOG.md` than what's committed. This is informational only; run `mise run changelog` locally to regenerate, or update `CHANGELOG.md` manually for the release entry.";
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            await github.rest.issues.createComment({ owner, repo, issue_number, body });
