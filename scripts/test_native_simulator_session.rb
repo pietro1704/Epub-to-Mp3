@@ -190,6 +190,18 @@ class NativeSimulatorSessionTest < Minitest::Test
     File.exist?(@marker) ? File.readlines(@marker).map { |line| JSON.parse(line) } : []
   end
 
+  def plan_with_test_bundle_xml(value)
+    load_subject
+    xctestrun = @plan.fetch("files").fetch("xctestrun")
+    xml = File.read(xctestrun.fetch("path")).sub(
+      "</dict></dict></plist>",
+      "<key>TestBundlePath</key>#{value}</dict></dict></plist>")
+    File.write(xctestrun.fetch("path"), xml)
+    xctestrun["sha256"] = Digest::SHA256.file(xctestrun.fetch("path")).hexdigest
+    File.write(@plan_path, JSON.generate(@plan))
+    NativeSimulatorSession::Plan.new(@plan_path)
+  end
+
   def wait_for_fixture
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 12
     loop do
@@ -354,6 +366,41 @@ class NativeSimulatorSessionTest < Minitest::Test
     refute File.exist?(@lease)
   ensure
     FileUtils.remove_entry(external) if external && File.directory?(external)
+  end
+
+  def test_plan_rejects_testroot_traversal_to_existing_external_bundle
+    load_subject
+    external = Dir.mktmpdir("simulator-external-bundle-", File.dirname(@directory))
+    FileUtils.mkdir_p(File.join(external, "ExternalTests.xctest"))
+    reference = "__TESTROOT__/../#{File.basename(external)}/ExternalTests.xctest"
+    error = assert_raises(NativeSimulatorSession::Stop) do
+      plan_with_test_bundle_xml("<string>#{reference}</string>")
+    end
+    assert_equal "TestBundlePath must be a directory inside source root", error.message
+    assert_empty operations
+    refute File.exist?(@lease)
+  ensure
+    FileUtils.remove_entry(external) if external && File.directory?(external)
+  end
+
+  def test_plan_rejects_unsupported_test_bundle_placeholder
+    load_subject
+    error = assert_raises(NativeSimulatorSession::Stop) do
+      plan_with_test_bundle_xml("<string>__TESTHOST__/X.xctest</string>")
+    end
+    assert_equal "Unsupported TestBundlePath reference", error.message
+    assert_empty operations
+    refute File.exist?(@lease)
+  end
+
+  def test_plan_rejects_empty_test_bundle_value
+    load_subject
+    error = assert_raises(NativeSimulatorSession::Stop) do
+      plan_with_test_bundle_xml("<string/>")
+    end
+    assert_equal "Invalid TestBundlePath", error.message
+    assert_empty operations
+    refute File.exist?(@lease)
   end
 
   def test_success_orders_fixed_phases_and_confirms_cleanup_before_releasing_lease
