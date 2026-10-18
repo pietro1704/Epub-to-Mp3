@@ -263,7 +263,7 @@ def run_session(config, root, session_id):
                     break
                 report["launchAttempted"] = True
                 write_json(directory / "lifecycle.json", report)
-                device.shell("am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
+                device.shell("am", "start", "-W", "-n", PACKAGE + "/com.pietrocode.epubtomp3.flutter_app.MainActivity")
                 owned = device.processes()
                 if not owned:
                     raise ValueError("Owned launch has no authenticated process")
