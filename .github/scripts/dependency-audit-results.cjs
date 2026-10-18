@@ -43,6 +43,9 @@ function consolidate(directory) {
   const findings = [];
   for (const name of ['cargo-audit.json', 'pip-audit.json', 'npm-audit.json']) {
     const data = readReport(directory, name);
+    if (data && typeof data === 'object' && Object.hasOwn(data, 'error')) {
+      throw new Error(`Scanner reported an error: ${name}`);
+    }
     if (name === 'npm-audit.json') {
       const total = data?.metadata?.vulnerabilities?.total;
       if (!Number.isSafeInteger(total) || total < 0) throw new Error(`Invalid scanner schema: ${name}`);
