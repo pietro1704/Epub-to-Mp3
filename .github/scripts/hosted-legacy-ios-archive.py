@@ -11,6 +11,7 @@ import re
 import selectors
 import shutil
 import signal
+import stat
 import struct
 import subprocess
 import sys
@@ -191,6 +192,51 @@ class PayloadListing:
     def receipt(self):
         return {"entries": self.entries, "bytes": self.bytes,
                 "sha256_observed_listing_receipt": self.digest.hexdigest(), "complete": self.complete}
+
+
+class BomModes:
+    """Diagnostic mode counts only; never authorizes listing or expansion."""
+
+    report_key = "bom_mode_inventory"
+
+    def __init__(self, sha256):
+        self.sha256 = sha256
+        self.pending = b""
+        self.entries = self.bytes = 0
+        self.counts = dict.fromkeys(("regular", "directory", "symlink", "other"), 0)
+        self.complete = False
+
+    def feed(self, chunk):
+        if len(chunk) > STREAM_CHUNK:
+            raise Blocked("BOM modes chunk exceeds its read budget")
+        self.bytes += len(chunk)
+        if self.bytes > MAX_LISTING_BYTES:
+            raise Blocked("BOM modes exceed the metadata byte budget")
+        self.pending += chunk
+        while b"\n" in self.pending:
+            line, self.pending = self.pending.split(b"\n", 1)
+            if not re.fullmatch(rb"[0-7]{1,6}", line):
+                raise Blocked("Malformed BOM octal mode")
+            kind = stat.S_IFMT(int(line, 8))
+            if kind not in (stat.S_IFREG, stat.S_IFDIR, stat.S_IFLNK, stat.S_IFBLK,
+                            stat.S_IFCHR, stat.S_IFIFO, stat.S_IFSOCK):
+                raise Blocked("Unknown BOM mode type")
+            label = {stat.S_IFREG: "regular", stat.S_IFDIR: "directory",
+                     stat.S_IFLNK: "symlink"}.get(kind, "other")
+            self.counts[label] += 1
+            self.entries += 1
+        if len(self.pending) > 6:
+            raise Blocked("Malformed BOM octal mode")
+
+    def finish(self):
+        if self.pending or not self.entries:
+            raise Blocked("Missing or incomplete BOM modes")
+        self.complete = True
+        return self.entries
+
+    def receipt(self):
+        return {"bom_sha256": self.sha256, "total": self.entries, **self.counts,
+                "bytes": self.bytes, "complete": self.complete}
 
 
 def safe_payload_listing(output):
@@ -376,7 +422,7 @@ class Inspector:
                             consumer.complete = False
                         unwinding = sys.exc_info()[0] is not None
                         try:
-                            self.report["payload_listing"] = consumer.receipt()
+                            self.report[getattr(consumer, "report_key", "payload_listing")] = consumer.receipt()
                         except Exception:
                             # Never replace the original process/validation error,
                             # but require a receipt before successful expansion.
@@ -529,6 +575,56 @@ class Inspector:
             raise Blocked(str(error)) from error
         return receipt
 
+    def inspect_bom_modes(self, flat):
+        if self.report["signature_verified"] is not True:
+            raise Blocked("BOM diagnostics require verified package signature")
+        # Use the hosted Apple manual as the capability evidence. -p m emits
+        # only octal modes, never filenames, owners, checksums or file contents.
+        manual = self.command(["/usr/bin/man", "-P", "/bin/cat", "lsbom"], timeout=15).decode()
+        manual = re.sub(r".\x08", "", manual)
+        if ("-p" not in manual or "octal" not in manual or
+                not re.search(r"\bm\s+file mode \(permissions\)", manual)):
+            raise Blocked("Hosted lsbom manual did not establish octal -p m output")
+        inventories = self.report["signed_bom_inventories"] = []
+        infos = []
+        for info in flat.rglob("PackageInfo"):
+            infos.append(info)
+            if len(infos) > 128:
+                raise Blocked("BOM component layout exceeds its budget")
+        if not infos:
+            raise Blocked("BOM component layout is missing or exceeds its budget")
+        for info in infos:
+            bom = info.parent / "Bom"
+
+            def identity():
+                resolved = within(flat, bom)
+                details = bom.lstat()
+                if not stat.S_ISREG(details.st_mode) or details.st_size > MAX_LISTING_BYTES:
+                    raise Blocked("BOM must be a bounded regular file")
+                digest = hashlib.sha256()
+                measured = 0
+                with resolved.open("rb") as handle:
+                    while chunk := handle.read(STREAM_CHUNK):
+                        measured += len(chunk)
+                        if measured > MAX_LISTING_BYTES:
+                            raise Blocked("BOM exceeds the metadata byte budget")
+                        digest.update(chunk)
+                return ((details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns),
+                        digest.hexdigest())
+
+            before, digest = identity()
+            consumer = BomModes(digest)
+            try:
+                self.command(["/usr/bin/lsbom", "-p", "m", str(bom)], timeout=90, consumer=consumer)
+                if identity() != (before, digest):
+                    raise Blocked("BOM identity changed during inspection")
+            except BaseException:
+                consumer.complete = False
+                raise
+            finally:
+                inventories.append(consumer.receipt())
+                self.report["bom_mode_inventory"] = consumer.receipt()
+
     def verify_and_expand(self, package):
         output = self.command(["/usr/sbin/pkgutil", "--check-signature", str(package)], timeout=90)
         self.report["certificate_sha256"] = signature_gate(output.decode())
@@ -542,6 +638,7 @@ class Inspector:
         self.report["package_payload_metadata"] = []
         expected = declared_payload(flat, self.report["package_payload_metadata"])
         self.report["declared_payload_bytes"] = expected
+        self.inspect_bom_modes(flat)
         shutil.rmtree(within(self.root, flat))
         self.report["payload_file_count"] = self.command(
             ["/usr/sbin/pkgutil", "--payload-files", str(package)], timeout=90, consumer=PayloadListing())

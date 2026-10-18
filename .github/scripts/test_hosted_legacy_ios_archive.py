@@ -456,8 +456,10 @@ class ArchiveSafetyTests(unittest.TestCase):
                 (destination / "PackageInfo").write_text('<pkg-info><payload installKBytes="1024" numberOfFiles="1"/></pkg-info>')
             return b""
         self.inspector.command = command
-        with patch.object(archive, "disk_gate", return_value=100 * archive.GIB) as gate:
+        with patch.object(archive, "disk_gate", return_value=100 * archive.GIB) as gate, \
+                patch.object(self.inspector, "inspect_bom_modes") as diagnostic:
             expanded = self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
+        diagnostic.assert_called_once_with(self.inspector.root / "flat")
         self.assertEqual(calls, ["--check-signature", "--expand", "--payload-files", "--expand-full"])
         self.assertEqual(gate.call_args_list[0].args, (self.inspector.root, archive.SIZE))
         self.assertEqual(gate.call_args_list[1].args, (self.inspector.root, 1024**2 + archive.SIZE))
@@ -778,7 +780,8 @@ class ArchiveSafetyTests(unittest.TestCase):
                     self.fail("Full payload extraction was reached after rejected listing")
                 self.inspector.command = command
                 with patch.object(archive, "disk_gate", return_value=100 * archive.GIB), \
-                        patch.object(archive, "MAX_LISTING_ENTRIES", 2):
+                        patch.object(archive, "MAX_LISTING_ENTRIES", 2), \
+                        patch.object(self.inspector, "inspect_bom_modes"):
                     with self.assertRaises(archive.Blocked):
                         self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
                 self.assertEqual(calls, ["--check-signature", "--expand", "--payload-files"])
@@ -790,6 +793,140 @@ class ArchiveSafetyTests(unittest.TestCase):
                 self.assertFalse(self.inspector.report["payload_listing"]["complete"])
                 self.assertFalse((self.inspector.root / "flat").exists())
                 self.assertFalse((self.inspector.reports / "active-command.json").exists())
+
+
+class BomDiagnosticTests(unittest.TestCase):
+    # Formatting fixture only. The real hosted Apple manual must independently
+    # establish -p m before any real BOM query; this text proves no Apple trust.
+    MANUAL = b"-p parameters\nmode (octal)\nm file mode (permissions)\n"
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.base = Path(self.temporary.name)
+        self.inspector = archive.Inspector(self.base, self.base / "reports")
+        self.original = self.inspector.command
+        self.calls = []
+
+    def configure(self, modes="print('100644\\n40755\\n120777\\n10644')", *,
+                  listing="print('Library/file')", layout="regular", manual=None, changed=False):
+        def command(arguments, **options):
+            self.calls.append(tuple(arguments[:3]))
+            if arguments[1] == "--check-signature":
+                return REAL_APPLE_SIGNATURE.encode()
+            if arguments[1] == "--expand":
+                flat = Path(arguments[-1])
+                flat.mkdir()
+                (flat / "PackageInfo").write_text('<pkg-info><payload installKBytes="1024" numberOfFiles="225598"/></pkg-info>')
+                if layout == "regular":
+                    (flat / "Bom").write_bytes(b"fixture BOM bytes")
+                elif layout == "escape":
+                    outside = self.base / "outside"
+                    outside.write_bytes(b"preserve foreign bytes")
+                    (flat / "Bom").symlink_to(outside)
+                return b""
+            if arguments[0] == "/usr/bin/man":
+                self.assertEqual(arguments, ["/usr/bin/man", "-P", "/bin/cat", "lsbom"])
+                return self.MANUAL if manual is None else manual
+            if arguments[0] == "/usr/bin/lsbom":
+                self.assertEqual(arguments[1:3], ["-p", "m"])
+                self.assertTrue(self.inspector.report["signature_verified"])
+                options["timeout"] = 1 if "sleep(30)" in modes else 20
+                result = self.original([sys.executable, "-c", modes], **options)
+                if changed:
+                    Path(arguments[-1]).write_bytes(b"changed BOM identity")
+                return result
+            if arguments[1] == "--payload-files":
+                return self.original([sys.executable, "-c", listing], **options)
+            if arguments[1] == "--expand-full":
+                destination = Path(arguments[-1])
+                destination.mkdir()
+                return b""
+            self.fail("Unexpected fixture command")
+        self.inspector.command = command
+
+    def invoke(self):
+        with patch.object(archive, "disk_gate", return_value=100 * archive.GIB):
+            return self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
+
+    def test_modes_count_types_without_reporting_paths_or_payload_contents(self):
+        self.configure()
+        self.assertTrue(self.invoke().is_dir())
+        receipt = self.inspector.report["signed_bom_inventories"][0]
+        self.assertEqual(receipt, {
+            "bom_sha256": hashlib.sha256(b"fixture BOM bytes").hexdigest(),
+            "regular": 1, "directory": 1, "symlink": 1, "other": 1,
+            "total": 4, "bytes": len(b"100644\n40755\n120777\n10644\n"), "complete": True})
+        self.assertNotIn("fixture BOM bytes", json.dumps(receipt))
+        self.assertNotIn(str(self.base), json.dumps(receipt))
+        self.assertLess(next(index for index, item in enumerate(self.calls) if item[0] == "/usr/bin/lsbom"),
+                        next(index for index, item in enumerate(self.calls) if item[1] == "--payload-files"))
+
+    def test_regular_below_limit_and_total_above_limit_keeps_raw_listing_blocked(self):
+        self.configure(modes="import sys; sys.stdout.buffer.write(b'100644\\n'*225598+b'40755\\n'*24403)",
+                       listing="import sys; sys.stdout.buffer.write(b'Library/file\\n'*250001)")
+        with self.assertRaisesRegex(archive.Blocked, "entry budget"):
+            self.invoke()
+        receipt = self.inspector.report["signed_bom_inventories"][0]
+        self.assertEqual(receipt["regular"], 225598)
+        self.assertEqual(receipt["directory"], 24403)
+        self.assertEqual(receipt["total"], 250001)
+        self.assertTrue(receipt["complete"])
+        self.assertFalse(self.inspector.report["payload_listing"]["complete"])
+        self.assertFalse(any(item[1] == "--expand-full" for item in self.calls))
+        self.assertFalse((self.inspector.reports / "active-command.json").exists())
+        self.inspector.cleanup()
+        self.assertFalse(self.inspector.root.exists())
+
+    def test_diagnostic_failure_blocks_listing_and_expansion_and_cleans_owned_child(self):
+        for script in ["print('../escape')", "print('100888')", "print('0')",
+                       "print('100644',end='')", "import sys; print('100644'); sys.exit(7)",
+                       "import time; print('100644',flush=True); time.sleep(30)"]:
+            with self.subTest(script=script):
+                flat = self.inspector.root / "flat"
+                if flat.exists():
+                    archive.shutil.rmtree(flat)
+                self.calls.clear()
+                self.configure(modes=script)
+                with self.assertRaises(archive.Blocked):
+                    self.invoke()
+                self.assertFalse(self.inspector.report["signed_bom_inventories"][0]["complete"])
+                self.assertFalse(any(item[1] in ("--payload-files", "--expand-full") for item in self.calls))
+                self.assertFalse((self.inspector.reports / "active-command.json").exists())
+
+    def test_missing_escaping_or_changed_bom_identity_never_reaches_listing(self):
+        for layout, changed in [("missing", False), ("escape", False), ("regular", True)]:
+            with self.subTest(layout=layout, changed=changed):
+                flat = self.inspector.root / "flat"
+                if flat.exists():
+                    archive.shutil.rmtree(flat)
+                self.calls.clear()
+                self.configure(layout=layout, changed=changed)
+                with self.assertRaises((archive.Blocked, OSError)):
+                    self.invoke()
+                self.assertFalse(any(item[1] in ("--payload-files", "--expand-full") for item in self.calls))
+                if changed:
+                    self.assertFalse(self.inspector.report["signed_bom_inventories"][0]["complete"])
+                if layout == "escape":
+                    self.assertEqual((self.base / "outside").read_bytes(), b"preserve foreign bytes")
+
+    def test_unknown_hosted_manual_cannot_authorize_bom_query(self):
+        self.configure(manual=b"unknown flags")
+        with self.assertRaisesRegex(archive.Blocked, "manual"):
+            self.invoke()
+        self.assertFalse(any(item[0] == "/usr/bin/lsbom" or item[1] in ("--payload-files", "--expand-full")
+                             for item in self.calls))
+
+    def test_mode_stream_fragmentation_and_existing_byte_budget(self):
+        consumer = archive.BomModes("a" * 64)
+        for value in b"100644\n40755\n":
+            consumer.feed(bytes([value]))
+        self.assertEqual(consumer.finish(), 2)
+        with patch.object(archive, "MAX_LISTING_BYTES", 6):
+            consumer = archive.BomModes("a" * 64)
+            with self.assertRaises(archive.Blocked):
+                consumer.feed(b"100644\n")
+            self.assertFalse(consumer.receipt()["complete"])
 
 
 if __name__ == "__main__":
