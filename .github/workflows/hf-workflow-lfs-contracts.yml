@@ -48,3 +48,5 @@ jobs:
         run: |
           git lfs version
           mise exec -- ruby scripts/test_hf_snapshot_workflow.rb
+      - name: Verify snapshot transport and rejection regressions
+        run: mise run hf:snapshot:test

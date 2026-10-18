@@ -100,10 +100,24 @@ jobs:
             [[ -n "$asset_url" ]] || continue
             [[ "$asset_url" == /* ]] || asset_url="/$asset_url"
             asset_status="$(curl --max-time 10 --silent --output "$RUNNER_TEMP/hf-served-asset" --write-out '%{http_code}' "http://127.0.0.1:17860$asset_url")"
+            asset_content_type="$(curl --max-time 10 --silent --output /dev/null --write-out '%{content_type}' "http://127.0.0.1:17860$asset_url")"
             asset_bytes="$(wc -c < "$RUNNER_TEMP/hf-served-asset" | tr -d ' ')"
-            echo "Asset $asset_url HTTP status=$asset_status bytes=$asset_bytes"
-            if [[ "$asset_status" != 200 || "$asset_bytes" == 0 ]]; then
-              echo "::error::Production SPA asset was not served successfully: $asset_url"
+            case "$asset_url" in
+              *.js|*.js\?*)
+                asset_type_valid=false
+                [[ "$asset_content_type" == application/javascript* || "$asset_content_type" == text/javascript* ]] && asset_type_valid=true
+                ;;
+              *.css|*.css\?*)
+                asset_type_valid=false
+                [[ "$asset_content_type" == text/css* ]] && asset_type_valid=true
+                ;;
+              *) echo "::error::Unexpected production asset extension: $asset_url"; exit 1 ;;
+            esac
+            echo "Asset $asset_url HTTP status=$asset_status content-type=$asset_content_type bytes=$asset_bytes"
+            if [[ "$asset_status" != 200 || "$asset_bytes" == 0 || "$asset_type_valid" != true ]] ||
+               grep -Eqi '^[[:space:]]*<!doctype[[:space:]]+html|^[[:space:]]*<html' "$RUNNER_TEMP/hf-served-asset"; then
+              echo "::error::Production SPA asset response is missing, has the wrong content type, or is an HTML fallback: $asset_url"
+              head -c 500 "$RUNNER_TEMP/hf-served-asset" || true
               exit 1
             fi
           done <<< "$asset_references"
