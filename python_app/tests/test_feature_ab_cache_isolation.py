@@ -10,7 +10,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 BENCHMARK = Path(__file__).resolve().parents[2] / "scripts/benchmark_feature_ab.py"
 ROUTES = ("baseline_no_stage", "stage_pipeline", "external_worker_pool")
 FAKE_CLI = '''import json, os, sys
