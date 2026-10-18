@@ -14,7 +14,7 @@ function consolidate(directory) {
     try {
       data = JSON.parse(fs.readFileSync(filename, 'utf8'));
     } catch {
-      continue;
+      throw new Error(`Invalid scanner JSON: ${name}`);
     }
     if (name === 'npm-audit.json' && (data.metadata?.vulnerabilities?.total ?? 0) === 0) continue;
     if (name === 'pip-audit.json') {
