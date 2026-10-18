@@ -100,3 +100,10 @@ test('an npm report without vulnerability metadata must fail instead of defaulti
     assertRejected(result, directory, /Invalid scanner schema: npm-audit\.json/);
   });
 });
+
+test('a failed cargo audit command must not publish clean findings from otherwise valid reports', () => {
+  const statuses = { ...validReports()['scanner-statuses.json'], cargoAudit: 2 };
+  withReports({ 'scanner-statuses.json': statuses }, (result, directory) => {
+    assertRejected(result, directory, /Unsuccessful scanner command: cargoAudit/);
+  });
+});
