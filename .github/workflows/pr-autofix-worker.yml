@@ -183,27 +183,15 @@ jobs:
     if: inputs.mode == 'merge' && needs.validate.outputs.eligible == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - name: Verify PR state and CI result
-        id: verify
+      - name: Checkout trusted merge policy
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          persist-credentials: false
+
+      - name: Merge only the exact green head
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
           RUN_SHA: ${{ needs.validate.outputs.head_sha }}
-        run: |
-          set -euo pipefail
-          gh pr view "$PR_NUMBER" --json \
-            isDraft,reviewDecision,headRefOid,statusCheckRollup \
-            > pr.json
-          jq -e --arg sha "$RUN_SHA" '
-            (.isDraft == false)
-            and (.headRefOid == $sha)
-            and (.reviewDecision != "CHANGES_REQUESTED")
-            and ([.statusCheckRollup[] | select(.name == "CI" or .workflowName == "CI") | .conclusion] | any(. == "SUCCESS"))
-          ' pr.json
-
-      - name: Enable squash auto-merge
-        if: steps.verify.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ inputs.pr_number }}
-        run: gh pr merge "$PR_NUMBER" --squash --auto --delete-branch
+        run: node scripts/guarded_pr_merge.mjs --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --head "$RUN_SHA" --merge
