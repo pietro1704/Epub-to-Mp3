@@ -27,6 +27,32 @@ pub enum EpubError {
     MissingSpine,
     #[error("EPUB resource not found: {0}")]
     MissingResource(String),
+    #[error("EPUB resource exceeds read limit of {limit} bytes: {path}")]
+    ResourceReadLimit { path: String, limit: u64 },
+    #[error("EPUB total read limit of {limit} bytes exceeded at: {path}")]
+    TotalReadLimit { path: String, limit: u64 },
+}
+
+/// Limits decompressed bytes read, including metadata, navigation and cover.
+/// Repeated reads count again. These limits do not bound total process memory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EpubReadLimits {
+    pub max_resource_bytes: u64,
+    pub max_total_bytes: u64,
+}
+
+impl Default for EpubReadLimits {
+    fn default() -> Self {
+        Self {
+            max_resource_bytes: 32 * 1024 * 1024,
+            max_total_bytes: 256 * 1024 * 1024,
+        }
+    }
+}
+
+struct ReadBudget {
+    limits: EpubReadLimits,
+    remaining: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,12 +79,24 @@ type Manifest = HashMap<String, (String, Option<String>)>;
 type PackageParts = (Manifest, Vec<String>, Option<String>, Option<String>);
 
 pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
+    parse_epub_with_limits(reader, EpubReadLimits::default())
+}
+
+/// Parse a book with an explicit decompressed-read budget.
+pub fn parse_epub_with_limits<R: Read + Seek>(
+    reader: R,
+    limits: EpubReadLimits,
+) -> Result<Book, EpubError> {
+    let mut budget = ReadBudget {
+        limits,
+        remaining: limits.max_total_bytes,
+    };
     let mut archive = ZipArchive::new(reader)?;
-    let container = read_entry(&mut archive, "META-INF/container.xml")?;
+    let container = read_entry(&mut archive, "META-INF/container.xml", &mut budget)?;
     let rootfile =
         xml_attr(&container, b"rootfile", b"full-path").ok_or(EpubError::MissingRootfile)?;
     let opf_dir = Path::new(&rootfile).parent().unwrap_or(Path::new(""));
-    let opf = read_entry(&mut archive, &rootfile)?;
+    let opf = read_entry(&mut archive, &rootfile, &mut budget)?;
 
     let title = xml_text(&opf, b"title").unwrap_or_default();
     let author = xml_text(&opf, b"creator").unwrap_or_default();
@@ -91,12 +129,14 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
         parse_nav(&read_entry(
             &mut archive,
             &resolve_resource_path(opf_dir, &href),
+            &mut budget,
         )?)
         .unwrap_or_default()
     } else if let Some(href) = ncx_href {
         parse_ncx(&read_entry(
             &mut archive,
             &resolve_resource_path(opf_dir, &href),
+            &mut budget,
         )?)
         .unwrap_or_default()
     } else {
@@ -116,7 +156,7 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
             .ok_or_else(|| EpubError::MissingResource(id.clone()))?
             .clone();
         let path = resolve_resource_path(opf_dir, &href);
-        let html = read_entry(&mut archive, &path)?;
+        let html = read_entry(&mut archive, &path, &mut budget)?;
         let text = html_to_text(&html);
         if text.trim().is_empty() {
             continue;
@@ -140,7 +180,7 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
             level,
         });
     }
-    let (cover, cover_mime) = cover_image(&mut archive, &manifest, opf_dir)?;
+    let (cover, cover_mime) = cover_image(&mut archive, &manifest, opf_dir, &mut budget)?;
     Ok(Book {
         title,
         author,
@@ -156,19 +196,14 @@ fn cover_image<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     manifest: &Manifest,
     base: &Path,
+    budget: &mut ReadBudget,
 ) -> Result<(Option<Vec<u8>>, Option<String>), EpubError> {
     for (href, media) in manifest.values() {
         let media = media.as_deref().unwrap_or_default().to_ascii_lowercase();
         let name = href.to_ascii_lowercase();
         if media.starts_with("image/") && (name.contains("cover") || name.contains("capa")) {
             let path = resolve_resource_path(base, href);
-            let index = crate::zip_names::member_index(archive, &path)?
-                .ok_or_else(|| EpubError::MissingResource(path.clone()))?;
-            let mut file = archive
-                .by_index(index)
-                .map_err(|_| EpubError::MissingResource(path.clone()))?;
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)?;
+            let bytes = read_resource(archive, &path, budget)?;
             return Ok((Some(bytes), Some(media.to_string())));
         }
     }
@@ -245,15 +280,47 @@ fn parse_package(xml: &str, _path: &str) -> Result<PackageParts, EpubError> {
 fn read_entry<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     path: &str,
+    budget: &mut ReadBudget,
 ) -> Result<String, EpubError> {
+    let bytes = read_resource(archive, path, budget)?;
+    String::from_utf8(bytes)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error).into())
+}
+
+fn read_resource<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    path: &str,
+    budget: &mut ReadBudget,
+) -> Result<Vec<u8>, EpubError> {
     let index = crate::zip_names::member_index(archive, path)?
         .ok_or_else(|| EpubError::MissingResource(path.into()))?;
-    let mut f = archive
+    let file = archive
         .by_index(index)
         .map_err(|_| EpubError::MissingResource(path.into()))?;
-    let mut s = String::new();
-    f.read_to_string(&mut s)?;
-    Ok(s)
+    let allowed = budget.limits.max_resource_bytes.min(budget.remaining);
+    let error = if budget.limits.max_resource_bytes <= budget.remaining {
+        EpubError::ResourceReadLimit {
+            path: path.into(),
+            limit: budget.limits.max_resource_bytes,
+        }
+    } else {
+        EpubError::TotalReadLimit {
+            path: path.into(),
+            limit: budget.limits.max_total_bytes,
+        }
+    };
+    if file.size() > allowed {
+        return Err(error);
+    }
+    // Also bound actual reads instead of trusting ZIP size metadata alone.
+    let mut bytes = Vec::new();
+    file.take(allowed.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > allowed {
+        return Err(error);
+    }
+    budget.remaining -= bytes.len() as u64;
+    Ok(bytes)
 }
 fn resolve_resource_path(base: &Path, href: &str) -> String {
     let href = href.split('#').next().unwrap_or(href);
