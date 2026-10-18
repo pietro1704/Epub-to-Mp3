@@ -201,3 +201,11 @@ test('a skipped pip dependency must not be accepted as a complete clean audit', 
     assert.doesNotMatch(result.stderr, /private fixture skip detail/);
   });
 });
+
+test('a cargo report without vulnerability results must not default to a clean audit', () => {
+  const report = { ...validReports()['cargo-audit.json'] };
+  delete report.vulnerabilities;
+  withReports({ 'cargo-audit.json': report }, (result, directory) => {
+    assertRejected(result, directory, /Invalid scanner schema: cargo-audit\.json/);
+  });
+});
