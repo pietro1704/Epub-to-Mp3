@@ -45,7 +45,7 @@ elif a[:1]==['shell']:
   if s.get('invalidPs') and s['active']:print('INVALID');sys.exit(0)
   print('PID UID NAME')
   if s['active']:
-   for i,pid in enumerate(s['pids']):print(pid,s['uid'],s['package']+(':'+str(i) if i else ''))
+   for i,pid in enumerate(s['pids']):print(pid,s['uid'],s.get('processNameOverride',s['package']+(':'+str(i) if i else '')))
  elif a[:1]==['cat']:
   stat=pathlib.Path(a[1]).read_text()
   if s.get('reuse'):
@@ -357,6 +357,27 @@ class SessionContracts(unittest.TestCase):
     def test_invalid_inventory_is_not_empty(self):
         self.start();self.active();self.mutate(invalidPs=True);self.finish()
         self.assertFalse(self.result(125)['cleanupVerified'])
+
+    def test_cleanup_same_uid_unknown_name_is_not_empty_inventory(self):
+        self.mutate(pids=[self.apps[0].pid])
+        self.start();self.active();self.mutate(processNameOverride='renamed-owned-process');self.finish()
+        report=self.result(125)
+        self.assertFalse(report['cleanupVerified'])
+        state=json.loads(self.state.read_text())
+        self.assertEqual(state['stops'],0)
+        self.assertTrue(state['active'])
+        next_session=subprocess.run([sys.executable,str(COORDINATOR),'--config',str(self.config),
+            '--state-root',str(self.sessions),'--session-id','two','--sole-executor'],
+            env=self.env,capture_output=True,text=True,timeout=10)
+        self.assertEqual(next_session.returncode,75,(next_session.stdout,next_session.stderr))
+        self.assertFalse((self.sessions/'two').exists())
+
+    def test_prelaunch_same_uid_unknown_name_is_not_inactive_package(self):
+        self.mutate(active=True,pids=[self.apps[0].pid],processNameOverride='renamed-owned-process')
+        self.start();self.result(75)
+        state=json.loads(self.state.read_text())
+        self.assertEqual(state['launches'],0)
+        self.assertEqual(state['stops'],0)
 
     def test_force_stop_failure_is_not_success(self):
         self.start();self.active();self.mutate(failStop=True);self.finish()
