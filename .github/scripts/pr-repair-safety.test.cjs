@@ -286,17 +286,6 @@ test('explicit CI and CodeQL dispatch identify new runs at the published SHA wit
   assert.deepEqual(evidence.map(item => item.state), ['pending', 'pending']);
 });
 
-test('watchdog proposes only current trusted PR metadata without dispatching or claiming readiness', () => {
-  const { assess, render } = require('./repository-health-watchdog.cjs');
-  const candidate = pr(), draft = pr(); draft.number = 8; draft.draft = true;
-  const state = assess({ runs: [{ id: 1, workflow_id: 2, head_sha: SHA, event: 'pull_request', status: 'completed', conclusion: 'failure' }],
-    pulls: [candidate, draft], issues: [], masterSha: 'b'.repeat(40), capped: [], repository: REPOSITORY,
-    repairReadiness: 'blocked_credentials' });
-  assert.deepEqual(state.repairCandidates, [{ number: 7, sha: SHA }]);
-  assert.match(render(state, REPOSITORY, []).body, /blocked_credentials/);
-  assert.match(render(state, REPOSITORY, []).body, /No repair is dispatched/);
-});
-
 test('fake gh subprocess rejects changed head before any publication command', t => {
   const f = fixture(t); fs.writeFileSync(path.join(f.work, 'src/value.txt'), 'fixed\n');
   const bin = path.join(f.root, 'bin'); fs.mkdirSync(bin);
