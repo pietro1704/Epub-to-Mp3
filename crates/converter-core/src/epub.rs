@@ -162,8 +162,10 @@ fn cover_image<R: Read + Seek>(
         let name = href.to_ascii_lowercase();
         if media.starts_with("image/") && (name.contains("cover") || name.contains("capa")) {
             let path = resolve_resource_path(base, href);
+            let index = crate::zip_names::member_index(archive, &path)?
+                .ok_or_else(|| EpubError::MissingResource(path.clone()))?;
             let mut file = archive
-                .by_name(&path)
+                .by_index(index)
                 .map_err(|_| EpubError::MissingResource(path.clone()))?;
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes)?;
@@ -244,8 +246,10 @@ fn read_entry<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     path: &str,
 ) -> Result<String, EpubError> {
+    let index = crate::zip_names::member_index(archive, path)?
+        .ok_or_else(|| EpubError::MissingResource(path.into()))?;
     let mut f = archive
-        .by_name(path)
+        .by_index(index)
         .map_err(|_| EpubError::MissingResource(path.into()))?;
     let mut s = String::new();
     f.read_to_string(&mut s)?;
@@ -501,6 +505,58 @@ mod tests {
         let book = parse_epub(Cursor::new(cursor.into_inner())).unwrap();
         assert_eq!(book.chapters.len(), 1);
         assert_eq!(book.chapters[0].text, "Chapter Readable content.");
+    }
+
+    fn zip_compatibility_book(
+        compression: zip::CompressionMethod,
+        include_chapter: bool,
+    ) -> Vec<u8> {
+        let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(compression);
+        archive
+            .start_file("META-INF/container.xml", options)
+            .unwrap();
+        archive.write_all(br#"<container><rootfiles><rootfile full-path="OPS/package.opf"/></rootfiles></container>"#).unwrap();
+        archive.start_file("OPS/package.opf", options).unwrap();
+        archive.write_all(br#"<package><metadata><title>ZIP compatibility</title></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#).unwrap();
+        if include_chapter {
+            archive.start_file("OPS/chapter.xhtml", options).unwrap();
+            archive
+                .write_all(b"<html><body><h1>Opening</h1><p>Preserved content.</p></body></html>")
+                .unwrap();
+        }
+        archive.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn zip_upgrade_preserves_stored_and_deflated_epub_identity() {
+        for compression in [
+            zip::CompressionMethod::Stored,
+            zip::CompressionMethod::Deflated,
+        ] {
+            let book = parse_epub(Cursor::new(zip_compatibility_book(compression, true))).unwrap();
+            assert_eq!(book.title, "ZIP compatibility");
+            assert_eq!(book.chapters.len(), 1);
+            assert_eq!(book.chapters[0].index, "1");
+            assert_eq!(book.chapters[0].source_path, "OPS/chapter.xhtml");
+            assert_eq!(book.chapters[0].name, "Opening");
+            assert_eq!(book.chapters[0].text, "Opening Preserved content.");
+        }
+    }
+
+    #[test]
+    fn zip_upgrade_keeps_missing_resource_and_corrupt_archive_failures() {
+        let missing = zip_compatibility_book(zip::CompressionMethod::Deflated, false);
+        assert!(matches!(
+            parse_epub(Cursor::new(missing)),
+            Err(super::EpubError::MissingResource(path)) if path == "OPS/chapter.xhtml"
+        ));
+        let mut truncated = zip_compatibility_book(zip::CompressionMethod::Stored, true);
+        truncated.truncate(truncated.len() / 2);
+        assert!(matches!(
+            parse_epub(Cursor::new(truncated)),
+            Err(super::EpubError::Archive(_))
+        ));
     }
 }
 
