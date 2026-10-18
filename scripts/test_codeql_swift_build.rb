@@ -48,7 +48,9 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
       end
       keys = %w[SDKROOT MACOSX_DEPLOYMENT_TARGET IPHONEOS_DEPLOYMENT_TARGET
                 EPUB2MP3_APPLE_SDK EPUB2MP3_APPLE_CLANG_TARGET CC CXX CFLAGS CXXFLAGS
-                CC_x86_64_apple_darwin CC_aarch64_apple_ios CFLAGS_aarch64_apple_ios
+                CC_x86_64_apple_darwin CFLAGS_x86_64_apple_darwin
+                CC_aarch64_apple_darwin CFLAGS_aarch64_apple_darwin
+                CC_aarch64_apple_ios CFLAGS_aarch64_apple_ios
                 RUSTC BINDGEN_EXTRA_CLANG_ARGS BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios
                 CODEQL_TRACER_CONFIGURATION]
       File.open(ENV.fetch('FIXTURE_CALLS'), 'a') do |file|
@@ -75,6 +77,8 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
     Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'MISE_PROJECT_ROOT' => @root,
                     'FIXTURE_BIN' => @bin, 'FIXTURE_CALLS' => @calls, 'FIXTURE_LEASE' => @lease,
                     'FIXTURE_HOST_STATUS' => host_status, 'CLANG_WRAPPER' => nil,
+                    'CC_x86_64_apple_darwin' => nil, 'CFLAGS_x86_64_apple_darwin' => nil,
+                    'CC_aarch64_apple_darwin' => nil, 'CFLAGS_aarch64_apple_darwin' => nil,
                     'CODEQL_TRACER_CONFIGURATION' => 'fixture-codeql-tracing' },
                   '/bin/bash', '-euo', 'pipefail', '-c', task[1], chdir: @root)
   end
@@ -119,6 +123,23 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
     assert_includes calls.first.fetch('argv'), 'espeak-rs-sys'
     refute_includes calls.first.fetch('argv'), 'converter-ffi'
     File.open(@lease, 'a+') { |file| assert file.flock(File::LOCK_EX | File::LOCK_NB) }
+  end
+
+  def test_both_cargo_builds_keep_host_c_dependencies_on_the_macos_sdk
+    output, error, status = invoke
+    assert status.success?, "#{output}#{error}"
+    calls = File.readlines(@calls).map { |line| JSON.parse(line) }
+    assert_equal 2, calls.length
+    calls.each do |call|
+      environment = call.fetch('environment')
+      %w[x86_64 aarch64].each do |architecture|
+        assert_equal File.join(@bin, 'clang'), environment["CC_#{architecture}_apple_darwin"],
+                     "#{call.fetch('argv')} must select the #{architecture} host compiler"
+        assert_equal "-isysroot #{File.join(@root, 'SDKs/macosx.sdk')}",
+                     environment["CFLAGS_#{architecture}_apple_darwin"],
+                     "#{call.fetch('argv')} must retain the #{architecture} host SDK"
+      end
+    end
   end
 end
 
