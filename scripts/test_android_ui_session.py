@@ -63,6 +63,7 @@ elif a[:1]==['shell']:
    print('Error type 3\nError: Activity class does not exist');sys.exit(0)
   s['active']=True;s['launches']+=1;save_state()
   if s.get('slowAmStart'):time.sleep(3.2)
+  p.with_suffix('.am-returned').write_text('response')
   print('Status: ok')
  elif a[:2]==['am','force-stop']:
   if s.get('failStop'):sys.exit(23)
@@ -335,6 +336,7 @@ class SessionContracts(unittest.TestCase):
         self.assertEqual(json.loads(self.state.read_text())['stops'],0)
 
     def test_am_start_timeout_records_the_exact_command_without_claiming_cleanup(self):
+        config=json.loads(self.config.read_text());config['seconds']=2;self.config.write_text(json.dumps(config))
         self.mutate(pids=[self.apps[0].pid],slowAmStart=True)
         self.start();report=self.result(125)
         self.assertEqual(report['error'],'TimeoutExpired')
@@ -346,6 +348,23 @@ class SessionContracts(unittest.TestCase):
         self.assertEqual(report.get('errorCommand'),[str(self.adb),'-s','fixture-serial',
             'shell','am','start','-W','-n',
             'com.pietrocode.epubtomp3.flutter_app.verification/com.pietrocode.epubtomp3.flutter_app.MainActivity'])
+
+    def test_slow_am_start_within_startup_budget_can_finish_and_cleanup(self):
+        self.mutate(pids=[self.apps[0].pid],slowAmStart=True)
+        self.start();self.active()
+        self.assertTrue(self.state.with_suffix('.am-returned').exists())
+        self.finish();report=self.result(0)
+        self.assertTrue(report['started'])
+        self.assert_stopped(report)
+
+    def test_signal_during_slow_am_start_cleans_only_after_owned_response(self):
+        self.mutate(pids=[self.apps[0].pid],slowAmStart=True)
+        self.start();self.wait(lambda:json.loads(self.state.read_text())['active'])
+        self.assertFalse(self.state.with_suffix('.am-returned').exists())
+        self.process.send_signal(signal.SIGTERM)
+        report=self.result(143)
+        self.assertTrue(report['started'])
+        self.assert_stopped(report)
 
     def test_first_postlaunch_ps_timeout_records_the_exact_command(self):
         self.mutate(pids=[self.apps[0].pid],slowFirstPostLaunchPs=True)
