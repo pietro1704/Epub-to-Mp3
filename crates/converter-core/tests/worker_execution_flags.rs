@@ -1,10 +1,12 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use converter_core::{
-    cache,
+    audio, cache,
     config::AppConfig,
-    epub, paths, piper,
-    worker::{ConversionRequest, ConversionWorker, ExecutionOptions},
+    epub,
+    jobs::JobState,
+    paths, piper,
+    worker::{ConversionRequest, ConversionWorker, ExecutionOptions, WorkerError},
 };
 use std::{
     fs,
@@ -353,4 +355,131 @@ fn explicit_model_reaches_worker_thread_without_environment_override() {
     );
     assert_eq!(fs::read(model_path).unwrap(), b"synthetic installed model");
     println!("EXPLICIT_MODEL_ASSERTIONS_COMPLETED");
+}
+
+#[test]
+fn cancellation_from_final_chapter_completion_preserves_resumable_audio() {
+    const GUARD: &str = "EPUB_FINAL_CHAPTER_CANCEL_ISOLATED_TEST";
+    if std::env::var(GUARD).as_deref() != Ok("1") {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "cancellation_from_final_chapter_completion_preserves_resumable_audio",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(GUARD, "1")
+            .env_remove("PIPER_MODEL")
+            .env_remove("PIPER_CONFIG")
+            .env("PATH", "/no-tools")
+            .env("FFMPEG", "/no-tools/ffmpeg")
+            .env("FFPROBE", "/no-tools/ffprobe")
+            .env("CONVERTER_AUDIO_DISABLE_EXTERNAL_TOOLS", "1")
+            .env("RUST_CHAPTER_TIMEOUT_SECONDS", "30")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout)
+            .contains("TERMINAL_CANCEL_ASSERTIONS_COMPLETED"));
+        return;
+    }
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    let input = root.join("source.epub");
+    book(&input);
+    let paths = paths::resolve_paths_from(
+        [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
+        root.to_owned(),
+    );
+    fs::create_dir_all(&paths.piper_models_dir).unwrap();
+    let model = paths.piper_models_dir.join("pt_BR-faber-medium.onnx");
+    let config = model.with_extension("onnx.json");
+    fs::write(&model, b"owned synthetic model").unwrap();
+    fs::write(&config, b"{}").unwrap();
+    let calls = Arc::new(Mutex::new(0));
+    let recorded = Arc::clone(&calls);
+    piper::register_runtime(Arc::new(piper::RegisteredPiperRuntime::new(
+        move |_, target| {
+            *recorded.lock().unwrap() += 1;
+            fs::write(target, waveform()).map_err(|error| piper::PiperError::Io(error.to_string()))
+        },
+    )));
+    let job = "final-chapter-cancel";
+    let output = paths.output_dir.join(job);
+    let completed = Arc::new(Mutex::new(Vec::new()));
+    let observed = Arc::clone(&completed);
+    let expected_output = output.clone();
+    let cancel = piper::CancellationToken::default();
+    let callback_cancel = cancel.clone();
+    let worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
+        .unwrap()
+        .with_cancellation(cancel)
+        .with_chapter_completed(Arc::new(move |event| {
+            assert_eq!(event.job_id, job);
+            assert_eq!(event.chapter_index, 1);
+            assert_eq!(event.chapters_completed, 1);
+            assert_eq!(event.chapters_total, 1);
+            assert_eq!(event.audio_path.parent(), Some(expected_output.as_path()));
+            observed.lock().unwrap().push(event.audio_path);
+            callback_cancel.cancel();
+        }));
+    let request = ConversionRequest {
+        input,
+        job_id: job.into(),
+        engine: Some("piper".into()),
+        voice: None,
+        language: None,
+        piper_model: Some(model),
+        piper_config: Some(config),
+        chapter_indices: Some(vec!["position:1".into()]),
+        no_parallel: true,
+    };
+    let result = worker.run(request.clone());
+    assert_eq!(*calls.lock().unwrap(), 1);
+    let completed_audio = completed.lock().unwrap();
+    assert_eq!(completed_audio.len(), 1);
+    assert!(audio::validate_audio(&completed_audio[0], 1).unwrap() > 0.0);
+    let receipt: serde_json::Value =
+        cache::read_json(completed_audio[0].with_extension("mp3.complete.json")).unwrap();
+    let bytes = fs::read(&completed_audio[0]).unwrap();
+    let digest = cache::sha256_bytes(&bytes);
+    assert_eq!(receipt["audio_sha256"], digest);
+    assert_eq!(receipt["size"], bytes.len() as u64);
+    assert!(
+        matches!(result, Err(WorkerError::Cancelled)),
+        "cancellation in the final chapter callback must prevent job completion"
+    );
+    assert_eq!(worker.jobs.load(job).unwrap().state, JobState::Cancelled);
+    assert!(!output.join("manifest.json").exists());
+    assert!(!fs::read_dir(&output).unwrap().any(|entry| entry
+        .unwrap()
+        .path()
+        .extension()
+        .is_some_and(|extension| extension == "zip")));
+    let resumed_worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+    let resumed = resumed_worker.resume(request).unwrap();
+    assert_eq!(
+        resumed_worker.jobs.load(job).unwrap().state,
+        JobState::Completed
+    );
+    assert_eq!(resumed.job_id, job);
+    assert_eq!(resumed.chapters.len(), 1);
+    assert_eq!(resumed.chapters[0].source_index, 1);
+    assert!(output.join(&resumed.archive).is_file());
+    assert!(output.join("manifest.json").is_file());
+    assert_eq!(
+        cache::sha256_bytes(&fs::read(&completed_audio[0]).unwrap()),
+        digest
+    );
+    assert_eq!(
+        *calls.lock().unwrap(),
+        1,
+        "resume must reuse the validated completed chapter"
+    );
+    println!("TERMINAL_CANCEL_ASSERTIONS_COMPLETED");
 }
