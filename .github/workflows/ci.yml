@@ -244,6 +244,8 @@ jobs:
           version: 2026.9.14
           install: false
       - name: Check Web toolchain scope
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           mise ls --current --json | python3 -c '
           import json, sys
@@ -254,6 +256,8 @@ jobs:
           print("Web CI tools: python, node, npm, rust, wasm-bindgen-cli")
           '
       - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
       - name: Install Rust WASM target
         run: rustup target add wasm32-unknown-unknown
