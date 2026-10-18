@@ -41,9 +41,10 @@ pub fn list_members<R: Read + Seek>(reader: R) -> Result<Vec<ArchiveMember>, Arc
         if entry.is_dir() {
             continue;
         }
-        validate_member_name(entry.name())?;
+        let name = entry.name()?;
+        validate_member_name(&name)?;
         members.push(ArchiveMember {
-            name: entry.name().to_owned(),
+            name: name.into_owned(),
             size: entry.size(),
         });
     }
@@ -76,8 +77,10 @@ pub fn extract_member<R: Read + Seek>(
 ) -> Result<(), ArchiveError> {
     validate_member_name(member_name)?;
     let mut archive = ZipArchive::new(reader)?;
+    let index = crate::zip_names::member_index(&archive, member_name)?
+        .ok_or_else(|| ArchiveError::MissingMember(member_name.to_owned()))?;
     let mut input = archive
-        .by_name(member_name)
+        .by_index(index)
         .map_err(|_| ArchiveError::MissingMember(member_name.to_owned()))?;
     let output = output.as_ref();
     if let Some(parent) = output.parent() {
