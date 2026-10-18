@@ -2802,12 +2802,8 @@ mod tests {
         let mut errors = Vec::new();
         for _ in 0..2 {
             unsafe {
-                let response = converter_session_convert_json(
-                    session.0,
-                    output.as_ptr(),
-                    i32::MAX,
-                    i32::MAX,
-                );
+                let response =
+                    converter_session_convert_json(session.0, output.as_ptr(), i32::MAX, i32::MAX);
                 if !response.is_null() {
                     converter_string_free(response);
                     panic!("an absent chapter must fail before synthesis");
@@ -2828,7 +2824,9 @@ mod tests {
             .unwrap();
         assert_eq!(jobs.len(), 2);
         assert_ne!(jobs[0].job_id, jobs[1].job_id);
-        assert!(jobs.iter().all(|job| job.state == converter_core::jobs::JobState::Failed));
+        assert!(jobs
+            .iter()
+            .all(|job| job.state == converter_core::jobs::JobState::Failed));
         assert_eq!(std::fs::read(book.path()).unwrap(), source);
         println!("LEGACY_JOB_IDENTITY_ASSERTIONS_COMPLETED");
     }

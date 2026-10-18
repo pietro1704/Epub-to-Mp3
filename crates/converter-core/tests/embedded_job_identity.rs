@@ -129,7 +129,11 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
         .unwrap()
         .is_empty());
     let explicit_input = root.join("explicit.epub");
-    book(&explicit_input, "Explicit book", "Caller-owned conversion identity.");
+    book(
+        &explicit_input,
+        "Explicit book",
+        "Caller-owned conversion identity.",
+    );
     let explicit_session = EmbeddedConversionSession::open(
         explicit_input,
         EmbeddedConversionOptions {
