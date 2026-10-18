@@ -16,7 +16,11 @@ function consolidate(directory) {
     } catch {
       throw new Error(`Invalid scanner JSON: ${name}`);
     }
-    if (name === 'npm-audit.json' && (data.metadata?.vulnerabilities?.total ?? 0) === 0) continue;
+    if (name === 'npm-audit.json') {
+      const total = data?.metadata?.vulnerabilities?.total;
+      if (!Number.isSafeInteger(total) || total < 0) throw new Error(`Invalid scanner schema: ${name}`);
+      if (total === 0) continue;
+    }
     if (name === 'pip-audit.json') {
       const dependencies = Array.isArray(data) ? data : (data.dependencies ?? []);
       if (!dependencies.some(item => item && typeof item === 'object' && item.vulns?.length)) continue;
