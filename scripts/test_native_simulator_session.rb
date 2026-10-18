@@ -305,6 +305,30 @@ class NativeSimulatorSessionTest < Minitest::Test
     refute File.exist?(@lease)
   end
 
+  def test_plan_rejects_explicit_test_bundle_outside_authorized_root_before_workers
+    load_subject
+    assert_instance_of NativeSimulatorSession::Plan, NativeSimulatorSession::Plan.new(@plan_path)
+    external = Dir.mktmpdir("simulator-external-bundle-")
+    bundle = File.join(File.realpath(external), "ExternalTests.xctest")
+    FileUtils.mkdir_p(bundle)
+    xctestrun = @plan.fetch("files").fetch("xctestrun")
+    xml = File.read(xctestrun.fetch("path")).sub(
+      "</dict></dict></plist>",
+      "<key>TestBundlePath</key><string>#{bundle}</string></dict></dict></plist>")
+    File.write(xctestrun.fetch("path"), xml)
+    xctestrun["sha256"] = Digest::SHA256.file(xctestrun.fetch("path")).hexdigest
+    File.write(@plan_path, JSON.generate(@plan))
+
+    error = assert_raises(NativeSimulatorSession::Stop) do
+      NativeSimulatorSession::Plan.new(@plan_path)
+    end
+    assert_match(/TestBundlePath/, error.message)
+    assert_empty operations
+    refute File.exist?(@lease)
+  ensure
+    FileUtils.remove_entry(external) if external && File.directory?(external)
+  end
+
   def test_success_orders_fixed_phases_and_confirms_cleanup_before_releasing_lease
     skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
     result = run_session
