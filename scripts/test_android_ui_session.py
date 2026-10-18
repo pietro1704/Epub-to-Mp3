@@ -403,6 +403,22 @@ class SessionContracts(unittest.TestCase):
         self.assertTrue(report['started'])
         self.assert_stopped(report)
 
+    def test_acknowledged_launch_without_process_cannot_admit_device(self):
+        self.mutate(pids=[])
+        self.start();report=self.result(125)
+        state=json.loads(self.state.read_text())
+        self.assertEqual(state['launches'],1)
+        self.assertEqual(state['stops'],0)
+        self.assertTrue(self.state.with_suffix('.am-returned').exists())
+        self.assertFalse(report['started'])
+        self.assertEqual(report['processes'],[])
+        self.assertFalse(report['conversionAccepted'])
+        self.assertTrue(report['deviceCleanupVerified'])
+        self.assertTrue(report['hostGroupsAbsent'])
+        self.assertEqual(report['remainingHostGroupPids'],[])
+        self.assertTrue(report['cleanupVerified'])
+        self.assertTrue(all(app.poll() is None for app in self.apps))
+
     def test_slow_am_start_within_startup_budget_can_finish_and_cleanup(self):
         self.mutate(slowAmStart=True)
         self.start();self.active()
