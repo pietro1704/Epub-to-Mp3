@@ -468,7 +468,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
     if let Err(error) = std::fs::create_dir_all(output) {
         return fail(format!("failed to create output directory: {error}"));
     }
-    let job = format!("embedded-{}", std::process::id());
+    let job = converter_core::embedded::fresh_embedded_job_id();
     let generated_output_dir = output.join(&job);
     let request = converter_core::worker::ConversionRequest {
         input: session.session.input_path().to_path_buf(),
@@ -2162,7 +2162,7 @@ mod android_jni {
         unsafe {
             (*handle).platform_tts = Some(Arc::new(platform));
         }
-        let job = format!("embedded-{}", std::process::id());
+        let job = converter_core::embedded::fresh_embedded_job_id();
         let output = match CString::new(Path::new(&output).join(&job).to_string_lossy().as_bytes())
         {
             Ok(output) => output,
