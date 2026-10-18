@@ -3,6 +3,7 @@ require 'tmpdir'
 require 'fileutils'
 require 'open3'
 require 'rbconfig'
+require 'digest'
 require_relative 'hf_snapshot'
 
 class HfSnapshotTest < Minitest::Test
@@ -58,6 +59,29 @@ class HfSnapshotTest < Minitest::Test
     %w[.env ios pretrained_models docs].each { |path| refute File.exist?(File.join(clone, path)), path }
     assert_equal git!('rev-parse', 'master', chdir: @remote), git!('rev-parse', 'main', chdir: @remote)
     refute_includes File.read(File.join(@snapshot, '.git/config')), 'HF_TOKEN'
+  end
+
+  def test_many_literal_binary_names_survive_real_lfs_transport
+    binaries = 129.times.to_h do |index|
+      [format('web/public/batched assets/part [%03d] *?.bin', index), "\0distinct fixture #{index}\xff".b]
+    end
+    binaries.each { |path, bytes| write(path, bytes) }
+    git!('add', '-A', chdir: @source)
+    git!('commit', '-m', 'fixture literal binary names', chdir: @source)
+
+    snapshot!
+    output, status = push
+    assert status.success?, output
+    binaries.each do |path, bytes|
+      pointer = git!('show', "master:#{path}", chdir: @remote)
+      expected = "version https://git-lfs.github.com/spec/v1\noid sha256:#{Digest::SHA256.hexdigest(bytes)}\nsize #{bytes.bytesize}\n"
+      assert_equal expected, pointer, path
+    end
+    clone = File.join(@directory, 'literal binary clone')
+    git!('clone', '--no-checkout', "file://#{@remote}", clone, chdir: @directory)
+    git!('lfs', 'install', '--local', chdir: clone)
+    git!('checkout', 'master', chdir: clone)
+    binaries.each { |path, bytes| assert_equal bytes, File.binread(File.join(clone, path)), path }
   end
 
   def test_local_sherpa_patch_keeps_its_complete_tracked_source_and_manifest_bytes
