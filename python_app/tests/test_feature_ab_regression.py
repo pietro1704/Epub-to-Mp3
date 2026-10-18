@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
-
+from pathlib import Path
 
 CHECKER = Path(__file__).resolve().parents[2] / "scripts/check_feature_ab_regression.py"
 RESULTS = ("baseline_no_stage", "stage_pipeline", "external_worker_pool")
@@ -25,6 +24,12 @@ def valid_report():
 
 
 class FeatureABCheckerTests(unittest.TestCase):
+    def assert_invalid(self, result):
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("A/B regression check: INVALID", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertLess(len(result.stderr), 250)
+
     def check(self, payload, *arguments):
         with tempfile.TemporaryDirectory(prefix="ab-checker-contract-") as directory:
             report = Path(directory) / "report.json"
@@ -52,11 +57,11 @@ class FeatureABCheckerTests(unittest.TestCase):
                     payload = valid_report()
                     for name in failed_names:
                         payload["results"][name].update(success=False, exit_code=exit_code)
-                    self.assertNotEqual(self.check(payload).returncode, 0)
+                    self.assert_invalid(self.check(payload))
         for name in RESULTS:
             payload = valid_report()
             payload["results"][name]["exit_code"] = 130
-            self.assertNotEqual(self.check(payload).returncode, 0, "A success flag cannot override cancellation")
+            self.assert_invalid(self.check(payload))
 
     def test_missing_or_malformed_schema_cannot_default_to_zero_gain(self):
         cases = [None, [], {}, {"results": {}}, {"comparisons": {}},
@@ -70,7 +75,7 @@ class FeatureABCheckerTests(unittest.TestCase):
             cases.append(payload)
         for payload in cases:
             with self.subTest(payload=payload):
-                self.assertNotEqual(self.check(payload).returncode, 0)
+                self.assert_invalid(self.check(payload))
 
     def test_result_fields_require_explicit_success_and_numeric_evidence(self):
         for field, values in {
@@ -82,10 +87,10 @@ class FeatureABCheckerTests(unittest.TestCase):
                 with self.subTest(field=field, value=value):
                     payload = valid_report()
                     payload["results"][RESULTS[0]][field] = value
-                    self.assertNotEqual(self.check(payload).returncode, 0)
+                    self.assert_invalid(self.check(payload))
             payload = valid_report()
             del payload["results"][RESULTS[0]][field]
-            self.assertNotEqual(self.check(payload).returncode, 0)
+            self.assert_invalid(self.check(payload))
 
     def test_both_comparisons_are_required_finite_numbers(self):
         for name in valid_report()["comparisons"]:
@@ -93,28 +98,28 @@ class FeatureABCheckerTests(unittest.TestCase):
                 with self.subTest(name=name, value=value):
                     payload = valid_report()
                     payload["comparisons"][name] = value
-                    self.assertNotEqual(self.check(payload).returncode, 0)
+                    self.assert_invalid(self.check(payload))
             payload = valid_report()
             del payload["comparisons"][name]
-            self.assertNotEqual(self.check(payload).returncode, 0)
+            self.assert_invalid(self.check(payload))
         for comparisons in [None, [], {}]:
             payload = valid_report()
             payload["comparisons"] = comparisons
-            self.assertNotEqual(self.check(payload).returncode, 0)
+            self.assert_invalid(self.check(payload))
 
     def test_nonfinite_thresholds_never_disable_validation(self):
         for option in ["--max-stage-loss-pct", "--max-pool-loss-pct"]:
             for value in ["nan", "inf", "-inf"]:
                 with self.subTest(option=option, value=value):
-                    self.assertNotEqual(self.check(valid_report(), f"{option}={value}").returncode, 0)
+                    self.assert_invalid(self.check(valid_report(), f"{option}={value}"))
 
     def test_missing_or_invalid_json_report_fails(self):
         with tempfile.TemporaryDirectory(prefix="ab-invalid-report-") as directory:
             report = Path(directory) / "report.json"
             command = [sys.executable, str(CHECKER), "--report", str(report)]
-            self.assertNotEqual(subprocess.run(command, capture_output=True, timeout=10, check=False).returncode, 0)
+            self.assert_invalid(subprocess.run(command, capture_output=True, text=True, timeout=10, check=False))
             report.write_text("{invalid JSON", encoding="utf-8")
-            self.assertNotEqual(subprocess.run(command, capture_output=True, timeout=10, check=False).returncode, 0)
+            self.assert_invalid(subprocess.run(command, capture_output=True, text=True, timeout=10, check=False))
 
 
 if __name__ == "__main__":
