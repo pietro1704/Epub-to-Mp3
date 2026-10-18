@@ -11,7 +11,8 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
   ROOT = File.expand_path('..', __dir__)
 
   def setup
-    @root = File.realpath(Dir.mktmpdir('ios task environment '))
+    @temporary = File.realpath(Dir.mktmpdir('ios-task-environment'))
+    @root = File.join(@temporary, 'project with spaces')
     @bin = File.join(@root, 'bin')
     @calls = File.join(@root, 'calls.jsonl')
     @lease = File.join(@root, 'fixture.lease')
@@ -61,7 +62,7 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
   end
 
   def teardown
-    FileUtils.remove_entry(@root)
+    FileUtils.remove_entry(@temporary)
   end
 
   def shim(name, body)
