@@ -2,6 +2,9 @@ name: Faber runtime integration
 
 on:
   pull_request:
+  push:
+    branches:
+      - ci/embedded-jni-job-identity
   workflow_dispatch:
 
 permissions:
@@ -54,6 +57,7 @@ jobs:
     timeout-minutes: 90
     env:
       MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
+      ANDROID_VERIFICATION_MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity' && 'identity' || 'full' }}
     steps:
       - uses: actions/checkout@v7
       - name: Enable and require hosted Linux KVM access
@@ -93,7 +97,9 @@ jobs:
       - name: Build the integration target as an audited ARM64-only APK
         working-directory: flutter_app
         run: |
-          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --debug --target-platform android-arm64 --target integration_test/android_piper_inference_test.dart
+          identity_only=false
+          if [[ "$ANDROID_VERIFICATION_MODE" == identity ]]; then identity_only=true; fi
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --debug --target-platform android-arm64 --target integration_test/android_piper_inference_test.dart --dart-define="ANDROID_JOB_IDENTITY_ONLY=$identity_only"
           mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- ruby ../scripts/package_converter_ffi_android.rb --audit --apk "$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
       - name: Run actual Piper inference in the packaged ARM64 app
         uses: ReactiveCircus/android-emulator-runner@v2
@@ -109,7 +115,7 @@ jobs:
           disable-animations: true
           disable-linux-hw-accel: false
           emulator-options: -no-window -no-audio -no-boot-anim -accel on
-          script: bash scripts/verify_android_piper_inference.sh
+          script: bash scripts/verify_android_piper_inference.sh "$ANDROID_VERIFICATION_MODE"
       - name: Retain APK, native identity and Android test results
         if: always()
         uses: actions/upload-artifact@v6
@@ -124,6 +130,7 @@ jobs:
           if-no-files-found: warn
 
   macos-preferences:
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity') }}
     name: Faber macOS preferences and installation (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -225,6 +232,7 @@ jobs:
           if-no-files-found: warn
 
   browser-runtime:
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity') }}
     name: Faber real browser runtime
     runs-on: ubuntu-24.04
     timeout-minutes: 40
