@@ -43,7 +43,7 @@ module HfSnapshot
     command!('git', 'config', 'user.name', 'hf-sync-bot', chdir: destination)
     command!('git', 'config', 'user.email', 'hf-sync-bot@users.noreply.github.com', chdir: destination)
     command!('git', 'lfs', 'install', '--local', chdir: destination)
-    binaries.each { |path| command!('git', 'lfs', 'track', '--filename', path, chdir: destination) }
+    binaries.each_slice(128) { |batch| command!('git', 'lfs', 'track', '--filename', *batch, chdir: destination) }
     command!('git', 'add', '-A', chdir: destination)
     command!('git', 'commit', '-m', 'HF runtime snapshot', chdir: destination)
     binaries.each do |path|
