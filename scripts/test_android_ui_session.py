@@ -20,11 +20,15 @@ ADB = r'''
 import json,os,pathlib,signal,sys,time
 p=pathlib.Path(os.environ['FAKE_ANDROID_STATE'])
 s=json.loads(p.read_text());a=sys.argv[1:]
+def save_state():
+ temporary=p.with_name('.'+p.name+'.'+str(os.getpid())+'.tmp')
+ with temporary.open('x') as stream:json.dump(s,stream)
+ os.replace(temporary,p)
 with p.with_suffix('.calls').open('a') as log:log.write(json.dumps(a)+'\n')
 if a[:2]!=['-s','fixture-serial']:sys.exit(22)
 a=a[2:]
 if s.get('blockQuery') and pathlib.Path(os.environ['FAKE_SESSION_ROOT'],'one/guard-ready.json').exists() and not s.get('blockedOnce'):
- s['blockedOnce']=True;p.write_text(json.dumps(s));p.with_suffix('.blocked').write_text('ready');time.sleep(.6)
+ s['blockedOnce']=True;save_state();p.with_suffix('.blocked').write_text('ready');time.sleep(.6)
 if s.get('slowCleanup') and s['active'] and pathlib.Path(os.environ['FAKE_SESSION_ROOT'],'one/finish.json').exists():time.sleep(2.6)
 if s.get('disconnect') and s['active']:sys.exit(21)
 if a==['get-state']:print('device')
@@ -43,7 +47,7 @@ elif a[:1]==['shell']:
   print(digest+'  '+a[1])
  elif a[:1]==['ps']:
   if s['active'] and s.get('slowFirstPostLaunchPs') and not s.get('postLaunchPsDelayed'):
-   s['postLaunchPsDelayed']=True;p.write_text(json.dumps(s));time.sleep(3.2)
+   s['postLaunchPsDelayed']=True;save_state();time.sleep(3.2)
   if s.get('invalidPs') and s['active']:print('INVALID');sys.exit(0)
   print('PID UID NAME')
   if s['active']:
@@ -57,7 +61,7 @@ elif a[:1]==['shell']:
   expected=s['package']+'/com.pietrocode.epubtomp3.flutter_app.MainActivity'
   if a!=['am','start','-W','-n',expected]:
    print('Error type 3\nError: Activity class does not exist');sys.exit(0)
-  s['active']=True;s['launches']+=1;p.write_text(json.dumps(s))
+  s['active']=True;s['launches']+=1;save_state()
   if s.get('slowAmStart'):time.sleep(3.2)
   print('Status: ok')
  elif a[:2]==['am','force-stop']:
@@ -66,7 +70,7 @@ elif a[:1]==['shell']:
   for pid in s['pids']:
    try:os.kill(pid,signal.SIGTERM)
    except ProcessLookupError:pass
-  s['active']=False;s['stops']+=1;p.write_text(json.dumps(s))
+  s['active']=False;s['stops']+=1;save_state()
  else:sys.exit(25)
 else:sys.exit(26)
 '''
@@ -167,7 +171,9 @@ class SessionContracts(unittest.TestCase):
 
     def mutate(self, **values):
         state = json.loads(self.state.read_text());state.update(values)
-        self.state.write_text(json.dumps(state))
+        temporary=self.state.with_name('.'+self.state.name+'.'+str(os.getpid())+'.tmp')
+        with temporary.open('x') as stream:json.dump(state,stream)
+        os.replace(temporary,self.state)
 
     def start(self, mode="normal"):
         self.env["FAKE_GUARD_MODE"] = mode
