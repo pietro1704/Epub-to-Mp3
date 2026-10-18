@@ -45,7 +45,12 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
     const GUARD: &str = "EPUB_DEFAULT_JOB_IDENTITY_ISOLATED_TEST";
     if std::env::var(GUARD).as_deref() != Ok("1") {
         let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "fresh_embedded_sessions_keep_independent_default_job_identity", "--nocapture", "--test-threads=1"])
+            .args([
+                "--exact",
+                "fresh_embedded_sessions_keep_independent_default_job_identity",
+                "--nocapture",
+                "--test-threads=1",
+            ])
             .env(GUARD, "1")
             .env_remove("PIPER_MODEL")
             .env_remove("PIPER_CONFIG")
@@ -54,14 +59,24 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
             .env("FFPROBE", "/no-tools/ffprobe")
             .env("CONVERTER_AUDIO_DISABLE_EXTERNAL_TOOLS", "1")
             .env("RUST_CHAPTER_TIMEOUT_SECONDS", "30")
-            .output().unwrap();
-        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        assert!(String::from_utf8_lossy(&output.stdout).contains("DEFAULT_JOB_IDENTITY_ASSERTIONS_COMPLETED"));
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout)
+            .contains("DEFAULT_JOB_IDENTITY_ASSERTIONS_COMPLETED"));
         return;
     }
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
-    let paths = paths::resolve_paths_from([("PERSISTENT_ROOT", root.to_string_lossy().into_owned())], root.to_owned());
+    let paths = paths::resolve_paths_from(
+        [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
+        root.to_owned(),
+    );
     fs::create_dir_all(&paths.piper_models_dir).unwrap();
     let model = paths.piper_models_dir.join("pt_BR-faber-medium.onnx");
     fs::write(&model, b"owned synthetic model").unwrap();
@@ -72,29 +87,46 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
     let first_input = root.join("first.epub");
     let second_input = root.join("second.epub");
     book(&first_input, "First book", "First independent conversion.");
-    book(&second_input, "Second book", "Second independent conversion.");
+    book(
+        &second_input,
+        "Second book",
+        "Second independent conversion.",
+    );
     let config = AppConfig::from_paths(paths.clone());
     let options = EmbeddedConversionOptions {
         engine: Some("piper".into()),
         no_parallel: true,
         ..Default::default()
     };
-    let first = EmbeddedConversionSession::open(first_input, options.clone(), config.clone()).unwrap().convert().unwrap();
+    let first = EmbeddedConversionSession::open(first_input, options.clone(), config.clone())
+        .unwrap()
+        .convert()
+        .unwrap();
     let first_output = paths.output_dir.join(&first.job_id);
     let first_manifest = fs::read(first_output.join("manifest.json")).unwrap();
     let first_audio = fs::read(first_output.join(&first.chapters[0].filename)).unwrap();
-    let second = EmbeddedConversionSession::open(second_input, options, config).unwrap().convert()
+    let second = EmbeddedConversionSession::open(second_input, options, config)
+        .unwrap()
+        .convert()
         .expect("a fresh session without a caller job ID must create an independent job");
     assert_ne!(first.job_id, second.job_id);
     assert_eq!(first.title, "First book");
     assert_eq!(second.title, "Second book");
     assert_eq!(first.chapters.len(), 1);
     assert_eq!(second.chapters.len(), 1);
-    assert_eq!(fs::read(first_output.join("manifest.json")).unwrap(), first_manifest);
-    assert_eq!(fs::read(first_output.join(&first.chapters[0].filename)).unwrap(), first_audio);
+    assert_eq!(
+        fs::read(first_output.join("manifest.json")).unwrap(),
+        first_manifest
+    );
+    assert_eq!(
+        fs::read(first_output.join(&first.chapters[0].filename)).unwrap(),
+        first_audio
+    );
     let second_output = paths.output_dir.join(&second.job_id);
     assert!(second_output.join("manifest.json").is_file());
     assert!(second_output.join(&second.archive).is_file());
-    assert!(!fs::read(second_output.join(&second.chapters[0].filename)).unwrap().is_empty());
+    assert!(!fs::read(second_output.join(&second.chapters[0].filename))
+        .unwrap()
+        .is_empty());
     println!("DEFAULT_JOB_IDENTITY_ASSERTIONS_COMPLETED");
 }

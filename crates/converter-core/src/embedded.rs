@@ -26,7 +26,11 @@ pub struct EmbeddedConversionOptions {
 
 /// Allocate a path-safe identity for a fresh conversion without a caller-owned ID.
 pub fn fresh_embedded_job_id() -> String {
-    format!("embedded-{}-{:032x}", std::process::id(), rand::random::<u128>())
+    format!(
+        "embedded-{}-{:032x}",
+        std::process::id(),
+        rand::random::<u128>()
+    )
 }
 
 /// Parsed EPUB metadata exposed before audio conversion.
