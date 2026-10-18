@@ -46,6 +46,7 @@ pub mod tts_preferences;
 pub mod tts_runtime;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod worker;
+mod zip_names;
 
 /// Returns the core library health status.
 pub fn health() -> &'static str {
