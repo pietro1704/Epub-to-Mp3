@@ -60,11 +60,17 @@ function consolidate(directory) {
       if (total === 0) continue;
     }
     if (name === 'pip-audit.json') {
-      const dependencies = Array.isArray(data) ? data : (data.dependencies ?? []);
+      const dependencies = Array.isArray(data) ? data : data?.dependencies;
+      if (!Array.isArray(dependencies)) throw new Error(`Invalid scanner schema: ${name}`);
       if (dependencies.some(item => item && typeof item === 'object' && Object.hasOwn(item, 'skip_reason'))) {
         throw new Error(`Incomplete scanner report: ${name}`);
       }
-      const found = dependencies.some(item => item && typeof item === 'object' && item.vulns?.length);
+      if (dependencies.some(item => !item || typeof item !== 'object' || Array.isArray(item)
+          || typeof item.name !== 'string' || item.name.length === 0
+          || typeof item.version !== 'string' || item.version.length === 0 || !Array.isArray(item.vulns))) {
+        throw new Error(`Invalid scanner schema: ${name}`);
+      }
+      const found = dependencies.some(item => item.vulns.length > 0);
       if (statuses.pipAudit !== Number(found)) commandFailure('pipAudit', statuses.pipAudit);
       if (!found) continue;
     }
