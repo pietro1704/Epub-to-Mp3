@@ -28,6 +28,15 @@ pub struct EmbeddedConversionOptions {
     pub no_parallel: bool,
 }
 
+/// Allocate a path-safe identity for a fresh conversion without a caller-owned ID.
+pub fn fresh_embedded_job_id() -> String {
+    format!(
+        "embedded-{}-{:032x}",
+        std::process::id(),
+        rand::random::<u128>()
+    )
+}
+
 /// Parsed EPUB metadata exposed before audio conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedBookMetadata {
@@ -124,7 +133,7 @@ impl EmbeddedConversionSession {
             .options
             .job_id
             .clone()
-            .unwrap_or_else(|| format!("embedded-{}", std::process::id()));
+            .unwrap_or_else(fresh_embedded_job_id);
         let worker = ConversionWorker::new(self.config.clone())?;
         #[cfg(any(target_os = "linux", target_os = "windows"))]
         let worker = {

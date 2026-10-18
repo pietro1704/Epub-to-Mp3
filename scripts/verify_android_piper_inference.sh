@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+mode="${1-full}"
+if [[ "$#" -gt 1 ]]; then
+  echo 'Expected one fixed Android verification mode.' >&2
+  exit 64
+fi
+case "$mode" in
+  full|identity) ;;
+  *) echo 'Unknown Android verification mode.' >&2; exit 64 ;;
+esac
+
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 api_level="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
 abi_list="$(adb shell getprop ro.product.cpu.abilist | tr -d '\r')"
@@ -15,4 +25,7 @@ printf 'ANDROID_ARM64_ABI_TRANSLATION: api=%s guest=%s arm64Bridge=%s arm64Isa=%
 mkdir -p .reports/tts-preferences
 cd flutter_app
 mise exec -- flutter drive --use-application-binary=build/app/outputs/flutter-apk/app-debug.apk --driver=test_driver/integration_test.dart --target=integration_test/android_piper_inference_test.dart -d emulator-5554 2>&1 | tee ../.reports/tts-preferences/android-inference.log
-grep -F 'ANDROID_FABER_ABI_TRANSLATION: model=pt_BR-faber-medium' ../.reports/tts-preferences/android-inference.log
+grep -F 'ANDROID_JNI_JOB_IDENTITY: defaults=2 distinct=true state=failed audio=none' ../.reports/tts-preferences/android-inference.log
+if [[ "$mode" == full ]]; then
+  grep -F 'ANDROID_FABER_ABI_TRANSLATION: model=pt_BR-faber-medium' ../.reports/tts-preferences/android-inference.log
+fi
