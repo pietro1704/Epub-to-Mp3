@@ -19,7 +19,6 @@ void main() {
   late List<MethodCall> converterCalls;
 
   setUp(() async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     documents = await Directory.systemTemp.createTemp('manual-range-test-');
     converterCalls = [];
     SharedPreferences.setMockInitialValues({});
@@ -43,7 +42,6 @@ void main() {
   });
 
   tearDown(() async {
-    debugDefaultTargetPlatformOverride = null;
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     for (final channel in [converterChannel, pathsChannel, noticesChannel]) {
@@ -85,14 +83,16 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('invalid chapter text never starts the Android converter', (
-    tester,
-  ) async {
-    await submitRange(tester, 'NaN', '6');
-    expect(converterCalls, isEmpty);
-    expect(find.text('range-result'), findsNothing);
-    expect(find.textContaining('non-negative integers'), findsOneWidget);
-  });
+  testWidgets(
+    'invalid chapter text never starts the Android converter',
+    (tester) async {
+      await submitRange(tester, 'NaN', '6');
+      expect(converterCalls, isEmpty);
+      expect(find.text('range-result'), findsNothing);
+      expect(find.textContaining('non-negative integers'), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 
   for (final (description, start, end, message) in [
     ('negative From', '-1', '6', 'non-negative integers'),
@@ -105,14 +105,16 @@ void main() {
     ('inverted range', '6', '5', 'greater than or equal to From'),
     ('To without From', '', '6', 'Enter From when specifying To'),
   ]) {
-    testWidgets('$description is rejected before any native call', (
-      tester,
-    ) async {
-      await submitRange(tester, start, end);
-      expect(converterCalls, isEmpty);
-      expect(find.textContaining(message), findsOneWidget);
-      expect(find.text('range-result'), findsNothing);
-    });
+    testWidgets(
+      '$description is rejected before any native call',
+      (tester) async {
+        await submitRange(tester, start, end);
+        expect(converterCalls, isEmpty);
+        expect(find.textContaining(message), findsOneWidget);
+        expect(find.text('range-result'), findsNothing);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
   }
 
   for (final (description, start, end, expectedStart, expectedEnd) in [
@@ -129,16 +131,21 @@ void main() {
       2147483647,
     ),
   ]) {
-    testWidgets('$description reaches the Android adapter unchanged', (
-      tester,
-    ) async {
-      await submitRange(tester, start, end);
-      expect(converterCalls.map((call) => call.method), ['status', 'convert']);
-      final arguments = converterCalls.last.arguments as Map;
-      expect(arguments['inputPath'], '/owned/book.epub');
-      expect(arguments['chapterStart'], expectedStart);
-      expect(arguments['chapterEnd'], expectedEnd);
-      expect(find.text('Retry'), findsNothing);
-    });
+    testWidgets(
+      '$description reaches the Android adapter unchanged',
+      (tester) async {
+        await submitRange(tester, start, end);
+        expect(converterCalls.map((call) => call.method), [
+          'status',
+          'convert',
+        ]);
+        final arguments = converterCalls.last.arguments as Map;
+        expect(arguments['inputPath'], '/owned/book.epub');
+        expect(arguments['chapterStart'], expectedStart);
+        expect(arguments['chapterEnd'], expectedEnd);
+        expect(find.text('Retry'), findsNothing);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
   }
 }
