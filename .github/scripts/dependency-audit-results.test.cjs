@@ -209,3 +209,9 @@ test('a cargo report without vulnerability results must not default to a clean a
     assertRejected(result, directory, /Invalid scanner schema: cargo-audit\.json/);
   });
 });
+
+test('a pip report without dependency results must not default to a clean audit', () => {
+  withReports({ 'pip-audit.json': { fixes: [] } }, (result, directory) => {
+    assertRejected(result, directory, /Invalid scanner schema: pip-audit\.json/);
+  });
+});
