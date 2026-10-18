@@ -46,6 +46,26 @@ elif a[:1]==['shell']:
   else:sys.exit(28)
   print(digest+'  '+a[1])
  elif a[:1]==['ps']:
+  if s['active'] and s.get('loseGuardDuringPostLaunchPs') and not s.get('guardLostBeforeReceipt'):
+   directory=pathlib.Path(os.environ['FAKE_SESSION_ROOT'],'one')
+   ready=json.loads((directory/'guard-ready.json').read_text())
+   runner=json.loads((directory/'lifecycle.json').read_text())['hostIdentities'][-1]
+   def identity(pid):
+    proc=pathlib.Path('/proc',str(pid));raw=(proc/'stat').read_text();fields=raw[raw.rfind(')')+2:].split()
+    return {'pid':pid,'uid':proc.stat().st_uid,'starttime':int(fields[19]),'ppid':int(fields[1]),'state':fields[0]}
+   child=identity(ready['pid']);parent=identity(runner['pid'])
+   assert child['uid']==ready['uid']==os.getuid() and child['starttime']==ready['starttime']
+   assert parent['uid']==runner['uid']==os.getuid() and parent['starttime']==runner['starttime']
+   assert child['ppid']==parent['pid'] and child['state'] not in ('Z','X') and parent['state'] not in ('Z','X')
+   os.kill(child['pid'],signal.SIGTERM)
+   deadline=time.monotonic()+1
+   while True:
+    try:gone=identity(parent['pid'])['state'] in ('Z','X')
+    except FileNotFoundError:gone=True
+    if gone and (directory/'resource-run/result.json').exists():break
+    assert time.monotonic()<deadline,'Fixture guard did not exit before inventory response'
+    time.sleep(.01)
+   s['guardLostBeforeReceipt']=True;save_state()
   if s['active'] and s.get('slowFirstPostLaunchPs') and not s.get('postLaunchPsDelayed'):
    s['postLaunchPsDelayed']=True;save_state();time.sleep(3.2)
   if s.get('invalidPs') and s['active']:print('INVALID');sys.exit(0)
@@ -277,6 +297,21 @@ class SessionContracts(unittest.TestCase):
         child=json.loads((self.sessions/'one/resource-run/child.json').read_text())['pid']
         os.kill(child,signal.SIGTERM)
         self.assert_stopped(self.result(143))
+
+    def test_guard_loss_during_postlaunch_inventory_cannot_admit_device(self):
+        self.mutate(loseGuardDuringPostLaunchPs=True)
+        self.start();report=self.result(125)
+        state=json.loads(self.state.read_text())
+        self.assertTrue(state['guardLostBeforeReceipt'])
+        self.assertEqual(state['launches'],1)
+        self.assertEqual(state['stops'],0)
+        self.assertTrue(state['active'])
+        self.assertTrue(self.state.with_suffix('.am-returned').exists())
+        self.assertFalse(report['started'])
+        self.assertEqual(report['processes'],[])
+        self.assertFalse(report['cleanupVerified'])
+        self.assertFalse(report['conversionAccepted'])
+        self.assertTrue(all(app.poll() is None for app in self.apps))
 
     def test_deadline_is_interrupted_and_cleans_device(self):
         config=json.loads(self.config.read_text());config['seconds']=2;self.config.write_text(json.dumps(config))
