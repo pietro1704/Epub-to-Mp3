@@ -38,13 +38,13 @@ class Device:
     def budget(self, seconds):
         self.deadline = time.monotonic() + seconds
 
-    def call(self, *arguments):
+    def call(self, *arguments, timeout_seconds=3):
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("Device query budget exhausted")
         result = subprocess.run(
             [*self.prefix, *arguments], capture_output=True, text=True,
-            timeout=min(3, remaining), check=True,
+            timeout=min(timeout_seconds, remaining), check=True,
         )
         return result.stdout.strip()
 
@@ -265,7 +265,11 @@ def run_session(config, root, session_id):
                     break
                 report["launchAttempted"] = True
                 write_json(directory / "lifecycle.json", report)
-                device.shell("am", "start", "-W", "-n", PACKAGE + "/com.pietrocode.epubtomp3.flutter_app.MainActivity")
+                device.call(
+                    "shell", "am", "start", "-W", "-n",
+                    PACKAGE + "/com.pietrocode.epubtomp3.flutter_app.MainActivity",
+                    timeout_seconds=10,
+                )
                 owned = device.processes()
                 if not owned:
                     raise ValueError("Owned launch has no authenticated process")
