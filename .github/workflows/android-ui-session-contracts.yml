@@ -2,7 +2,7 @@ name: Android UI session lifecycle contracts
 
 on:
   push:
-    branches: [master, feature/android-ui-session-cleanup]
+    branches: [master, feature/android-ui-session-cleanup, feature/android-ui-activity-regression]
     paths:
       - scripts/android_ui_session.py
       - scripts/test_android_ui_session.py

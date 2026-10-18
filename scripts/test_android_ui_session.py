@@ -52,6 +52,9 @@ elif a[:1]==['shell']:
    cut=stat.rfind(')')+2;fields=stat[cut:].split();fields[19]=str(int(fields[19])+1);stat=stat[:cut]+' '.join(fields)
   print(stat)
  elif a[:2]==['am','start']:
+  expected=s['package']+'/com.pietrocode.epubtomp3.flutter_app.MainActivity'
+  if a!=['am','start','-W','-n',expected]:
+   print('Error type 3\nError: Activity class does not exist');sys.exit(0)
   s['active']=True;s['launches']+=1;p.write_text(json.dumps(s));print('Status: ok')
  elif a[:2]==['am','force-stop']:
   if s.get('failStop'):sys.exit(23)
@@ -222,7 +225,16 @@ class SessionContracts(unittest.TestCase):
         self.assert_stopped(self.result(143))
 
     def test_normal_exit_cleans_all_package_processes_without_claiming_conversion(self):
-        self.start();self.active();self.finish();self.assert_stopped(self.result(0))
+        self.start()
+        def launch_calls():
+            path=self.state.with_suffix('.calls')
+            if not path.exists():return []
+            return [json.loads(line) for line in path.read_text().splitlines()
+                    if json.loads(line)[2:5]==['shell','am','start']]
+        self.wait(lambda: bool(launch_calls()))
+        self.assertEqual(launch_calls()[-1],['-s','fixture-serial','shell','am','start','-W','-n',
+            'com.pietrocode.epubtomp3.flutter_app.verification/com.pietrocode.epubtomp3.flutter_app.MainActivity'])
+        self.active();self.finish();self.assert_stopped(self.result(0))
 
     def test_killed_guard_child_still_cleans_device(self):
         self.start();self.active()
