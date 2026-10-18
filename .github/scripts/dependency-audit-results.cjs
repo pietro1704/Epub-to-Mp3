@@ -49,6 +49,12 @@ function consolidate(directory) {
     if (name === 'npm-audit.json') {
       const total = data?.metadata?.vulnerabilities?.total;
       if (!Number.isSafeInteger(total) || total < 0) throw new Error(`Invalid scanner schema: ${name}`);
+      const vulnerabilities = data.vulnerabilities;
+      if (!vulnerabilities || typeof vulnerabilities !== 'object' || Array.isArray(vulnerabilities)
+          || (Object.keys(vulnerabilities).length === 0) !== (total === 0)
+          || Object.values(vulnerabilities).some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
+        throw new Error(`Invalid scanner schema: ${name}`);
+      }
       const counts = data.metadata.vulnerabilities;
       const levels = ['info', 'low', 'moderate', 'high', 'critical'];
       if (levels.some(level => !Number.isSafeInteger(counts[level]) || counts[level] < 0)
