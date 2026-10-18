@@ -103,7 +103,29 @@ module NativeSimulatorSession
       raise Stop, "xctestrun exceeds size limit" if File.size(xml_path) > 4 * 1024 * 1024
       xml = File.read(xml_path)
       raise Stop, "xctestrun entities are not accepted" if xml.match?(/<!ENTITY/i)
-      hosts = REXML::Document.new(xml).get_elements("//key").filter_map do |key|
+      keys = REXML::Document.new(xml).get_elements("//key")
+      keys.select { |key| key.text == "TestBundlePath" }.each do |key|
+        value = key.next_element
+        unless value&.name == "string" && value.text.is_a?(String) && !value.text.empty? && !value.text.include?("\0")
+          raise Stop, "Invalid TestBundlePath"
+        end
+        path = value.text
+        if path.start_with?("__TESTROOT__/")
+          path = File.expand_path(path.delete_prefix("__TESTROOT__/"), File.dirname(xml_path))
+        end
+        unless path.start_with?("/") && !path.match?(/__[^\/]*__/)
+          raise Stop, "Unsupported TestBundlePath reference"
+        end
+        begin
+          resolved = File.realpath(path)
+          unless resolved.start_with?(self["source_root"] + "/") && File.directory?(resolved)
+            raise Stop, "TestBundlePath must be a directory inside source root"
+          end
+        rescue SystemCallError
+          raise Stop, "Invalid TestBundlePath directory"
+        end
+      end
+      hosts = keys.filter_map do |key|
         next unless key.text == "TestHostPath"
         value = key.next_element
         raise Stop, "Invalid TestHostPath" unless value&.name == "string" && value.text.is_a?(String)
