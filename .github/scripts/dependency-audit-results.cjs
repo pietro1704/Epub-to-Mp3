@@ -69,7 +69,15 @@ function consolidate(directory) {
       if (!found) continue;
     }
     if (name === 'cargo-audit.json') {
-      const found = Boolean(data.vulnerabilities?.list?.length);
+      const vulnerabilities = data?.vulnerabilities;
+      if (!vulnerabilities || typeof vulnerabilities !== 'object' || Array.isArray(vulnerabilities)
+          || typeof vulnerabilities.found !== 'boolean'
+          || !Number.isSafeInteger(vulnerabilities.count) || vulnerabilities.count < 0
+          || !Array.isArray(vulnerabilities.list) || vulnerabilities.count !== vulnerabilities.list.length
+          || vulnerabilities.found !== (vulnerabilities.count > 0)) {
+        throw new Error(`Invalid scanner schema: ${name}`);
+      }
+      const found = vulnerabilities.found;
       if (statuses.cargoAudit !== Number(found)) commandFailure('cargoAudit', statuses.cargoAudit);
       if (!found) continue;
     }
