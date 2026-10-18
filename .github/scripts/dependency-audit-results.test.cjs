@@ -187,3 +187,17 @@ test('an embedded cargo scanner error must not be accepted as a clean report', (
     assert.doesNotMatch(result.stderr, /private fixture error detail/);
   });
 });
+
+test('a skipped pip dependency must not be accepted as a complete clean audit', () => {
+  const report = {
+    dependencies: [
+      { name: 'example', version: '1.0', vulns: [] },
+      { name: 'unresolved-example', skip_reason: 'private fixture skip detail' },
+    ],
+    fixes: [],
+  };
+  withReports({ 'pip-audit.json': report }, (result, directory) => {
+    assertRejected(result, directory, /Incomplete scanner report: pip-audit\.json/);
+    assert.doesNotMatch(result.stderr, /private fixture skip detail/);
+  });
+});
