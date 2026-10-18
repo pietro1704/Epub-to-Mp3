@@ -105,7 +105,7 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
     let first_output = paths.output_dir.join(&first.job_id);
     let first_manifest = fs::read(first_output.join("manifest.json")).unwrap();
     let first_audio = fs::read(first_output.join(&first.chapters[0].filename)).unwrap();
-    let second = EmbeddedConversionSession::open(second_input, options, config)
+    let second = EmbeddedConversionSession::open(second_input, options.clone(), config.clone())
         .unwrap()
         .convert()
         .expect("a fresh session without a caller job ID must create an independent job");
@@ -128,5 +128,27 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
     assert!(!fs::read(second_output.join(&second.chapters[0].filename))
         .unwrap()
         .is_empty());
+    let explicit_input = root.join("explicit.epub");
+    book(&explicit_input, "Explicit book", "Caller-owned conversion identity.");
+    let explicit_session = EmbeddedConversionSession::open(
+        explicit_input,
+        EmbeddedConversionOptions {
+            job_id: Some("caller-owned-job".into()),
+            ..options
+        },
+        config,
+    )
+    .unwrap();
+    let explicit = explicit_session.convert().unwrap();
+    assert_eq!(explicit.job_id, "caller-owned-job");
+    let explicit_manifest = paths.output_dir.join("caller-owned-job/manifest.json");
+    let explicit_snapshot = fs::read(&explicit_manifest).unwrap();
+    assert!(matches!(
+        explicit_session.convert(),
+        Err(converter_core::embedded::EmbeddedConversionError::Conversion(
+            converter_core::worker::WorkerError::Job(converter_core::jobs::JobError::Io(error))
+        )) if error.kind() == std::io::ErrorKind::AlreadyExists
+    ));
+    assert_eq!(fs::read(explicit_manifest).unwrap(), explicit_snapshot);
     println!("DEFAULT_JOB_IDENTITY_ASSERTIONS_COMPLETED");
 }
