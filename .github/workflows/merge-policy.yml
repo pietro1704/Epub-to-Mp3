@@ -1,0 +1,34 @@
+name: Merge policy regression
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/guarded_pr_merge.mjs'
+      - 'scripts/test_guarded_pr_merge.mjs'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/guarded_pr_merge.mjs'
+      - 'scripts/test_guarded_pr_merge.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-policy:
+    name: Merge policy host regressions
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check JavaScript and workflow YAML syntax on GitHub
+        run: |
+          node --check scripts/guarded_pr_merge.mjs
+          node --check scripts/test_guarded_pr_merge.mjs
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.parse_file(path) }' .github/workflows/*.yml
+      - name: Test policy and workflow integration without GitHub mutations
+        run: node --test scripts/test_guarded_pr_merge.mjs
