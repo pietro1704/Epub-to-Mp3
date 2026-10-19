@@ -95,6 +95,7 @@ class NativeSimulatorSessionTest < Minitest::Test
         }, "xcode_version" => "16.4")
       when "boot"
         File.write(File.join(directory, "booted"), "yes")
+        exit 19 if mode == "boot_failure_after_start"
       when "install"
         if mode == "replace_artifact"
           source = File.join(directory, "source.swift")
@@ -179,10 +180,10 @@ class NativeSimulatorSessionTest < Minitest::Test
     require_relative "native_simulator_session"
   end
 
-  def run_session(mode: "success")
+  def run_session(mode: "success", backend: nil)
     load_subject
     NativeSimulatorSession.run(plan_path: @plan_path,
-                              backend: FakeBackend.new(@directory, mode: mode),
+                              backend: backend || FakeBackend.new(@directory, mode: mode),
                               lock_path: @lease, report_path: @report)
   end
 
@@ -747,6 +748,115 @@ class NativeSimulatorSessionTest < Minitest::Test
     assert_equal "Invalid TestBundlePath", error.message
     assert_empty operations
     refute File.exist?(@lease)
+  end
+
+  def fixture_process_identity(pid)
+    fields = File.read("/proc/#{pid}/stat").sub(/\A.*\) /, "").split
+    return nil if fields.first == "Z"
+    [pid, Integer(fields.fetch(2)), fields.fetch(19)]
+  rescue Errno::ENOENT
+    nil
+  end
+
+  def test_owner_loss_after_final_inspection_before_boot_spawn_never_starts_cleanup
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    load_subject
+    @plan["phase_timeout_seconds"] = 5.0
+    File.write(@plan_path, JSON.generate(@plan))
+    baseline = @plan.fetch("files").transform_values { |entry| File.binread(entry.fetch("path")) }
+    ready_reader, ready_writer = IO.pipe
+    resume_reader, resume_writer = IO.pipe
+    backend = FakeBackend.new(@directory)
+    original_environment = backend.method(:environment)
+    backend.define_singleton_method(:environment) do |phase, plan|
+      if phase == :boot
+        ready_writer.write("before-boot-spawn\n")
+        ready_writer.flush
+        raise "Missing preboot acknowledgement" unless resume_reader.read(1) == "1"
+      end
+      original_environment.call(phase, plan)
+    end
+    owner = fork do
+      ready_reader.close
+      resume_writer.close
+      run_session(backend: backend)
+      exit! 0
+    end
+    ready_writer.close
+    resume_reader.close
+    assert_equal "before-boot-spawn\n", Timeout.timeout(12) { ready_reader.gets }, failure_diagnostics
+    snapshot = JSON.parse(File.read(@report))
+    assert_equal owner, snapshot.fetch("owner_pid")
+    caretaker = snapshot.fetch("caretaker_pid")
+    owned = [caretaker, *snapshot.fetch("process_groups")].map { |pid| fixture_process_identity(pid) }
+    assert owned.all?, "All fixture processes must be authenticated before owner loss"
+    # Reaping this owner guarantees its only owner-pipe writer is closed.
+    Process.kill("KILL", owner)
+    Process.waitpid(owner)
+    owner = nil
+    resume_writer.write("1")
+    resume_writer.close
+    report = wait_for_fixture do
+      value = read_fixture_json(@report)
+      value if value&.key?("elapsed_seconds")
+    end
+    wait_for_fixture { !live_process?(caretaker) }
+    assert_equal ["inspect", "inspect"], operations.map { |operation| operation.fetch("phase") }
+    assert_equal "deny", report.fetch("decision")
+    assert_equal false, report.fetch("cleanup_verified")
+    assert_match(/owner disappeared or cancelled/, report.fetch("reason"))
+    baseline.each do |role, bytes|
+      assert_equal bytes, File.binread(@plan.fetch("files").fetch(role).fetch("path"))
+    end
+    File.open(@lease, "a+") { |lease| assert lease.flock(File::LOCK_EX | File::LOCK_NB) }
+  ensure
+    [ready_reader, ready_writer, resume_reader, resume_writer].compact.each { |io| io.close unless io.closed? }
+    if owner
+      Process.kill("KILL", owner) rescue Errno::ESRCH
+      Process.waitpid(owner) rescue Errno::ECHILD
+    end
+    # Recheck the recorded process birth before fallback signaling.
+    (owned || []).compact.each do |identity|
+      pid, group, = identity
+      next unless fixture_process_identity(pid) == identity
+      Process.kill("KILL", group == pid ? -pid : pid) rescue Errno::ESRCH
+    end
+  end
+
+  def test_boot_spawn_refusal_never_starts_cleanup_or_changes_baseline
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    backend = FakeBackend.new(@directory)
+    original_argv = backend.method(:argv)
+    missing = File.join(@directory, "missing-boot-executable")
+    backend.define_singleton_method(:argv) do |phase, plan|
+      phase == :boot ? [missing] : original_argv.call(phase, plan)
+    end
+    baseline = @plan.fetch("files").transform_values { |entry| File.binread(entry.fetch("path")) }
+    assert_equal 75, run_session(backend: backend), failure_diagnostics
+    assert_equal ["inspect", "inspect"], operations.map { |operation| operation.fetch("phase") }
+    report = JSON.parse(File.read(@report))
+    assert_equal false, report.fetch("cleanup_verified")
+    assert_equal "deny", report.fetch("decision")
+    assert_includes report.fetch("reason"), "missing-boot-executable"
+    baseline.each do |role, bytes|
+      assert_equal bytes, File.binread(@plan.fetch("files").fetch(role).fetch("path"))
+    end
+  end
+
+  def test_started_boot_failure_still_cleans_up_its_owned_marker
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    baseline = @plan.fetch("files").transform_values { |entry| File.binread(entry.fetch("path")) }
+    assert_equal 75, run_session(mode: "boot_failure_after_start"), failure_diagnostics
+    phases = operations.map { |operation| operation.fetch("phase") }.reject { |phase| phase == "inspect" }
+    assert_equal %w[boot terminate shutdown quit verify], phases
+    report = JSON.parse(File.read(@report))
+    assert_equal true, report.fetch("cleanup_verified")
+    assert_equal "deny", report.fetch("decision")
+    assert_match(/boot failed with status 19/, report.fetch("reason"))
+    refute File.exist?(File.join(@directory, "booted"))
+    baseline.each do |role, bytes|
+      assert_equal bytes, File.binread(@plan.fetch("files").fetch(role).fetch("path"))
+    end
   end
 
   def test_success_orders_fixed_phases_and_confirms_cleanup_before_releasing_lease
