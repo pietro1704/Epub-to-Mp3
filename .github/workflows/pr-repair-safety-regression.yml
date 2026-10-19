@@ -1,7 +1,7 @@
 name: PR repair safety regressions
 on:
   push:
-    branches: [feature/pr-repair-confinement, master]
+    branches: [master]
     paths:
       - '.github/scripts/pr-repair-*.cjs'
       - '.github/workflows/pr-autofix*.yml'
