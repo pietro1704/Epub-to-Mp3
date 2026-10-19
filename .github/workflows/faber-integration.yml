@@ -203,20 +203,25 @@ jobs:
       - name: Run real macOS preference and installation XCTest
         working-directory: ios/EpubToMp3
         run: |
-          set -o pipefail
+          set -euo pipefail
           mkdir -p ../../.reports/tts-preferences
-          xcodebuild test -project EpubToMp3.xcodeproj \
-            -scheme EpubToMp3-UnitTests -destination 'platform=macOS' \
-            -derivedDataPath .build/faber-ci \
+          test_arguments=(
+            -project EpubToMp3.xcodeproj
+            -scheme EpubToMp3-UnitTests -destination 'platform=macOS'
+            -derivedDataPath .build/faber-ci
+            -jobs 1 -parallel-testing-enabled NO
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+            "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$EPUB2MP3_PIPER_TEST_MODEL_ROOT"
+            -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests
+            -only-testing:EpubToMp3Tests/ConvertViewModelTests
+            -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests
+            -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests
+          )
+          xcodebuild build-for-testing "${test_arguments[@]}" \
+            | tee ../../.reports/tts-preferences/macos-prefs-build.log
+          xcodebuild test-without-building "${test_arguments[@]}" \
             -resultBundlePath ../../.reports/tts-preferences/macos-prefs.xcresult \
-            -jobs 1 -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
-            EPUB2MP3_PIPER_TEST_MODEL_ROOT="$EPUB2MP3_PIPER_TEST_MODEL_ROOT" \
-            -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests \
-            -only-testing:EpubToMp3Tests/ConvertViewModelTests \
-            -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests \
-            -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests \
             | tee ../../.reports/tts-preferences/macos-prefs.log
           grep -F 'FABER_NATIVE firstChunkSeconds=' ../../.reports/tts-preferences/macos-prefs.log
       - name: Capture sanitized existing test build metadata without execution
