@@ -1,0 +1,80 @@
+name: Swift CodeQL toolchain contracts
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/codeql.yml
+      - .github/workflows/codeql-swift-toolchain-contracts.yml
+      - mise.toml
+      - ios/EpubToMp3/mise.toml
+  push:
+    branches:
+      - master
+      - feature/codeql-swift-toolchain-scope
+    paths:
+      - .github/workflows/codeql.yml
+      - .github/workflows/codeql-swift-toolchain-contracts.yml
+      - mise.toml
+      - ios/EpubToMp3/mise.toml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  toolchain-scope:
+    name: Actual root and nested Swift tool scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      MISE_ENABLE_TOOLS: ruby
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install only the contract harness runtime
+        run: mise install ruby
+      - name: Inspect actual Swift scope in both project directories
+        run: |
+          mise exec -- ruby <<'RUBY'
+          require 'json'
+          require 'open3'
+          require 'yaml'
+
+          workflow = YAML.safe_load(File.read('.github/workflows/codeql.yml'), aliases: false)
+          swift = workflow.fetch('jobs').fetch('swift')
+          environment = swift.fetch('env', {})
+          abort 'Swift job env must be a mapping' unless environment.is_a?(Hash)
+          if environment.key?('MISE_ENABLE_TOOLS') && !environment['MISE_ENABLE_TOOLS'].is_a?(String)
+            abort 'Swift MISE_ENABLE_TOOLS must be a literal string or absent'
+          end
+          filter = environment['MISE_ENABLE_TOOLS']
+          expected = %w[python ruby rust]
+          failures = []
+          { 'root' => '.', 'Apple project' => 'ios/EpubToMp3' }.each do |label, directory|
+            # A missing production filter must remove the harness-only Ruby filter.
+            output, error, status = Open3.capture3(
+              { 'MISE_ENABLE_TOOLS' => filter },
+              'mise', 'ls', '--current', '--json', chdir: directory
+            )
+            unless status.success?
+              failures << "#{label}: mise ls failed (exit #{status.exitstatus}): #{error}"
+              next
+            end
+            begin
+              tools = JSON.parse(output)
+              raise TypeError, 'expected a tool-name mapping' unless tools.is_a?(Hash)
+              names = tools.keys.sort
+              puts "#{label} Swift tools: #{names.join(', ')}"
+              failures << "#{label}: unexpected Swift tools #{names.inspect}; expected #{expected.inspect}" unless names == expected
+            rescue JSON::ParserError, TypeError => error
+              failures << "#{label}: invalid mise tool manifest: #{error.message}"
+            end
+          end
+          abort failures.join("\n") unless failures.empty?
+          RUBY
