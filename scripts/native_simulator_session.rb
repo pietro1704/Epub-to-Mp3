@@ -374,6 +374,7 @@ module NativeSimulatorSession
       check!(deadline, cleanup: cleanup)
       pid = Process.spawn(env, [argv.first, argv.first], *argv.drop(1), { pgroup: group, out: out, err: err, close_others: true, unsetenv_others: true, NativeJob::CHILD_FD => @lease })
       @children << pid
+      @work_started = true if phase == :boot
       pid
     end
 
@@ -441,7 +442,6 @@ module NativeSimulatorSession
         inspect_target!(initial: true)
         %i[boot install test].each do |phase|
           inspect_target!(initial: phase == :boot)
-          @work_started = true if phase == :boot
           operation(phase)
         end
         code = 0
