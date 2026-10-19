@@ -295,6 +295,352 @@ class NativeSimulatorSessionTest < Minitest::Test
     end.join("\n")
   end
 
+  # Scoped Ruby method replacement; Minitest 6 no longer includes minitest/mock.
+  def with_method(receiver, name, replacement)
+    own_method = receiver.singleton_class.instance_methods(false).include?(name)
+    original = receiver.method(name)
+    receiver.define_singleton_method(name, &replacement)
+    yield
+  ensure
+    if own_method
+      receiver.define_singleton_method(name, original)
+    else
+      receiver.singleton_class.remove_method(name)
+    end
+  end
+
+  def test_source_over_one_mib_is_rejected_even_with_a_valid_digest
+    load_subject
+    source = @plan.fetch("files").fetch("source")
+    File.open(source.fetch("path"), "wb") { |file| file.truncate(1_048_577) }
+    source["sha256"] = Digest::SHA256.file(source.fetch("path")).hexdigest
+    File.write(@plan_path, JSON.generate(@plan))
+
+    error = assert_raises(NativeSimulatorSession::Stop) do
+      NativeSimulatorSession::Plan.new(@plan_path)
+    end
+    assert_match(/size limit/, error.message)
+    assert_empty operations
+    refute File.exist?(@lease)
+  end
+
+  def test_each_role_rejects_oversized_regular_files_before_opening_them
+    load_subject
+    NativeSimulatorSession::Plan::FILE_LIMITS.each do |role, limit|
+      path = File.join(@directory, "oversized-#{role}")
+      File.open(path, "wb") { |file| file.truncate(limit + 1) }
+      with_method(File, :open, ->(*) { flunk "Oversized #{role} was opened" }) do
+        error = assert_raises(NativeSimulatorSession::Stop) do
+          NativeSimulatorSession::Plan.read_identity(path, limit: limit, deadline: NativeSimulatorSession.now + 2)
+        end
+        assert_match(/size limit/, error.message)
+      end
+    end
+    assert_empty operations
+  end
+
+  def test_exact_role_boundaries_are_hashed_and_capture_the_same_bytes
+    load_subject
+    NativeSimulatorSession::Plan::FILE_LIMITS.each do |role, limit|
+      path = File.join(@directory, "boundary-#{role}")
+      File.open(path, "wb") { |file| file.truncate(limit) }
+      identity, contents = NativeSimulatorSession::Plan.read_identity(path, limit: limit,
+        deadline: NativeSimulatorSession.now + 5, capture: true)
+      assert_equal limit, contents.bytesize
+      assert_equal Digest::SHA256.hexdigest(contents), identity.last
+    end
+  end
+
+  def test_plan_and_manifest_are_not_reopened_for_unbounded_parsing
+    load_subject
+    with_method(File, :read, ->(*) { flunk "Plan or manifest was reopened for parsing" }) do
+      assert NativeSimulatorSession::Plan.new(@plan_path).verify!
+    end
+  end
+
+  def test_identity_rejects_symlinks_directories_and_fifos_without_opening_them
+    load_subject
+    link = File.join(@directory, "identity-link")
+    fifo = File.join(@directory, "identity-fifo")
+    File.symlink(@tool, link)
+    File.mkfifo(fifo)
+    with_method(File, :open, ->(*) { flunk "Nonregular identity was opened" }) do
+      [link, @directory, fifo].each do |path|
+        assert_raises(NativeSimulatorSession::Stop) do
+          NativeSimulatorSession::Plan.read_identity(path, limit: 65_536, deadline: NativeSimulatorSession.now + 2)
+        end
+      end
+    end
+  end
+
+  def test_replacement_between_lstat_and_open_is_rejected_before_read_and_closes_fd
+    load_subject
+    path = @plan.fetch("files").fetch("source").fetch("path")
+    replacement = path + ".replacement"
+    File.write(replacement, File.read(path))
+    original_open = File.method(:open)
+    opened = nil
+    intercept = lambda do |name, *arguments, &block|
+      File.rename(replacement, path)
+      original_open.call(name, *arguments) do |file|
+        opened = file
+        file.define_singleton_method(:read) { |*| raise "Replaced descriptor was read" }
+        block.call(file)
+      end
+    end
+    with_method(File, :open, intercept) do
+      error = assert_raises(NativeSimulatorSession::Stop) do
+        NativeSimulatorSession::Plan.read_identity(path, limit: 1024**2, deadline: NativeSimulatorSession.now + 2)
+      end
+      assert_match(/before reading/, error.message)
+    end
+    assert opened.closed?
+  end
+
+  def test_fifo_replacement_between_lstat_and_open_is_bounded_and_closes_fd
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    load_subject
+    path = @plan.fetch("files").fetch("source").fetch("path")
+    ack_reader, ack_writer = IO.pipe
+    resume_reader, resume_writer = IO.pipe
+    result_path = File.join(@directory, "fifo-result.json")
+    child = fork do
+      ack_reader.close
+      resume_writer.close
+      original_open = File.method(:open)
+      opened = nil
+      result = {}
+      intercept = lambda do |name, *arguments, &block|
+        ack_writer.write("before-open\n")
+        ack_writer.flush
+        raise "Missing FIFO replacement acknowledgement" unless resume_reader.read(1) == "1"
+        original_open.call(name, *arguments) do |file|
+          opened = file
+          file.define_singleton_method(:read) { |*| raise "FIFO descriptor was read" }
+          block.call(file)
+        end
+      end
+      begin
+        with_method(File, :open, intercept) do
+          NativeSimulatorSession::Plan.read_identity(path, limit: 1024**2,
+            deadline: NativeSimulatorSession.now + 2)
+          result["reason"] = "Unexpected FIFO acceptance"
+        end
+      rescue NativeSimulatorSession::Stop => error
+        result["reason"] = error.message
+        result["closed"] = opened&.closed?
+      rescue StandardError => error
+        result["fixture_error"] = "#{error.class}: #{error.message}"
+      ensure
+        File.write(result_path, JSON.generate(result))
+      end
+      exit! 0
+    end
+    ack_writer.close
+    resume_reader.close
+    assert_equal "before-open\n", Timeout.timeout(12) { ack_reader.gets }
+    File.unlink(path)
+    File.mkfifo(path)
+    resume_writer.write("1")
+    resume_writer.close
+    _, status = Timeout.timeout(3) { Process.waitpid2(child) }
+    child = nil
+    assert status.success?
+    result = JSON.parse(File.read(result_path))
+    refute result.key?("fixture_error"), result.inspect
+    assert_match(/changed before reading/, result.fetch("reason"))
+    assert_equal true, result["closed"]
+    assert_empty operations
+  ensure
+    if child
+      Process.kill("KILL", child) rescue Errno::ESRCH
+      Process.waitpid(child) rescue Errno::ECHILD
+    end
+    [ack_reader, ack_writer, resume_reader, resume_writer].compact.each { |io| io.close unless io.closed? }
+  end
+
+  def test_in_place_change_during_read_is_rejected_and_closes_fd
+    load_subject
+    path = @plan.fetch("files").fetch("source").fetch("path")
+    File.write(path, "a" * (2 * NativeSimulatorSession::Plan::CHUNK_BYTES))
+    original_open = File.method(:open)
+    opened = nil
+    intercept = lambda do |name, *arguments, &block|
+      original_open.call(name, *arguments) do |file|
+        opened = file
+        original_read = file.method(:read)
+        changed = false
+        file.define_singleton_method(:read) do |length|
+          chunk = original_read.call(length)
+          unless changed
+            changed = true
+            original_open.call(path, "r+b") { |writer| writer.write("b") }
+          end
+          chunk
+        end
+        block.call(file)
+      end
+    end
+    with_method(File, :open, intercept) do
+      error = assert_raises(NativeSimulatorSession::Stop) do
+        NativeSimulatorSession::Plan.read_identity(path, limit: 1024**2, deadline: NativeSimulatorSession.now + 2)
+      end
+      assert_match(/changed while hashing/, error.message)
+    end
+    assert opened.closed?
+  end
+
+  def test_validation_deadline_refuses_before_opening_any_artifact
+    load_subject
+    with_method(File, :open, ->(*) { flunk "Expired validation opened an artifact" }) do
+      error = assert_raises(NativeSimulatorSession::Stop) do
+        NativeSimulatorSession::Plan.read_identity(@plan_path, limit: 65_536, deadline: NativeSimulatorSession.now - 1)
+      end
+      assert_match(/deadline/, error.message)
+    end
+  end
+
+  def assert_hash_progress_stop(mode)
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    load_subject
+    source = @plan.fetch("files").fetch("source").fetch("path")
+    File.write(source, "a" * (2 * NativeSimulatorSession::Plan::CHUNK_BYTES))
+    @plan["files"]["source"]["sha256"] = Digest::SHA256.file(source).hexdigest
+    @plan["phase_timeout_seconds"] = 10.0
+    @plan["duration_seconds"] = 30.0
+    File.write(@plan_path, JSON.generate(@plan))
+    clock = NativeSimulatorSession.now
+    policy = { "event" => "policy", "limits" => NativeSimulatorSession::Monitor::LIMITS,
+               "load1_limit" => "min(6.0, 0.75 * logical_cpus)",
+               "duration_seconds" => 30.0, "interval_seconds" => 0.1 }
+    sample = { "started_monotonic" => clock, "collected_monotonic" => clock,
+               "collection_seconds" => 0.0, "memory_bytes" => 8 * 1024**3,
+               "logical_cpus" => 8, "memory_free_percent" => 58,
+               "disk_free_bytes" => 12 * 1024**3, "swap_used_bytes" => 0,
+               "load_averages" => [1.0, 1.0, 1.0], "panic_identities" => [] }
+    record = ->(value) { JSON.generate("event" => "sample", "decision" => "allow", "reasons" => [], "sample" => value) + "\n" }
+    monitor_reader, monitor_writer = IO.pipe
+    ack_reader, ack_writer = IO.pipe
+    resume_reader, resume_writer = IO.pipe
+    owner_reader, owner_writer = IO.pipe
+    result_path = File.join(@directory, "hash-result.json")
+    monitor_writer.write(JSON.generate(policy) + "\n" + record.call(sample))
+    monitor_writer.flush
+    child = fork do
+      [monitor_writer, ack_reader, resume_writer, owner_writer].each(&:close)
+      result = {}
+      begin
+        plan = NativeSimulatorSession::Plan.new(@plan_path)
+        lease, = NativeJob.lease(@lease)
+        caretaker = NativeSimulatorSession::Caretaker.new(plan, FakeBackend.new(@directory), lease,
+          @lease, [true, true], owner_reader, NativeSimulatorSession::Report.new(@report), clock)
+        caretaker.instance_variable_set(:@monitor, NativeSimulatorSession::Monitor.new(monitor_reader, StringIO.new, 30.0))
+        original_open = File.method(:open)
+        opened = nil
+        paused = false
+        intercept = lambda do |name, *arguments, &block|
+          unless name == source
+            next original_open.call(name, *arguments, &block)
+          end
+          original_open.call(name, *arguments) do |file|
+            opened = file
+            original_read = file.method(:read)
+            file.define_singleton_method(:read) do |length|
+              chunk = original_read.call(length)
+              unless paused
+                paused = true
+                ack_writer.write("read\n")
+                ack_writer.flush
+                raise "Missing hash acknowledgement" unless resume_reader.read(1) == "1"
+                # A controlled clock crossing exercises expiry without a timing race.
+                clock += mode == "stale" ? 6 : mode == "deadline" ? 11 : 0.001
+              end
+              chunk
+            end
+            block.call(file)
+          end
+        end
+        with_method(NativeSimulatorSession, :now, -> { clock }) do
+          with_method(File, :open, intercept) do
+            begin
+              caretaker.operation(:inspect)
+              result["reason"] = "Unexpected operation success"
+            rescue NativeSimulatorSession::Stop => error
+              result["reason"] = error.message
+              result["fatal"] = error.fatal
+              result["closed"] = opened&.closed?
+              if mode == "panic"
+                result["fatal_refusals"] = %i[inspect shutdown].count do |phase|
+                  begin
+                    caretaker.operation(phase, cleanup: true)
+                    false
+                  rescue NativeSimulatorSession::Stop => repeated
+                    repeated.fatal
+                  end
+                end
+              end
+            end
+          end
+        end
+      rescue StandardError => error
+        result["fixture_error"] = "#{error.class}: #{error.message}"
+      ensure
+        lease&.close
+        File.write(result_path, JSON.generate(result))
+      end
+      exit! 0
+    end
+    [monitor_reader, ack_writer, resume_reader, owner_reader].each(&:close)
+    assert_equal "read\n", Timeout.timeout(12) { ack_reader.gets }, failure_diagnostics
+    if mode == "panic"
+      monitor_writer.write(record.call(sample.merge("started_monotonic" => clock + 0.001,
+        "collected_monotonic" => clock + 0.001, "panic_identities" => ["owned new panic"])))
+      monitor_writer.flush
+    elsif mode == "cancel"
+      owner_writer.close
+    end
+    resume_writer.write("1")
+    resume_writer.close
+    _, status = Timeout.timeout(12) { Process.waitpid2(child) }
+    child = nil
+    assert status.success?
+    result = JSON.parse(File.read(result_path))
+    refute result.key?("fixture_error"), result.inspect
+    assert_equal true, result["closed"], result.inspect
+    assert_empty operations, "Hash refusal must precede every new backend operation"
+    case mode
+    when "panic"
+      assert_equal true, result["fatal"]
+      assert_equal 2, result["fatal_refusals"]
+    when "cancel" then assert_match(/owner disappeared or cancelled/, result.fetch("reason"))
+    when "stale" then assert_match(/sample is stale/, result.fetch("reason"))
+    when "deadline" then assert_match(/deadline/, result.fetch("reason"))
+    end
+  ensure
+    if child
+      Process.kill("KILL", child) rescue Errno::ESRCH
+      Process.waitpid(child) rescue Errno::ECHILD
+    end
+    [monitor_reader, monitor_writer, ack_reader, ack_writer, resume_reader, resume_writer,
+     owner_reader, owner_writer].compact.each { |io| io.close unless io.closed? }
+  end
+
+  def test_hashing_pumps_new_panic_and_never_starts_inspect_or_cleanup
+    assert_hash_progress_stop("panic")
+  end
+
+  def test_hashing_rechecks_monitor_freshness_between_chunks
+    assert_hash_progress_stop("stale")
+  end
+
+  def test_hashing_observes_owner_cancellation_before_starting_an_operation
+    assert_hash_progress_stop("cancel")
+  end
+
+  def test_hashing_observes_phase_deadline_before_starting_an_operation
+    assert_hash_progress_stop("deadline")
+  end
+
   def test_failure_diagnostics_accepts_empty_owned_logs
     logs = File.join(@directory, ".session-logs-empty")
     FileUtils.mkdir_p(logs)
@@ -547,7 +893,8 @@ class NativeSimulatorSessionTest < Minitest::Test
     child = nil
     begin
       File.open(File::NULL, "w") do |sink|
-        child = caretaker.spawn_operation(:test, true, out: sink, err: sink)
+        child = caretaker.spawn_operation(:test, true, out: sink, err: sink,
+          deadline: NativeSimulatorSession.now + 2, cleanup: true)
         spawned = true
         wait_for_fixture { Process.waitpid(child, Process::WNOHANG) }
       end
