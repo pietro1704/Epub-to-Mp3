@@ -1,9 +1,15 @@
 name: PR repair safety regressions
 on:
   push:
-    branches: [feature/pr-repair-confinement]
+    branches: [feature/pr-repair-confinement, master]
     paths:
       - '.github/scripts/pr-repair-*.cjs'
+      - '.github/workflows/pr-autofix*.yml'
+      - '.github/workflows/pr-repair-safety-regression.yml'
+  pull_request:
+    paths:
+      - '.github/scripts/pr-repair-*.cjs'
+      - '.github/workflows/pr-autofix*.yml'
       - '.github/workflows/pr-repair-safety-regression.yml'
 permissions:
   contents: read
@@ -25,5 +31,5 @@ jobs:
         run: mise install node ruby
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
-      - name: Reject historical signing-path bypass using real Git
+      - name: Verify repair confinement with real Git and fake API
         run: mise exec -- node --test .github/scripts/pr-repair-safety.test.cjs

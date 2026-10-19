@@ -30,7 +30,11 @@ function validate(pr, repository, expected) {
 }
 
 function readiness({ credentials, writers }) {
-  return !credentials ? 'blocked_credentials' : !writers ? 'blocked_writers_disabled' : 'prepared';
+  return credentials !== true ? 'blocked_credentials' : writers !== true ? 'blocked_writers_disabled' : 'prepared';
+}
+
+function requirePrepared(options) {
+  if (readiness(options) !== 'prepared') throw new Error('Publication readiness blocked');
 }
 
 function attempted(comments, sha) {
@@ -39,41 +43,89 @@ function attempted(comments, sha) {
 }
 
 function protectedPath(filename) {
-  return !filename || filename.startsWith('/') || filename.split('/').includes('..') ||
-    filename.includes('\\') || /[\x00-\x1f\x7f]/.test(filename) ||
-    /(^|\/)(\.git|\.github|\.claude|\.codex|\.agents|\.hermes|\.ssh)(\/|$)/i.test(filename) ||
-    /(^|\/)(\.aws|\.azure|\.kube)(\/|$)/i.test(filename) ||
-    /(^|\/)\.config\/gcloud(\/|$)/i.test(filename) ||
-    /(^|\/)\.docker\/config\.json$/i.test(filename) ||
-    /(^|\/)(\.netrc|\.npmrc|\.pypirc|auth\.json)$/i.test(filename) ||
-    /(^|\/)(AGENTS\.md|CLAUDE\.md|mise\.toml|\.gitmodules|\.env[^/]*|[^/]*(credential|secret)[^/]*|[^/]*\.(pem|key|p12|mobileprovision))$/i.test(filename) ||
-    /^(scripts\/|docs\/agents\/|docs\/agent-workflow\.md|TODO_APP\.md)/.test(filename);
+  const parts = filename.split('/');
+  return !filename || filename.startsWith('/') || filename.includes('\\') ||
+    parts.some(part => ['', '.', '..'].includes(part)) || /[\x00-\x1f\x7f]/.test(filename) ||
+    /(^|\/)(\.git|\.github|\.claude|\.codex|\.agents|\.hermes|\.ssh|\.aws|\.azure|\.kube)(\/|$)/i.test(filename) ||
+    /(^|\/)\.config\/gcloud(\/|$)|(^|\/)\.docker\/config\.json$/i.test(filename) ||
+    /(^|\/)(AGENTS\.md|CLAUDE\.md|CODEOWNERS|SECURITY\.md|mise\.toml|\.gitmodules|\.gitattributes|\.gitignore|\.netrc|\.npmrc|\.pypirc|auth\.json|\.env[^/]*|[^/]*(credential|secret)[^/]*|[^/]*\.(pem|key|p12|mobileprovision|entitlements))$/i.test(filename) ||
+    /^scripts\/(guard_remediation_changes\.py|guarded_pr_merge\.mjs|native_job\.rb|native_build_preflight\.rb|native_codex_tool_guard\.rb|native_build_command\.rb|device-workflow\.sh|ios_simulator_smoke\.swift|guard_ios_simulator_resources\.py|guard_no_python_production\.sh|heavy_job_guard\.py|ios_disk_guard\.sh|preflight\.sh)$/.test(filename) ||
+    /^(docs\/agents\/|docs\/agent-workflow\.md$|TODO_APP\.md$|Dockerfile(?:\.|$)|docker-compose[^/]*$|compose\.[^/]+$|deploy\/|infra\/)/.test(filename);
+}
+
+function checkoutGit(directory) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  return (...args) => command('git', ['--no-replace-objects', '--literal-pathspecs',
+    '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', ...args],
+    { cwd: directory, env, timeout: 30000 });
+}
+
+function records(value) {
+  if (value && !value.endsWith('\0')) throw new Error('Incomplete NUL Git records');
+  return value ? value.slice(0, -1).split('\0') : [];
 }
 
 function validateChanges(directory, expected) {
-  const git = (...args) => command('git', args, { cwd: directory });
+  if (!/^[a-f0-9]{40}$/.test(expected || '')) throw new Error('Invalid expected SHA');
+  directory = fs.realpathSync(directory);
+  const git = checkoutGit(directory);
   if (git('rev-parse', 'HEAD').trim() !== expected) throw new Error('Repair checkout HEAD changed');
-  const status = git('status', '--porcelain=v1', '-z', '--untracked-files=all').split('\0').filter(Boolean);
+  if (fs.realpathSync(git('rev-parse', '--show-toplevel').trim()) !== directory) throw new Error('Unexpected repair root');
+  const status = records(git('status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none'));
   if (!status.length) throw new Error('No repair produced');
+  const paths = [];
   for (const entry of status) {
-    if (/[RCU]/.test(entry.slice(0, 2)) || protectedPath(entry.slice(3))) {
-      throw new Error('Repair changes a protected path, rename, copy or conflict');
+    if (entry.length < 4 || entry[2] !== ' ' ||
+        ![' M', 'M ', 'MM', 'A ', 'AM', ' D', 'D ', '??'].includes(entry.slice(0, 2))) {
+      throw new Error('Repair rename, copy, conflict or unsupported status refused');
     }
-    const filename = path.join(directory, entry.slice(3));
+    const relative = entry.slice(3);
+    if (protectedPath(relative) || relative.includes('\ufffd')) throw new Error('Repair changes a protected path');
+    const filename = path.join(directory, relative);
+    let parent = path.dirname(filename);
+    while (parent !== directory) {
+      try {
+        if (!fs.lstatSync(parent).isDirectory()) throw new Error('Symlink or non-directory parent repair refused');
+      } catch (error) {
+        if (error.code !== 'ENOENT' || !entry.slice(0, 2).includes('D')) throw error;
+      }
+      parent = path.dirname(parent);
+    }
     try {
-      if (fs.lstatSync(filename).isSymbolicLink()) throw new Error('Untracked or tracked symlink repair refused');
+      if (!fs.lstatSync(filename).isFile()) throw new Error('Only regular files permitted; symlink repair refused');
+      if (!fs.realpathSync(filename).startsWith(directory + path.sep)) throw new Error('Repair escapes checkout');
     } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
+      if (error.code !== 'ENOENT' || !entry.slice(0, 2).includes('D')) throw error;
     }
-  }
-  const modes = git('diff', '--raw', '--no-abbrev', expected, '--').split('\n');
-  if (modes.some(line => /^:(160000|120000) |^:\d+ (160000|120000) /.test(line))) throw new Error('Submodule or symlink repair refused');
-  for (const entry of git('ls-files', '--stage', '-z').split('\0').filter(Boolean)) {
-    if (entry.startsWith('160000 ') && status.some(item => item.slice(3) === entry.split('\t')[1])) {
-      throw new Error('Submodule repair refused');
+    for (const row of records(git('ls-tree', '-r', '-z', expected, '--', relative))) {
+      if (!['100644', '100755'].includes(row.split(' ')[0])) throw new Error('Baseline submodule or symlink repair refused');
     }
+    for (const row of records(git('ls-files', '--stage', '-z', '--', relative))) {
+      const metadata = row.split('\t')[0].split(' ');
+      if (metadata.length !== 3 || !['100644', '100755'].includes(metadata[0]) || metadata[2] !== '0') {
+        throw new Error('Submodule, symlink or conflict in index refused');
+      }
+    }
+    paths.push(relative);
   }
-  git('diff', '--check');
+  git('diff', '--no-ext-diff', '--no-textconv', '--check');
+  git('diff', '--cached', '--no-ext-diff', '--no-textconv', '--check');
+  return paths;
+}
+
+function stageChanges(directory, expected) {
+  const approved = validateChanges(directory, expected);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  command('git', ['--no-replace-objects', '--literal-pathspecs', '-c', 'core.fsmonitor=false',
+    '-c', 'core.hooksPath=/dev/null', 'add', '--pathspec-from-file=-', '--pathspec-file-nul'],
+  { cwd: directory, env, input: approved.join('\0') + '\0', timeout: 30000 });
+  const after = validateChanges(directory, expected);
+  if (JSON.stringify([...after].sort()) !== JSON.stringify([...approved].sort())) {
+    throw new Error('Repair paths changed during explicit staging');
+  }
+  const staged = records(checkoutGit(directory)('diff', '--cached', '--name-only', '-z'));
+  if (JSON.stringify([...staged].sort()) !== JSON.stringify([...approved].sort())) throw new Error('Unexpected staged paths');
+  return approved;
 }
 
 function client(repository) {
@@ -87,7 +139,9 @@ function client(repository) {
 
 function inspect(api, repository, number, expected) {
   if (!/^[1-9]\d*$/.test(String(number))) throw new Error('Invalid PR number');
-  return validate(api(`/pulls/${number}`), repository, expected);
+  const current = validate(api(`/pulls/${number}`), repository, expected);
+  if (current.number !== Number(number)) throw new Error('PR identity mismatch');
+  return current;
 }
 
 // A manual dispatch or an old red rerun is never authority to repair a green
@@ -139,13 +193,16 @@ function comments(api, number) {
   const all = [];
   for (let page = 1; page <= 10; page++) {
     const values = api(`/issues/${number}/comments?per_page=100&page=${page}`);
+    if (!Array.isArray(values)) throw new Error('Attempt history unavailable');
     all.push(...values);
     if (values.length < 100) return all;
   }
   throw new Error('Attempt history incomplete');
 }
 
-function claim(api, repository, number, expected, run) {
+function claim(api, repository, number, expected, run, options = {}) {
+  requirePrepared(options);
+  if (!/^[1-9]\d*$/.test(String(run))) throw new Error('Invalid claim run');
   const current = repairCandidate(api, repository, number, expected);
   if (attempted(comments(api, number), expected)) return { ...current, state: 'deduplicated' };
   api(`/issues/${number}/comments`, 'POST', {
@@ -154,14 +211,20 @@ function claim(api, repository, number, expected, run) {
   return { ...current, state: 'claimed' };
 }
 
-function publish({ api, repository, number, expected, directory }) {
+function publish({ api, repository, number, expected, directory, writers = false, credentials = false, run }) {
+  requirePrepared({ writers, credentials });
+  if (!/^[1-9]\d*$/.test(String(run))) throw new Error('Invalid claim run');
   validateChanges(directory, expected);
   const current = repairCandidate(api, repository, number, expected);
+  const claimed = comments(api, number).some(comment =>
+    comment.user?.login === BOT && comment.user?.type === 'Bot' &&
+    comment.body === `${MARKER}${expected} -->\nRepair attempt claimed by trusted worker run ${run}. This is not a successful repair or verification claim.`);
+  if (!claimed) throw new Error('Current worker claim unavailable');
   const git = (...args) => command('git', args, { cwd: directory });
   command('git', ['check-ref-format', `refs/heads/${current.branch}`]);
   const remote = git('ls-remote', 'origin', `refs/heads/${current.branch}`).trim().split(/\s+/)[0];
   if (remote !== expected) throw new Error('Remote branch changed before publication');
-  git('add', '--all');
+  stageChanges(directory, expected);
   git('-c', 'core.hooksPath=/dev/null', '-c', 'user.name=github-actions[bot]',
     '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
     'commit', '-m', 'fix(ci): repair trusted current-head failure');
@@ -173,13 +236,16 @@ function publish({ api, repository, number, expected, directory }) {
 }
 
 async function dispatchVerification(api, repository, number, sha,
-  { attempts = 10, wait = () => new Promise(resolve => setTimeout(resolve, 1000)) } = {}) {
+  { attempts = 10, wait = () => new Promise(resolve => setTimeout(resolve, 1000)),
+    writers = false, credentials = false } = {}) {
+  requirePrepared({ writers, credentials });
   if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) throw new Error('Invalid observation bound');
   const current = inspect(api, repository, number, sha);
   const evidence = [];
   for (const workflow of ['ci.yml', 'codeql.yml']) {
     const endpoint = `/actions/workflows/${workflow}/runs?event=workflow_dispatch&branch=${encodeURIComponent(current.branch)}&per_page=100`;
     const before = new Set(api(endpoint).workflow_runs.map(run => run.id));
+    inspect(api, repository, number, sha);
     api(`/actions/workflows/${workflow}/dispatches`, 'POST', { ref: current.branch });
     let observed;
     for (let attempt = 0; attempt < attempts; attempt++) {
@@ -197,16 +263,21 @@ async function main() {
   const [operation, number, expected, directory] = process.argv.slice(2);
   const repository = process.env.GITHUB_REPOSITORY;
   const api = client(repository);
+  const prepared = { credentials: process.env.REPAIR_CREDENTIALS_AVAILABLE === 'true',
+    writers: process.env.REPAIR_WRITERS_ENABLED === 'true' };
   let result;
   if (operation === 'readiness') {
     result = { state: readiness({ credentials: process.env.REPAIR_CREDENTIALS_AVAILABLE === 'true',
       writers: process.env.REPAIR_WRITERS_ENABLED === 'true' }) };
   } else if (operation === 'inspect') result = inspect(api, repository, number, expected);
   else if (operation === 'failure') result = repairCandidate(api, repository, number, expected);
-  else if (operation === 'claim') result = claim(api, repository, number, expected, process.env.GITHUB_RUN_ID);
+  else if (operation === 'claim') result = claim(api, repository, number, expected, process.env.GITHUB_RUN_ID, prepared);
   else if (operation === 'validate-changes') { validateChanges(directory, expected); result = { state: 'validated' }; }
-  else if (operation === 'publish') result = publish({ api, repository, number, expected, directory });
-  else if (operation === 'verify') result = { verification: await dispatchVerification(api, repository, number, expected) };
+  else if (operation === 'stage-changes') { stageChanges(directory, expected); result = { state: 'staged' }; }
+  else if (operation === 'publish') result = publish({ api, repository, number, expected, directory,
+    writers: process.env.REPAIR_WRITERS_ENABLED === 'true', credentials: process.env.REPAIR_CREDENTIALS_AVAILABLE === 'true',
+    run: process.env.GITHUB_RUN_ID });
+  else if (operation === 'verify') result = { verification: await dispatchVerification(api, repository, number, expected, prepared) };
   else throw new Error('Unknown repair operation');
   console.log(JSON.stringify(result));
   if (result.verification?.some(item => item.state === 'verification_blocked')) process.exitCode = 1;
@@ -217,5 +288,5 @@ async function main() {
   }
 }
 
-module.exports = { validate, readiness, attempted, protectedPath, validateChanges, inspect, currentFailure, repairCandidate, claim, publish, dispatchVerification };
+module.exports = { validate, readiness, attempted, protectedPath, validateChanges, stageChanges, inspect, currentFailure, repairCandidate, claim, publish, dispatchVerification };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
