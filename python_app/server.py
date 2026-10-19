@@ -1065,7 +1065,9 @@ def _summarize_resume_job(job_id: str, job_data: dict, saved_at: Optional[str] =
         "fileName": Path(job_data.get("file_path", "")).name
         if job_data.get("file_path")
         else "unknown",
-        "savedAt": saved_at or job_data.get("_saved_at") or datetime.utcnow().isoformat(),
+        "savedAt": saved_at
+        or job_data.get("_saved_at")
+        or datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "chaptersCompleted": job_data.get("chaptersCompleted", 0),
         "chaptersTotal": job_data.get("chaptersTotal"),
         "engine": job_data.get("engine"),
@@ -1228,7 +1230,7 @@ def _append_event(job: dict, message: str, *, raw: Optional[str] = None) -> None
     events.append(message)
     raw_log = job.setdefault("_raw_log", [])
     plain = raw if raw is not None else _sanitize_event_message(message)
-    timestamp = datetime.utcnow().strftime("%H:%M:%S")
+    timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
     raw_log.append(f"{timestamp} {plain}")
 
     # **OPTIMIZATION #3**: Broadcast event to SSE clients
