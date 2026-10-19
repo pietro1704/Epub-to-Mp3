@@ -1,0 +1,102 @@
+name: Native player deferred seek identity
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/player-seek-identity.yml'
+      - 'ios/EpubToMp3/EpubToMp3/Features/Playback/Services/AudioPlayer.swift'
+      - 'ios/EpubToMp3/EpubToMp3Tests/AudioPlayerDivergenceTests.swift'
+  pull_request:
+    paths:
+      - '.github/workflows/player-seek-identity.yml'
+      - 'ios/EpubToMp3/EpubToMp3/Features/Playback/Services/AudioPlayer.swift'
+      - 'ios/EpubToMp3/EpubToMp3Tests/AudioPlayerDivergenceTests.swift'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: player-seek-identity-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos-player:
+    name: Real AudioPlayer deferred seek (hosted ARM64)
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      CARGO_BUILD_JOBS: '1'
+    steps:
+      - name: Refuse a different runner context
+        if: runner.environment != 'github-hosted' || runner.os != 'macOS' || runner.arch != 'ARM64'
+        run: exit 1
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Require the canonical hosted Xcode 16.4 toolchain
+        run: |
+          test "$(uname -m)" = arm64
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | tee "$RUNNER_TEMP/player-seek-xcode-version.txt"
+          grep -Fx 'Xcode 16.4' "$RUNNER_TEMP/player-seek-xcode-version.txt"
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install only the managed build tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Install the project generator under the existing native supervisor
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: mise exec -- ruby scripts/native_job.rb build -- brew install xcodegen
+      - name: Run the real app-host regression under the existing native supervisor
+        run: |
+          set -o pipefail
+          mkdir -p .reports/player-seek
+          mise exec -- ruby scripts/native_job.rb build -- bash -euo pipefail -s <<'NATIVE_JOB' 2>&1 | tee .reports/player-seek/native-build-test.log
+          # Build the real FFI only for linking. No voice model is installed.
+          mise run converter-ffi:build
+          cd ios/EpubToMp3
+          xcodegen generate
+          xcodebuild test -project EpubToMp3.xcodeproj \
+            -scheme EpubToMp3-UnitTests -destination 'platform=macOS' \
+            -derivedDataPath .build/player-seek-ci \
+            -resultBundlePath ../../.reports/player-seek/player-seek.xcresult \
+            -jobs 1 -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            -only-testing:EpubToMp3Tests/AudioPlayerDivergenceTests
+          NATIVE_JOB
+      - name: Retain and verify the actual focused XCTest summary
+        if: always()
+        run: |
+          result=.reports/player-seek/player-seek.xcresult
+          if [ ! -d "$result" ]; then
+            echo 'error: No app-host xcresult exists; deferred seek acceptance is unverified.' >&2
+            exit 1
+          fi
+          xcrun xcresulttool get test-results summary --path "$result" \
+            > .reports/player-seek/test-summary.json
+          mise exec -- ruby -rjson -e '
+            summary = JSON.parse(File.read(ARGV.fetch(0)))
+            counts = summary.values_at("totalTestCount", "passedTests", "failedTests", "skippedTests")
+            abort "Missing or invalid XCTest execution counts" unless counts.all? { |count| count.is_a?(Integer) && count >= 0 }
+            total, passed, failed, skipped = counts
+            abort "Focused XCTest must execute at least three cases without failures or skips" unless
+              summary["result"] == "Passed" && total >= 3 && passed == total && failed.zero? && skipped.zero?
+            puts "PLAYER_SEEK_XCTEST total=#{total} passed=#{passed} failed=#{failed} skipped=#{skipped}"
+          ' .reports/player-seek/test-summary.json
+      - name: Retain app-host XCTest evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: player-seek-identity-arm64
+          path: .reports/player-seek
+          if-no-files-found: warn
