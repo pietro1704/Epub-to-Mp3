@@ -4,7 +4,26 @@ on:
   pull_request:
     paths:
       - '.github/workflows/native-safety.yml'
+      - '.claude/hooks/**'
+      - 'scripts/native_job.rb'
+      - 'scripts/native_codex_tool_guard.rb'
+      - 'scripts/native_build_preflight.rb'
+      - 'scripts/device-workflow.sh'
+      - 'scripts/ios_simulator_smoke.swift'
       - 'scripts/test_native_*.rb'
+      - 'mise.toml'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/native-safety.yml'
+      - '.claude/hooks/**'
+      - 'scripts/native_job.rb'
+      - 'scripts/native_codex_tool_guard.rb'
+      - 'scripts/native_build_preflight.rb'
+      - 'scripts/device-workflow.sh'
+      - 'scripts/ios_simulator_smoke.swift'
+      - 'scripts/test_native_*.rb'
+      - 'mise.toml'
   workflow_dispatch:
 
 permissions:
@@ -27,16 +46,25 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
       - name: Install host test library
         run: gem install minitest --version '~> 5.0' --no-document
-      - name: Verify preflight regression against the current source
-        run: ruby scripts/test_native_build_preflight.rb
-      - name: Verify supervisor regression against the current source
-        if: always()
-        run: ruby scripts/test_native_job.rb
-      - name: Verify entrypoint regression with fake native tools
-        if: always()
-        run: ruby scripts/test_native_entrypoint_safety.rb
-      - name: Verify both hooks with fake native tools
-        if: always()
-        run: ruby scripts/test_native_hook_safety.rb
+      - name: Exercise supervisor, preflight and notification-only hooks
+        run: |
+          ruby scripts/test_native_build_preflight.rb
+          ruby scripts/test_native_job.rb
+          ruby scripts/test_native_hook_safety.rb
+          ruby scripts/test_native_entrypoint_safety.rb
+          ruby scripts/test_native_task_wiring.rb
+          ruby scripts/test_native_codex_tool_guard.rb
+      - name: Check shell and Ruby syntax
+        run: |
+          bash -n scripts/device-workflow.sh .claude/hooks/swift_test_after_edit.sh .claude/hooks/xcode_build_smoke.sh
+          ruby -c scripts/native_job.rb
+          ruby -c scripts/native_build_preflight.rb
+      - name: Type-check the inherited-lease Swift adapter without launching it
+        if: runner.os == 'macOS'
+        run: xcrun swiftc -typecheck scripts/ios_simulator_smoke.swift

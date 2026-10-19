@@ -85,14 +85,12 @@ run = "mise exec -- python scripts/build_converter_ffi.py --list"
 
 [tasks."converter-ffi:build"]
 description = "Build the shared converter-ffi Rust library for the host"
-run = "mise exec -- cargo build -p converter-ffi --release"
+run = "mise exec -- ruby scripts/native_job.rb build -- mise exec -- cargo build -p converter-ffi --release"
 
 [tasks."native-tts:rust:test"]
 description = "Verify platform speech policy, native PCM encoding and C callback under the shared lease"
 run = '''
-mise exec -- ruby -e '
-lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
-abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+mise exec -- ruby scripts/native_job.rb build -- mise exec -- ruby -e '
 commands = [
   ["cargo", "test", "-p", "converter-core", "--lib", "platform_tts", "--jobs", "1"],
   ["cargo", "test", "-p", "converter-core", "--lib", "worker::tests", "--jobs", "1"],
@@ -121,12 +119,9 @@ description = "Build host iOS Simulator Rust under shared lease; Debug by defaul
 run = '''
 # Xcode exports its selected iOS Simulator SDK as SDKROOT to build phases.
 # This driver is a host-side Swift script; let Swift select the macOS SDK.
-env -u SDKROOT xcrun swift -e '
+mise exec -- ruby scripts/native_job.rb build -- env -u SDKROOT xcrun swift -e '
 import Foundation
 import Darwin
-let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
-guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
-defer { close(lease) }
 let simulator = Process()
 simulator.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
 simulator.arguments = ["simctl", "list", "devices", "booted", "-j"]
@@ -223,12 +218,9 @@ try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 [tasks."apple:chapter-callback:test"]
 description = "Run focused native macOS chapter-event path/delivery regressions, one job under the shared lease"
 run = '''
-xcrun swift -e '
+mise exec -- ruby scripts/native_job.rb build -- xcrun swift -e '
 import Foundation
 import Darwin
-let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
-guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
-defer { close(lease) }
 let child = Process()
 child.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
 child.arguments = ["xcodebuild", "-quiet", "-project", "ios/EpubToMp3/EpubToMp3.xcodeproj",
@@ -746,6 +738,7 @@ description = "Build native UIKit iOS app on the best installed iOS Simulator"
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -826,6 +819,7 @@ if ! xcodebuild \\
   exit 65
 fi
 tail -20 "${BUILD_LOG}"
+NATIVE_JOB
 """
 
 [tasks."ios:device:run"]
@@ -988,17 +982,18 @@ esac
 
 [tasks."ios:simulator:smoke:build"]
 description = "Build only bundled-FFI and library-search smoke tests with Simulator stopped; no Python"
-run = "xcrun swift scripts/ios_simulator_smoke.swift build"
+run = "mise exec -- ruby scripts/native_job.rb build -- xcrun swift scripts/ios_simulator_smoke.swift build"
 
 [tasks."ios:simulator:smoke:test"]
 description = "Run existing focused Simulator smoke build, no compilation or Python"
-run = "xcrun swift scripts/ios_simulator_smoke.swift test"
+run = "mise exec -- ruby scripts/native_job.rb simulator -- xcrun swift scripts/ios_simulator_smoke.swift test"
 
 [tasks."ios:simulator:run"]
 description = "Install and launch an existing iphonesimulator EpubToMp3.app; never builds or downloads runtimes"
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 
 # This task intentionally launches only an existing artifact. Use
 # `mise run ios:build` separately when a new simulator build is required.
@@ -1063,6 +1058,7 @@ if [[ "$SEED_LAUNCH" == "1" ]]; then
 else
   xcrun simctl launch "$UDID" com.pietrocode.epubtomp3
 fi
+NATIVE_JOB
 """
 
 [tasks."ios:simulator:resume"]
@@ -1070,6 +1066,7 @@ description = "Launch the EpubToMp3 app already installed in a selected Simulato
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 
 # This task is deliberately distinct from `ios:run`: it is useful when a
 # legacy simulator can boot an already-installed build but the selected Xcode
@@ -1110,6 +1107,7 @@ if [[ -n "$BUILT_WITH_XCODE" ]]; then
 fi
 open -a Simulator
 xcrun simctl launch "$UDID" "$BUNDLE_ID"
+NATIVE_JOB
 """
 
 [tasks."ios:simulator:test"]
@@ -1118,6 +1116,7 @@ depends = ["vendor:python"]
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
@@ -1159,8 +1158,8 @@ run_simulator_tests() {
     done
   fi
   if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
-    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
-      -destination "$DEST" -derivedDataPath "$DD" "${test_settings[@]}" build-for-testing
+    mise exec -- ruby ../../scripts/native_job.rb build -- xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+      -destination "$DEST" -derivedDataPath "$DD" -jobs 1 -parallel-testing-enabled NO "${test_settings[@]}" build-for-testing
   fi
   # The bundled Rust Simulator build must run with every Simulator shut down.
   # Build first; boot only for the XCTest execution phase.
@@ -1232,7 +1231,8 @@ run_simulator_tests() {
 
 export DEST DD IOS_SKIP_BUILD UDID
 export -f run_simulator_tests
-python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -e -c run_simulator_tests
+run_simulator_tests
+NATIVE_JOB
 """
 
 [tasks."ios:device:test"]
@@ -1258,12 +1258,9 @@ run = "bash scripts/device-workflow.sh host-tests"
 [tasks."apple:foundation:test"]
 description = "Run focused XCTest on the app's actual Foundation production files without launching an app"
 run = '''
-xcrun swift -e '
+mise exec -- ruby scripts/native_job.rb build -- xcrun swift -e '
 import Foundation
 import Darwin
-let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
-guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
-defer { close(lease) }
 let taskRoot = ProcessInfo.processInfo.environment["MISE_PROJECT_ROOT"] ?? FileManager.default.currentDirectoryPath
 let ffiEnabled = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_TESTS"] == "1"
 if ffiEnabled {

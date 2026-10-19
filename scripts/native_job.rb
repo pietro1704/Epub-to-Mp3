@@ -53,6 +53,14 @@ module NativeJob
   end
 
   def self.run(phase:, command:, path: LOCK_PATH)
+    # Recurrent IGGuC.cpp:2913 panics occurred inside SimMetalHost on this
+    # Intel host. A lease cannot make the GPU driver safe. Keep Simulator
+    # execution quarantined; neither inherited leases nor environment flags
+    # authorize another attempt. Use physical-device verification instead.
+    if phase == "simulator" && RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+      warn "Intel Simulator execution is quarantined after recurrent IGGuC/SimMetalHost kernel panics. Use physical-device verification; do not retry or boot Simulator."
+      return 75
+    end
     path = File.expand_path(path)
     handle, inherited = lease(path)
     if phase == "build"
