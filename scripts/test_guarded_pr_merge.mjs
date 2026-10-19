@@ -183,14 +183,17 @@ test('argument injection and non-scalar identifiers fail before any command', ()
     assert.throws(() => guardedMerge({ repo, pr: '802', head, ...changed, invoke: () => assert.fail('must not run') }));
   }
 });
-test('workflow inspection and explicit merge use the same trusted-base gate', () => {
+test('policy inspection uses the trusted base and the repair worker cannot merge', () => {
   for (const filename of ['auto-merge-dependabot.yml', 'pr-autofix-worker.yml']) {
     const text = readFileSync(new URL(`../.github/workflows/${filename}`, import.meta.url), 'utf8');
     assert.match(text, /ref: master/);
     assert.match(text, /persist-credentials: false/);
-    assert.match(text, /node scripts\/guarded_pr_merge\.mjs/);
-    if (filename === 'pr-autofix-worker.yml') assert.match(text, /--merge/);
-    else assert.doesNotMatch(text, /--merge/);
+    if (filename === 'pr-autofix-worker.yml') {
+      assert.doesNotMatch(text, /guarded_pr_merge|automerge:|inputs\.mode/);
+    } else {
+      assert.match(text, /node scripts\/guarded_pr_merge\.mjs/);
+    }
+    assert.doesNotMatch(text, /--merge/);
     assert.doesNotMatch(text, /gh pr merge/);
   }
   const gate = readFileSync(new URL('../.github/workflows/merge-policy.yml', import.meta.url), 'utf8');
