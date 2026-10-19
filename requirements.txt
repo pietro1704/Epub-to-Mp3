@@ -13,7 +13,7 @@ uvicorn[standard]>=0.54.0
 python-multipart>=0.0.32
 
 # TTS Engine (Edge-TTS - Microsoft online)
-edge-tts>=7.2.8
+edge-tts>=7.3.1
 
 # Piper audio deps
 # torch and torchaudio are NOT listed here: they are optional GPU-monitoring
