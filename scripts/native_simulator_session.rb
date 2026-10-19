@@ -30,24 +30,70 @@ module NativeSimulatorSession
     DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-SE"
     RUNTIME = "com.apple.CoreSimulator.SimRuntime.iOS-15-5"
     XCODE = "/Applications/Xcode-16.4.0.app/Contents/Developer"
+    CHUNK_BYTES = 65_536
+    VALIDATION_SECONDS = 5.0
+    # The test host is still a regular-file fixture, not an admitted native app.
+    FILE_LIMITS = { "plan" => 65_536, "xctestrun" => 4 * 1024**2,
+                    "source" => 1024**2, "monitor" => 256 * 1024,
+                    "test_host" => 4 * 1024**2 }.freeze
+    TOTAL_BYTES = FILE_LIMITS.values.sum
     attr_reader :data
 
-    def self.identity(path)
+    def self.checkpoint!(deadline, progress)
+      raise Stop, "Artifact validation deadline exceeded" if NativeSimulatorSession.now >= deadline
+      progress&.call
+      raise Stop, "Artifact validation deadline exceeded" if NativeSimulatorSession.now >= deadline
+    end
+
+    def self.metadata(stat)
+      [stat.dev, stat.ino, stat.mode, stat.size, stat.mtime, stat.ctime]
+    end
+
+    def self.read_identity(path, limit:, deadline:, progress: nil, capture: false)
+      checkpoint!(deadline, progress)
       expanded = File.expand_path(path)
       raise Stop, "Identity path must be canonical" unless File.realpath(expanded) == expanded
       before = File.lstat(expanded)
       raise Stop, "Identity must be a regular file" unless before.file?
-      digest = Digest::SHA256.file(expanded).hexdigest
-      after = File.lstat(expanded)
-      raise Stop, "Identity changed while hashing" unless [before.dev, before.ino, before.size, before.mtime] == [after.dev, after.ino, after.size, after.mtime]
-      [expanded, before.dev, before.ino, before.size, digest]
+      raise Stop, "Artifact exceeds size limit" if before.size > limit
+      unless File.const_defined?(:NOFOLLOW) && File.const_defined?(:NONBLOCK)
+        raise Stop, "Nonblocking no-follow artifact reads unavailable"
+      end
+      checkpoint!(deadline, progress)
+      digest = Digest::SHA256.new
+      bytes = 0
+      contents = +"" if capture
+      File.open(expanded, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |file|
+        opened = file.stat
+        unless opened.file? && metadata(opened) == metadata(before)
+          raise Stop, "Identity changed before reading"
+        end
+        loop do
+          checkpoint!(deadline, progress)
+          chunk = file.read([CHUNK_BYTES, limit + 1 - bytes].min)
+          checkpoint!(deadline, progress)
+          break unless chunk
+          bytes += chunk.bytesize
+          raise Stop, "Artifact exceeds size limit" if bytes > limit
+          digest.update(chunk)
+          contents << chunk if capture
+        end
+        checkpoint!(deadline, progress)
+        unless bytes == before.size && metadata(file.stat) == metadata(before) &&
+               File.realpath(expanded) == expanded && metadata(File.lstat(expanded)) == metadata(before)
+          raise Stop, "Identity changed while hashing"
+        end
+      end
+      [[expanded, *metadata(before), digest.hexdigest], contents]
+    rescue SystemCallError => error
+      raise Stop, "Cannot read artifact identity (#{error.class})"
     end
 
     def initialize(path)
       @path = File.expand_path(path)
-      @plan_identity = self.class.identity(@path)
-      raise Stop, "Plan exceeds size limit" if File.size(@path) > 65_536
-      @data = JSON.parse(File.read(@path), freeze: true)
+      deadline = NativeSimulatorSession.now + VALIDATION_SECONDS
+      @plan_identity, contents = self.class.read_identity(@path, limit: FILE_LIMITS.fetch("plan"), deadline: deadline, capture: true)
+      @data = JSON.parse(contents, freeze: true)
       expected = %w[schema_version device xcode_path xcode_version source_revision source_root files tests duration_seconds phase_timeout_seconds cleanup_timeout_seconds]
       raise Stop, "Unknown or missing session fields" unless @data.is_a?(Hash) && @data.keys.sort == expected.sort
       target = @data.fetch("device")
@@ -76,33 +122,54 @@ module NativeSimulatorSession
       @root_identity = [root_stat.dev, root_stat.ino]
       files = @data["files"]
       raise Stop, "Missing immutable session artifacts" unless files.is_a?(Hash) && files.keys.sort == %w[source test_host xctestrun monitor].sort
-      @identities = files.transform_values do |entry|
+      files.each_value do |entry|
         unless entry.is_a?(Hash) && entry.keys.sort == %w[path sha256] && entry["path"].is_a?(String) && entry["path"].start_with?(root + "/") &&
                entry["sha256"].is_a?(String) && entry["sha256"].match?(/\A[0-9a-f]{64}\z/)
           raise Stop, "Invalid artifact identity"
         end
-        identity = self.class.identity(entry["path"])
-        raise Stop, "Artifact SHA256 mismatch" unless identity.last == entry["sha256"]
-        identity
       end
-      verify!
+      verify_sizes!(deadline: deadline)
+      @identities = files.to_h do |role, entry|
+        identity, = self.class.read_identity(entry["path"], limit: FILE_LIMITS.fetch(role), deadline: deadline)
+        raise Stop, "Artifact SHA256 mismatch" unless identity.last == entry["sha256"]
+        [role, identity]
+      end
+      verify!(deadline: deadline)
     end
 
     def [](key)
       @data.fetch(key)
     end
 
-    def verify!
-      raise Stop, "Plan identity changed" unless self.class.identity(@path) == @plan_identity
+    def verify_sizes!(deadline: NativeSimulatorSession.now + VALIDATION_SECONDS, progress: nil)
+      total = File.lstat(@path).size
+      self["files"].each do |role, entry|
+        self.class.checkpoint!(deadline, progress)
+        stat = File.lstat(entry.fetch("path"))
+        raise Stop, "Identity must be a regular file" unless stat.file?
+        raise Stop, "Artifact exceeds size limit" if stat.size > FILE_LIMITS.fetch(role)
+        total += stat.size
+      end
+      raise Stop, "Session artifact budget exceeded" if total > TOTAL_BYTES
+    end
+
+    def verify!(deadline: NativeSimulatorSession.now + VALIDATION_SECONDS, progress: nil)
+      identity, = self.class.read_identity(@path, limit: FILE_LIMITS.fetch("plan"), deadline: deadline, progress: progress)
+      raise Stop, "Plan identity changed" unless identity == @plan_identity
       root = File.lstat(self["source_root"])
       raise Stop, "Source root identity changed" unless root.directory? && [root.dev, root.ino] == @root_identity && File.realpath(self["source_root"]) == self["source_root"]
-      @identities.each_value do |identity|
-        raise Stop, "Artifact identity changed" unless self.class.identity(identity.first) == identity
+      verify_sizes!(deadline: deadline, progress: progress)
+      xml = nil
+      @identities.each do |role, expected|
+        observed, contents = self.class.read_identity(expected.first, limit: FILE_LIMITS.fetch(role), deadline: deadline,
+          progress: progress, capture: role == "xctestrun")
+        raise Stop, "Artifact identity changed" unless observed == expected
+        xml = contents if role == "xctestrun"
       end
       xml_path = self["files"].fetch("xctestrun").fetch("path")
-      raise Stop, "xctestrun exceeds size limit" if File.size(xml_path) > 4 * 1024 * 1024
-      xml = File.read(xml_path)
       raise Stop, "xctestrun entities are not accepted" if xml.match?(/<!ENTITY/i)
+      # Parsing is bounded by the XML byte cap, but is not supervised per chunk.
+      # A final checkpoint refuses the next operation if parsing exhausts time.
       keys = REXML::Document.new(xml).get_elements("//key")
       keys.select { |key| key.text == "TestBundlePath" }.each do |key|
         value = key.next_element
@@ -133,6 +200,7 @@ module NativeSimulatorSession
       end
       expected = self["files"].fetch("test_host").fetch("path")
       raise Stop, "xctestrun TestHost identity mismatch" unless !hosts.empty? && hosts.all? { |host| host == expected }
+      self.class.checkpoint!(deadline, progress)
       true
     rescue REXML::ParseException => error
       raise Stop, "Invalid xctestrun: #{error.class}"
@@ -292,8 +360,9 @@ module NativeSimulatorSession
       @logs = Dir.mktmpdir(".session-logs-", File.dirname(lock_path))
     end
 
-    def spawn_operation(phase, group, out:, err:)
-      @plan.verify!
+    def spawn_operation(phase, group, out:, err:, deadline:, cleanup: false)
+      progress = -> { check!(deadline, cleanup: cleanup) }
+      @plan.verify!(deadline: deadline, progress: progress)
       argv = @backend.argv(phase, @plan)
       environment = @backend.environment(phase, @plan)
       unless argv.is_a?(Array) && argv.length.between?(1, 64) && argv.all? { |value| value.is_a?(String) && !value.empty? && !value.include?("\0") } &&
@@ -302,6 +371,7 @@ module NativeSimulatorSession
       end
       env = { "PATH" => ENV.fetch("PATH"), "LC_ALL" => "C" }.merge(environment).merge(
         NativeJob::FD_ENV => NativeJob::CHILD_FD.to_s, NativeJob::PATH_ENV => @lock_path)
+      check!(deadline, cleanup: cleanup)
       pid = Process.spawn(env, [argv.first, argv.first], *argv.drop(1), { pgroup: group, out: out, err: err, close_others: true, NativeJob::CHILD_FD => @lease })
       @children << pid
       pid
@@ -320,11 +390,13 @@ module NativeSimulatorSession
       deadline = [@deadline, NativeSimulatorSession.now + @plan["phase_timeout_seconds"]].min
       deadline = [deadline, @work_deadline].min unless cleanup
       check!(deadline, cleanup: cleanup)
-      @plan.verify!
+      @plan.verify!(deadline: deadline, progress: -> { check!(deadline, cleanup: cleanup) })
       @report.event(phase, "started")
       @counter += 1
       path = File.join(@logs, "#{@counter}-#{phase}.log")
-      pid = File.open(path, "wx", 0o600) { |log| spawn_operation(phase, @groups[cleanup ? 1 : 0], out: log, err: log) }
+      pid = File.open(path, "wx", 0o600) do |log|
+        spawn_operation(phase, @groups[cleanup ? 1 : 0], out: log, err: log, deadline: deadline, cleanup: cleanup)
+      end
       status = nil
       until status
         check!(deadline, cleanup: cleanup)
@@ -356,12 +428,12 @@ module NativeSimulatorSession
       begin
         reader, writer = IO.pipe
         error_log = File.open(File.join(@logs, "monitor-errors.log"), "wx", 0o600)
-        @monitor_pid = spawn_operation(:monitor, @groups[1], out: writer, err: error_log)
+        startup = [@work_deadline, NativeSimulatorSession.now + @plan["phase_timeout_seconds"]].min
+        @monitor_pid = spawn_operation(:monitor, @groups[1], out: writer, err: error_log, deadline: startup)
         writer.close
         error_log.close
         @monitor_log = File.open(File.join(@logs, "resources.jsonl"), "wx", 0o600)
         @monitor = Monitor.new(reader, @monitor_log, @plan["duration_seconds"])
-        startup = [@work_deadline, NativeSimulatorSession.now + @plan["phase_timeout_seconds"]].min
         until @monitor.check!
           check!(startup)
           sleep 0.01
