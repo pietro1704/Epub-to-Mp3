@@ -2981,12 +2981,20 @@ async def download_output(job_id: str, filename: str) -> FileResponse:
             matches = sorted(
                 path
                 for path in candidate_root.rglob("*")
-                if path.is_file() and path.name == safe_filename
+                if path.name == safe_filename
             )
         except OSError:
             continue
-        if matches:
-            file_path = matches[0]
+        for candidate in matches:
+            try:
+                resolved = _resolve_path_within_root(candidate_root, candidate, must_exist=True)
+                if not resolved.is_file():
+                    continue
+            except (OSError, RuntimeError, ValueError):
+                continue
+            file_path = resolved
+            break
+        if file_path is not None:
             break
 
     if file_path is None:

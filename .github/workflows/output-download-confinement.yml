@@ -44,4 +44,10 @@ jobs:
           mise exec -- python -m venv .venv
           .venv/bin/python -m pip install -r requirements.txt -r python_app/requirements.txt
       - name: Exercise the actual output endpoint
-        run: mise exec -- python -m pytest -v --tb=short python_app/tests/test_server_conversion.py::test_download_output_rejects_symlink_to_foreign_file
+        run: >-
+          mise exec -- python -m pytest -v --tb=short
+          python_app/tests/test_server_conversion.py::test_download_output_rejects_symlink_to_foreign_file
+          python_app/tests/test_server_conversion.py::test_download_output_serves_confined_nested_member
+          python_app/tests/test_server_conversion.py::test_download_output_skips_foreign_member_before_valid_match
+          python_app/tests/test_server_conversion.py::test_download_output_serves_named_file_from_job_directory
+          python_app/tests/test_download_range.py
