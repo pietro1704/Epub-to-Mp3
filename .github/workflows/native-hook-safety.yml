@@ -66,7 +66,7 @@ jobs:
       - name: Verify hooks with isolated compiler fixtures
         run: ruby scripts/test_native_hook_safety.rb
       - name: Verify quarantined session ownership and cleanup with host fixtures
-        run: ruby scripts/test_native_simulator_session.rb --name test_operation_excludes_ambient_environment_and_preserves_explicit_values_and_real_lease
+        run: ruby scripts/test_native_simulator_session.rb
 
   simulator-resources:
     name: Simulator resource monitor host contracts
