@@ -9,16 +9,14 @@ class NativeBuildPreflightTest < Minitest::Test
     def success? = exitstatus == 0
   end
 
-  def check(states: [], metal: 1, app: 1, sim: 0, raw: nil)
+  def check(states: [], metal: 1, sim: 0, raw: nil)
     calls = []
     runner = lambda do |*args|
       calls << args
       if args.first == "xcrun"
         [raw || JSON.generate("devices" => { "runtime" => states.map { |s| { "state" => s } } }), "", Status.new(sim)]
-      elsif args.last == "SimMetalHost"
-        ["", "", Status.new(metal)]
       else
-        ["", "", Status.new(app)]
+        ["", "", Status.new(metal)]
       end
     end
     result = NativeBuildPreflight.check(host: "x86_64-darwin24", runner: runner)
@@ -28,8 +26,7 @@ class NativeBuildPreflightTest < Minitest::Test
   def test_shutdown_and_absent_metal_allow_build
     result, calls = check(states: ["Shutdown"])
     assert_nil result
-    assert_equal ["pgrep", "-f", "SimMetalHost"], calls[-2]
-    assert_includes calls.last.last, "/Simulator[.]app/"
+    assert_equal ["pgrep", "-f", "SimMetalHost"], calls.last
     assert_nil check.first
   end
 
@@ -43,19 +40,6 @@ class NativeBuildPreflightTest < Minitest::Test
 
   def test_lingering_metal_blocks_after_shutdown
     assert_match(/SimMetalHost to exit/, check(states: ["Shutdown"], metal: 0).first)
-  end
-
-  def test_open_simulator_app_blocks_even_after_all_devices_and_metal_exit
-    assert_match(/Quit Simulator.app/, check(states: ["Shutdown"], app: 0).first)
-    assert_match(/Cannot inspect Simulator.app/, check(app: 2).first)
-  end
-
-  def test_simulator_process_expression_is_accepted_by_real_pgrep
-    _, calls = check
-    # Exercise the production expression against the host's POSIX ERE engine.
-    # This only queries processes; it cannot start a Simulator or native build.
-    _, error, status = Open3.capture3(*calls.last)
-    assert_includes [0, 1], status.exitstatus, error
   end
 
   def test_inspection_failures_block

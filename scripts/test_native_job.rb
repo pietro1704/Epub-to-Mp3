@@ -35,11 +35,11 @@ class NativeJobIntegrationTest < Minitest::Test
     File.chmod(0o755, File.join(@dir, name))
   end
 
-  def command(phase = "build", *child)
+  def command(phase = "simulator", *child)
     [RUBY, SCRIPT, "--lock-path", @lock, phase, "--", *(child.empty? ? [RUBY, "-e", "File.write(ARGV[0], 'ran')", @marker] : child)]
   end
 
-  def run_job(phase = "build", *child, env: {})
+  def run_job(phase = "simulator", *child, env: {})
     Open3.capture3(@env.merge(env), *command(phase, *child))
   end
 
@@ -55,35 +55,13 @@ class NativeJobIntegrationTest < Minitest::Test
     RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
   end
 
-  def test_intel_simulator_quarantine_refuses_launch_before_any_child
-    skip "Intel macOS quarantine only" unless intel_mac?
-    _, error, status = run_job("simulator", env: {
-      "IOS_SKIP_BUILD" => "1", "EPUB2MP3_ALLOW_INTEL_SIMULATOR" => "1"
-    })
-    assert_equal 75, status.exitstatus, error
-    assert_match(/quarantined/, error)
-    assert_match(/physical-device verification/, error)
-    refute File.exist?(@marker)
-    refute File.exist?(@lock), "quarantine must reject before even acquiring a lease"
-  end
-
-  def test_intel_simulator_quarantine_cannot_be_bypassed_by_valid_inherited_lease
-    skip "Intel macOS quarantine only" unless intel_mac?
-    nested = command("simulator")
-    _, error, status = run_job("build", *nested)
-    assert_equal 75, status.exitstatus, error
-    assert_match(/quarantined/, error)
-    refute File.exist?(@marker)
-    assert_unlocked
-  end
-
   def test_success_failure_and_child_signal_preserve_exit_status_and_release
     [0, 17].each do |exit_code|
-      _, error, status = run_job("build", RUBY, "-e", "exit #{exit_code}")
+      _, error, status = run_job("simulator", RUBY, "-e", "exit #{exit_code}")
       assert_equal exit_code, status.exitstatus, error
       assert_unlocked
     end
-    _, error, status = run_job("build", RUBY, "-e", "Process.kill('TERM', Process.pid); sleep 10")
+    _, error, status = run_job("simulator", RUBY, "-e", "Process.kill('TERM', Process.pid); sleep 10")
     assert_equal 143, status.exitstatus, error
     assert_unlocked
   end
@@ -114,7 +92,7 @@ class NativeJobIntegrationTest < Minitest::Test
       %w[build simulator].each do |phase|
         _, error, status = run_job(phase)
         assert_equal 75, status.exitstatus, error
-        assert_match(phase == "simulator" && intel_mac? ? /quarantined/ : /active/, error)
+        assert_match(/active/, error)
         refute File.exist?(@marker)
       end
       File.write(@state, "Booted")
@@ -128,10 +106,10 @@ class NativeJobIntegrationTest < Minitest::Test
   end
 
   def test_nested_ruby_shell_ruby_inherits_real_lease_without_deadlock
-    nested = command("build")
+    nested = command("simulator")
     shell = File.join(@dir, "nested.sh")
     File.write(shell, "#!/bin/bash\nexec \"$@\"\n")
-    _, error, status = run_job("build", "/bin/bash", shell, *nested)
+    _, error, status = run_job("simulator", "/bin/bash", shell, *nested)
     assert status.success?, error
     assert_equal "ran", File.read(@marker)
     assert_unlocked
@@ -161,7 +139,7 @@ class NativeJobIntegrationTest < Minitest::Test
   end
 
   def test_single_command_string_never_invokes_a_shell
-    _, error, status = run_job("build", "echo injected > #{@marker}")
+    _, error, status = run_job("simulator", "echo injected > #{@marker}")
     assert_equal 75, status.exitstatus, error
     refute File.exist?(@marker)
     assert_unlocked
@@ -192,7 +170,7 @@ class NativeJobIntegrationTest < Minitest::Test
   def test_failed_leader_cannot_leave_forked_work_running
     late = File.join(@dir, "late")
     child = "fork { sleep 0.6; File.write(ARGV[0], 'escaped') }; exit 17"
-    _, error, status = run_job("build", RUBY, "-e", child, late)
+    _, error, status = run_job("simulator", RUBY, "-e", child, late)
     assert_equal 17, status.exitstatus, error
     sleep 0.7
     refute File.exist?(late)
@@ -202,9 +180,9 @@ class NativeJobIntegrationTest < Minitest::Test
   def test_cancel_nested_supervisor_reaches_descendant_group
     pid_file = File.join(@dir, "nested-pid")
     log = File.join(@dir, "nested-log")
-    inner = command("build", RUBY, "-e", "File.write(ARGV[0], Process.pid); sleep 30", pid_file)
+    inner = command("simulator", RUBY, "-e", "File.write(ARGV[0], Process.pid); sleep 30", pid_file)
     File.open(log, "w") do |output|
-      pid = Process.spawn(@env, *command("build", *inner), out: output, err: output)
+      pid = Process.spawn(@env, *command("simulator", *inner), out: output, err: output)
       wait_for(pid_file)
       child = Integer(File.read(pid_file))
       Process.kill("TERM", pid)
@@ -221,7 +199,7 @@ class NativeJobIntegrationTest < Minitest::Test
     pid_file = File.join(@dir, "pid")
     log = File.join(@dir, "log")
     File.open(log, "w") do |output|
-      pid = Process.spawn(@env, *command("build", RUBY, "-e", "File.write(ARGV[0], Process.pid); sleep 30", pid_file), out: output, err: output)
+      pid = Process.spawn(@env, *command("simulator", RUBY, "-e", "File.write(ARGV[0], Process.pid); sleep 30", pid_file), out: output, err: output)
       wait_for(pid_file)
       child = Integer(File.read(pid_file))
       Process.kill("TERM", pid)

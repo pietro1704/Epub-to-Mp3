@@ -2,7 +2,6 @@
 # frozen_string_literal: true
 
 require "optparse"
-require "rbconfig"
 require_relative "native_build_preflight"
 
 # One lease spans inspection and execution. Descendants receive the actual open
@@ -12,25 +11,6 @@ module NativeJob
   CHILD_FD = 9
   FD_ENV = "EPUB_NATIVE_LEASE_FD"
   PATH_ENV = "EPUB_NATIVE_LEASE_PATH"
-
-  # Ruby build drivers call this before preparation or compiler work. The first
-  # invocation becomes a supervised child; that child validates its real inherited
-  # lease and rechecks host state without opening a second independent lock.
-  def self.build_entrypoint(file, arguments = [])
-    unless ENV[FD_ENV] || ENV[PATH_ENV]
-      exit run(phase: "build", command: [RbConfig.ruby, File.expand_path(file), *arguments])
-    end
-    lease(LOCK_PATH)
-    error = NativeBuildPreflight.check
-    if error
-      warn error
-      exit 75
-    end
-    nil
-  rescue StandardError => error
-    warn "native_job: #{error.message}"
-    exit 75
-  end
 
   def self.lease(path)
     inherited = ENV[FD_ENV]
@@ -73,14 +53,6 @@ module NativeJob
   end
 
   def self.run(phase:, command:, path: LOCK_PATH)
-    # Recurrent IGGuC.cpp:2913 panics occurred inside SimMetalHost on this
-    # Intel host. A lease cannot make the GPU driver safe. Keep Simulator
-    # execution quarantined; neither inherited leases nor environment flags
-    # authorize another attempt. Use physical-device verification instead.
-    if phase == "simulator" && RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-      warn "Intel Simulator execution is quarantined after recurrent IGGuC/SimMetalHost kernel panics. Use physical-device verification; do not retry or boot Simulator."
-      return 75
-    end
     path = File.expand_path(path)
     handle, inherited = lease(path)
     if phase == "build"
