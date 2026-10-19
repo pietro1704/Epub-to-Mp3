@@ -10,7 +10,6 @@ on:
   push:
     branches:
       - master
-      - feature/codeql-swift-toolchain-scope
     paths:
       - .github/workflows/codeql.yml
       - .github/workflows/codeql-swift-toolchain-contracts.yml
