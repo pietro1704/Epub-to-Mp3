@@ -1238,7 +1238,7 @@ def test_job_status_rehydrates_outputs(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("layout", ["recorded", "legacy"])
-@pytest.mark.parametrize("foreign_location", ["outside-output", "sibling-book"])
+@pytest.mark.parametrize("foreign_location", ["outside-output", "prefix-sibling", "sibling-book"])
 @pytest.mark.parametrize("request_kind", ["get", "head", "range"])
 def test_download_output_rejects_symlink_to_foreign_file(
     tmp_path, monkeypatch, layout, foreign_location, request_kind
@@ -1248,9 +1248,11 @@ def test_download_output_rejects_symlink_to_foreign_file(
     job_id = str(uuid4())
     job_dir = output_root / ("Download Book" if layout == "recorded" else job_id)
     job_dir.mkdir()
-    foreign_dir = (
-        tmp_path / "foreign" if foreign_location == "outside-output" else output_root / "Other Book"
-    )
+    foreign_dir = {
+        "outside-output": tmp_path / "foreign",
+        "prefix-sibling": tmp_path / "outputs-other",
+        "sibling-book": output_root / "Other Book",
+    }[foreign_location]
     foreign_dir.mkdir()
     foreign = foreign_dir / "chapter-001.mp3"
     foreign_bytes = b"owned foreign fixture must not be downloaded"
