@@ -39,6 +39,9 @@ MAX_LOG = 16 * 1024**2
 MAX_HEADERS = 64 * 1024
 MAX_LISTING_BYTES = 64 * 1024**2
 MAX_LISTING_ENTRIES = 250_000
+# Complete signed BOM in hosted run 39163845178 at 8c5b5f1: 225519 regular,
+# 85186 directories and 79 symlinks. This is a ceiling, not a listing equality.
+MAX_SIGNED_BOM_ENTRIES = 310_784
 MAX_LISTING_LINE = 4096
 STREAM_CHUNK = 64 * 1024
 MARKER = "legacy-ios-archive-owned-v1\n"
@@ -151,7 +154,11 @@ def signature_gate(output):
 class PayloadListing:
     """Bounded incremental path validation; the digest is an observed receipt only."""
 
-    def __init__(self):
+    def __init__(self, entry_limit=None):
+        self.entry_limit = MAX_LISTING_ENTRIES if entry_limit is None else entry_limit
+        if (type(self.entry_limit) is not int or
+                not 0 < self.entry_limit <= MAX_SIGNED_BOM_ENTRIES):
+            raise Blocked("Payload listing entry budget is invalid")
         self.pending = b""
         self.entries = 0
         self.bytes = 0
@@ -178,7 +185,7 @@ class PayloadListing:
                     any(ord(character) < 32 or ord(character) == 127 for character in name)):
                 raise Blocked("Unsafe package payload path")
             self.entries += 1
-            if self.entries > MAX_LISTING_ENTRIES:
+            if self.entries > self.entry_limit:
                 raise Blocked("Payload listing exceeds its entry budget")
         if len(self.pending) > MAX_LISTING_LINE:
             raise Blocked("Payload listing path exceeds its line budget")
@@ -195,7 +202,7 @@ class PayloadListing:
 
 
 class BomModes:
-    """Diagnostic mode counts only; never authorizes listing or expansion."""
+    """Bounded mode counts; paired signed metadata must authorize their use."""
 
     report_key = "bom_mode_inventory"
 
@@ -247,7 +254,38 @@ def safe_payload_listing(output):
     return listing.finish()
 
 
-def declared_payload(directory, metadata=None):
+def package_info_metadata(directory, info):
+    def identity(item):
+        return item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns
+
+    within(directory, info)
+    before = info.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_size > 1024**2:
+        raise Blocked("PackageInfo must be a bounded regular file")
+    with os.fdopen(os.open(info, os.O_RDONLY | os.O_NOFOLLOW), "rb") as handle:
+        if identity(os.fstat(handle.fileno())) != identity(before):
+            raise Blocked("PackageInfo identity changed before reading")
+        data = handle.read(1024**2 + 1)
+        if identity(os.fstat(handle.fileno())) != identity(before):
+            raise Blocked("PackageInfo identity changed while reading")
+    after = info.lstat()
+    if len(data) > 1024**2 or identity(before) != identity(after):
+        raise Blocked("PackageInfo identity changed during inspection")
+    if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+        raise Blocked("PackageInfo contains unsupported XML declarations")
+    root = ET.fromstring(data)
+    payloads = root.findall("payload")
+    if len(payloads) != 1 or not re.fullmatch(r"[1-9]\d*", payloads[0].get("installKBytes", "")):
+        raise Blocked("Package payload size is unknown")
+    count = payloads[0].get("numberOfFiles")
+    if count is not None and not re.fullmatch(r"[0-9]{1,10}", count):
+        raise Blocked("Declared package file count is malformed")
+    return ({"package_info_sha256": hashlib.sha256(data).hexdigest(),
+             "install_bytes": int(payloads[0].get("installKBytes")) * 1024,
+             "number_of_files": int(count) if count is not None else None}, identity(after))
+
+
+def declared_payload(directory, metadata=None, snapshots=None):
     infos = []
     for info in Path(directory).rglob("PackageInfo"):
         infos.append(info)
@@ -257,26 +295,15 @@ def declared_payload(directory, metadata=None):
         raise Blocked("PackageInfo layout is missing or ambiguous")
     total = 0
     for info in infos:
-        within(directory, info)
-        if info.stat().st_size > 1024**2:
-            raise Blocked("PackageInfo exceeds the metadata budget")
-        data = info.read_bytes()
-        if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
-            raise Blocked("PackageInfo contains unsupported XML declarations")
-        root = ET.fromstring(data)
-        payloads = root.findall("payload")
-        if len(payloads) != 1 or not re.fullmatch(r"[1-9]\d*", payloads[0].get("installKBytes", "")):
-            raise Blocked("Package payload size is unknown")
-        total += int(payloads[0].get("installKBytes")) * 1024
+        details, identity = package_info_metadata(directory, info)
+        total += details["install_bytes"]
         if total > MAX_PAYLOAD:
             raise Blocked("Declared package payload exceeds 24 GiB")
         if metadata is not None:
-            count = payloads[0].get("numberOfFiles")
-            if count is not None and not re.fullmatch(r"[0-9]{1,10}", count):
-                raise Blocked("Declared package file count is malformed")
-            metadata.append({"package_info_sha256": hashlib.sha256(data).hexdigest(),
-                             "install_bytes": int(payloads[0].get("installKBytes")) * 1024,
-                             "number_of_files": int(count) if count is not None else None})
+            metadata.append(details)
+        if snapshots is not None:
+            snapshots[info] = (identity, details["package_info_sha256"],
+                               details["install_bytes"], details["number_of_files"])
     return total
 
 
@@ -575,7 +602,7 @@ class Inspector:
             raise Blocked(str(error)) from error
         return receipt
 
-    def inspect_bom_modes(self, flat):
+    def inspect_bom_modes(self, flat, snapshots):
         if self.report["signature_verified"] is not True:
             raise Blocked("BOM diagnostics require verified package signature")
         # Use the hosted Apple manual as the capability evidence. -p m emits
@@ -593,8 +620,23 @@ class Inspector:
                 raise Blocked("BOM component layout exceeds its budget")
         if not infos:
             raise Blocked("BOM component layout is missing or exceeds its budget")
+        boms = []
+        for bom in flat.rglob("Bom"):
+            boms.append(bom)
+            if len(boms) > 128:
+                raise Blocked("BOM component layout exceeds its budget")
+        if (set(infos) != set(snapshots) or
+                {info.parent for info in infos} != {bom.parent for bom in boms}):
+            raise Blocked("PackageInfo and BOM components are missing or ambiguous")
+        entry_limit = 0
         for info in infos:
             bom = info.parent / "Bom"
+            metadata, info_identity = package_info_metadata(flat, info)
+            if snapshots[info] != (info_identity, metadata["package_info_sha256"],
+                                   metadata["install_bytes"], metadata["number_of_files"]):
+                raise Blocked("PackageInfo differs from the declared payload snapshot")
+            if not metadata["number_of_files"]:
+                raise Blocked("Signed BOM budget requires a positive package file count")
 
             def identity():
                 resolved = within(flat, bom)
@@ -618,12 +660,27 @@ class Inspector:
                 self.command(["/usr/bin/lsbom", "-p", "m", str(bom)], timeout=90, consumer=consumer)
                 if identity() != (before, digest):
                     raise Blocked("BOM identity changed during inspection")
+                if package_info_metadata(flat, info) != (metadata, info_identity):
+                    raise Blocked("PackageInfo identity changed during BOM inspection")
+                if (not consumer.complete or consumer.entries != sum(consumer.counts.values()) or
+                        consumer.counts["other"] != 0 or
+                        consumer.counts["regular"] + consumer.counts["symlink"] != metadata["number_of_files"]):
+                    raise Blocked("Signed BOM counts do not match their package metadata")
+                entry_limit += consumer.entries
+                if entry_limit > MAX_SIGNED_BOM_ENTRIES:
+                    raise Blocked("Signed BOM count exceeds the reviewed entry ceiling")
             except BaseException:
                 consumer.complete = False
                 raise
             finally:
-                inventories.append(consumer.receipt())
+                inventories.append({**consumer.receipt(),
+                                    "package_info_sha256": metadata["package_info_sha256"],
+                                    "number_of_files": metadata["number_of_files"]})
                 self.report["bom_mode_inventory"] = consumer.receipt()
+        self.report["payload_listing_budget"] = {
+            "source": "complete_signed_component_boms", "entries": entry_limit,
+            "ceiling": MAX_SIGNED_BOM_ENTRIES}
+        return entry_limit
 
     def verify_and_expand(self, package):
         output = self.command(["/usr/sbin/pkgutil", "--check-signature", str(package)], timeout=90)
@@ -633,15 +690,17 @@ class Inspector:
         flat = self.root / "flat"
         self.command(["/usr/sbin/pkgutil", "--expand", str(package), str(flat)],
                      timeout=180, monitor=lambda: disk_gate(self.root))
-        # Read only bounded signed package metadata before listing. Preserve its
-        # declared count when the unchanged listing gate blocks this archive.
+        # Derive the path budget from complete, identity-checked signed BOMs.
+        # PackageInfo counts regular files and links; the BOM also counts dirs.
         self.report["package_payload_metadata"] = []
-        expected = declared_payload(flat, self.report["package_payload_metadata"])
+        snapshots = {}
+        expected = declared_payload(flat, self.report["package_payload_metadata"], snapshots)
         self.report["declared_payload_bytes"] = expected
-        self.inspect_bom_modes(flat)
+        entry_limit = self.inspect_bom_modes(flat, snapshots)
         shutil.rmtree(within(self.root, flat))
         self.report["payload_file_count"] = self.command(
-            ["/usr/sbin/pkgutil", "--payload-files", str(package)], timeout=90, consumer=PayloadListing())
+            ["/usr/sbin/pkgutil", "--payload-files", str(package)], timeout=90,
+            consumer=PayloadListing(entry_limit))
         disk_gate(self.root, expected + SIZE)
         expanded = self.root / "expanded"
         self.command(["/usr/sbin/pkgutil", "--expand-full", str(package), str(expanded)],
