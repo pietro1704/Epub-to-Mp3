@@ -877,6 +877,73 @@ class NativeSimulatorSessionTest < Minitest::Test
     end
   end
 
+  def test_operation_excludes_ambient_environment_and_preserves_explicit_values_and_real_lease
+    skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
+    load_subject
+    sentinel = "EPUB_SESSION_AMBIENT_TEST_ONLY"
+    previous_sentinel = ENV[sentinel]
+    ENV[sentinel] = "owned harmless fixture"
+    program = <<~'RUBY'
+      require "json"
+      descriptor = ENV.fetch("EPUB_NATIVE_LEASE_FD")
+      lease_path = ENV.fetch("EPUB_NATIVE_LEASE_PATH")
+      handle = File.for_fd(Integer(descriptor), autoclose: false)
+      actual = handle.stat
+      expected = File.stat(lease_path)
+      held = File.open(lease_path, "a+") { |probe| !probe.flock(File::LOCK_EX | File::LOCK_NB) }
+      puts JSON.generate(
+        "ambient_present" => ENV.key?("EPUB_SESSION_AMBIENT_TEST_ONLY"),
+        "explicit_value" => ENV["EPUB_SESSION_EXPLICIT_TEST"],
+        "path_matches" => ENV["PATH"] == ARGV.fetch(0),
+        "locale" => ENV["LC_ALL"], "lease_descriptor" => descriptor,
+        "lease_path_matches" => lease_path == ARGV.fetch(1),
+        "lease_identity_matches" => actual.file? && [actual.dev, actual.ino] == [expected.dev, expected.ino],
+        "lease_held" => held)
+    RUBY
+    command = [RUBY, "-e", program, ENV.fetch("PATH"), @lease]
+    backend = FakeBackend.new(@directory)
+    backend.define_singleton_method(:argv) { |_phase, _plan| command }
+    backend.define_singleton_method(:environment) do |_phase, _plan|
+      { "EPUB_SESSION_EXPLICIT_TEST" => "owned explicit fixture" }
+    end
+    lease, inherited = NativeJob.lease(@lease)
+    caretaker = NativeSimulatorSession::Caretaker.new(
+      NativeSimulatorSession::Plan.new(@plan_path), backend, lease, @lease,
+      [], nil, NativeSimulatorSession::Report.new(@report), NativeSimulatorSession.now)
+    child = nil
+    output_path = File.join(@directory, "operation-environment.json")
+    File.open(output_path, "w+") do |output|
+      child = caretaker.spawn_operation(:test, true, out: output, err: output,
+        deadline: NativeSimulatorSession.now + 2, cleanup: true)
+      _, status = Timeout.timeout(5) { Process.waitpid2(child) }
+      child = nil
+      assert status.success?, "Owned environment fixture failed"
+      output.rewind
+      observed = JSON.parse(output.read)
+      assert_equal false, observed.fetch("ambient_present")
+      assert_equal "owned explicit fixture", observed.fetch("explicit_value")
+      assert_equal true, observed.fetch("path_matches")
+      assert_equal "C", observed.fetch("locale")
+      assert_equal NativeJob::CHILD_FD.to_s, observed.fetch("lease_descriptor")
+      assert_equal true, observed.fetch("lease_path_matches")
+      assert_equal true, observed.fetch("lease_identity_matches")
+      assert_equal true, observed.fetch("lease_held")
+    end
+  ensure
+    if sentinel
+      if previous_sentinel.nil?
+        ENV.delete(sentinel)
+      else
+        ENV[sentinel] = previous_sentinel
+      end
+    end
+    if child
+      Process.kill("KILL", -child) rescue Errno::ESRCH
+      Process.waitpid(child) rescue Errno::ECHILD
+    end
+    lease&.close unless inherited
+  end
+
   def test_singleton_backend_command_is_a_literal_executable_without_shell_expansion
     skip "Injected process contracts run on Linux only" if RUBY_PLATFORM.include?("darwin")
     load_subject
