@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 SOURCE = Path(__file__).with_name("hosted-legacy-ios-archive.py")
@@ -791,7 +792,8 @@ class ArchiveSafetyTests(unittest.TestCase):
                 self.assertEqual(calls, ["--check-signature", "--expand", "--payload-files"])
                 self.assertEqual(self.inspector.report["package_payload_metadata"], [{
                     "package_info_sha256": hashlib.sha256(metadata).hexdigest(),
-                    "install_bytes": 1024**2, "number_of_files": 3}])
+                    "install_bytes": 1024**2, "number_of_files": 3,
+                    "install_location": {"form": "missing", "simruntime_suffix": False, "sha256": None}}])
                 self.assertEqual(self.inspector.report["declared_payload_bytes"], 1024**2)
                 self.assertTrue(self.inspector.report["signature_verified"])
                 self.assertFalse(self.inspector.report["payload_listing"]["complete"])
@@ -1080,6 +1082,155 @@ class BomDiagnosticTests(unittest.TestCase):
             with self.assertRaises(archive.Blocked):
                 consumer.feed(b"100644\n")
             self.assertFalse(consumer.receipt()["complete"])
+
+
+class RuntimeLayoutDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.base = Path(self.temporary.name)
+        self.inspector = archive.Inspector(self.base, self.base / "reports")
+        self.expanded = self.inspector.root / "expanded"
+        self.expanded.mkdir()
+
+    def blocked_discovery(self):
+        with self.assertRaisesRegex(archive.Blocked, "Expected one legacy runtime in the package"):
+            self.inspector.inspect_runtime(self.expanded)
+        return self.inspector.report["runtime_directory_candidates"]
+
+    def test_zero_candidates_records_relative_shallow_layout_without_new_selection(self):
+        payload = self.expanded / "Payload"
+        (payload / "Contents").mkdir(parents=True)
+        (payload / "Contents" / "Info.plist").write_bytes(b"not collected")
+        self.assertEqual(self.blocked_discovery()["count"], 0)
+        records = self.inspector.report["expanded_layout"]["records"]
+        self.assertEqual(records, [{"path": "Payload", "kind": "directory"},
+                                   {"path": "Payload/Contents", "kind": "directory"}])
+        self.assertNotIn("not collected", json.dumps(self.inspector.report))
+        self.assertNotIn(str(self.base), json.dumps(self.inspector.report))
+
+    def test_multiple_candidates_remain_blocked_and_sample_is_bounded(self):
+        for index in range(10):
+            (self.expanded / f"runtime-{index}.simruntime").mkdir()
+        discovery = self.blocked_discovery()
+        self.assertEqual(discovery["count"], 10)
+        self.assertEqual(len(discovery["sample"]), 8)
+        self.assertEqual(discovery["sample_omitted"], 2)
+        self.assertTrue(all(item["kind"] == "directory" and "/" not in item["path"]
+                            for item in discovery["sample"]))
+
+    def test_exactly_one_candidate_still_requires_original_runtime_identity(self):
+        runtime = self.expanded / "one.simruntime"
+        contents = runtime / "Contents"
+        system = contents / "Resources/RuntimeRoot/System/Library/CoreServices"
+        system.mkdir(parents=True)
+        (contents / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "foreign.bundle"}))
+        (system / "SystemVersion.plist").write_bytes(plistlib.dumps(
+            {"ProductVersion": "15.5", "ProductBuildVersion": "19F70"}))
+        with self.assertRaisesRegex(archive.Blocked, "runtime identity differs"):
+            self.inspector.inspect_runtime(self.expanded)
+        self.assertEqual(self.inspector.report["runtime_directory_candidates"], {
+            "count": 1, "sample": [{"path": "one.simruntime", "kind": "directory"}], "sample_omitted": 0})
+        self.assertNotIn("expanded_layout", self.inspector.report)
+
+    def test_symlinks_and_control_paths_do_not_expose_or_change_foreign_tree(self):
+        foreign = self.base / "foreign"
+        foreign.mkdir()
+        sentinel = foreign / "private-name"
+        sentinel.write_bytes(b"preserve foreign bytes")
+        (self.expanded / "linked.simruntime").symlink_to(foreign)
+        (self.expanded / "control\nname").write_bytes(b"not collected")
+        self.assertEqual(self.blocked_discovery()["count"], 0)
+        layout = self.inspector.report["expanded_layout"]
+        self.assertEqual(layout["records"], [{"path": "linked.simruntime", "kind": "symlink"}])
+        self.assertEqual(layout["invalid_paths"], 1)
+        self.assertEqual(sentinel.read_bytes(), b"preserve foreign bytes")
+        self.assertNotIn("private-name", json.dumps(layout))
+        self.assertNotIn("control", json.dumps(layout))
+        with self.assertRaises(archive.Blocked):
+            archive.diagnostic_path(Path("."), Path("x" * 4097))
+
+    def test_layout_record_scan_byte_and_time_limits_are_explicit(self):
+        for index in range(70):
+            (self.expanded / f"file-{index}").touch()
+        self.blocked_discovery()
+        layout = self.inspector.report["expanded_layout"]
+        self.assertEqual(len(layout["records"]), 64)
+        self.assertLessEqual(layout["scanned"], 256)
+        self.assertTrue(layout["truncated"])
+        with patch.object(archive, "LAYOUT_BYTES", 256):
+            layout = self.inspector.runtime_layout(self.expanded)
+        self.assertTrue(layout["truncated"])
+        self.assertLessEqual(len(json.dumps({"expanded_layout": layout}, indent=2).encode()), 256)
+        with patch.object(archive.time, "monotonic", side_effect=[0, 2]):
+            layout = self.inspector.runtime_layout(self.expanded)
+        self.assertTrue(layout["truncated"])
+        self.assertEqual(layout["scanned"], 0)
+        with patch.object(archive, "LAYOUT_SCANNED", 2), patch.object(archive, "LAYOUT_RECORDS", 64):
+            layout = self.inspector.runtime_layout(self.expanded)
+        self.assertTrue(layout["truncated"])
+        self.assertEqual(layout["scanned"], 2)
+
+    def test_final_invalid_path_counters_cannot_overflow_the_receipt_byte_budget(self):
+        (self.expanded / "valid").touch()
+        initial = self.inspector.runtime_layout(self.expanded)
+        budget = len(json.dumps({"expanded_layout": initial}, indent=2).encode())
+        for index in range(10):
+            (self.expanded / f"invalid\n{index}").touch()
+        real_scandir = archive.os.scandir
+
+        @contextmanager
+        def valid_first(descriptor):
+            with real_scandir(descriptor) as entries:
+                observed = []
+                for entry in entries:
+                    entry.stat(follow_symlinks=False)
+                    observed.append(entry)
+                yield iter(sorted(observed, key=lambda entry: entry.name != "valid"))
+
+        # Cache actual lstat results while the iterator is open, then control
+        # ordering so both final counters gain a digit after the valid record.
+        with patch.object(archive.os, "scandir", side_effect=valid_first), \
+                patch.object(archive, "LAYOUT_BYTES", budget):
+            layout = self.inspector.runtime_layout(self.expanded)
+        self.assertEqual(layout["scanned"], 11)
+        self.assertEqual(layout["invalid_paths"], 10)
+        self.assertEqual(layout["records"], [])
+        self.assertTrue(layout["truncated"])
+        self.assertLessEqual(len(json.dumps({"expanded_layout": layout}, indent=2).encode()), budget)
+        self.inspector.report["expanded_layout"] = layout
+        fragment = "\n".join(json.dumps({"expanded_layout": layout}, indent=2).splitlines()[1:-1])
+        self.assertIn(fragment, json.dumps(self.inspector.report, indent=2))
+        self.assertLessEqual(len(fragment.encode()), budget)
+
+    def test_diagnostic_io_failure_preserves_original_runtime_blocker(self):
+        with patch.object(archive.os, "open", side_effect=PermissionError("private diagnostic path")):
+            self.blocked_discovery()
+        self.assertEqual(self.inspector.report["expanded_layout"], {
+            "error_type": "PermissionError", "truncated": True})
+        self.assertNotIn("private diagnostic path", json.dumps(self.inspector.report))
+
+    def test_install_location_is_same_read_enums_and_hash_never_a_path_to_open(self):
+        info = self.expanded / "PackageInfo"
+        for location, form, suffix in [(None, "missing", False),
+                                        ("/Library/private.simruntime", "absolute", True),
+                                        ("relative/private.simruntime", "relative", True),
+                                        ("../private", "invalid", False),
+                                        ("private\npath", "invalid", False)]:
+            with self.subTest(form=form, location=location):
+                root = archive.ET.Element("pkg-info")
+                if location is not None:
+                    root.set("install-location", location)
+                archive.ET.SubElement(root, "payload", installKBytes="1024", numberOfFiles="1")
+                raw = archive.ET.tostring(root)
+                info.write_bytes(raw)
+                metadata, _ = archive.package_info_metadata(self.expanded, info)
+                self.assertEqual(metadata["package_info_sha256"], hashlib.sha256(raw).hexdigest())
+                self.assertEqual(metadata["install_location"], {
+                    "form": form, "simruntime_suffix": suffix,
+                    "sha256": hashlib.sha256(location.encode()).hexdigest() if location is not None else None})
+                if location:
+                    self.assertNotIn(location, json.dumps(metadata))
 
 
 if __name__ == "__main__":

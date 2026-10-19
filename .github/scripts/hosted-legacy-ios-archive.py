@@ -44,6 +44,11 @@ MAX_LISTING_ENTRIES = 250_000
 MAX_SIGNED_BOM_ENTRIES = 310_784
 MAX_LISTING_LINE = 4096
 STREAM_CHUNK = 64 * 1024
+LAYOUT_DEPTH = 2
+LAYOUT_SCANNED = 256
+LAYOUT_RECORDS = 64
+LAYOUT_BYTES = 64 * 1024
+LAYOUT_SECONDS = 1
 MARKER = "legacy-ios-archive-owned-v1\n"
 
 
@@ -280,9 +285,23 @@ def package_info_metadata(directory, info):
     count = payloads[0].get("numberOfFiles")
     if count is not None and not re.fullmatch(r"[0-9]{1,10}", count):
         raise Blocked("Declared package file count is malformed")
+    location = root.get("install-location")
+    location_form = "missing"
+    suffix = False
+    if location is not None:
+        if (not location or len(location.encode("utf-8")) > MAX_LISTING_LINE or
+                ".." in PurePosixPath(location).parts or
+                any(ord(character) < 32 or ord(character) == 127 for character in location)):
+            location_form = "invalid"
+        else:
+            location_form = "absolute" if location.startswith("/") else "relative"
+            suffix = location.endswith(".simruntime")
     return ({"package_info_sha256": hashlib.sha256(data).hexdigest(),
              "install_bytes": int(payloads[0].get("installKBytes")) * 1024,
-             "number_of_files": int(count) if count is not None else None}, identity(after))
+             "number_of_files": int(count) if count is not None else None,
+             "install_location": {"form": location_form, "simruntime_suffix": suffix,
+                                  "sha256": hashlib.sha256(location.encode("utf-8")).hexdigest()
+                                  if location is not None else None}}, identity(after))
 
 
 def declared_payload(directory, metadata=None, snapshots=None):
@@ -350,6 +369,19 @@ def cache_metadata(filename, root):
     return {"path": str(filename.relative_to(root)), "header_hex": raw.hex(),
             "header": raw.decode("ascii", errors="replace"),
             "architecture": match["architecture"].decode() if match else None}
+
+
+def diagnostic_path(root, path):
+    relative = path.relative_to(root).as_posix()
+    if (".." in PurePosixPath(relative).parts or len(relative.encode("utf-8")) > MAX_LISTING_LINE or
+            any(ord(character) < 32 or ord(character) == 127 for character in relative)):
+        raise Blocked("Layout diagnostic path is invalid")
+    return relative
+
+
+def diagnostic_kind(mode):
+    return {stat.S_IFREG: "regular", stat.S_IFDIR: "directory",
+            stat.S_IFLNK: "symlink"}.get(stat.S_IFMT(mode), "other")
 
 
 class Inspector:
@@ -707,9 +739,78 @@ class Inspector:
                      timeout=600, monitor=lambda: disk_gate(self.root))
         return expanded
 
+    def runtime_layout(self, expanded):
+        """Shallow diagnostic only; never selects or authorizes a runtime."""
+        result = {"records": [], "scanned": 0, "invalid_paths": 0,
+                  "depth_limit": LAYOUT_DEPTH, "truncated": False}
+        deadline = time.monotonic() + LAYOUT_SECONDS
+
+        def encoded_size(receipt):
+            # Include the field wrapper and the final report's indentation.
+            return len(json.dumps({"expanded_layout": receipt}, indent=2).encode())
+
+        def walk(descriptor, relative, depth):
+            with os.scandir(descriptor) as entries:
+                for entry in entries:
+                    if (time.monotonic() >= deadline or result["scanned"] >= LAYOUT_SCANNED or
+                            len(result["records"]) >= LAYOUT_RECORDS):
+                        result["truncated"] = True
+                        return
+                    result["scanned"] += 1
+                    path = relative / entry.name
+                    try:
+                        name = diagnostic_path(Path("."), path)
+                    except (Blocked, UnicodeError):
+                        result["invalid_paths"] += 1
+                        continue
+                    details = entry.stat(follow_symlinks=False)
+                    record = {"path": name, "kind": diagnostic_kind(details.st_mode)}
+                    if encoded_size({**result, "records": result["records"] + [record]}) > LAYOUT_BYTES:
+                        result["truncated"] = True
+                        return
+                    result["records"].append(record)
+                    if stat.S_ISDIR(details.st_mode) and depth < LAYOUT_DEPTH:
+                        child = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                        dir_fd=descriptor)
+                        try:
+                            opened = os.fstat(child)
+                            if (opened.st_dev, opened.st_ino) != (details.st_dev, details.st_ino):
+                                raise Blocked("Layout directory identity changed")
+                            walk(child, path, depth + 1)
+                        finally:
+                            os.close(child)
+                        if result["truncated"]:
+                            return
+
+        root = os.open(within(self.root, expanded), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            walk(root, Path("."), 1)
+        finally:
+            os.close(root)
+        # Recheck counters updated after the last retained record as well.
+        while encoded_size(result) > LAYOUT_BYTES:
+            if not result["records"]:
+                raise Blocked("Layout diagnostic receipt exceeds its byte budget")
+            result["records"].pop()
+            result["truncated"] = True
+        return result
+
     def inspect_runtime(self, expanded):
         runtimes = [item for item in expanded.rglob("*.simruntime") if not item.is_symlink()]
+        discovery = {"count": len(runtimes), "sample": [], "sample_omitted": max(0, len(runtimes) - 8)}
+        self.report["runtime_directory_candidates"] = discovery
+        for item in runtimes[:8]:
+            try:
+                discovery["sample"].append({"path": diagnostic_path(expanded, item),
+                                            "kind": diagnostic_kind(item.lstat().st_mode)})
+            except Exception as error:
+                discovery["sample_omitted"] += 1
+                discovery["error_type"] = type(error).__name__
         if len(runtimes) != 1:
+            try:
+                self.report["expanded_layout"] = self.runtime_layout(expanded)
+            except Exception as error:
+                self.report["expanded_layout"] = {"error_type": type(error).__name__, "truncated": True}
             raise Blocked("Expected one legacy runtime in the package")
         runtime = within(expanded, runtimes[0])
         info_path = within(expanded, runtime / "Contents/Info.plist")
