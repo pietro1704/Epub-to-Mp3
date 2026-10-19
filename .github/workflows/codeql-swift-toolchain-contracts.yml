@@ -66,6 +66,7 @@ jobs:
               failures << "#{label}: mise ls failed (exit #{status.exitstatus}): #{error}"
               next
             end
+            warn "#{label}: mise ls diagnostics: #{error}" unless error.strip.empty?
             begin
               tools = JSON.parse(output)
               raise TypeError, 'expected a tool-name mapping' unless tools.is_a?(Hash)

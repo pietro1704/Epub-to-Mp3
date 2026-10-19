@@ -93,6 +93,10 @@ jobs:
   swift:
     name: CodeQL · swift (${{ matrix.coverage }} · ${{ matrix.platform }})
     runs-on: macos-latest
+    env:
+      # Nested mise exec calls in Xcode build phases must not install XcodeGen.
+      # The project generator is installed separately through Homebrew below.
+      MISE_ENABLE_TOOLS: python,rust,ruby
     # The observed 40-minute cap canceled successful Swift extraction during
     # TRAP finalization. Keep real builds and analysis within a bounded budget.
     timeout-minutes: 90
@@ -170,7 +174,21 @@ jobs:
           install: false
 
       - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
+
+      - name: Verify nested Apple toolchain scope
+        working-directory: ios/EpubToMp3
+        run: |
+          set -o pipefail
+          mise ls --current --json | mise exec -- python -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          if tools != {"python", "rust", "ruby"}:
+              sys.exit(f"Unexpected Swift CodeQL tools: {sorted(tools)}")
+          print("Swift CodeQL nested tools: python, rust, ruby")
+          '
 
       - name: Install XcodeGen
         env:
