@@ -516,11 +516,11 @@ schemes:
     run:
       config: Debug
       environmentVariables:
-        IDEPreferLogStreaming: YES
+        IDELogRedirectionPolicy: oslogToStdio
     test:
       config: Debug
       environmentVariables:
-        IDEPreferLogStreaming: YES
+        IDELogRedirectionPolicy: oslogToStdio
         EPUB2MP3_LOTR_IMPORTED_EPUB: "${EPUB2MP3_LOTR_IMPORTED_EPUB}"
         EPUB2MP3_NATIVE_TTS_TEST: "$(EPUB2MP3_NATIVE_TTS_TEST)"
         APP_IOS_LIVE_EDGE: "$(APP_IOS_LIVE_EDGE)"
@@ -586,11 +586,11 @@ schemes:
     run:
       config: Debug
       environmentVariables:
-        IDEPreferLogStreaming: YES
+        IDELogRedirectionPolicy: oslogToStdio
     test:
       config: Debug
       environmentVariables:
-        IDEPreferLogStreaming: YES
+        IDELogRedirectionPolicy: oslogToStdio
         EPUB2MP3_NATIVE_TTS_TEST: "$(EPUB2MP3_NATIVE_TTS_TEST)"
         APP_FOUNDATION_LIVE_EDGE: "$(APP_FOUNDATION_LIVE_EDGE)"
         APP_FOUNDATION_FFI_LIBRARY: "$(APP_FOUNDATION_FFI_LIBRARY)"

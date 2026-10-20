@@ -38,6 +38,18 @@ fi
 [[ -f "$source" ]] || { echo "error: missing linked ONNX Runtime: $source" >&2; exit 1; }
 destination="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/$linked_name"
 cp "$source" "$destination"
-install_name_tool -id "@rpath/$linked_name" "$destination"
+# Avoid invalidating the copied signature when the install name already matches.
+if ! install_names="$(otool -D "$destination")"; then
+  echo "error: cannot inspect ONNX Runtime install name: $destination" >&2
+  exit 1
+fi
+current_name="$(printf '%s\n' "$install_names" | awk 'NR > 1 && NF { print }')"
+[[ -n "$current_name" && "$current_name" != *$'\n'* ]] || {
+  echo "error: missing or ambiguous ONNX Runtime install name: $destination" >&2
+  exit 1
+}
+if [[ "$current_name" != "@rpath/$linked_name" ]]; then
+  install_name_tool -id "@rpath/$linked_name" "$destination"
+fi
 codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$destination"
 codesign --verify --strict "$destination"
