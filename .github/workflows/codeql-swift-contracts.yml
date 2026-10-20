@@ -1,11 +1,21 @@
 name: CodeQL Swift host contracts
 
 on:
+  pull_request:
+    paths:
+      - 'mise.toml'
+      - 'scripts/apple_target_clang.sh'
+      - 'scripts/codeql_swift_build.sh'
+      - 'scripts/test_codeql_swift_build.rb'
+      - '.github/workflows/codeql.yml'
+      - '.github/workflows/codeql-swift-contracts.yml'
   push:
     paths:
       - 'mise.toml'
+      - 'scripts/apple_target_clang.sh'
       - 'scripts/codeql_swift_build.sh'
       - 'scripts/test_codeql_swift_build.rb'
+      - '.github/workflows/codeql.yml'
       - '.github/workflows/codeql-swift-contracts.yml'
   workflow_dispatch:
 

@@ -58,6 +58,7 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
         file.puts(JSON.generate({ argv: ARGV, environment: ENV.to_h.slice(*keys) }))
       end
       exit Integer(ENV.fetch('FIXTURE_HOST_STATUS', '0')) if ARGV.include?('espeak-rs-sys')
+      exit Integer(ENV.fetch('FIXTURE_DEVICE_STATUS', '0'))
     RUBY
   end
 
@@ -71,13 +72,13 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
     FileUtils.chmod(0o755, path)
   end
 
-  def invoke(host_status: '0')
+  def invoke(host_status: '0', device_status: '0')
     source = File.read(File.join(ROOT, 'mise.toml'))
     task = source.match(/^\[tasks\."converter-ffi:ios-device"\]\n.*?^run = '''\n(.*?)^'''/m)
     refute_nil task, 'real iOS device task must exist'
     Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'MISE_PROJECT_ROOT' => @root,
                     'FIXTURE_BIN' => @bin, 'FIXTURE_CALLS' => @calls, 'FIXTURE_LEASE' => @lease,
-                    'FIXTURE_HOST_STATUS' => host_status, 'CLANG_WRAPPER' => nil,
+                    'FIXTURE_HOST_STATUS' => host_status, 'FIXTURE_DEVICE_STATUS' => device_status, 'CLANG_WRAPPER' => nil,
                     'CC_x86_64_apple_darwin' => nil, 'CFLAGS_x86_64_apple_darwin' => nil,
                     'CC_aarch64_apple_darwin' => nil, 'CFLAGS_aarch64_apple_darwin' => nil,
                     'CODEQL_TRACER_CONFIGURATION' => 'fixture-codeql-tracing' },
@@ -123,6 +124,15 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
     assert_equal 1, calls.length
     assert_includes calls.first.fetch('argv'), 'espeak-rs-sys'
     refute_includes calls.first.fetch('argv'), 'converter-ffi'
+    File.open(@lease, 'a+') { |file| assert file.flock(File::LOCK_EX | File::LOCK_NB) }
+  end
+
+  def test_device_build_failure_propagates_after_host_assets
+    output, error, status = invoke(device_status: '23')
+    assert_equal 23, status.exitstatus, "#{output}#{error}"
+    calls = File.readlines(@calls).map { |line| JSON.parse(line) }
+    assert_equal 2, calls.length
+    assert_includes calls.last.fetch('argv'), 'converter-ffi'
     File.open(@lease, 'a+') { |file| assert file.flock(File::LOCK_EX | File::LOCK_NB) }
   end
 
