@@ -250,6 +250,8 @@ void main() {
       final restored = (await store.load('manual-book', 'rust-manual'))!;
       expect(restored.createdAt, started);
       expect(restored.bookTitle, 'Manual Book');
+      expect(restored.mode, 'manual');
+      expect(restored.copyWith().mode, 'manual');
       expect(restored.chapters.map((chapter) => chapter.index), [5, 9]);
       expect(restored.chapters.first.outputPath, Platform.isWindows
           ? r'C:\tmp\audio dir\0001-six.mp3'
@@ -301,7 +303,7 @@ void main() {
       );
     },
   );
-  test('manual writer refusal preserves completed audio and playback save semantics', () async {
+  test('writer refusal preserves completed audio and reports manual and playback save failures', () async {
     final directory = await Directory.systemTemp.createTemp('manual-history-refusal-');
     final audio = File('${directory.path}/completed.mp3');
     final bytes = [0x49, 0x44, 0x33, 1, 2, 3];
@@ -326,7 +328,7 @@ void main() {
       final job = await coordinator.createJob(
         bookId: 'playback', jobId: 'unchanged', chapters: const [],
       );
-      await manualStore.save(job);
+      await expectLater(manualStore.save(job), throwsA(isA<StateError>()));
       expect(refusing.writes, 2);
     } finally {
       await directory.delete(recursive: true);

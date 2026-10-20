@@ -7,6 +7,8 @@ else
   NativeJob.build_entrypoint(__FILE__, ARGV)
 end
 require "fileutils"
+require_relative "native_job"
+NativeJob.build_entrypoint(__FILE__, ARGV)
 if RUBY_PLATFORM.include?("darwin")
   runtime = IO.popen(["mise", "exec", "--", "ruby", "scripts/prepare_onnxruntime_macos.rb"], NativeJob.child_options, &:read).strip
   abort "Failed to prepare Intel ONNX Runtime" unless $?.success? && runtime.start_with?("/")

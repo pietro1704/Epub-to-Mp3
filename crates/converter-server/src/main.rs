@@ -1060,15 +1060,24 @@ fn uuid() -> String {
         ]),
     )
 }
+fn server_bind_address(
+    host: Option<&str>,
+    port: Option<&str>,
+) -> Result<SocketAddr, std::net::AddrParseError> {
+    let host = host.unwrap_or("127.0.0.1");
+    let port = port
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(8000);
+    format!("{host}:{port}").parse()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env();
-    let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(8000);
-    let address: SocketAddr = format!("{host}:{port}").parse()?;
+    let address = server_bind_address(
+        std::env::var("HOST").ok().as_deref(),
+        std::env::var("PORT").ok().as_deref(),
+    )?;
     tokio::fs::create_dir_all(&config.paths.uploads_dir).await?;
     tokio::fs::create_dir_all(&config.paths.job_inputs_dir).await?;
     tokio::fs::create_dir_all(&config.paths.output_dir).await?;
@@ -1085,6 +1094,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn default_server_listener_is_loopback_only() {
+        let address = server_bind_address(None, Some("0")).unwrap();
+        let listener = tokio::net::TcpListener::bind(address).await.unwrap();
+        assert!(listener.local_addr().unwrap().ip().is_loopback());
+        assert_eq!(server_bind_address(None, None).unwrap().port(), 8000);
+    }
+
+    #[test]
+    fn explicit_server_bind_configuration_is_preserved() {
+        assert_eq!(
+            server_bind_address(Some("0.0.0.0"), Some("9000")).unwrap(),
+            "0.0.0.0:9000".parse::<SocketAddr>().unwrap()
+        );
+        assert_eq!(
+            server_bind_address(Some("127.0.0.1"), Some("invalid"))
+                .unwrap()
+                .port(),
+            8000
+        );
+        assert!(server_bind_address(Some("invalid-host"), None).is_err());
+    }
 
     async fn post_conversion(config: AppConfig, body: serde_json::Value) -> String {
         let body = body.to_string();

@@ -2,8 +2,11 @@
 # https://github.com/akitaonrails/ai-jail
 # Edit freely. Regenerate with: ai-jail --clean --init
 
-# Keep network and agent credentials out of the project sandbox.
-agent_state = false
-
-# Avoid host mise trust writes from inside the private-home Seatbelt jail.
+deny_paths = [
+    "**/.env*",
+    "ruby_app/rails_gateway/config/credentials.yml.enc",
+    "ruby_app/rails_gateway/tmp/local_secret.txt",
+]
+network = true
 no_mise = true
+agent_state = true

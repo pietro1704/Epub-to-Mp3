@@ -93,6 +93,7 @@ class LocalConversionJob {
     required this.createdAt,
     required this.updatedAt,
     this.bookTitle,
+    this.mode,
     this.manifestUsedSelections = const [],
     this.manifestFallbackUsed = false,
     this.conversionOptionsJson,
@@ -107,6 +108,7 @@ class LocalConversionJob {
   final String bookId;
   final String jobId;
   final String? bookTitle;
+  final String? mode;
   final List<TtsSelection> manifestUsedSelections;
   final bool manifestFallbackUsed;
   final List<LocalConversionChapter> chapters;
@@ -152,6 +154,7 @@ class LocalConversionJob {
     bookId: bookId,
     jobId: jobId,
     bookTitle: bookTitle,
+    mode: mode,
     manifestUsedSelections: manifestUsedSelections,
     manifestFallbackUsed: manifestFallbackUsed,
     conversionOptionsJson: conversionOptionsJson ?? this.conversionOptionsJson,
@@ -171,6 +174,7 @@ class LocalConversionJob {
     'bookId': bookId,
     'jobId': jobId,
     'bookTitle': ?bookTitle,
+    'mode': ?mode,
     if (manifestUsedSelections.isNotEmpty)
       'manifestUsedSelections': manifestUsedSelections
           .map((selection) => selection.toJson())
@@ -204,6 +208,7 @@ class LocalConversionJob {
     bookId: json['bookId'] as String,
     jobId: json['jobId'] as String,
     bookTitle: json['bookTitle'] as String?,
+    mode: json['mode'] as String?,
     manifestUsedSelections: (json['manifestUsedSelections'] as List? ?? const [])
         .whereType<Map>()
         .map((value) => TtsSelection.fromJson(Map<String, dynamic>.from(value)))
@@ -305,10 +310,11 @@ class LocalConversionJobStore {
   }
 
   Future<void> save(LocalConversionJob job) async {
-    await _prefs.setString(
+    final saved = await _prefs.setString(
       key(job.bookId, job.jobId),
       jsonEncode(job.toJson()),
     );
+    if (!saved) throw StateError('Could not persist local conversion history');
   }
 
   /// Projects a completed Rust manifest into local history. A legacy injected
@@ -375,6 +381,7 @@ class LocalConversionJobStore {
       bookId: bookId,
       jobId: jobId,
       bookTitle: manifest['title'] as String?,
+      mode: 'manual',
       manifestUsedSelections: used,
       manifestFallbackUsed: manifest['fallbackUsed'] == true,
       chapters: chapters,

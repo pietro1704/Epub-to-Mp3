@@ -4,7 +4,9 @@ python = "3.12.10"
 node = "lts"
 npm = "latest"
 # Project-managed Codex CLI; keep aligned with the global standalone install.
-"npm:@openai/codex" = "0.162.0"
+# Update from the repository root with: mise use --pin npm:@openai/codex@latest
+# Do not use Codex's global npm/pnpm updater for this mise-owned installation.
+"npm:@openai/codex" = "0.163.0"
 # Runtimes required by the cargo:git-cliff and cocoapods backends below.
 rust = "stable"
 ruby = "4.0.7"
@@ -100,8 +102,8 @@ description = "List converter-ffi native target mappings and exact output paths"
 run = "mise exec -- python scripts/build_converter_ffi.py --list"
 
 [tasks."native:build:preflight"]
-description = "Read-only Intel Mac check: Simulator shutdown and SimMetalHost exit before compilation"
-run = "ruby scripts/native_build_preflight.rb"
+description = "Read-only native host and Mac build-storage checks before compilation"
+run = "ruby scripts/native_build_preflight.rb && ruby -r ./scripts/mac_build_budget -e 'error = MacBuildBudget.check; abort(error) if error'"
 
 [tasks."models:catalog:test"]
 description = "Verify model catalog and atomic/checksummed installation contracts without downloading models"
@@ -449,64 +451,21 @@ echo "  - book cache (.cache/<book>), models preserved"
 echo "  - .mise-cache"
 """
 
+[tasks."build:storage"]
+description = "Inspect Mac free space and project build caches across linked worktrees"
+run = "ruby scripts/mac_build_budget.rb status"
+
+[tasks."build:storage:test"]
+description = "Verify build storage refusal, monitoring and cleanup exclusion without compiling"
+run = "ruby scripts/test_mac_build_budget.rb"
+
 [tasks."clean:build"]
-description = "Reclaim disk from iOS/macOS/Flutter build artifacts (DerivedData, .build, dist, flutter build/) — run periodically or when disk is low, NOT wired into mac:build itself since mac:run/CI consume its .build output immediately after."
-run = """
-#!/bin/bash
-set -e
-
-echo "🧹 Cleaning build artifacts..."
-
-# xcodebuild -derivedDataPath output for the headless mac:build/ios:build
-# tasks. Not auto-run after mac:build/mac:build:dev — mac:run and other
-# immediate consumers read the just-built .app straight out of here.
-echo "  → Removing ios/EpubToMp3/.build..."
-rm -rf ios/EpubToMp3/.build 2>/dev/null || true
-
-# Xcode.app's own DerivedData for this project, only if Xcode.app was ever
-# opened directly on it (headless builds above never populate this — see
-# "Build Artifact Hygiene" in CLAUDE.md: don't let two build caches for the
-# same project accumulate in parallel).
-echo "  → Removing Xcode DerivedData for EpubToMp3..."
-rm -rf "$HOME/Library/Developer/Xcode/DerivedData"/EpubToMp3-* 2>/dev/null || true
-
-echo "  → Removing Rust sidecar dist/..."
-rm -rf dist 2>/dev/null || true
-
-echo "  → Removing flutter_app/build..."
-rm -rf flutter_app/build 2>/dev/null || true
-
-echo "✅ Build artifacts cleaned!"
-"""
+description = "Prune superseded project Xcode caches under the native lease; preserve current artifacts"
+run = "ruby scripts/mac_build_budget.rb prune"
 
 [tasks."clean:build:if-low"]
-description = "Run clean:build only when free disk is below threshold and no build is active. Invoked every 6h by the com.pietro.epub-to-mp3-disk-guard LaunchAgent (~/bin/epub-to-mp3-disk-guard.sh)."
-run = """
-#!/bin/bash
-set -e
-
-THRESHOLD_GB="${DISK_GUARD_THRESHOLD_GB:-20}"
-# /System/Volumes/Data, not /: `df /` reports the sealed System snapshot
-# (barely moves regardless of real usage) — actual builds/caches live on
-# the Data volume. Checking `/` made this threshold nearly meaningless.
-AVAIL_GB="$(df -g /System/Volumes/Data | tail -1 | awk '{print $4}')"
-
-echo "Available: ${AVAIL_GB}Gi (threshold: ${THRESHOLD_GB}Gi)"
-
-if [ "$AVAIL_GB" -ge "$THRESHOLD_GB" ]; then
-  echo "Above threshold — nothing to do."
-  exit 0
-fi
-
-# Never delete a build's own output out from under it.
-if pgrep -f xcodebuild >/dev/null 2>&1; then
-  echo "xcodebuild is running — skipping this cycle."
-  exit 0
-fi
-
-echo "Below threshold — running clean:build"
-mise run clean:build
-"""
+description = "Prune superseded Xcode caches below the configured free-space floor, only without active jobs"
+run = "ruby scripts/mac_build_budget.rb prune-if-low"
 
 [tasks.install]
 description = "Install Python and web dependencies (venv + npm)"
@@ -802,6 +761,7 @@ xcodebuild \\
   -configuration "$CONFIG" \\
   -destination 'platform=macOS' \\
   -derivedDataPath ./.build \\
+  -jobs 1 \\
   -showBuildTimingSummary \\
   build | tail -20
 
@@ -931,6 +891,7 @@ if ! xcodebuild \\
        -configuration Debug \\
        -destination "${DEST}" \\
        -derivedDataPath ./.build \\
+       -jobs 1 \\
        -showBuildTimingSummary \\
        build >"${BUILD_LOG}" 2>&1; then
   echo "** BUILD FAILED **"
@@ -1070,7 +1031,7 @@ if ! xcodebuild \\
        -configuration Debug \\
        -destination "id=$XCODE_DEVICE" \\
        -derivedDataPath ./.build-device \\
-       -parallelizeTargets \\
+       -jobs 1 \\
        -showBuildTimingSummary \\
        build >"${BUILD_LOG}" 2>&1; then
   echo "** DEVICE BUILD FAILED **"

@@ -1989,6 +1989,42 @@ fn sanitize(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn empty_typed_manifest_metadata_preserves_legacy_shape_and_nondefault_round_trip() {
+        let legacy = serde_json::json!({
+            "jobId": "legacy", "title": "Book", "author": "Author", "chapters": [],
+            "archive": "book.zip", "cover": null,
+        });
+        let mut manifest: OutputManifest = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&manifest).unwrap(), legacy);
+        let primary = crate::tts_preferences::TtsSelection {
+            engine: "system".into(),
+            model_id: None,
+            voice: None,
+        };
+        manifest.tts_preferences = Some(crate::tts_preferences::TtsPreferences {
+            policy_version: None,
+            primary: primary.clone(),
+            secondary: None,
+            allow_online_fallback: false,
+        });
+        manifest.used_selections.push(primary);
+        manifest.fallback_used = true;
+        manifest
+            .tts_policy_state
+            .get_or_insert_with(Default::default)
+            .primary_failed(false, true)
+            .unwrap();
+        let encoded = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(encoded["fallbackUsed"], true);
+        assert_eq!(encoded["usedSelections"][0]["engine"], "system");
+        assert_eq!(encoded["ttsPolicyState"]["consecutive_failures"], 1);
+        assert_eq!(
+            serde_json::from_value::<OutputManifest>(encoded).unwrap(),
+            manifest
+        );
+    }
+
     use super::*;
 
     #[test]

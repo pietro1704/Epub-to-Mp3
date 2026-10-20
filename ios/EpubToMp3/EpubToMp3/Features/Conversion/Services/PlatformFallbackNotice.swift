@@ -14,7 +14,7 @@ final class PlatformFallbackNoticeTracker: @unchecked Sendable {
 
     func shouldNotify(progress: Data) -> Bool {
         guard let fields = try? JSONSerialization.jsonObject(with: progress) as? [String: Any],
-              (fields["engine"] as? String == "system" || fields["fallbackUsed"] as? Bool == true) else { return false }
+              ((fields["fallbackUsed"] as? Bool) ?? (fields["engine"] as? String == "system")) else { return false }
         lock.lock(); defer { lock.unlock() }
         guard !notified else { return false }
         notified = true

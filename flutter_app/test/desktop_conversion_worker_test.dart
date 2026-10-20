@@ -1,3 +1,10 @@
+import 'package:flutter_app/state/providers.dart';
+import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/screens/jobs_list_screen.dart';
+import 'package:flutter_app/services/local_conversion_job.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
@@ -136,6 +143,7 @@ Future<T> _whileNativeBlocked<T>(String root, Future<T> Function() operation) as
 
 void main() {
   if (!Platform.isMacOS && !Platform.isLinux) return;
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory directory;
   late String library;
   setUpAll(() async {
@@ -157,6 +165,59 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stderr}');
   });
   tearDownAll(() async => directory.delete(recursive: true));
+
+  testWidgets(
+    'desktop Jobs keeps local details without unsupported Rust log controls',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await LocalConversionJobStore(prefs).save(
+        LocalConversionJob(
+          bookId: 'desktop-book',
+          jobId: 'desktop-rust-id',
+          bookTitle: 'Desktop Book',
+          status: LocalConversionJobStatus.failed,
+          createdAt: DateTime.utc(2026, 1, 1),
+          updatedAt: DateTime.utc(2026, 1, 1),
+          error: 'Persisted failure',
+          chapters: const [
+            LocalConversionChapter(
+              index: 0,
+              name: 'One',
+              status: 'completed',
+              outputPath: '/local/audio.mp3',
+            ),
+          ],
+        ),
+      );
+      EmbeddedConverterRegistry.register(
+        DesktopEmbeddedConverter(libraryPath: library),
+      );
+      try {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+            child: const MaterialApp(
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: JobsListScreen(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Desktop Book'), findsOneWidget);
+        expect(find.byIcon(Icons.article_outlined), findsNothing);
+        await tester.tap(find.text('Desktop Book'));
+        await tester.pumpAndSettle();
+        expect(find.text('desktop-rust-id'), findsOneWidget);
+        expect(find.text('Persisted failure'), findsOneWidget);
+        expect(find.textContaining('/local/audio.mp3'), findsOneWidget);
+        expect(find.text('Conversion log'), findsNothing);
+      } finally {
+        EmbeddedConverterRegistry.clear();
+      }
+    },
+  );
 
   test('new defaults register native speech inside the conversion worker', () async {
     final converter = DesktopEmbeddedConverter(libraryPath: library);

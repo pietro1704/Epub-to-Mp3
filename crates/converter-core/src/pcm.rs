@@ -1,4 +1,4 @@
-//! Platform-independent PCM WAV to normalized MP3 encoding shared by native and WASM clients.
+//! PCM WAV to MP3 encoding, with normalized segments shared by native and WASM clients.
 
 fn encoder_error(message: impl Into<String>) -> String {
     message.into()
@@ -241,6 +241,25 @@ mod tests {
         bytes.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&pcm);
         bytes
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn standalone_source_rate_and_mixed_segment_rate_remain_distinct() {
+        let input = wav(22_050);
+        for (encoded, expected_rate) in [
+            (encode_wav_mp3_at_source_rate(&input).unwrap(), 22_050),
+            (encode_wav_mp3(&input).unwrap(), 24_000),
+        ] {
+            let mut decoder = rusty_mp3::Mp3Decoder::new();
+            decoder.push(&encoded);
+            decoder.flush();
+            let frame = decoder.next_frame().unwrap();
+            assert_eq!(frame.sample_rate, expected_rate);
+            assert_eq!(frame.channels, 1);
+            assert!(!frame.samples.is_empty());
+        }
+        assert!(encode_wav_mp3_at_source_rate(&wav(12_345)).is_err());
     }
 
     #[test]

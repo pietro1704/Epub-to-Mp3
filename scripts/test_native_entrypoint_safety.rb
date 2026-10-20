@@ -12,11 +12,11 @@ class NativeEntrypointSafetyTest < Minitest::Test
 
   def test_booted_simulator_blocks_before_every_bootstrap_compiler
     skip "Intel macOS policy" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-    %w[device-workflow.sh].each do |entry|
+    %w[verify_tts_preferences.rb verify_portable_tts.rb device-workflow.sh].each do |entry|
       Dir.mktmpdir("native-entry-safety-") do |directory|
         scripts = File.join(directory, "scripts")
         FileUtils.mkdir_p(scripts)
-        %W[#{entry} native_job.rb native_build_preflight.rb].each do |name|
+        %W[#{entry} native_job.rb native_build_preflight.rb mac_build_budget.rb].each do |name|
           content = File.read(File.join(ROOT, "scripts", name)).gsub("/tmp/epub2mp3.heavy-job.lock", File.join(directory, "lease"))
           File.write(File.join(scripts, name), content)
         end

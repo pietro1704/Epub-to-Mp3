@@ -24,9 +24,13 @@ class NativeTaskWiringTest < Minitest::Test
     @events = File.join(@dir, "events")
     @target_dir = File.join(@dir, "custom-target")
     FileUtils.mkdir_p([@bin, File.join(@dir, "scripts"), File.join(@dir, "ios/EpubToMp3"), File.join(@target_dir, "debug")])
-    %w[native_job.rb native_build_preflight.rb native_build_command.rb].each do |file|
+    %w[native_job.rb native_build_preflight.rb native_build_command.rb mac_build_budget.rb].each do |file|
       FileUtils.cp(File.join(__dir__, file), File.join(@dir, "scripts", file))
     end
+    FileUtils.mkdir_p(File.join(@dir, "config"))
+    FileUtils.cp(File.join(ROOT, "config/mac-build-budget.json"), File.join(@dir, "config"))
+    _, error, status = Open3.capture3("git", "init", "-q", @dir)
+    raise "Cannot initialize isolated task fixture: #{error}" unless status.success?
     FileUtils.cp(File.join(__dir__, "dev_backend.sh"), File.join(@dir, "scripts", "dev_backend.sh"))
     wasm_build = File.join(@dir, "scripts/build_web_wasm.sh")
     File.write(wasm_build, "#!/bin/bash\nset -euo pipefail\nmise exec -- cargo build -p converter-wasm --target wasm32-unknown-unknown --release\n")
