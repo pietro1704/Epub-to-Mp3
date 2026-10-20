@@ -37,6 +37,11 @@ else if (args[0] === 'pr' && args[1] === 'view') response = data.pr;
 else if (args[0] === 'pr' && args[1] === 'merge') { data.pr.state = 'MERGED'; data.pr.mergeCommit = { oid: 'c'.repeat(40) }; fs.writeFileSync('fixture.json', JSON.stringify(data)); response = {}; }
 else if (args[0] === 'workflow' && args[1] === 'run') response = {};
 else if (args[0] === 'api' && args.includes('--method')) response = {};
+else if (args[0] === 'api' && args.at(-1).endsWith('/protection')) response = {
+  enforce_admins: { enabled: true }, required_status_checks: {
+    strict: true, contexts: ['PR gate'], checks: [{ context: 'PR gate', app_id: 15368 }],
+  },
+};
 else if (args[0] === 'api' && args.at(-1).includes('/compare/')) response = data.comparison;
 else if (args[0] === 'api' && args.at(-1).includes('/actions/workflows/')) {
   response = [{ workflow_runs: args.at(-1).includes('codeql.yml') ? data.securityRuns : data.runs }];
