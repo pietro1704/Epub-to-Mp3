@@ -2809,6 +2809,8 @@ mod tests {
             let result = worker.run(ConversionRequest {
                 input,
                 job_id: "cancelled-job".into(),
+                tts_preferences: None,
+                models_root: None,
                 engine: Some("system".into()),
                 voice: None,
                 language: Some("pt-BR".into()),

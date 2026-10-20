@@ -151,6 +151,8 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
             .run(ConversionRequest {
                 input: input.clone(),
                 job_id: job.into(),
+                tts_preferences: None,
+                models_root: None,
                 engine: Some("piper".into()),
                 voice: None,
                 language: None,
@@ -319,8 +321,6 @@ fn explicit_model_reaches_worker_thread_without_environment_override() {
             input,
             job_id: "explicit-model-job".into(),
             engine: Some("piper".into()),
-            piper_model: None,
-            piper_config: None,
             voice: None,
             language: None,
             chapter_indices: Some(vec!["position:1".into()]),

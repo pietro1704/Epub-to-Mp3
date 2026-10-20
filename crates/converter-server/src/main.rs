@@ -1356,8 +1356,6 @@ mod tests {
             engine: None,
             voice: None,
             language: None,
-            piper_model: None,
-            piper_config: None,
             tts_preferences: None,
             models_root: None,
             chapter_indices: None,
