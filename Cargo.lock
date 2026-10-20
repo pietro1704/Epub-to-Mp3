@@ -664,7 +664,9 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
+ "zip",
 ]
 
 [[package]]

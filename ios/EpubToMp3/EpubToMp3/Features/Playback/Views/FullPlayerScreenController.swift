@@ -447,6 +447,9 @@ final class FullPlayerScreenController: UIViewController {
         chapterLabel.text = player.snapshot == nil
             ? L10n.string("player.chapter", UserDefaults.standard.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey) + 1)
             : player.effectiveChapterTitle
+        if let voice = player.snapshot?.activeVoiceDisplayName {
+            chapterLabel.text = (chapterLabel.text ?? "") + "\n" + voice
+        }
 
         if let data = currentBook?.coverPNG, let image = UIImage(data: data) {
             coverImageView.image = image

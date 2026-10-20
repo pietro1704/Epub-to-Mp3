@@ -24,6 +24,17 @@ function client(f) {
   };
 }
 const verify = (f, extra = {}) => validatedMerge({ repo, ref: sha, api: client(f), ...extra });
+test('dispatched post-merge validation accepts only a successful exact confirmed merge', async () => {
+  const f = fixture();
+  f.runs[0].event = 'workflow_dispatch';
+  f.run.event = 'workflow_dispatch';
+  assert.equal((await verify(f, { latest: true })).sha, sha);
+  f.run.conclusion = 'failure';
+  await assert.rejects(verify(f), /unsuccessful|stale/);
+  f.run.conclusion = 'success';
+  f.prs[0].merge_commit_sha = tip;
+  await assert.rejects(verify(f), /confirmed master merge/);
+});
 test('only successful exact merged revision is accepted; historical release stays possible', async () => {
   const f = fixture(); assert.equal((await verify(f, { latest: true, tag: 'v1.2.3' })).sha, sha);
   f.master = tip; f.comparison.status = 'ahead';

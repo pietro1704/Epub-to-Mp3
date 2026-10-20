@@ -695,12 +695,15 @@ final class SettingsScreenController: UITableViewController {
     private func clearAllDownloads() {
         Task { [weak self] in
             guard let self else { return }
-            await DownloadManager.shared.cancelAll()
-            try? await LocalAudioArtifactStore.shared.clearAllAudio()
-            StorageUsageScanner.clearAllDownloads()
-            for var book in self.library.books where book.cachedOffline {
-                book.cachedOffline = false
-                self.library.update(book)
+            do {
+                try await AudioStorageMaintenance().clearAllDownloads()
+                for var book in self.library.books where book.cachedOffline {
+                    book.cachedOffline = false
+                    self.library.update(book)
+                }
+            } catch {
+                self.presentInfoAlert(title: L10n.string("settings.storageRemovalFailedTitle"),
+                    message: L10n.string("settings.storageRemovalFailedMessage") + "\n\n" + error.localizedDescription)
             }
             self.refreshStorageUsage()
             self.tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
@@ -709,9 +712,13 @@ final class SettingsScreenController: UITableViewController {
 
     private func clearTemporaryAudio() {
         Task { [weak self] in
-            StorageUsageScanner.clearLegacyTemporaryAudio()
-            try? await LocalAudioArtifactStore.shared.clearTemporaryAudio()
             guard let self else { return }
+            do {
+                try await AudioStorageMaintenance().clearTemporaryAudio()
+            } catch {
+                self.presentInfoAlert(title: L10n.string("settings.storageRemovalFailedTitle"),
+                    message: L10n.string("settings.storageRemovalFailedMessage") + "\n\n" + error.localizedDescription)
+            }
             self.refreshStorageUsage()
             self.tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
         }

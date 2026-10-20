@@ -9,6 +9,7 @@ struct AudioStorageMaintenance: Sendable {
     private let downloadManager: DownloadManager?
     private let cancelDownloads: (@Sendable () async -> Void)?
     private let notificationCenter: NotificationCenter
+    private let rustOutputs: RustConversionOutputStore
 
     init(
         artifactStore: LocalAudioArtifactStore = .shared,
@@ -17,7 +18,8 @@ struct AudioStorageMaintenance: Sendable {
             .appendingPathComponent("epub2mp3-tts", isDirectory: true),
         downloadManager: DownloadManager? = nil,
         cancelDownloads: (@Sendable () async -> Void)? = nil,
-        notificationCenter: NotificationCenter = .default
+        notificationCenter: NotificationCenter = .default,
+        rustOutputs: RustConversionOutputStore = .shared
     ) {
         self.artifactStore = artifactStore
         self.legacyAudiobooksRoot = legacyAudiobooksRoot
@@ -25,6 +27,7 @@ struct AudioStorageMaintenance: Sendable {
         self.downloadManager = downloadManager
         self.cancelDownloads = cancelDownloads
         self.notificationCenter = notificationCenter
+        self.rustOutputs = rustOutputs
     }
 
     func clearAllDownloads() async throws {
@@ -32,9 +35,11 @@ struct AudioStorageMaintenance: Sendable {
         try await manager.withStorageMaintenance {
             await cancelDownloads?()
             try Task.checkCancellation()
-            try await artifactStore.clearAllAudio()
-            try removeLegacyRoot(legacyAudiobooksRoot)
-            try removeLegacyRoot(legacyTTSRoot)
+            try await rustOutputs.clearAllAudio {
+                try await artifactStore.clearAllAudio()
+                try removeLegacyRoot(legacyAudiobooksRoot)
+                try removeLegacyRoot(legacyTTSRoot)
+            }
             notificationCenter.post(name: ChapterCacheManager.clearAllNotification, object: nil)
         }
     }

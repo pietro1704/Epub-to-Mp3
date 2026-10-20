@@ -3125,6 +3125,84 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_job_rejection_preserves_another_invocations_record_and_outputs() {
+        use converter_core::jobs::{JobManager, JobRecord, JobState};
+        let book = fixture();
+        let root = tempfile::tempdir().unwrap();
+        let manager = JobManager::new(root.path().join(".jobs")).unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let options = CString::new(r#"{"engine":"system","language":"pt-BR"}"#).unwrap();
+        for state in [
+            JobState::Queued,
+            JobState::Running,
+            JobState::Cancelled,
+            JobState::Completed,
+        ] {
+            let id = format!("owned-{state:?}");
+            let directory = root.path().join(&id);
+            std::fs::create_dir_all(&directory).unwrap();
+            for name in ["chapter.mp3", "manifest.json", "conversion.log"] {
+                std::fs::write(directory.join(name), format!("winner-owned {name}")).unwrap();
+            }
+            let mut record = JobRecord::new(&id, Default::default());
+            record.state = state;
+            manager.create(record.clone()).unwrap();
+            let record_bytes =
+                std::fs::read(root.path().join(".jobs").join(format!("{id}.json"))).unwrap();
+            let calls = std::sync::atomic::AtomicUsize::new(0);
+            let output = CString::new(directory.to_str().unwrap()).unwrap();
+            let job = CString::new(id).unwrap();
+            unsafe {
+                let session = converter_session_open(input.as_ptr());
+                assert!(!session.is_null());
+                assert!(converter_session_set_platform_tts_v1(
+                    session,
+                    Some(platform_test_speech),
+                    (&calls as *const std::sync::atomic::AtomicUsize)
+                        .cast_mut()
+                        .cast(),
+                ));
+                let response = converter_session_convert_job_options_json_v1(
+                    session,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                );
+                assert!(response.is_null(), "a duplicate invocation must not start");
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+                converter_string_free(error);
+                converter_session_free(session);
+                assert!(message.contains("job storage error"), "{message}");
+            }
+            assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 0);
+            assert_eq!(manager.load(&record.job_id).unwrap(), record);
+            assert_eq!(
+                std::fs::read(
+                    root.path()
+                        .join(".jobs")
+                        .join(format!("{}.json", record.job_id))
+                )
+                .unwrap(),
+                record_bytes
+            );
+            for name in ["chapter.mp3", "manifest.json", "conversion.log"] {
+                assert_eq!(
+                    std::fs::read(directory.join(name)).unwrap(),
+                    format!("winner-owned {name}").as_bytes()
+                );
+            }
+            assert_eq!(std::fs::read_dir(directory).unwrap().count(), 3);
+        }
+    }
+
+    #[test]
     fn platform_callback_synthesizes_a_validated_job_without_network_or_piper() {
         let book = fixture();
         let root = tempfile::tempdir().unwrap();

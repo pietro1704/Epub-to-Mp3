@@ -4,6 +4,45 @@ import AVFoundation
 import Darwin
 
 final class RustConversionCoordinatorTests: XCTestCase {
+    func testProgressAndChapterPreserveResolvedVoiceAndRejectForeignJobs() throws {
+        func progress(_ engine: String, model: String? = nil, voice: String? = nil, job: String = "active") throws -> RustConversionCoordinator.ConversionProgressEvent {
+            var object: [String: Any] = ["jobId": job, "state": "running", "chaptersTotal": 3,
+                "chaptersCompleted": 0, "percent": 0, "engine": engine, "message": "Fixture"]
+            object["modelId"] = model; object["voice"] = voice
+            return try JSONDecoder().decode(RustConversionCoordinator.ConversionProgressEvent.self,
+                                           from: JSONSerialization.data(withJSONObject: object))
+        }
+        let chapter = RustConversionCoordinator.ChapterCompletionEvent(jobId: "active", bookTitle: "Book", bookAuthor: "Author",
+            chapterIndex: 0, chaptersTotal: 3, chaptersCompleted: 1, chapterTitle: "Chapter", filename: "one.mp3",
+            audioPath: URL(fileURLWithPath: "/fixture/one.mp3"), textChars: 50)
+        let initial = chapter.snapshot(chapters: [])
+        let primary = try progress("piper", model: "pt_BR-faber-medium").updating(initial)
+        let completed = chapter.snapshot(chapters: [chapter.playableChapter], preserving: primary)
+        XCTAssertEqual(completed.voice, "pt_BR-faber-medium")
+        let unresolvedFallback = try progress("system").updating(completed)
+        XCTAssertNil(unresolvedFallback.voice, "System fallback cannot retain the old Piper model as its voice")
+        let fallback = try progress("system", voice: "Luciana (installed.luciana)").updating(unresolvedFallback)
+        XCTAssertEqual(chapter.snapshot(chapters: [chapter.playableChapter], preserving: fallback).voice,
+                       "Luciana (installed.luciana)")
+        let recovered = try progress("piper", model: "pt_BR-faber-medium").updating(fallback)
+        XCTAssertEqual(recovered.engine, "piper")
+        XCTAssertEqual(recovered.voice, "pt_BR-faber-medium")
+        XCTAssertEqual(try progress("edge", voice: "foreign", job: "retired").updating(recovered), recovered)
+        // A foreign chapter cannot erase or replace the current session.
+        let foreign = RustConversionCoordinator.ChapterCompletionEvent(jobId: "retired", bookTitle: "Old", bookAuthor: "Author", chapterIndex: 0,
+            chaptersTotal: 1, chaptersCompleted: 1, chapterTitle: "Old", filename: "old.mp3",
+            audioPath: URL(fileURLWithPath: "/fixture/old.mp3"), textChars: 1)
+        XCTAssertEqual(foreign.snapshot(chapters: [], preserving: recovered), recovered)
+    }
+
+    func testEnrichedChapterReportsActualSystemVoiceWithoutPriorProgressDelivery() throws {
+        let payload = Data(#"{"jobId":"active","bookTitle":"Book","bookAuthor":"Author","chapterIndex":0,"chaptersTotal":1,"chaptersCompleted":1,"chapterTitle":"Chapter","filename":"one.mp3","audioPath":"/fixture/one.mp3","textChars":50,"engine":"system","voice":"Luciana (installed.luciana)"}"#.utf8)
+        let event = try JSONDecoder().decode(RustConversionCoordinator.ChapterCompletionEvent.self, from: payload)
+        let snapshot = event.snapshot(chapters: [event.playableChapter])
+        XCTAssertEqual(snapshot.engine, "system")
+        XCTAssertEqual(snapshot.voice, "Luciana (installed.luciana)")
+    }
+
     func testProgressUsesActualSecondaryModelAndVoice() throws {
         let json = #"{"jobId":"fixture","state":"running","chaptersTotal":1,"chaptersCompleted":0,"percent":0,"engine":"edge","voice":"pt-BR-FranciscaNeural","fallbackUsed":true,"message":"Using edge"}"#
         let event = try JSONDecoder().decode(RustConversionCoordinator.ConversionProgressEvent.self, from: Data(json.utf8))

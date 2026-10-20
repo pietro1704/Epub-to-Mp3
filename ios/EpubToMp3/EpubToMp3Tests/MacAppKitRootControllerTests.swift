@@ -8,6 +8,123 @@ import CryptoKit
 
 final class MacAppKitRootControllerTests: XCTestCase {
     @MainActor
+    func testExpandedMacPlayerDisplaysResolvedInstalledVoiceName() throws {
+        let id = "MacActiveVoice.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defer { defaults.removePersistentDomain(forName: id) }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defer { player.stop() }
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data(#"{"jobId":"voice-fixture","state":"running","engine":"system","voice":"Luciana (installed.luciana)"}"#.utf8))
+        player.setSnapshot(snapshot)
+        let controller = MacFullPlayerViewController(player: player,
+            library: LibraryStore(defaults: defaults, defaultsKey: "library"),
+            presentation: PlayerPresentation(defaults: defaults), onStartPlayback: {})
+        func status(in view: NSView) -> NSTextField? {
+            if let label = view as? NSTextField, label.accessibilityIdentifier() == "fullPlayer.chapterAndVoice" { return label }
+            return view.subviews.lazy.compactMap { status(in: $0) }.first
+        }
+        let label = try XCTUnwrap(status(in: controller.view))
+        XCTAssertTrue(label.stringValue.contains("Luciana"))
+        XCTAssertFalse(label.stringValue.contains("installed.luciana"), "Implementation identifiers stay in diagnostics")
+    }
+
+    @MainActor
+    func testReplacingWindowLimitedConversionAdmitsNewBookAndIgnoresRetiredCompletionAndFailure() async throws {
+        for retiredFails in [false, true] {
+            let id = "MacPlaybackReplacement.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+            let standard = UserDefaults.standard
+            let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.currentBookIDDefaultsKey,
+                        AudioPlayer.readerCurrentChapterIndexDefaultsKey]
+            let saved = keys.map { standard.object(forKey: $0) }
+            let widgetDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
+            let savedWidgetBook = widgetDefaults?.object(forKey: "currentlyPlayingBookId")
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(id)
+            let library = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: directory)
+            let firstSource = try EpubFixture.createWithChapters(["First one", "First two", "First three", "First four"])
+            let secondSource = try EpubFixture.createWithChapters(["Second one", "Second two", "Second three"])
+            let first = try library.importBook(from: firstSource)
+            let second = try library.importBook(from: secondSource)
+            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+            var continuations: [AsyncStream<Void>.Continuation] = []
+            var controls: [ConverterPlaybackControl] = []
+            var jobs: [String] = []
+            var retiredReturned = false
+            let root = MacAppKitRootController(settings: AppSettings(defaults: defaults), library: library,
+                player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+                playerPresentation: PlayerPresentation(defaults: defaults),
+                conversionExecutor: { _, jobID, _, _, control, _, _, _, _ in
+                    let position = jobs.count
+                    jobs.append(jobID); controls.append(control)
+                    var continuation: AsyncStream<Void>.Continuation!
+                    let stream = AsyncStream<Void> { continuation = $0 }
+                    continuations.append(continuation)
+                    // Model a real worker held after it fills the two-chapter playback window.
+                    for await _ in stream { }
+                    if position == 0 {
+                        retiredReturned = true
+                        if retiredFails { throw CancellationError() }
+                    }
+                    let manifest = try JSONSerialization.data(withJSONObject: ["manifest": [
+                        "jobId": jobID, "title": "Fixture", "author": "Author", "chapters": [
+                            ["sourceIndex": 0, "filename": "chapter.mp3", "title": "Chapter", "textChars": 50]]]])
+                    return .init(jobID: jobID, manifestJSON: manifest, outputDirectory: directory)
+                })
+            defer {
+                for continuation in continuations { continuation.finish() }
+                NotificationCenter.default.post(name: RustConversionOutputStore.willRemoveAudio, object: nil)
+                player.stop()
+                for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
+                widgetDefaults?.set(savedWidgetBook, forKey: "currentlyPlayingBookId")
+                defaults.removePersistentDomain(forName: id)
+                try? FileManager.default.removeItem(at: directory)
+                try? FileManager.default.removeItem(at: firstSource)
+                try? FileManager.default.removeItem(at: secondSource)
+            }
+            func wait(_ predicate: () -> Bool) async throws {
+                for _ in 0..<200 {
+                    if predicate() { return }
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                }
+                XCTFail("Replacement conversion did not reach its expected state")
+            }
+            standard.set(first.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            standard.set(first.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
+            standard.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+            _ = root.view
+            root.startPlaybackForCurrentBook()
+            try await wait { jobs.count == 1 }
+            root.startPlaybackForCurrentBook()
+            XCTAssertEqual(jobs.count, 1, "A repeated same-book Play must not start a replacement conversion")
+            standard.set(second.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            root.startPlaybackForCurrentBook()
+            try await wait { jobs.count == 2 }
+            XCTAssertTrue(controls[0].isCancellationRequested)
+            XCTAssertFalse(controls[1].isCancellationRequested)
+            XCTAssertEqual(player.snapshot?.jobId, jobs[1])
+            continuations[0].finish()
+            try await wait { retiredReturned }
+            await Task.yield()
+            XCTAssertEqual(player.snapshot?.jobId, jobs[1])
+            XCTAssertFalse(controls[1].isCancellationRequested,
+                           "A retired failure/completion must not cancel the replacement control")
+            XCTAssertNil(library.books.first(where: { $0.id == first.id })?.lastJobId,
+                         "An invalidated completion must not record a stale playback job")
+            NotificationCenter.default.post(name: RustConversionOutputStore.willRemoveAudio,
+                                             object: nil, userInfo: ["bookID": first.id])
+            XCTAssertFalse(controls[1].isCancellationRequested, "Storage removal of another book preserves playback")
+            let external = try JSONDecoder().decode(JobSnapshot.self,
+                from: Data(#"{"jobId":"external-owner","state":"running","bookTitle":"External owner"}"#.utf8))
+            player.setSnapshot(external)
+            XCTAssertTrue(controls[1].isCancellationRequested,
+                          "A different playback owner must release the old window-limited worker")
+            XCTAssertEqual(player.snapshot, external, "Retirement must not stop the replacement player")
+            NotificationCenter.default.post(name: RustConversionOutputStore.willRemoveAudio, object: nil)
+            XCTAssertNil(player.snapshot)
+        }
+    }
+
+    @MainActor
     func testSpeedMenuUsesRequestedRatesAndAppliesSelection() async throws {
         let suiteName = "mac-speed-menu-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

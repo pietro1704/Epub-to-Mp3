@@ -1,29 +1,10 @@
 import Foundation
 
-/// Minimal pure-Swift EPUB → `EbookFulltext` safety net. Used ONLY when
-/// the backend fulltext pipeline — the sole
-/// source of truth for book structure — fails or times out.
-///
-/// Python (`python_app/src/ebook_reader.py`) owns every structural
-/// feature: TOC hierarchy, footnote extraction, oversized-chapter
-/// detection, duplicate-chapter removal, per-chapter language tagging,
-/// title resolution. This parser deliberately does NOT re-implement any
-/// of that — it exists to put *readable plain text* on screen when Python
-/// is unavailable, nothing more. Duplicating that logic here means two
-/// implementations drifting apart, and it's exactly what caused a
-/// multi-GB memory crash (`stripHTML` running unbounded regex over a
-/// whole book after a spine misparse) that a plain-text-only parser has
-/// no surface for.
-///
-/// Strategy: walk the OPF `<spine>` in order and preserve the source XHTML.
-/// Plain text remains available for search and speech fallback, while the
-/// native reader renders the original markup with its safe default CSS.
-/// EPUB stylesheet rules are intentionally excluded: this safety net cannot
-/// validate viewport-bound `height` or `overflow` rules that would clip text.
-///
-/// Never throws: returns an empty `EbookFulltext` (zero chapters) if the
-/// EPUB is truly unreadable. Callers decide whether to surface that as an
-/// error.
+/// Local Apple reader projection of an EPUB. Preserve spine document identity
+/// and source markup, while using the declared EPUB navigation for labels and
+/// hierarchy. Rust remains responsible for conversion and synthesis structure.
+/// This reader projection does not split/reorder chapters or import publisher CSS.
+/// Unreadable input yields an empty payload; missing navigation keeps a flat list.
 enum EpubFallbackParser {
 
     /// Keep archive IO and extraction independent of the caller's executor.
@@ -50,19 +31,31 @@ enum EpubFallbackParser {
         let opfInfo = parseOPFForSpine(data: opfData)
         let opfDir = (opfPath as NSString).deletingLastPathComponent
 
+        let navigation = navigationNodes(info: opfInfo, opfDirectory: opfDir, archiveURL: url)
+        var navigationTitles: [String: String] = [:]
+        func collectTitles(_ nodes: [NavigationNode]) {
+            for node in nodes {
+                if let path = node.path, navigationTitles[path] == nil, !node.title.isEmpty {
+                    navigationTitles[path] = node.title
+                }
+                collectTitles(node.children)
+            }
+        }
+        collectTitles(navigation)
+
         // 3. Resolve each spine idref to its href and preserve source markup.
         var chapters: [EbookFulltext.Chapter] = []
         var index = 1
         for idref in opfInfo.spineOrder {
             guard let href = opfInfo.manifest[idref] else { continue }
-            let chapterPath = opfDir.isEmpty ? href : "\(opfDir)/\(href)"
+            let chapterPath = normalizeZipPath(opfDir.isEmpty ? href : "\(opfDir)/\(href)")
             guard let htmlData = ZipReader.extract(member: chapterPath, from: url),
                   let html = String(data: htmlData, encoding: .utf8) ?? String(data: htmlData, encoding: .isoLatin1) else {
                 continue
             }
             let text = stripHTML(html).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
-            let title = firstHeading(in: html) ?? "Chapter \(index)"
+            let title = navigationTitles[chapterPath] ?? firstHeading(in: html) ?? "Chapter \(index)"
             let resources = imageResources(in: html, chapterPath: chapterPath, archiveURL: url)
             let footnotes = linkedFootnotes(in: html, chapterPath: chapterPath, archiveURL: url)
             chapters.append(EbookFulltext.Chapter(
@@ -80,12 +73,120 @@ enum EpubFallbackParser {
             index += 1
         }
 
+        var chapterIndices: [String: Int] = [:]
+        for chapter in chapters {
+            if let path = chapter.sourcePath, chapterIndices[path] == nil { chapterIndices[path] = chapter.index }
+        }
+        func entries(_ nodes: [NavigationNode], level: Int) -> [EbookFulltext.TocEntry] {
+            nodes.map { node in
+                .init(title: node.title, level: level, chapterIndex: node.path.flatMap { chapterIndices[$0] },
+                      children: entries(node.children, level: level + 1))
+            }
+        }
         return EbookFulltext(
             jobId: bookId,
             bookTitle: opfInfo.title,
             bookAuthor: opfInfo.author,
-            chapters: chapters
+            chapters: chapters,
+            toc: navigation.isEmpty ? nil : entries(navigation, level: 1)
         )
+    }
+
+    private final class NavigationNode {
+        var title = ""
+        var href: String?
+        var path: String?
+        var children: [NavigationNode] = []
+    }
+
+    private static func navigationNodes(info: OPFInfo, opfDirectory: String, archiveURL: URL) -> [NavigationNode] {
+        let ncx = (info.spineTocID ?? info.ncxID).flatMap { info.manifest[$0] }
+        for (href, isNav) in [(info.navigationHref, true), (ncx, false)] {
+            guard let href,
+                  let path = navigationPath(href, relativeTo: opfDirectory),
+                  let data = ZipReader.extract(member: path, from: archiveURL),
+                  data.count <= 2 * 1024 * 1024 else { continue }
+            let delegate = NavigationDelegate(isNav: isNav)
+            let parser = XMLParser(data: data)
+            parser.shouldResolveExternalEntities = false
+            parser.delegate = delegate
+            guard parser.parse(), !delegate.roots.isEmpty else { continue }
+            let directory = (path as NSString).deletingLastPathComponent
+            func resolve(_ nodes: [NavigationNode]) {
+                for node in nodes {
+                    node.title = node.title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                    node.path = node.href.flatMap { navigationPath($0, relativeTo: directory) }
+                    resolve(node.children)
+                }
+            }
+            resolve(delegate.roots)
+            return delegate.roots
+        }
+        return []
+    }
+
+    /// Fragment anchors belong to their containing spine document; they never
+    /// become chapter ordinals. External links cannot resolve to local chapters.
+    private static func navigationPath(_ href: String, relativeTo directory: String) -> String? {
+        guard !href.hasPrefix("/"), !href.contains(":"), !href.unicodeScalars.contains(where: { $0.value == 0 }) else { return nil }
+        guard let file = href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first,
+              !file.isEmpty else { return nil }
+        let decoded = String(file).removingPercentEncoding ?? String(file)
+        return normalizeZipPath(directory.isEmpty ? decoded : "\(directory)/\(decoded)")
+    }
+
+    private final class NavigationDelegate: NSObject, XMLParserDelegate {
+        let isNav: Bool
+        var roots: [NavigationNode] = []
+        private var stack: [NavigationNode] = []
+        private var elementDepth = 0
+        private var tocDepth: Int?
+        private var labelDepth: Int?
+        private var nodes = 0
+
+        init(isNav: Bool) { self.isNav = isNav }
+
+        func parser(_ parser: XMLParser, didStartElement elementName: String,
+                    namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+            elementDepth += 1
+            let tag = elementName.split(separator: ":").last.map(String.init)?.lowercased() ?? elementName
+            if isNav, tag == "nav", tocDepth == nil {
+                let type = attributes["epub:type"] ?? attributes["type"] ?? ""
+                if type.split(whereSeparator: \.isWhitespace).contains("toc") || attributes["role"] == "doc-toc" {
+                    tocDepth = elementDepth
+                }
+            }
+            guard !isNav || tocDepth != nil else { return }
+            if tag == (isNav ? "li" : "navpoint") {
+                nodes += 1
+                guard nodes <= 10_000, stack.count < 64 else { parser.abortParsing(); return }
+                let node = NavigationNode()
+                if let parent = stack.last { parent.children.append(node) } else { roots.append(node) }
+                stack.append(node)
+            }
+            guard let node = stack.last else { return }
+            if isNav && (tag == "a" || tag == "span") && labelDepth == nil {
+                node.href = attributes["href"]
+                labelDepth = elementDepth
+            } else if !isNav && tag == "content" { node.href = attributes["src"] }
+            else if !isNav && tag == "text" { labelDepth = elementDepth }
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            guard labelDepth != nil, let node = stack.last else { return }
+            node.title.append(string)
+        }
+
+        func parser(_ parser: XMLParser, didEndElement elementName: String,
+                    namespaceURI: String?, qualifiedName: String?) {
+            let tag = elementName.split(separator: ":").last.map(String.init)?.lowercased() ?? elementName
+            if elementDepth == labelDepth { labelDepth = nil }
+            if (!isNav || tocDepth != nil), tag == (isNav ? "li" : "navpoint"), !stack.isEmpty {
+                stack.removeLast()
+            }
+            if elementDepth == tocDepth { tocDepth = nil }
+            elementDepth -= 1
+        }
     }
 
     private static func firstHeading(in html: String) -> String? {
@@ -216,6 +317,9 @@ enum EpubFallbackParser {
         var author: String?
         var manifest: [String: String] = [:]  // idref → href
         var cssHrefs: [String] = []
+        var navigationHref: String?
+        var ncxID: String?
+        var spineTocID: String?
         var spineOrder: [String] = []          // idrefs in reading order
     }
 
@@ -366,11 +470,16 @@ private final class SpineDelegate: NSObject, XMLParserDelegate {
         if tag == "item",
            let id = attributeDict["id"],
            let href = attributeDict["href"] {
-            info.manifest[id] = href
+            info.manifest[id] = href.removingPercentEncoding ?? href
+            if attributeDict["properties"]?.split(whereSeparator: \.isWhitespace).contains("nav") == true {
+                info.navigationHref = href
+            }
+            if attributeDict["media-type"]?.lowercased() == "application/x-dtbncx+xml" { info.ncxID = id }
             if attributeDict["media-type"]?.lowercased() == "text/css" || href.lowercased().hasSuffix(".css") {
                 info.cssHrefs.append(href)
             }
         }
+        if tag == "spine" { info.spineTocID = attributeDict["toc"] }
         if tag == "itemref", let idref = attributeDict["idref"] {
             info.spineOrder.append(idref)
         }

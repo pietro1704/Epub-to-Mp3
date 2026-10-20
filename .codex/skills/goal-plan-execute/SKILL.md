@@ -1,33 +1,37 @@
 ---
 name: goal-plan-execute
-description: Execute non-trivial repository goals through specialist inspection, reviewed planning, focused implementation, live verification, adversarial QA, tests, and final diff audit.
+description: Deliver repository changes with focused inspection, proportional planning, regression verification and final diff review.
 ---
 
 # Goal plan execute
 
-Use this workflow for substantial features or coordinated changes across runtime
-boundaries. For a focused bug or configuration fix, use the short path in the
-project diagnosing-bugs skill. Changing both production code and its regression
-test does not by itself require a planning campaign.
+Follow the current user scope and the repository's canonical instructions.
+For a small, clear task, inspect the relevant files, implement directly, run
+the focused checks and review the final diff. Do not require a plan document,
+a specialist sequence or delegation merely because several files change.
 
-1. Inspect the current worktree and read project instructions before editing.
-2. Delegate independent questions with explicit file ownership when the scope
-   needs specialist inspection. Choose affected seams rather than imposing
-   parser, UI and runtime passes on every task. If delegation is unavailable,
-   inspect those actual seams sequentially.
-3. Write a short plan containing scope, non-goals, affected files, risks, and
-   acceptance evidence. Review the plan against the user's exact wording before
-   touching code.
-4. Implement in reversible slices. Preserve existing user changes and keep
-   ownership boundaries disjoint.
-5. Verify the golden path using the real executable path. Treat source presence
-   or a unit test as insufficient proof of runtime behavior.
-6. Run an adversarial QA pass for edge cases, regressions, accessibility,
-   portability, and performance. Then add or update permanent regression tests.
-7. Run the project's required checks, inspect the final diff, and report what
-   was executed versus what could not be run. Never claim completion from intent
-   or an indirect check.
+For work with independent seams or material uncertainty, write a short plan
+naming the outcome, ownership, risks and acceptance evidence. Delegate only
+an independent implementation/inspection or a review whose value justifies
+its cost. Give each delegate bounded context and disjoint editing ownership.
+Keep native compilation serialized through the existing guard.
 
-For parser/rendering work, compare source fidelity explicitly: titles, hierarchy,
-HTML structure, CSS, images/resources, links, and plain-text fallback must each
-have an evidence-backed acceptance check.
+Preserve unrelated changes. Implement the smallest complete behavior slice
+and add meaningful regression coverage at the affected runtime. Reproduce
+the failure before the fix when feasible; record when this was not done.
+Check relevant failure, cancellation and identity cases rather than running
+every role or test category for every change.
+
+Use the smallest authorized verification that proves the requested outcome.
+Real-app acceptance requires the affected real app; static checks and tests
+supplement it. When the user owns manual validation or requests static-only
+verification, respect that scope and report runtime acceptance as pending.
+Documentation/configuration-only edits need focused static checks, not a
+native build or broad suite unless they expose a concrete runtime risk.
+
+Review the complete final diff for correctness and regressions. For parser
+or rendering changes, compare the affected source fidelity (labels, hierarchy,
+markup, resources, links or fallback) explicitly. Preserve proven behavior.
+Report executed checks, unresolved limits and delivery state accurately.
+Follow canonical Git/PR authorization and CI policy; pushing does not request
+CI monitoring, merging or publication.

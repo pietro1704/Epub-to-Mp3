@@ -43,3 +43,14 @@ struct TtsPreferences: Codable, Sendable, Equatable {
         case policyVersion = "policy_version"
     }
 }
+
+extension JobSnapshot {
+    /// Present the resolved voice names; installed identifiers remain in diagnostic state.
+    var activeVoiceDisplayName: String? {
+        guard let voice, !voice.isEmpty else { return nil }
+        return voice.components(separatedBy: " + ").map {
+            let name = $0.components(separatedBy: " (").first ?? $0
+            return name == "pt_BR-faber-medium" ? "Faber medium" : name
+        }.joined(separator: " + ")
+    }
+}

@@ -61,13 +61,15 @@ struct StorageUsageSnapshot: Equatable, Sendable {
 }
 
 enum StorageUsageScanner {
-    static func current(budgetBytes: Int64 = defaultOfflineCacheBudgetBytes) -> StorageUsageSnapshot {
+    static func current(budgetBytes: Int64 = defaultOfflineCacheBudgetBytes,
+                        rustOutputsRoot: URL = RustConversionOutputStore.defaultRoot) -> StorageUsageSnapshot {
         let legacyOffline = directorySize(DownloadManager.audiobooksRoot())
         let ttsRoot = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts", isDirectory: true)
         let artifacts = LocalAudioArtifactStore.storageUsage()
         let offline = legacyOffline + artifacts.downloadedBytes
+            + RustConversionOutputStore.storageBytes(at: rustOutputsRoot)
         let tts = directorySize(ttsRoot) + artifacts.temporaryBytes
         return StorageUsageSnapshot(
             offlineAudioBytes: offline,
@@ -77,11 +79,8 @@ enum StorageUsageScanner {
         )
     }
 
-    static func clearAllDownloads() {
-        AudiobookCacheEviction.deleteAllAudiobooks()
-        clearLegacyTemporaryAudio()
-        Task { try? await LocalAudioArtifactStore.shared.clearAllAudio() }
-        NotificationCenter.default.post(name: ChapterCacheManager.clearAllNotification, object: nil)
+    static func clearAllDownloads() async throws {
+        try await AudioStorageMaintenance().clearAllDownloads()
     }
 
     static func clearLegacyTemporaryAudio() {

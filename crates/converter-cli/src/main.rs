@@ -27,10 +27,8 @@ struct CliOptions {
     show_structure: bool,
     clean_cache: bool,
     verify: bool,
-    no_cache: bool,
     no_parallel: bool,
     yes: bool,
-    stop_on_error: bool,
     menu: bool,
 }
 
@@ -55,10 +53,8 @@ impl Default for CliOptions {
             show_structure: false,
             clean_cache: false,
             verify: false,
-            no_cache: false,
             no_parallel: false,
             yes: false,
-            stop_on_error: false,
             menu: false,
         }
     }
@@ -436,7 +432,7 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
     }
 
     if options.menu && options.inputs.is_empty() && batch.is_empty() {
-        return Err("--menu requires an EPUB or PDF input file".into());
+        return Err("--menu requires an EPUB input file".into());
     }
     if options.inputs.is_empty() && batch.is_empty() {
         print_help();
@@ -445,6 +441,10 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
 
     let mut all = options.inputs.clone();
     all.extend(batch);
+    // Validate the complete batch before cache cleanup or the first conversion.
+    for input in &all {
+        require_supported_conversion(Path::new(input))?;
+    }
     if options.show_structure {
         return show_structure(&all);
     }
@@ -579,11 +579,12 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
             "--batch-file" => options.batch_manifest = Some(next(value)?),
             "--show-structure" => options.show_structure = true,
             "--clear-cache" | "--clean-cache" => options.clean_cache = true,
-            "--verify" | "--verify-only" => options.verify = true,
-            "--no-cache" => options.no_cache = true,
+            "--verify" => options.verify = true,
+            "--verify-only" | "--no-cache" | "--stop-on-error" => {
+                return Err(format!("{value} is not supported by the native CLI"));
+            }
             "--no-parallel" => options.no_parallel = true,
             "--yes" | "-y" => options.yes = true,
-            "--stop-on-error" => options.stop_on_error = true,
             "--menu" => options.menu = true,
             option if option.starts_with('-') => {
                 return Err(format!("unknown option '{option}'"));
@@ -698,6 +699,20 @@ fn supported(path: &Path) -> bool {
                 .any(|extension| value.eq_ignore_ascii_case(extension))
         })
         .unwrap_or(false)
+}
+
+fn require_supported_conversion(path: &Path) -> Result<(), String> {
+    if path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("pdf"))
+    {
+        return Err(format!(
+            "PDF conversion and structure inspection are not supported by the native CLI: {}",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 fn fuzzy_find_book(query: &str) -> Option<std::path::PathBuf> {
@@ -912,6 +927,9 @@ fn clear_global_cache(assume_yes: bool) -> Result<(), String> {
 }
 
 fn show_structure(inputs: &[String]) -> Result<i32, String> {
+    for input in inputs {
+        require_supported_conversion(Path::new(input))?;
+    }
     let config = cli_config();
     for input in inputs {
         println!("Structure: {input}");
@@ -929,15 +947,13 @@ fn show_structure(inputs: &[String]) -> Result<i32, String> {
             for chapter in &metadata.chapters {
                 println!("{} {}", chapter.index, chapter.name);
             }
-        } else {
-            println!("PDF structure inspection is delegated to the PDF ingestion adapter.");
         }
     }
     Ok(0)
 }
 
 fn print_help() {
-    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB/PDF files, directories, loose multiword names, and fuzzy matches.\n\nPreferences: preferences show | preferences set JSON\nModels: models list | models install MODEL_ID | models remove MODEL_ID --yes\nOptions: --tts-preferences-json JSON (per-job snapshot; exclusive of other TTS options)\n         --engine {{edge,piper,system}} --fallback-engine {{none,edge,piper,system}} --allow-online-fallback | --no-online-fallback --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clean-cache --verify --batch PATH --batch-file FILE --yes");
+    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB files, directories, loose multiword names, and fuzzy matches. PDF ingestion is not supported.\n\nPreferences: preferences show | preferences set JSON\nModels: models list | models install MODEL_ID | models remove MODEL_ID --yes\nOptions: --tts-preferences-json JSON (per-job snapshot; exclusive of other TTS options)\n         --engine {{edge,piper,system}} --fallback-engine {{none,edge,piper,system}} --allow-online-fallback | --no-online-fallback --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clean-cache --verify --batch PATH --batch-file FILE --yes");
 }
 
 fn home_dir() -> PathBuf {

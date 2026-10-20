@@ -194,8 +194,11 @@ warnings.
 
 Book ingestion, structure verification, text preparation, TTS, chapter audio,
 manifest persistence, and playback performed on the client device without a
-backend requirement. Edge TTS may be attempted online; a compatible installed
-local model is the fallback and is never downloaded implicitly.
+backend requirement. Piper Faber is the default primary narration provider;
+installed platform speech is the default fallback. Online Edge narration requires
+explicit selection or consent. A model is never downloaded implicitly. The
+actually active provider and voice remain distinguishable from the configured
+primary while fallback is in use.
 
 ## Playback snapshot
 

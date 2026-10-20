@@ -41,8 +41,6 @@ settings:
     # GUI uses its own index regardless). Cuts ~25% off cold builds.
     COMPILER_INDEX_STORE_ENABLE: NO
     ENABLE_TESTABILITY: YES
-    # Strip nothing in Debug — speeds linker; Release strips debug.
-    STRIP_INSTALLED_PRODUCT: NO
     # Warnings are errors. This keeps deprecations, concurrency diagnostics,
     # and unsafe API usage from accumulating behind a green build.
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
@@ -99,7 +97,6 @@ settings:
     # --- Xcode 26 "Perform Changes" recommended settings ----------
     # Pre-applied here so the dialog stops nagging on every regenerate.
     DEAD_CODE_STRIPPING: YES
-    REGISTER_APP_GROUPS_IN_MACOS: YES
     "ENABLE_APP_SANDBOX[sdk=macosx*]": YES
     "ENABLE_HARDENED_RUNTIME[sdk=macosx*]": YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -169,6 +166,7 @@ settings:
       SWIFT_DISABLE_SAFETY_CHECKS: NO
     Release:
       ONLY_ACTIVE_ARCH: NO
+      SWIFT_COMPILATION_MODE: wholemodule
       # ThinLTO: cross-module inlining without full LTO's link-time cost.
       # Typical 5-8% runtime win in Swift-heavy apps + ~10-15% smaller binary.
       LLVM_LTO: YES_THIN
@@ -282,6 +280,7 @@ targets:
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
+        REGISTER_APP_GROUPS: YES
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         # AVFoundation exposes legacy non-Sendable handles and the player
@@ -339,7 +338,6 @@ targets:
           SWIFT_OPTIMIZATION_LEVEL: "-O"
           GCC_OPTIMIZATION_LEVEL: s
           DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
-          STRIP_INSTALLED_PRODUCT: YES
   EpubToMp3Tests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]

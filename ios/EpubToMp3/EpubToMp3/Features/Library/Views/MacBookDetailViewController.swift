@@ -82,6 +82,32 @@ final class MacBookDetailViewController: NSViewController {
     }
 
     private func observeLocalPlaybackChapterChanges() {
+        NotificationCenter.default.publisher(for: RustConversionOutputStore.willRemoveAudio)
+            .sink { [weak self] notification in
+                let bookID = notification.userInfo?["bookID"] as? String
+                MainActor.assumeIsolated {
+                    guard let self, bookID == nil || bookID == self.book.id else { return }
+                    let ownsPlayer = self.player.snapshot?.jobId == self.localPlaybackGeneration
+                    self.localConversionGeneration = nil
+                    self.localConversionProgress = nil
+                    self.localConversionChapters.removeAll()
+                    self.progressLabel.stringValue = ""
+                    self.localPlaybackGeneration = nil
+                    self.localPlaybackControl?.cancel()
+                    self.localPlaybackControl = nil
+                    if ownsPlayer { self.player.stop(); self.player.clearConversionState() }
+                }
+            }
+            .store(in: &playbackCancellables)
+        player.$snapshot
+            .sink { [weak self] snapshot in
+                guard let self, let snapshot, let jobID = self.localPlaybackGeneration,
+                      snapshot.jobId != jobID else { return }
+                self.localPlaybackGeneration = nil
+                self.localPlaybackControl?.cancel()
+                self.localPlaybackControl = nil
+            }
+            .store(in: &playbackCancellables)
         player.$activeStreamingChapterIndex
             .compactMap { $0 }
             .removeDuplicates()
@@ -241,14 +267,18 @@ final class MacBookDetailViewController: NSViewController {
     /// stays local by default; server-only formats and the explicit remote
     /// provider use the same API/SSE contract as iOS.
     @objc private func tapListen() {
+        guard localPlaybackGeneration == nil else { return }
+        let jobID = UUID().uuidString
+        localPlaybackGeneration = jobID
         Task { [weak self] in
             guard let self else { return }
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
-                guard !Task.isCancelled else { return }
-                startRustStreaming(url: url)
+                guard !Task.isCancelled, localPlaybackGeneration == jobID else { return }
+                startRustStreaming(url: url, jobID: jobID)
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, localPlaybackGeneration == jobID else { return }
+                localPlaybackGeneration = nil
                 onShowJobs()
             }
         }
@@ -304,21 +334,26 @@ final class MacBookDetailViewController: NSViewController {
     }
 
     func convertWholeBook(options: ConversionOptions) {
+        guard localConversionGeneration == nil else { return }
+        let jobID = UUID().uuidString
+        localConversionGeneration = jobID
         let selectedOptions = options
         Task { [weak self] in
             guard let self else { return }
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
-                startRustConversion(url: url, options: selectedOptions)
+                guard localConversionGeneration == jobID else { return }
+                startRustConversion(url: url, jobID: jobID, options: selectedOptions)
             } catch {
+                guard localConversionGeneration == jobID else { return }
+                localConversionGeneration = nil
                 presentListenError(error)
             }
         }
     }
 
-    private func startRustConversion(url: URL, options: ConversionOptions) {
-        let jobID = UUID().uuidString
-        localConversionGeneration = jobID
+    private func startRustConversion(url: URL, jobID: String, options: ConversionOptions) {
+        guard localConversionGeneration == jobID else { return }
         localConversionProgress = 0
         localConversionChapters.removeAll()
         progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 0)
@@ -359,10 +394,13 @@ final class MacBookDetailViewController: NSViewController {
                         self.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
                     }
                 )
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, localConversionGeneration == jobID else { return }
+                guard result.jobID == jobID else {
+                    throw EmbeddedConverterError.conversionFailed("Conversion returned a different manual job.")
+                }
                 _ = try finalizeLocalConversion(result)
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, localConversionGeneration == jobID else { return }
                 localConversionGeneration = nil
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")
@@ -373,9 +411,9 @@ final class MacBookDetailViewController: NSViewController {
         }
     }
 
-    private func startRustStreaming(url: URL) {
+    private func startRustStreaming(url: URL, jobID: String) {
+        guard localPlaybackGeneration == jobID else { return }
         localPlaybackControl?.cancel()
-        let jobID = UUID().uuidString
         let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
         do {
             let control = try RustConversionCoordinator.makePlaybackControl()
@@ -409,6 +447,8 @@ final class MacBookDetailViewController: NSViewController {
             player.isConverting = true
             player.resume()
         } catch {
+            guard localPlaybackGeneration == jobID else { return }
+            localPlaybackGeneration = nil
             presentListenError(error)
             return
         }
@@ -449,7 +489,7 @@ final class MacBookDetailViewController: NSViewController {
                         self.progressLabel.stringValue = L10n.string(
                             "bookDetail.progressPercent", self.localConversionProgress ?? 0
                         )
-                        self.player.updateSnapshot(event.snapshot(chapters: self.localPlaybackChapters))
+                        self.player.updateSnapshot(event.snapshot(chapters: self.localPlaybackChapters, preserving: self.player.snapshot))
                     },
                     { [weak self] chapterIndex, chunkIndex, data in
                         guard let self else { return false }
@@ -476,6 +516,7 @@ final class MacBookDetailViewController: NSViewController {
                         )
                     }
                 )
+                guard localPlaybackGeneration == jobID, player.snapshot?.jobId == jobID else { return }
                 let snapshot = try result.snapshot()
                 let indices = snapshot.playableChapters.map(\.index)
                 guard result.jobID == jobID, snapshot.jobId == jobID,

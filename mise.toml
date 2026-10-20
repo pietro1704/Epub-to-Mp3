@@ -740,6 +740,21 @@ chmod 755 dist/epub-to-mp3-server
 echo "Built Rust sidecar: dist/epub-to-mp3-server"
 """
 
+[tasks."xcode:generate"]
+description = "Regenerate and open the native Xcode project without compiling"
+alias = "generate"
+dir = "ios/EpubToMp3"
+run = """
+#!/bin/bash
+set -euo pipefail
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "xcode:generate error: xcodegen is required. Install via: brew install xcodegen" >&2
+  exit 1
+fi
+mise exec -- ruby ../../scripts/native_job.rb build -- xcodegen generate --spec project.yml
+open EpubToMp3.xcodeproj
+"""
+
 [tasks."mac:build"]
 description = "Build native AppKit macOS app with embedded Rust FFI (MAC_BUILD_CONFIG=Release|Debug, default Release)"
 depends = ["converter-ffi:build"]

@@ -34,12 +34,13 @@ final class AudioStorageMaintenanceTests: XCTestCase {
         let notifications: MaintenanceNotifications
         func service(cancel: @escaping @Sendable () async -> Void = {}) -> AudioStorageMaintenance {
             .init(artifactStore: store, legacyAudiobooksRoot: downloads, legacyTTSRoot: tts,
-                  downloadManager: DownloadManager(), cancelDownloads: cancel, notificationCenter: center)
+                  downloadManager: DownloadManager(), cancelDownloads: cancel, notificationCenter: center,
+                  rustOutputs: RustConversionOutputStore(root: root.appendingPathComponent("rust"), notificationCenter: center))
         }
     }
 
     private func fixture() throws -> Fixture {
-        let root = FileManager.default.temporaryDirectory
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
             .appendingPathComponent("StorageMaintenance-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }

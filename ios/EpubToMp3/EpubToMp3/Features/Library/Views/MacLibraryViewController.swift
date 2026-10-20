@@ -314,19 +314,25 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private func removeSelectedBook(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         let jobID = library.books.first(where: { $0.id == id })?.lastJobId
-        bookmarkStore.removeAll(for: id)
-        LocalFulltextCache.evict(bookId: id)
-        EpubFontManager.evictCachedFonts(bookID: id)
         Task {
-            try? await LocalAudioArtifactStore.shared.removeAllAudio(bookID: id)
-            if let jobID {
-                await DownloadManager.shared.clearDownloadedBook(jobId: jobID)
+            do {
+                try await RustConversionOutputStore.shared.removeAudio(bookID: id, legacyJobID: jobID) {
+                    try await LocalAudioArtifactStore.shared.removeAllAudio(bookID: id)
+                    if let jobID { await DownloadManager.shared.clearDownloadedBook(jobId: jobID) }
+                }
+                bookmarkStore.removeAll(for: id)
+                LocalFulltextCache.evict(bookId: id)
+                EpubFontManager.evictCachedFonts(bookID: id)
+                if let jobID { FulltextStore.evict(jobId: jobID) }
+                library.remove(id: id)
+            } catch {
+                guard let window = view.window else { return }
+                let alert = NSAlert()
+                alert.messageText = L10n.string("settings.storageRemovalFailedTitle")
+                alert.informativeText = error.localizedDescription
+                alert.beginSheetModal(for: window, completionHandler: nil)
             }
         }
-        if let jobID {
-            FulltextStore.evict(jobId: jobID)
-        }
-        library.remove(id: id)
     }
 }
 

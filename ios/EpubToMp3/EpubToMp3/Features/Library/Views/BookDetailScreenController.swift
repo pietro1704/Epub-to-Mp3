@@ -27,6 +27,7 @@ final class BookDetailScreenController: UIViewController {
     private let listenButton = UIButton(type: .system)
     private let downloadButton = UIButton(type: .system)
     private let logButton = UIButton(type: .system)
+    private var manualConversionGeneration: String?
     private var playbackGeneration: String?
     private var playbackControl: ConverterPlaybackControl?
     private var playbackCancellables: Set<AnyCancellable> = []
@@ -73,6 +74,29 @@ final class BookDetailScreenController: UIViewController {
     }
 
     private func observePlaybackChapterChanges() {
+        NotificationCenter.default.publisher(for: RustConversionOutputStore.willRemoveAudio)
+            .sink { [weak self] notification in
+                let bookID = notification.userInfo?["bookID"] as? String
+                MainActor.assumeIsolated {
+                    guard let self, bookID == nil || bookID == self.book.id else { return }
+                    let ownsPlayer = self.player.snapshot?.jobId == self.playbackGeneration
+                    self.manualConversionGeneration = nil
+                    self.playbackGeneration = nil
+                    self.playbackControl?.cancel()
+                    self.playbackControl = nil
+                    if ownsPlayer { self.player.stop(); self.player.clearConversionState() }
+                }
+            }
+            .store(in: &playbackCancellables)
+        player.$snapshot
+            .sink { [weak self] snapshot in
+                guard let self, let snapshot, let jobID = self.playbackGeneration,
+                      snapshot.jobId != jobID else { return }
+                self.playbackGeneration = nil
+                self.playbackControl?.cancel()
+                self.playbackControl = nil
+            }
+            .store(in: &playbackCancellables)
         player.$activeStreamingChapterIndex
             .compactMap { $0 }
             .removeDuplicates()
@@ -206,6 +230,7 @@ final class BookDetailScreenController: UIViewController {
             guard let self else { return }
             do {
                 let url = try await self.bookFileOpener(bookID)
+                guard self.playbackGeneration == jobID else { return }
                 try await self.startStreaming(url: url, bookID: bookID, chapterStart: priorityChapterIndex,
                                               jobID: jobID, conversionOptions: conversionOptions)
             } catch {
@@ -269,7 +294,7 @@ final class BookDetailScreenController: UIViewController {
                     }
                     self.playbackChapters.sort { $0.index < $1.index }
                     self.progressLabel.text = L10n.string("bookDetail.progressPercent", Int(event.progressPercent.rounded()))
-                    self.player.updateSnapshot(event.snapshot(chapters: self.playbackChapters))
+                    self.player.updateSnapshot(event.snapshot(chapters: self.playbackChapters, preserving: self.player.snapshot))
                 },
                 { [weak self] chapterIndex, chunkIndex, data in
                     guard let self else { return false }
@@ -292,6 +317,7 @@ final class BookDetailScreenController: UIViewController {
                     )
                 }
             )
+            guard playbackGeneration == jobID, player.snapshot?.jobId == jobID else { return }
             let snapshot = try result.snapshot()
             let indices = snapshot.playableChapters.map(\.index)
             guard result.jobID == jobID, snapshot.jobId == jobID,
@@ -348,23 +374,35 @@ final class BookDetailScreenController: UIViewController {
     }
 
     @objc private func tapDownload() {
+        guard manualConversionGeneration == nil else { return }
+        let jobID = UUID().uuidString
+        manualConversionGeneration = jobID
         let bookID = book.id
         let conversionOptions = settings.conversionOptions
         Task { [weak self] in
             guard let self else { return }
+            defer {
+                if self.manualConversionGeneration == jobID { self.manualConversionGeneration = nil }
+            }
             if let url = try? await self.bookFileOpener(bookID) {
+                guard self.manualConversionGeneration == jobID else { return }
                 do {
                     let result = try await self.conversionExecutor(
-                        url, UUID().uuidString, -1, -1,
+                        url, jobID, -1, -1,
                         conversionOptions,
                         nil, nil
                     )
+                    guard self.manualConversionGeneration == jobID else { return }
+                    guard result.jobID == jobID else {
+                        throw EmbeddedConverterError.conversionFailed("Conversion returned a different manual job.")
+                    }
                     _ = try result.snapshot()
                     if self.book.id == bookID { self.book.lastJobId = result.jobID }
                     self.library.recordConversion(jobId: result.jobID, for: bookID)
                     self.render()
                     return
                 } catch {
+                    guard self.manualConversionGeneration == jobID else { return }
                     let alert = UIAlertController(
                         title: L10n.string("bookDetail.download"),
                         message: error.localizedDescription,
@@ -375,6 +413,7 @@ final class BookDetailScreenController: UIViewController {
                 }
                 return
             }
+            guard self.manualConversionGeneration == jobID else { return }
             self.downloadExistingJob()
         }
     }
