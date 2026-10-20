@@ -7,12 +7,18 @@ on:
       - 'tools/DeviceWorkflow/**'
       - 'scripts/device-workflow.sh'
       - 'scripts/test_device_workflow_entrypoint.rb'
+      - 'scripts/device_workflow_receipt.rb'
+      - 'scripts/native_build_preflight.rb'
+      - 'scripts/test_native_build_preflight.rb'
       - '.github/workflows/device-workflow.yml'
   pull_request:
     paths:
       - 'tools/DeviceWorkflow/**'
       - 'scripts/device-workflow.sh'
       - 'scripts/test_device_workflow_entrypoint.rb'
+      - 'scripts/device_workflow_receipt.rb'
+      - 'scripts/native_build_preflight.rb'
+      - 'scripts/test_native_build_preflight.rb'
       - '.github/workflows/device-workflow.yml'
   workflow_dispatch:
 
@@ -30,5 +36,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Test explicit device workflow preparation boundary
         run: ruby scripts/test_device_workflow_entrypoint.rb
+      - name: Test native build preflight without native processes
+        run: ruby scripts/test_native_build_preflight.rb
       - name: Test native workflow without a device or TTS requests
         run: xcrun swift test --package-path tools/DeviceWorkflow --jobs 1

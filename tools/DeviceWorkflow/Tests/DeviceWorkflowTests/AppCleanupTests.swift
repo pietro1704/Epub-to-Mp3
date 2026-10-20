@@ -8,6 +8,7 @@ final class AppCleanupTests: XCTestCase {
     private var originalPath: String?
 
     override func setUpWithError() throws {
+        originalPath = ProcessInfo.processInfo.environment["PATH"]
         root = FileManager.default.temporaryDirectory.appendingPathComponent("app-cleanup-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let tool = root.appendingPathComponent("xcrun")
@@ -15,7 +16,6 @@ final class AppCleanupTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tool.path)
         // posix_spawnp resolves in the parent's PATH, before applying child envp.
         // This XCTest suite runs serially; restore PATH before removing fixtures.
-        originalPath = ProcessInfo.processInfo.environment["PATH"]
         guard setenv("PATH", root.path, 1) == 0 else { throw WorkflowError("Cannot install fake-tool PATH") }
     }
 
