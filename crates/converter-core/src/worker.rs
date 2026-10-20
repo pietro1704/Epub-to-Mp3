@@ -86,15 +86,19 @@ pub struct OutputManifest {
     pub source_chapters_total: Option<usize>,
     pub archive: String,
     pub cover: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tts_preferences: Option<crate::tts_preferences::TtsPreferences>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub used_selections: Vec<crate::tts_preferences::TtsSelection>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default_manifest_field")]
     pub tts_policy_state: crate::tts_preferences::SegmentPolicy,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default_manifest_field")]
     pub fallback_used: bool,
 }
+fn is_default_manifest_field<T: Default + PartialEq>(value: &T) -> bool {
+    value == &T::default()
+}
+
 #[derive(Debug, Error)]
 pub enum WorkerError {
     #[error("job error: {0}")]
@@ -1206,8 +1210,9 @@ impl ConversionWorker {
                         );
                     }
                     let (model, config) = self.selection_model_paths(request, selection);
-                    self.synthesize_with_piper(segment, &path, Some(&model), Some(&config))?;
-                    Ok(fs::read(&path)?)
+                    let wav = path.with_extension("wav");
+                    self.synthesize_with_piper(segment, &wav, Some(&model), Some(&config))?;
+                    platform_tts::encode_wav(&fs::read(wav)?).map_err(WorkerError::PlatformTts)
                 };
             let synthesize =
                 |selection: &crate::tts_preferences::TtsSelection| -> Result<Vec<u8>, WorkerError> {
@@ -1716,6 +1721,40 @@ fn sanitize(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn empty_typed_manifest_metadata_preserves_legacy_shape_and_nondefault_round_trip() {
+        let legacy = serde_json::json!({
+            "jobId": "legacy", "title": "Book", "author": "Author", "chapters": [],
+            "archive": "book.zip", "cover": null,
+        });
+        let mut manifest: OutputManifest = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&manifest).unwrap(), legacy);
+        let primary = crate::tts_preferences::TtsSelection {
+            engine: "system".into(),
+            model_id: None,
+            voice: None,
+        };
+        manifest.tts_preferences = Some(crate::tts_preferences::TtsPreferences {
+            primary: primary.clone(),
+            secondary: None,
+            allow_online_fallback: false,
+        });
+        manifest.used_selections.push(primary);
+        manifest.fallback_used = true;
+        manifest
+            .tts_policy_state
+            .primary_failed(false, true)
+            .unwrap();
+        let encoded = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(encoded["fallbackUsed"], true);
+        assert_eq!(encoded["usedSelections"][0]["engine"], "system");
+        assert_eq!(encoded["ttsPolicyState"]["consecutive_failures"], 1);
+        assert_eq!(
+            serde_json::from_value::<OutputManifest>(encoded).unwrap(),
+            manifest
+        );
+    }
+
     use super::*;
 
     #[test]
