@@ -173,6 +173,31 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   Future<void> _submit() async {
     final path = _filePath;
     if (path == null || path.isEmpty || _submitting) return;
+    final startText = _startController.text.trim();
+    final endText = _endController.text.trim();
+    final start = int.tryParse(startText);
+    final end = int.tryParse(endText);
+    bool validPosition(String text, int? position) =>
+        text.isEmpty ||
+        (RegExp(r'^[0-9]+$').hasMatch(text) &&
+            position != null &&
+            position <= 2147483647);
+    String? rangeError;
+    if (!validPosition(startText, start) || !validPosition(endText, end)) {
+      rangeError =
+          'Chapter positions must be non-negative integers up to 2147483647.';
+    } else if (start == null && end != null) {
+      rangeError = 'Enter From when specifying To.';
+    } else if (start != null && end != null && end < start) {
+      rangeError = 'To must be greater than or equal to From.';
+    }
+    if (rangeError != null) {
+      setState(() {
+        _error = rangeError;
+        _jobId = null;
+      });
+      return;
+    }
     final startedAt = DateTime.now().toUtc();
     final jobStore = ref.read(localConversionJobStoreProvider);
     final matchingBooks = ref
@@ -211,8 +236,8 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         engine: selected.primary.engine,
         voice: selected.primary.voice ?? selected.primary.modelId ?? '',
         language: _language,
-        chapterStart: int.tryParse(_startController.text),
-        chapterEnd: int.tryParse(_endController.text),
+        chapterStart: start,
+        chapterEnd: end,
         includeCover: _includeCover,
         normalizeAudio: _normalizeAudio,
       );
