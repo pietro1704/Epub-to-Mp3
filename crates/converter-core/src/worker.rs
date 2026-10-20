@@ -809,6 +809,9 @@ impl ConversionWorker {
                 )
             })?;
         }
+        if self.cancel.is_cancelled() || self.jobs.is_cancellation_requested(&request.job_id)? {
+            return Err(WorkerError::Cancelled);
+        }
         let mut results = results.into_inner().unwrap();
         results.sort_by_key(|item| item.0);
         let files: Vec<_> = results
