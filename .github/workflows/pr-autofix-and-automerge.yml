@@ -25,4 +25,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_EVENT: ${{ github.event.workflow_run.event }}
-        run: node .github/scripts/pr-repair-dispatch.cjs
+          REPAIR_WRITERS_ENABLED: ${{ vars.PR_REPAIR_WRITERS_ENABLED }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          export REPAIR_CREDENTIALS_AVAILABLE=false
+          if [ -n "$OPENAI_API_KEY" ]; then export REPAIR_CREDENTIALS_AVAILABLE=true; fi
+          unset OPENAI_API_KEY
+          node .github/scripts/pr-repair-dispatch.cjs

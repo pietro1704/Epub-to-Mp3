@@ -1,19 +1,24 @@
 name: PR repair safety regressions
 on:
   push:
-    branches: ['feature/pr-repair-safety', master]
-    paths: ['.github/scripts/pr-repair-*.cjs', '.github/workflows/pr-autofix*.yml', '.github/workflows/pr-repair-safety-regression.yml']
+    branches: [master]
+    paths:
+      - '.github/scripts/pr-repair-*.cjs'
+      - '.github/workflows/pr-autofix*.yml'
+      - '.github/workflows/pr-repair-safety-regression.yml'
   pull_request:
-    paths: ['.github/scripts/pr-repair-*.cjs', '.github/workflows/pr-autofix*.yml', '.github/workflows/pr-repair-safety-regression.yml']
-  workflow_dispatch:
+    paths:
+      - '.github/scripts/pr-repair-*.cjs'
+      - '.github/workflows/pr-autofix*.yml'
+      - '.github/workflows/pr-repair-safety-regression.yml'
 permissions:
   contents: read
 jobs:
   host:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
-      MISE_ENABLE_TOOLS: ruby
+      MISE_ENABLE_TOOLS: node,ruby
     steps:
       - uses: actions/checkout@v7
         with:
@@ -22,7 +27,9 @@ jobs:
         with:
           version: 2026.9.14
           install: false
-      - run: mise install ruby
+      - name: Install managed host test tools
+        run: mise install node ruby
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
-      - run: mise exec -- node --test .github/scripts/pr-repair-safety.test.cjs
+      - name: Verify repair confinement with real Git and fake API
+        run: mise exec -- node --test .github/scripts/pr-repair-safety.test.cjs
