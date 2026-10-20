@@ -20,6 +20,67 @@ import XCTest
 @testable import EpubToMp3
 
 final class EpubFallbackParserTests: XCTestCase {
+    func testNCXLabelsAndHierarchyReplaceRepeatedDocumentTitlesWithoutChangingSpineIdentity() throws {
+        let document = "<html><head><title>repeated_export_name</title></head><body><p id='start'>Fixture text.</p><p id='next'>Another section.</p></body></html>"
+        let ncx = """
+        <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap>
+          <navPoint id="cover"><navLabel><text>Cover label</text></navLabel><content src="../Text/cover.xhtml"/></navPoint>
+          <navPoint id="part"><navLabel><text>Part One &amp; More</text></navLabel><content src="../Text/split001.xhtml#start"/>
+            <navPoint id="section"><navLabel><text>Section One</text></navLabel><content src="../Text/split001.xhtml#next"/></navPoint>
+          </navPoint>
+          <navPoint id="last"><navLabel><text>Part Two</text></navLabel><content src="../Text/split002.xhtml"/></navPoint>
+        </navMap></ncx>
+        """
+        let source = try EpubFixture.createWithNavigation(documents: [
+            ("Text/cover.xhtml", document), ("Text/copyright.xhtml", document),
+            ("Text/split001.xhtml", document), ("Text/split002.xhtml", document)], ncx: ncx)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let payload = EpubFallbackParser.parse(url: source, bookId: "navigation-fixture")
+        XCTAssertEqual(payload.chapters.map(\.index), [1, 2, 3, 4])
+        XCTAssertEqual(payload.chapters.map(\.sourcePath), ["OEBPS/Text/cover.xhtml", "OEBPS/Text/copyright.xhtml",
+            "OEBPS/Text/split001.xhtml", "OEBPS/Text/split002.xhtml"])
+        XCTAssertEqual(payload.chapters[2].name, "Part One & More")
+        XCTAssertEqual(payload.chapters[3].name, "Part Two")
+        let rows = ReaderTocFlattener.rows(toc: payload.toc, chapters: payload.chapters)
+        XCTAssertEqual(rows.map(\.title), ["Cover label", "Part One & More", "Section One", "Part Two"])
+        XCTAssertEqual(rows.map(\.level), [0, 0, 1, 0])
+        XCTAssertEqual(rows.map(\.chapterIndex), [0, 2, 2, 3], "Fragments resolve to the containing document, never a new ordinal")
+        XCTAssertFalse(rows.contains { $0.title == "repeated_export_name" })
+    }
+
+    func testEPUB3TOCNavigationTakesPrecedenceAndIgnoresLandmarks() throws {
+        let nav = """
+        <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body>
+        <nav epub:type="landmarks"><ol><li><a href="../Text/chapter%20one.xhtml">Wrong landmark</a></li></ol></nav>
+        <nav epub:type="toc"><ol><li><span>Volume</span><ol>
+          <li><a href="../Text/chapter%20one.xhtml#start"><span>Actual</span> chapter</a></li>
+          <li><a href="https://example.invalid/chapter">External reference</a></li>
+          <li><a href="../Text/missing.xhtml">Missing chapter</a></li>
+        </ol></li></ol></nav></body></html>
+        """
+        let ncx = "<ncx><navMap><navPoint><navLabel><text>Old NCX label</text></navLabel><content src='../Text/chapter%20one.xhtml'/></navPoint></navMap></ncx>"
+        let source = try EpubFixture.createWithNavigation(documents: [("Text/chapter one.xhtml", "<html><body><p id='start'>Readable fixture.</p></body></html>")], ncx: ncx, nav: nav)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let payload = EpubFallbackParser.parse(url: source, bookId: "nav-fixture")
+        let rows = ReaderTocFlattener.rows(toc: payload.toc, chapters: payload.chapters)
+        XCTAssertEqual(rows.map(\.title), ["Volume", "Actual chapter", "External reference", "Missing chapter"])
+        XCTAssertEqual(rows.map(\.level), [0, 1, 1, 1])
+        XCTAssertEqual(rows.map(\.chapterIndex), [nil, 0, nil, nil])
+        XCTAssertEqual(payload.chapters.first?.name, "Actual chapter")
+    }
+
+    func testMalformedNavigationFallsBackToDeclaredNCXAndUnresolvedEntriesStayDisabled() throws {
+        let ncx = "<ncx><navMap><navPoint><navLabel><text>Preserved label</text></navLabel><content src='../Text/one.xhtml'/></navPoint><navPoint><navLabel><text>Absent</text></navLabel><content src='../Text/absent.xhtml#note'/></navPoint></navMap></ncx>"
+        let source = try EpubFixture.createWithNavigation(documents: [("Text/one.xhtml", "<html><body><h1>Misleading heading</h1><p>Fixture.</p></body></html>")],
+                                                        ncx: ncx, nav: "<html><nav epub:type='toc'><ol><li>")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let payload = EpubFallbackParser.parse(url: source, bookId: "fallback-navigation")
+        let rows = ReaderTocFlattener.rows(toc: payload.toc, chapters: payload.chapters)
+        XCTAssertEqual(rows.map(\.title), ["Preserved label", "Absent"])
+        XCTAssertEqual(rows.map(\.chapterIndex), [0, nil])
+        XCTAssertEqual(payload.chapters.first?.name, "Preserved label")
+    }
+
 
     // MARK: - Helpers
 
@@ -168,15 +229,7 @@ final class EpubFallbackParserTests: XCTestCase {
             "End text must be present; got: \(text.prefix(120))")
     }
 
-    // MARK: - Minimal-safety-net contract
-    //
-    // This parser is a plain-text-only fallback for when the embedded
-    // Python pipeline (the sole source of truth for book structure) is
-    // unavailable. It intentionally does NOT extract TOC-derived titles,
-    // CSS, or image resources — that logic lives in
-    // `python_app/src/ebook_reader.py` and duplicating it here is exactly
-    // what caused the multi-GB `stripHTML` regex crash on a pathological
-    // chapter. These tests pin the *absence* of that duplicated surface.
+    // MARK: - Native source markup and resource preservation
 
     func testChapterNamePreservesDocumentHeading() throws {
         let url = try EpubFixture.createWithChapter(

@@ -34,7 +34,7 @@ enum LocalFulltextCache {
         ) else { return nil }
         let dir = base
             .appendingPathComponent("EpubToMp3", isDirectory: true)
-            .appendingPathComponent("ReaderFulltext-v1", isDirectory: true)
+            .appendingPathComponent("ReaderFulltext-v2", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: dir,
             withIntermediateDirectories: true
@@ -42,9 +42,8 @@ enum LocalFulltextCache {
         return dir
     }
 
-    /// Existing installs may still have valid v5 payloads in Caches. Read
-    /// them once and migrate instead of forcing listeners through a new cold
-    /// parse after an app update.
+    /// Older parser payloads omitted declared EPUB navigation. Keep their location
+    /// for explicit eviction only; importing them would restore the incorrect TOC.
     private static var legacyDirectory: URL? {
         guard let base = try? FileManager.default.url(
             for: .cachesDirectory,
@@ -99,8 +98,7 @@ enum LocalFulltextCache {
         let primary = readPayload(at: storageURL(bookId: bookId))
         guard !Task.isCancelled else { return nil }
         guard let payload = primary
-                ?? readPayload(at: fileURL(bookId: bookId, in: directory))
-                ?? readPayload(at: fileURL(bookId: bookId, in: legacyDirectory)) else {
+                ?? readPayload(at: fileURL(bookId: bookId, in: directory)) else {
             return nil
         }
         guard !Task.isCancelled else { return nil }

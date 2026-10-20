@@ -186,6 +186,31 @@ enum EpubFixture {
         return url
     }
 
+    /// Source-shaped navigation fixture; labels and body text are entirely synthetic.
+    static func createWithNavigation(documents: [(path: String, html: String)],
+                                     ncx: String? = nil, nav: String? = nil) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fixture-\(UUID().uuidString).epub")
+        let items = documents.enumerated().map { index, document in
+            let href = document.path.replacingOccurrences(of: " ", with: "%20")
+            return "<item id=\"document\(index)\" href=\"\(href)\" media-type=\"application/xhtml+xml\"/>"
+        }.joined()
+        let spine = documents.indices.map { "<itemref idref=\"document\($0)\"/>" }.joined()
+        let navigationItems = (ncx == nil ? "" : "<item id=\"ncx\" href=\"Navigation/toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>")
+            + (nav == nil ? "" : "<item id=\"nav\" href=\"Navigation/nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>")
+        let opf = """
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+        <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Navigation fixture</dc:title></metadata>
+        <manifest>\(items)\(navigationItems)</manifest><spine toc="ncx">\(spine)</spine></package>
+        """
+        var members: [Member] = [.stored("mimetype", Data("application/epub+zip".utf8)),
+            .deflated("META-INF/container.xml", containerXML), .deflated("OEBPS/content.opf", Data(opf.utf8))]
+        for document in documents { members.append(.deflated("OEBPS/\(document.path)", Data(document.html.utf8))) }
+        if let ncx { members.append(.deflated("OEBPS/Navigation/toc.ncx", Data(ncx.utf8))) }
+        if let nav { members.append(.deflated("OEBPS/Navigation/nav.xhtml", Data(nav.utf8))) }
+        try buildArchive(members: members).write(to: url)
+        return url
+    }
+
     // MARK: - Tiny ZIP writer
 
     private struct Member {

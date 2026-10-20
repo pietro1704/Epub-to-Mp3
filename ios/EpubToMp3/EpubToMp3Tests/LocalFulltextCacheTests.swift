@@ -252,7 +252,7 @@ final class LocalFulltextCacheTests: XCTestCase {
         XCTAssertEqual(try canonicalJSON(migrated), original)
     }
 
-    func testLegacyCachesJSONMigratesAndEvictRemovesOnlyRequestedFormats() throws {
+    func testOldNavigationlessCachesAreNotMigratedAndExplicitEvictionStaysScoped() throws {
         let id = uniqueId()
         defer { LocalFulltextCache.evict(bookId: id) }
         let primary = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
@@ -264,8 +264,11 @@ final class LocalFulltextCacheTests: XCTestCase {
         let legacy = caches.appendingPathComponent("\(id).json")
         let original = try canonicalJSON(completePayload(id))
         try original.write(to: legacy)
-        XCTAssertEqual(LocalFulltextCache.read(bookId: id), completePayload(id))
+        XCTAssertNil(LocalFulltextCache.read(bookId: id), "Old TOC-less caches must trigger a source reparse")
         XCTAssertEqual(try Data(contentsOf: legacy), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: primary.path))
+        XCTAssertEqual(primary.deletingLastPathComponent().lastPathComponent, "ReaderFulltext-v2")
+        LocalFulltextCache.save(completePayload(id), bookId: id)
         XCTAssertEqual(try PropertyListDecoder().decode(EbookFulltext.self, from: Data(contentsOf: primary)), completePayload(id))
         try original.write(to: durableJSON)
         let otherID = uniqueId()
