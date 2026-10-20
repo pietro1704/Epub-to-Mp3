@@ -3,12 +3,19 @@ import Foundation
 enum AudioEnginePreference: String, CaseIterable, Identifiable {
     case edge
     case piper
+    case system
 
     var id: String { rawValue }
-    var displayName: String { rawValue == "edge" ? "Edge" : "Faber medium" }
+    var displayName: String {
+        switch self {
+        case .edge: return "Edge"
+        case .piper: return "Faber medium"
+        case .system: return L10n.string("settings.systemVoice")
+        }
+    }
 
     static var supportedPreferences: [AudioEnginePreference] {
-        [.piper, .edge]
+        [.piper, .edge, .system]
     }
 }
 

@@ -532,6 +532,11 @@ final class NativeResponsiveScreenTests: XCTestCase {
         XCTAssertTrue(final.allowOnlineAudioFallback)
         XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
         XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "piper")
+        secondary.selectItem(withTitle: AudioEnginePreference.system.displayName)
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+        XCTAssertEqual(AppSettings(defaults: defaults).secondaryAudioEngine, .system)
+        XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
+        XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "piper")
         let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent("mac-tts-settings-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: screenshot) }
         try captureLiveWindow(window, to: screenshot)

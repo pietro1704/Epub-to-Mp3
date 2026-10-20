@@ -1191,7 +1191,7 @@ impl ConversionWorker {
                         if let Some(edge) = &self.test_edge {
                             return edge(segment);
                         }
-                        return run_edge_synthesis(
+                        return run_preference_edge_synthesis(
                             crate::tts::synthesize_with_reference_client(
                                 segment,
                                 selection
@@ -1202,7 +1202,7 @@ impl ConversionWorker {
                                 self.telemetry.clone(),
                             ),
                             &self.cancel,
-                            std::time::Duration::from_secs(5),
+                            segment.len(),
                         );
                     }
                     let (model, config) = self.selection_model_paths(request, selection);
@@ -1595,6 +1595,21 @@ where
     });
     runtime.shutdown_background();
     result
+}
+
+fn run_preference_edge_synthesis<T, F>(
+    synthesis: F,
+    cancel: &CancellationToken,
+    text_bytes: usize,
+) -> Result<T, WorkerError>
+where
+    F: std::future::Future<Output = Result<T, EdgeError>>,
+{
+    run_edge_synthesis(
+        synthesis,
+        cancel,
+        crate::tts::reference_synthesis_timeout_for_text(text_bytes),
+    )
 }
 
 fn run_edge_synthesis<T, F>(
@@ -3246,6 +3261,42 @@ mod tests {
         );
         assert!(!output.join("manifest.json").exists());
         assert_eq!(fs::metadata(audio).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn preference_edge_allows_first_audio_after_five_seconds() {
+        let bytes = run_preference_edge_synthesis(
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(5_100)).await;
+                Ok(vec![1, 2, 3])
+            },
+            &CancellationToken::default(),
+            20,
+        )
+        .expect("Configured Edge must retain the reference client's connection/retry budget");
+        assert_eq!(bytes, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn preference_edge_keeps_cancellation_and_provider_error_identity() {
+        let cancelled = CancellationToken::default();
+        cancelled.cancel();
+        assert!(matches!(
+            run_preference_edge_synthesis::<Vec<u8>, _>(
+                async { panic!("Cancelled jobs must not contact Edge") },
+                &cancelled,
+                20,
+            ),
+            Err(WorkerError::Cancelled)
+        ));
+        assert!(matches!(
+            run_preference_edge_synthesis::<Vec<u8>, _>(
+                async { Err(EdgeError::NoAudio) },
+                &CancellationToken::default(),
+                20,
+            ),
+            Err(WorkerError::Edge(EdgeError::NoAudio))
+        ));
     }
 
     #[test]
