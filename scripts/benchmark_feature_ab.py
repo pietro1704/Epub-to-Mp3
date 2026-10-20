@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -29,9 +30,9 @@ def _default_book() -> Path:
 
 
 def _run(cmd: List[str], env: Dict[str, str] | None = None) -> Dict[str, object]:
-    start = time.time()
+    start = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
-    elapsed = max(0.001, time.time() - start)
+    elapsed = max(0.001, time.perf_counter() - start)
     return {
         "cmd": cmd,
         "exit_code": int(proc.returncode),
@@ -101,9 +102,14 @@ def main() -> int:
             f"--engine {args.engine} --max-performance --stage-pipeline --output-dir {pool_out}",
         ]
 
-        base = _run(base_cmd)
-        stage = _run(stage_cmd)
-        pool = _run(pool_cmd)
+        results = []
+        for name, command in (("base", base_cmd), ("stage", stage_cmd), ("pool", pool_cmd)):
+            cache = tmp_dir / f"{name}-cache"
+            cache.mkdir()
+            env = os.environ.copy()
+            env["CACHE_DIR"] = str(cache)
+            results.append(_run(command, env=env))
+        base, stage, pool = results
 
     base_time = float(base.get("elapsed_s") or 0.0)
     stage_time = float(stage.get("elapsed_s") or 0.0)
@@ -114,6 +120,7 @@ def main() -> int:
         "hostname": socket.gethostname(),
         "book": str(book),
         "engine": str(args.engine),
+        "cache_policy": "isolated-cold-per-route",
         "results": {
             "baseline_no_stage": base,
             "stage_pipeline": stage,
