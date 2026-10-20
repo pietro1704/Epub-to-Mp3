@@ -398,6 +398,38 @@ mod tests {
     }
 
     #[test]
+    fn progress_after_cancellation_preserves_state_and_terminal_records() {
+        let (_directory, manager) = manager();
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("source".into(), serde_json::json!("original-book"));
+        manager
+            .create(JobRecord::new("cancelled", metadata))
+            .unwrap();
+        manager.transition("cancelled", JobState::Running).unwrap();
+        let cancelling = manager.request_cancellation("cancelled").unwrap();
+        let progress = serde_json::json!({"completed": 2});
+        let clone = manager.clone();
+        let updated = clone
+            .update_progress("cancelled", progress.clone())
+            .unwrap();
+        assert_eq!(updated.state, JobState::Cancelling);
+        assert_eq!(updated.progress, progress);
+        assert_eq!(updated.metadata, cancelling.metadata);
+        assert_eq!(manager.load("cancelled").unwrap(), updated);
+
+        let terminal = manager
+            .transition("cancelled", JobState::Cancelled)
+            .unwrap();
+        let stored = fs::read(manager.job_path("cancelled")).unwrap();
+        assert!(matches!(
+            clone.update_progress("cancelled", serde_json::json!({"completed": 3})),
+            Err(JobError::InvalidTransition(_))
+        ));
+        assert_eq!(manager.load("cancelled").unwrap(), terminal);
+        assert_eq!(fs::read(manager.job_path("cancelled")).unwrap(), stored);
+    }
+
+    #[test]
     fn concurrent_progress_updates_preserve_a_valid_running_job() {
         let (_directory, manager) = manager();
         manager
@@ -542,6 +574,47 @@ mod tests {
             .unwrap();
         manager.request_cancellation("job-2").unwrap();
         assert!(manager.is_cancellation_requested("job-2").unwrap());
+        assert_eq!(manager.cleanup_stale().unwrap(), 0);
+    }
+
+    #[test]
+    fn cleanup_removes_expired_terminal_jobs_without_relocking() {
+        let (_directory, manager) = manager();
+        for (id, state) in [
+            ("expired-completed", JobState::Completed),
+            ("expired-cancelled", JobState::Cancelled),
+            ("expired-failed", JobState::Failed),
+            ("old-running", JobState::Running),
+        ] {
+            let mut record = JobRecord::new(id, serde_json::Map::new());
+            record.state = state;
+            record.updated_at = 0;
+            manager.persist(&record).unwrap();
+        }
+        let mut recent = JobRecord::new("recent-completed", serde_json::Map::new());
+        recent.state = JobState::Completed;
+        manager.persist(&recent).unwrap();
+
+        let worker = manager.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let cleanup = std::thread::spawn(move || {
+            sender.send(worker.cleanup_stale()).unwrap();
+        });
+        let deleted = receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("cleanup must not recursively acquire the mutation lock")
+            .unwrap();
+        cleanup.join().unwrap();
+        assert_eq!(deleted, 3);
+        for id in ["expired-completed", "expired-cancelled", "expired-failed"] {
+            assert!(matches!(manager.load(id), Err(JobError::NotFound(_))));
+        }
+        assert_eq!(
+            manager.load("old-running").unwrap().state,
+            JobState::Running
+        );
+        assert_eq!(manager.load("recent-completed").unwrap(), recent);
+        assert_eq!(manager.list().unwrap().len(), 2);
         assert_eq!(manager.cleanup_stale().unwrap(), 0);
     }
 }
