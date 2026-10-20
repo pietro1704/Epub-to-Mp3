@@ -12,7 +12,7 @@ require "rbconfig"
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
   COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check sidecar:build piper:build-runtime web:wasm-build].freeze
-  TASKS = (%w[ios:build ios:device:build ios:simulator:test ios:simulator:run ios:simulator:resume ios:simulator:smoke:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS).to_h do |name|
+  TASKS = (%w[ios:run ios:test ios:device:test ios:build ios:device:build ios:simulator:test ios:simulator:run ios:simulator:resume ios:simulator:smoke:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS).to_h do |name|
     output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: ROOT)
     raise "Cannot read mise task #{name}: #{error}" unless status.success?
     [name, JSON.parse(output).fetch("run").join("\n")]
@@ -51,21 +51,57 @@ class NativeTaskWiringTest < Minitest::Test
       File.write(path, "#!/bin/bash\nexit 0\n")
       File.chmod(0o755, path)
     end
+    @simulator_run_task = File.join(@dir, "ios-simulator-run.sh")
+    @simulator_test_task = File.join(@dir, "ios-simulator-test.sh")
+    File.write(@simulator_run_task, TASKS.fetch("ios:simulator:run"))
+    File.write(@simulator_test_task, TASKS.fetch("ios:simulator:test"))
     shim("mise", <<~'SH')
-      if [[ "$1" == exec && "$2" == -- && "$3" == ruby ]]; then
-        shift 3
-        script="$1"
-        shift
-        exec "$FIXTURE_RUBY" "$script" --lock-path "$FIXTURE_LOCK" "$@"
+      if [[ "${1:-}" == run ]]; then
+        [[ "$#" == 2 ]] || exit 98
+        case "$2" in
+          ios:build)
+            echo "route ios:build" >> "$FIXTURE_EVENTS"
+            exit "${FIXTURE_IOS_BUILD_STATUS:-0}" ;;
+          ios:device:test)
+            echo "route ios:device:test" >> "$FIXTURE_EVENTS"
+            exit "${FIXTURE_IOS_DEVICE_TEST_STATUS:-0}" ;;
+          ios:simulator:run)
+            echo "route ios:simulator:run" >> "$FIXTURE_EVENTS"
+            exec /bin/bash -euo pipefail "$FIXTURE_IOS_SIMULATOR_RUN_TASK" ;;
+          ios:simulator:test)
+            echo "route ios:simulator:test" >> "$FIXTURE_EVENTS"
+            exec /bin/bash -euo pipefail "$FIXTURE_IOS_SIMULATOR_TEST_TASK" ;;
+          *) exit 98 ;;
+        esac
       fi
-      if [[ "$1" == exec && "$2" == -- && "$3" == cargo ]]; then
+      if [[ "${1:-}" == exec && "${2:-}" == -- && "${3:-}" == cargo ]]; then
         shift 3
         exec cargo "$@"
       fi
-      exit 98
+      [[ "${1:-}" == exec && "${2:-}" == -- && "${3:-}" == ruby ]] || exit 98
+      shift 3
+      script="${1:-}"
+      case "$script" in
+        "$MISE_PROJECT_ROOT/scripts/native_job.rb"|"$MISE_PROJECT_ROOT/scripts/native_build_command.rb") ;;
+        scripts/native_job.rb|scripts/native_build_command.rb)
+          [[ "$PWD" -ef "$MISE_PROJECT_ROOT" ]] || exit 98 ;;
+        ../../scripts/native_job.rb|../../scripts/native_build_command.rb)
+          [[ "$PWD" -ef "$MISE_PROJECT_ROOT/ios/EpubToMp3" ]] || exit 98 ;;
+        *) exit 98 ;;
+      esac
+      shift
+      exec "$FIXTURE_RUBY" "$script" --lock-path "$FIXTURE_LOCK" "$@"
     SH
     shim("xcrun", <<~'SH')
-      [[ "$1" == simctl ]] || exit 98
+      if [[ "${1:-}" == devicectl ]]; then
+        [[ "$#" == 3 && "$2" == list && "$3" == devices ]] || exit 98
+        echo devicectl >> "$FIXTURE_EVENTS"
+        if [[ "${FIXTURE_DEVICE_AVAILABLE:-0}" == 1 ]]; then
+          echo "Fixture iPhone fixture-device-id available"
+        fi
+        exit 0
+      fi
+      [[ "${1:-}" == simctl ]] || exit 98
       shift
       case "$1" in
         list) printf '{"devices":{"fixture":[{"state":"%s"}]}}\n' "${FIXTURE_SIM_STATE:-Shutdown}" ;;
@@ -105,6 +141,9 @@ class NativeTaskWiringTest < Minitest::Test
       "IOS_SIMULATOR_UDID" => "00000000-0000-0000-0000-000000000001",
       "IOS_DEST" => "id=00000000-0000-0000-0000-000000000001",
       "IOS_TESTS" => "EpubToMp3Tests/Fixture", "IOS_SKIP_BUILD" => "0",
+      "IOS_DEVICE_ID" => nil, "IOS_TARGET" => nil,
+      "FIXTURE_IOS_SIMULATOR_RUN_TASK" => @simulator_run_task,
+      "FIXTURE_IOS_SIMULATOR_TEST_TASK" => @simulator_test_task,
       "EPUB_NATIVE_LEASE_FD" => nil, "EPUB_NATIVE_LEASE_PATH" => nil
     }
   end
@@ -207,6 +246,55 @@ class NativeTaskWiringTest < Minitest::Test
     assert status.success?, error
     assert_equal ["cargo", "server"], events.map { |event| event.split(/[ |]/).first }
     assert_equal "server||127.0.0.1:8000||", events.last
+  end
+
+  def test_fixture_rejects_unknown_routes_and_guards_outside_the_owned_worktree
+    foreign = File.join(@dir, "foreign")
+    nested = File.join(foreign, "ios/EpubToMp3")
+    FileUtils.mkdir_p([File.join(foreign, "scripts"), nested])
+    File.write(File.join(foreign, "scripts/native_job.rb"),
+               'File.write(ENV.fetch("FIXTURE_EVENTS"), "foreign guard executed")')
+    cases = [
+      [@dir, ["run", "ios:unknown"]],
+      [@dir, ["exec", "--", "ruby", File.join(foreign, "scripts/native_job.rb"), "build"]],
+      [foreign, ["exec", "--", "ruby", "scripts/native_job.rb", "build"]],
+      [nested, ["exec", "--", "ruby", "../../scripts/native_job.rb", "build"]]
+    ]
+    cases.each do |directory, arguments|
+      _, error, status = Open3.capture3(@env, File.join(@bin, "mise"), *arguments, chdir: directory)
+      assert_equal 98, status.exitstatus, error
+      assert_empty events, "An unknown route or foreign guard must not execute"
+    end
+  end
+
+  def test_ios_run_simulator_mode_reaches_guard_without_launching_simulator
+    skip "Intel macOS quarantine only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    _, error, status = run_task("ios:run", "IOS_TARGET" => "simulator")
+    assert_equal 75, status.exitstatus, error
+    assert_match(/quarantined/, error)
+    assert_equal ["route ios:build", "route ios:simulator:run"], events
+    assert_unlocked
+  end
+
+  def test_ios_run_build_failure_never_reaches_simulator_route
+    _, error, status = run_task("ios:run", "IOS_TARGET" => "simulator", "FIXTURE_IOS_BUILD_STATUS" => "23")
+    assert_equal 23, status.exitstatus, error
+    assert_equal ["route ios:build"], events
+  end
+
+  def test_ios_test_without_device_reaches_simulator_guard
+    skip "Intel macOS quarantine only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    _, error, status = run_task("ios:test")
+    assert_equal 75, status.exitstatus, error
+    assert_match(/quarantined/, error)
+    assert_equal ["devicectl", "route ios:simulator:test"], events
+    assert_unlocked
+  end
+
+  def test_ios_test_with_device_available_keeps_physical_route
+    _, error, status = run_task("ios:test", "FIXTURE_DEVICE_AVAILABLE" => "1")
+    assert status.success?, error
+    assert_equal ["devicectl", "route ios:device:test"], events
   end
 
   def test_blocked_preflight_never_invokes_compiler_or_task_body

@@ -18,6 +18,10 @@ class NativeHookSafetyTest < Minitest::Test
     @root = File.join(@temporary, "checkout ' literal")
     @bin = File.join(@root, "bin")
     FileUtils.mkdir_p(@bin)
+    FileUtils.mkdir_p([File.join(@root, "scripts"), File.join(@root, "ios/EpubToMp3/EpubToMp3.xcodeproj")])
+    %w[native_job.rb native_build_preflight.rb].each do |file|
+      FileUtils.cp(File.join(ROOT, "scripts", file), File.join(@root, "scripts", file))
+    end
     @marker = File.join(@root, "native-called")
     @git_marker = File.join(@root, "git-called")
     @lease = File.join(@root, "lease")
@@ -63,20 +67,24 @@ class NativeHookSafetyTest < Minitest::Test
 
   def assert_notification(hook, environment = {})
     output, error, status = run_hook(hook, environment)
+    refute File.exist?(@marker), "hook invoked a native tool"
     assert status.success?, output + error
     assert_includes error, "native verification pending"
     assert_includes error, "automatic compilation disabled"
-    refute File.exist?(@marker), "hook invoked a native tool"
   end
 
-  def test_idle_and_booted_states_never_start_native_work
-    %w[Shutdown Booted].each do |state|
-      HOOKS.each { |hook| assert_notification(hook, "FIXTURE_STATE" => state) }
-    end
+  def test_edit_with_valid_guards_and_project_never_starts_native_work
+    assert_notification("swift_test_after_edit.sh")
+  end
+
+  def test_stop_with_valid_guards_and_project_never_starts_native_work
+    assert_notification("xcode_build_smoke.sh")
   end
 
   def test_missing_guard_does_not_reenable_automatic_work
-    refute File.exist?(File.join(@root, "scripts/native_job.rb"))
+    %w[native_job.rb native_build_preflight.rb].each do |file|
+      FileUtils.rm(File.join(@root, "scripts", file))
+    end
     HOOKS.each { |hook| assert_notification(hook) }
   end
 
