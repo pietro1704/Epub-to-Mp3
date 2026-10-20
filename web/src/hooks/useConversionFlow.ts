@@ -1037,7 +1037,7 @@ export function useConversionFlow(
       if (removeFn && apiAvailable) {
         void (async () => {
           try {
-            await removeFn(jobId);
+            await removeFn.call(api, jobId);
           } catch (error) {
             console.warn(
               "[useConversionFlow] Failed to purge cancelled job on backend",
@@ -2383,7 +2383,7 @@ export function useConversionFlow(
     if (jobId && !removeFn && typeof cancelFn === "function") {
       void (async () => {
         try {
-          await cancelFn(jobId);
+          await cancelFn.call(api, jobId);
         } catch (error) {
           const message =
             error instanceof Error && error.message
@@ -2448,7 +2448,7 @@ export function useConversionFlow(
       if (!removeFn && typeof cancelFn === "function") {
         void (async () => {
           try {
-            await cancelFn(jobId);
+            await cancelFn.call(api, jobId);
           } catch (error) {
             console.warn(
               "[skipCurrent] Failed to cancel job on backend:",
@@ -2528,7 +2528,7 @@ export function useConversionFlow(
       if (jobId && removeFn && apiAvailable) {
         void (async () => {
           try {
-            await removeFn(jobId);
+            await removeFn.call(api, jobId);
           } catch (error) {
             console.warn(
               "[useConversionFlow] Failed to remove job on backend",
