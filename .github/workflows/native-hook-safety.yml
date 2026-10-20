@@ -10,6 +10,11 @@ on:
       - '.claude/hooks/xcode_build_smoke.sh'
       - 'scripts/native_build_preflight.rb'
       - 'scripts/native_job.rb'
+      - 'scripts/mac_build_budget.rb'
+      - 'scripts/test_mac_build_budget.rb'
+      - 'config/mac-build-budget.json'
+      - 'mise.toml'
+      - 'native/vendor/espeak-rs-sys/build.rs'
       - 'scripts/test_native_build_preflight.rb'
       - 'scripts/test_native_job.rb'
       - 'scripts/test_native_hook_safety.rb'
@@ -25,6 +30,11 @@ on:
       - '.claude/hooks/xcode_build_smoke.sh'
       - 'scripts/native_build_preflight.rb'
       - 'scripts/native_job.rb'
+      - 'scripts/mac_build_budget.rb'
+      - 'scripts/test_mac_build_budget.rb'
+      - 'config/mac-build-budget.json'
+      - 'mise.toml'
+      - 'native/vendor/espeak-rs-sys/build.rs'
       - 'scripts/test_native_build_preflight.rb'
       - 'scripts/test_native_job.rb'
       - 'scripts/test_native_hook_safety.rb'
@@ -91,3 +101,32 @@ jobs:
           mise exec -- ruff format --check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
       - name: Verify monitor runtime contracts without Apple execution
         run: mise run host:simulator-resources:test
+
+  mac-build-storage:
+    name: Mac build storage regressions
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CMAKE_BUILD_PARALLEL_LEVEL: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+          bundler-cache: false
+      - run: gem install minitest --version 6.0.6 --no-document
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Exercise storage refusals, monitoring and protected cleanup
+        run: ruby scripts/test_mac_build_budget.rb
+      - name: Preserve existing lease and cancellation contracts
+        run: ruby scripts/test_native_job.rb
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the actual eSpeak native dependency serially
+        run: ruby scripts/native_job.rb build -- cargo check --locked -p espeak-rs-sys --jobs 1

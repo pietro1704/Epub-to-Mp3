@@ -155,7 +155,7 @@ fn main() {
     // Refresh source inputs after Cargo restores an existing OUT_DIR from cache.
     debug_log!("Copy {} to {}", espeak_src.display(), espeak_dst.display());
     source_copy::prepare_source(&espeak_src, &espeak_dst);
-    // Speed up build
+    // Keep Mac builds serial; retain existing parallelism on other hosts.
     env::set_var(
         "CMAKE_BUILD_PARALLEL_LEVEL",
         if cfg!(target_os = "macos") {

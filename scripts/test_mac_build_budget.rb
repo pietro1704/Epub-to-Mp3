@@ -252,4 +252,73 @@ class MacBuildBudgetTest < Minitest::Test
     assert_nil NativeJob.parallelism_error(["cargo", "build", "--jobs", "1"])
     assert_nil NativeJob.parallelism_error(["xcodebuild", "-showdestinations", "-json", "-jobs", "1"])
   end
+
+  def test_device_and_variant_build_caches_are_counted_without_being_pruned
+    caches = %w[.build-device ios/EpubToMp3/.build-device ios/EpubToMp3/.build-release].map do |relative|
+      path = File.join(@dir, relative)
+      FileUtils.mkdir_p(path)
+      File.write(File.join(path, "artifact"), "preserve" * 1024)
+      path
+    end
+    with_stub(:worktrees, [@dir]) do
+      with_stub(:xcode_caches, []) do
+        assert_equal caches.sort, MacBuildBudget.metrics.fetch(:paths).sort
+        with_stub(:capture, "") { MacBuildBudget.prune(lock: File.join(@dir, "lease")) }
+        caches.each { |path| assert File.file?(File.join(path, "artifact")) }
+      end
+    end
+  end
+
+  def task_body(name)
+    root = File.expand_path("..", __dir__)
+    output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: root)
+    assert status.success?, error
+    JSON.parse(output).fetch("run").join("\n")
+  end
+
+  def test_apple_build_tasks_route_through_the_serial_guard
+    %w[mac:build ios:build ios:device:build converter-ffi:build].each do |name|
+      body = task_body(name)
+      assert_match(/native_job.rb.*build --/, body, name)
+      assert_match(/(?:-jobs|--jobs) 1/, body, name)
+      refute_match(/-parallelizeTargets/, body, name)
+      _, error, status = Open3.capture3("/bin/bash", "-n", stdin_data: body)
+      assert status.success?, error
+    end
+  end
+
+  def test_actual_ios_build_task_uses_storage_guard_with_fake_compilers
+    fixture
+    body = task_body("ios:build")
+    FileUtils.mkdir_p(File.join(@dir, "ios/EpubToMp3"))
+    %w[ios_disk_guard.sh verify_widget_embedded.sh].each do |name|
+      path = File.join(@dir, "scripts", name)
+      File.write(path, "#!/bin/sh\nexit 0\n")
+      File.chmod(0o755, path)
+    end
+    commands = {
+      "mise" => 'shift 3; script="$1"; shift; exec "$BUDGET_RUBY" "$script" --lock-path "$BUDGET_FIXTURE_ROOT/lease" "$@"',
+      "python3" => 'exit 0',
+      "xcodegen" => 'exit 0',
+      "xcodebuild" => 'case " $* " in *" -showdestinations "*) printf "platform:iOS Simulator,\\n";; *) printf ran > "$BUDGET_MARKER"; exit "${BUDGET_COMPILER_STATUS:-0}";; esac'
+    }
+    commands.each do |name, command|
+      path = File.join(@dir, "bin", name)
+      File.write(path, "#!/bin/sh\n#{command}\n")
+      File.chmod(0o755, path)
+    end
+    environment = @env.merge("BUDGET_RUBY" => RbConfig.ruby, "BUDGET_MARKER" => @marker,
+                             "MISE_PROJECT_ROOT" => @dir, "IOS_DEST" => "fixture-only", "TMPDIR" => @dir)
+    [0, 17].each do |compiler_status|
+      _, error, status = Open3.capture3(environment.merge("BUDGET_COMPILER_STATUS" => compiler_status.to_s),
+                                       "/bin/bash", "-euo", "pipefail", "-c", body, chdir: @dir)
+      assert_equal compiler_status.zero? ? 0 : 65, status.exitstatus, error
+      assert File.file?(@marker)
+      File.unlink(@marker)
+    end
+    File.write(@free, "0")
+    _, error, status = Open3.capture3(environment, "/bin/bash", "-euo", "pipefail", "-c", body, chdir: @dir)
+    refute status.success?, error
+    refute File.exist?(@marker)
+  end
 end
