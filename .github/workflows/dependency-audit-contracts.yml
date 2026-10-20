@@ -1,0 +1,45 @@
+name: Dependency audit report contracts
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/dependency-audit-results.cjs'
+      - '.github/scripts/dependency-audit-results.test.cjs'
+      - '.github/workflows/dependency-audit-contracts.yml'
+      - '.github/workflows/dependency-vulnerability-remediation.yml'
+  push:
+    paths:
+      - .github/scripts/dependency-audit-results.cjs
+      - .github/scripts/dependency-audit-results.test.cjs
+      - .github/workflows/dependency-audit-contracts.yml
+      - .github/workflows/dependency-vulnerability-remediation.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-contracts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    name: Scanner report and command outcome contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Report Node runtime
+        run: node --version
+
+      - name: Exercise scanner report contracts without network scanners
+        run: node --test .github/scripts/dependency-audit-results.test.cjs
