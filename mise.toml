@@ -1357,6 +1357,10 @@ run = "mise exec -- ruby docs/research/tts-phone-benchmark/summarize.rb"
 description = "Measure isolated native Mac CLI synthesis for Faber medium, Miro high and Dii high"
 run = "mise exec -- ruby docs/research/piper-high-terminal-benchmark.rb"
 
+[tasks."ios:device:prepare"]
+description = "Explicitly build the physical-device workflow CLI under the native build guard"
+run = "bash scripts/device-workflow.sh prepare"
+
 [tasks."ios:device:benchmark"]
 description = "Benchmark explicit EPUB/ranges on iPhone; --case BOOK START END, at most two chapters unless --whole-book"
 run = "bash scripts/device-workflow.sh benchmark"

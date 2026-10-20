@@ -29,7 +29,7 @@ class NativeBuildPreflightTest < Minitest::Test
     result, calls = check(states: ["Shutdown"])
     assert_nil result
     assert_equal ["pgrep", "-f", "SimMetalHost"], calls[-2]
-    assert_includes calls.last.last, "/Simulator[.]app/"
+    assert_equal ["pgrep", "-f", "/Simulator[.]app/Contents/MacOS/Simulator($| )"], calls.last
     assert_nil check.first
   end
 
@@ -65,6 +65,11 @@ class NativeBuildPreflightTest < Minitest::Test
       assert_match(/blocked/, check(raw: raw).first)
     end
     assert_match(/blocked/, NativeBuildPreflight.check(host: "x86_64-darwin", runner: ->(*) { raise Errno::ENOENT }))
+  end
+
+  def test_open_simulator_app_or_failed_inspection_blocks_build
+    assert_match(/Quit Simulator.app/, check(states: ["Shutdown"], app: 0).first)
+    assert_match(/Cannot inspect Simulator.app/, check(states: ["Shutdown"], app: 2).first)
   end
 
   def test_other_hosts_do_not_inspect_apple_services

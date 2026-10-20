@@ -21,14 +21,14 @@ final class DeviceWorkflowTests: XCTestCase {
     }
 
     private func options(_ arguments: [String]) throws -> Options {
-        try Options(arguments: arguments, root: root, environment: [:])
+        try Options(arguments: arguments, root: root, environment: ["IOS_TESTS": "EpubToMp3Tests/ReaderViewportTransitionTests"])
     }
 
     private func workflow(_ arguments: [String], runner: @escaping CommandRunner,
                           resourceCheck: @escaping () throws -> Void = {}) throws -> Workflow {
         Workflow(root: root, options: try options(arguments), runID: runID, runner: runner,
                  identity: { _ in "Wed Oct 7 12:00:00 2026" }, resourceCheck: resourceCheck,
-                 heavyLock: root.appendingPathComponent("heavy.lock"), environment: ["IOS_TESTS": "EpubToMp3Tests/Smoke"])
+                 heavyLock: root.appendingPathComponent("heavy.lock"), environment: ["IOS_TESTS": "EpubToMp3Tests/ReaderViewportTransitionTests"])
     }
 
     func testScopeLimitsSentinelsOverflowAndMissingInput() throws {
@@ -248,6 +248,10 @@ final class DeviceWorkflowTests: XCTestCase {
                     ["executable": "/apps/EpubToMp3.app/EpubToMp3", "processIdentifier": 42],
                     ["executable": "/apps/EpubToMp3.app/Other", "processIdentifier": 43],
                 ]]
+                case "appCleanupInspection", "appCleanupRevalidation":
+                    result = ["runningProcesses": [["executable": "/apps/EpubToMp3.app/EpubToMp3", "processIdentifier": 42]]]
+                case "appCleanupVerification":
+                    result = ["runningProcesses": [["executable": "/apps/Unrelated.app/Unrelated", "processIdentifier": 43]]]
                 case "inputCleanupVerification":
                     XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--subdirectory")! + 1],
                                    "tmp/EpubToMp3/DeviceTestInputs")
@@ -275,7 +279,7 @@ final class DeviceWorkflowTests: XCTestCase {
                 XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--destination")! + 1],
                                "tmp/EpubToMp3/DeviceTestInputs/\(self.runID)")
             case "testWall":
-                XCTAssertTrue(command.arguments.contains("-only-testing:EpubToMp3Tests/Smoke"))
+                XCTAssertTrue(command.arguments.contains("-only-testing:EpubToMp3Tests/ReaderViewportTransitionTests"))
                 if let index = command.arguments.firstIndex(of: "-xctestrun") {
                     let plist = try PropertyListSerialization.propertyList(
                         from: Data(contentsOf: URL(fileURLWithPath: command.arguments[index + 1])), format: nil) as! [String: Any]
@@ -293,7 +297,8 @@ final class DeviceWorkflowTests: XCTestCase {
                 }
                 return CommandResult(code: failNative ? 65 : 0)
             case "build":
-                XCTAssertTrue(command.arguments.contains("-only-testing:EpubToMp3Tests/Smoke"))
+                XCTAssertTrue(command.arguments.contains("-only-testing:EpubToMp3Tests/ReaderViewportTransitionTests"))
+                XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "-jobs")! + 1], "1")
                 XCTAssertTrue(command.arguments.contains("build-for-testing"))
             case "nativeCollection":
                 XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--source")! + 1],
@@ -305,7 +310,9 @@ final class DeviceWorkflowTests: XCTestCase {
                 var evidence = self.native(selections)
                 if failNative { evidence["status"] = "failed"; evidence["error"] = "ffprobe/ffmpeg: No such file (os error 2)" }
                 try DurableJSON.write(evidence, to: URL(fileURLWithPath: command.arguments[index + 1]).appendingPathComponent("native.json"))
-            case "testSummary": return CommandResult(output: "{\"result\":\"Passed\",\"passedTests\":1,\"failedTests\":0,\"skippedTests\":0}")
+            case "testSummary":
+                let benchmark = (state["cases"] as? [[String: Any]])?.isEmpty == false
+                return CommandResult(output: "{\"result\":\"Passed\",\"passedTests\":\(benchmark ? 1 : 4),\"failedTests\":0,\"skippedTests\":0}")
             case "inputCleanup":
                 XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--destination")! + 1],
                                "tmp/EpubToMp3/DeviceTestInputs/\(self.runID)")
@@ -336,6 +343,99 @@ final class DeviceWorkflowTests: XCTestCase {
         XCTAssertTrue(executed.contains("projectGeneration"))
         XCTAssertFalse(executed.contains("install"))
         XCTAssertFalse(executed.contains("transfer"))
+        XCTAssertEqual(work.report["appCleanupVerified"] as? Bool, true)
+        XCTAssertTrue(executed.firstIndex(of: "nativeBuildPreflight")! < executed.firstIndex(of: "build")!)
+        XCTAssertEqual(Array(executed.suffix(4)), ["appCleanupInspection", "appCleanupRevalidation", "appCleanupTermination", "appCleanupVerification"])
+    }
+
+    func testTestFailureStillVerifiesAppShutdownAndPreservesPrimaryError() throws {
+        _ = try appFixture()
+        let phases = NSMutableArray()
+        let fallback = fakeRunner(phases: phases)
+        let work = try workflow(["test"], runner: { command, observe in
+            if command.phase == "testWall" {
+                _ = try fallback(command, observe)
+                throw WorkflowError("original test failure")
+            }
+            return try fallback(command, observe)
+        })
+        XCTAssertThrowsError(try work.execute()) { XCTAssertTrue(String(describing: $0).contains("original test failure")) }
+        XCTAssertEqual(work.report["appCleanupVerified"] as? Bool, true)
+    }
+
+    func testCleanupRefusesReplacedPIDAndRetainsTestFailure() throws {
+        _ = try appFixture()
+        let fallback = fakeRunner(phases: NSMutableArray())
+        var terminated = false
+        let work = try workflow(["test"], runner: { command, observe in
+            if command.phase == "testWall" {
+                _ = try fallback(command, observe)
+                throw WorkflowError("original test failure")
+            }
+            if command.phase == "appCleanupTermination" { terminated = true }
+            if command.phase == "appCleanupRevalidation" {
+                let path = command.arguments[command.arguments.firstIndex(of: "--json-output")! + 1]
+                try DurableJSON.write(["info": ["outcome": "success"], "result": ["runningProcesses": [
+                    ["executable": "/apps/EpubToMp3.app/EpubToMp3", "processIdentifier": 99]
+                ]]], to: URL(fileURLWithPath: path))
+                return CommandResult()
+            }
+            return try fallback(command, observe)
+        })
+        XCTAssertThrowsError(try work.execute()) { XCTAssertTrue(String(describing: $0).contains("original test failure")) }
+        XCTAssertFalse(terminated)
+        XCTAssertEqual(work.report["appCleanupVerified"] as? Bool, false)
+        XCTAssertTrue((work.report["appCleanupError"] as? String ?? "").contains("identity changed"))
+    }
+
+    func testNoCleanupDeviceActionsWhenTestSpawnWasRefused() throws {
+        _ = try appFixture()
+        let fallback = fakeRunner(phases: NSMutableArray())
+        let work = try workflow(["test"], runner: { command, observe in
+            XCTAssertFalse(command.phase.hasPrefix("appCleanup"))
+            if command.phase == "testWall" { throw WorkflowError("spawn refused") }
+            return try fallback(command, observe)
+        })
+        XCTAssertThrowsError(try work.execute())
+        XCTAssertNil(work.report["appCleanupVerified"])
+    }
+
+    func testPartialOrSkippedFocusedRunCannotPassAndStillCleansUp() throws {
+        _ = try appFixture()
+        for (index, counts) in [(1, 0), (3, 1)].enumerated() {
+            let fallback = fakeRunner(phases: NSMutableArray())
+            let work = try workflow(["test"], runner: { command, observe in
+                if command.phase == "testSummary" {
+                    return CommandResult(output: "{\"result\":\"Passed\",\"passedTests\":\(counts.0),\"failedTests\":0,\"skippedTests\":\(counts.1)}")
+                }
+                return try fallback(command, observe)
+            })
+            XCTAssertThrowsError(try work.execute(), "case \(index)")
+            XCTAssertEqual(work.report["appCleanupVerified"] as? Bool, true)
+            try FileManager.default.removeItem(at: work.directory)
+        }
+    }
+
+    func testCleanupDoesNotClaimSuccessForInvalidInventoryOrRemainingApp() throws {
+        _ = try appFixture()
+        for invalidInventory in [true, false] {
+            let fallback = fakeRunner(phases: NSMutableArray())
+            let work = try workflow(["test"], runner: { command, observe in
+                if command.phase == "appCleanupVerification" {
+                    let result: [String: Any] = invalidInventory ? [:] : ["runningProcesses": [
+                        ["executable": "/apps/EpubToMp3.app/EpubToMp3", "processIdentifier": 42]
+                    ]]
+                    let path = command.arguments[command.arguments.firstIndex(of: "--json-output")! + 1]
+                    try DurableJSON.write(["info": ["outcome": "success"], "result": result], to: URL(fileURLWithPath: path))
+                    return CommandResult()
+                }
+                return try fallback(command, observe)
+            })
+            XCTAssertThrowsError(try work.execute())
+            XCTAssertEqual(work.report["appCleanupVerified"] as? Bool, false)
+            XCTAssertEqual(work.report["status"] as? String, "failed")
+            try FileManager.default.removeItem(at: work.directory)
+        }
     }
 
     func testWrongTestHostFailsBeforeDeviceWrites() throws {

@@ -41,7 +41,27 @@ public typealias CommandRunner = (Command, (Int32?) throws -> Void) throws -> Co
 
 public enum HostProcess {
     public static func run(_ command: Command, observer: (Int32?) throws -> Void) throws -> CommandResult {
-        guard !HostInterruption.interrupted else { throw WorkflowError("Workflow interrupted; inspect its persisted phase before restart.") }
+        try run(command, interrupted: { HostInterruption.interrupted }, observer: observer)
+    }
+
+    // Cancellation may finish only this bounded device-app shutdown protocol.
+    // It cannot admit a build, app launch, Simulator operation or arbitrary command.
+    static func isAppCleanup(_ command: Command) -> Bool {
+        let args = command.arguments
+        guard command.timeout > 0, command.timeout <= 60, Array(args.prefix(3)) == ["xcrun", "devicectl", "device"] else { return false }
+        if ["appCleanupInspection", "appCleanupRevalidation", "appCleanupVerification"].contains(command.phase) {
+            return args.count == 11 && Array(args[3...5]) == ["info", "processes", "--device"]
+                && !args[6].isEmpty && Array(args[7...9]) == ["--timeout", "30", "--json-output"]
+                && !args[10].isEmpty
+        }
+        return command.phase == "appCleanupTermination" && args.count == 9
+            && Array(args[3...5]) == ["process", "terminate", "--device"] && !args[6].isEmpty
+            && args[7] == "--pid" && (Int32(args[8]) ?? 0) > 0
+    }
+
+    static func run(_ command: Command, interrupted: () -> Bool, observer: (Int32?) throws -> Void) throws -> CommandResult {
+        let cleanup = isAppCleanup(command)
+        guard !interrupted() || cleanup else { throw WorkflowError("Workflow interrupted; inspect its persisted phase before restart.") }
         guard let executable = command.arguments.first else { throw WorkflowError("Empty command.") }
         let fd = open(command.log.path, O_WRONLY | O_CREAT | O_TRUNC, mode_t(0o600))
         guard fd >= 0 else { throw WorkflowError("Cannot open command log (errno=\(errno)).") }
@@ -96,7 +116,7 @@ public enum HostProcess {
             let deadline = ProcessInfo.processInfo.systemUptime + command.timeout
             var status: Int32 = 0
             while true {
-                if HostInterruption.interrupted { throw WorkflowError("\(command.phase) interrupted; inspect \(command.log.path).") }
+                if interrupted() && !cleanup { throw WorkflowError("\(command.phase) interrupted; inspect \(command.log.path).") }
                 let result = waitpid(pid, &status, WNOHANG)
                 if result == pid { reaped = true; break }
                 if result < 0 && errno != EINTR { throw WorkflowError("Cannot reap owned subprocess.") }
