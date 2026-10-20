@@ -103,7 +103,9 @@ The reviewer owns enforcement of scope, resource cost, regression quality and
 acceptance evidence. Review the final diff against the user's actual request;
 check that claimed behavior was exercised at its runtime and that original data
 and unrelated work remain intact. Follow the execution policy for the minimal
-PR gate, explicit merge/auto-merge authorization and no-monitoring default.
+PR gate, standing automatic-merge authorization for ready PRs to `master`
+and no-monitoring default. Keep the repository's existing guarded merge
+workflow enabled; other targets follow the execution policy's authorization rules.
 Comprehensive post-merge validation and publishers are separate from PR checks.
 
 After an authorized merge, read back its identity and confirm it belongs to

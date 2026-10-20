@@ -86,12 +86,18 @@ and verify its remote tip; a failed lease requires reassessment.
 
 The required pre-merge check is the exact-head `PR gate`; comprehensive validation
 runs after merge and publishers require the integrated, validated SHA. A pending
-optional check does not expand the pre-merge gate. Merge requires task-specific
-authorization. Auto-merge additionally requires explicit user authorization and
-confirmed server enforcement of the required gate; `--auto` alone is not proof
-of deferred, validated merging. Administrative bypass requires explicit approval
-for that PR. Release, website/Hugging Face publication and issue closure retain
-their own authorization boundaries.
+optional check does not expand the pre-merge gate. All ready PRs targeting
+`master`, from any author including forks, have standing user authorization for
+automatic merge after successful exact-head CI and its required `PR gate`.
+Keep repository auto-merge enabled and the `Merge eligible pull requests`
+workflow active. It uses the trusted master merge helper to verify the current
+head, up-to-date base and server protection before squash merging. Drafts,
+conflicts, requested changes, stale bases and unverified heads remain blocked;
+resolve the blocker and validate the new head before merging. Other targets
+require task-specific authorization. `--auto` alone is not proof of deferred,
+validated merging. Administrative bypass requires explicit approval for that PR.
+Release, website/Hugging Face publication and issue closure retain their own
+authorization boundaries.
 
 CI monitoring is opt-in. Do not poll unrelated CI or infer monitoring permission
 from PR creation. Report pending/unobserved results precisely. After an authorized
