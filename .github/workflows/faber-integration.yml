@@ -305,24 +305,52 @@ jobs:
       - name: Run real macOS preference and installation XCTest
         working-directory: ios/EpubToMp3
         run: |
-          set -o pipefail
+          set -euo pipefail
           mkdir -p ../../.reports/tts-preferences
-          xcodebuild test -project EpubToMp3.xcodeproj \
-            -scheme EpubToMp3-UnitTests -destination 'platform=macOS' \
-            -derivedDataPath .build/faber-ci \
+          test_arguments=(
+            -project EpubToMp3.xcodeproj
+            -scheme EpubToMp3-UnitTests -destination 'platform=macOS'
+            -derivedDataPath .build/faber-ci
+            -jobs 1 -parallel-testing-enabled NO
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+            "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$EPUB2MP3_PIPER_TEST_MODEL_ROOT"
+            -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests
+            -only-testing:EpubToMp3Tests/ConvertViewModelTests
+            -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests
+            -only-testing:EpubToMp3Tests/PlatformSpeechSynthesizerTests
+            -only-testing:EpubToMp3Tests/ReaderProgressiveListeningTests
+            -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests
+          )
+          xcodebuild build-for-testing "${test_arguments[@]}" \
+            | tee ../../.reports/tts-preferences/macos-prefs-build.log
+          xcodebuild test-without-building "${test_arguments[@]}" \
             -resultBundlePath ../../.reports/tts-preferences/macos-prefs.xcresult \
-            -jobs 1 -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
-            EPUB2MP3_PIPER_TEST_MODEL_ROOT="$EPUB2MP3_PIPER_TEST_MODEL_ROOT" \
-            -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests \
-            -only-testing:EpubToMp3Tests/ConvertViewModelTests \
-            -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests \
-            -only-testing:EpubToMp3Tests/PlatformSpeechSynthesizerTests \
-            -only-testing:EpubToMp3Tests/ReaderProgressiveListeningTests \
-            -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests \
             | tee ../../.reports/tts-preferences/macos-prefs.log
           grep -F 'FABER_NATIVE firstChunkSeconds=' ../../.reports/tts-preferences/macos-prefs.log
+      - name: Capture sanitized existing test build metadata without execution
+        if: always()
+        env:
+          INVENTORY_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          INVENTORY_EVENT_SHA: ${{ github.sha }}
+          INVENTORY_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          export INVENTORY_CHECKOUT_SHA="$(git rev-parse HEAD)"
+          export INVENTORY_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          if state=$(git status --porcelain --untracked-files=normal 2>/dev/null); then
+            if [ -z "$state" ]; then
+              export INVENTORY_WORKTREE_STATE=clean
+            else
+              export INVENTORY_WORKTREE_STATE=dirty
+            fi
+          else
+            export INVENTORY_WORKTREE_STATE=unknown
+          fi
+          unset state
+          mise exec -- python scripts/capture_native_test_metadata.py \
+            --products ios/EpubToMp3/.build/faber-ci/Build/Products \
+            --output .reports/tts-preferences/test-metadata \
+            --xcode-version-file "$RUNNER_TEMP/faber-xcode-version.txt"
       - name: Remove explicitly downloaded native test weights
         if: always()
         run: |

@@ -1,0 +1,35 @@
+name: Native test metadata contracts
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/capture_native_test_metadata.py'
+      - 'scripts/test_capture_native_test_metadata.py'
+      - '.github/workflows/native-test-metadata-contracts.yml'
+      - '.github/workflows/faber-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MISE_ENABLE_TOOLS: python
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install only project-pinned Python
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Exercise synthetic metadata, redaction and filesystem boundaries only
+        run: mise exec -- python scripts/test_capture_native_test_metadata.py -v
