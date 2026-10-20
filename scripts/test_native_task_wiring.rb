@@ -22,9 +22,13 @@ class NativeTaskWiringTest < Minitest::Test
     @bin = File.join(@dir, "bin")
     @events = File.join(@dir, "events")
     FileUtils.mkdir_p([@bin, File.join(@dir, "scripts"), File.join(@dir, "ios/EpubToMp3")])
-    %w[native_job.rb native_build_preflight.rb].each do |file|
+    %w[native_job.rb native_build_preflight.rb mac_build_budget.rb].each do |file|
       FileUtils.cp(File.join(__dir__, file), File.join(@dir, "scripts", file))
     end
+    FileUtils.mkdir_p(File.join(@dir, "config"))
+    FileUtils.cp(File.join(ROOT, "config/mac-build-budget.json"), File.join(@dir, "config"))
+    _, error, status = Open3.capture3("git", "init", "-q", @dir)
+    raise "Cannot initialize isolated task fixture: #{error}" unless status.success?
     %w[ios_disk_guard.sh verify_widget_embedded.sh].each do |file|
       path = File.join(@dir, "scripts", file)
       File.write(path, "#!/bin/bash\nexit 0\n")
@@ -111,32 +115,45 @@ class NativeTaskWiringTest < Minitest::Test
     assert_match(/BUILD FAILED/, output)
   end
 
+  def quarantined?(status, error)
+    return false unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    assert_equal 75, status.exitstatus, error
+    assert_match(/quarantined/, error)
+    assert_empty events
+    true
+  end
+
   def test_test_build_failure_never_boots_or_runs_tests
     _, error, status = run_task("ios:simulator:test", "FIXTURE_BUILD_STATUS" => "17")
+    return if quarantined?(status, error)
     assert_equal 17, status.exitstatus, error
     assert_equal ["generate", "build-for-testing"], events
   end
 
   def test_success_builds_before_boot_and_runs_without_building
     _, error, status = run_task("ios:simulator:test")
+    return if quarantined?(status, error)
     assert status.success?, error
     assert_equal ["generate", "build-for-testing", "boot", "bootstatus", "test-without-building"], events
   end
 
   def test_skip_build_only_boots_and_executes_existing_tests
     _, error, status = run_task("ios:simulator:test", "IOS_SKIP_BUILD" => "1")
+    return if quarantined?(status, error)
     assert status.success?, error
     assert_equal ["generate", "boot", "bootstatus", "test-without-building"], events
   end
 
   def test_failed_boot_status_never_runs_test_process
     _, error, status = run_task("ios:simulator:test", "FIXTURE_BOOT_STATUS" => "21")
+    return if quarantined?(status, error)
     assert_equal 21, status.exitstatus, error
     assert_equal ["generate", "build-for-testing", "boot", "bootstatus"], events
   end
 
   def test_test_failure_preserves_status
     _, error, status = run_task("ios:simulator:test", "FIXTURE_TEST_STATUS" => "19")
+    return if quarantined?(status, error)
     assert_equal 19, status.exitstatus, error
     assert_equal ["generate", "build-for-testing", "boot", "bootstatus", "test-without-building"], events
   end

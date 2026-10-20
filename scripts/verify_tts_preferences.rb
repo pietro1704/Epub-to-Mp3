@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 require "fileutils"
+require_relative "native_job"
+NativeJob.build_entrypoint(__FILE__, ARGV)
 if RUBY_PLATFORM.include?("darwin")
   runtime = IO.popen(["mise", "exec", "--", "ruby", "scripts/prepare_onnxruntime_macos.rb"], &:read).strip
   abort "Failed to prepare Intel ONNX Runtime" unless $?.success? && runtime.start_with?("/")
@@ -13,8 +15,6 @@ if RUBY_PLATFORM.include?("darwin")
     Dir.glob(File.join(runtime, "libonnxruntime*.dylib")).each { |library| FileUtils.cp(library, directory) }
   end
 end
-lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
-abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
 commands = [
   %w[cargo test -p converter-core --lib tts_preferences --jobs 1],
   %w[cargo test -p converter-core --lib a_voice_is_installed_only_with_both_verified_artifacts --jobs 1],

@@ -187,13 +187,17 @@ fn main() {
         std::fs::write(&copied_speech_header, expected_header)
             .expect("Failed to refresh eSpeak speech.h in the native build source");
     }
-    // Speed up build
+    // Keep Mac builds serial; retain existing parallelism on other hosts.
     env::set_var(
         "CMAKE_BUILD_PARALLEL_LEVEL",
-        std::thread::available_parallelism()
-            .unwrap()
-            .get()
-            .to_string(),
+        if cfg!(target_os = "macos") {
+            "1".to_string()
+        } else {
+            std::thread::available_parallelism()
+                .unwrap()
+                .get()
+                .to_string()
+        },
     );
 
     // Bindings

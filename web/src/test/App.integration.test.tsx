@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { renderWithProviders } from "./testUtils";
-import type { ConversionClient } from "../services/ConversionService";
+import { HttpConversionClient, type ConversionClient } from "../services/ConversionService";
 import type { JobSnapshot } from "../types/conversion";
 
 function setTauriGlobal(value: unknown) {
@@ -19,6 +19,68 @@ afterEach(() => {
 });
 
 describe("App integration", () => {
+  it('opens embedded help without backend requests or restart controls', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('No backend is available in the embedded browser runtime'));
+    try {
+      await act(async () => {
+        renderWithProviders(<App />, { locale: 'en' });
+      });
+      await user.click(screen.getByRole('button', { name: 'Help & System' }));
+      expect(screen.getByRole('button', { name: 'Help & System' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const backendRequests = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('/api/'),
+      );
+      expect(backendRequests).toEqual([]);
+      expect(screen.queryByTestId('telemetry-panel')).not.toBeInTheDocument();
+      expect(screen.queryByText('Restart Python backend')).not.toBeInTheDocument();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("loads explicit HTTP help diagnostics without duplicating the API prefix", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      const data = url.endsWith("/summary")
+        ? { engines: {}, ranked: [], totalSamples: 0 }
+        : url.includes("/timeline") ? { points: [], count: 0 } : {};
+      return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const client = new HttpConversionClient();
+    try {
+      await act(async () => {
+        renderWithProviders(<App client={client} />, { locale: "en" });
+      });
+      expect(screen.queryByTestId("telemetry-panel")).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Help & System" }));
+      expect(await screen.findByTestId("telemetry-panel")).toBeInTheDocument();
+      expect(screen.getByText("Restart Python backend")).toBeInTheDocument();
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map(([input]) => String(input));
+        expect(urls).toContain("/api/telemetry/summary");
+        expect(urls).toContain("/api/telemetry/timeline?limit=30");
+        expect(urls).toContain("/api/system/stats");
+        expect(urls.some((url) => url.includes("/api/api/"))).toBe(false);
+      });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("runs full conversion flow with a custom client", async () => {
     const user = userEvent.setup();
     const submit = vi.fn().mockResolvedValue({ jobId: "job-777" });

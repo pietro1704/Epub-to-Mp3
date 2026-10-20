@@ -83,15 +83,19 @@ pub struct OutputManifest {
     pub chapters: Vec<ChapterMetadata>,
     pub archive: String,
     pub cover: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tts_preferences: Option<crate::tts_preferences::TtsPreferences>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub used_selections: Vec<crate::tts_preferences::TtsSelection>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default_manifest_field")]
     pub tts_policy_state: crate::tts_preferences::SegmentPolicy,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default_manifest_field")]
     pub fallback_used: bool,
 }
+fn is_default_manifest_field<T: Default + PartialEq>(value: &T) -> bool {
+    value == &T::default()
+}
+
 #[derive(Debug, Error)]
 pub enum WorkerError {
     #[error("job error: {0}")]
@@ -431,6 +435,24 @@ impl ConversionWorker {
             } else {
                 base_request_key
             };
+            // Legacy Piper receipts do not fingerprint model bytes. Only typed
+            // preferences establish a safe identity for predecessor recovery.
+            let recovery_has_model_identity =
+                engine != "piper" || request.tts_preferences.is_some();
+            if recovery_has_model_identity && !chapter_audio_is_complete(&mp3, &request_key) {
+                if let Some(predecessor) = self
+                    .control
+                    .as_ref()
+                    .and_then(|control| control.recover_job())
+                {
+                    recover_chapter_audio(
+                        &self.config.paths.output_dir,
+                        &predecessor,
+                        &mp3,
+                        &request_key,
+                    )?;
+                }
+            }
             let cached = chapter_audio_is_complete(&mp3, &request_key);
 
             if cached {
@@ -1117,7 +1139,7 @@ impl ConversionWorker {
                         if let Some(edge) = &self.test_edge {
                             return edge(segment);
                         }
-                        return run_edge_synthesis(
+                        return run_preference_edge_synthesis(
                             crate::tts::synthesize_with_reference_client(
                                 segment,
                                 selection
@@ -1128,12 +1150,13 @@ impl ConversionWorker {
                                 self.telemetry.clone(),
                             ),
                             &self.cancel,
-                            std::time::Duration::from_secs(5),
+                            segment.len(),
                         );
                     }
                     let (model, config) = self.selection_model_paths(request, selection);
-                    self.synthesize_with_piper(segment, &path, Some(&model), Some(&config))?;
-                    Ok(fs::read(&path)?)
+                    let wav = path.with_extension("wav");
+                    self.synthesize_with_piper(segment, &wav, Some(&model), Some(&config))?;
+                    platform_tts::encode_wav(&fs::read(wav)?).map_err(WorkerError::PlatformTts)
                 };
             let synthesize =
                 |selection: &crate::tts_preferences::TtsSelection| -> Result<Vec<u8>, WorkerError> {
@@ -1427,6 +1450,91 @@ fn chapter_audio_is_complete(output: &Path, request_key: &str) -> bool {
         && cache::sha256_file(output).is_ok_and(|hash| hash == receipt.audio_sha256)
 }
 
+/// Import only a complete, identity-matched chapter from a direct sibling job.
+/// The predecessor remains immutable; untrusted or unavailable artifacts simply
+/// fall through to normal synthesis without weakening completion receipts.
+fn recover_chapter_audio(
+    output_root: &Path,
+    predecessor: &str,
+    output: &Path,
+    request_key: &str,
+) -> Result<(), WorkerError> {
+    if predecessor.is_empty()
+        || matches!(predecessor, "." | "..")
+        || predecessor.contains(['/', '\\', '\0'])
+    {
+        return Ok(());
+    }
+    let source_directory = output_root.join(predecessor);
+    let Some(filename) = output.file_name() else {
+        return Ok(());
+    };
+    // Do not follow links into another job or outside the output root.
+    let is_plain_directory =
+        fs::symlink_metadata(&source_directory).is_ok_and(|metadata| metadata.file_type().is_dir());
+    let is_plain_file = |path: &Path| {
+        fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+    };
+    if !is_plain_directory {
+        return Ok(());
+    }
+    let (Ok(root), Ok(directory)) = (
+        fs::canonicalize(output_root),
+        fs::canonicalize(&source_directory),
+    ) else {
+        return Ok(());
+    };
+    if directory.parent() != Some(root.as_path()) {
+        return Ok(());
+    }
+    let is_matching_source = |path: &Path| {
+        is_plain_file(path)
+            && is_plain_file(&chapter_audio_receipt_path(path))
+            && chapter_audio_is_complete(path, request_key)
+    };
+    let expected_source = source_directory.join(filename);
+    let source = if is_matching_source(&expected_source) {
+        expected_source
+    } else {
+        // Filenames number the current selection, not the source chapter.
+        // Completion receipts retain the source identity across selections.
+        let Ok(entries) = fs::read_dir(&source_directory) else {
+            return Ok(());
+        };
+        let Some(source) = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.extension().is_some_and(|extension| extension == "mp3")
+                    && is_matching_source(path)
+            })
+        else {
+            return Ok(());
+        };
+        source
+    };
+    let source_receipt = chapter_audio_receipt_path(&source);
+    let Some(parent) = output.parent() else {
+        return Ok(());
+    };
+    let staging = tempfile::Builder::new()
+        .prefix(".chapter-recovery-")
+        .tempdir_in(parent)?;
+    let pending = staging.path().join("chapter.mp3");
+    let pending_receipt = chapter_audio_receipt_path(&pending);
+    if fs::copy(&source, &pending).is_err() || fs::copy(source_receipt, &pending_receipt).is_err() {
+        return Ok(());
+    }
+    // Revalidate the copied pair so a concurrently replaced source cannot
+    // publish bytes that disagree with the accepted completion receipt.
+    if !chapter_audio_is_complete(&pending, request_key) {
+        return Ok(());
+    }
+    fs::rename(pending, output)?;
+    fs::rename(pending_receipt, chapter_audio_receipt_path(output))?;
+    Ok(())
+}
+
 fn refresh_chapter_audio_receipt(output: &Path) -> Result<(), WorkerError> {
     let receipt_path = chapter_audio_receipt_path(output);
     let mut receipt: ChapterAudioReceipt = cache::read_json(&receipt_path)?;
@@ -1504,6 +1612,21 @@ where
     });
     runtime.shutdown_background();
     result
+}
+
+fn run_preference_edge_synthesis<T, F>(
+    synthesis: F,
+    cancel: &CancellationToken,
+    text_bytes: usize,
+) -> Result<T, WorkerError>
+where
+    F: std::future::Future<Output = Result<T, EdgeError>>,
+{
+    run_edge_synthesis(
+        synthesis,
+        cancel,
+        crate::tts::reference_synthesis_timeout_for_text(text_bytes),
+    )
 }
 
 fn run_edge_synthesis<T, F>(
@@ -1610,6 +1733,40 @@ fn sanitize(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn empty_typed_manifest_metadata_preserves_legacy_shape_and_nondefault_round_trip() {
+        let legacy = serde_json::json!({
+            "jobId": "legacy", "title": "Book", "author": "Author", "chapters": [],
+            "archive": "book.zip", "cover": null,
+        });
+        let mut manifest: OutputManifest = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&manifest).unwrap(), legacy);
+        let primary = crate::tts_preferences::TtsSelection {
+            engine: "system".into(),
+            model_id: None,
+            voice: None,
+        };
+        manifest.tts_preferences = Some(crate::tts_preferences::TtsPreferences {
+            primary: primary.clone(),
+            secondary: None,
+            allow_online_fallback: false,
+        });
+        manifest.used_selections.push(primary);
+        manifest.fallback_used = true;
+        manifest
+            .tts_policy_state
+            .primary_failed(false, true)
+            .unwrap();
+        let encoded = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(encoded["fallbackUsed"], true);
+        assert_eq!(encoded["usedSelections"][0]["engine"], "system");
+        assert_eq!(encoded["ttsPolicyState"]["consecutive_failures"], 1);
+        assert_eq!(
+            serde_json::from_value::<OutputManifest>(encoded).unwrap(),
+            manifest
+        );
+    }
+
     use super::*;
 
     struct TestSystem {
@@ -2988,6 +3145,42 @@ mod tests {
         );
         assert!(!output.join("manifest.json").exists());
         assert_eq!(fs::metadata(audio).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn preference_edge_allows_first_audio_after_five_seconds() {
+        let bytes = run_preference_edge_synthesis(
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(5_100)).await;
+                Ok(vec![1, 2, 3])
+            },
+            &CancellationToken::default(),
+            20,
+        )
+        .expect("Configured Edge must retain the reference client's connection/retry budget");
+        assert_eq!(bytes, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn preference_edge_keeps_cancellation_and_provider_error_identity() {
+        let cancelled = CancellationToken::default();
+        cancelled.cancel();
+        assert!(matches!(
+            run_preference_edge_synthesis::<Vec<u8>, _>(
+                async { panic!("Cancelled jobs must not contact Edge") },
+                &cancelled,
+                20,
+            ),
+            Err(WorkerError::Cancelled)
+        ));
+        assert!(matches!(
+            run_preference_edge_synthesis::<Vec<u8>, _>(
+                async { Err(EdgeError::NoAudio) },
+                &CancellationToken::default(),
+                20,
+            ),
+            Err(WorkerError::Edge(EdgeError::NoAudio))
+        ));
     }
 
     #[test]

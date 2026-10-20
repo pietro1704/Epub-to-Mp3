@@ -1,7 +1,17 @@
-//! Platform-independent PCM WAV to normalized MP3 encoding shared by native and WASM clients.
+//! PCM WAV to MP3 encoding, with normalized segments shared by native and WASM clients.
 
 /// Parse RIFF chunks rather than assuming every writer emits a 44-byte header.
 pub fn encode_wav_mp3(data: &[u8]) -> Result<Vec<u8>, String> {
+    encode_wav_mp3_at_rate(data, Some(24_000))
+}
+
+/// Standalone Piper output retains its source rate and rejects unsupported MP3 rates.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn encode_wav_mp3_preserving_rate(data: &[u8]) -> Result<Vec<u8>, String> {
+    encode_wav_mp3_at_rate(data, None)
+}
+
+fn encode_wav_mp3_at_rate(data: &[u8], output_rate: Option<u32>) -> Result<Vec<u8>, String> {
     if data.len() < 12 || &data[..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         return Err("Invalid WAV header".into());
     }
@@ -48,7 +58,7 @@ pub fn encode_wav_mp3(data: &[u8]) -> Result<Vec<u8>, String> {
         return Err("System speech PCM exceeds the segment duration limit".into());
     }
     // Edge emits 24 kHz MP3. Keep concatenated fallback artifacts at that rate.
-    let target_rate = 24_000u32;
+    let target_rate = output_rate.unwrap_or(rate);
     let resampled;
     let normalized = if rate == target_rate {
         pcm
@@ -134,6 +144,25 @@ mod tests {
         bytes.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&pcm);
         bytes
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn standalone_source_rate_and_mixed_segment_rate_remain_distinct() {
+        let input = wav(22_050);
+        for (encoded, expected_rate) in [
+            (encode_wav_mp3_preserving_rate(&input).unwrap(), 22_050),
+            (encode_wav_mp3(&input).unwrap(), 24_000),
+        ] {
+            let mut decoder = rusty_mp3::Mp3Decoder::new();
+            decoder.push(&encoded);
+            decoder.flush();
+            let frame = decoder.next_frame().unwrap();
+            assert_eq!(frame.sample_rate, expected_rate);
+            assert_eq!(frame.channels, 1);
+            assert!(!frame.samples.is_empty());
+        }
+        assert!(encode_wav_mp3_preserving_rate(&wav(12_345)).is_err());
     }
 
     #[test]

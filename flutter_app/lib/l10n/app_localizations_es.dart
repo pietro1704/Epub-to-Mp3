@@ -39,6 +39,62 @@ class AppLocalizationsEs extends AppLocalizations {
   String get noJobs => 'Ninguna conversión aún';
 
   @override
+  String get conversionLogTitle => 'Registro de conversión';
+
+  @override
+  String get conversionJobLabel => 'Conversión';
+
+  @override
+  String get conversionLastRecordedState => 'Último estado registrado';
+
+  @override
+  String conversionLastRecordedStateValue(String state) {
+    return 'Último estado registrado: $state';
+  }
+
+  @override
+  String get conversionLastUpdated => 'Última actualización';
+
+  @override
+  String conversionRecordedAudioPath(String path) {
+    return 'Ruta registrada del audio: $path';
+  }
+
+  @override
+  String conversionUnreadableRecords(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'No se pudieron leer $count registros de conversión guardados.',
+      one: 'No se pudo leer 1 registro de conversión guardado.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversionStatusPending => 'Pendiente';
+
+  @override
+  String get conversionStatusRunning => 'Convirtiendo';
+
+  @override
+  String get conversionStatusCompleted => 'Completada';
+
+  @override
+  String get conversionStatusFailed => 'Fallida';
+
+  @override
+  String get conversionStatusCancelled => 'Cancelada';
+
+  @override
+  String get conversionStatusUnknown => 'Desconocido';
+
+  @override
+  String conversionHistorySaveWarning(String error) {
+    return 'Conversión completada, pero no se pudo guardar el historial: $error';
+  }
+
+  @override
   String get refresh => 'Actualizar';
 
   @override

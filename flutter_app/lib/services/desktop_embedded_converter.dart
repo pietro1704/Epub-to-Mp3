@@ -82,6 +82,7 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   late final DesktopTtsModelAdapter _models = DesktopTtsModelAdapter(
     library: _library,
   );
+
   final ffi.DynamicLibrary _library;
   late final _OpenDart _open;
   late final _MetadataDart _metadata;
@@ -498,8 +499,11 @@ String _convertOnWorker(DesktopConversionRequest request) {
     if (session == ffi.nullptr) return readOwned(ffi.nullptr);
     try {
       final output = request.outputPath.toNativeUtf8(allocator: arena);
-      final job = 'flutter-${DateTime.now().microsecondsSinceEpoch}'
-          .toNativeUtf8(allocator: arena);
+      // The explicit-job FFI requires the job ID to match its artifact directory.
+      final jobId = Directory(
+        request.outputPath,
+      ).absolute.uri.pathSegments.where((segment) => segment.isNotEmpty).last;
+      final job = jobId.toNativeUtf8(allocator: arena);
       final captured = jsonEncode(options).toNativeUtf8(allocator: arena);
       final control = ffi.Pointer<ffi.Void>.fromAddress(request.controlAddress);
       if (request.streaming) {

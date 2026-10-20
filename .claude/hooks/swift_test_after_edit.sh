@@ -1,30 +1,10 @@
 #!/bin/bash
-# PostToolUse hook: when a Swift file under the iOS target is edited, run
-# `swift test` async. Debounced 60s so consecutive edits don't queue
-# multiple test runs.
-
+# PostToolUse notification only. Native compilation is always an explicit task.
 set -euo pipefail
-
 PAYLOAD=$(cat)
 FILE=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // .tool_response.filePath // empty' 2>/dev/null || true)
-
 case "$FILE" in
-    */ios/EpubToMp3/EpubToMp3/*.swift|*/ios/EpubToMp3/EpubToMp3Tests/*.swift) ;;
+    */ios/EpubToMp3/EpubToMp3/*.swift|*/ios/EpubToMp3/EpubToMp3Tests/*.swift|*/ios/EpubToMp3/EpubToMp3UITests/*.swift) ;;
     *) exit 0 ;;
 esac
-
-STAMP="/tmp/claude-swift-test.stamp"
-NOW=$(date +%s)
-if [[ -f "$STAMP" ]]; then
-    LAST=$(cat "$STAMP" 2>/dev/null || echo 0)
-    if (( NOW - LAST < 60 )); then exit 0; fi
-fi
-echo "$NOW" > "$STAMP"
-
-LOG="/tmp/claude-swift-test.log"
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
-cd "$ROOT/ios/EpubToMp3" || exit 0
-{
-    echo "=== $(date) :: edited $FILE"
-    swift test 2>&1 | tail -5
-} >> "$LOG"
+printf '%s\n' 'swift_test_after_edit: native verification pending; automatic compilation disabled. Use an explicit guarded task after reviewing docs/agent-workflow.md.' >&2

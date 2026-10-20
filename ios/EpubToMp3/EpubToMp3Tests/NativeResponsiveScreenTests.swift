@@ -364,6 +364,12 @@ final class NativeResponsiveScreenTests: XCTestCase {
             root.view.layoutSubtreeIfNeeded()
             let popups = descendants(settings.view).compactMap { $0 as? NSPopUpButton }
             XCTAssertGreaterThanOrEqual(popups.count, 4)
+            let primary = try XCTUnwrap(popups.first { $0.accessibilityIdentifier() == "settings.tts.primary" })
+            let secondary = try XCTUnwrap(popups.first { $0.accessibilityIdentifier() == "settings.tts.secondary" })
+            let menu = try XCTUnwrap(secondary.menu)
+            menu.update()
+            XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: try XCTUnwrap(primary.titleOfSelectedItem))).isEnabled)
+            XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: L10n.string("settings.noSecondary"))).isEnabled)
             for popup in popups {
                 XCTAssertGreaterThan(popup.bounds.height, 0)
                 XCTAssertTrue(window.contentView!.bounds.insetBy(dx: -1, dy: -1)
@@ -526,9 +532,63 @@ final class NativeResponsiveScreenTests: XCTestCase {
         XCTAssertTrue(final.allowOnlineAudioFallback)
         XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
         XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "piper")
+        secondary.selectItem(withTitle: AudioEnginePreference.system.displayName)
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+        XCTAssertEqual(AppSettings(defaults: defaults).secondaryAudioEngine, .system)
+        XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
+        XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "piper")
         let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent("mac-tts-settings-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: screenshot) }
         try captureLiveWindow(window, to: screenshot)
+    }
+
+    func testMacSecondaryVoiceMenuValidationKeepsPrimaryDisabled() throws {
+        let settings = AppSettings(defaults: defaults)
+        let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil); window.contentViewController = nil; window.close() }
+        let controls = descendants(controller.view).compactMap { $0 as? NSPopUpButton }
+        let primary = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "settings.tts.primary" })
+        let secondary = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "settings.tts.secondary" })
+        let menu = try XCTUnwrap(secondary.menu)
+        menu.update()
+        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Faber medium")).isEnabled,
+                       "AppKit menu validation must preserve the primary-voice exclusion.")
+        XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
+
+        secondary.selectItem(withTitle: "Faber medium")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+        XCTAssertNil(settings.secondaryAudioEngine, "A stale or programmatic action must not persist a duplicate voice.")
+        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
+        secondary.selectItem(withTitle: "Edge")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+        XCTAssertEqual(settings.secondaryAudioEngine, .edge)
+
+        let captured = settings.conversionOptions
+        secondary.selectItem(withTitle: "Faber medium")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+        XCTAssertEqual(AppSettings(defaults: defaults).secondaryAudioEngine, .edge)
+        XCTAssertEqual(secondary.titleOfSelectedItem, "Edge")
+        XCTAssertEqual(settings.ttsPreferences, captured.ttsPreferences)
+        secondary.selectItem(withTitle: L10n.string("settings.noSecondary"))
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+        XCTAssertNil(AppSettings(defaults: defaults).secondaryAudioEngine)
+        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
+        XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "edge")
+        secondary.selectItem(withTitle: "Edge")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+
+        primary.selectItem(withTitle: "Edge")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
+        menu.update()
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
+        XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Faber medium")).isEnabled)
+        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
     }
 
     func testMacManualTtsDialogSupportsInheritanceAndStrictOverrideBeforeCancel() throws {

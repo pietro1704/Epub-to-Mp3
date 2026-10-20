@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 require "fileutils"
-lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
-abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+require_relative "native_job"
+NativeJob.build_entrypoint(__FILE__, ARGV)
 directory = ".reports/tts-preferences/checks"
 FileUtils.mkdir_p(directory)
 commands = [

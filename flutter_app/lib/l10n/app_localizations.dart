@@ -160,6 +160,90 @@ abstract class AppLocalizations {
   /// **'No conversions yet'**
   String get noJobs;
 
+  /// No description provided for @conversionLogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversion log'**
+  String get conversionLogTitle;
+
+  /// No description provided for @conversionJobLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Job'**
+  String get conversionJobLabel;
+
+  /// No description provided for @conversionLastRecordedState.
+  ///
+  /// In en, this message translates to:
+  /// **'Last recorded state'**
+  String get conversionLastRecordedState;
+
+  /// No description provided for @conversionLastRecordedStateValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Last recorded state: {state}'**
+  String conversionLastRecordedStateValue(String state);
+
+  /// No description provided for @conversionLastUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Last updated'**
+  String get conversionLastUpdated;
+
+  /// No description provided for @conversionRecordedAudioPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Recorded audio path: {path}'**
+  String conversionRecordedAudioPath(String path);
+
+  /// No description provided for @conversionUnreadableRecords.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 saved conversion record could not be read.} other{{count} saved conversion records could not be read.}}'**
+  String conversionUnreadableRecords(int count);
+
+  /// No description provided for @conversionStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get conversionStatusPending;
+
+  /// No description provided for @conversionStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Converting'**
+  String get conversionStatusRunning;
+
+  /// No description provided for @conversionStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get conversionStatusCompleted;
+
+  /// No description provided for @conversionStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get conversionStatusFailed;
+
+  /// No description provided for @conversionStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get conversionStatusCancelled;
+
+  /// No description provided for @conversionStatusUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get conversionStatusUnknown;
+
+  /// No description provided for @conversionHistorySaveWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversion completed, but its history could not be saved: {error}'**
+  String conversionHistorySaveWarning(String error);
+
   /// No description provided for @refresh.
   ///
   /// In en, this message translates to:

@@ -18,6 +18,15 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
         XCTAssertTrue(PlatformFallbackNoticeTracker().shouldNotify(progress: system))
     }
 
+    func testExplicitSystemPrimaryDoesNotConsumeTheFallbackNotice() {
+        let tracker = PlatformFallbackNoticeTracker()
+        let primary = Data(#"{"engine":"system","fallbackUsed":false}"#.utf8)
+        let secondary = Data(#"{"engine":"system","fallbackUsed":true}"#.utf8)
+        XCTAssertFalse(tracker.shouldNotify(progress: primary))
+        XCTAssertTrue(tracker.shouldNotify(progress: secondary))
+        XCTAssertFalse(tracker.shouldNotify(progress: secondary))
+    }
+
     func testConfiguredSecondaryNoticeIsOncePerJob() {
         let tracker = PlatformFallbackNoticeTracker()
         let primary = Data(#"{"engine":"piper","fallbackUsed":false}"#.utf8)
@@ -28,7 +37,7 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
     }
 
     func testFaberIsAvailableAsAnExplicitOfflineProvider() {
-        XCTAssertEqual(AudioEnginePreference.supportedPreferences, [.piper, .edge])
+        XCTAssertEqual(AudioEnginePreference.supportedPreferences, [.piper, .edge, .system])
         XCTAssertEqual(ConversionOptions.selectedEngine(.piper).engine, "piper")
         XCTAssertEqual(ConversionOptions.selectedEngine(.piper).modelID, "pt_BR-faber-medium")
     }

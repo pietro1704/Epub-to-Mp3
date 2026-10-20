@@ -1,9 +1,16 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/services/desktop_embedded_converter.dart';
 import 'package:flutter_app/services/embedded_converter.dart';
+import 'package:flutter_app/services/local_conversion_job.dart';
+import 'package:flutter_app/screens/jobs_list_screen.dart';
+import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/state/providers.dart';
 
 // This tiny ABI fixture blocks inside native conversion, proving the UI isolate
 // remains responsive and can cancel without transferring native sessions.
@@ -15,6 +22,14 @@ const _fixture = r'''
 #include <stdio.h>
 #include <sys/stat.h>
 typedef struct { atomic_int cancelled; atomic_int queued; char* chunk_path; } FixtureControl;
+// Match the real explicit-job FFI contract, including its artifact directory.
+static int matches_job_directory(const char* output, const char* job) {
+ size_t end = strlen(output);
+ while (end > 0 && output[end - 1] == '/') end--;
+ size_t start = end;
+ while (start > 0 && output[start - 1] != '/') start--;
+ return strlen(job) == end - start && strncmp(output + start, job, end - start) == 0;
+}
 void* converter_session_open(const char* path) { return malloc(1); }
 void converter_session_free(void* session) { free(session); }
 char* converter_session_metadata_json(void* session) { usleep(200000); return strdup("{\"bookTitle\":\"Native fixture\",\"chapters\":[{\"index\":0,\"name\":\"Native chapter\",\"text\":\"Metadata text\"}]}"); }
@@ -34,6 +49,7 @@ char* converter_job_control_take_audio_chunk_json(FixtureControl* control) {
 char* converter_session_convert_streaming_job_options_json_v1(void* session,
  const char* output, const char* job, const char* options, int start, int end,
  void* progress, void* chapter, void* chunk, void* context, FixtureControl* control) {
+ if (!matches_job_directory(output, job)) return NULL;
  mkdir(output, 0700);
  char path[2048];
  snprintf(path, sizeof(path), "%s/chunk-0.mp3", output);
@@ -63,6 +79,7 @@ char* converter_job_log_json(const char* id) { return strdup("[]"); }
 char* converter_session_convert_controlled_job_options_json_v1(void* session,
  const char* output, const char* job, const char* options, int start, int end,
  void* progress, void* chapter, void* context, atomic_int* control) {
+ if (!matches_job_directory(output, job)) return NULL;
  if (!strstr(options, "pt_BR-faber-medium") || start != 2 || end != 3) return NULL;
  for (int i=0; i<100; i++) {
    if (atomic_load(control)) return NULL;
@@ -74,6 +91,7 @@ char* converter_session_convert_controlled_job_options_json_v1(void* session,
 
 void main() {
   if (!Platform.isMacOS && !Platform.isLinux) return;
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory directory;
   late String library;
   setUpAll(() async {
@@ -95,6 +113,76 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stderr}');
   });
   tearDownAll(() async => directory.delete(recursive: true));
+
+  testWidgets(
+    'desktop Jobs keeps local details without unsupported Rust log controls',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await LocalConversionJobStore(prefs).save(
+        LocalConversionJob(
+          bookId: 'desktop-book',
+          jobId: 'desktop-rust-id',
+          bookTitle: 'Desktop Book',
+          status: LocalConversionJobStatus.failed,
+          createdAt: DateTime.utc(2026, 1, 1),
+          updatedAt: DateTime.utc(2026, 1, 1),
+          error: 'Persisted failure',
+          chapters: const [
+            LocalConversionChapter(
+              index: 0,
+              name: 'One',
+              status: 'completed',
+              outputPath: '/local/audio.mp3',
+            ),
+          ],
+        ),
+      );
+      EmbeddedConverterRegistry.register(
+        DesktopEmbeddedConverter(libraryPath: library),
+      );
+      try {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+            child: const MaterialApp(
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: JobsListScreen(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Desktop Book'), findsOneWidget);
+        expect(find.byIcon(Icons.article_outlined), findsNothing);
+        await tester.tap(find.text('Desktop Book'));
+        await tester.pumpAndSettle();
+        expect(find.text('desktop-rust-id'), findsOneWidget);
+        expect(find.text('Persisted failure'), findsOneWidget);
+        expect(find.textContaining('/local/audio.mp3'), findsOneWidget);
+        expect(find.text('Conversion log'), findsNothing);
+      } finally {
+        EmbeddedConverterRegistry.clear();
+      }
+    },
+  );
+
+  test(
+    'native conversion uses the output directory name as its Rust job ID',
+    () async {
+      final converter = DesktopEmbeddedConverter(libraryPath: library);
+      for (final trailing in ['', '/']) {
+        final manifest = await converter.convert(
+          inputPath: '/fixture.epub',
+          outputPath: '${directory.path}/manual-real-job$trailing',
+          chapterStart: 2,
+          chapterEnd: 3,
+          optionsJson: const TtsPreferences().optionsJson(),
+        );
+        expect(manifest, '{"chapters":[]}');
+      }
+    },
+  );
 
   test(
     'native streaming publishes playable bytes before chapter conversion finishes',

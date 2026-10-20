@@ -1,49 +1,10 @@
 #!/bin/bash
-# Stop hook (async): if any Swift file in the iOS target was edited this
-# turn, verify it still compiles for macOS Debug. Runs async so it never
-# stalls the Stop — on BUILD FAILED it injects the error as
-# additionalContext, surfacing on the next turn for the assistant to fix.
-#
-# Skipped when:
-#   - No .swift edits in the working tree (git diff gate below).
-#   - The .build / .xcodeproj is locked by an active xcodebuild
-#     (avoid double-builds when the user is already running one).
-
+# Stop notification only. Never start native work after the session becomes idle.
 set -euo pipefail
-
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
-cd "$ROOT/ios/EpubToMp3" || {
-    echo '{"systemMessage":"xcode_build_smoke: ios/EpubToMp3 not found, skipping"}'
-    exit 0
-}
-
-PROJ=EpubToMp3.xcodeproj
-[ -d "$PROJ" ] || exit 0
-
-# Skip when the user is mid-build to avoid lock contention.
-if pgrep -f "xcodebuild .*EpubToMp3" >/dev/null 2>&1; then
+CHANGED=$(git -C "$ROOT" diff --name-only HEAD -- ios/EpubToMp3 2>/dev/null || true)
+UNTRACKED=$(git -C "$ROOT" ls-files --others --exclude-standard -- ios/EpubToMp3 2>/dev/null || true)
+if ! printf '%s\n%s\n' "$CHANGED" "$UNTRACKED" | grep -qE '^ios/EpubToMp3/.*\.swift$'; then
     exit 0
 fi
-
-# Only run when at least one Swift file changed in the working tree —
-# avoids paying ~30 s on no-op turns.
-CHANGED=$(git -C "$ROOT" diff --name-only HEAD 2>/dev/null | grep -cE '^ios/EpubToMp3/EpubToMp3.*\.swift$' || true)
-STAGED=$(git -C "$ROOT" diff --cached --name-only 2>/dev/null | grep -cE '^ios/EpubToMp3/EpubToMp3.*\.swift$' || true)
-if [ "$CHANGED" = "0" ] && [ "$STAGED" = "0" ]; then
-    exit 0
-fi
-
-LOG=$(mktemp -t xcode_smoke.XXXXXX)
-if xcodebuild -project "$PROJ" -scheme EpubToMp3 \
-        -destination 'platform=macOS' -configuration Debug build \
-        > "$LOG" 2>&1; then
-    rm -f "$LOG"
-    exit 0
-fi
-
-# Build failed — async hooks can't block Stop, so inject the error as
-# context. It surfaces on the next turn for the assistant to fix.
-TAIL=$(grep -E "error:" "$LOG" | head -10)
-rm -f "$LOG"
-jq -n --arg tail "$TAIL" \
-  '{additionalContext: ("## xcodebuild macOS Debug FAILED\nThe iOS target no longer compiles for macOS. Fix before continuing:\n" + $tail)}'
+printf '%s\n' 'xcode_build_smoke: native verification pending; automatic compilation disabled. Use an explicit guarded task after reviewing docs/agent-workflow.md.' >&2

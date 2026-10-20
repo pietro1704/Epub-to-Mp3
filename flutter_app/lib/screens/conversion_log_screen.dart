@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/conversion_log_source.dart';
+import '../l10n/app_localizations.dart';
 
 class ConversionLogScreen extends StatefulWidget {
   const ConversionLogScreen({super.key, required this.jobId});
@@ -30,7 +31,7 @@ class _ConversionLogScreenState extends State<ConversionLogScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
-          title: const Text('Conversion log'),
+          title: Text(AppLocalizations.of(context)!.conversionLogTitle),
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh),

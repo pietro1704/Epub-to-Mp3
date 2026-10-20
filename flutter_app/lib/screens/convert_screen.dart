@@ -6,9 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import '../services/platform_voice_notice.dart';
 import '../services/embedded_converter.dart';
 import '../services/desktop_embedded_converter.dart';
+import 'library_screen.dart' show libraryStoreProvider;
 
 import '../state/providers.dart';
 import '../l10n/app_localizations.dart';
@@ -64,6 +66,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   bool _submitting = false;
   String? _jobId;
   String? _error;
+  String? _historyError;
   final _voiceSession = PlatformVoiceNoticeSession();
   StreamSubscription<dynamic>? _voiceSubscription;
   AndroidEmbeddedConverter? _activeAndroidConverter;
@@ -163,9 +166,17 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   Future<void> _submit() async {
     final path = _filePath;
     if (path == null || path.isEmpty || _submitting) return;
+    final startedAt = DateTime.now().toUtc();
+    final jobStore = ref.read(localConversionJobStoreProvider);
+    final matchingBooks = ref
+        .read(libraryStoreProvider)
+        .books
+        .where((book) => book.filePath == path);
+    final bookId = matchingBooks.isEmpty ? path : matchingBooks.first.id;
     setState(() {
       _submitting = true;
       _error = null;
+      _historyError = null;
       _jobId = null;
       _usedSelections = const [];
     });
@@ -236,12 +247,20 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       var jobId = result;
       var actual = <TtsSelection>[];
       var nativeFallbackUsed = false;
+      Map<String, dynamic>? completedManifest;
       try {
-        final decoded = jsonDecode(result);
+        var raw = result;
+        if (raw.endsWith('.json') &&
+            File(raw).isAbsolute &&
+            await File(raw).exists()) {
+          raw = await File(raw).readAsString();
+        }
+        final decoded = jsonDecode(raw);
         if (decoded is Map) {
           final manifest = decoded['manifest'] is Map
               ? decoded['manifest'] as Map
               : decoded;
+          completedManifest = Map<String, dynamic>.from(manifest);
           if (manifest['jobId'] is String) jobId = manifest['jobId'] as String;
           nativeFallbackUsed = manifest['fallbackUsed'] == true;
           actual = (manifest['usedSelections'] as List? ?? const [])
@@ -255,6 +274,25 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       } on FormatException {
         /* Legacy injected starters return only a job ID. */
       }
+      String? historyError;
+      if (completedManifest != null) {
+        try {
+          await jobStore.saveCompletedManifest(
+            manifest: completedManifest,
+            bookId: bookId,
+            startedAt: startedAt,
+            outputDirectory: _activeNativeOutputPath,
+            conversionOptionsJson: request.ttsPreferences.optionsJson(
+              language: request.language,
+            ),
+          );
+          if (mounted) ref.invalidate(localConversionHistoryProvider);
+        } catch (error) {
+          // Native synthesis has completed. A history-write failure must not
+          // turn it into a failed conversion or invite an unnecessary retry.
+          historyError = error.toString();
+        }
+      }
       if (!mounted) return;
       if (nativeFallbackUsed) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -266,6 +304,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       setState(() {
         _jobId = jobId;
         _usedSelections = actual;
+        _historyError = historyError;
         _submitting = false;
       });
     } catch (e) {
@@ -392,29 +431,12 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           if (jobId != null) ...[
             const SizedBox(height: 12),
             Text(jobId, key: const Key('conversion-job-id')),
-            if (defaultTargetPlatform != TargetPlatform.android)
-              StreamBuilder(
-                stream: ref.read(apiClientProvider).jobStream(jobId),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Text('Progress error: ${snapshot.error}');
-                  }
-                  final value = snapshot.data;
-                  final progress = value?.progressPercent;
-                  return Column(
-                    children: [
-                      LinearProgressIndicator(
-                        value: progress == null ? null : progress / 100,
-                      ),
-                      if (value != null)
-                        Text(
-                          '${value.state} ${progress?.toStringAsFixed(0) ?? ''}%',
-                        ),
-                    ],
-                  );
-                },
-              ),
           ],
+          if (_historyError != null)
+            ListTile(
+              leading: const Icon(Icons.warning_amber_outlined),
+              title: Text(t.conversionHistorySaveWarning(_historyError!)),
+            ),
           if (_error != null) ...[
             Text(
               _error!,

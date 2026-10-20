@@ -5,6 +5,7 @@ import 'package:flutter_app/l10n/app_localizations_es.dart';
 import 'package:flutter_app/l10n/app_localizations_pt.dart';
 import 'package:flutter_app/screens/root_screen.dart';
 import 'package:flutter_app/state/providers.dart';
+import 'package:flutter_app/services/local_conversion_job.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -102,6 +103,26 @@ void main() {
       // Library screen empty state
       expect(find.text('Your library is empty'), findsOneWidget);
     });
+
+    testWidgets(
+      'entering Jobs refreshes conversions created while the tab was mounted',
+      (t) async {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(_wrap(prefs));
+        await t.pumpAndSettle();
+        await ConversionJobCoordinator(
+          LocalConversionJobStore(prefs),
+        ).createJob(
+          bookId: 'new-local-book',
+          jobId: 'new-local-job',
+          chapters: const [LocalConversionChapterSpec(0, 'One')],
+        );
+        await t.tap(find.text('Jobs'));
+        await t.pumpAndSettle();
+        expect(find.text('new-local-book'), findsOneWidget);
+        expect(find.text('No conversions yet'), findsNothing);
+      },
+    );
 
     testWidgets('tapping Settings navigates to settings tab', (t) async {
       final prefs = await _mockPrefs();

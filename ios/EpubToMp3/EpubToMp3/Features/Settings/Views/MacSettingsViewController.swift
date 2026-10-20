@@ -89,6 +89,7 @@ final class MacSettingsViewController: NSViewController {
         audioEnginePopup.target = self
         audioEnginePopup.action = #selector(audioEngineChanged(_:))
         secondaryEnginePopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + AudioEnginePreference.supportedPreferences.map(\.displayName))
+        secondaryEnginePopup.menu?.autoenablesItems = false
         secondaryEnginePopup.target = self
         secondaryEnginePopup.action = #selector(secondaryEngineChanged(_:))
         onlineFallbackButton.title = L10n.string("settings.onlineFallback")
@@ -215,8 +216,12 @@ final class MacSettingsViewController: NSViewController {
 
     @objc private func secondaryEngineChanged(_ sender: NSPopUpButton) {
         let index = sender.indexOfSelectedItem - 1
-        settings.secondaryAudioEngine = AudioEnginePreference.supportedPreferences.indices.contains(index)
+        let selection = AudioEnginePreference.supportedPreferences.indices.contains(index)
             ? AudioEnginePreference.supportedPreferences[index] : nil
+        if selection != settings.audioEngine {
+            settings.secondaryAudioEngine = selection
+        }
+        refresh()
     }
     @objc private func onlineFallbackChanged(_ sender: NSButton) {
         settings.allowOnlineAudioFallback = sender.state == .on
