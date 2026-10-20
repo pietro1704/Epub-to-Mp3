@@ -179,9 +179,158 @@ pub fn validate_mp3(bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+/// Edge appends a long silent tail to each independent response. Remove only
+/// complete trailing silent MPEG frames, retaining 120 ms after the last sample
+/// above -80 dB. The speech payload, decoder pre-roll and natural internal pauses
+/// stay byte-identical. Tagged/variable-format streams are left unchanged.
+pub(crate) fn trim_edge_trailing_silence(bytes: &mut Vec<u8>) {
+    let mut frames = Vec::new();
+    let mut offset = 0;
+    let mut samples = 0usize;
+    let mut rate = None;
+    while offset < bytes.len() {
+        let Some(header_bytes) = bytes.get(offset..offset + 4) else {
+            return;
+        };
+        let Ok(header) = rusty_mp3::header::FrameHeader::parse(header_bytes.try_into().unwrap())
+        else {
+            return;
+        };
+        if rate.is_some_and(|value| value != header.sample_rate) {
+            return;
+        }
+        rate = Some(header.sample_rate);
+        let end = offset + header.frame_size();
+        let Some(frame) = bytes.get(offset..end) else {
+            return;
+        };
+        if offset == 0 {
+            let tag = 4 + usize::from(header.crc_protected) * 2 + header.side_info_len();
+            if frame
+                .get(tag..tag + 4)
+                .is_some_and(|value| value == b"Xing" || value == b"Info")
+            {
+                return;
+            }
+        }
+        samples += header.version.samples_per_frame();
+        frames.push((end, samples));
+        offset = end;
+    }
+    let Some(rate) = rate else { return };
+    let mut decoder = rusty_mp3::Mp3Decoder::new();
+    decoder.push(bytes);
+    decoder.flush();
+    let mut decoded_samples = 0usize;
+    let mut last_audible = None;
+    while let Ok(frame) = decoder.next_frame() {
+        if frame.sample_rate != rate || frame.channels == 0 {
+            return;
+        }
+        let channels = usize::from(frame.channels);
+        for (index, sample_frame) in frame.samples.chunks_exact(channels).enumerate() {
+            if sample_frame
+                .iter()
+                .any(|sample| !sample.is_finite() || sample.abs() > 0.0001)
+            {
+                last_audible = Some(decoded_samples + index + 1);
+            }
+        }
+        decoded_samples += frame.samples.len() / channels;
+    }
+    if decoded_samples != samples {
+        return;
+    }
+    let Some(last_audible) = last_audible else {
+        return;
+    };
+    if samples.saturating_sub(last_audible) < rate as usize / 4 {
+        return;
+    }
+    let keep = last_audible.saturating_add(rate as usize * 120 / 1000);
+    if let Some((end, _)) = frames.into_iter().find(|(_, count)| *count >= keep) {
+        bytes.truncate(end);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn raw_edge_shaped_audio(speech: usize, silence: usize) -> Vec<u8> {
+        let mut encoder = rusty_mp3::Mp3Encoder::new(rusty_mp3::Mp3EncoderConfig {
+            bitrate_kbps: 48,
+            vbr_quality: None,
+        });
+        let pcm = (0..speech + silence)
+            .flat_map(|index| {
+                let sample = if index < speech {
+                    if index % 48 < 24 {
+                        4000i16
+                    } else {
+                        -4000i16
+                    }
+                } else {
+                    0
+                };
+                sample.to_le_bytes()
+            })
+            .collect::<Vec<_>>();
+        encoder.push_pcm_s16le(&pcm, 1, 24_000).unwrap();
+        encoder.finish();
+        let tagged = collect_rusty_mp3_output(&mut encoder).unwrap();
+        let header =
+            rusty_mp3::header::FrameHeader::parse(tagged[..4].try_into().unwrap()).unwrap();
+        tagged[header.frame_size()..].to_vec()
+    }
+
+    #[test]
+    fn edge_padding_removes_only_complete_silent_tail_frames() {
+        let original = raw_edge_shaped_audio(24_000, 24_000);
+        let mut trimmed = original.clone();
+        trim_edge_trailing_silence(&mut trimmed);
+        assert!(trimmed.len() < original.len() * 3 / 4);
+        assert!(
+            original.starts_with(&trimmed),
+            "Speech frames must not be re-encoded"
+        );
+        validate_mp3(&trimmed).unwrap();
+        let length = trimmed.len();
+        trim_edge_trailing_silence(&mut trimmed);
+        assert_eq!(trimmed.len(), length, "Trimming is idempotent");
+
+        if let Some(directory) = std::env::var_os("EPUB_EDGE_PADDING_FIXTURES") {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.extension().and_then(|value| value.to_str()) != Some("mp3") {
+                    continue;
+                }
+                let original = std::fs::read(&path).unwrap();
+                let mut trimmed = original.clone();
+                trim_edge_trailing_silence(&mut trimmed);
+                assert!(
+                    trimmed.len() < original.len(),
+                    "Captured Edge padding must be reduced"
+                );
+                assert!(original.starts_with(&trimmed));
+                validate_mp3(&trimmed).unwrap();
+                std::fs::write(path.with_extension("trimmed-mp3"), trimmed).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn edge_padding_preserves_speech_short_pauses_silence_and_invalid_input() {
+        for original in [
+            raw_edge_shaped_audio(24_000, 1200),
+            raw_edge_shaped_audio(0, 24_000),
+            b"invalid MP3".to_vec(),
+        ] {
+            let mut actual = original.clone();
+            trim_edge_trailing_silence(&mut actual);
+            assert_eq!(actual, original);
+        }
+    }
 
     #[test]
     fn source_rate_encoding_preserves_mpeg_rates_and_rejects_unsupported_rates() {

@@ -25,10 +25,12 @@ final class DeviceWorkflowTests: XCTestCase {
     }
 
     private func workflow(_ arguments: [String], runner: @escaping CommandRunner,
-                          resourceCheck: @escaping () throws -> Void = {}) throws -> Workflow {
+                          resourceCheck: @escaping () throws -> Void = {},
+                          environment: [String: String] = [:]) throws -> Workflow {
         Workflow(root: root, options: try options(arguments), runID: runID, runner: runner,
                  identity: { _ in "Wed Oct 7 12:00:00 2026" }, resourceCheck: resourceCheck,
-                 heavyLock: root.appendingPathComponent("heavy.lock"), environment: ["IOS_TESTS": "EpubToMp3Tests/ReaderViewportTransitionTests"])
+                 heavyLock: root.appendingPathComponent("heavy.lock"), environment:
+                    ["IOS_TESTS": "EpubToMp3Tests/ReaderViewportTransitionTests"].merging(environment) { _, override in override })
     }
 
     func testScopeLimitsSentinelsOverflowAndMissingInput() throws {
@@ -202,8 +204,9 @@ final class DeviceWorkflowTests: XCTestCase {
         }
     }
 
-    private func appFixture() throws -> URL {
-        let products = root.appendingPathComponent("ios/EpubToMp3/.build/Build/Products")
+    private func appFixture(derivedData: URL? = nil) throws -> URL {
+        let products = (derivedData ?? root.appendingPathComponent("ios/EpubToMp3/.build"))
+            .appendingPathComponent("Build/Products")
         let app = products.appendingPathComponent("Debug-iphoneos/EpubToMp3.app")
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
         let info = ["CFBundleIdentifier": Evidence.appID, "CFBundleExecutable": "EpubToMp3"]
@@ -346,6 +349,65 @@ final class DeviceWorkflowTests: XCTestCase {
         XCTAssertEqual(work.report["appCleanupVerified"] as? Bool, true)
         XCTAssertTrue(executed.firstIndex(of: "nativeBuildPreflight")! < executed.firstIndex(of: "build")!)
         XCTAssertEqual(Array(executed.suffix(4)), ["appCleanupInspection", "appCleanupRevalidation", "appCleanupTermination", "appCleanupVerification"])
+    }
+
+    func testSharedXcodeDerivedDataSuppliesBuildTestAppAndBenchmarkHost() throws {
+        let shared = root.appendingPathComponent("GUI DerivedData")
+        try assertDerivedDataWorkflow(selected: shared, environment: ["APPLE_DERIVED_DATA_PATH": shared.path])
+    }
+
+    func testExplicitIOSDerivedDataTakesPriorityOverSharedXcodeCache() throws {
+        let shared = root.appendingPathComponent("GUI DerivedData")
+        let isolated = root.appendingPathComponent("isolated iOS DerivedData")
+        // A valid competing cache must not win app or xctestrun discovery.
+        _ = try appFixture(derivedData: shared)
+        try assertDerivedDataWorkflow(selected: isolated, environment:
+            ["APPLE_DERIVED_DATA_PATH": shared.path, "IOS_DERIVED_DATA_PATH": isolated.path])
+    }
+
+    private func assertDerivedDataWorkflow(selected: URL, environment: [String: String]) throws {
+        let app = try appFixture(derivedData: selected)
+        let products = selected.appendingPathComponent("Build/Products")
+        let originalRun = products.appendingPathComponent("EpubToMp3-IntegrationTests_fixture.xctestrun")
+        let originalBytes = try Data(contentsOf: originalRun)
+        let path = try book().path
+        for action in ["test", "benchmark"] {
+            let fallback = fakeRunner(phases: NSMutableArray())
+            var commands: [Command] = []
+            let arguments = action == "benchmark" ? [action, "--case", path, "8", "9"] : [action]
+            let work = try workflow(arguments, runner: { command, observe in
+                commands.append(command)
+                return try fallback(command, observe)
+            }, environment: environment)
+            XCTAssertEqual(try work.execute()["status"] as? String, "passed")
+            let build = try XCTUnwrap(commands.first { $0.phase == "build" })
+            let buildPath = try XCTUnwrap(build.arguments.firstIndex(of: "-derivedDataPath"))
+            XCTAssertEqual(build.arguments[buildPath + 1], selected.path)
+            let signing = try XCTUnwrap(commands.first { $0.phase == "signing" })
+            XCTAssertEqual(signing.arguments.last, app.path)
+            let test = try XCTUnwrap(commands.first { $0.phase == "testWall" })
+            if action == "test" {
+                let testPath = try XCTUnwrap(test.arguments.firstIndex(of: "-derivedDataPath"))
+                XCTAssertEqual(test.arguments[testPath + 1], selected.path)
+                XCTAssertTrue(test.arguments.contains("test-without-building"))
+            } else {
+                let install = try XCTUnwrap(commands.first { $0.phase == "install" })
+                XCTAssertEqual(install.arguments.last, app.path)
+                let runPath = try XCTUnwrap(test.arguments.firstIndex(of: "-xctestrun"))
+                let isolatedRun = URL(fileURLWithPath: test.arguments[runPath + 1])
+                let configured = try XCTUnwrap(PropertyListSerialization.propertyList(
+                    from: Data(contentsOf: isolatedRun), format: nil) as? [String: Any])
+                let configurations = try XCTUnwrap(configured["TestConfigurations"] as? [[String: Any]])
+                let targets = try XCTUnwrap(configurations.first?["TestTargets"] as? [[String: Any]])
+                XCTAssertEqual(targets.first?["TestHostPath"] as? String, app.path)
+                XCTAssertEqual(try Data(contentsOf: originalRun), originalBytes,
+                               "Configuring a benchmark must preserve the shared Xcode fixture")
+            }
+            try FileManager.default.removeItem(at: work.directory)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath:
+            root.appendingPathComponent("ios/EpubToMp3/.build").path),
+            "A shared-cache workflow must not silently create a second app cache")
     }
 
     func testTestFailureStillVerifiesAppShutdownAndPreservesPrimaryError() throws {

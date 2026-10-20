@@ -66,8 +66,8 @@ final class ReaderModesHarness {
     private var activeReaderPage: Int?
     private var activeReaderPageCount: Int?
 
-    init(app: XCUIApplication = XCUIApplication()) {
-        self.app = app
+    init(app: XCUIApplication? = nil) {
+        self.app = app ?? XCUIApplication()
     }
 
     @discardableResult

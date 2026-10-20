@@ -214,11 +214,17 @@ actor RustConversionOutputStore {
     }
 
     nonisolated private static func hasCanonicalRoot(_ root: URL) -> Bool {
-        // Reject aliases in every existing ancestor, including an app-support override.
+        // Foundation canonicalizes /private/var back to /var on Darwin, even
+        // after resolvingSymlinksInPath(). Accept only that system alias;
+        // custom aliases in the root or any ancestor remain forbidden.
         var ancestor = root.standardizedFileURL
         while ancestor.path != "/" {
             if (try? ancestor.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-                return false
+                guard ancestor.path == "/var",
+                      let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: ancestor.path),
+                      destination == "private/var" || destination == "/private/var" else {
+                    return false
+                }
             }
             ancestor.deleteLastPathComponent()
         }

@@ -9,10 +9,46 @@ require "timeout"
 require_relative "mac_build_budget"
 
 class MacBuildBudgetTest < Minitest::Test
+  def test_read_only_check_retains_budget_refusal_status
+    with_stub(:check, nil) { assert_equal 0, MacBuildBudget.main(["check"]) }
+    with_stub(:check, "Fixture: cache budget exceeded") do
+      _, error = capture_io { assert_equal 75, MacBuildBudget.main(["check"]) }
+      assert_match(/Fixture: cache budget exceeded/, error)
+    end
+  end
+
   def setup
     @dir = File.realpath(Dir.mktmpdir("mac-build-budget-"))
     @limits = { "version" => 1, "minimum_free_gib" => 20, "maximum_cache_gib" => 12,
                 "check_interval_seconds" => 1 }
+  end
+
+  def test_compatibility_wrapper_only_checks_and_preserves_cache_bytes_on_success_and_refusal
+    bin = File.join(@dir, "bin")
+    FileUtils.mkdir_p(bin)
+    cache = File.join(@dir, ".build-old")
+    FileUtils.mkdir_p(cache)
+    artifact = File.join(cache, "artifact")
+    File.write(artifact, "retained cache bytes")
+    File.utime(Time.now - 864_000, Time.now - 864_000, cache)
+    trace = File.join(@dir, "trace")
+    fake_mise = File.join(bin, "mise")
+    File.write(fake_mise, <<~'SH')
+      #!/bin/bash
+      printf '%s\n' "$@" > "$GUARD_TEST_TRACE"
+      exit "$GUARD_TEST_STATUS"
+    SH
+    File.chmod(0o755, fake_mise)
+    [0, 75].each do |expected|
+      _, error, status = Open3.capture3({ "PATH" => "#{bin}:#{ENV.fetch('PATH')}",
+        "GUARD_TEST_TRACE" => trace, "GUARD_TEST_STATUS" => expected.to_s,
+        "IOS_DISK_GUARD_IOS_BUILD_DIR" => @dir, "IOS_DISK_GUARD_MAX_TOTAL_MB" => "0" },
+        "bash", File.join(__dir__, "ios_disk_guard.sh"), chdir: @dir)
+      assert_equal expected, status.exitstatus, error
+      assert_equal ["-C", File.expand_path("..", __dir__), "exec", "--", "ruby",
+                    File.join(__dir__, "mac_build_budget.rb"), "check"], File.readlines(trace, chomp: true)
+      assert_equal "retained cache bytes", File.binread(artifact)
+    end
   end
 
   def with_stub(name, value)

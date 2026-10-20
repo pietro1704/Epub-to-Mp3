@@ -33,6 +33,7 @@ final class StreamingPlaybackChunkDelivery: @unchecked Sendable {
         _ data: Data,
         chapterIndex: Int,
         chunkIndex: Int,
+        buffersAudio: Bool = true,
         isCurrent: @escaping @MainActor @Sendable () -> Bool,
         onAccepted: @escaping @MainActor @Sendable () -> Void
     ) -> Bool {
@@ -40,6 +41,10 @@ final class StreamingPlaybackChunkDelivery: @unchecked Sendable {
         Task { @MainActor [player] in
             guard isCurrent() else {
                 gate.resolve(false)
+                return
+            }
+            guard buffersAudio else {
+                gate.resolve(true)
                 return
             }
             let accepted = await player.enqueueSegmentAsync(

@@ -252,7 +252,8 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             guard let self else { return }
             let outcomes = await self.importSelectedBooks(from: urls)
             if let error = outcomes.compactMap(\.error).first {
-                self.presentMessage(title: L10n.string("library.importError"), message: error)
+                self.presentMessage(title: L10n.string("library.importError"),
+                                    message: AppErrorReporter.message(error, context: "Library import"))
             }
         }
     }
@@ -313,7 +314,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
                 reloadGrid(animated: true)
             } catch {
                 presentMessage(title: L10n.string("settings.storageRemovalFailedTitle"),
-                               message: error.localizedDescription)
+                               message: AppErrorReporter.message(error, context: #function))
             }
         }
     }

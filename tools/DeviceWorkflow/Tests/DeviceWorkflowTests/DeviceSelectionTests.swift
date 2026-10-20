@@ -22,6 +22,73 @@ final class DeviceSelectionTests: XCTestCase {
         XCTAssertEqual(options.expectedTestCount, 1)
     }
 
+    func testTerminalReaderRegressionRequiresOneExactMethod() throws {
+        let selector = "EpubToMp3Tests/ReaderProgressiveListeningTests/testTerminalEmptySnapshotDoesNotWaitForReaderPageForever"
+        let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": selector])
+        XCTAssertEqual(options.testFilters, [selector])
+        XCTAssertEqual(options.expectedTestCount, 1)
+    }
+
+    func testAppFixMethodSelectionsPreserveExactOrderAndCount() throws {
+        let methods: [(String, [String])] = [
+            ("ReaderProgressiveListeningTests", [
+                "testMiniPlayerPreservesPageUntilCompleteChapterArrives",
+                "testMiniPlayerPageStartKeepsPauseWhileWaitingForChapter",
+                "testMiniPlayerRejectsNonfinitePageAnchorAndStreamsImmediately",
+                "testMiniPlayerPageAnchorDoesNotSurviveReplacementSession",
+                "testRequestedChapterPlaysBeforeConversionFinishesWithoutRestart",
+                "testPauseWhileWaitingPreventsChapterAutoplay",
+            ]),
+            ("AppErrorReporterTests", [
+                "testAlertMessageAlsoWritesErrorIdentityAndCauseToTerminal",
+                "testStringFailureRetainsLocalizedAlertAndPrefixesEveryDiagnosticLine",
+            ]),
+            ("RustOutputRootValidationTests", [
+                "testSystemTemporaryRootSupportsWritingCountingAndOwnedRemoval",
+                "testCustomSymlinkAncestorStillRejectsWritesAndRemoval",
+                "testCanonicalRootStillRejectsTraversalAndPreservesAnotherBooksOutput",
+            ]),
+            ("ToolbarSettingsParityTests", [
+                "testInstalledSystemVoiceCanBeSelectedAsSecondaryWithoutChangingPrimary",
+                "testNewSpeechSettingsUseFaberWithNativeFallbackAndPersistExplicitNone",
+                "testLoadingConsentedEdgeFallbackAdoptsNativeRecoveryWithoutChangingSelections",
+                "testExistingSpeechSettingsRetainPrimaryAndRecoverThroughSystem",
+                "testExistingExplicitNativeFallbackAdoptsRecoveryWithoutSettingsEdit",
+                "testLoadingDuplicateLegacyFallbackClearsOnlySecondary",
+            ]),
+        ]
+        let filters = methods.flatMap { name, tests in tests.map { "EpubToMp3Tests/\(name)/\($0)" } }
+        let options = try Options(arguments: ["test"], root: root,
+                                  environment: ["IOS_TESTS": filters.joined(separator: ",")])
+        XCTAssertEqual(options.testFilters, filters)
+        XCTAssertEqual(options.expectedTestCount, 17)
+        let reproduction = try Options(arguments: ["test"], root: root,
+            environment: ["IOS_TESTS": filters.prefix(2).joined(separator: ",")])
+        XCTAssertEqual(reproduction.testFilters, Array(filters.prefix(2)))
+        XCTAssertEqual(reproduction.expectedTestCount, 2)
+        for filter in filters {
+            let single = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": filter])
+            XCTAssertEqual(single.testFilters, [filter])
+            XCTAssertEqual(single.expectedTestCount, 1)
+        }
+    }
+
+    func testPartialAppFixAuditsNeverAuthorizeWholeClassesOrOtherMethods() {
+        for name in ["ReaderProgressiveListeningTests", "AppErrorReporterTests",
+                     "RustOutputRootValidationTests", "ToolbarSettingsParityTests"] {
+            let selector = "EpubToMp3Tests/\(name)"
+            XCTAssertThrowsError(try Options(arguments: ["test"], root: root,
+                                             environment: ["IOS_TESTS": selector]), selector)
+        }
+        for selector in ["EpubToMp3Tests/ToolbarSettingsParityTests/testFontSizeStepperBoundaries",
+                         "EpubToMp3Tests/ReaderProgressiveListeningTests/testBookChangedBeforeDeliveryDoesNotAutoplayOldBook",
+                         "EpubToMp3Tests/AppErrorReporterTests/test*",
+                         "EpubToMp3Tests/RustOutputRootValidationTests/testSystemTemporaryRootSupportsWritingCountingAndOwnedRemoval()"] {
+            XCTAssertThrowsError(try Options(arguments: ["test"], root: root,
+                                             environment: ["IOS_TESTS": selector]), selector)
+        }
+    }
+
     func testMixedDistinctClassAndMethodsCountOnlySelectedTests() throws {
         let filters = ["EpubToMp3Tests/ReaderViewportTransitionTests",
                        "EpubToMp3Tests/ReaderProgressStoreTests/testSaveAndReadRoundTrip",

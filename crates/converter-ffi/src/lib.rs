@@ -1845,14 +1845,12 @@ impl converter_core::piper::PiperRuntime for EmbeddedPiperRuntime {
         let config = CString::new(config.to_string_lossy().as_bytes())
             .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
         let mut error = vec![0 as std::ffi::c_char; 2048];
-        if unsafe {
-            piper_runtime::piper_runtime_init(
-                model.as_ptr(),
-                config.as_ptr(),
-                error.as_mut_ptr(),
-                error.len() as u32,
-            )
-        } == 0
+        if piper_runtime::piper_runtime_init(
+            model.as_ptr(),
+            config.as_ptr(),
+            error.as_mut_ptr(),
+            error.len() as u32,
+        ) == 0
         {
             return Err(converter_core::piper::PiperError::Synthesis(c_error(
                 unsafe { std::slice::from_raw_parts(error.as_ptr().cast::<u8>(), error.len()) },
@@ -1871,14 +1869,12 @@ impl converter_core::piper::PiperRuntime for EmbeddedPiperRuntime {
         let output = CString::new(output.to_string_lossy().as_bytes())
             .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
         let mut error = vec![0 as std::ffi::c_char; 2048];
-        if unsafe {
-            piper_runtime::piper_synthesize(
-                text.as_ptr(),
-                output.as_ptr(),
-                error.as_mut_ptr(),
-                error.len() as u32,
-            )
-        } == 0
+        if piper_runtime::piper_synthesize(
+            text.as_ptr(),
+            output.as_ptr(),
+            error.as_mut_ptr(),
+            error.len() as u32,
+        ) == 0
         {
             return Err(converter_core::piper::PiperError::Synthesis(c_error(
                 unsafe { std::slice::from_raw_parts(error.as_ptr().cast::<u8>(), error.len()) },

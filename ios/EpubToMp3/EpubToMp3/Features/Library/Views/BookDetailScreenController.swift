@@ -346,7 +346,7 @@ final class BookDetailScreenController: UIViewController {
         guard isViewLoaded, view.window != nil else { return }
         let alert = UIAlertController(
             title: L10n.string("bookDetail.listenStart"),
-            message: error.localizedDescription,
+            message: AppErrorReporter.message(error, context: #function),
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
@@ -405,7 +405,7 @@ final class BookDetailScreenController: UIViewController {
                     guard self.manualConversionGeneration == jobID else { return }
                     let alert = UIAlertController(
                         title: L10n.string("bookDetail.download"),
-                        message: error.localizedDescription,
+                        message: AppErrorReporter.message(error, context: #function),
                         preferredStyle: .alert
                     )
                     alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))

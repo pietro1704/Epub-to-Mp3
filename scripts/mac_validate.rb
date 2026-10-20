@@ -41,7 +41,7 @@ module MacValidate
     digests = files.sort.to_h { |path| [path.delete_prefix(root + '/'), Digest::SHA256.file(path).hexdigest] }
     { 'sources' => digests, 'root' => File.realpath(root), 'configuration' => configuration,
       'destination' => 'platform=macOS', 'scheme' => 'EpubToMp3Mac', 'jobs' => 1,
-      'developer' => capture('xcode-select', '-p'), 'xcode' => capture('xcodebuild', '-version'),
+      'developer' => ENV['DEVELOPER_DIR'] || capture('xcode-select', '-p'), 'xcode' => capture('xcodebuild', '-version'),
       'architecture' => capture('uname', '-m'),
       'flags' => %w[DEVELOPER_DIR TOOLCHAINS SDKROOT ARCHS OTHER_SWIFT_FLAGS OTHER_CFLAGS OTHER_LDFLAGS SWIFT_VERSION SWIFT_ACTIVE_COMPILATION_CONDITIONS MACOSX_DEPLOYMENT_TARGET].to_h { |name| [name, ENV[name]] } }
   end
@@ -100,6 +100,7 @@ module MacValidate
     end
     options[:mode] = arguments.shift if MODES.include?(arguments.first)
     parser.parse!(arguments)
+    options[:derived] ||= ENV['APPLE_DERIVED_DATA_PATH'] if options[:root] == ROOT
     raise parser.to_s unless arguments.empty? && options[:derived]
     root, derived, configuration = options.values_at(:root, :derived, :configuration)
     app = File.join(derived, 'Build/Products', configuration, 'EpubToMp3.app')

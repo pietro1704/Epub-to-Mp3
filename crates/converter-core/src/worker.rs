@@ -1243,8 +1243,14 @@ impl ConversionWorker {
         let mut output = fs::File::create(out)?;
         let mut policy = self.segment_policy.lock().expect("segment policy lock");
         // The first short utterance becomes playable before the rest of the chapter.
-        let segments = platform_tts::segments(text);
-        for (index, segment) in segments.iter().enumerate() {
+        let mut segments = std::collections::VecDeque::from(platform_tts::segments(text));
+        let system_selection = crate::tts_preferences::TtsSelection {
+            engine: "system".into(),
+            model_id: None,
+            voice: None,
+        };
+        let mut index = 0;
+        while let Some(segment) = segments.pop_front() {
             if self.cancel.is_cancelled() {
                 return Err(WorkerError::Cancelled);
             }
@@ -1255,128 +1261,186 @@ impl ConversionWorker {
             // A cancelled/stale secondary must not consume recovery counters.
             let mut pending_policy = policy.clone();
             let path = staging.path().join(format!("{index}.mp3"));
-            let synthesize_unvalidated =
-                |selection: &crate::tts_preferences::TtsSelection| -> Result<Vec<u8>, WorkerError> {
-                    if self.cancel.is_cancelled() {
-                        return Err(WorkerError::Cancelled);
-                    }
-                    if stale.load(Ordering::Acquire) {
-                        return Err(WorkerError::PlaybackWindowChanged);
-                    }
-                    selection.validate(language).map_err(WorkerError::Piper)?;
-                    if selection.engine == "system" {
-                        let adapter = self.platform_tts.as_ref().ok_or_else(|| {
-                            WorkerError::PlatformTts("No installed system speech adapter".into())
-                        })?;
-                        let _guard = loop {
-                            if self.cancel.is_cancelled() {
-                                return Err(WorkerError::Cancelled);
-                            }
-                            if stale.load(Ordering::Acquire) {
-                                return Err(WorkerError::PlaybackWindowChanged);
-                            }
-                            match self.platform_gate.try_lock() {
-                                Ok(guard) => break guard,
-                                Err(std::sync::TryLockError::Poisoned(_)) => {
-                                    return Err(WorkerError::PlatformTts(
-                                        "system speech lock poisoned".into(),
-                                    ))
-                                }
-                                Err(std::sync::TryLockError::WouldBlock) => {
-                                    std::thread::sleep(std::time::Duration::from_millis(25))
-                                }
-                            }
-                        };
-                        let started = std::time::Instant::now();
-                        let deadline = std::time::Duration::from_secs(30);
-                        let wav = path.with_extension("wav");
-                        let cancelled = || {
-                            self.cancel.is_cancelled()
-                                || stale.load(Ordering::Acquire)
-                                || started.elapsed() >= deadline
-                        };
-                        adapter
-                            .synthesize_wav(segment, language.unwrap_or("pt-BR"), &wav, &cancelled)
-                            .map_err(WorkerError::PlatformTts)?;
-                        if started.elapsed() >= deadline {
-                            return Err(WorkerError::PlatformTts(
-                                "System speech deadline exceeded".into(),
-                            ));
+            let synthesize_unvalidated = |selection: &crate::tts_preferences::TtsSelection,
+                                          segment: &str|
+             -> Result<Vec<u8>, WorkerError> {
+                if self.cancel.is_cancelled() {
+                    return Err(WorkerError::Cancelled);
+                }
+                if stale.load(Ordering::Acquire) {
+                    return Err(WorkerError::PlaybackWindowChanged);
+                }
+                selection.validate(language).map_err(WorkerError::Piper)?;
+                if selection.engine == "system" {
+                    let adapter = self.platform_tts.as_ref().ok_or_else(|| {
+                        WorkerError::PlatformTts("No installed system speech adapter".into())
+                    })?;
+                    let _guard = loop {
+                        if self.cancel.is_cancelled() {
+                            return Err(WorkerError::Cancelled);
                         }
-                        return platform_tts::encode_wav(&fs::read(wav)?)
-                            .map_err(WorkerError::PlatformTts);
-                    }
-                    if selection.engine == "edge" {
-                        #[cfg(test)]
-                        if let Some(edge) = &self.test_edge {
-                            return edge(segment);
+                        if stale.load(Ordering::Acquire) {
+                            return Err(WorkerError::PlaybackWindowChanged);
                         }
-                        return run_preference_edge_synthesis(
-                            crate::tts::synthesize_with_reference_client(
-                                segment,
-                                selection
-                                    .voice
-                                    .as_deref()
-                                    .unwrap_or_else(|| default_edge_voice(language)),
-                                Arc::clone(&self.adaptive),
-                                self.telemetry.clone(),
-                            ),
-                            &self.cancel,
-                            segment.len(),
-                        );
-                    }
-                    let (model, config) = self.selection_model_paths(request, selection);
+                        match self.platform_gate.try_lock() {
+                            Ok(guard) => break guard,
+                            Err(std::sync::TryLockError::Poisoned(_)) => {
+                                return Err(WorkerError::PlatformTts(
+                                    "system speech lock poisoned".into(),
+                                ))
+                            }
+                            Err(std::sync::TryLockError::WouldBlock) => {
+                                std::thread::sleep(std::time::Duration::from_millis(25))
+                            }
+                        }
+                    };
+                    let started = std::time::Instant::now();
+                    let deadline = std::time::Duration::from_secs(30);
                     let wav = path.with_extension("wav");
-                    self.synthesize_with_piper(segment, &wav, Some(&model), Some(&config))?;
-                    platform_tts::encode_wav(&fs::read(wav)?).map_err(WorkerError::PlatformTts)
-                };
-            let synthesize =
-                |selection: &crate::tts_preferences::TtsSelection| -> Result<Vec<u8>, WorkerError> {
-                    let result = synthesize_unvalidated(selection);
-                    // Native inference may finish after cancellation was requested.
-                    // Never deliver those bytes or start a secondary provider afterward.
-                    if self.cancel.is_cancelled() {
-                        return Err(WorkerError::Cancelled);
+                    let cancelled = || {
+                        self.cancel.is_cancelled()
+                            || stale.load(Ordering::Acquire)
+                            || started.elapsed() >= deadline
+                    };
+                    adapter
+                        .synthesize_wav(segment, language.unwrap_or("pt-BR"), &wav, &cancelled)
+                        .map_err(WorkerError::PlatformTts)?;
+                    if started.elapsed() >= deadline {
+                        return Err(WorkerError::PlatformTts(
+                            "System speech deadline exceeded".into(),
+                        ));
                     }
-                    if stale.load(Ordering::Acquire) {
-                        return Err(WorkerError::PlaybackWindowChanged);
+                    return platform_tts::encode_wav(&fs::read(wav)?)
+                        .map_err(WorkerError::PlatformTts);
+                }
+                if selection.engine == "edge" {
+                    #[cfg(test)]
+                    if let Some(edge) = &self.test_edge {
+                        return edge(segment);
                     }
-                    let bytes = result?;
-                    platform_tts::validate_mp3(&bytes).map_err(WorkerError::PlatformTts)?;
-                    Ok(bytes)
-                };
+                    return run_preference_edge_synthesis(
+                        crate::tts::synthesize_with_reference_client(
+                            segment,
+                            selection
+                                .voice
+                                .as_deref()
+                                .unwrap_or_else(|| default_edge_voice(language)),
+                            Arc::clone(&self.adaptive),
+                            self.telemetry.clone(),
+                        ),
+                        &self.cancel,
+                        segment.len(),
+                    );
+                }
+                let (model, config) = self.selection_model_paths(request, selection);
+                let wav = path.with_extension("wav");
+                self.synthesize_with_piper(segment, &wav, Some(&model), Some(&config))?;
+                platform_tts::encode_wav(&fs::read(wav)?).map_err(WorkerError::PlatformTts)
+            };
+            let synthesize = |selection: &crate::tts_preferences::TtsSelection,
+                              segment: &str|
+             -> Result<Vec<u8>, WorkerError> {
+                let result = synthesize_unvalidated(selection, segment);
+                // Native inference may finish after cancellation was requested.
+                // Never deliver those bytes or start a secondary provider afterward.
+                if self.cancel.is_cancelled() {
+                    return Err(WorkerError::Cancelled);
+                }
+                if stale.load(Ordering::Acquire) {
+                    return Err(WorkerError::PlaybackWindowChanged);
+                }
+                let bytes = result?;
+                platform_tts::validate_mp3(&bytes).map_err(WorkerError::PlatformTts)?;
+                Ok(bytes)
+            };
+            // A real, useful segment is the health probe. Attempts are serial
+            // under the policy lock; no second voice or throwaway audio runs
+            // in parallel. Native fallback covers only a short passage before
+            // we reconsider the preferred providers.
+            let attempt_selection = |selection: &crate::tts_preferences::TtsSelection|
+                -> Result<(Vec<u8>, Vec<String>), WorkerError> {
+                if selection.engine == "system" && selection != &preferences.primary {
+                    let mut passages = platform_tts::native_segments(&segment, index == 0);
+                    let first = passages.remove(0);
+                    Ok((synthesize(selection, &first)?, passages))
+                } else {
+                    Ok((synthesize(selection, &segment)?, Vec::new()))
+                }
+            };
+            let terminal = |error: &WorkerError| {
+                self.cancel.is_cancelled()
+                    || stale.load(Ordering::Acquire)
+                    || matches!(
+                        error,
+                        WorkerError::Cancelled
+                            | WorkerError::PlaybackWindowChanged
+                            | WorkerError::Edge(EdgeError::Cancelled)
+                    )
+            };
             let attempt = if pending_policy.should_try_primary(preferences) {
-                synthesize(&preferences.primary)
+                attempt_selection(&preferences.primary)
             } else {
                 Err(WorkerError::Piper("Primary recovery cooldown".into()))
             };
             let cooling_down = matches!(&attempt, Err(WorkerError::Piper(message)) if message == "Primary recovery cooldown");
-            let (selection, bytes, fallback_used) = match attempt {
-                Ok(bytes) => {
+            let retry_delay = |error: &WorkerError| match error {
+                WorkerError::Edge(EdgeError::RateLimited { retry_after, .. }) => {
+                    Some(retry_after.unwrap_or(std::time::Duration::from_secs(30)))
+                }
+                _ => None,
+            };
+            let (selection, bytes, remainder, fallback_used) = match attempt {
+                Ok((bytes, remainder)) => {
                     pending_policy.primary_succeeded();
-                    (&preferences.primary, bytes, false)
+                    (&preferences.primary, bytes, remainder, false)
                 }
                 Err(error) => {
-                    if stale.load(Ordering::Acquire)
-                        || matches!(error, WorkerError::PlaybackWindowChanged)
-                    {
-                        return Err(WorkerError::PlaybackWindowChanged);
-                    }
-                    if self.cancel.is_cancelled()
-                        || matches!(
-                            error,
-                            WorkerError::Cancelled | WorkerError::Edge(EdgeError::Cancelled)
-                        )
-                    {
-                        return Err(WorkerError::Cancelled);
+                    if terminal(&error) {
+                        return Err(error);
                     }
                     if !cooling_down {
+                        eprintln!("[Rust][TTS] primary failed: {error}");
                         pending_policy.provider_failed(false, preferences).map_err(
                             |policy_error| WorkerError::Piper(format!("{policy_error}: {error}")),
                         )?;
+                        if preferences.continues_native() {
+                            if let Some(delay) = retry_delay(&error) {
+                                pending_policy.defer_primary_for(delay);
+                            }
+                        }
                     }
-                    let secondary = preferences.secondary.as_ref().expect("checked secondary");
-                    (secondary, synthesize(secondary)?, true)
+                    let secondary = preferences.secondary.as_ref();
+                    let secondary_result = secondary.map(|selection| {
+                        if pending_policy.should_try_secondary() {
+                            attempt_selection(selection)
+                        } else {
+                            Err(WorkerError::Piper("Secondary recovery cooldown".into()))
+                        }
+                    });
+                    match secondary_result {
+                        Some(Ok((bytes, remainder))) => {
+                            pending_policy.secondary_succeeded();
+                            (secondary.unwrap(), bytes, remainder, true)
+                        }
+                        Some(Err(error)) if terminal(&error) => return Err(error),
+                        failure
+                            if preferences.continues_native()
+                                && preferences.primary.engine != "system"
+                                && secondary
+                                    .map_or(true, |selection| selection.engine != "system") =>
+                        {
+                            if let Some(Err(error)) = failure {
+                                if let Some(delay) = retry_delay(&error) {
+                                    pending_policy.defer_secondary_for(delay);
+                                }
+                                eprintln!("[Rust][TTS] secondary failed: {error}; trying installed system voice");
+                            }
+                            let (bytes, remainder) = attempt_selection(&system_selection)?;
+                            (&system_selection, bytes, remainder, true)
+                        }
+                        Some(Err(error)) => return Err(error),
+                        None => return Err(error),
+                    }
                 }
             };
             if !dispatch_playback_chunk(
@@ -1394,6 +1458,10 @@ impl ConversionWorker {
                 });
             }
             output.write_all(&bytes)?;
+            for passage in remainder.into_iter().rev() {
+                segments.push_front(passage);
+            }
+            index += 1;
             *policy = pending_policy;
             if fallback_used {
                 self.fallback_chapters
@@ -1430,7 +1498,7 @@ impl ConversionWorker {
                     } else {
                         &selection.engine
                     },
-                    index + 1
+                    index
                 ),
             });
         }
@@ -1782,6 +1850,7 @@ fn refresh_chapter_audio_receipt(output: &Path) -> Result<(), WorkerError> {
     Ok(())
 }
 
+#[cfg(test)]
 fn ensure_chapter_audio(
     output: &Path,
     request_key: &str,
@@ -2365,6 +2434,171 @@ mod tests {
         ));
         assert_eq!(spoken.lock().unwrap().len(), count);
         assert_eq!(*worker.segment_policy.lock().unwrap(), snapshot);
+    }
+
+    #[test]
+    fn app_policy_uses_configured_secondary_before_system_voice() {
+        use crate::tts_preferences::{TtsPreferences, TtsSelection};
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: spoken.clone(),
+            }));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let edge_calls = calls.clone();
+        worker.test_edge = Some(Arc::new(move |_| {
+            edge_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(platform_tts::encode_wav(&test_system_wav()).unwrap())
+        }));
+        let preferences = TtsPreferences {
+            secondary: Some(TtsSelection {
+                engine: "edge".into(),
+                model_id: None,
+                voice: Some("pt-BR-FranciscaNeural".into()),
+            }),
+            allow_online_fallback: true,
+            ..TtsPreferences::app_default(true)
+        };
+        let providers = Mutex::new(Vec::new());
+        worker
+            .synthesize_preferences(
+                &preference_test_request(),
+                &preferences,
+                &"Uma frase para a voz secundária. ".repeat(80),
+                &temp.path().join("secondary.mp3"),
+                0,
+                Some("pt-BR"),
+                &std::sync::atomic::AtomicBool::new(false),
+                &providers,
+                1,
+            )
+            .unwrap();
+        assert!(calls.load(Ordering::SeqCst) > 3);
+        assert!(spoken.lock().unwrap().is_empty());
+        assert_eq!(
+            providers.into_inner().unwrap(),
+            vec![preferences.secondary.unwrap()]
+        );
+    }
+
+    #[test]
+    fn app_policy_uses_short_system_passages_until_primary_recovers() {
+        use crate::tts_preferences::{TtsPreferences, TtsSelection};
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: spoken.clone(),
+            }));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let edge_calls = calls.clone();
+        worker.test_edge = Some(Arc::new(move |_| {
+            if edge_calls.fetch_add(1, Ordering::SeqCst) < 2 {
+                Err(WorkerError::Edge(EdgeError::Timeout))
+            } else {
+                Ok(platform_tts::encode_wav(&test_system_wav()).unwrap())
+            }
+        }));
+        let preferences = TtsPreferences {
+            policy_version: Some(2),
+            primary: TtsSelection {
+                engine: "edge".into(),
+                model_id: None,
+                voice: None,
+            },
+            secondary: Some(TtsSelection::default()),
+            allow_online_fallback: false,
+        };
+        let providers = Mutex::new(Vec::new());
+        worker
+            .synthesize_preferences(
+                &preference_test_request(),
+                &preferences,
+                &"Uma frase que continua após a recuperação. ".repeat(80),
+                &temp.path().join("recovered.mp3"),
+                0,
+                Some("pt-BR"),
+                &std::sync::atomic::AtomicBool::new(false),
+                &providers,
+                1,
+            )
+            .unwrap();
+        let native = spoken.lock().unwrap();
+        assert_eq!(
+            native.len(),
+            3,
+            "One fallback passage between recovery probes"
+        );
+        assert!(native.iter().all(|text| text.chars().count() <= 240));
+        assert!(calls.load(Ordering::SeqCst) >= 3);
+        assert!(worker.segment_policy.lock().unwrap().is_initial());
+        let used = providers.into_inner().unwrap();
+        assert!(used.iter().any(|selection| selection.engine == "system"));
+        assert!(used.iter().any(|selection| selection.engine == "edge"));
+    }
+    #[test]
+    fn app_policy_rate_limited_primary_waits_while_native_continues() {
+        use crate::tts_preferences::{TtsPreferences, TtsSelection};
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: spoken.clone(),
+            }));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let edge_calls = calls.clone();
+        worker.test_edge = Some(Arc::new(move |_| {
+            edge_calls.fetch_add(1, Ordering::SeqCst);
+            Err(WorkerError::Edge(EdgeError::RateLimited {
+                status: 429,
+                retry_after: Some(std::time::Duration::from_secs(60)),
+            }))
+        }));
+        let preferences = TtsPreferences {
+            policy_version: Some(2),
+            primary: TtsSelection {
+                engine: "edge".into(),
+                model_id: None,
+                voice: None,
+            },
+            secondary: None,
+            allow_online_fallback: false,
+        };
+        worker
+            .synthesize_preferences(
+                &preference_test_request(),
+                &preferences,
+                &"Uma passagem para a voz instalada. ".repeat(80),
+                &temp.path().join("throttled.mp3"),
+                0,
+                Some("pt-BR"),
+                &std::sync::atomic::AtomicBool::new(false),
+                &Mutex::new(Vec::new()),
+                1,
+            )
+            .unwrap();
+        assert!(spoken.lock().unwrap().len() > 3);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "Retry-After must prevent extra provider probes"
+        );
     }
     #[test]
     fn in_flight_native_cancellation_and_stale_results_do_not_commit_policy() {

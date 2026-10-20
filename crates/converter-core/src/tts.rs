@@ -748,7 +748,10 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
             )
             .await
         {
-            Ok(audio) => Ok(audio),
+            Ok(mut audio) => {
+                crate::pcm::trim_edge_trailing_silence(&mut audio);
+                Ok(audio)
+            }
             Err(error)
                 if matches!(
                     error.retry_category(),
