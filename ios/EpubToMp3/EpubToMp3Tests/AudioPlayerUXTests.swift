@@ -157,22 +157,20 @@ final class AudioPlayerUXTests: XCTestCase {
     @MainActor
     func testAvailableRatesContainsExpectedValues() {
         let player = makePlayer()
-        let expected: [Float] = [0.8, 1.0, 1.3, 1.5, 1.8, 3.0]
+        let expected: [Float] = [0.75, 1.25, 1.5, 1.75, 2.5, 3.0]
         XCTAssertEqual(player.availableRates, expected)
     }
 
     // MARK: - cycleRate
 
-    /// Starting at 1x, successive `cycleRate()` calls should advance
-    /// through the ordered list and wrap around from 3x back to 0.8x.
+    /// The initial internal 1x rate enters the requested menu on first cycle.
     @MainActor
     func testCycleRateAdvancesThroughAllCases() {
         let player = makePlayer()
         // Default rate is 1.0.
         XCTAssertEqual(player.rate, .x100)
 
-        let expected: [PlaybackRate] = [.x130, .x150, .x180, .x300,
-                                        .x080, .x100]
+        let expected: [PlaybackRate] = [.x075, .x125, .x150, .x175, .x250, .x300, .x075]
         for expectedRate in expected {
             player.cycleRate()
             XCTAssertEqual(player.rate, expectedRate,
@@ -180,20 +178,23 @@ final class AudioPlayerUXTests: XCTestCase {
         }
     }
 
-    /// After a full loop (6 cycles from 1.0), the rate must return to 1.0.
+    /// A complete cycle returns to the first menu option.
     @MainActor
     func testCycleRateWrapsAroundToStart() {
         let player = makePlayer()
+        player.setRate(.x075)
         let cycleCount = player.availableRates.count
         for _ in 0..<cycleCount { player.cycleRate() }
-        XCTAssertEqual(player.rate, .x100,
-            "Cycling through all \(cycleCount) rates must land back at 1.0")
+        XCTAssertEqual(player.rate, .x075,
+            "Cycling through all \(cycleCount) rates must land back at 0.75")
     }
 
     // MARK: - PlaybackRate.shortLabel
 
     @MainActor
     func testShortLabelForCommonRates() {
+        XCTAssertEqual(PlaybackRate.primaryRates.map(\.shortLabel),
+                       ["0.75x", "1.25x", "1.5x", "1.75x", "2.5x", "3x"])
         XCTAssertEqual(PlaybackRate.x100.shortLabel, "1x")
         XCTAssertEqual(PlaybackRate.x130.shortLabel, "1.3x")
         XCTAssertEqual(PlaybackRate.x080.shortLabel, "0.8x")
