@@ -320,7 +320,7 @@ jobs:
           mise exec -- ruby scripts/test_codeql_swift_build.rb | tee .reports/ios-bundle-signing/swift-build.log
       - name: Retain signing contract evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ios-build-only-signing-contracts
           path: .reports/ios-bundle-signing
