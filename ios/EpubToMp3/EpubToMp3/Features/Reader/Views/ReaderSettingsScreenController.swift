@@ -22,6 +22,10 @@ final class ReaderSettingsScreenController: UITableViewController {
     /// changes — so the reader behind this sheet can re-render immediately.
     var onChange: (() -> Void)?
 
+    /// The presenting reader can refresh window-coordinate diagnostics only
+    /// after the sheet has restored its final presentation transform.
+    var onDismiss: (() -> Void)?
+
     init(settings: AppSettings) {
         self.settings = settings
         super.init(style: .insetGrouped)
@@ -422,7 +426,7 @@ final class ReaderSettingsScreenController: UITableViewController {
 
     @objc
     private func doneTapped() {
-        dismiss(animated: true)
+        dismiss(animated: true, completion: onDismiss)
     }
 }
 #endif

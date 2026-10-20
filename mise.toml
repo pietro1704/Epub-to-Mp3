@@ -99,6 +99,26 @@ run = "mise exec -- python scripts/validate_converter_ffi_targets.py"
 description = "List converter-ffi native target mappings and exact output paths"
 run = "mise exec -- python scripts/build_converter_ffi.py --list"
 
+[tasks."native:build:preflight"]
+description = "Read-only Intel Mac check: Simulator shutdown and SimMetalHost exit before compilation"
+run = "ruby scripts/native_build_preflight.rb"
+
+[tasks."models:catalog:test"]
+description = "Verify model catalog and atomic/checksummed installation contracts without downloading models"
+run = "ruby scripts/native_job.rb build -- mise exec -- cargo test -p converter-core --lib model_ --jobs 1"
+
+[tasks."host:workflow:test"]
+description = "Run fail-fast host workflow regressions with exact logs; no native build or Simulator"
+run = "ruby scripts/run_host_checks.rb"
+
+[tasks."git:hygiene:test"]
+description = "Verify ignore rules and index-only cleanup through real Git in temporary repositories"
+run = "ruby scripts/test_git_hygiene.rb"
+
+[tasks."native:build:preflight:test"]
+description = "Host regressions for native build crash-prevention preflight; no Simulator or build"
+run = "ruby scripts/test_native_build_preflight.rb"
+
 [tasks."converter-ffi:build"]
 description = "Build the shared converter-ffi Rust library for the host"
 depends = ["onnxruntime:host"]
@@ -686,6 +706,7 @@ done
 echo ""
 echo "Result: $ok OK, $fail failed"
 [[ $fail -eq 0 ]]
+mise run host:workflow:test
 """
 
 [tasks."hooks:install"]
@@ -1541,6 +1562,30 @@ mise exec -- flutter run -d "$DEVICE"
 [tasks."flutter:test"]
 description = "Run Flutter unit + widget tests"
 run = "cd flutter_app && flutter test"
+
+[tasks."agents:collaboration"]
+description = "Exchange explicitly addressed Mac/Arch coordination messages through ai-memory"
+run = "mise exec -- node scripts/agent_collaboration.mjs"
+
+[tasks."agents:collaboration:test"]
+description = "Verify collaboration routing, message identity, failure and cancellation without network/device actions"
+run = "mise exec -- node --test scripts/test_agent_collaboration.mjs scripts/test_install_agent_collaboration.mjs scripts/test_collaboration_doctor.mjs scripts/test_revalidate_collaboration.mjs"
+
+[tasks."agents:collaboration:doctor"]
+description = "Read-only verification of Mac/Arch transport, CLI capabilities and project UUIDs"
+run = "mise exec -- node scripts/collaboration_doctor.mjs"
+
+[tasks."agents:collaboration:revalidate"]
+description = "Revalidate transport using exact owned queue fixtures; requires --allow-queue-fixtures and invokes no model"
+run = "mise exec -- node scripts/revalidate_collaboration.mjs"
+
+[tasks."agents:collaboration:install"]
+description = "Plan/apply reviewed collaboration files from literal JSON stdin with baseline and alias checks"
+run = "mise exec -- node scripts/install_agent_collaboration.mjs"
+
+[tasks."native:xcresult"]
+description = "Serialize xcresulttool operations on one result bundle; never builds or launches apps"
+run = "mise exec -- ruby scripts/xcresult_job.rb"
 
 [tasks."native-tts:android:test"]
 description = "Verify native speech notices, cancellation and Android voice selection under the shared lease"

@@ -349,8 +349,7 @@ enum EpubHtmlRenderer {
         let targetSize = settings.readerPointSize
         #endif
         let targetFamily = familyName(for: settings.readerFontFamily)
-        let targetFG = resolvedForeground(for: settings)
-        let targetBG = resolvedBackground(for: settings)
+        let colors = settings.readerColors
 
         // Cap EPUB CSS font sizes at `targetSize * 1.5` even when the
         // user has not enabled `readerOverrideFontSize`. Some EPUBs
@@ -380,12 +379,19 @@ enum EpubHtmlRenderer {
 
             // ---- Colours -------------------------------------------
             if overrideColours {
-                attr.addAttribute(.foregroundColor, value: targetFG, range: range)
-                if let targetBG {
-                    attr.addAttribute(.backgroundColor, value: targetBG, range: range)
-                } else {
-                    attr.removeAttribute(.backgroundColor, range: range)
-                }
+                attr.addAttribute(.foregroundColor,
+                                  value: attrs[.link] == nil ? colors.foreground : colors.link,
+                                  range: range)
+                // The native page owns the background. Publisher run backgrounds
+                // must not form rectangles against a different theme surface.
+                attr.removeAttribute(.backgroundColor, range: range)
+            } else if attrs[.foregroundColor] == nil {
+                // The importer can omit the default foreground. Give these
+                // runs a native color rather than inheriting the text view's
+                // previous theme, while keeping explicit publisher colors.
+                attr.addAttribute(.foregroundColor,
+                                  value: attrs[.link] == nil ? colors.foreground : colors.link,
+                                  range: range)
             }
 
             // ---- Kerning -------------------------------------------
@@ -510,52 +516,6 @@ enum EpubHtmlRenderer {
         case .sans:  return "Helvetica Neue"
         case .mono:  return "Menlo"
         }
-    }
-
-    // MARK: Colour resolution
-    //
-    // We mirror `ReaderView.themeBackground` / `themeForeground` here
-    // so the renderer stays independent of the UI framework.
-
-    private static func resolvedForeground(for settings: AppSettings) -> PlatformColor {
-        switch settings.readerTheme {
-        #if canImport(UIKit)
-        case .auto:      return .label
-        #else
-        case .auto:      return .labelColor
-        #endif
-        case .light:     return .black
-        case .sepia:     return rgb(0.20, 0.15, 0.10)
-        case .parchment: return rgb(0.18, 0.13, 0.06)
-        case .paper:     return rgb(0.10, 0.10, 0.10)
-        case .dark:      return rgb(0.92, 0.92, 0.92)
-        case .black:     return rgb(0.95, 0.95, 0.95)
-        case .custom:
-            let fg = settings.readerCustomColors.foreground
-            return rgb(fg.0, fg.1, fg.2)
-        }
-    }
-
-    /// Background returned as optional because for `.light` /
-    /// transparent themes we'd rather strip the attribute than paint
-    /// over inline highlights with white.
-    private static func resolvedBackground(for settings: AppSettings) -> PlatformColor? {
-        switch settings.readerTheme {
-        case .auto:      return nil
-        case .light:     return nil
-        case .sepia:     return rgb(0.96, 0.93, 0.85)
-        case .parchment: return rgb(0.94, 0.89, 0.78)
-        case .paper:     return rgb(0.98, 0.97, 0.94)
-        case .dark:      return rgb(0.12, 0.12, 0.14)
-        case .black:     return .black
-        case .custom:
-            let bg = settings.readerCustomColors.background
-            return rgb(bg.0, bg.1, bg.2)
-        }
-    }
-
-    private static func rgb(_ r: Double, _ g: Double, _ b: Double) -> PlatformColor {
-        PlatformColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
     }
 
     // MARK: - HTML / CSS sanitisation

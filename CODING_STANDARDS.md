@@ -13,6 +13,10 @@ reject unsigned device bundles before calling devicectl.
 
 Keep code, comments, logs, and technical documentation in English. Preserve
 intentional localized strings, language-detection fixtures, and matching regexes.
+For native Apple appearance, use platform semantic colors and native materials.
+Light and dark modes share the same material/transparency configuration; let the
+OS adapt its rendering. Warm/custom reader palettes remain explicit choices.
+Verify actual rendered colors and materials rather than a separate sample palette.
 Use existing module boundaries and remove obsolete paths when replacing them;
 check source, tests, and manifests before deleting a referenced file.
 
@@ -21,12 +25,16 @@ Tests belong to the runtime they exercise:
 - Native Swift: XCTest in ios/EpubToMp3/EpubToMp3Tests or EpubToMp3UITests.
 - Rust: unit/integration tests in the owning crate.
 - Tooling scripts: executable host tests for argument, process, and report behavior.
-- Legacy Python and web: their own suites, only for those compatibility surfaces.
+- Web/TypeScript: the web suite for active Rust/WASM client behavior.
+- Flutter/Dart: Flutter tests for bindings, state and UI behavior.
+- Legacy Python: its own compatibility suite; Python/Ruff execute in CI.
 
 A host test may validate tooling around a native run; parsing Swift source cannot
 prove native behavior. Use XCTest for native UI automation, never osascript or
 ad hoc accessibility scripting. Select focused checks from actual mise task
-definitions. Add regression coverage at the failing seam; documentation-only
+definitions. Cover each changed behavior at its failing seam, including success and relevant
+failure, cancellation or identity cases. Coverage percentages alone do not prove
+acceptance; documentation-only
 changes need link/content and diff checks, not a runtime build.
 
 ## Benchmark review
@@ -52,8 +60,9 @@ native performance evidence.
 
 ## Environment and resumption
 
-Prefer physical iOS devices on the local 8 GiB Intel Mac. Build or run only when
-authorized; check device readiness before building. Stop the previous app before
+Use the exact native destinations required by the task and native reader contract.
+Apply build/Simulator phase separation from `docs/agent-workflow.md` on this Intel
+Mac; a physical device does not replace required SE1/iOS 15.5 verification. Stop the previous app before
 another native conversion run. Serialize builds, tests, and conversions through
 the existing scripts/heavy_job_guard.py task integration; do not bypass its lock
 or stack heavy jobs to maximize CPU/RAM use.
@@ -75,6 +84,14 @@ Review the complete owned diff against the goal and matching plan, including
 scope, runtime boundaries, evidence, and resource cost. Stop after focused
 verification passes unless new changes, failures, or uncertainty justify more.
 Report changed paths, exact checks/results, skips, and unresolved limits.
+
+For host workflow tooling, review the executable boundaries: a failed or
+cancelled command must prevent later work and retain its real status; index
+transactions must prove scope and local-byte preservation; instruction patches
+must be idempotent and preserve aliases. Require concurrency and identity
+failure coverage at those seams. Use `mise run host:workflow:test` and the
+controls documented in `docs/agent-workflow.md`; host fixtures do not certify
+native apps, Xcode descriptor propagation or kernel/driver stability.
 
 Commit/push requires authorization; prior authorization within the task persists.
 The user has standing commit/push authorization by default. Use Gitflow feature

@@ -2,6 +2,23 @@ import XCTest
 @testable import EpubToMp3
 
 final class ToolbarSettingsParityTests: XCTestCase {
+    func testInstalledSystemVoiceCanBeSelectedAsSecondaryWithoutChangingPrimary() throws {
+        let system = try XCTUnwrap(AudioEnginePreference.supportedPreferences.first { $0.rawValue == "system" },
+                                  "Apple must expose installed system speech as an offline fallback.")
+        let (settings, defaults) = make()
+        settings.audioEngine = .edge
+        settings.secondaryAudioEngine = system
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertEqual(restored.audioEngine, .edge)
+        XCTAssertEqual(restored.ttsPreferences.secondary?.engine, "system")
+        XCTAssertFalse(restored.ttsPreferences.allowOnlineFallback)
+        let captured = restored.conversionOptions
+        restored.secondaryAudioEngine = nil
+        XCTAssertNil(AppSettings(defaults: defaults).secondaryAudioEngine)
+        XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "system")
+        XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
+    }
+
     private func make() -> (AppSettings, UserDefaults) {
         let suite = "Toolbar.\(UUID().uuidString)"
         let d = UserDefaults(suiteName: suite)!

@@ -94,6 +94,7 @@ final class MacSettingsViewController: NSViewController {
         audioEnginePopup.target = self
         audioEnginePopup.action = #selector(audioEngineChanged(_:))
         secondaryEnginePopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + AudioEnginePreference.supportedPreferences.map(\.displayName))
+        secondaryEnginePopup.menu?.autoenablesItems = false
         secondaryEnginePopup.target = self
         secondaryEnginePopup.action = #selector(secondaryEngineChanged(_:))
         onlineFallbackButton.title = L10n.string("settings.onlineFallback")

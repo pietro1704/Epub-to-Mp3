@@ -613,3 +613,4 @@
 
 "conversion.secondaryVoiceUsed" = "Usando la voz secundaria %@ para un segmento fallido.";
 "settings.systemTts" = "Voz del sistema (Luciana cuando esté disponible)";
+"settings.systemVoice" = "Voz instalada del sistema";

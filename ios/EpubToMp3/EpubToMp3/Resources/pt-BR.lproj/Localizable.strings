@@ -612,3 +612,4 @@
 
 "conversion.secondaryVoiceUsed" = "Usando a voz secundária %@ em um trecho com falha.";
 "settings.systemTts" = "Voz do sistema (Luciana quando disponível)";
+"settings.systemVoice" = "Voz instalada do sistema";

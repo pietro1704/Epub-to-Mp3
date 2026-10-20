@@ -390,10 +390,10 @@ final class IOSRootContainerController: UIViewController {
     }
 
     func updateTheme(_ theme: ReaderTheme) {
-        let colors = theme.previewColors
+        let colors = settings.readerColors
         view.backgroundColor = colors.background
         miniPlayerController.applyReaderBackground(colors.background)
-        shellController.applyTheme(theme)
+        shellController.applyTheme(theme, preferredColorScheme: settings.readerPreferredColorScheme)
         readerController.update(
             library: library,
             settings: settings,
@@ -401,7 +401,7 @@ final class IOSRootContainerController: UIViewController {
         )
         refreshMiniPlayerContent()
         fullPlayerController?.refresh(library: library)
-        switch theme.preferredColorScheme {
+        switch settings.readerPreferredColorScheme {
         case .dark:
             overrideUserInterfaceStyle = .dark
         case .light:
@@ -598,6 +598,13 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func bindState() {
+        settings.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateTheme(self.settings.readerTheme)
+            }
+            .store(in: &cancellables)
         playerPresentation.$showingFullPlayer
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshOverlayState() }
