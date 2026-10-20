@@ -7,7 +7,8 @@ const BAD = new Set(['failure', 'timed_out', 'action_required', 'startup_failure
 function assess({ runs, pulls, issues, masterSha, capped }) {
   const heads = new Map([[masterSha, 'master']]);
   for (const pr of pulls) {
-    if (pr.head.repo?.full_name === pr.base.repo?.full_name) {
+    if (typeof pr.head.repo?.full_name === 'string' && pr.head.repo.full_name.length > 0 &&
+        pr.head.repo.full_name === pr.base.repo?.full_name) {
       heads.set(pr.head.sha, `PR #${pr.number}`);
     }
   }
