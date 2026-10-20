@@ -2,7 +2,7 @@ name: Native player deferred seek identity
 
 on:
   push:
-    branches: ['feature/player-seek-identity']
+    branches: [master]
     paths:
       - '.github/workflows/player-seek-identity.yml'
       - 'ios/EpubToMp3/EpubToMp3/Features/Playback/Services/AudioPlayer.swift'
@@ -36,6 +36,7 @@ jobs:
         run: exit 1
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Require the canonical hosted Xcode 16.4 toolchain
         run: |
