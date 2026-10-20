@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require_relative "update_instruction"
 require "tmpdir"
 require "fileutils"
 require "open3"
@@ -108,6 +109,55 @@ class UpdateInstructionTest < Minitest::Test
       assert_match(/Another instruction update/, error)
       assert_equal @before, File.binread(@target)
     end
+  end
+
+
+  def with_chmod_hook(hook)
+    original = File.method(:chmod)
+    File.define_singleton_method(:chmod) do |*arguments|
+      result = original.call(*arguments)
+      hook.call
+      result
+    end
+    yield
+  ensure
+    File.define_singleton_method(:chmod, original) if original
+  end
+
+  def apply_in_process(destination: @target)
+    UpdateInstruction.apply(
+      root: @root, destination: destination, baseline: @baseline,
+      sha256: Digest::SHA256.hexdigest(@before),
+      old: File.join(@directory, "old"), new: File.join(@directory, "new")
+    )
+  end
+
+  def test_drift_after_staging_preserves_concurrent_bytes_and_cleans_temporary
+    changed = @before + "concurrent staged edit\n"
+    with_chmod_hook(-> { File.binwrite(@target, changed) }) do
+      error = assert_raises(RuntimeError) { apply_in_process }
+      assert_match(/Destination changed during update/, error.message)
+    end
+    assert_equal changed, File.binread(@target)
+    assert_empty Dir.glob(File.join(@root, ".instruction-*"))
+  end
+
+  def test_alias_retargeted_after_staging_never_changes_either_destination
+    outside = File.join(@directory, "outside")
+    File.binwrite(outside, @before)
+    alias_path = File.join(@root, "AGENTS.md")
+    File.symlink("CLAUDE.md", alias_path)
+    with_chmod_hook(-> {
+      File.unlink(alias_path)
+      File.symlink(outside, alias_path)
+    }) do
+      error = assert_raises(RuntimeError) { apply_in_process(destination: alias_path) }
+      assert_match(/Destination changed during update/, error.message)
+    end
+    assert_equal @before, File.binread(@target)
+    assert_equal @before, File.binread(outside)
+    assert_equal outside, File.readlink(alias_path)
+    assert_empty Dir.glob(File.join(@root, ".instruction-*"))
   end
 
   def test_missing_cli_arguments_fail
