@@ -1,25 +1,8 @@
 name: Native FFI adapter test isolation
 
 on:
+  workflow_call:
   workflow_dispatch:
-  push:
-    branches: [master, 'feature/**']
-    paths:
-      - '.github/workflows/native-ffi-test-isolation.yml'
-      - 'ios/EpubToMp3/EpubToMp3Tests/ConverterFFIAdapterTests.swift'
-      - 'scripts/native_job.rb'
-      - 'scripts/native_build_preflight.rb'
-      - 'scripts/native_build_command.rb'
-  pull_request:
-    paths:
-      - '.github/workflows/native-ffi-test-isolation.yml'
-      - 'ios/EpubToMp3/EpubToMp3Tests/ConverterFFIAdapterTests.swift'
-      - 'scripts/native_job.rb'
-      - 'scripts/native_build_preflight.rb'
-      - 'scripts/native_build_command.rb'
-      - 'ios/EpubToMp3/EpubToMp3/Features/Conversion/Services/ConverterFFIAdapter.swift'
-      - 'ios/EpubToMp3/project.yml'
-      - 'crates/converter-ffi/**'
 
 permissions:
   contents: read

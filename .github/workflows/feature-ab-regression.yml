@@ -1,10 +1,11 @@
 name: Feature A/B Regression
 
 env:
+  MISE_ENABLE_TOOLS: python,node,npm
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  pull_request:
+  # Legacy network benchmarks require an explicit operator decision.
   workflow_dispatch:
 
 permissions:

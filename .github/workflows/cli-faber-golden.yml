@@ -1,31 +1,7 @@
 name: Packaged CLI Faber golden
 
 on:
-  push:
-    branches: [master, 'feature/**']
-    paths:
-      - '.github/workflows/cli-faber-golden.yml'
-      - 'scripts/verify_cli_faber.rb'
-      - 'scripts/test_verify_cli_faber.rb'
-      - 'scripts/package_rust_cli.rb'
-      - 'scripts/package_linux_onnxruntime.rb'
-      - 'scripts/test_package_linux_onnxruntime.rb'
-      - 'crates/converter-cli/**'
-  pull_request:
-    paths:
-      - '.github/workflows/cli-faber-golden.yml'
-      - 'scripts/verify_cli_faber.rb'
-      - 'scripts/test_verify_cli_faber.rb'
-      - 'scripts/package_rust_cli.rb'
-      - 'scripts/package_linux_onnxruntime.rb'
-      - 'scripts/test_package_linux_onnxruntime.rb'
-      - 'crates/converter-cli/**'
-      - 'crates/converter-core/**'
-      - 'crates/converter-ffi/**'
-      - 'native/**'
-      - 'mise.toml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+  workflow_call:
   workflow_dispatch:
 
 permissions:

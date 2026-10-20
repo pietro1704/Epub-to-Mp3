@@ -10,6 +10,7 @@ const { validate, readiness, attempted, claim, validateChanges, stageChanges, pu
 const { dispatch } = require('./pr-repair-dispatch.cjs');
 const REPOSITORY = 'pietro1704/epub-to-mp3';
 const SHA = 'a'.repeat(40);
+const BASE_SHA = 'c'.repeat(40);
 const PREPARED = { writers: true, credentials: true };
 function withFailure(api, sha = SHA, runs) {
   const values = runs || [{ id: 101, run_attempt: 1, workflow_id: 42, head_sha: sha,
@@ -23,7 +24,7 @@ function withFailure(api, sha = SHA, runs) {
 function pr(sha = SHA) {
   return { number: 7, state: 'open', draft: false, user: { login: 'pietro1704', type: 'User' },
     head: { sha, ref: 'feature/repair', repo: { full_name: REPOSITORY } },
-    base: { ref: 'master', repo: { full_name: REPOSITORY } } };
+    base: { ref: 'master', sha: BASE_SHA, repo: { full_name: REPOSITORY } } };
 }
 
 test('readiness never simulates credentials or enables absent writers', () => {
@@ -98,9 +99,9 @@ test('verification observation is bounded and missing exact-head runs remain blo
   };
   const result = await dispatchVerification(api, REPOSITORY, 7, SHA,
     { ...PREPARED, attempts: 2, wait: async () => { waited++; } });
-  assert.equal(dispatched, 2); assert.equal(waited, 2);
-  assert.deepEqual(result.map(item => item.state), ['verification_blocked', 'verification_blocked']);
-  assert.deepEqual(result.map(item => item.run), [null, null]);
+  assert.equal(dispatched, 1); assert.equal(waited, 1);
+  assert.deepEqual(result.map(item => item.state), ['verification_blocked']);
+  assert.deepEqual(result.map(item => item.run), [null]);
 });
 
 test('older run101 green or active blocks newer red102, including cross-ID rerun visibility', () => {
@@ -295,17 +296,30 @@ test('dispatcher refreshes metadata and never dispatches a stale, draft or fork 
   assert.equal(posts[0].inputs.head_sha, SHA);
 });
 
-test('explicit CI and CodeQL dispatch identify new runs at the published SHA without claiming green', async () => {
+test('verification refuses missing or malformed base identity before dispatch', async () => {
+  for (const base of [undefined, null, 'invalid']) {
+    let writes = 0;
+    const api = (endpoint, method) => {
+      if (endpoint === '/pulls/7') { const candidate = pr(); candidate.base.sha = base; return candidate; }
+      if (method === 'POST') writes++;
+      return { workflow_runs: [] };
+    };
+    await assert.rejects(dispatchVerification(api, REPOSITORY, 7, SHA, PREPARED), /exact PR base/);
+    assert.equal(writes, 0);
+  }
+});
+
+test('only scoped PR CI dispatch identifies new runs at the published SHA without claiming green', async () => {
   const dispatched = new Set();
   const api = (endpoint, method, body) => {
     if (endpoint === '/pulls/7') return pr();
     const workflow = endpoint.includes('codeql.yml') ? 'codeql.yml' : 'ci.yml';
-    if (method === 'POST') { assert.equal(body.ref, 'feature/repair'); dispatched.add(workflow); return null; }
+    if (method === 'POST') { assert.equal(body.ref, 'feature/repair'); assert.deepEqual(body.inputs, { full_validation: 'false', base_sha: BASE_SHA }); dispatched.add(workflow); return null; }
     return { workflow_runs: dispatched.has(workflow) ? [{ id: workflow === 'ci.yml' ? 11 : 12, head_sha: SHA, event: 'workflow_dispatch', conclusion: 'success' }] : [] };
   };
   const evidence = await dispatchVerification(api, REPOSITORY, 7, SHA, PREPARED);
-  assert.deepEqual([...dispatched], ['ci.yml', 'codeql.yml']);
-  assert.deepEqual(evidence.map(item => item.state), ['pending', 'pending']);
+  assert.deepEqual([...dispatched], ['ci.yml']);
+  assert.deepEqual(evidence.map(item => item.state), ['pending']);
 });
 
 test('fake gh subprocess rejects changed head before any publication command', t => {
@@ -341,7 +355,9 @@ test('concrete policy and deployment paths are refused untracked and staged', as
     'ios/Fixture.entitlements', 'Dockerfile', 'compose.fixture.yml', 'deploy/task.sh',
     'infra/fixture.tf', 'scripts/native_job.rb', 'scripts/guard_remediation_changes.py',
     'config/mac-build-budget.json', 'scripts/mac_build_budget.rb',
-    'scripts/native_simulator_session.rb', 'scripts/simulator_resource_monitor.py']) {
+    'scripts/native_simulator_session.rb', 'scripts/simulator_resource_monitor.py',
+    'scripts/validated_merge.mjs', 'scripts/post_merge_validation.mjs',
+    'scripts/run_ci_contracts.rb', 'scripts/check_codeql_swift_tool_scope.rb']) {
     await t.test(filename, child => {
       const f = fixture(child), full = path.join(f.work, filename);
       fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -512,7 +528,7 @@ test('post-staging path injection is detected before publication', t => {
 });
 
 test('verification revalidates the head after each history read before any dispatch', async t => {
-  for (const changedWorkflow of ['ci.yml', 'codeql.yml']) await t.test(changedWorkflow, async () => {
+  for (const changedWorkflow of ['ci.yml']) await t.test(changedWorkflow, async () => {
     const dispatched = [], active = new Set();
     let changed = false;
     const api = (endpoint, method) => {

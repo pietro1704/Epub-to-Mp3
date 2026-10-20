@@ -18,19 +18,20 @@ function workflow(name) {
 }
 
 test('PR regression cannot schedule the privileged metadata monitor or skipped monitor check', () => {
-  const regression = workflow('repository-health-watchdog-regression.yml');
+  const regression = workflow('ci.yml');
   const events = regression.on ?? regression.true;
-  assert.deepEqual(Object.keys(events).sort(), ['pull_request', 'workflow_dispatch']);
+  assert.ok(Object.hasOwn(events, 'pull_request'));
+  assert.equal(events.pull_request?.paths, undefined, 'Fixture contracts run for every PR');
   assert.deepEqual(regression.permissions, { contents: 'read' });
-  assert.deepEqual(Object.keys(regression.jobs), ['regression']);
-  const job = regression.jobs.regression;
+  const job = regression.jobs['production-packaging-guard'];
+  assert.deepEqual(job.permissions, { contents: 'read' });
   assert.equal(job.if, undefined);
-  assert.ok(events.pull_request.paths.includes('.github/workflows/repository-health-watchdog*.yml'));
   const checkout = job.steps.find(step => step.uses?.startsWith('actions/checkout@'));
   assert.equal(checkout.with.ref, undefined, 'PR regression must test the actual PR merge revision');
   assert.equal(checkout.with['persist-credentials'], false);
-  assert.equal(checkout.with['sparse-checkout'], '.github');
-  assert.ok(job.steps.some(step => step.run === 'node --test .github/scripts/repository-health-watchdog.test.cjs'));
+  assert.ok(job.steps.some(step => step.run?.startsWith('mise exec -- ruby scripts/run_ci_contracts.rb')));
+  assert.match(readFileSync(resolve(__dirname, '../../scripts/run_ci_contracts.rb'), 'utf8'), /\.github\/scripts\/repository-health-watchdog\.test\.cjs/);
+  assert.doesNotMatch(JSON.stringify(job), /issues.*write|repository-health-watchdog\.cjs/);
 });
 
 test('monitor retains operational events and executes only trusted default-branch code', () => {
@@ -38,13 +39,13 @@ test('monitor retains operational events and executes only trusted default-branc
   const events = monitor.on ?? monitor.true;
   assert.deepEqual(Object.keys(events).sort(), ['issues', 'schedule', 'workflow_dispatch', 'workflow_run']);
   assert.deepEqual(events.schedule, [{ cron: '11,41 * * * *' }]);
-  assert.deepEqual(events.workflow_run.workflows, ['CI', 'Release Desktop', 'Converter FFI portability', 'CodeQL']);
+  assert.deepEqual(events.workflow_run.workflows, ['CI', 'Post-merge validation', 'Release Desktop', 'Converter FFI portability', 'CodeQL']);
   assert.deepEqual(events.issues.types, ['opened', 'reopened', 'closed', 'labeled', 'unlabeled']);
   assert.deepEqual(monitor.permissions, { contents: 'read', actions: 'read', 'pull-requests': 'read', issues: 'write' });
   assert.deepEqual(monitor.jobs.regression.permissions, { contents: 'read' });
   assert.equal(monitor.jobs.monitor.needs, 'regression');
   assert.equal(monitor.jobs.monitor.if, "vars.REPOSITORY_HEALTH_WATCHDOG_ENABLED == 'true' && (github.event_name != 'issues' || github.event.issue.user.login != 'github-actions[bot]')");
-  assert.equal(monitor.jobs.regression.if, undefined, 'Trusted host regression does not require monitor activation');
+  assert.equal(monitor.jobs.regression.if, "vars.REPOSITORY_HEALTH_WATCHDOG_ENABLED == 'true'", 'Disabled monitor must not allocate a regression runner');
   for (const job of Object.values(monitor.jobs)) {
     const checkout = job.steps.find(step => step.uses?.startsWith('actions/checkout@'));
     assert.equal(checkout.with.ref, '${{ github.event.repository.default_branch }}');

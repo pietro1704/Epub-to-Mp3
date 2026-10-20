@@ -4,42 +4,21 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/converter-ffi.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/converter-core/**"
-      - "crates/converter-ffi/**"
-      - "flutter_app/android/app/src/main/jniLibs/**"
-      - "scripts/build_converter_ffi.py"
-      - "scripts/validate_converter_ffi_targets.py"
-      - "mise.toml"
-  push:
-    branches:
-      - master
-    paths:
-      - ".github/workflows/converter-ffi.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/converter-core/**"
-      - "crates/converter-ffi/**"
-      - "flutter_app/android/app/src/main/jniLibs/**"
-      - "scripts/build_converter_ffi.py"
-      - "scripts/validate_converter_ffi_targets.py"
-      - "mise.toml"
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  group: converter-ffi-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/master') }}
 
 jobs:
   host-validation:
     name: Host target mapping and converter-ffi tests
+    env:
+      MISE_ENABLE_TOOLS: python,rust
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -70,15 +49,18 @@ jobs:
 
   artifact-build:
     name: Build converter-ffi native artifacts
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby
+      CARGO_BUILD_JOBS: '1'
     needs: host-validation
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
-            logical_target: ios-device
-            rust_target: aarch64-apple-ios
+          # The actual iOS device app link belongs to CodeQL's iOS
+          # build-for-testing scope and signed release packaging, not this
+          # unsupported standalone cdylib route. Never report it as skipped-success.
           - os: macos-15
             logical_target: ios-simulator-arm64
             rust_target: aarch64-apple-ios-sim
@@ -116,18 +98,11 @@ jobs:
 
       - name: Build converter-ffi artifact (verification only)
         run: |
-          if [[ "${{ matrix.logical_target }}" == "ios-device" ]]; then
-            echo "Skipping unsupported direct iOS-device verification; iOS packaging performs the Xcode link."
-            exit 0
-          fi
-          mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}"
+          mise exec -- ruby scripts/native_job.rb build -- cargo build --locked -p converter-ffi --release --jobs 1 --target "${{ matrix.rust_target }}"
 
       - name: Verify expected artifact exists
         shell: bash
         run: |
-          if [[ "${{ matrix.logical_target }}" == "ios-device" ]]; then
-            exit 0
-          fi
           set -euo pipefail
           case '${{ matrix.rust_target }}' in
             *apple*) library=libconverter_ffi.dylib ;;

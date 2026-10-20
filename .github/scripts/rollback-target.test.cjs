@@ -25,7 +25,7 @@ const previous = 'b'.repeat(40);
 
 test('manual rollback checks out a trusted repository before resolving data-only input', () => {
   assert.deepEqual(Object.keys(rollback.on ?? rollback.true), ['workflow_dispatch']);
-  assert.deepEqual(rollback.permissions, { contents: 'read' });
+  assert.deepEqual(rollback.permissions, { contents: 'read', actions: 'read', 'pull-requests': 'read' });
   const checkoutIndex = steps.findIndex(step => step.uses?.startsWith('actions/checkout@'));
   assert.ok(checkoutIndex >= 0 && checkoutIndex < targetIndex);
   assert.equal(steps[checkoutIndex].with.ref, '${{ github.event.repository.default_branch }}');
@@ -38,15 +38,17 @@ test('manual rollback checks out a trusted repository before resolving data-only
 });
 
 test('contract workflow runs checked-out tests with read-only permissions and no deployment', () => {
-  const contract = workflow('rollback-target-contracts.yml');
-  assert.deepEqual(Object.keys(contract.on ?? contract.true).sort(), ['pull_request', 'workflow_dispatch']);
+  const contract = workflow('ci.yml');
+  assert.ok(Object.hasOwn(contract.on ?? contract.true, 'pull_request'));
   assert.deepEqual(contract.permissions, { contents: 'read' });
-  assert.deepEqual(Object.keys(contract.jobs), ['contracts']);
-  const contractSteps = contract.jobs.contracts.steps;
+  const job = contract.jobs['production-packaging-guard'];
+  assert.deepEqual(job.permissions, { contents: 'read' });
+  const contractSteps = job.steps;
   assert.equal(contractSteps[0].with['persist-credentials'], false);
   assert.equal(contractSteps[0].with.ref, undefined);
-  assert.equal(contractSteps.at(-1).run, 'node --test .github/scripts/rollback-target.test.cjs');
-  assert.doesNotMatch(JSON.stringify(contract), /HF_TOKEN|HF_SSH|rollback-hf\.yml.*workflow run/);
+  assert.ok(contractSteps.some(step => step.run?.startsWith('mise exec -- ruby scripts/run_ci_contracts.rb')));
+  assert.match(readFileSync(resolve(__dirname, '../../scripts/run_ci_contracts.rb'), 'utf8'), /\.github\/scripts\/rollback-target\.test\.cjs/);
+  assert.doesNotMatch(JSON.stringify(job), /HF_TOKEN|HF_SSH|rollback-hf\.yml.*workflow run|issues.*write/);
 });
 
 function execute(input, options = {}) {

@@ -17,7 +17,6 @@ on:
       - "CHANGELOG.md"
       - "cliff.toml"
       - '.github/workflows/changelog-drift.yml'
-      - '.github/workflows/changelog-drift-contracts.yml'
       - '.github/scripts/changelog-drift.test.cjs'
 
 permissions:

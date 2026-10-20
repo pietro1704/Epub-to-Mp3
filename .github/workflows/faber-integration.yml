@@ -1,11 +1,7 @@
 name: Faber runtime integration
 
 on:
-  pull_request:
-  push:
-    branches:
-      - ci/embedded-jni-job-identity
-      - feature/piper-native-fallback
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -58,7 +54,7 @@ jobs:
     timeout-minutes: 90
     env:
       MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
-      ANDROID_VERIFICATION_MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity' && 'identity' || 'full' }}
+      ANDROID_VERIFICATION_MODE: full
     steps:
       - uses: actions/checkout@v7
         with:
@@ -232,7 +228,6 @@ jobs:
           if-no-files-found: error
 
   macos-preferences:
-    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity') }}
     name: Faber macOS preferences and installation (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -290,6 +285,14 @@ jobs:
           set -o pipefail
           mkdir -p .reports/tts-preferences
           mise run apple:foundation:test 2>&1 | tee .reports/tts-preferences/foundation.log
+      - name: Require the actual Foundation history suite in the shared package run
+        shell: ruby {0}
+        run: |
+          log = File.read('.reports/tts-preferences/foundation.log')
+          suites = log.scan(/Test Suite 'ConversionHistoryReaderTests' passed[^\n]*\n\s*Executed (\d+) tests?, with 0 failures/)
+          abort 'Foundation history must execute without failures or skips' if suites.empty? || suites.any? { |counts| counts.first.to_i.zero? }
+          abort 'Foundation history contains a skipped or failing case' if log.match?(/Test Case '[^'\n]*ConversionHistoryReaderTests[^'\n]*' (?:skipped|failed)/)
+          puts "FOUNDATION_HISTORY_XCTEST total=#{suites.sum { |counts| counts.first.to_i }} failed=0 skipped=0"
       - name: Explicitly install checksum-pinned native Faber test model
         run: |
           model_dir="$RUNNER_TEMP/faber-models"
@@ -321,6 +324,7 @@ jobs:
             -only-testing:EpubToMp3Tests/PlatformSpeechSynthesizerTests
             -only-testing:EpubToMp3Tests/ReaderProgressiveListeningTests
             -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests
+            -only-testing:EpubToMp3Tests/AudioPlayerDivergenceTests
           )
           xcodebuild build-for-testing "${test_arguments[@]}" \
             | tee ../../.reports/tts-preferences/macos-prefs-build.log
@@ -328,6 +332,28 @@ jobs:
             -resultBundlePath ../../.reports/tts-preferences/macos-prefs.xcresult \
             | tee ../../.reports/tts-preferences/macos-prefs.log
           grep -F 'FABER_NATIVE firstChunkSeconds=' ../../.reports/tts-preferences/macos-prefs.log
+      - name: Verify actual player seek execution in the shared XCTest result
+        if: always()
+        shell: ruby {0}
+        run: |
+          require 'json'
+          root = '.reports/tts-preferences'
+          result = File.join(root, 'macos-prefs.xcresult')
+          summary_path = File.join(root, 'test-summary.json')
+          abort 'No app-host XCTest result; player seek acceptance is unverified' unless File.directory?(result)
+          abort 'Cannot read actual XCTest summary' unless system('xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', result, out: summary_path)
+          summary = JSON.parse(File.read(summary_path))
+          counts = summary.values_at('totalTestCount', 'passedTests', 'failedTests', 'skippedTests')
+          abort 'Missing or invalid XCTest counts' unless counts.all? { |count| count.is_a?(Integer) && count >= 0 }
+          total, passed, failed, skipped = counts
+          abort 'App-host XCTest must pass with consistent execution counts' unless summary['result'] == 'Passed' && total >= 3 && passed >= 3 && passed + skipped == total && failed.zero?
+          log = File.read(File.join(root, 'macos-prefs.log'))
+          suite = log.match(/Test Suite 'AudioPlayerDivergenceTests' passed[^\n]*\n\s*Executed (\d+) tests?, with 0 failures/)
+          abort 'The real player suite must execute at least three passing cases' unless suite && suite[1].to_i >= 3
+          %w[testStopCancelsReaderPageSeekBeforeDurationArrives testReaderPageSeekCannotCrossJobsAtTheSameChapterIndex testPendingProportionalSeekAppliedOnceDurationLands].each do |name|
+            abort "Player seek case did not pass: #{name}" unless log.match?(/Test Case '[^'\n]*AudioPlayerDivergenceTests[ .]#{Regexp.escape(name)}\]' passed/)
+          end
+          puts "PLAYER_SEEK_XCTEST total=#{suite[1]} failed=0 skipped=0 sharedResult=#{result}"
       - name: Capture sanitized existing test build metadata without execution
         if: always()
         env:
@@ -364,7 +390,6 @@ jobs:
           if-no-files-found: warn
 
   browser-runtime:
-    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity') }}
     name: Faber real browser runtime
     runs-on: ubuntu-24.04
     timeout-minutes: 40

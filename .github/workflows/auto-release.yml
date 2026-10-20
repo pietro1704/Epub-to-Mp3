@@ -12,6 +12,7 @@ on:
 permissions:
   actions: write
   contents: write
+  pull-requests: read
 
 jobs:
   auto-release:
@@ -19,11 +20,25 @@ jobs:
     runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/master'
     steps:
+      - name: Checkout trusted publication policy
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          path: publication-policy
+          persist-credentials: false
+      - name: Snapshot trusted publication helper
+        run: cp publication-policy/scripts/validated_merge.mjs "$RUNNER_TEMP/validated_merge.mjs"
+      - name: Require validated current merge
+        id: validated
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_REF: ${{ github.sha }}
+        run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: master
+          ref: ${{ steps.validated.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate shared app version
@@ -52,6 +67,9 @@ jobs:
               details = ", ".join(f"{path}={version}" for path, version in versions.items())
               raise SystemExit(f"Version mismatch across manifests: {details}")
 
+          if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", python_version):
+              raise SystemExit("Committed release version must be a numeric major.minor.patch")
+
           changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
           if f"## [{python_version}]" not in changelog:
               raise SystemExit(
@@ -63,11 +81,12 @@ jobs:
 
       - name: Determine next version
         id: bump
+        env:
+          BASE_VERSION: ${{ steps.version.outputs.base_version }}
         run: |
           set -euo pipefail
 
           LAST_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null || echo "")
-          BASE_VERSION="${{ steps.version.outputs.base_version }}"
 
           RANGE="${LAST_TAG:+${LAST_TAG}..}HEAD"
 
@@ -125,35 +144,41 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Version: ${BASE_VERSION} -> ${NEW} (last tag: ${LAST_TAG:-none})"
 
+      - name: Revalidate immediately before creating a release tag
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_REF: ${{ steps.validated.outputs.sha }}
+        run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest
+
       - name: Create release tag
         if: steps.bump.outputs.skip != 'true'
+        env:
+          VERSION_TAG: ${{ steps.bump.outputs.tag }}
+          VALIDATED_SHA: ${{ steps.validated.outputs.sha }}
         run: |
           set -euo pipefail
-          if git rev-parse "${{ steps.bump.outputs.tag }}" >/dev/null 2>&1; then
-            echo "Tag ${{ steps.bump.outputs.tag }} already exists — skipping"
+          [[ "$VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 64
+          [[ "$VALIDATED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 65
+          if git rev-parse --verify "refs/tags/${VERSION_TAG}^{commit}" >/dev/null 2>&1; then
+            [[ "$(git rev-parse --verify "refs/tags/${VERSION_TAG}^{commit}")" == "$VALIDATED_SHA" ]] || exit 66
+            echo "The existing tag already identifies the validated merge."
             exit 0
           fi
-          git tag "${{ steps.bump.outputs.tag }}"
-          git push origin "${{ steps.bump.outputs.tag }}"
+          git tag -- "$VERSION_TAG" "$VALIDATED_SHA"
+          git push origin "refs/tags/$VERSION_TAG"
 
       - name: Dispatch Release Desktop (new version)
         if: steps.bump.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_TAG: ${{ steps.bump.outputs.tag }}
         run: |
           set -euo pipefail
           gh workflow run release-desktop.yml \
             --ref master \
-            -f tag="${{ steps.bump.outputs.tag }}"
+            -f tag="$VERSION_TAG"
 
-      - name: Dispatch Release Desktop (rolling rebuild)
-        if: steps.bump.outputs.skip == 'true' && steps.bump.outputs.last_tag != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          echo "Rolling rebuild: updating artifacts on ${{ steps.bump.outputs.last_tag }}"
-          gh workflow run release-desktop.yml \
-            --ref master \
-            -f tag="${{ steps.bump.outputs.last_tag }}" \
-            -f checkout_ref="master"
+      - name: Report unchanged version without rebuilding a historical tag
+        if: steps.bump.outputs.skip == 'true'
+        run: echo 'No new committed version; no tag or publication was requested.'

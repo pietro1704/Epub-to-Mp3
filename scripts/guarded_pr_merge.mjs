@@ -15,23 +15,16 @@ function ownRun(check, repo, runId) {
       || url.pathname.startsWith(`/${repo}/actions/runs/${runId}/`));
   } catch { return false; }
 }
-export function evaluate({ pr, runs, securityRuns, comparison, repo, head, runId }) {
+export function evaluate({ pr, runs, comparison, repo, head }) {
   if (!pr || pr.state !== 'OPEN' || pr.isDraft !== false || pr.baseRefName !== 'master'
       || pr.headRefOid !== head || pr.isCrossRepository !== false
       || pr.reviewDecision === 'CHANGES_REQUESTED' || pr.mergeable !== 'MERGEABLE'
-      || pr.mergeStateStatus !== 'CLEAN') return { eligible: false, reason: 'pr_state_or_head' };
+      || !['CLEAN', 'UNSTABLE'].includes(pr.mergeStateStatus)) return { eligible: false, reason: 'pr_state_or_head' };
   if (!comparison || comparison.behind_by !== 0 || !['ahead', 'identical'].includes(comparison.status))
     return { eligible: false, reason: 'base_not_current' };
   if (!Array.isArray(pr.statusCheckRollup)) return { eligible: false, reason: 'missing_checks' };
-  const checks = pr.statusCheckRollup.filter(check => !ownRun(check, repo, runId));
-  if (checks.length === 0) return { eligible: false, reason: 'empty_checks' };
-  for (const check of checks) {
-    const green = check.__typename === 'CheckRun' ? check.status === 'COMPLETED' && check.conclusion === 'SUCCESS'
-      : check.__typename === 'StatusContext' && check.state === 'SUCCESS';
-    if (!green) return { eligible: false, reason: 'non_green_check' };
-  }
-  // Require whole CI and CodeQL workflows, including checks not yet published
-  // into the PR rollup. Missing metadata must never look like a green check set.
+  // Only the scoped PR workflow blocks integration. Full runtime/security
+  // validation belongs to the merged SHA and gates publishers separately.
   const completedRun = (workflowRuns) => {
     if (!Array.isArray(workflowRuns) || workflowRuns.length === 0) return null;
     if (workflowRuns.some(run => !run || run.head_sha !== head || !Number.isSafeInteger(run.id) || run.id <= 0)) return null;
@@ -40,9 +33,10 @@ export function evaluate({ pr, runs, securityRuns, comparison, repo, head, runId
   };
   const ciRun = completedRun(runs);
   if (!ciRun) return { eligible: false, reason: 'ci_not_successful' };
-  const securityRun = completedRun(securityRuns);
-  if (!securityRun) return { eligible: false, reason: 'security_not_successful' };
-  return { eligible: true, head, checks: checks.length, ci_run: ciRun, security_run: securityRun };
+  const checks = pr.statusCheckRollup.filter(check => check.name === 'PR gate' && ownRun(check, repo, String(ciRun)));
+  if (checks.length !== 1 || checks[0].status !== 'COMPLETED' || checks[0].conclusion !== 'SUCCESS')
+    return { eligible: false, reason: 'pr_gate_not_successful' };
+  return { eligible: true, head, checks: checks.length, ci_run: ciRun };
 }
 function invokeGh(args) {
   const result = spawnSync('gh', args, { encoding: 'utf8', timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
@@ -64,7 +58,7 @@ export function guardedMerge({ repo, pr, head, runId, merge = false, invoke = in
       return pages.flatMap(page => page.workflow_runs);
     };
     const comparison = JSON.parse(invoke(['api', `repos/${repo}/compare/master...${head}`]));
-    return evaluate({ pr: current, runs: workflowRuns('ci.yml'), securityRuns: workflowRuns('codeql.yml'), comparison, repo, head, runId });
+    return evaluate({ pr: current, runs: workflowRuns('ci.yml'), comparison, repo, head });
   };
   const first = capture();
   if (!first.eligible || !merge) return { ...first, merged: false };

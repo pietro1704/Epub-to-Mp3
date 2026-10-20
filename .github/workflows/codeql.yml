@@ -1,13 +1,15 @@
 name: CodeQL
 
 on:
-  push:
-    branches:
-      - master
-  pull_request:
+  workflow_call:
   schedule:
     - cron: "27 3 * * 1"
   workflow_dispatch:
+    inputs:
+      historical_categories:
+        description: Rebuild the preserved historical Swift analysis identities
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -123,67 +125,11 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      # Bound the expanded Apple matrix instead of requesting seven Mac runners
-      # at once while other native verification jobs are queued.
+      # Default validation compiles both production platform dependency graphs.
+      # Historical analysis identities remain available by manual opt-in.
       max-parallel: 2
       matrix:
-        include:
-          # The production macOS build reaches every shared source that is
-          # conditionally compiled for AppKit.
-          - coverage: app
-            platform: macOS
-            destination: generic/platform=macOS
-            derived_data: .build-codeql-macos
-            scheme: EpubToMp3
-            action: build
-          # Preserve the historical category identities with real target builds.
-          - coverage: unit-tests
-            platform: macOS
-            destination: platform=macOS
-            derived_data: .build-codeql-macos-tests
-            scheme: EpubToMp3-UnitTests
-            action: build-for-testing
-          # The iOS app dependency graph includes ShareExtension and Widget.
-          # Device compilation traces UIKit-only code without booting Simulator.
-          - coverage: unit-tests
-            platform: iOS
-            destination: generic/platform=iOS
-            derived_data: .build-codeql-ios-tests
-            scheme: EpubToMp3-UnitTests
-            action: build-for-testing
-          - coverage: ui-tests
-            platform: iOS
-            destination: generic/platform=iOS
-            derived_data: .build-codeql-ios-ui-tests
-            scheme: EpubToMp3-UITests
-            action: build-for-testing
-          # Historical app-only identities are backed by their original real
-          # build scopes, not aliases of a different platform's SARIF.
-          - coverage: legacy-app
-            platform: macOS
-            destination: generic/platform=macOS
-            derived_data: .build-codeql-macos
-            scheme: EpubToMp3
-            action: build
-            legacy_category: /language:swift/platform:macOS
-            legacy_matrix: '{"derived_data":".build-codeql-macos","destination":"generic/platform=macOS","platform":"macOS"}'
-          - coverage: legacy-app
-            platform: iOS
-            destination: generic/platform=iOS
-            derived_data: .build-codeql-ios
-            scheme: EpubToMp3
-            action: build
-            legacy_category: /language:swift/platform:iOS
-            legacy_matrix: '{"derived_data":".build-codeql-ios","destination":"generic/platform=iOS","platform":"iOS"}'
-          # The generic identity originally traced both builds into one DB.
-          - coverage: legacy-combined-app
-            platform: macOS+iOS
-            destination: generic/platform=macOS
-            derived_data: .build-codeql-legacy-combined
-            scheme: EpubToMp3
-            action: build
-            legacy_category: /language:swift
-            legacy_matrix: '{}'
+        include: ${{ fromJSON(inputs.historical_categories == true && '[{"coverage":"app","platform":"macOS","destination":"generic/platform=macOS","derived_data":".build-codeql-macos","scheme":"EpubToMp3","action":"build"},{"coverage":"unit-tests","platform":"macOS","destination":"platform=macOS","derived_data":".build-codeql-macos-tests","scheme":"EpubToMp3-UnitTests","action":"build-for-testing"},{"coverage":"unit-tests","platform":"iOS","destination":"generic/platform=iOS","derived_data":".build-codeql-ios-tests","scheme":"EpubToMp3-UnitTests","action":"build-for-testing"},{"coverage":"ui-tests","platform":"iOS","destination":"generic/platform=iOS","derived_data":".build-codeql-ios-ui-tests","scheme":"EpubToMp3-UITests","action":"build-for-testing"},{"coverage":"legacy-app","platform":"macOS","destination":"generic/platform=macOS","derived_data":".build-codeql-macos","scheme":"EpubToMp3","action":"build","legacy_category":"/language:swift/platform:macOS","legacy_matrix":"{\"derived_data\":\".build-codeql-macos\",\"destination\":\"generic/platform=macOS\",\"platform\":\"macOS\"}"},{"coverage":"legacy-app","platform":"iOS","destination":"generic/platform=iOS","derived_data":".build-codeql-ios","scheme":"EpubToMp3","action":"build","legacy_category":"/language:swift/platform:iOS","legacy_matrix":"{\"derived_data\":\".build-codeql-ios\",\"destination\":\"generic/platform=iOS\",\"platform\":\"iOS\"}"},{"coverage":"legacy-combined-app","platform":"macOS+iOS","destination":"generic/platform=macOS","derived_data":".build-codeql-legacy-combined","scheme":"EpubToMp3","action":"build","legacy_category":"/language:swift","legacy_matrix":"{}"}]' || '[{"coverage":"unit-tests","platform":"macOS","destination":"platform=macOS","derived_data":".build-codeql-macos-tests","scheme":"EpubToMp3-UnitTests","action":"build-for-testing"},{"coverage":"unit-tests","platform":"iOS","destination":"generic/platform=iOS","derived_data":".build-codeql-ios-tests","scheme":"EpubToMp3-UnitTests","action":"build-for-testing"}]') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
