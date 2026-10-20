@@ -37,7 +37,7 @@ export async function validatedMerge({ repo, ref, tag, latest = false, api }) {
   requireThat(Number.isSafeInteger(workflow.id) && workflow.id > 0 && workflow.path === '.github/workflows/post-merge-validation.yml'
     && workflow.name === 'Post-merge validation' && workflow.state === 'active', 'Untrusted validation workflow');
   const runs = await pages(`/actions/workflows/${workflow.id}/runs?head_sha=${sha}`, 'workflow_runs');
-  const trusted = run => run && run.workflow_id === workflow.id && run.head_sha === sha && run.event === 'push'
+  const trusted = run => run && run.workflow_id === workflow.id && run.head_sha === sha && ['push', 'workflow_dispatch'].includes(run.event)
     && run.head_branch === 'master' && run.repository?.full_name === repo && run.head_repository?.full_name === repo
     && Number.isSafeInteger(run.id) && run.id > 0 && Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0;
   const candidates = runs.filter(trusted);

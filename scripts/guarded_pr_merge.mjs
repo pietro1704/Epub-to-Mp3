@@ -18,7 +18,7 @@ function ownRun(check, repo, runId) {
 }
 export function evaluate({ pr, runs, comparison, repo, head }) {
   if (!pr || pr.state !== 'OPEN' || pr.isDraft !== false || pr.baseRefName !== 'master'
-      || pr.headRefOid !== head || pr.isCrossRepository !== false
+      || pr.headRefOid !== head || typeof pr.isCrossRepository !== 'boolean'
       || pr.reviewDecision === 'CHANGES_REQUESTED' || pr.mergeable !== 'MERGEABLE'
       || !['CLEAN', 'UNSTABLE'].includes(pr.mergeStateStatus)) return { eligible: false, reason: 'pr_state_or_head' };
   if (!comparison || comparison.behind_by !== 0 || !['ahead', 'identical'].includes(comparison.status))

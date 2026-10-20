@@ -1,4 +1,4 @@
-name: Inspect pull request merge eligibility
+name: Merge eligible pull requests
 
 on:
   workflow_run:
@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pull-requests: read
-  actions: read
+  contents: write
+  pull-requests: write
+  actions: write
 
 concurrency:
   group: auto-merge-queue
@@ -21,7 +21,7 @@ concurrency:
 jobs:
   auto-merge:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    name: Inspect required checks without mutations
+    name: Merge only after required exact-head checks succeed
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout trusted merge policy
@@ -30,18 +30,26 @@ jobs:
           ref: master
           persist-credentials: false
 
-      - name: Inspect exact-head merge eligibility
+      - name: Merge all eligible ready pull requests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          prs=$(gh pr list --repo "$REPO" --state open --base master --limit 100 \
+          prs=$(gh pr list --repo "$REPO" --state open --base master --limit 1000 \
             --json number,isDraft,author,headRepository,headRefName,headRefOid,mergeStateStatus | \
-            jq -c --arg owner "${REPO%%/*}" --arg repo "$REPO" \
-              '[.[] | select(.isDraft | not) | select(.author.login == $owner or .author.login == "app/dependabot" or .author.login == "dependabot[bot]") | select(.headRepository.nameWithOwner == $repo)] | sort_by(.number)')
+            jq -c '[.[] | select(.isDraft | not)] | sort_by(.number)')
           while IFS=$'\t' read -r pr head_sha; do
-            if ! node scripts/guarded_pr_merge.mjs --repo "$REPO" --pr "$pr" --head "$head_sha"; then
+            if ! node scripts/guarded_pr_merge.mjs --repo "$REPO" --pr "$pr" --head "$head_sha" --merge; then
               echo "PR #$pr is not verifiably green at the inspected head; left unchanged."
+              continue
+            fi
+            # GITHUB_TOKEN merges do not emit a new push-triggered run.
+            # Confirm delivery before dispatching the existing post-merge gate.
+            delivered=$(gh pr view "$pr" --repo "$REPO" --json state,headRefOid,mergeCommit)
+            if jq -e --arg head "$head_sha" '.state == "MERGED" and .headRefOid == $head and (.mergeCommit.oid | test("^[0-9a-f]{40}$"))' <<< "$delivered" >/dev/null; then
+              gh workflow run post-merge-validation.yml --repo "$REPO" --ref master
+            else
+              echo "PR #$pr merge delivery is unconfirmed; no post-merge validation dispatched."
             fi
           done < <(jq -r '.[] | [.number, .headRefOid] | @tsv' <<< "$prs")

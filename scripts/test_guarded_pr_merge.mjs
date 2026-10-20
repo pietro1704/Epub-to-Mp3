@@ -9,7 +9,7 @@ const repo = 'pietro1704/Epub-to-Mp3';
 const head = 'a'.repeat(40);
 
 for (const state of ['CLEAN', 'BEHIND']) {
-  test(`scheduled policy only inspects ${state} candidates without GitHub mutations`, () => {
+  test(`automatic policy merges only current exact-head green ${state} candidates`, () => {
     const directory = mkdtempSync(join(tmpdir(), 'pr-policy-inspection-'));
     try {
       mkdirSync(join(directory, 'scripts'));
@@ -19,9 +19,10 @@ for (const state of ['CLEAN', 'BEHIND']) {
         readFileSync(new URL('./pr_gate_policy.mjs', import.meta.url)));
       const data = fixture();
       data.pr.mergeStateStatus = state;
+      data.pr.isCrossRepository = true;
       writeFileSync(join(directory, 'fixture.json'), JSON.stringify({ ...data, candidates: [{
-        number: 802, isDraft: false, author: { login: 'pietro1704' },
-        headRepository: { nameWithOwner: repo }, headRefName: 'feature/example',
+        number: 802, isDraft: false, author: { login: 'external-contributor' },
+        headRepository: { nameWithOwner: 'external-contributor/fork' }, headRefName: 'feature/example',
         headRefOid: head, mergeStateStatus: state,
       }] }));
       const fakeGh = join(directory, 'gh');
@@ -33,7 +34,7 @@ fs.appendFileSync('calls.jsonl', JSON.stringify(args) + '\n');
 let response;
 if (args[0] === 'pr' && args[1] === 'list') response = data.candidates;
 else if (args[0] === 'pr' && args[1] === 'view') response = data.pr;
-else if (args[0] === 'pr' && args[1] === 'merge') response = {};
+else if (args[0] === 'pr' && args[1] === 'merge') { data.pr.state = 'MERGED'; data.pr.mergeCommit = { oid: 'c'.repeat(40) }; fs.writeFileSync('fixture.json', JSON.stringify(data)); response = {}; }
 else if (args[0] === 'workflow' && args[1] === 'run') response = {};
 else if (args[0] === 'api' && args.includes('--method')) response = {};
 else if (args[0] === 'api' && args.at(-1).includes('/compare/')) response = data.comparison;
@@ -61,7 +62,14 @@ process.stdout.write(JSON.stringify(response));
         (args[0] === 'pr' && args[1] === 'merge') ||
         (args[0] === 'workflow' && args[1] === 'run') ||
         (args[0] === 'api' && args.some(value => ['PUT', 'POST', 'PATCH', 'DELETE'].includes(value))));
-      assert.deepEqual(mutations, [], 'scheduled policy must not merge, update branches or dispatch workflows');
+      if (state === 'CLEAN') {
+        assert.deepEqual(mutations, [
+          ['pr', 'merge', '802', '--repo', repo, '--squash', '--match-head-commit', head],
+          ['workflow', 'run', 'post-merge-validation.yml', '--repo', repo, '--ref', 'master'],
+        ]);
+      } else {
+        assert.deepEqual(mutations, [], 'behind PRs cannot merge, update branches or dispatch workflows');
+      }
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -119,12 +127,18 @@ test('zero checks or missing CI evidence fails closed without branch protection'
     assert.equal(evaluate(f).eligible, false);
   }
 });
-test('drafts, forks, closed PRs, review rejection and changed heads block merge', () => {
-  for (const changed of [{ isDraft: true }, { isCrossRepository: true }, { isCrossRepository: null }, { state: 'MERGED' },
+test('drafts, invalid fork metadata, closed PRs, review rejection and changed heads block merge', () => {
+  for (const changed of [{ isDraft: true }, { isCrossRepository: null }, { state: 'MERGED' },
     { baseRefName: 'develop' }, { reviewDecision: 'CHANGES_REQUESTED' }, { headRefOid: 'b'.repeat(40) }]) {
     const f = fixture(); Object.assign(f.pr, changed);
     assert.equal(evaluate(f).eligible, false);
   }
+});
+test('fork PRs use the same exact-head gate without executing contributor code', () => {
+  const f = fixture(); f.pr.isCrossRepository = true;
+  assert.equal(evaluate(f).eligible, true);
+  f.pr.statusCheckRollup[0].conclusion = 'FAILURE';
+  assert.equal(evaluate(f).eligible, false);
 });
 test('only the named gate from the latest exact CI run can authorize merge', () => {
   for (const url of [`https://github.com/${repo}/actions/runs/801/job/12`, `https://evil.test/${repo}/actions/runs/80/job/12`,
@@ -200,7 +214,7 @@ test('argument injection and non-scalar identifiers fail before any command', ()
     assert.throws(() => guardedMerge({ repo, pr: '802', head, ...changed, invoke: () => assert.fail('must not run') }));
   }
 });
-test('policy inspection uses the trusted base and the repair worker cannot merge', () => {
+test('automatic merging uses the trusted base and the repair worker cannot merge', () => {
   for (const filename of ['auto-merge-dependabot.yml', 'pr-autofix-worker.yml']) {
     const text = readFileSync(new URL(`../.github/workflows/${filename}`, import.meta.url), 'utf8');
     assert.match(text, /ref: master/);
@@ -210,7 +224,11 @@ test('policy inspection uses the trusted base and the repair worker cannot merge
     } else {
       assert.match(text, /node scripts\/guarded_pr_merge\.mjs/);
     }
-    assert.doesNotMatch(text, /--merge/);
+    if (filename === 'pr-autofix-worker.yml') assert.doesNotMatch(text, /--merge/);
+    else {
+      assert.match(text, /--head \"\$head_sha\" --merge/);
+      assert.doesNotMatch(text, /select\(\.author\.login|select\(\.headRepository/);
+    }
     assert.doesNotMatch(text, /gh pr merge/);
   }
   const gate = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
