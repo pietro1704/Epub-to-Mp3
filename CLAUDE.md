@@ -128,3 +128,9 @@ Current user preference: no CI or PR monitoring. Do not infer permission to merg
 publish, close issues, or expand verification into repository-wide remote audits.
 Completion means the authorized scope is implemented and its verification is reported;
 a plan, skipped test, or displayed 100% alone does not establish success.
+
+## Host kernel panic response (2026-10-16)
+
+After any newly reported or observed kernel panic on an agent host, stop initiating local process work on that host immediately, including shells, builds, tests, Simulator/device actions, and resource-intensive tasks. Preserve the report and already available bounded execution receipts. Do not reboot, retry, stress the machine, or change hardware or firmware automatically. Continue only with GitHub-hosted Actions or remote tools that start no process on the affected host; if those are unavailable, wait for the user to confirm host stability before resuming local execution.
+
+The reported ARM64/T8010 panic says `x86 CPU CATERR detected` in `kernel_task` and does not identify an initiating user process. Keep it distinct from the Intel `SimMetalHost`/`IGGuC.cpp:2913` incident. Timing alone is not causal evidence. These controls limit further exposure; they do not prove or fix a hardware or firmware cause.
