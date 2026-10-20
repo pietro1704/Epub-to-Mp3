@@ -23,6 +23,8 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private let previousButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
     private let rateButton = UIButton(type: .system)
+    private var renderedRate: PlaybackRate?
+    private weak var renderedRatePlayer: AudioPlayer?
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let chromeStack = UIStackView()
     private var minimumHeightConstraint: NSLayoutConstraint?
@@ -280,7 +282,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         playPauseButton.accessibilityLabel = player.isPlaying
             ? L10n.string("player.pause")
             : L10n.string("player.play")
-        rateButton.setTitle(player.rate.shortLabel, for: .normal)
+        rebuildRateMenu(player: player)
         accessibilityIdentifier = "miniPlayer.bar"
     }
 
@@ -335,8 +337,12 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     }
 
     private func rebuildRateMenu(player: AudioPlayer) {
+        guard renderedRatePlayer !== player || renderedRate != player.rate || rateButton.menu == nil else { return }
+        renderedRatePlayer = player
+        renderedRate = player.rate
+        rateButton.setTitle(player.rate.shortLabel, for: .normal)
         rateButton.showsMenuAsPrimaryAction = true
-        rateButton.menu = UIMenu(children: PlaybackRate.allCases.map { rate in
+        rateButton.menu = UIMenu(children: PlaybackRate.primaryRates.map { rate in
             UIAction(
                 title: rate.shortLabel,
                 state: rate == player.rate ? .on : .off

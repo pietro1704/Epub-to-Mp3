@@ -101,7 +101,8 @@ enum EpubFixture {
         body: String = "This is a short chapter used for end to end testing.",
         stylesheet: String? = nil,
         footnote: (reference: String, text: String)? = nil,
-        includeCover: Bool = true
+        includeCover: Bool = true,
+        language: String = "en"
     ) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("fixture-\(UUID().uuidString).epub")
@@ -145,7 +146,7 @@ enum EpubFixture {
             <dc:identifier id="bookid">urn:test:book</dc:identifier>
             <dc:title>\(title)</dc:title>
             <dc:creator>\(author)</dc:creator>
-            <dc:language>en</dc:language>
+            <dc:language>\(language)</dc:language>
             \(coverMetadata)
           </metadata>
           <manifest>

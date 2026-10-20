@@ -6,7 +6,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import sys
 from pathlib import Path
+
+
+def _finite_number(value: object) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _invalid(reason: str) -> int:
+    print(f"A/B regression check: INVALID ({reason})", file=sys.stderr)
+    return 2
 
 
 def main() -> int:
@@ -26,26 +42,35 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if not all(math.isfinite(value) for value in (args.max_stage_loss_pct, args.max_pool_loss_pct)):
+        return _invalid("loss thresholds must be finite")
+
     report = Path(args.report).expanduser()
-    if not report.exists():
-        print(f"Report not found: {report}")
-        return 2
+    try:
+        payload = json.loads(report.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return _invalid("report cannot be read as JSON")
+    if not isinstance(payload, dict) or not isinstance(payload.get("results"), dict):
+        return _invalid("results must be an object")
 
-    payload = json.loads(report.read_text(encoding="utf-8"))
+    for name in ("baseline_no_stage", "stage_pipeline", "external_worker_pool"):
+        result = payload["results"].get(name)
+        if not isinstance(result, dict):
+            return _invalid(f"missing result: {name}")
+        if result.get("success") is not True or type(result.get("exit_code")) is not int or result["exit_code"] != 0:
+            return _invalid(f"unsuccessful result: {name}")
+        elapsed = result.get("elapsed_s")
+        if not _finite_number(elapsed) or elapsed <= 0:
+            return _invalid(f"invalid elapsed time: {name}")
 
-    # If all three runs failed, elapsed-time comparisons are meaningless —
-    # skip regression check rather than producing spurious failures.
-    results = payload.get("results", {}) if isinstance(payload, dict) else {}
-    all_failed = results and all(not r.get("success") for r in results.values())
-    if all_failed:
-        print(
-            "All benchmark runs failed (engine unavailable or no models) — skipping regression check."
-        )
-        return 0
-
-    comp = payload.get("comparisons", {}) if isinstance(payload, dict) else {}
-    stage_gain = float(comp.get("stage_vs_baseline_gain_pct", 0.0) or 0.0)
-    pool_gain = float(comp.get("pool_vs_stage_gain_pct", 0.0) or 0.0)
+    comp = payload.get("comparisons")
+    if not isinstance(comp, dict):
+        return _invalid("comparisons must be an object")
+    for name in ("stage_vs_baseline_gain_pct", "pool_vs_stage_gain_pct"):
+        if not _finite_number(comp.get(name)):
+            return _invalid(f"missing or invalid comparison: {name}")
+    stage_gain = float(comp["stage_vs_baseline_gain_pct"])
+    pool_gain = float(comp["pool_vs_stage_gain_pct"])
 
     max_stage_loss = -abs(float(args.max_stage_loss_pct))
     max_pool_loss = -abs(float(args.max_pool_loss_pct))

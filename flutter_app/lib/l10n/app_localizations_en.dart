@@ -39,6 +39,62 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noJobs => 'No conversions yet';
 
   @override
+  String get conversionLogTitle => 'Conversion log';
+
+  @override
+  String get conversionJobLabel => 'Job';
+
+  @override
+  String get conversionLastRecordedState => 'Last recorded state';
+
+  @override
+  String conversionLastRecordedStateValue(String state) {
+    return 'Last recorded state: $state';
+  }
+
+  @override
+  String get conversionLastUpdated => 'Last updated';
+
+  @override
+  String conversionRecordedAudioPath(String path) {
+    return 'Recorded audio path: $path';
+  }
+
+  @override
+  String conversionUnreadableRecords(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count saved conversion records could not be read.',
+      one: '1 saved conversion record could not be read.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversionStatusPending => 'Pending';
+
+  @override
+  String get conversionStatusRunning => 'Converting';
+
+  @override
+  String get conversionStatusCompleted => 'Completed';
+
+  @override
+  String get conversionStatusFailed => 'Failed';
+
+  @override
+  String get conversionStatusCancelled => 'Cancelled';
+
+  @override
+  String get conversionStatusUnknown => 'Unknown';
+
+  @override
+  String conversionHistorySaveWarning(String error) {
+    return 'Conversion completed, but its history could not be saved: $error';
+  }
+
+  @override
   String get refresh => 'Refresh';
 
   @override
@@ -417,4 +473,48 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get off => 'Off';
+
+  @override
+  String get ttsPrimaryNarration => 'Primary narration';
+
+  @override
+  String get ttsSecondaryNarration => 'Secondary narration';
+
+  @override
+  String get ttsFaberOffline => 'Faber medium · Offline';
+
+  @override
+  String get ttsEdgeOnline => 'Edge · Online';
+
+  @override
+  String get ttsNoSecondary => 'None';
+
+  @override
+  String get ttsSystemOffline => 'System voice · Offline fallback';
+
+  @override
+  String get ttsUseRecommendedDefaults => 'Use Faber with system voice fallback';
+
+  @override
+  String get ttsAllowOnlineSecondary => 'Allow online secondary';
+
+  @override
+  String get ttsOnlineSecondaryDescription =>
+      'Send failed segments to Edge only when enabled.';
+
+  @override
+  String get ttsUsePreferences => 'Use audio preferences';
+
+  @override
+  String get ttsAllowJobSecondary =>
+      'Allow configured secondary for this conversion';
+
+  @override
+  String ttsActualVoices(String voices) {
+    return 'Used voice: $voices';
+  }
+
+  @override
+  String get ttsSecondaryUsedNotice =>
+      'Using the secondary voice. The primary voice will be retried periodically.';
 }

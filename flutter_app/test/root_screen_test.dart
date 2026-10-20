@@ -5,6 +5,7 @@ import 'package:flutter_app/l10n/app_localizations_es.dart';
 import 'package:flutter_app/l10n/app_localizations_pt.dart';
 import 'package:flutter_app/screens/root_screen.dart';
 import 'package:flutter_app/state/providers.dart';
+import 'package:flutter_app/services/local_conversion_job.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,26 +28,32 @@ Widget _wrap(SharedPreferences prefs) {
 
 void main() {
   group('RootScreen', () {
-    test('provides a localized label for the Convert destination in every locale', () {
-      expect(AppLocalizationsEn().convertTitle, 'Convert');
-      expect(AppLocalizationsPt().convertTitle, 'Converter');
-      expect(AppLocalizationsEs().convertTitle, 'Convertir');
-    });
+    test(
+      'provides a localized label for the Convert destination in every locale',
+      () {
+        expect(AppLocalizationsEn().convertTitle, 'Convert');
+        expect(AppLocalizationsPt().convertTitle, 'Converter');
+        expect(AppLocalizationsEs().convertTitle, 'Convertir');
+      },
+    );
 
-    testWidgets('has Reader, Library, Convert, Jobs, and Settings destinations', (t) async {
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(prefs));
-      await t.pumpAndSettle();
+    testWidgets(
+      'has Reader, Library, Convert, Jobs, and Settings destinations',
+      (t) async {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(_wrap(prefs));
+        await t.pumpAndSettle();
 
-      expect(find.byType(NavigationDestination), findsNWidgets(5));
-      // "Reader" appears both in the nav bar label and the AppBar title,
-      // so we check at least one. Same for "Library" vs library tab content.
-      expect(find.text('Reader'), findsWidgets);
-      expect(find.text('Library'), findsWidgets);
-      expect(find.text('Settings'), findsWidgets);
-      expect(find.text('Convert'), findsWidgets);
-      expect(find.text('Jobs'), findsWidgets);
-    });
+        expect(find.byType(NavigationDestination), findsNWidgets(5));
+        // "Reader" appears both in the nav bar label and the AppBar title,
+        // so we check at least one. Same for "Library" vs library tab content.
+        expect(find.text('Reader'), findsWidgets);
+        expect(find.text('Library'), findsWidgets);
+        expect(find.text('Settings'), findsWidgets);
+        expect(find.text('Convert'), findsWidgets);
+        expect(find.text('Jobs'), findsWidgets);
+      },
+    );
 
     testWidgets('reader tab is shown by default (index 0)', (t) async {
       final prefs = await _mockPrefs();
@@ -57,7 +64,9 @@ void main() {
       expect(find.text('Pick a book to read'), findsOneWidget);
     });
 
-    testWidgets('convert destination is localized in every supported locale', (t) async {
+    testWidgets('convert destination is localized in every supported locale', (
+      t,
+    ) async {
       const expectedTitles = {
         'en': 'Convert',
         'es': 'Convertir',
@@ -95,6 +104,26 @@ void main() {
       expect(find.text('Your library is empty'), findsOneWidget);
     });
 
+    testWidgets(
+      'entering Jobs refreshes conversions created while the tab was mounted',
+      (t) async {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(_wrap(prefs));
+        await t.pumpAndSettle();
+        await ConversionJobCoordinator(
+          LocalConversionJobStore(prefs),
+        ).createJob(
+          bookId: 'new-local-book',
+          jobId: 'new-local-job',
+          chapters: const [LocalConversionChapterSpec(0, 'One')],
+        );
+        await t.tap(find.text('Jobs'));
+        await t.pumpAndSettle();
+        expect(find.text('new-local-book'), findsOneWidget);
+        expect(find.text('No conversions yet'), findsNothing);
+      },
+    );
+
     testWidgets('tapping Settings navigates to settings tab', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(prefs));
@@ -103,7 +132,7 @@ void main() {
       await t.tap(find.text('Settings'));
       await t.pumpAndSettle();
 
-      expect(find.text('Backend URL'), findsOneWidget);
+      expect(find.text('Primary narration'), findsOneWidget);
     });
   });
 }

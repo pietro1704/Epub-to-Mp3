@@ -1,0 +1,15 @@
+{
+  "protocol": "epubtomp3-collaboration/v1",
+  "workspace": "default",
+  "roles": {
+    "mac": {
+      "project": "epubtomp3-mac",
+      "project_id": "01a141b0-86c9-7972-ae68-7f0cb66449db"
+    },
+    "arch": {
+      "project": "Epub-to-Mp3",
+      "project_id": "019f8f88-5ba3-7133-a527-6b536bbfb668"
+    }
+  },
+  "ssh_host": "arch"
+}

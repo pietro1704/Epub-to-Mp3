@@ -8,6 +8,7 @@ import {
   sanitizeReaderCss,
   sanitizeReaderHtml,
 } from "../utils/readerSanitizer";
+import NativeReaderFallback from "./NativeReaderFallback";
 import StreamingAudioPlayer from "./StreamingAudioPlayer";
 import {
   BookTextDocument,
@@ -512,6 +513,7 @@ export default function EbookReaderPanel({
             )}
           </div>
         </div>
+        {selectedChapter && <NativeReaderFallback jobId={jobId} chapterIndex={selectedChapter.index} text={selectedChapter.text} />}
         {chapterProgress && chapterProgress.length > 0 && (
           <StreamingAudioPlayer
             jobId={jobId}

@@ -63,29 +63,43 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
     var previewColors: (background: UIColor, foreground: UIColor) {
         switch self {
         case .auto: return (.systemBackground, .label)
-        case .light: return (.white, .black)
+        case .light: return Self.systemColors(style: .light)
         case .sepia: return (UIColor(red: 0.96, green: 0.91, blue: 0.80, alpha: 1), UIColor(red: 0.22, green: 0.16, blue: 0.10, alpha: 1))
         case .parchment: return (UIColor(red: 0.90, green: 0.85, blue: 0.72, alpha: 1), UIColor(red: 0.18, green: 0.14, blue: 0.08, alpha: 1))
         case .paper: return (UIColor(red: 0.98, green: 0.98, blue: 0.95, alpha: 1), UIColor(red: 0.12, green: 0.12, blue: 0.12, alpha: 1))
-        case .dark: return (UIColor(white: 0.12, alpha: 1), .white)
+        case .dark: return Self.systemColors(style: .dark)
         case .black: return (.black, .white)
         case .custom: return (.systemBackground, .label)
         }
+    }
+
+    private static func systemColors(style: UIUserInterfaceStyle) -> (background: UIColor, foreground: UIColor) {
+        let traits = UITraitCollection(userInterfaceStyle: style)
+        return (.systemBackground.resolvedColor(with: traits), .label.resolvedColor(with: traits))
     }
     #endif
 
     #if canImport(AppKit)
     var macOSColors: (background: NSColor, foreground: NSColor) {
         switch self {
-        case .auto: return (.windowBackgroundColor, .labelColor)
-        case .light: return (.white, .black)
+        case .auto: return (.textBackgroundColor, .textColor)
+        case .light: return Self.systemColors(appearance: .aqua)
         case .sepia: return (NSColor(red: 0.96, green: 0.91, blue: 0.80, alpha: 1), NSColor(red: 0.22, green: 0.16, blue: 0.10, alpha: 1))
         case .parchment: return (NSColor(red: 0.90, green: 0.85, blue: 0.72, alpha: 1), NSColor(red: 0.18, green: 0.14, blue: 0.08, alpha: 1))
         case .paper: return (NSColor(red: 0.98, green: 0.98, blue: 0.95, alpha: 1), NSColor(red: 0.12, green: 0.12, blue: 0.12, alpha: 1))
-        case .dark: return (NSColor(white: 0.12, alpha: 1), .white)
+        case .dark: return Self.systemColors(appearance: .darkAqua)
         case .black: return (.black, .white)
         case .custom: return (.windowBackgroundColor, .labelColor)
         }
+    }
+
+    private static func systemColors(appearance name: NSAppearance.Name) -> (background: NSColor, foreground: NSColor) {
+        var colors = (background: NSColor.textBackgroundColor, foreground: NSColor.textColor)
+        NSAppearance(named: name)?.performAsCurrentDrawingAppearance {
+            colors = (NSColor(cgColor: NSColor.textBackgroundColor.cgColor) ?? .textBackgroundColor,
+                      NSColor(cgColor: NSColor.textColor.cgColor) ?? .textColor)
+        }
+        return colors
     }
     #endif
 }
@@ -93,6 +107,55 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
 enum ReaderColorScheme: Equatable {
     case light
     case dark
+}
+
+extension AppSettings {
+    /// The reader page and attributed content share one palette. Explicit
+    /// light/dark themes resolve Apple's semantic colors in that appearance;
+    /// Auto keeps adaptive colors so it follows the host appearance.
+    var readerColors: (background: PlatformColor, foreground: PlatformColor, link: PlatformColor) {
+        let base: (background: PlatformColor, foreground: PlatformColor)
+        if readerTheme == .custom {
+            let custom = readerCustomColors
+            base = (
+                PlatformColor(red: CGFloat(custom.background.0), green: CGFloat(custom.background.1), blue: CGFloat(custom.background.2), alpha: 1),
+                PlatformColor(red: CGFloat(custom.foreground.0), green: CGFloat(custom.foreground.1), blue: CGFloat(custom.foreground.2), alpha: 1)
+            )
+        } else {
+            #if canImport(UIKit)
+            base = readerTheme.previewColors
+            #else
+            base = readerTheme.macOSColors
+            #endif
+        }
+        #if canImport(UIKit)
+        let link: UIColor
+        if let scheme = readerPreferredColorScheme {
+            link = UIColor.link.resolvedColor(with: UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light))
+        } else {
+            link = .link
+        }
+        #else
+        var link = NSColor.linkColor
+        if let scheme = readerPreferredColorScheme {
+            NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
+                link = NSColor(cgColor: NSColor.linkColor.cgColor) ?? .linkColor
+            }
+        }
+        #endif
+        return (base.background, base.foreground, link)
+    }
+
+    var readerPreferredColorScheme: ReaderColorScheme? {
+        guard readerTheme == .custom else { return readerTheme.preferredColorScheme }
+        let rgb = readerCustomColors.background
+        func linear(_ value: Double) -> Double {
+            let channel = min(1, max(0, value))
+            return channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(rgb.0) + 0.7152 * linear(rgb.1) + 0.0722 * linear(rgb.2)
+        return luminance < 0.179 ? .dark : .light
+    }
 }
 
 enum ReaderLayout: String, CaseIterable, Identifiable {
@@ -174,6 +237,27 @@ final class AppSettings: ObservableObject {
             create: true
         ).appendingPathComponent("EpubToMp3/TTSModels", isDirectory: true)
     }
+    /// Installation UI reports readiness only for a complete catalog installation.
+    static func isFaberInstalled(modelsRoot: URL? = ttsModelsRoot(), fileManager: FileManager = .default) -> Bool {
+        guard let modelsRoot else { return false }
+        let directory = modelsRoot.appendingPathComponent("pt_BR-faber-medium", isDirectory: true)
+        guard let metadata = try? Data(contentsOf: directory.appendingPathComponent("metadata.json")),
+              let fields = try? JSONSerialization.jsonObject(with: metadata) as? [String: Any],
+              fields["id"] as? String == "pt_BR-faber-medium",
+              let artifacts = fields["artifacts"] as? [[String: String]] else { return false }
+        let expected = [
+            "model.onnx": "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7",
+            "model.onnx.json": "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f",
+        ]
+        return expected.allSatisfy { name, digest in
+            guard artifacts.contains(where: { $0["path"] == name && $0["sha256"] == digest }),
+                  let attributes = try? fileManager.attributesOfItem(atPath: directory.appendingPathComponent(name).path),
+                  attributes[.type] as? FileAttributeType == .typeRegular,
+                  let bytes = attributes[.size] as? NSNumber else { return false }
+            return bytes.int64Value > 0
+        }
+    }
+
     static let playbackForwardSecondsKey = "playbackForwardSeconds"
     static let playbackBackwardSecondsKey = "playbackBackwardSeconds"
     static let playbackSkipIntervals: Set<Double> = [15, 30, 45, 60]
@@ -190,12 +274,29 @@ final class AppSettings: ObservableObject {
         // it on Wi-Fi by default; the user may opt into cellular explicitly.
         self.allowCellularAudioConversion =
             defaults.object(forKey: "allowCellularAudioConversion") as? Bool ?? false
-        let storedAudioEngine = AudioEnginePreference(
-            rawValue: defaults.string(forKey: Self.audioEngineKey) ?? ""
-        ) ?? .edge
-        self.audioEngine = AudioEnginePreference.supportedPreferences.contains(storedAudioEngine)
-            ? storedAudioEngine
-            : .edge
+        self.audioEngine = AudioEnginePreference(
+            rawValue: defaults.string(forKey: Self.audioEngineKey) ?? "piper"
+        ) ?? .piper
+        let storedSecondaryAudioEngine = defaults.string(forKey: "secondaryAudioEngine")
+            .flatMap(AudioEnginePreference.init(rawValue:))
+        let storedOnlineFallbackConsent = defaults.bool(forKey: "allowOnlineAudioFallback")
+        // A missing secondary in old settings may be an explicit no-fallback
+        // choice. Only an entirely unconfigured speech policy adopts defaults.
+        let hasSavedSpeechPolicy = [Self.audioEngineKey, "secondaryAudioEngine",
+                                    "allowOnlineAudioFallback", "ttsPreferencesVersion"]
+            .contains { defaults.object(forKey: $0) != nil }
+        self.secondaryAudioEngine = hasSavedSpeechPolicy ? storedSecondaryAudioEngine : .system
+        if !hasSavedSpeechPolicy {
+            defaults.set("piper", forKey: Self.audioEngineKey)
+            defaults.set("system", forKey: "secondaryAudioEngine")
+            defaults.set(2, forKey: "ttsPreferencesVersion")
+        }
+        self.allowOnlineAudioFallback = storedOnlineFallbackConsent
+        if storedSecondaryAudioEngine == self.audioEngine
+            || (!storedOnlineFallbackConsent && storedSecondaryAudioEngine == .edge) {
+            self.secondaryAudioEngine = nil
+            defaults.removeObject(forKey: "secondaryAudioEngine")
+        }
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
         )
@@ -300,8 +401,63 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(allowCellularAudioConversion, forKey: "allowCellularAudioConversion") }
     }
 
-    @Published var audioEngine: AudioEnginePreference = .edge {
-        didSet { defaults.set(audioEngine.rawValue, forKey: Self.audioEngineKey) }
+    @Published var audioEngine: AudioEnginePreference = .piper {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            adoptCurrentSpeechPolicyIfEdited()
+            defaults.set(audioEngine.rawValue, forKey: Self.audioEngineKey)
+            if secondaryAudioEngine == audioEngine { secondaryAudioEngine = nil }
+        }
+    }
+
+    @Published var secondaryAudioEngine: AudioEnginePreference? = nil {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            adoptCurrentSpeechPolicyIfEdited()
+            if secondaryAudioEngine == audioEngine
+                || (secondaryAudioEngine == .edge && !allowOnlineAudioFallback) {
+                secondaryAudioEngine = nil
+                defaults.removeObject(forKey: "secondaryAudioEngine")
+                return
+            }
+            defaults.set(secondaryAudioEngine?.rawValue, forKey: "secondaryAudioEngine")
+        }
+    }
+    @Published var allowOnlineAudioFallback = false {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            adoptCurrentSpeechPolicyIfEdited()
+            defaults.set(allowOnlineAudioFallback, forKey: "allowOnlineAudioFallback")
+            if !allowOnlineAudioFallback && secondaryAudioEngine == .edge {
+                secondaryAudioEngine = nil
+            }
+        }
+    }
+    var selectableSecondaryAudioEngines: [AudioEnginePreference] {
+        AudioEnginePreference.supportedPreferences.filter {
+            $0 != audioEngine && ($0 != .edge || allowOnlineAudioFallback)
+        }
+    }
+    var ttsPreferences: TtsPreferences {
+        let secondary = secondaryAudioEngine.flatMap { engine -> TtsSelection? in
+            guard engine != .edge || allowOnlineAudioFallback else { return nil }
+            return .selected(engine)
+        }
+        return TtsPreferences(primary: .selected(audioEngine),
+                              secondary: secondary,
+                              allowOnlineFallback: allowOnlineAudioFallback,
+                              policyVersion: (defaults.object(forKey: "ttsPreferencesVersion") as? NSNumber)?.uint32Value)
+    }
+    private func adoptCurrentSpeechPolicyIfEdited() {
+        guard !loadingPersistedValues else { return }
+        defaults.set(2, forKey: "ttsPreferencesVersion")
+    }
+    var conversionOptions: ConversionOptions {
+        var options = ConversionOptions.selectedEngine(audioEngine, modelsRoot: Self.ttsModelsRoot())
+        options.ttsPreferences = ttsPreferences
+        options.modelsRoot = Self.ttsModelsRoot()?.path
+        options.espeakDataDirectory = Bundle.main.resourceURL?.path
+        return options
     }
 
     @Published var playbackForwardSeconds: Double = 15 {

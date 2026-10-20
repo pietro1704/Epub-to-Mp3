@@ -22,7 +22,7 @@ branch=$(git branch --show-current)
 if [[ -z "$branch" ]]; then
   branch="(detached HEAD)"
 fi
-integration=$(git config --get gitflow.branch.develop || echo develop)
+integration=master
 if [[ "$branch" == master || "$branch" == main || "$branch" == "$integration" ]]; then
   echo "Run preflight from a feature or fix ref, not '$branch'." >&2
   exit 1
@@ -46,6 +46,7 @@ if [[ "$SCOPE" == "device-workflow" ]]; then
   exit 0
 fi
 if [[ "${CI:-false}" != "true" ]]; then
+  mise run host:workflow:test
   echo 'Full Python/lint gates run in CI. Select --scope device-workflow for native host verification.'
   exit 0
 fi

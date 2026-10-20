@@ -1,0 +1,151 @@
+name: HF snapshot regression
+
+on:
+  pull_request:
+    paths: ['.github/workflows/sync-hf.yml', '.github/workflows/hf-snapshot-regression.yml', 'scripts/hf_*', 'scripts/test_hf_snapshot.rb', 'Dockerfile', '.dockerignore', 'mise.toml', 'Cargo.toml', 'Cargo.lock', 'web/**', 'crates/**', 'native/**', 'benches/**']
+  push:
+    branches: [master, 'feature/hf-binary-sync']
+    paths: ['.github/workflows/sync-hf.yml', '.github/workflows/hf-snapshot-regression.yml', 'scripts/hf_*', 'scripts/test_hf_snapshot.rb', 'Dockerfile', '.dockerignore', 'mise.toml', 'Cargo.toml', 'Cargo.lock', 'web/**', 'crates/**', 'native/**', 'benches/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-snapshot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      MISE_ENABLE_TOOLS: ruby
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          lfs: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install managed Ruby
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise install ruby
+      - name: Exercise actual Git/LFS offline transport
+        run: |
+          git lfs version
+          mise run hf:snapshot:test
+      - name: Reconstruct the actual snapshot through local LFS transport
+        run: |
+          set -euo pipefail
+          snapshot_root="$(mktemp -d "$RUNNER_TEMP/hf-regression.XXXXXX")"
+          echo "HF_REGRESSION_ROOT=$snapshot_root" >> "$GITHUB_ENV"
+          mise run hf:snapshot -- "$GITHUB_WORKSPACE" "$snapshot_root/source"
+          git init --bare --initial-branch=master "$snapshot_root/transport.git"
+          bash scripts/hf_push.sh "$snapshot_root/source" "file://$snapshot_root/transport.git"
+          git clone --no-checkout "file://$snapshot_root/transport.git" "$snapshot_root/reconstructed"
+          git -C "$snapshot_root/reconstructed" lfs install --local
+          git -C "$snapshot_root/reconstructed" checkout master
+          cmp web/src/wasm/converter_wasm_bg.wasm "$snapshot_root/reconstructed/web/src/wasm/converter_wasm_bg.wasm"
+          cmp web/public/sample.epub "$snapshot_root/reconstructed/web/public/sample.epub"
+      - name: Build Docker from the reconstructed snapshot
+        run: docker build --tag hf-snapshot-regression "$HF_REGRESSION_ROOT/reconstructed"
+      - name: Verify container health, contract and production SPA assets without models
+        run: |
+          set -euo pipefail
+          docker run --detach --name hf-snapshot-regression --publish 127.0.0.1:17860:7860 hf-snapshot-regression
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl --max-time 3 --fail --silent http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/hf-health.json"; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$ready" != true ]]; then
+            echo "::error::Container health endpoint did not become ready"
+            cat "$RUNNER_TEMP/hf-health.json" 2>/dev/null || true
+            docker logs --tail 100 hf-snapshot-regression 2>&1 || true
+            exit 1
+          fi
+
+          echo "Checking API health contract"
+          curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/health | jq -e '.status == "healthy" and .contract_version == "1"'
+          echo "Checking API capability contract"
+          curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/contract | jq -e '.backend == "rust" and (.capabilities | index("uploads") != null)'
+
+          echo "Checking built SPA entrypoint exists in the runtime image"
+          docker exec hf-snapshot-regression sh -c 'test -s /app/web/dist/index.html'
+          echo "Checking frontend root response"
+          root_status="$(curl --max-time 5 --silent --output "$RUNNER_TEMP/hf-index.html" --write-out '%{http_code}' http://127.0.0.1:17860/)"
+          root_content_type="$(curl --max-time 5 --silent --output /dev/null --write-out '%{content_type}' http://127.0.0.1:17860/)"
+          root_bytes="$(wc -c < "$RUNNER_TEMP/hf-index.html" | tr -d ' ')"
+          echo "Root HTTP status=$root_status content-type=$root_content_type bytes=$root_bytes"
+          if [[ "$root_status" != 200 ]] || [[ "$root_content_type" != text/html* ]] || ! grep -qi '<html' "$RUNNER_TEMP/hf-index.html"; then
+            echo "::error::Frontend root did not return an HTML document"
+            head -c 1000 "$RUNNER_TEMP/hf-index.html" || true
+            exit 1
+          fi
+
+          echo "Checking every JavaScript and CSS asset referenced by the production SPA"
+          asset_references="$(grep -Eo '(src|href)="[^"]+\.(js|css)(\?[^"]*)?"' "$RUNNER_TEMP/hf-index.html" | sed -E 's/^(src|href)="([^"]+)"$/\2/' | sort -u || true)"
+          if [[ -z "$asset_references" ]]; then
+            echo "::error::Production SPA did not reference a JavaScript or CSS asset"
+            exit 1
+          fi
+          while IFS= read -r asset_url; do
+            [[ -n "$asset_url" ]] || continue
+            [[ "$asset_url" == /* ]] || asset_url="/$asset_url"
+            asset_status="$(curl --max-time 10 --silent --output "$RUNNER_TEMP/hf-served-asset" --write-out '%{http_code}' "http://127.0.0.1:17860$asset_url")"
+            asset_content_type="$(curl --max-time 10 --silent --output /dev/null --write-out '%{content_type}' "http://127.0.0.1:17860$asset_url")"
+            asset_bytes="$(wc -c < "$RUNNER_TEMP/hf-served-asset" | tr -d ' ')"
+            case "$asset_url" in
+              *.js|*.js\?*)
+                asset_type_valid=false
+                [[ "$asset_content_type" == application/javascript* || "$asset_content_type" == text/javascript* ]] && asset_type_valid=true
+                ;;
+              *.css|*.css\?*)
+                asset_type_valid=false
+                [[ "$asset_content_type" == text/css* ]] && asset_type_valid=true
+                ;;
+              *) echo "::error::Unexpected production asset extension: $asset_url"; exit 1 ;;
+            esac
+            echo "Asset $asset_url HTTP status=$asset_status content-type=$asset_content_type bytes=$asset_bytes"
+            if [[ "$asset_status" != 200 || "$asset_bytes" == 0 || "$asset_type_valid" != true ]] ||
+               grep -Eqi '^[[:space:]]*<!doctype[[:space:]]+html|^[[:space:]]*<html' "$RUNNER_TEMP/hf-served-asset"; then
+              echo "::error::Production SPA asset response is missing, has the wrong content type, or is an HTML fallback: $asset_url"
+              head -c 500 "$RUNNER_TEMP/hf-served-asset" || true
+              exit 1
+            fi
+          done <<< "$asset_references"
+
+          echo "Checking configured bind address, actual IPv4 listener and absence of model weights"
+          docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0 && test "$PORT" = 7860'
+          # Linux /proc/net/tcp stores IPv4 addresses in little-endian hex.
+          # 00000000:1EB4 is the wildcard listener on TCP port 7860;
+          # 0100007F:1EB4 would indicate a loopback-only bind and must fail.
+          if ! docker exec hf-snapshot-regression sh -c "awk 'NR > 1 && \$2 == \"00000000:1EB4\" && \$4 == \"0A\" { found = 1 } END { exit !found }' /proc/net/tcp"; then
+            echo "::error::Server is not listening on 0.0.0.0:7860 inside the container"
+            docker exec hf-snapshot-regression sh -c 'cat /proc/net/tcp'
+            exit 1
+          fi
+          if ! docker exec hf-snapshot-regression sh -c 'test -z "$(find /app /data -name "*.onnx" -print -quit)"'; then
+            echo "::error::Snapshot container unexpectedly contains ONNX model weights"
+            docker exec hf-snapshot-regression sh -c 'find /app /data -name "*.onnx" -type f'
+            exit 1
+          fi
+          echo "HF reconstructed snapshot container checks passed"
+      - name: Retain bounded container diagnostics
+        if: always()
+        run: |
+          docker logs --tail 100 hf-snapshot-regression 2>&1 || true
+      - name: Remove owned container and snapshot fixtures
+        if: always()
+        run: |
+          docker rm --force hf-snapshot-regression >/dev/null 2>&1 || true
+          if [[ -n "${HF_REGRESSION_ROOT:-}" && "$HF_REGRESSION_ROOT" == "$RUNNER_TEMP/hf-regression."* ]]; then
+            rm -rf -- "$HF_REGRESSION_ROOT"
+          fi

@@ -72,14 +72,14 @@
 "settings.audioEngine" = "Motor de audio";
 "settings.audioEngineChoice" = "Motor de voz";
 "settings.audioEngineChoiceDescription" = "Edge usa voz en línea. Piper usa el modelo local instalado.";
-"settings.piperInstall" = "Instalar modelo Piper en portugués";
-"settings.piperInstalled" = "Modelo Piper instalado";
+"settings.piperInstall" = "Instalar Faber medium";
+"settings.piperInstalled" = "Faber medium instalado";
 "settings.piperNotInstalled" = "Modelo Piper no instalado";
 "settings.useBuiltInEngine" = "Usar motor de audio integrado";
 "settings.useBuiltInEngineDescription" = "Sintetiza capítulos en este dispositivo. No necesita backend.";
 "settings.allowCellularAudio" = "Permitir conversión de audio con datos móviles";
 "settings.allowCellularAudioDescription" = "De forma predeterminada, la conversión de capítulos espera Wi-Fi.";
-"settings.audioEngineFooter" = "La lectura funciona sin conexión de todas formas — esto solo afecta cómo se convierten los capítulos a audio. Desactívalo solo para forzar el modo legacy de backend remoto.";
+"settings.audioEngineFooter" = "Faber medium funciona sin conexión después de instalarlo. Edge requiere internet. La voz secundaria se usa solo para segmentos aislados que fallen.";
 "settings.remoteBackend" = "Backend remoto";
 "settings.urlNotValid" = "URL no válida";
 "settings.remoteBackendFooterMac" = "Se usa cuando el servidor integrado está apagado. Destinos comunes: una instancia `mise run web` en esta máquina, o una URL de Hugging Face Space.";
@@ -602,3 +602,15 @@
 "settings.seconds" = "%d segundos";
 
 "conversion.systemVoiceFallback" = "Se usa temporalmente la voz del dispositivo en este segmento. Se volverá a intentar Edge en el siguiente.";
+
+"settings.secondaryVoice" = "Voz secundaria";
+"settings.noSecondary" = "Ninguna";
+"settings.onlineFallback" = "Permitir respaldo en línea";
+"settings.onlineFallbackDescription" = "Permite enviar segmentos fallidos a una voz en línea.";
+"convert.usePreferences" = "Usar preferencias";
+"convert.allowSecondary" = "Permitir voz secundaria";
+"convert.allowSecondaryDescription" = "Se aplica a esta conversión al elegir una voz.";
+
+"conversion.secondaryVoiceUsed" = "Usando la voz secundaria %@ para un segmento fallido.";
+"settings.systemTts" = "Voz del sistema (Luciana cuando esté disponible)";
+"settings.systemVoice" = "Voz instalada del sistema";

@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
       __APP_VERSION__: JSON.stringify(pkg.version),
     },
     plugins: [react()],
+    worker: { format: "es" },
     publicDir: "public",
     server: {
       proxy: {
@@ -31,10 +32,6 @@ export default defineConfig(({ mode }) => {
           target: proxyTarget,
           changeOrigin: true,
           timeout: 120000,
-        },
-        "/sample.epub": {
-          target: proxyTarget,
-          changeOrigin: true,
         },
         "/api/uploads": {
           target: proxyTarget,

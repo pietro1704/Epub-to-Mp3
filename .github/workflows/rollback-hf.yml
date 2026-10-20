@@ -17,24 +17,41 @@ jobs:
     name: Rollback HF Space
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout trusted repository for target resolution
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Resolve target commit
         id: target
+        env:
+          REQUESTED_COMMIT: ${{ inputs.commit_sha }}
         run: |
-          if [ -n "${{ inputs.commit_sha }}" ]; then
-            echo "sha=${{ inputs.commit_sha }}" >> "$GITHUB_OUTPUT"
-            echo "Rolling back to commit ${{ inputs.commit_sha }}"
+          set -euo pipefail
+          if [[ -n "$REQUESTED_COMMIT" ]]; then
+            if [[ ! "$REQUESTED_COMMIT" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+              echo '::error::Expected a hexadecimal commit SHA (7 to 40 characters).'
+              exit 64
+            fi
+            SHA=$(git rev-parse --verify --end-of-options "${REQUESTED_COMMIT}^{commit}")
           else
             # Find the second-to-last version tag (skip current, use previous)
-            TAGS=$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/v*' | head -5)
-            PREV_TAG=$(echo "$TAGS" | sed -n '2p' | awk '{print $2}' | sed 's|refs/tags/||')
+            TAGS=$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/v*')
+            PREV_TAG=$(printf '%s\n' "$TAGS" | sed -n '2p' | awk '{print $2}' | sed 's|refs/tags/||')
             if [ -z "$PREV_TAG" ]; then
               echo "::error::No previous version tag found"
               exit 1
             fi
-            SHA=$(echo "$TAGS" | sed -n '2p' | awk '{print $1}')
-            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-            echo "Rolling back to $PREV_TAG ($SHA)"
+            SHA=$(printf '%s\n' "$TAGS" | sed -n '2p' | awk '{print $1}')
           fi
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Resolved target is not a complete commit SHA.'
+            exit 65
+          fi
+          printf 'sha=%s\n' "$SHA" >> "$GITHUB_OUTPUT"
+          printf 'Rolling back to commit %s\n' "$SHA"
 
       - name: Checkout target commit
         uses: actions/checkout@v7
@@ -44,6 +61,8 @@ jobs:
           lfs: false
 
       - name: Build HF-only repo snapshot
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           set -euo pipefail
           HF_SYNC_DIR="$(mktemp -d)"
@@ -66,7 +85,7 @@ jobs:
           git config user.name "hf-rollback-bot"
           git config user.email "hf-rollback-bot@users.noreply.github.com"
           git add -A
-          git commit -m "HF rollback to ${{ steps.target.outputs.sha }}"
+          git commit -m "HF rollback to $TARGET_SHA"
 
       - name: Push rollback to Hugging Face
         env:

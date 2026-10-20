@@ -1065,7 +1065,9 @@ def _summarize_resume_job(job_id: str, job_data: dict, saved_at: Optional[str] =
         "fileName": Path(job_data.get("file_path", "")).name
         if job_data.get("file_path")
         else "unknown",
-        "savedAt": saved_at or job_data.get("_saved_at") or datetime.utcnow().isoformat(),
+        "savedAt": saved_at
+        or job_data.get("_saved_at")
+        or datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "chaptersCompleted": job_data.get("chaptersCompleted", 0),
         "chaptersTotal": job_data.get("chaptersTotal"),
         "engine": job_data.get("engine"),
@@ -1228,7 +1230,7 @@ def _append_event(job: dict, message: str, *, raw: Optional[str] = None) -> None
     events.append(message)
     raw_log = job.setdefault("_raw_log", [])
     plain = raw if raw is not None else _sanitize_event_message(message)
-    timestamp = datetime.utcnow().strftime("%H:%M:%S")
+    timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
     raw_log.append(f"{timestamp} {plain}")
 
     # **OPTIMIZATION #3**: Broadcast event to SSE clients
@@ -2975,18 +2977,31 @@ async def download_output(job_id: str, filename: str) -> FileResponse:
     safe_filename = _safe_leaf_name(filename, field_name="filename")
     legacy_base = _resolve_relative_path_within_root(output_dir, job_id, must_exist=False)
     file_path: Optional[Path] = None
+    output_prefix = os.path.realpath(output_dir).rstrip(os.sep) + os.sep
 
     for candidate_root in (base_dir, legacy_base):
         try:
             matches = sorted(
                 path
                 for path in candidate_root.rglob("*")
-                if path.is_file() and path.name == safe_filename
+                if path.name == safe_filename
             )
         except OSError:
             continue
-        if matches:
-            file_path = matches[0]
+        for candidate in matches:
+            try:
+                resolved = _resolve_path_within_root(candidate_root, candidate, must_exist=True)
+                # Retain the book boundary and independently require the trusted output root.
+                resolved_path = os.path.realpath(resolved)
+                if not resolved_path.startswith(output_prefix):
+                    continue
+                if not Path(resolved_path).is_file():
+                    continue
+            except (OSError, RuntimeError, ValueError):
+                continue
+            file_path = Path(resolved_path)
+            break
+        if file_path is not None:
             break
 
     if file_path is None:

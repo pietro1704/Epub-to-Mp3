@@ -1,0 +1,418 @@
+name: Faber runtime integration
+
+on:
+  pull_request:
+  push:
+    branches:
+      - ci/embedded-jni-job-identity
+      - feature/piper-native-fallback
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faber-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  ffi-jni:
+    name: Faber FFI JNI contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - name: Test Apple runtime packaging with owned process fixtures
+        run: mise exec -- ruby scripts/test_bundle_onnxruntime_apple.rb
+      - name: Test Android inference runner shell and failure propagation
+        run: mise exec -- ruby scripts/test_verify_android_piper_inference.rb
+      - name: Test JNI-enabled preference and streaming contracts
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          for contract in typed_preferences controlled_typed_options queued_streaming_ opaque_tts_policy_state; do
+            mise exec -- cargo test --locked -p converter-ffi --lib --features android-jni "$contract" -- --test-threads=1 \
+              |& tee ".reports/tts-preferences/jni-$contract.log"
+          done
+      - name: Retain JNI test artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-jni-contracts
+          path: .reports/tts-preferences
+          if-no-files-found: ignore
+
+  android-package:
+    name: Faber Android APK and ARM64 ABI-translation inference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
+      ANDROID_VERIFICATION_MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity' && 'identity' || 'full' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Enable and require hosted Linux KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle --timeout=10
+          id
+          stat -c '%F %a %U:%G %n' /dev/kvm
+          if ! { test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm; }; then
+            echo '::error::Hosted Android inference requires readable/writable /dev/kvm.'
+            exit 1
+          fi
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install host build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config
+      - run: mise install
+      - name: Accept Android SDK licenses
+        run: |
+          set +o pipefail
+          yes | mise exec -- sdkmanager --licenses
+          result=${PIPESTATUS[1]}
+          exit "$result"
+      - name: Install project Android target dependencies
+        run: |
+          mise run android:embedded-deps
+          mise exec -- rustup target add aarch64-linux-android
+      - name: Build fresh Piper JNI and audited ARM64 APK
+        id: main-ui-apk
+        env:
+          EPUB2MP3_ANDROID_VERIFICATION: "1"
+          UI_PACKAGE: com.pietrocode.epubtomp3.flutter_app.verification
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mise run flutter:build-apk-debug
+          apk="$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
+          application_id="$(mise exec -- apkanalyzer manifest application-id "$apk")"
+          test "$application_id" = "$UI_PACKAGE"
+          evidence="$GITHUB_WORKSPACE/.reports/android-ui"
+          mkdir -p "$evidence"
+          cp "$apk" "$evidence/app-debug-ui-verification.apk"
+          cp "$GITHUB_WORKSPACE/target/piper-android/aarch64-linux-android/release/libconverter_ffi.so.runtime.json" "$evidence/"
+          mise exec -- ruby -rjson -rdigest -e '
+            root = ENV.fetch("GITHUB_WORKSPACE")
+            evidence = File.join(root, ".reports/android-ui")
+            source = IO.popen(%w[git rev-parse HEAD], chdir: root, &:read).strip
+            abort "Source identity differs from the requested head" unless source == ENV.fetch("PR_HEAD_SHA")
+            runtime = JSON.parse(File.read(File.join(evidence, "libconverter_ffi.so.runtime.json")))
+            metadata = {
+              sourceCommit: source,
+              runId: ENV.fetch("GITHUB_RUN_ID"),
+              runAttempt: ENV.fetch("GITHUB_RUN_ATTEMPT"),
+              target: "lib/main.dart",
+              applicationId: ENV.fetch("UI_PACKAGE"),
+              apkSha256: Digest::SHA256.file(File.join(evidence, "app-debug-ui-verification.apk")).hexdigest,
+              nativeRuntime: runtime,
+              physicalDeviceTestExecuted: false
+            }
+            File.write(File.join(evidence, "build-identity.json"), JSON.pretty_generate(metadata))
+          '
+      - name: Test Android background and selection adapters
+        working-directory: flutter_app/android
+        run: mise exec -- ./gradlew :app:testDebugUnitTest
+      - name: Build the integration target as an audited ARM64-only APK
+        working-directory: flutter_app
+        run: |
+          identity_only=false
+          if [[ "$ANDROID_VERIFICATION_MODE" == identity ]]; then identity_only=true; fi
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --debug --target-platform android-arm64 --target integration_test/android_piper_inference_test.dart --dart-define="ANDROID_JOB_IDENTITY_ONLY=$identity_only"
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- ruby ../scripts/package_converter_ffi_android.rb --audit --apk "$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
+      - name: Run actual Piper inference in the packaged ARM64 app
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          # API 35 Google APIs x86_64 exposes arm64-v8a through libndk_translation.so.
+          # Keep the guest x86_64 because hosted x86_64 QEMU rejects an ARM64 guest.
+          arch: x86_64
+          profile: pixel_2
+          avd-name: faber-arm64-abi-translation
+          force-avd-creation: true
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -no-audio -no-boot-anim -accel on
+          script: bash scripts/verify_android_piper_inference.sh "$ANDROID_VERIFICATION_MODE"
+      - name: Retain APK, native identity and Android test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-android-package
+          path: |
+            flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+            target/piper-android/aarch64-linux-android/release/libconverter_ffi.so.runtime.json
+            flutter_app/build/app/reports/tests
+            flutter_app/build/app/test-results
+            .reports/tts-preferences/android-inference.log
+          if-no-files-found: warn
+
+      - name: Build the private-fixture APK for physical Android verification
+        id: device-fixture-apk
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feature/piper-native-fallback' || github.ref == 'refs/heads/feature/piper-native-fallback'
+        working-directory: flutter_app
+        env:
+          EPUB2MP3_ANDROID_VERIFICATION: "1"
+          FIXTURE_PACKAGE: com.pietrocode.epubtomp3.flutter_app.verification
+          FIXTURE_DIRECTORY: /data/user/0/com.pietrocode.epubtomp3.flutter_app.verification/files/test-fixtures
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          connected_devices="$(adb devices)"
+          if printf '%s\n' "$connected_devices" | awk 'NR > 1 && $1 == "emulator-5554" { found = 1 } END { exit !found }'; then
+            echo '::error::The inference emulator must be stopped before building the device fixture APK.'
+            exit 1
+          fi
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk \
+            --debug --no-pub --target-platform android-arm64 \
+            --target integration_test/android_real_books_inference_test.dart \
+            --dart-define="REAL_BOOK_FIXTURE_MANIFEST=$FIXTURE_DIRECTORY/manifest.json" \
+            --dart-define="FABER_FIXTURE_DIRECTORY=$FIXTURE_DIRECTORY/tts-models/pt_BR-faber-medium"
+          apk="$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
+          mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- ruby ../scripts/package_converter_ffi_android.rb --audit --apk "$apk"
+          application_id="$(mise exec -- apkanalyzer manifest application-id "$apk")"
+          test "$application_id" = "$FIXTURE_PACKAGE"
+          evidence="$GITHUB_WORKSPACE/.reports/android-device-fixture"
+          mkdir -p "$evidence"
+          cp "$apk" "$evidence/app-debug-verification.apk"
+          cp "$GITHUB_WORKSPACE/target/piper-android/aarch64-linux-android/release/libconverter_ffi.so.runtime.json" "$evidence/"
+          mise exec -- ruby -rjson -rdigest -e '
+            root = ENV.fetch("GITHUB_WORKSPACE")
+            evidence = File.join(root, ".reports/android-device-fixture")
+            source = IO.popen(%w[git rev-parse HEAD], chdir: root, &:read).strip
+            abort "Source identity differs from the requested head" unless source == ENV.fetch("PR_HEAD_SHA")
+            driver = "flutter_app/integration_test/android_real_books_inference_test.dart"
+            runtime = JSON.parse(File.read(File.join(evidence, "libconverter_ffi.so.runtime.json")))
+            metadata = {
+              sourceCommit: source,
+              runId: ENV.fetch("GITHUB_RUN_ID"),
+              runAttempt: ENV.fetch("GITHUB_RUN_ATTEMPT"),
+              target: "integration_test/android_real_books_inference_test.dart",
+              driverSha256: Digest::SHA256.file(File.join(root, driver)).hexdigest,
+              applicationId: ENV.fetch("FIXTURE_PACKAGE"),
+              fixtureManifest: "#{ENV.fetch("FIXTURE_DIRECTORY")}/manifest.json",
+              faberFixtureDirectory: "#{ENV.fetch("FIXTURE_DIRECTORY")}/tts-models/pt_BR-faber-medium",
+              apkSha256: Digest::SHA256.file(File.join(evidence, "app-debug-verification.apk")).hexdigest,
+              nativeRuntime: runtime,
+              physicalDeviceTestExecuted: false
+            }
+            File.write(File.join(evidence, "build-identity.json"), JSON.pretty_generate(metadata))
+          '
+      - name: Retain the physical-device fixture APK and build identity
+        if: success() && steps.device-fixture-apk.outcome == 'success'
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-android-device-fixture
+          path: .reports/android-device-fixture
+          if-no-files-found: error
+
+      - name: Retain the normal Android UI APK and build identity
+        if: success() && steps.main-ui-apk.outcome == 'success'
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-android-ui
+          path: .reports/android-ui
+          if-no-files-found: error
+
+  macos-preferences:
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity') }}
+    name: Faber macOS preferences and installation (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      EXPECTED_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require the canonical hosted Xcode 16.4 toolchain
+        run: |
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | tee "$RUNNER_TEMP/faber-xcode-version.txt"
+          grep -Fx 'Xcode 16.4' "$RUNNER_TEMP/faber-xcode-version.txt"
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - name: Install Xcode project generator
+        run: brew install xcodegen
+      - name: Build embedded host runtime without Simulator
+        run: mise run converter-ffi:build
+      - name: Verify actual FFI and pinned ORT architectures
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          ffi_arch="$(xcrun lipo -archs target/release/libconverter_ffi.dylib)"
+          test "$ffi_arch" = "$EXPECTED_ARCH"
+          runtime_root="target/onnxruntime-macos-prebuilt/$EXPECTED_ARCH"
+          ort_arch="$(xcrun lipo -archs "$runtime_root/lib/libonnxruntime.dylib")"
+          test "$ort_arch" = "$EXPECTED_ARCH"
+          mise exec -- ruby -rjson -e '
+            manifest = JSON.parse(File.read(ARGV.fetch(0)))
+            actual = manifest.fetch("architecture")
+            abort "ORT manifest architecture mismatch" unless actual == ARGV.fetch(1)
+            puts "ORT manifest architecture: #{actual}"
+          ' "$runtime_root/runtime.json" "$EXPECTED_ARCH"
+          printf 'Host: %s\nFFI: %s\nORT: %s\n' "$(uname -m)" "$ffi_arch" "$ort_arch" > .reports/tts-preferences/native-architectures.log
+          cat .reports/tts-preferences/native-architectures.log
+      - name: Generate native project with actual FFI artifact
+        working-directory: ios/EpubToMp3
+        run: xcodegen generate
+      - name: Test the real Foundation package without native FFI opt-in
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          mise run apple:foundation:test 2>&1 | tee .reports/tts-preferences/foundation.log
+      - name: Explicitly install checksum-pinned native Faber test model
+        run: |
+          model_dir="$RUNNER_TEMP/faber-models"
+          mkdir -p "$model_dir"
+          base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
+          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx" -o "$model_dir/pt_BR-faber-medium.onnx"
+          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx.json" -o "$model_dir/pt_BR-faber-medium.onnx.json"
+          printf '%s  %s\n' \
+            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$model_dir/pt_BR-faber-medium.onnx" \
+            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$model_dir/pt_BR-faber-medium.onnx.json" \
+            | shasum -a 256 --check
+          echo "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$model_dir" >> "$GITHUB_ENV"
+      - name: Run real macOS preference and installation XCTest
+        working-directory: ios/EpubToMp3
+        run: |
+          set -euo pipefail
+          mkdir -p ../../.reports/tts-preferences
+          test_arguments=(
+            -project EpubToMp3.xcodeproj
+            -scheme EpubToMp3-UnitTests -destination 'platform=macOS'
+            -derivedDataPath .build/faber-ci
+            -jobs 1 -parallel-testing-enabled NO
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+            "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$EPUB2MP3_PIPER_TEST_MODEL_ROOT"
+            -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests
+            -only-testing:EpubToMp3Tests/ConvertViewModelTests
+            -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests
+            -only-testing:EpubToMp3Tests/PlatformSpeechSynthesizerTests
+            -only-testing:EpubToMp3Tests/ReaderProgressiveListeningTests
+            -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests
+          )
+          xcodebuild build-for-testing "${test_arguments[@]}" \
+            | tee ../../.reports/tts-preferences/macos-prefs-build.log
+          xcodebuild test-without-building "${test_arguments[@]}" \
+            -resultBundlePath ../../.reports/tts-preferences/macos-prefs.xcresult \
+            | tee ../../.reports/tts-preferences/macos-prefs.log
+          grep -F 'FABER_NATIVE firstChunkSeconds=' ../../.reports/tts-preferences/macos-prefs.log
+      - name: Capture sanitized existing test build metadata without execution
+        if: always()
+        env:
+          INVENTORY_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          INVENTORY_EVENT_SHA: ${{ github.sha }}
+          INVENTORY_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          export INVENTORY_CHECKOUT_SHA="$(git rev-parse HEAD)"
+          export INVENTORY_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          if state=$(git status --porcelain --untracked-files=normal 2>/dev/null); then
+            if [ -z "$state" ]; then
+              export INVENTORY_WORKTREE_STATE=clean
+            else
+              export INVENTORY_WORKTREE_STATE=dirty
+            fi
+          else
+            export INVENTORY_WORKTREE_STATE=unknown
+          fi
+          unset state
+          mise exec -- python scripts/capture_native_test_metadata.py \
+            --products ios/EpubToMp3/.build/faber-ci/Build/Products \
+            --output .reports/tts-preferences/test-metadata \
+            --xcode-version-file "$RUNNER_TEMP/faber-xcode-version.txt"
+      - name: Remove explicitly downloaded native test weights
+        if: always()
+        run: |
+          rm -f -- "$RUNNER_TEMP/faber-models/pt_BR-faber-medium.onnx" "$RUNNER_TEMP/faber-models/pt_BR-faber-medium.onnx.json"
+      - name: Retain macOS XCTest evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-macos-prefs-${{ matrix.arch }}
+          path: .reports/tts-preferences
+          if-no-files-found: warn
+
+  browser-runtime:
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/ci/embedded-jni-job-identity') }}
+    name: Faber real browser runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      MISE_ENABLE_TOOLS: python,rust,node,npm,cargo:wasm-bindgen-cli
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - name: Test browser server ownership and process cleanup
+        run: mise exec -- node --test web/scripts/browser-server.node-tests.mjs
+      - name: Build fresh browser WASM
+        run: |
+          mise exec -- rustup target add wasm32-unknown-unknown
+          mise run web:wasm-build
+      - name: Verify fresh WASM voice and locale contracts
+        run: mise run web:wasm-contract:test
+      - name: Install browser prerequisites and build production assets
+        working-directory: web
+        run: |
+          mise exec -- npm ci --no-audit --no-fund
+          mise exec -- npx playwright install --with-deps chromium
+          mise exec -- npm run build
+      - name: Explicitly install checksum-pinned Faber test model
+        run: |
+          mkdir -p models
+          base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
+          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx" -o models/pt_BR-faber-medium.onnx
+          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx.json" -o models/pt_BR-faber-medium.onnx.json
+          printf '%s  %s\n' \
+            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' 'models/pt_BR-faber-medium.onnx' \
+            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' 'models/pt_BR-faber-medium.onnx.json' \
+            | sha256sum --check
+      - name: Exercise real browser storage and development inference
+        run: |
+          mise exec -- node web/scripts/verify-browser-store.mjs
+          mise exec -- node web/scripts/verify-browser-tts.mjs
+      - name: Exercise real production inference
+        env:
+          TTS_BROWSER_MODE: production
+        run: mise exec -- node web/scripts/verify-browser-tts.mjs
+      - name: Retain browser reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-browser-runtime
+          path: .reports/tts-preferences
+          if-no-files-found: warn

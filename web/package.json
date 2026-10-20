@@ -16,15 +16,22 @@
     "test": "NODE_OPTIONS='--max-old-space-size=4096' vitest run",
     "test:watch": "vitest",
     "cap:ios": "npx cap open ios",
-    "cap:android": "npx cap open android"
+    "cap:android": "npx cap open android",
+    "predev": "node scripts/prepare-tts-runtime.mjs",
+    "prebuild": "node scripts/prepare-tts-runtime.mjs",
+    "prebuild:desktop": "node scripts/prepare-tts-runtime.mjs",
+    "prebuild:mobile:bundle": "node scripts/prepare-tts-runtime.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8",
     "@capacitor/core": "^8",
     "@capacitor/ios": "^8",
+    "@diffusionstudio/piper-wasm": "1.0.0",
+    "@mintplex-labs/piper-tts-web": "1.0.3",
     "clsx": "^2.1.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "onnxruntime-web": "1.18.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "overrides": {
     "undici": "^7.30.0",
@@ -35,24 +42,25 @@
   "devDependencies": {
     "@capacitor/cli": "^8",
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "1.56.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.7",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@typescript-eslint/eslint-plugin": "^8.71.1",
-    "@typescript-eslint/parser": "^8.71.1",
+    "@typescript-eslint/eslint-plugin": "^8.71.2",
+    "@typescript-eslint/parser": "^8.71.2",
     "@vitejs/plugin-react": "^6.1.1",
-    "baseline-browser-mapping": "^2.11.28",
-    "eslint": "^10.11.0",
+    "baseline-browser-mapping": "^2.11.29",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.12.0",
-    "jsdom": "^30.1.2",
+    "jsdom": "^30.1.3",
     "prettier": "^3.9.10",
     "terser": "^5.51.2",
     "typescript": "^6.0.3",
     "vite": "^8.3.4",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.5"
   }
 }

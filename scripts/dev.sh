@@ -186,12 +186,13 @@ start_backend_watcher() {
 }
 
 start_backend() {
-  local -a backend_cmd=(env HOST="$BACKEND_HOST" PORT="$BACKEND_PORT" mise exec -- cargo run -p converter-server)
+  local reload=0
   if [[ "$BACKEND_RELOAD" == "1" || "$BACKEND_RELOAD" == "true" || "$BACKEND_RELOAD" == "yes" ]]; then
-    backend_cmd+=(--reload)
+    reload=1
   fi
-  echo "[dev] starting backend: ${backend_cmd[*]}"
-  "${backend_cmd[@]}" &
+  echo "[dev] building and starting backend on http://$BACKEND_HOST:$BACKEND_PORT"
+  env BACKEND_HOST="$BACKEND_HOST" BACKEND_PORT="$BACKEND_PORT" BACKEND_RELOAD="$reload" \
+    bash "$PROJECT_ROOT/scripts/dev_backend.sh" &
   BACK_PID=$!
 }
 

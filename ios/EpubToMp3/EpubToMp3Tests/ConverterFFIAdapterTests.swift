@@ -3,15 +3,45 @@ import XCTest
 @testable import EpubToMp3
 
 final class ConverterFFIAdapterTests: XCTestCase {
-    func testMissingArtifactReturnsTypedUnavailableError() {
-        let adapter = ConverterFFIAdapter(bundle: Bundle(for: ConverterFFIAdapterTests.self))
-        XCTAssertThrowsError(try adapter.openBook(at: URL(fileURLWithPath: "/tmp/book.epub"))) { error in
+    func testMissingOverrideRemainsUnavailableWithAValidBundledCatalog() throws {
+        let bundled = ConverterFFIAdapter(bundle: Bundle(for: ConverterFFIAdapterTests.self))
+        let catalogData = try bundled.ttsModels()
+        let catalogObject = try JSONSerialization.jsonObject(with: catalogData)
+        let catalog = try XCTUnwrap(catalogObject as? [[String: Any]])
+        XCTAssertTrue(catalog.contains { $0["id"] as? String == "pt_BR-faber-medium" })
+
+        let fixture = try makeArtifactFixture()
+        let marker = fixture.root.appendingPathComponent("preserved.txt")
+        let original = try Data(contentsOf: marker)
+        let before = try FileManager.default.contentsOfDirectory(atPath: fixture.root.path)
+        let missing = ConverterFFIAdapter(libraryURL: fixture.libraryURL)
+        XCTAssertThrowsError(try missing.ttsModels()) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
+        XCTAssertEqual(try Data(contentsOf: marker), original)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path), before)
     }
 
-    func testMissingArtifactReturnsUnavailableForTtsCatalog() {
-        let adapter = ConverterFFIAdapter(bundle: Bundle(for: ConverterFFIAdapterTests.self))
+    func testMissingArtifactReturnsTypedInvalidErrorBeforeOpeningBook() throws {
+        let fixture = try makeArtifactFixture()
+        let before = try FileManager.default.contentsOfDirectory(atPath: fixture.root.path)
+        let adapter = ConverterFFIAdapter(libraryURL: fixture.libraryURL)
+        XCTAssertThrowsError(try adapter.openBook(at: fixture.root.appendingPathComponent("missing.epub"))) { error in
+            guard case .artifactInvalid(let reason)? = error as? EmbeddedConverterError else {
+                return XCTFail("Expected typed dylib load failure, got \(error)")
+            }
+            XCTAssertFalse(reason.isEmpty)
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path), before)
+    }
+
+    func testMissingArtifactReturnsUnavailableForTtsCatalogWithoutFileIO() throws {
+        let fixture = try makeArtifactFixture()
+        let before = try FileManager.default.contentsOfDirectory(atPath: fixture.root.path)
+        let marker = fixture.root.appendingPathComponent("preserved.txt")
+        let markerBytes = try Data(contentsOf: marker)
+        let models = fixture.root.appendingPathComponent("models", isDirectory: true)
+        let adapter = ConverterFFIAdapter(libraryURL: fixture.libraryURL)
         XCTAssertThrowsError(try adapter.ttsModels()) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
@@ -21,29 +51,37 @@ final class ConverterFFIAdapterTests: XCTestCase {
         XCTAssertThrowsError(try adapter.ttsDefaultEngine(language: "pt-BR", platform: "ios")) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
-        XCTAssertThrowsError(try adapter.installTtsModel(modelID: "kokoro-82m", url: "https://example.invalid/model", sha256: String(repeating: "0", count: 64), root: "/tmp/models")) { error in
+        // Even a future test failure must not point at an online model or a
+        // shared model directory. The unavailable adapter rejects before I/O.
+        XCTAssertThrowsError(try adapter.installTtsModel(modelID: "test-unavailable-model", url: fixture.root.appendingPathComponent("missing-model").absoluteString, sha256: String(repeating: "0", count: 64), root: models.path)) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
-        XCTAssertThrowsError(try adapter.removeTtsModel(modelID: "kokoro-82m", root: "/tmp/models")) { error in
+        XCTAssertThrowsError(try adapter.removeTtsModel(modelID: "test-unavailable-model", root: models.path)) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
-        XCTAssertThrowsError(try adapter.ttsModelMetadata(modelID: "kokoro-82m", root: "/tmp/models")) { error in
+        XCTAssertThrowsError(try adapter.ttsModelMetadata(modelID: "test-unavailable-model", root: models.path)) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
-        XCTAssertThrowsError(try adapter.installTtsModelFromCatalog(modelID: "kokoro-82m", root: "/tmp/models")) { error in
+        XCTAssertThrowsError(try adapter.installTtsModelFromCatalog(modelID: "test-unavailable-model", root: models.path)) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path), before)
+        XCTAssertEqual(try Data(contentsOf: marker), markerBytes)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: models.path))
     }
 
-    func testInvalidArtifactReturnsTypedUnavailableErrorWithoutRuntimeConversion() throws {
-        let bundleURL = try makeBundle(with: Data("not a Mach-O dylib".utf8), name: "converter_ffi")
-        defer { try? FileManager.default.removeItem(at: bundleURL) }
-        let adapter = ConverterFFIAdapter(bundle: Bundle(url: bundleURL)!)
-        XCTAssertThrowsError(try adapter.openBook(at: URL(fileURLWithPath: "/tmp/book.epub"))) { error in
-            guard case .artifactUnavailable? = error as? EmbeddedConverterError else {
-                return XCTFail("Expected unavailable artifact, got \(error)")
+    func testInvalidArtifactReturnsTypedInvalidErrorWithoutRuntimeConversion() throws {
+        let fixture = try makeArtifactFixture(with: Data("not a Mach-O dylib".utf8))
+        let artifactBytes = try Data(contentsOf: fixture.libraryURL)
+        let adapter = ConverterFFIAdapter(libraryURL: fixture.libraryURL)
+        XCTAssertThrowsError(try adapter.openBook(at: fixture.root.appendingPathComponent("missing.epub"))) { error in
+            guard case .artifactInvalid(let reason)? = error as? EmbeddedConverterError else {
+                return XCTFail("Expected typed dylib load failure, got \(error)")
             }
+            XCTAssertFalse(reason.isEmpty)
         }
+        XCTAssertEqual(try Data(contentsOf: fixture.libraryURL), artifactBytes)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("missing.epub").path))
     }
 
     func testConverterFFISymbolSignaturesMatchPublishedABI() {
@@ -51,10 +89,13 @@ final class ConverterFFIAdapterTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<UnsafeMutableRawPointer?>.size, MemoryLayout<UnsafeMutablePointer<CChar>?>.size)
     }
 
-    private func makeBundle(with dylib: Data, name: String) throws -> URL {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try dylib.write(to: root.appendingPathComponent("\(name).dylib"))
-        return root
+    private func makeArtifactFixture(with dylib: Data? = nil) throws -> (root: URL, libraryURL: URL) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ffi-isolation-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        try Data("Preserve this fixture".utf8).write(to: root.appendingPathComponent("preserved.txt"))
+        let libraryURL = root.appendingPathComponent("converter_ffi.dylib")
+        if let dylib { try dylib.write(to: libraryURL) }
+        return (root, libraryURL)
     }
 }

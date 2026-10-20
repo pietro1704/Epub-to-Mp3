@@ -1,0 +1,45 @@
+name: Android UI session lifecycle contracts
+
+on:
+  push:
+    branches: [master, feature/android-ui-session-cleanup, feature/android-ui-activity-regression, feature/android-ui-validation-reasons]
+    paths:
+      - scripts/android_ui_session.py
+      - scripts/test_android_ui_session.py
+      - .github/workflows/android-ui-session-contracts.yml
+  pull_request:
+    paths:
+      - scripts/android_ui_session.py
+      - scripts/test_android_ui_session.py
+      - .github/workflows/android-ui-session-contracts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ui-session-contracts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lifecycle-contracts:
+    name: Owned session and device cleanup contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      MISE_ENABLE_TOOLS: python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install the project Python toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Run subprocess contracts with fake ADB only
+        run: |
+          mise exec -- python --version
+          mise exec -- python scripts/test_android_ui_session.py -v

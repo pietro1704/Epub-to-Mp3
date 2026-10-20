@@ -26,9 +26,16 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.readerLayout = .paginated
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let restoredPosition = expectation(description: "Saved reader position has committed")
         let reader = MacReaderViewController(library: library, settings: settings, player: player,
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
-            preparedFulltextReader: { _ in fulltext }, preparedFulltextWriter: { _, _ in })
+            preparedFulltextReader: { _ in fulltext }, preparedFulltextWriter: { _, _ in },
+            initialPositionScheduler: { operation in
+                DispatchQueue.main.async {
+                    operation()
+                    restoredPosition.fulfill()
+                }
+            })
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 700),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -42,6 +49,9 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         window.contentViewController = reader
         window.makeKeyAndOrderFront(nil)
         reader.setBook(book.id)
+        // Text can be laid out before the queued initial-position restore.
+        // Scroll notifications intentionally ignore that restoration phase.
+        await fulfillment(of: [restoredPosition], timeout: 10)
         var scroll: NSScrollView?
         for _ in 0..<100 {
             reader.view.layoutSubtreeIfNeeded()
@@ -135,6 +145,14 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         player.resume()
         player.pause()
         standard.set(0.6, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        // Transport notifications and the AVPlayer observer update AppKit on
+        // subsequent run-loop turns; wait for the actual paused control.
+        for _ in 0..<20 where !buttons(in: controller.view).contains(where: {
+            $0.toolTip == L10n.string("player.play")
+        }) {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertFalse(player.isPlaying)
         let play = try XCTUnwrap(buttons(in: controller.view).first { $0.toolTip == L10n.string("player.play") })
         play.performClick(nil)
         let sheet = try await waitForSheet(window)

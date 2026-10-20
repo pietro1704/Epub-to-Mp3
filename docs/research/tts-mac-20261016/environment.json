@@ -1,0 +1,16 @@
+{
+  "python": "3.12.10",
+  "macos": "15.8.1",
+  "machine": "x86_64",
+  "packages": {
+    "numpy": "2.5.3",
+    "sherpa-onnx": "1.13.8",
+    "onnxruntime": "1.23.2",
+    "soundfile": "0.14.0",
+    "sentencepiece": "0.2.2",
+    "safetensors": "0.8.0",
+    "huggingface_hub": "2.2.0",
+    "httpx2": "2.13.1"
+  },
+  "sherpa_native_ort": "1.28.2"
+}

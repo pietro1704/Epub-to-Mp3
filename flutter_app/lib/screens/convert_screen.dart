@@ -5,10 +5,17 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import '../services/manual_conversion_output.dart';
 import '../services/platform_voice_notice.dart';
 import '../services/embedded_converter.dart';
+import '../services/desktop_embedded_converter.dart';
+import 'library_screen.dart' show libraryStoreProvider;
 
 import '../state/providers.dart';
+import '../l10n/app_localizations.dart';
+import '../models/tts_preferences.dart';
 
 class ConversionRequest {
   const ConversionRequest({
@@ -16,12 +23,14 @@ class ConversionRequest {
     required this.engine,
     required this.voice,
     required this.language,
+    this.ttsPreferences = const TtsPreferences.appDefaults(),
     this.chapterStart,
     this.chapterEnd,
     this.includeCover = true,
     this.normalizeAudio = true,
   });
 
+  final TtsPreferences ttsPreferences;
   final String filePath;
   final String engine;
   final String voice;
@@ -46,7 +55,9 @@ class ConvertScreen extends ConsumerStatefulWidget {
 
 class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   late String? _filePath = widget.initialFilePath;
-  String _engine = 'edge';
+  List<TtsSelection> _usedSelections = const [];
+  String _engine = 'preferences';
+  bool _allowSecondary = false;
   String _voice = 'pt-BR-AntonioNeural';
   String _language = 'pt';
   final _startController = TextEditingController();
@@ -56,10 +67,18 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   bool _submitting = false;
   String? _jobId;
   String? _error;
+  String? _historyError;
   final _voiceSession = PlatformVoiceNoticeSession();
   StreamSubscription<dynamic>? _voiceSubscription;
   AndroidEmbeddedConverter? _activeAndroidConverter;
+  DesktopEmbeddedConverter? _activeDesktopConverter;
   String? _activeNativeOutputPath;
+
+  bool get _usesEmbeddedConversion =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.windows);
 
   @override
   void initState() {
@@ -95,6 +114,9 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     final output = _activeNativeOutputPath;
     if (_submitting && output != null && converter != null) {
       unawaited(converter.cancelConversion(outputPath: output));
+    }
+    if (_submitting && output != null && _activeDesktopConverter != null) {
+      unawaited(_activeDesktopConverter!.cancelConversion(outputPath: output));
     }
     _voiceSession.end();
     _voiceSubscription?.cancel();
@@ -151,26 +173,78 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   Future<void> _submit() async {
     final path = _filePath;
     if (path == null || path.isEmpty || _submitting) return;
+    final startText = _startController.text.trim();
+    final endText = _endController.text.trim();
+    final start = int.tryParse(startText);
+    final end = int.tryParse(endText);
+    bool validPosition(String text, int? position) =>
+        text.isEmpty ||
+        (RegExp(r'^[0-9]+$').hasMatch(text) &&
+            position != null &&
+            position <= 2147483647);
+    String? rangeError;
+    if (!validPosition(startText, start) || !validPosition(endText, end)) {
+      rangeError =
+          'Chapter positions must be non-negative integers up to 2147483647.';
+    } else if (start == null && end != null) {
+      rangeError = 'Enter From when specifying To.';
+    } else if (start != null && end != null && end < start) {
+      rangeError = 'To must be greater than or equal to From.';
+    }
+    if (rangeError != null) {
+      setState(() {
+        _error = rangeError;
+        _jobId = null;
+      });
+      return;
+    }
+    final startedAt = DateTime.now().toUtc();
+    final jobStore = ref.read(localConversionJobStoreProvider);
+    final matchingBooks = ref
+        .read(libraryStoreProvider)
+        .books
+        .where((book) => book.filePath == path);
+    final bookId = matchingBooks.isEmpty ? path : matchingBooks.first.id;
     setState(() {
       _submitting = true;
       _error = null;
+      _historyError = null;
       _jobId = null;
+      _usedSelections = const [];
     });
     try {
+      final saved = ref.read(settingsProvider).ttsPreferences;
+      final manualPrimary = _engine == 'piper'
+          ? TtsSelection.faber
+          : TtsSelection(engine: 'edge', voice: _voice);
+      final selected = _engine == 'preferences'
+          ? saved
+          : TtsPreferences(
+              primary: manualPrimary,
+              secondary:
+                  _allowSecondary &&
+                      jsonEncode(saved.secondary?.toJson()) !=
+                          jsonEncode(manualPrimary.toJson())
+                  ? saved.secondary
+                  : null,
+              allowOnlineFallback: _allowSecondary && saved.allowOnlineFallback,
+              policyVersion: saved.policyVersion,
+            );
       final request = ConversionRequest(
         filePath: path,
-        engine: 'edge',
-        voice: _voice,
+        ttsPreferences: selected,
+        engine: selected.primary.engine,
+        voice: selected.primary.voice ?? selected.primary.modelId ?? '',
         language: _language,
-        chapterStart: int.tryParse(_startController.text),
-        chapterEnd: int.tryParse(_endController.text),
+        chapterStart: start,
+        chapterEnd: end,
         includeCover: _includeCover,
         normalizeAudio: _normalizeAudio,
       );
       final starter =
           widget.startConversion ??
           (request) async {
-            if (defaultTargetPlatform == TargetPlatform.android) {
+            if (_usesEmbeddedConversion) {
               final root = await getApplicationDocumentsDirectory();
               final output =
                   '${root.path}/audiobooks/${DateTime.now().millisecondsSinceEpoch}';
@@ -179,31 +253,95 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
               if (converter is AndroidEmbeddedConverter) {
                 _activeAndroidConverter = converter;
               }
+              if (converter is DesktopEmbeddedConverter) {
+                _activeDesktopConverter = converter;
+              }
+              final support = await getApplicationSupportDirectory();
               return converter.convert(
+                optionsJson: request.ttsPreferences.optionsJson(
+                  modelsRoot: '${support.path}/tts-models',
+                  language: request.language,
+                ),
                 inputPath: request.filePath,
                 outputPath: output,
                 chapterStart: request.chapterStart,
                 chapterEnd: request.chapterEnd,
               );
             }
-            return ref
-                .read(apiClientProvider)
-                .uploadAndConvert(
-                  request.filePath,
-                  engine: request.engine,
-                  voice: request.voice,
-                  language: request.language,
-                  chapterStart: request.chapterStart,
-                  chapterEnd: request.chapterEnd,
-                  includeCover: request.includeCover,
-                  normalizeAudio: request.normalizeAudio,
-                );
+            throw EmbeddedConverterUnavailable(
+              'No local Rust conversion adapter is registered for this platform.',
+            );
           };
       _voiceSession.begin(request.filePath);
-      final jobId = await starter(request);
+      final result = await starter(request);
+      var jobId = result;
+      var actual = <TtsSelection>[];
+      var nativeFallbackUsed = false;
+      String? historyError;
+      try {
+        var raw = result;
+        final manifestFile = File(raw);
+        if (raw.endsWith('.json') && manifestFile.isAbsolute) {
+          raw = await manifestFile.readAsString();
+        }
+        Map<String, dynamic>? completedManifest;
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map) {
+            completedManifest = Map<String, dynamic>.from(
+              decoded['manifest'] is Map ? decoded['manifest'] as Map : decoded,
+            );
+          }
+        } on FormatException {
+          // An injected legacy ID does not establish a manifest or history.
+          if (raw.trimLeft().startsWith('{') || raw != result) rethrow;
+        }
+        if (completedManifest != null) {
+          if (completedManifest['jobId'] is String) {
+            jobId = completedManifest['jobId'] as String;
+          }
+          nativeFallbackUsed = completedManifest['fallbackUsed'] == true;
+          actual = (completedManifest['usedSelections'] as List? ?? const [])
+              .whereType<Map>()
+              .map(
+                (value) =>
+                    TtsSelection.fromJson(Map<String, dynamic>.from(value)),
+              )
+              .toList();
+          await jobStore.saveCompletedManifest(
+            manifest: completedManifest,
+            bookId: bookId,
+            startedAt: startedAt,
+            outputDirectory: manualConversionOutputDirectory(
+              requestOutputDirectory: _activeNativeOutputPath,
+              jobId: jobId,
+              android: _activeAndroidConverter != null,
+            ),
+            conversionOptionsJson: request.ttsPreferences.optionsJson(
+              language: request.language,
+            ),
+          );
+          if (mounted) {
+            ref.invalidate(localConversionHistoryProvider);
+          }
+        }
+      } catch (error) {
+        // The native operation already completed; a history failure is not
+        // a conversion failure and must not invite another synthesis attempt.
+        historyError = error.toString();
+      }
       if (!mounted) return;
+      if (nativeFallbackUsed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.ttsSecondaryUsedNotice),
+          ),
+        );
+      }
       setState(() {
         _jobId = jobId;
+        _usedSelections = actual;
+        _historyError = historyError;
         _submitting = false;
       });
     } catch (e) {
@@ -221,6 +359,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   @override
   Widget build(BuildContext context) {
     final jobId = _jobId;
+    final t = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(title: const Text('Convert')),
       body: ListView(
@@ -231,34 +370,54 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             icon: const Icon(Icons.attach_file),
             label: Text(_filePath == null ? 'Choose EPUB or PDF' : _filePath!),
           ),
+          if (_usedSelections.isNotEmpty)
+            Text(
+              t.ttsActualVoices(
+                _usedSelections
+                    .map((selection) => selection.displayName)
+                    .join(', '),
+              ),
+            ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             initialValue: _engine,
             decoration: const InputDecoration(labelText: 'Engine'),
             items: [
-              const DropdownMenuItem(value: 'edge', child: Text('Edge TTS')),
+              DropdownMenuItem(
+                value: 'preferences',
+                child: Text(t.ttsUsePreferences),
+              ),
+              DropdownMenuItem(value: 'piper', child: Text(t.ttsFaberOffline)),
+              DropdownMenuItem(value: 'edge', child: Text(t.ttsEdgeOnline)),
             ],
             onChanged: (v) => setState(() => _engine = v ?? _engine),
           ),
-          DropdownButtonFormField<String>(
-            initialValue: _voice,
-            decoration: const InputDecoration(labelText: 'Voice'),
-            items: const [
-              DropdownMenuItem(
-                value: 'pt-BR-AntonioNeural',
-                child: Text('Antonio (pt-BR)'),
-              ),
-              DropdownMenuItem(
-                value: 'en-US-GuyNeural',
-                child: Text('Guy (en-US)'),
-              ),
-              DropdownMenuItem(
-                value: 'es-MX-JorgeNeural',
-                child: Text('Jorge (es-MX)'),
-              ),
-            ],
-            onChanged: (v) => setState(() => _voice = v ?? _voice),
-          ),
+          if (_engine != 'preferences')
+            SwitchListTile(
+              title: Text(t.ttsAllowJobSecondary),
+              value: _allowSecondary,
+              onChanged: (v) => setState(() => _allowSecondary = v),
+            ),
+          if (_engine == 'edge')
+            DropdownButtonFormField<String>(
+              initialValue: _voice,
+              decoration: const InputDecoration(labelText: 'Voice'),
+              items: const [
+                DropdownMenuItem(
+                  value: 'pt-BR-AntonioNeural',
+                  child: Text('Antonio (pt-BR)'),
+                ),
+                DropdownMenuItem(
+                  value: 'en-US-GuyNeural',
+                  child: Text('Guy (en-US)'),
+                ),
+                DropdownMenuItem(
+                  value: 'es-MX-JorgeNeural',
+                  child: Text('Jorge (es-MX)'),
+                ),
+              ],
+              onChanged: (v) => setState(() => _voice = v ?? _voice),
+            ),
           DropdownButtonFormField<String>(
             initialValue: _language,
             decoration: const InputDecoration(labelText: 'Language'),
@@ -295,43 +454,32 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           ),
           const SizedBox(height: 12),
           const Text('Options', style: TextStyle(fontWeight: FontWeight.bold)),
-          SwitchListTile(
-            title: const Text('Include cover'),
-            value: _includeCover,
-            onChanged: (v) => setState(() => _includeCover = v),
-          ),
-          SwitchListTile(
-            title: const Text('Normalize audio'),
-            value: _normalizeAudio,
-            onChanged: (v) => setState(() => _normalizeAudio = v),
-          ),
+          if (_usesEmbeddedConversion)
+            const Text(
+              'Cover and audio processing options are managed by the local converter.',
+            )
+          else ...[
+            SwitchListTile(
+              title: const Text('Include cover'),
+              value: _includeCover,
+              onChanged: (v) => setState(() => _includeCover = v),
+            ),
+            SwitchListTile(
+              title: const Text('Normalize audio'),
+              value: _normalizeAudio,
+              onChanged: (v) => setState(() => _normalizeAudio = v),
+            ),
+          ],
           if (_submitting) const LinearProgressIndicator(),
           if (jobId != null) ...[
             const SizedBox(height: 12),
             Text(jobId, key: const Key('conversion-job-id')),
-            if (defaultTargetPlatform != TargetPlatform.android)
-              StreamBuilder(
-                stream: ref.read(apiClientProvider).jobStream(jobId),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Text('Progress error: ${snapshot.error}');
-                  }
-                  final value = snapshot.data;
-                  final progress = value?.progressPercent;
-                  return Column(
-                    children: [
-                      LinearProgressIndicator(
-                        value: progress == null ? null : progress / 100,
-                      ),
-                      if (value != null)
-                        Text(
-                          '${value.state} ${progress?.toStringAsFixed(0) ?? ''}%',
-                        ),
-                    ],
-                  );
-                },
-              ),
           ],
+          if (_historyError != null)
+            ListTile(
+              leading: const Icon(Icons.warning_amber_outlined),
+              title: Text(t.conversionHistorySaveWarning(_historyError!)),
+            ),
           if (_error != null) ...[
             Text(
               _error!,

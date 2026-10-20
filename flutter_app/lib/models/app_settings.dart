@@ -11,6 +11,8 @@
 // providers over to consume `MirrorAppSettings`.
 
 import 'dart:async';
+import 'dart:convert';
+import 'tts_preferences.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -147,6 +149,33 @@ class MirrorAppSettings {
   }
 
   final SharedPreferences _prefs;
+
+  TtsPreferences get ttsPreferences {
+    final raw = _prefs.getString('ttsPreferences');
+    if (raw != null) {
+      try {
+        return TtsPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      } catch (_) {
+        /* Ignore invalid persisted data and preserve old explicit selection. */
+      }
+    }
+    final engine =
+        _prefs.getString('audioEngine') ?? _prefs.getString('engine');
+    if (engine == 'edge') {
+      return TtsPreferences(
+        primary: TtsSelection(engine: 'edge', voice: _prefs.getString('voice')),
+      );
+    }
+    // A recorded legacy provider is an explicit preference, even without a
+    // secondary key. New defaults never mutate that earlier choice.
+    return engine == null
+        ? const TtsPreferences.appDefaults()
+        : const TtsPreferences();
+  }
+
+  Future<void> setTtsPreferences(TtsPreferences value) async {
+    await _prefs.setString('ttsPreferences', jsonEncode(value.toJson()));
+  }
 
   /// One-shot migration from the legacy `state/providers.dart` AppSettings
   /// key space. Runs only if `_settingsMigratedV1` isn't set yet.

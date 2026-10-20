@@ -1,0 +1,2873 @@
+{
+  "schema": 1,
+  "created_utc": "2026-10-16T21:53:51Z",
+  "pid": 81932,
+  "hardware": "Intel Core i5-8259U @ 2.30GHz, 8 GiB RAM, macOS x86_64",
+  "head": "6131951e3bbc5f27daa415315cbe2fb951955fd6",
+  "output": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z",
+  "threads": 2,
+  "timeout_per_attempt_s": 120,
+  "macos": "15.8.1",
+  "harness_sha256": {
+    "run.rb": "d966f6e70116ccbadb3c0f97f1e1a9cf85edd00bca468da181394e33c929c07c",
+    "worker.py": "c048ff5c8ef7f6b0b7ad99db4f52443a7cdf0367296bb86c9007d5ed9eca60e5",
+    "pocket-worker.py": "dbf1516a9f4288245a1780a13f6db7805a35431000a0ab8d5d5001f3157a8596"
+  },
+  "process_state": "fresh process per attempt; filesystem/OS caches are not purged",
+  "corpora": {
+    "short": {
+      "text": "A biblioteca estava silenciosa. \"Vamos começar?\", perguntou Ana. Às 8h30, ela abriu o livro e leu a primeira página.",
+      "characters": 116,
+      "sha256": "76e29553963f4d787a4170d7fc5d867fcce357d63f3fea06d699d5adf1948a09"
+    },
+    "paragraph": {
+      "text": "Na manhã de terça-feira, Ana encontrou um livro antigo na biblioteca. A capa estava gasta, mas as páginas permaneciam legíveis. \"Quanto custa?\", perguntou ela. O funcionário respondeu: \"Vinte e três reais e cinquenta centavos.\" Ana sorriu, conferiu o relógio às 8h30 e decidiu começar a leitura. No primeiro capítulo, um viajante atravessava a cidade em busca de notícias de sua família. Ele parou diante da estação, observou as pessoas e perguntou qual trem partiria às 14h15. A resposta chegou depressa: plataforma número 3. Mesmo com a chuva e o vento, o viajante continuou seu caminho. Não precisava correr; precisava apenas chegar antes do anoitecer.",
+      "characters": 655,
+      "sha256": "84067aa7d643dbccbc3ffb2559155027b6d9d66673bcc9ecbf68a20036fd182b"
+    }
+  },
+  "limitations": [
+    "Host experiment, not app/mobile/Simulator acceptance",
+    "No speaker playback or blind quality rating",
+    "Three attempts do not establish p95",
+    "Other user workloads remain running",
+    "Native CPU libraries called through an isolated Python research harness for Sherpa models",
+    "Qwen CLI outputs a complete WAV, not external streaming; its TTFA is not measured",
+    "Apple/Edge remote services are excluded from child RSS",
+    "ASR/text fidelity and energy/thermals are not measured"
+  ],
+  "runs": [
+    {
+      "engine": "apple",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/apple-short-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 3.0003819999983534,
+      "first_non_silent_pcm_request_s": 3.0003819999983534,
+      "host_load_before": "18:53  up  4:57, 1 user, load averages: 140.14 152.77 108.03",
+      "argv": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "--file-format=WAVE",
+        "--data-format=LEI16@24000",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-short-1.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 3.23774499999854,
+      "host_load_after": "18:53  up  4:57, 1 user, load averages: 138.13 152.14 108.07",
+      "peak_rss_bytes": 41332736,
+      "request_file_ready_s": 3.23774499999854,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.196042"
+        }
+      },
+      "audio_s": 9.196042,
+      "peak_db": -3.7,
+      "rtf_request": 0.352080275405282,
+      "characters_per_request_s": 35.82740456708367,
+      "sha256": "4663f1f1fed9fd76620ca65a7773d8f7de5c171bc2609233da5bce4c1ef607c0",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-short-1.wav"
+    },
+    {
+      "engine": "edresson",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edresson-short-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 15.922064167996723,
+      "first_non_silent_pcm_request_s": 15.939878999997745,
+      "host_load_before": "18:53  up  4:57, 1 user, load averages: 138.13 152.14 108.07",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "edresson",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 13.480684604997805,
+      "generation_started_after_process_s": 14.314103999997315,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 1.6079601679994084,
+      "first_non_silent_callback_s": 1.6079601679994084,
+      "callback_count": 4,
+      "synthesis_s": 3.3854962779987545,
+      "file_ready_s": 3.458644373000425,
+      "audio_s": 9.367188,
+      "sample_rate": 16000,
+      "rtf": 0.3692297579183106,
+      "characters_per_s": 33.539152190824495,
+      "peak_rss_bytes": 190726144,
+      "peak_amplitude": 0.1342725306749344,
+      "sha256": "cfa93312e8b03c0b4b4f74c57c22deb3052308312c00a7351c4c4db80e359d24",
+      "request_file_ready_s": 17.777586999996856,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 18.20050899999842,
+      "host_load_after": "18:54  up  4:57, 1 user, load averages: 152.48 154.59 109.71",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "16000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.367188"
+        }
+      },
+      "peak_db": -17.4,
+      "rtf_request": 1.8978573932749994,
+      "characters_per_request_s": 6.525070022158829,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edresson-short-1.wav"
+    },
+    {
+      "engine": "faber",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/faber-short-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 6.667095287997654,
+      "first_non_silent_pcm_request_s": 6.665306999999302,
+      "host_load_before": "18:54  up  4:57, 1 user, load averages: 140.99 152.18 109.12",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "faber",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 5.638310074999026,
+      "generation_started_after_process_s": 6.183502999996563,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.4835922880010912,
+      "first_non_silent_callback_s": 0.4835922880010912,
+      "callback_count": 4,
+      "synthesis_s": 1.5158369809978467,
+      "file_ready_s": 1.5966321289997722,
+      "audio_s": 7.050385,
+      "sample_rate": 22050,
+      "rtf": 0.22646025977219353,
+      "characters_per_s": 72.65292855698043,
+      "peak_rss_bytes": 207560704,
+      "peak_amplitude": 0.5546884536743164,
+      "sha256": "8e0eccb192ab0b0e70af82a850f31e3c77b750d13b0f5a795f655faf47f21d18",
+      "request_file_ready_s": 7.781945999999152,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 7.940065999999206,
+      "host_load_after": "18:54  up  4:57, 1 user, load averages: 141.87 152.17 109.37",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "22050",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "7.050385"
+        }
+      },
+      "peak_db": -5.1,
+      "rtf_request": 1.1037618513030354,
+      "characters_per_request_s": 14.906297216661827,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/faber-short-1.wav"
+    },
+    {
+      "engine": "kokoro",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/kokoro-short-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 21.39154591500119,
+      "first_non_silent_pcm_request_s": 21.3982560000004,
+      "host_load_before": "18:54  up  4:57, 1 user, load averages: 141.87 152.17 109.37",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "kokoro",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 5.233693741000025,
+      "generation_started_after_process_s": 6.362984999999753,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 15.028560915001435,
+      "first_non_silent_callback_s": 15.028560915001435,
+      "callback_count": 4,
+      "synthesis_s": 60.96526786499817,
+      "file_ready_s": 61.162826342999324,
+      "audio_s": 8.118167,
+      "sample_rate": 24000,
+      "rtf": 7.5340688180417565,
+      "characters_per_s": 1.8965768414539155,
+      "peak_rss_bytes": 269889536,
+      "peak_amplitude": 0.3923383355140686,
+      "sha256": "b000a0ea2d118d817137264867252b5a48068d6b64c6827ed0e3405aef0d99a3",
+      "request_file_ready_s": 67.55379099999845,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 68.2413059999999,
+      "host_load_after": "18:55  up  4:58, 1 user, load averages: 206.22 166.94 118.15",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "8.118167"
+        }
+      },
+      "peak_db": -8.1,
+      "rtf_request": 8.32131083285161,
+      "characters_per_request_s": 1.7171501152319142,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/kokoro-short-1.wav"
+    },
+    {
+      "engine": "supertonic",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/supertonic-short-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 15.147156037000968,
+      "first_non_silent_pcm_request_s": 15.163758999999118,
+      "host_load_before": "18:55  up  4:58, 1 user, load averages: 206.22 166.94 118.15",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "supertonic",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 4.226748868997674,
+      "generation_started_after_process_s": 5.014466000000539,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 10.13269003700043,
+      "first_non_silent_callback_s": 10.13269003700043,
+      "callback_count": 1,
+      "synthesis_s": 10.14827091600091,
+      "file_ready_s": 10.27190669400079,
+      "audio_s": 10.042268,
+      "sample_rate": 44100,
+      "rtf": 1.0228672576805404,
+      "characters_per_s": 11.292937470679002,
+      "peak_rss_bytes": 229380096,
+      "peak_amplitude": 0.4833744764328003,
+      "sha256": "5526df6dc03c08c4bbebf6752547fc52eb9a860aed6681095e5c5f6a0557d607",
+      "request_file_ready_s": 15.30337199999849,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 15.650207999999111,
+      "host_load_after": "18:55  up  4:59, 1 user, load averages: 188.78 165.24 118.41",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "44100",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "10.042268"
+        }
+      },
+      "peak_db": -6.3,
+      "rtf_request": 1.5238959964022558,
+      "characters_per_request_s": 7.580028767516822,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/supertonic-short-1.wav"
+    },
+    {
+      "engine": "pocket",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/pocket-short-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 6.139781186997425,
+      "first_non_silent_pcm_request_s": 6.140937000000122,
+      "host_load_before": "18:55  up  4:59, 1 user, load averages: 188.78 165.24 118.41",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/pocket-worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "pocket",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.6083065120001265,
+      "generation_started_after_process_s": 4.0997129999996105,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 2.0400681869978143,
+      "first_non_silent_callback_s": 2.0400681869978143,
+      "callback_count": 108,
+      "reference": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+      "synthesis_s": 50.66287858699798,
+      "file_ready_s": 50.71856809900055,
+      "audio_s": 8.8,
+      "sample_rate": 24000,
+      "rtf": 5.763473647613698,
+      "characters_per_s": 2.2871308151597023,
+      "peak_rss_bytes": 761307136,
+      "peak_amplitude": 0.5846899747848511,
+      "sha256": "9fbb028f4778e0b2182ccac34079e43fa40003aaf5f10c850490bdd99133701a",
+      "request_file_ready_s": 54.83548100000189,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 55.94133900000088,
+      "host_load_after": "18:56  up 5 hrs, 1 user, load averages: 270.74 186.60 128.94",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "8.800000"
+        }
+      },
+      "peak_db": -4.7,
+      "rtf_request": 6.231304659091124,
+      "characters_per_request_s": 2.115418664787421,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/pocket-short-1.wav"
+    },
+    {
+      "engine": "edge",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edge-short-1.mp3",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "18:56  up 5 hrs, 1 user, load averages: 284.21 190.79 130.75",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-short-1.mp3"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 5.561861000001954,
+      "host_load_after": "18:56  up 5 hrs, 1 user, load averages: 298.53 195.31 132.70",
+      "peak_rss_bytes": 10608640,
+      "request_file_ready_s": 5.561861000001954,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.312000"
+        }
+      },
+      "audio_s": 9.312,
+      "peak_db": -3.7,
+      "rtf_request": 0.5972788874572545,
+      "characters_per_request_s": 20.856328484289563,
+      "sha256": "bea39a855d2506bc36de35ccc3f795872267ab5a1fab268c9296f5ff5ad21c3b",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-short-1.mp3"
+    },
+    {
+      "engine": "qwen06",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-1.wav",
+      "status": "timeout",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "18:56  up 5 hrs, 1 user, load averages: 308.33 199.06 134.39",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.mmproj-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-1.wav"
+      ],
+      "request_wall_s": 120.29367399999683,
+      "host_load_after": "18:58  up  5:02, 1 user, load averages: 169.05 187.24 138.58",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-1.wav"
+    },
+    {
+      "engine": "qwen17",
+      "corpus": "short",
+      "iteration": 1,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "18:58  up  5:02, 1 user, load averages: 169.05 187.24 138.58",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-1.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 112.5270500000006,
+      "host_load_after": "19:00  up  5:04, 1 user, load averages: 71.28 143.70 127.25",
+      "peak_rss_bytes": 2782363648,
+      "request_file_ready_s": 112.5270500000006,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.920000"
+        }
+      },
+      "audio_s": 9.92,
+      "peak_db": -3.3,
+      "rtf_request": 11.343452620967803,
+      "characters_per_request_s": 1.0308632457706781,
+      "sha256": "6c48c601d0884fab78cd06dd804e31f4e9b74b3dd304555224ed675326e31e7c",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-1.wav"
+    },
+    {
+      "engine": "qwen17",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-1.wav",
+      "status": "timeout",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:00  up  5:04, 1 user, load averages: 71.28 143.70 127.25",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-1.wav"
+      ],
+      "request_wall_s": 120.68836899999951,
+      "host_load_after": "19:02  up  5:06, 1 user, load averages: 54.24 109.25 115.49",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-1.wav"
+    },
+    {
+      "engine": "qwen06",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-1.wav",
+      "status": "timeout",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:02  up  5:06, 1 user, load averages: 54.24 109.25 115.49",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.mmproj-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-1.wav"
+      ],
+      "request_wall_s": 120.2771619999985,
+      "host_load_after": "19:04  up  5:08, 1 user, load averages: 28.53 81.19 103.50",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-1.wav"
+    },
+    {
+      "engine": "edge",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-1.mp3",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:04  up  5:08, 1 user, load averages: 28.53 81.19 103.50",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-1.mp3"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 2.1594290000030014,
+      "host_load_after": "19:04  up  5:08, 1 user, load averages: 26.56 79.91 102.92",
+      "peak_rss_bytes": 11960320,
+      "request_file_ready_s": 2.1594290000030014,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "43.536000"
+        }
+      },
+      "audio_s": 43.536,
+      "peak_db": -2.8,
+      "rtf_request": 0.04960099687621741,
+      "characters_per_request_s": 303.3209241883339,
+      "sha256": "0f8f54598ea66fee8a82a9de4547633f381e223bd8a16b5181ae21ddd167e6bc",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-1.mp3"
+    },
+    {
+      "engine": "pocket",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/pocket-paragraph-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 3.593392576000042,
+      "first_non_silent_pcm_request_s": 3.5840659999994386,
+      "host_load_before": "19:04  up  5:08, 1 user, load averages: 26.56 79.91 102.92",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/pocket-worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "pocket",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.3935890099965036,
+      "generation_started_after_process_s": 2.471523000000161,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 1.121869575999881,
+      "first_non_silent_callback_s": 1.121869575999881,
+      "callback_count": 88,
+      "reference": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+      "synthesis_s": 24.154805920999934,
+      "file_ready_s": 24.247493801998644,
+      "audio_s": 36.24,
+      "sample_rate": 24000,
+      "rtf": 0.669080954801287,
+      "characters_per_s": 27.013101038343617,
+      "peak_rss_bytes": 953868288,
+      "peak_amplitude": 0.6586989164352417,
+      "sha256": "8fa803054f6bfc7e00f57c5dcc385086e953bcb63053fa2426e153103046218d",
+      "request_file_ready_s": 26.726346999999805,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 27.085857999998552,
+      "host_load_after": "19:05  up  5:08, 1 user, load averages: 21.44 74.44 100.28",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "36.240000"
+        }
+      },
+      "peak_db": -3.6,
+      "rtf_request": 0.7374819812361977,
+      "characters_per_request_s": 24.507651569442125,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/pocket-paragraph-1.wav"
+    },
+    {
+      "engine": "supertonic",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/supertonic-paragraph-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 11.436087646001397,
+      "first_non_silent_pcm_request_s": 11.441502000001492,
+      "host_load_before": "19:05  up  5:08, 1 user, load averages: 20.04 73.27 99.71",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "supertonic",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.6516548410036194,
+      "generation_started_after_process_s": 2.105358000000706,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 9.330729646000691,
+      "first_non_silent_callback_s": 9.330729646000691,
+      "callback_count": 3,
+      "synthesis_s": 22.009606441999495,
+      "file_ready_s": 22.462410034997447,
+      "audio_s": 55.118367,
+      "sample_rate": 44100,
+      "rtf": 0.40753039533281804,
+      "characters_per_s": 29.159827417426737,
+      "peak_rss_bytes": 474701824,
+      "peak_amplitude": 0.4832509756088257,
+      "sha256": "f33e6ee497db051d9af7b6f1eb29391031ac8b90c1f9e868ccdd277cdb1359f2",
+      "request_file_ready_s": 24.598754999999073,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 24.84903100000156,
+      "host_load_after": "19:05  up  5:09, 1 user, load averages: 16.88 68.21 97.12",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "44100",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "55.118367"
+        }
+      },
+      "peak_db": -6.3,
+      "rtf_request": 0.44628961884881446,
+      "characters_per_request_s": 26.62736386455431,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/supertonic-paragraph-1.wav"
+    },
+    {
+      "engine": "kokoro",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/kokoro-paragraph-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 21.43500122200203,
+      "first_non_silent_pcm_request_s": 21.48781500000041,
+      "host_load_before": "19:05  up  5:09, 1 user, load averages: 16.88 68.21 97.12",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "kokoro",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 3.002717756000493,
+      "generation_started_after_process_s": 3.319041999999172,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 18.115959222002857,
+      "first_non_silent_callback_s": 18.115959222002857,
+      "callback_count": 11,
+      "synthesis_s": 101.30269229999976,
+      "file_ready_s": 101.59587094000017,
+      "audio_s": 39.533917,
+      "sample_rate": 24000,
+      "rtf": 2.5698407723326215,
+      "characters_per_s": 6.4471124066333925,
+      "peak_rss_bytes": 281595904,
+      "peak_amplitude": 0.41552501916885376,
+      "sha256": "df4e4245acf1c806a1e42a016b67665b18de7edee79a726717b29b0caac2b7da",
+      "request_file_ready_s": 104.95618900000045,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 105.32301300000108,
+      "host_load_after": "19:07  up  5:10, 1 user, load averages: 22.33 54.69 88.46",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "39.533917"
+        }
+      },
+      "peak_db": -7.6,
+      "rtf_request": 2.6548391094158577,
+      "characters_per_request_s": 6.2406991549588104,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/kokoro-paragraph-1.wav"
+    },
+    {
+      "engine": "faber",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/faber-paragraph-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 3.863684429998102,
+      "first_non_silent_pcm_request_s": 3.8651599999975588,
+      "host_load_before": "19:07  up  5:10, 1 user, load averages: 22.33 54.69 88.46",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "faber",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.8670783509987814,
+      "generation_started_after_process_s": 3.426514999999199,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.43716942999890307,
+      "first_non_silent_callback_s": 0.43716942999890307,
+      "callback_count": 11,
+      "synthesis_s": 3.5584296380002343,
+      "file_ready_s": 3.7379204249991744,
+      "audio_s": 37.697596,
+      "sample_rate": 22050,
+      "rtf": 0.099155404714005,
+      "characters_per_s": 175.23112467011512,
+      "peak_rss_bytes": 286474240,
+      "peak_amplitude": 0.7809123992919922,
+      "sha256": "f9002a79e665b995cfcca31c2bb70e521714fee38b687c70d6b9195aba17af6f",
+      "request_file_ready_s": 7.17426599999817,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 7.286770999999135,
+      "host_load_after": "19:07  up  5:11, 1 user, load averages: 21.02 53.88 87.97",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "22050",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "37.697596"
+        }
+      },
+      "peak_db": -2.1,
+      "rtf_request": 0.19031096837045444,
+      "characters_per_request_s": 91.29853841496357,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/faber-paragraph-1.wav"
+    },
+    {
+      "engine": "edresson",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edresson-paragraph-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 5.839640564001456,
+      "first_non_silent_pcm_request_s": 5.840487000001303,
+      "host_load_before": "19:07  up  5:11, 1 user, load averages: 21.02 53.88 87.97",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "edresson",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 3.8766646289986966,
+      "generation_started_after_process_s": 4.177451999999903,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 1.6621885640015535,
+      "first_non_silent_callback_s": 1.6621885640015535,
+      "callback_count": 11,
+      "synthesis_s": 6.2131491049985925,
+      "file_ready_s": 6.3975140180009475,
+      "audio_s": 46.800563,
+      "sample_rate": 16000,
+      "rtf": 0.1366973744813633,
+      "characters_per_s": 102.38351931031329,
+      "peak_rss_bytes": 252821504,
+      "peak_amplitude": 0.241568922996521,
+      "sha256": "1acd98d17a96bbe5ac7661b76a1b65554a06fe76d6e7741ac135588472ae00bd",
+      "request_file_ready_s": 10.587812000001577,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 10.802651000001788,
+      "host_load_after": "19:07  up  5:11, 1 user, load averages: 18.88 52.33 87.03",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "16000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "46.800563"
+        }
+      },
+      "peak_db": -12.3,
+      "rtf_request": 0.2262325775867606,
+      "characters_per_request_s": 61.863584279726766,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edresson-paragraph-1.wav"
+    },
+    {
+      "engine": "apple",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-1.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 2.432103000002826,
+      "first_non_silent_pcm_request_s": 2.432103000002826,
+      "host_load_before": "19:07  up  5:11, 1 user, load averages: 17.77 51.55 86.55",
+      "argv": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "--file-format=WAVE",
+        "--data-format=LEI16@24000",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-1.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 3.5601300000016636,
+      "host_load_after": "19:07  up  5:11, 1 user, load averages: 17.77 51.55 86.55",
+      "peak_rss_bytes": 38158336,
+      "request_file_ready_s": 3.5601300000016636,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "48.771167"
+        }
+      },
+      "audio_s": 48.771167,
+      "peak_db": -3.4,
+      "rtf_request": 0.07299661293734602,
+      "characters_per_request_s": 183.98204559937247,
+      "sha256": "4a8a84d71ef596b4044ca38142d7169b20f2abe7fc4a9d80b86cf45a6cd678d8",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-1.wav"
+    },
+    {
+      "engine": "qwen17",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:07  up  5:11, 1 user, load averages: 17.77 51.55 86.55",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-2.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 86.2017270000033,
+      "host_load_after": "19:09  up  5:12, 1 user, load averages: 22.63 44.17 80.16",
+      "peak_rss_bytes": 2216259584,
+      "request_file_ready_s": 86.2017270000033,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.920000"
+        }
+      },
+      "audio_s": 9.92,
+      "peak_db": -3.3,
+      "rtf_request": 8.689690221774526,
+      "characters_per_request_s": 1.3456806961651193,
+      "sha256": "6c48c601d0884fab78cd06dd804e31f4e9b74b3dd304555224ed675326e31e7c",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-2.wav"
+    },
+    {
+      "engine": "qwen06",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:09  up  5:12, 1 user, load averages: 22.63 44.17 80.16",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.mmproj-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-2.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 69.7240759999986,
+      "host_load_after": "19:10  up  5:13, 1 user, load averages: 59.22 47.52 78.39",
+      "peak_rss_bytes": 1557852160,
+      "request_file_ready_s": 69.7240759999986,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "10.880000"
+        }
+      },
+      "audio_s": 10.88,
+      "peak_db": -4.1,
+      "rtf_request": 6.40846286764693,
+      "characters_per_request_s": 1.6637007853643313,
+      "sha256": "c780dfc31deeb04cf4f44877c0ebbfc6a2a6d2a18f7131a038d46818265096d5",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-2.wav"
+    },
+    {
+      "engine": "edge",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edge-short-2.mp3",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:10  up  5:13, 1 user, load averages: 59.22 47.52 78.39",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-short-2.mp3"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 2.2954680000002554,
+      "host_load_after": "19:10  up  5:14, 1 user, load averages: 59.22 47.52 78.39",
+      "peak_rss_bytes": 11714560,
+      "request_file_ready_s": 2.2954680000002554,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.312000"
+        }
+      },
+      "audio_s": 9.312,
+      "peak_db": -3.7,
+      "rtf_request": 0.2465064432989965,
+      "characters_per_request_s": 50.53435726395972,
+      "sha256": "7ec88724977789ba03381290c0e5019b20bbc098f7b632781d64880d1121482f",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-short-2.mp3"
+    },
+    {
+      "engine": "pocket",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/pocket-short-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 4.348275457999989,
+      "first_non_silent_pcm_request_s": 4.334686999998667,
+      "host_load_before": "19:10  up  5:14, 1 user, load averages: 55.36 46.92 78.00",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/pocket-worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "pocket",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.7526979690010194,
+      "generation_started_after_process_s": 2.846491000000242,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 1.5017844579997472,
+      "first_non_silent_callback_s": 1.5017844579997472,
+      "callback_count": 34,
+      "reference": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+      "synthesis_s": 7.306011898999714,
+      "file_ready_s": 7.32415785899866,
+      "audio_s": 8.8,
+      "sample_rate": 24000,
+      "rtf": 0.8322906657953022,
+      "characters_per_s": 15.837998338263453,
+      "peak_rss_bytes": 879783936,
+      "peak_amplitude": 0.5846899747848511,
+      "sha256": "cb8221f7f9d08baf9a17664c5e6cf79263f4121bfe679de3c1c790483e142e4c",
+      "request_file_ready_s": 10.16266899999755,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 10.497082999998383,
+      "host_load_after": "19:10  up  5:14, 1 user, load averages: 47.46 45.50 77.13",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "8.800000"
+        }
+      },
+      "peak_db": -4.7,
+      "rtf_request": 1.1548487499997215,
+      "characters_per_request_s": 11.41432432759819,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/pocket-short-2.wav"
+    },
+    {
+      "engine": "supertonic",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/supertonic-short-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 6.445532377998461,
+      "first_non_silent_pcm_request_s": 6.4489119999998366,
+      "host_load_before": "19:10  up  5:14, 1 user, load averages: 47.46 45.50 77.13",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "supertonic",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.4711500320008781,
+      "generation_started_after_process_s": 1.7854019999977027,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 4.660130378000758,
+      "first_non_silent_callback_s": 4.660130378000758,
+      "callback_count": 1,
+      "synthesis_s": 4.664569682001456,
+      "file_ready_s": 4.766199570000026,
+      "audio_s": 10.042268,
+      "sample_rate": 44100,
+      "rtf": 0.4746138792880007,
+      "characters_per_s": 24.338049277277612,
+      "peak_rss_bytes": 290119680,
+      "peak_amplitude": 0.5052164793014526,
+      "sha256": "85e385282e13a60a456c4de176d227c5e7e683d8bd0e10147e4a836159b0c088",
+      "request_file_ready_s": 6.558021999997436,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 6.738618999999744,
+      "host_load_after": "19:10  up  5:14, 1 user, load averages: 44.06 44.83 76.71",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "44100",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "10.042268"
+        }
+      },
+      "peak_db": -5.9,
+      "rtf_request": 0.6530419224021343,
+      "characters_per_request_s": 17.688260271167945,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/supertonic-short-2.wav"
+    },
+    {
+      "engine": "kokoro",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/kokoro-short-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 8.981682060999447,
+      "first_non_silent_pcm_request_s": 8.982346000000689,
+      "host_load_before": "19:10  up  5:14, 1 user, load averages: 44.06 44.83 76.71",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "kokoro",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.6948148920018866,
+      "generation_started_after_process_s": 3.067258999999467,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 5.9144230609999795,
+      "first_non_silent_callback_s": 5.9144230609999795,
+      "callback_count": 4,
+      "synthesis_s": 19.504749071002152,
+      "file_ready_s": 19.545589223002025,
+      "audio_s": 8.12575,
+      "sample_rate": 24000,
+      "rtf": 2.4053889453899058,
+      "characters_per_s": 5.934842827019335,
+      "peak_rss_bytes": 306450432,
+      "peak_amplitude": 0.38427984714508057,
+      "sha256": "157f4ed73d66676a9444ff4f8742cd7651bd5d065dd4be4f9bddb4e13375d0b5",
+      "request_file_ready_s": 22.6215200000006,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 22.843995999999606,
+      "host_load_after": "19:11  up  5:14, 1 user, load averages: 37.65 43.14 75.17",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "8.125750"
+        }
+      },
+      "peak_db": -8.3,
+      "rtf_request": 2.7839300987601883,
+      "characters_per_request_s": 5.127860550484535,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/kokoro-short-2.wav"
+    },
+    {
+      "engine": "faber",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/faber-short-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 3.03044362899891,
+      "first_non_silent_pcm_request_s": 3.030185999999958,
+      "host_load_before": "19:11  up  5:14, 1 user, load averages: 37.65 43.14 75.17",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "faber",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.4613439950007887,
+      "generation_started_after_process_s": 2.810184999998455,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.22025862900045468,
+      "first_non_silent_callback_s": 0.22025862900045468,
+      "callback_count": 4,
+      "synthesis_s": 0.6862816800021392,
+      "file_ready_s": 0.7204416970016609,
+      "audio_s": 6.997279,
+      "sample_rate": 22050,
+      "rtf": 0.10296026585576916,
+      "characters_per_s": 161.01233518655232,
+      "peak_rss_bytes": 216584192,
+      "peak_amplitude": 0.5500001907348633,
+      "sha256": "3df9e56e2373bccd454973e32a41bd76b72b7a7cd97acb6b9b07ff0bb89c1d61",
+      "request_file_ready_s": 3.53138399999807,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 3.638896999997087,
+      "host_load_after": "19:11  up  5:14, 1 user, load averages: 35.43 42.59 74.79",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "22050",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "6.997279"
+        }
+      },
+      "peak_db": -5.2,
+      "rtf_request": 0.5046796047432253,
+      "characters_per_request_s": 32.848311030480794,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/faber-short-2.wav"
+    },
+    {
+      "engine": "edresson",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edresson-short-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 2.7441758119966835,
+      "first_non_silent_pcm_request_s": 2.7450539999990724,
+      "host_load_before": "19:11  up  5:14, 1 user, load averages: 35.43 42.59 74.79",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "edresson",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.296934985999542,
+      "generation_started_after_process_s": 2.5154589999983727,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.22871681199831073,
+      "first_non_silent_callback_s": 0.22871681199831073,
+      "callback_count": 4,
+      "synthesis_s": 0.775421472000744,
+      "file_ready_s": 0.8089047700013907,
+      "audio_s": 9.491438,
+      "sample_rate": 16000,
+      "rtf": 0.08522468488059798,
+      "characters_per_s": 143.4037779253058,
+      "peak_rss_bytes": 214745088,
+      "peak_amplitude": 0.13694293797016144,
+      "sha256": "ddf4b75eedd3190922a177dda1c055e6f182fcb158ac6c1f3e39182b56308269",
+      "request_file_ready_s": 3.3257290000001376,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 3.4200789999995322,
+      "host_load_after": "19:11  up  5:14, 1 user, load averages: 35.43 42.59 74.79",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "16000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.491438"
+        }
+      },
+      "peak_db": -17.3,
+      "rtf_request": 0.3503925327226641,
+      "characters_per_request_s": 34.87957076478426,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edresson-short-2.wav"
+    },
+    {
+      "engine": "apple",
+      "corpus": "short",
+      "iteration": 2,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/apple-short-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 2.182519999998476,
+      "first_non_silent_pcm_request_s": 2.182519999998476,
+      "host_load_before": "19:11  up  5:14, 1 user, load averages: 35.43 42.59 74.79",
+      "argv": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "--file-format=WAVE",
+        "--data-format=LEI16@24000",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-short-2.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 2.346781000000192,
+      "host_load_after": "19:11  up  5:14, 1 user, load averages: 33.00 41.96 74.38",
+      "peak_rss_bytes": 41525248,
+      "request_file_ready_s": 2.346781000000192,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.196042"
+        }
+      },
+      "audio_s": 9.196042,
+      "peak_db": -3.7,
+      "rtf_request": 0.25519468049408556,
+      "characters_per_request_s": 49.429409902326,
+      "sha256": "4663f1f1fed9fd76620ca65a7773d8f7de5c171bc2609233da5bce4c1ef607c0",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-short-2.wav"
+    },
+    {
+      "engine": "apple",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 0.9046289999969304,
+      "first_non_silent_pcm_request_s": 0.9046289999969304,
+      "host_load_before": "19:11  up  5:14, 1 user, load averages: 33.00 41.96 74.38",
+      "argv": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "--file-format=WAVE",
+        "--data-format=LEI16@24000",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-2.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 1.8079489999981888,
+      "host_load_after": "19:11  up  5:14, 1 user, load averages: 33.00 41.96 74.38",
+      "peak_rss_bytes": 43261952,
+      "request_file_ready_s": 1.8079489999981888,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "48.771167"
+        }
+      },
+      "audio_s": 48.771167,
+      "peak_db": -3.4,
+      "rtf_request": 0.037070037713023946,
+      "characters_per_request_s": 362.2889804970473,
+      "sha256": "4a8a84d71ef596b4044ca38142d7169b20f2abe7fc4a9d80b86cf45a6cd678d8",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-2.wav"
+    },
+    {
+      "engine": "edresson",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edresson-paragraph-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 3.8036131949993432,
+      "first_non_silent_pcm_request_s": 3.8075759999992442,
+      "host_load_before": "19:11  up  5:14, 1 user, load averages: 33.00 41.96 74.38",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "edresson",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.763042040998698,
+      "generation_started_after_process_s": 3.056774000000587,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.7468391949987563,
+      "first_non_silent_callback_s": 0.7468391949987563,
+      "callback_count": 11,
+      "synthesis_s": 4.607606395999028,
+      "file_ready_s": 4.790085240998451,
+      "audio_s": 46.797375,
+      "sample_rate": 16000,
+      "rtf": 0.10235798997269506,
+      "characters_per_s": 136.74078164493605,
+      "peak_rss_bytes": 257761280,
+      "peak_amplitude": 0.24811741709709167,
+      "sha256": "c4d0a0a8e45d7ff2a0f18a70c4d74422cdd702a26ddd75602941bb2f39bf4487",
+      "request_file_ready_s": 7.854404000001523,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 8.024998000000778,
+      "host_load_after": "19:11  up  5:15, 1 user, load averages: 30.08 41.04 73.67",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "16000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "46.797375"
+        }
+      },
+      "peak_db": -12.1,
+      "rtf_request": 0.1678385593209346,
+      "characters_per_request_s": 83.39270554454201,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edresson-paragraph-2.wav"
+    },
+    {
+      "engine": "faber",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/faber-paragraph-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 4.573412693996943,
+      "first_non_silent_pcm_request_s": 4.5734599999996135,
+      "host_load_before": "19:11  up  5:15, 1 user, load averages: 30.08 41.04 73.67",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "faber",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 3.6316201490008098,
+      "generation_started_after_process_s": 3.995065999999497,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.578346693997446,
+      "first_non_silent_callback_s": 0.578346693997446,
+      "callback_count": 11,
+      "synthesis_s": 5.326403627997934,
+      "file_ready_s": 5.554092824000691,
+      "audio_s": 37.327302,
+      "sample_rate": 22050,
+      "rtf": 0.14879438340890258,
+      "characters_per_s": 117.9310502643336,
+      "peak_rss_bytes": 242540544,
+      "peak_amplitude": 0.7741153240203857,
+      "sha256": "10ddf87230e90348fa548878ad00a1440874fc636a73a9684ef6f1b934358cf1",
+      "request_file_ready_s": 9.560837999997602,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 9.981966999999713,
+      "host_load_after": "19:11  up  5:15, 1 user, load averages: 26.74 39.97 72.91",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "22050",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "37.327302"
+        }
+      },
+      "peak_db": -2.2,
+      "rtf_request": 0.2561352545650795,
+      "characters_per_request_s": 68.50863909629723,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/faber-paragraph-2.wav"
+    },
+    {
+      "engine": "kokoro",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/kokoro-paragraph-2.wav",
+      "status": "timeout",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": 12.885898000000452,
+      "host_load_before": "19:11  up  5:15, 1 user, load averages: 26.74 39.97 72.91",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "kokoro",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.7134092599990254,
+      "generation_started_after_process_s": 3.108198000001721,
+      "request_wall_s": 120.3020170000018,
+      "host_load_after": "19:13  up  5:17, 1 user, load averages: 70.81 47.41 71.28",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/kokoro-paragraph-2.wav"
+    },
+    {
+      "engine": "supertonic",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/supertonic-paragraph-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 65.04240942300021,
+      "first_non_silent_pcm_request_s": 65.09936999999991,
+      "host_load_before": "19:13  up  5:17, 1 user, load averages: 70.81 47.41 71.28",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "supertonic",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 17.68728431499767,
+      "generation_started_after_process_s": 22.095154999999068,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 42.94725442300114,
+      "first_non_silent_callback_s": 42.94725442300114,
+      "callback_count": 3,
+      "synthesis_s": 65.16624169000352,
+      "file_ready_s": 69.11708534000354,
+      "audio_s": 55.118367,
+      "sample_rate": 44100,
+      "rtf": 1.2539755560056922,
+      "characters_per_s": 9.476672761559572,
+      "peak_rss_bytes": 412262400,
+      "peak_amplitude": 0.4729631245136261,
+      "sha256": "1d3cdcf0b84c259e989144f5b616064eff51979f0f4f63cd4186eec49fd450bd",
+      "request_file_ready_s": 91.29973800000153,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 91.915481,
+      "host_load_after": "19:15  up  5:18, 1 user, load averages: 147.26 89.65 85.66",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "44100",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "55.118367"
+        }
+      },
+      "peak_db": -6.5,
+      "rtf_request": 1.6564303873516704,
+      "characters_per_request_s": 7.174171737491613,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/supertonic-paragraph-2.wav"
+    },
+    {
+      "engine": "pocket",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/pocket-paragraph-2.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 4.827005554998323,
+      "first_non_silent_pcm_request_s": 4.8256209999999555,
+      "host_load_before": "19:15  up  5:18, 1 user, load averages: 147.26 89.65 85.66",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/pocket-worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "pocket",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.0270793759991648,
+      "generation_started_after_process_s": 3.1531189999986964,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 1.6738865549996262,
+      "first_non_silent_callback_s": 1.6738865549996262,
+      "callback_count": 256,
+      "reference": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+      "synthesis_s": 37.77136658699965,
+      "file_ready_s": 38.122282421998534,
+      "audio_s": 36.24,
+      "sample_rate": 24000,
+      "rtf": 1.051939360430423,
+      "characters_per_s": 17.181552582539787,
+      "peak_rss_bytes": 887152640,
+      "peak_amplitude": 0.6586989164352417,
+      "sha256": "edf651a33919ae3dcc9f04267edfcf00fa1af610ef85b0ee87a3e3bf4ea681c4",
+      "request_file_ready_s": 41.45753599999807,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 42.12523599999986,
+      "host_load_after": "19:16  up  5:19, 1 user, load averages: 100.28 84.73 84.03",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "36.240000"
+        }
+      },
+      "peak_db": -3.6,
+      "rtf_request": 1.1439717439293065,
+      "characters_per_request_s": 15.799298829530787,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/pocket-paragraph-2.wav"
+    },
+    {
+      "engine": "edge",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-2.mp3",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:16  up  5:19, 1 user, load averages: 100.28 84.73 84.03",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-2.mp3"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 15.152792000000773,
+      "host_load_after": "19:16  up  5:19, 1 user, load averages: 79.00 80.79 82.64",
+      "peak_rss_bytes": 11632640,
+      "request_file_ready_s": 15.152792000000773,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "43.536000"
+        }
+      },
+      "audio_s": 43.536,
+      "peak_db": -2.8,
+      "rtf_request": 0.3480520029401133,
+      "characters_per_request_s": 43.22635722842144,
+      "sha256": "935c9913d602361df30c59d17a06ecfd180832bb83ce3191254cd0abb259580a",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-2.mp3"
+    },
+    {
+      "engine": "qwen06",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-2.wav",
+      "status": "timeout",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:16  up  5:19, 1 user, load averages: 79.00 80.79 82.64",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.mmproj-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-2.wav"
+      ],
+      "request_wall_s": 120.25315299999784,
+      "host_load_after": "19:18  up  5:21, 1 user, load averages: 37.87 66.66 76.94",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-2.wav"
+    },
+    {
+      "engine": "qwen17",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-2.wav",
+      "status": "timeout",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:18  up  5:21, 1 user, load averages: 37.87 66.66 76.94",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-2.wav"
+      ],
+      "request_wall_s": 120.2612229999977,
+      "host_load_after": "19:20  up  5:23, 1 user, load averages: 58.50 65.81 75.21",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-2.wav"
+    },
+    {
+      "engine": "apple",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/apple-short-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 1.8605870000028517,
+      "first_non_silent_pcm_request_s": 1.8605870000028517,
+      "host_load_before": "19:20  up  5:23, 1 user, load averages: 53.82 64.72 74.77",
+      "argv": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "--file-format=WAVE",
+        "--data-format=LEI16@24000",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-short-3.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 1.9473219999999856,
+      "host_load_after": "19:20  up  5:23, 1 user, load averages: 53.82 64.72 74.77",
+      "peak_rss_bytes": 42033152,
+      "request_file_ready_s": 1.9473219999999856,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.196042"
+        }
+      },
+      "audio_s": 9.196042,
+      "peak_db": -3.7,
+      "rtf_request": 0.2117565361271714,
+      "characters_per_request_s": 59.56898756343371,
+      "sha256": "4663f1f1fed9fd76620ca65a7773d8f7de5c171bc2609233da5bce4c1ef607c0",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-short-3.wav"
+    },
+    {
+      "engine": "edresson",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edresson-short-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 3.1255667299992638,
+      "first_non_silent_pcm_request_s": 3.130701999998564,
+      "host_load_before": "19:20  up  5:23, 1 user, load averages: 53.82 64.72 74.77",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "edresson",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.3858787439967273,
+      "generation_started_after_process_s": 2.835782999998628,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.28978373000063584,
+      "first_non_silent_callback_s": 0.28978373000063584,
+      "callback_count": 4,
+      "synthesis_s": 0.7472210970008746,
+      "file_ready_s": 0.7730124720001186,
+      "audio_s": 9.2975,
+      "sample_rate": 16000,
+      "rtf": 0.08314197063728083,
+      "characters_per_s": 150.0622618673379,
+      "peak_rss_bytes": 216231936,
+      "peak_amplitude": 0.15440306067466736,
+      "sha256": "527bf68f9985b87cf6be7b1396295c23d1dfe379a5e06533506849668cb1510a",
+      "request_file_ready_s": 3.6175900000016554,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 3.6841400000012072,
+      "host_load_after": "19:20  up  5:23, 1 user, load averages: 50.07 63.76 74.37",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "16000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.297500"
+        }
+      },
+      "peak_db": -16.2,
+      "rtf_request": 0.3890927668729933,
+      "characters_per_request_s": 32.06554639966025,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edresson-short-3.wav"
+    },
+    {
+      "engine": "faber",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/faber-short-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 2.356029785998544,
+      "first_non_silent_pcm_request_s": 2.356349000001501,
+      "host_load_before": "19:20  up  5:23, 1 user, load averages: 50.07 63.76 74.37",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "faber",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.9126999879990763,
+      "generation_started_after_process_s": 2.126213999999891,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.22981578599865315,
+      "first_non_silent_callback_s": 0.22981578599865315,
+      "callback_count": 4,
+      "synthesis_s": 0.6879084469983354,
+      "file_ready_s": 0.7097529269994993,
+      "audio_s": 7.043356,
+      "sample_rate": 22050,
+      "rtf": 0.10076913989375143,
+      "characters_per_s": 163.43715620926469,
+      "peak_rss_bytes": 216834048,
+      "peak_amplitude": 0.7043799161911011,
+      "sha256": "fc73b4a2755258d2146baad2f40590b6920f0b0c237ca3985b230d891e91d207",
+      "request_file_ready_s": 2.8378799999991315,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 2.9084299999994982,
+      "host_load_after": "19:20  up  5:23, 1 user, load averages: 50.07 63.76 74.37",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "22050",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "7.043356"
+        }
+      },
+      "peak_db": -3.0,
+      "rtf_request": 0.40291588271260625,
+      "characters_per_request_s": 40.87558318182428,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/faber-short-3.wav"
+    },
+    {
+      "engine": "kokoro",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/kokoro-short-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 6.15780257899678,
+      "first_non_silent_pcm_request_s": 6.156592999999702,
+      "host_load_before": "19:20  up  5:23, 1 user, load averages: 50.07 63.76 74.37",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "kokoro",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 2.1416464089998044,
+      "generation_started_after_process_s": 2.341426999999385,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 3.8163755789973948,
+      "first_non_silent_callback_s": 3.8163755789973948,
+      "callback_count": 4,
+      "synthesis_s": 14.445140104999155,
+      "file_ready_s": 14.497537665996788,
+      "audio_s": 8.126792,
+      "sample_rate": 24000,
+      "rtf": 1.783918951123203,
+      "characters_per_s": 8.00135875984457,
+      "peak_rss_bytes": 332308480,
+      "peak_amplitude": 0.3903672397136688,
+      "sha256": "b8a4b980eaa152d278bafb647ac88c45dbf3f575e5a0b7018cc09d6e586a63aa",
+      "request_file_ready_s": 16.839891999999963,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 16.98928700000033,
+      "host_load_after": "19:20  up  5:24, 1 user, load averages: 37.28 59.95 72.76",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "8.126792"
+        }
+      },
+      "peak_db": -8.2,
+      "rtf_request": 2.0721450727421056,
+      "characters_per_request_s": 6.888405222551324,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/kokoro-short-3.wav"
+    },
+    {
+      "engine": "supertonic",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/supertonic-short-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 5.082315906001895,
+      "first_non_silent_pcm_request_s": 5.083871000002546,
+      "host_load_before": "19:20  up  5:24, 1 user, load averages: 37.28 59.95 72.76",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "supertonic",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.262819194002077,
+      "generation_started_after_process_s": 1.5471040000011271,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 3.535211906000768,
+      "first_non_silent_callback_s": 3.535211906000768,
+      "callback_count": 1,
+      "synthesis_s": 3.537278192001395,
+      "file_ready_s": 3.6246686060003412,
+      "audio_s": 10.042268,
+      "sample_rate": 44100,
+      "rtf": 0.3609412495136544,
+      "characters_per_s": 32.00292567656296,
+      "peak_rss_bytes": 342605824,
+      "peak_amplitude": 0.5228499174118042,
+      "sha256": "0c5601b3c43570ba554f6e4e413a9ff133f8e1062d9747212ee36b52d0131d20",
+      "request_file_ready_s": 5.176212000002124,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 5.3130160000000615,
+      "host_load_after": "19:20  up  5:24, 1 user, load averages: 34.69 59.04 72.36",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "44100",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "10.042268"
+        }
+      },
+      "peak_db": -5.6,
+      "rtf_request": 0.5154425275248703,
+      "characters_per_request_s": 22.410210400955833,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/supertonic-short-3.wav"
+    },
+    {
+      "engine": "pocket",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/pocket-short-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 3.3342167739974684,
+      "first_non_silent_pcm_request_s": 3.3351069999989704,
+      "host_load_before": "19:20  up  5:24, 1 user, load averages: 34.69 59.04 72.36",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/pocket-worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "pocket",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.3413546810006665,
+      "generation_started_after_process_s": 1.9539679999979853,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 1.380248773999483,
+      "first_non_silent_callback_s": 1.380248773999483,
+      "callback_count": 26,
+      "reference": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+      "synthesis_s": 6.584603253999376,
+      "file_ready_s": 6.60159876599937,
+      "audio_s": 8.8,
+      "sample_rate": 24000,
+      "rtf": 0.7501816779544738,
+      "characters_per_s": 17.571501103254278,
+      "peak_rss_bytes": 862617600,
+      "peak_amplitude": 0.5846899747848511,
+      "sha256": "15239d817d26a11ebe3cb6ee8d824a71621e4300ae2aafad4d03726e6150e179",
+      "request_file_ready_s": 8.562674000000698,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 8.896913000000495,
+      "host_load_after": "19:21  up  5:24, 1 user, load averages: 30.75 57.39 71.62",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "8.800000"
+        }
+      },
+      "peak_db": -4.7,
+      "rtf_request": 0.9730311363637155,
+      "characters_per_request_s": 13.547169961158225,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/pocket-short-3.wav"
+    },
+    {
+      "engine": "edge",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edge-short-3.mp3",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:21  up  5:24, 1 user, load averages: 30.75 57.39 71.62",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-short-3.mp3"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 1.4319509999986622,
+      "host_load_after": "19:21  up  5:24, 1 user, load averages: 30.75 57.39 71.62",
+      "peak_rss_bytes": 11653120,
+      "request_file_ready_s": 1.4319509999986622,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.312000"
+        }
+      },
+      "audio_s": 9.312,
+      "peak_db": -3.7,
+      "rtf_request": 0.15377480670088728,
+      "characters_per_request_s": 81.00835852631018,
+      "sha256": "3fe721a306bff90f7b2fc342430b3f150a6376fa9834a4c049515e842b571b9b",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-short-3.mp3"
+    },
+    {
+      "engine": "qwen06",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:21  up  5:24, 1 user, load averages: 30.75 57.39 71.62",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.mmproj-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-3.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 46.92147800000021,
+      "host_load_after": "19:21  up  5:25, 1 user, load averages: 20.34 50.57 68.29",
+      "peak_rss_bytes": 2579918848,
+      "request_file_ready_s": 46.92147800000021,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "10.880000"
+        }
+      },
+      "audio_s": 10.88,
+      "peak_db": -4.1,
+      "rtf_request": 4.312635845588254,
+      "characters_per_request_s": 2.472215389293566,
+      "sha256": "c780dfc31deeb04cf4f44877c0ebbfc6a2a6d2a18f7131a038d46818265096d5",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-short-3.wav"
+    },
+    {
+      "engine": "qwen17",
+      "corpus": "short",
+      "iteration": 3,
+      "characters": 116,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:21  up  5:25, 1 user, load averages: 20.34 50.57 68.29",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/short.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-3.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 77.85613600000215,
+      "host_load_after": "19:23  up  5:26, 1 user, load averages: 41.81 52.25 67.54",
+      "peak_rss_bytes": 2368647168,
+      "request_file_ready_s": 77.85613600000215,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.920000"
+        }
+      },
+      "audio_s": 9.92,
+      "peak_db": -3.3,
+      "rtf_request": 7.84840080645183,
+      "characters_per_request_s": 1.489927524787472,
+      "sha256": "6c48c601d0884fab78cd06dd804e31f4e9b74b3dd304555224ed675326e31e7c",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-short-3.wav"
+    },
+    {
+      "engine": "qwen17",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-3.wav",
+      "status": "timeout",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:23  up  5:26, 1 user, load averages: 41.81 52.25 67.54",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-3.wav"
+      ],
+      "request_wall_s": 120.30517400000099,
+      "host_load_after": "19:25  up  5:28, 1 user, load averages: 60.92 50.09 64.30",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen17-paragraph-3.wav"
+    },
+    {
+      "engine": "qwen06",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-3.wav",
+      "status": "timeout",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:25  up  5:28, 1 user, load averages: 60.92 50.09 64.30",
+      "argv": [
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/llama-b11669/llama-tts",
+        "-m",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.Q4_K_M.gguf",
+        "-mm",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets/Qwen3-TTS-12Hz-0.6B-Base.mmproj-Q8_0.gguf",
+        "--device",
+        "none",
+        "-ngl",
+        "0",
+        "--no-mmproj-offload",
+        "--tts-lang",
+        "pt",
+        "--tts-speaker-file",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "4096",
+        "-n",
+        "2048",
+        "--seed",
+        "42",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-3.wav"
+      ],
+      "request_wall_s": 120.26205499999924,
+      "host_load_after": "19:27  up  5:30, 1 user, load averages: 15.71 36.22 56.82",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/qwen06-paragraph-3.wav"
+    },
+    {
+      "engine": "edge",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-3.mp3",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": null,
+      "first_non_silent_pcm_request_s": null,
+      "host_load_before": "19:27  up  5:30, 1 user, load averages: 15.71 36.22 56.82",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-3.mp3"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 87.73318300000028,
+      "host_load_after": "19:28  up  5:32, 1 user, load averages: 7.78 28.47 51.87",
+      "peak_rss_bytes": 12279808,
+      "request_file_ready_s": 87.73318300000028,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "43.536000"
+        }
+      },
+      "audio_s": 43.536,
+      "peak_db": -2.8,
+      "rtf_request": 2.0151870406100763,
+      "characters_per_request_s": 7.465818263997077,
+      "sha256": "935c9913d602361df30c59d17a06ecfd180832bb83ce3191254cd0abb259580a",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edge-paragraph-3.mp3"
+    },
+    {
+      "engine": "pocket",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/pocket-paragraph-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 2.6694029249993037,
+      "first_non_silent_pcm_request_s": 2.6692129999973986,
+      "host_load_before": "19:28  up  5:32, 1 user, load averages: 7.78 28.47 51.87",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/pocket-worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "pocket",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.01928141299868,
+      "generation_started_after_process_s": 1.7166719999986526,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.952730925000651,
+      "first_non_silent_callback_s": 0.952730925000651,
+      "callback_count": 67,
+      "reference": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/reference.wav",
+      "synthesis_s": 18.392536698000185,
+      "file_ready_s": 18.44963052300227,
+      "audio_s": 36.24,
+      "sample_rate": 24000,
+      "rtf": 0.5090957649835063,
+      "characters_per_s": 35.502065972723514,
+      "peak_rss_bytes": 918716416,
+      "peak_amplitude": 0.6586989164352417,
+      "sha256": "7e3a1cda2d83c694c86f70337e60da0ade991b7fc4760cb3f0729880ee25d63b",
+      "request_file_ready_s": 20.17620700000043,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 20.516132999997353,
+      "host_load_after": "19:28  up  5:32, 1 user, load averages: 6.66 26.87 50.75",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "36.240000"
+        }
+      },
+      "peak_db": -3.6,
+      "rtf_request": 0.5567386037527713,
+      "characters_per_request_s": 32.46398096530165,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/pocket-paragraph-3.wav"
+    },
+    {
+      "engine": "supertonic",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/supertonic-paragraph-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 9.13330502199824,
+      "first_non_silent_pcm_request_s": 9.137507000003097,
+      "host_load_before": "19:28  up  5:32, 1 user, load averages: 6.66 26.87 50.75",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "supertonic",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.0835491809993982,
+      "generation_started_after_process_s": 1.3538100000005215,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 7.779495021997718,
+      "first_non_silent_callback_s": 7.779495021997718,
+      "callback_count": 3,
+      "synthesis_s": 18.03823075299806,
+      "file_ready_s": 18.788750960997277,
+      "audio_s": 55.118367,
+      "sample_rate": 44100,
+      "rtf": 0.3408800344671455,
+      "characters_per_s": 34.861284891139654,
+      "peak_rss_bytes": 484155392,
+      "peak_amplitude": 0.5904360413551331,
+      "sha256": "27810dc2a54297efaad19626c1345d8ffe54c082922fa8e5eaa24bdffc4bdefb",
+      "request_file_ready_s": 20.16403100000025,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 20.315378000002966,
+      "host_load_after": "19:29  up  5:32, 1 user, load averages: 6.28 25.47 49.70",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "44100",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "55.118367"
+        }
+      },
+      "peak_db": -4.6,
+      "rtf_request": 0.36583142965756316,
+      "characters_per_request_s": 32.48358425951596,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/supertonic-paragraph-3.wav"
+    },
+    {
+      "engine": "kokoro",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/kokoro-paragraph-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 7.431465231999027,
+      "first_non_silent_pcm_request_s": 7.431624999997439,
+      "host_load_before": "19:29  up  5:32, 1 user, load averages: 6.28 25.47 49.70",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "kokoro",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.4925846530022682,
+      "generation_started_after_process_s": 1.8033419999992475,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 5.62812323199978,
+      "first_non_silent_callback_s": 5.62812323199978,
+      "callback_count": 11,
+      "synthesis_s": 59.687153929997294,
+      "file_ready_s": 59.83881430999827,
+      "audio_s": 39.541167,
+      "sample_rate": 24000,
+      "rtf": 1.5133295083182912,
+      "characters_per_s": 10.946072504156524,
+      "peak_rss_bytes": 360095744,
+      "peak_amplitude": 0.44117847084999084,
+      "sha256": "c66380507558c78d268cf1ad5bdf3660a42f3ed799933b01388d2f4b1c970fa9",
+      "request_file_ready_s": 61.65371099999902,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 61.81198999999833,
+      "host_load_after": "19:30  up  5:33, 1 user, load averages: 4.70 21.26 46.33",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "39.541167"
+        }
+      },
+      "peak_db": -7.1,
+      "rtf_request": 1.5592284112403414,
+      "characters_per_request_s": 10.623853607125294,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/kokoro-paragraph-3.wav"
+    },
+    {
+      "engine": "faber",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/faber-paragraph-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 2.1890321470018534,
+      "first_non_silent_pcm_request_s": 2.189352000001236,
+      "host_load_before": "19:30  up  5:33, 1 user, load averages: 4.70 21.26 46.33",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "faber",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.6108091449968924,
+      "generation_started_after_process_s": 1.876538000000437,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.3124941470014164,
+      "first_non_silent_callback_s": 0.3124941470014164,
+      "callback_count": 11,
+      "synthesis_s": 2.500302410000586,
+      "file_ready_s": 2.604266861002543,
+      "audio_s": 37.407347,
+      "sample_rate": 22050,
+      "rtf": 0.06961912763460447,
+      "characters_per_s": 251.51032323463582,
+      "peak_rss_bytes": 288120832,
+      "peak_amplitude": 0.8257474899291992,
+      "sha256": "a60d527021337055b0035b8fb45dd6fda75c8ea35eb90c1e7813bb771f81a228",
+      "request_file_ready_s": 4.486446999999316,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 4.556592000000819,
+      "host_load_after": "19:30  up  5:33, 1 user, load averages: 4.49 20.94 46.07",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "22050",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "37.407347"
+        }
+      },
+      "peak_db": -1.7,
+      "rtf_request": 0.11993491545923628,
+      "characters_per_request_s": 145.99526083783,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/faber-paragraph-3.wav"
+    },
+    {
+      "engine": "edresson",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/edresson-paragraph-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 2.1139053480001166,
+      "first_non_silent_pcm_request_s": 2.1154999999998836,
+      "host_load_before": "19:30  up  5:33, 1 user, load averages: 4.49 20.94 46.07",
+      "argv": [
+        "/Users/pips/Developer/epubtomp3/.venv/bin/python",
+        "/private/tmp/epub-tts-benchmark-20261016/docs/research/tts-mac-20261016/worker.py",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/assets",
+        "edresson",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/corpus.json",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z"
+      ],
+      "load_s": 1.5706927150022238,
+      "generation_started_after_process_s": 1.746911000002001,
+      "model_state": "first_generation",
+      "first_pcm_callback_s": 0.3669943479981157,
+      "first_non_silent_callback_s": 0.3669943479981157,
+      "callback_count": 11,
+      "synthesis_s": 2.595288296997751,
+      "file_ready_s": 2.6804682669971953,
+      "audio_s": 46.430125,
+      "sample_rate": 16000,
+      "rtf": 0.05773123089798263,
+      "characters_per_s": 244.3602888586949,
+      "peak_rss_bytes": 277389312,
+      "peak_amplitude": 0.2734362781047821,
+      "sha256": "ecfdec469e09ccdd46196d71e0ef7d471bc9997f934761f4b91e583ae75e059d",
+      "request_file_ready_s": 4.433290000000852,
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 4.507924000001367,
+      "host_load_after": "19:30  up  5:33, 1 user, load averages: 4.45 20.66 45.83",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "16000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "46.430125"
+        }
+      },
+      "peak_db": -11.3,
+      "rtf_request": 0.09548305114407624,
+      "characters_per_request_s": 147.74580503415615,
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/edresson-paragraph-3.wav"
+    },
+    {
+      "engine": "apple",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "characters": 655,
+      "file": "/Users/pips/Developer/epubtomp3/ios/EpubToMp3/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-3.wav",
+      "status": "passed_full_decode",
+      "first_pcm_request_s": 1.4075440000015078,
+      "first_non_silent_pcm_request_s": 1.4075440000015078,
+      "host_load_before": "19:30  up  5:33, 1 user, load averages: 4.45 20.66 45.83",
+      "argv": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "--file-format=WAVE",
+        "--data-format=LEI16@24000",
+        "-f",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/paragraph.txt",
+        "-o",
+        "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-3.wav"
+      ],
+      "exit_code": 0,
+      "signal": null,
+      "request_wall_s": 1.9313529999999446,
+      "host_load_after": "19:30  up  5:34, 1 user, load averages: 4.45 20.66 45.83",
+      "peak_rss_bytes": 43401216,
+      "request_file_ready_s": 1.9313529999999446,
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "48.771167"
+        }
+      },
+      "audio_s": 48.771167,
+      "peak_db": -3.4,
+      "rtf_request": 0.03960030318733084,
+      "characters_per_request_s": 339.1404885590665,
+      "sha256": "4a8a84d71ef596b4044ca38142d7169b20f2abe7fc4a9d80b86cf45a6cd678d8",
+      "original_file": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z/apple-paragraph-3.wav"
+    }
+  ],
+  "excluded": [],
+  "engines_requested": [
+    "apple",
+    "edresson",
+    "faber",
+    "kokoro",
+    "supertonic",
+    "pocket",
+    "edge",
+    "qwen06",
+    "qwen17"
+  ],
+  "iterations_requested": 3,
+  "active_attempt": null,
+  "finished_utc": "2026-10-16T22:30:33Z",
+  "source_report_sha256": "cb63f9197b44535f9724635ff5fd2b883d2b5592802b556f22e8da941c4485f9",
+  "original_output": "/private/tmp/epub-tts-benchmark-20261016/.reports/tts-mac-20261016/20261016T215351Z",
+  "archived_utc": "2026-10-16T22:32:19Z"
+}

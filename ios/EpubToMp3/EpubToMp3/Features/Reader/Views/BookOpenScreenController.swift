@@ -1,4 +1,5 @@
 #if os(iOS)
+import Combine
 import UIKit
 import UniformTypeIdentifiers
 
@@ -115,6 +116,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var lastScrollingViewportSize: CGSize = .zero
     private var settingsUpdateWorkItem: DispatchWorkItem?
     private var lastRenderedTextSettings: ReaderTextSettings?
+    private var lastRenderedGeometry: (margin: Double, layout: ReaderLayout, showsNumbers: Bool)?
+    private var settingsCancellable: AnyCancellable?
     private var uiTestPageNumber: Int?
     private lazy var textViewport = ReaderTextViewport(
         textView: textView,
@@ -285,6 +288,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         configureNativeReader()
+        applyReaderColors()
+        settingsCancellable = settings.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.scheduleReaderSettingsUpdate() }
         loadBook()
         observeOpenStage("reader_view_did_load_completed")
     }
@@ -293,6 +300,13 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         observeOpenStage("reader_view_did_appear_started")
         super.viewDidAppear(animated)
         observeOpenStage("reader_view_did_appear_completed")
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard isViewLoaded,
+              traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) else { return }
+        applyReaderColors()
     }
 
     func update(book: BookEntity) {
@@ -422,12 +436,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         scrollView.accessibilityIdentifier = "reader.viewport"
         pageOverflowGuard.isUserInteractionEnabled = false
         pageOverflowGuard.accessibilityElementsHidden = true
-        pageOverflowGuard.backgroundColor = settings.readerTheme.previewColors.background
+        pageOverflowGuard.backgroundColor = settings.readerColors.background
         pageOverflowGuard.isHidden = true
         view.addSubview(pageOverflowGuard)
         pageUnderflowGuard.isUserInteractionEnabled = false
         pageUnderflowGuard.accessibilityElementsHidden = true
-        pageUnderflowGuard.backgroundColor = settings.readerTheme.previewColors.background
+        pageUnderflowGuard.backgroundColor = settings.readerColors.background
         pageUnderflowGuard.isHidden = true
         view.addSubview(pageUnderflowGuard)
         view.bringSubviewToFront(pageIndicator)
@@ -1617,6 +1631,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         observeOpenStage("reader_loading_chrome_callback_completed")
         onLoadStateChanged?(false)
         observeOpenStage("reader_loading_root_callback_completed")
+        if lastRenderedTextSettings != ReaderTextSettings(settings: settings) {
+            scheduleReaderSettingsUpdate()
+        }
         guard deferInitialReaderGestures else {
             isDeferringReaderGestures = false
             pageTap.isEnabled = true
@@ -1814,6 +1831,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private func showChapter(_ index: Int, preparedRendering: NSAttributedString? = nil) {
         guard let chapter = fulltext?.chapters[safe: index]
             ?? (activePreparedChapter?.chapterOrdinal == index ? activePreparedChapter?.chapter : nil) else { return }
+        applyReaderColors()
         rememberedViewportOffsets.removeAll()
         paginatedLayoutResult = nil
         textViewport.resetForChapter()
@@ -1859,21 +1877,13 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     settings: settings, fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent())
             }
             if let rendered, rendered.length > 0 {
-                let visible = NSMutableAttributedString(attributedString: rendered)
-                if visible.length > 0 {
-                    visible.addAttribute(
-                        .foregroundColor,
-                        value: settings.readerTheme.previewColors.foreground,
-                        range: NSRange(location: 0, length: visible.length)
-                    )
-                }
-                textView.attributedText = visible
+                textView.attributedText = rendered
             } else {
                 let fallbackText = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? EpubHtmlRenderer.plainText(from: chapter.html ?? "")
                     : chapter.text
                 textView.text = fallbackText
-                textView.textColor = settings.readerTheme.previewColors.foreground
+                textView.textColor = settings.readerColors.foreground
                 let font = settings.readerFontFamily == .sans
                     ? UIFont.systemFont(ofSize: settings.readerPointSize)
                     : settings.readerFontFamily == .mono
@@ -1892,6 +1902,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             uiTestPageNumber = nil
         }
         lastRenderedTextSettings = ReaderTextSettings(settings: settings)
+        lastRenderedGeometry = (settings.readerMargin, settings.readerLayout, settings.readerShowPageNumbers)
         updatePageIndicator()
         updateFlickerProbe()
     }
@@ -1963,7 +1974,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// on the next page instead of ever showing a chopped line.
     private func updatePageOverflowGuard() {
         textViewport.updateMasks(
-            background: settings.readerTheme.previewColors.background,
+            background: settings.readerColors.background,
             paginated: isPaginatedMode
         )
     }
@@ -2215,11 +2226,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         controller.onChange = { [weak self] in
             self?.scheduleReaderSettingsUpdate()
         }
+        controller.onDismiss = { [weak self] in
+            self?.updatePaginationProbe()
+        }
         present(UINavigationController(rootViewController: controller), animated: true)
     }
 
     private func scheduleReaderSettingsUpdate() {
-        guard fulltext != nil else { return }
+        guard !isLoadingBookContent, fulltext != nil || activePreparedChapter != nil else {
+            applyReaderColors()
+            return
+        }
         settingsUpdateWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             self?.applyReaderSettingsImmediately()
@@ -2239,13 +2256,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         forcesScrollingForOversizedFragment = false
         let nextTextSettings = ReaderTextSettings(settings: settings)
         let needsTextRerender = lastRenderedTextSettings != nextTextSettings
-        let colors = settings.readerTheme.previewColors
-        view.backgroundColor = colors.background
-        scrollView.backgroundColor = colors.background
-        textView.backgroundColor = colors.background
-        pageIndicator.textColor = colors.foreground.withAlphaComponent(0.7)
-        pageOverflowGuard.backgroundColor = colors.background
-        pageUnderflowGuard.backgroundColor = colors.background
+        let preservesRawOffset = lastRenderedTextSettings?.hasSameGeometry(as: nextTextSettings) == true
+            && lastRenderedGeometry?.margin == settings.readerMargin
+            && lastRenderedGeometry?.layout == settings.readerLayout
+            && lastRenderedGeometry?.showsNumbers == settings.readerShowPageNumbers
+        applyReaderColors()
         applyReaderLayoutMode()
         applyReaderMargins()
         view.setNeedsLayout()
@@ -2256,8 +2271,33 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             updateTextHeightForCurrentLayout()
         }
         view.layoutIfNeeded()
-        restoreReadingAnchor(readingAnchor)
+        restoreReadingAnchor(readingAnchor, preservingViewportOffset: preservesRawOffset)
+        lastRenderedGeometry = (settings.readerMargin, settings.readerLayout, settings.readerShowPageNumbers)
         updatePageIndicator()
+        persistReadingProgress()
+    }
+
+    private func applyReaderColors() {
+        let style: UIUserInterfaceStyle
+        switch settings.readerPreferredColorScheme {
+        case .dark: style = .dark
+        case .light: style = .light
+        case nil: style = .unspecified
+        }
+        if overrideUserInterfaceStyle != style { overrideUserInterfaceStyle = style }
+        let colors = settings.readerColors
+        view.backgroundColor = colors.background
+        view.tintColor = colors.link
+        scrollView.backgroundColor = colors.background
+        textView.backgroundColor = colors.background
+        textView.linkTextAttributes = settings.readerTheme != .light || settings.readerOverrideColours
+            ? [.foregroundColor: colors.link, .underlineStyle: NSUnderlineStyle.single.rawValue]
+            : [:]
+        loadingContainer.backgroundColor = colors.background
+        loadingStatusLabel.textColor = colors.foreground.withAlphaComponent(0.75)
+        pageIndicator.textColor = colors.foreground.withAlphaComponent(0.7)
+        pageOverflowGuard.backgroundColor = colors.background
+        pageUnderflowGuard.backgroundColor = colors.background
     }
 
     @objc private func turnPageLeft() { turnPage(forward: false) }
@@ -2407,10 +2447,14 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         view.layoutIfNeeded()
         let estimatedTotal = measuredPageCount
         let current = pageNumber(at: scrollView.contentOffset.y)
+        let outgoingPage = settings.pageTurnStyle == .none || UIAccessibility.isReduceMotionEnabled
+            || ProcessInfo.processInfo.arguments.contains("-uiTestReduceMotion")
+            ? nil : snapshotReaderPage(afterScreenUpdates: false)
         if forward, current >= estimatedTotal, selectedChapter + 1 < fulltext.chapters.count {
             persistReadingProgress(); selectedChapter += 1; showChapter(selectedChapter)
-            scrollView.setContentOffset(.zero, animated: false); updatePageIndicator()
-            finishChapterTransition(); return
+            view.layoutIfNeeded()
+            setPageOffset(.zero, forward: true, outgoingPage: outgoingPage)
+            updatePageIndicator(); return
         }
         if !forward, current <= 1, selectedChapter > 0 {
             persistReadingProgress(); selectedChapter -= 1; showChapter(selectedChapter)
@@ -2421,8 +2465,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
                 uiTestPageNumber = previousTotal
             }
-            scrollView.setContentOffset(CGPoint(x: 0, y: pageOffset(for: previousTotal)), animated: false)
-            updatePageIndicator(); finishChapterTransition(); return
+            setPageOffset(CGPoint(x: 0, y: pageOffset(for: previousTotal)), forward: false, outgoingPage: outgoingPage)
+            updatePageIndicator(); return
         }
         if (forward && current >= estimatedTotal) || (!forward && current <= 1) {
             isPageTransitioning = false
@@ -2432,20 +2476,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             uiTestPageNumber = next
         }
-        setPageOffset(CGPoint(x: 0, y: pageOffset(for: next)), forward: forward)
+        setPageOffset(CGPoint(x: 0, y: pageOffset(for: next)), forward: forward, outgoingPage: outgoingPage)
         updatePageIndicator(); persistReadingProgress()
     }
 
-    private func finishChapterTransition() {
-        // Chapter rendering and layout can be expensive for EPUBs with many
-        // short sections. Keep the input serialized for one run-loop turn so
-        // another edge tap cannot observe half-rendered text metrics.
-        DispatchQueue.main.async { [weak self] in
-            self?.isPageTransitioning = false
+    private func setPageOffset(_ offset: CGPoint, forward: Bool, outgoingPage: UIView?) {
+        guard !UIAccessibility.isReduceMotionEnabled,
+              !ProcessInfo.processInfo.arguments.contains("-uiTestReduceMotion") else {
+            scrollView.setContentOffset(offset, animated: false)
+            isPageTransitioning = false
+            return
         }
-    }
-
-    private func setPageOffset(_ offset: CGPoint, forward: Bool) {
         switch settings.pageTurnStyle {
         case .none:
             scrollView.setContentOffset(offset, animated: false)
@@ -2456,10 +2497,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             // synchronously, and animate a snapshot horizontally. This also
             // prevents UIKit from exposing the intermediate vertical offset
             // when the reader is opened with everything else hidden.
-            let oldPage = scrollView.snapshotView(afterScreenUpdates: false)
             let frame = scrollView.convert(scrollView.bounds, to: view)
             scrollView.setContentOffset(offset, animated: false)
-            guard let oldPage else {
+            guard let oldPage = outgoingPage else {
                 isPageTransitioning = false
                 return
             }
@@ -2475,17 +2515,15 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 self.isPageTransitioning = false
             }
         case .flip:
-            performHorizontalPageCurl(to: offset, forward: forward)
+            performHorizontalPageCurl(to: offset, forward: forward, outgoingPage: outgoingPage)
         }
     }
 
     /// A horizontal page fold around the vertical reading edge. UIKit's
     /// built-in curl only travels vertically and `transitionFlip…` rotates
     /// like a card, so neither represents turning a book page.
-    private func performHorizontalPageCurl(to offset: CGPoint, forward: Bool) {
-        guard !UIAccessibility.isReduceMotionEnabled,
-              !ProcessInfo.processInfo.arguments.contains("-uiTestReduceMotion"),
-              let outgoingPage = scrollView.snapshotView(afterScreenUpdates: false) else {
+    private func performHorizontalPageCurl(to offset: CGPoint, forward: Bool, outgoingPage: UIView?) {
+        guard let outgoingPage else {
             scrollView.setContentOffset(offset, animated: false)
             isPageTransitioning = false
             return
@@ -2494,37 +2532,72 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         let frame = scrollView.convert(scrollView.bounds, to: view)
         scrollView.setContentOffset(offset, animated: false)
         outgoingPage.frame = frame
-        outgoingPage.accessibilityIdentifier = "reader.pageCurl"
-        outgoingPage.isAccessibilityElement = true
-        outgoingPage.accessibilityLabel = "Page turning"
-        outgoingPage.layer.isDoubleSided = false
-        outgoingPage.layer.anchorPoint = CGPoint(x: forward ? 1 : 0, y: 0.5)
-        outgoingPage.layer.position = CGPoint(x: forward ? frame.maxX : frame.minX, y: frame.midY)
+        view.addSubview(outgoingPage)
+        let turningPage: UIView
+        if forward {
+            turningPage = outgoingPage
+        } else {
+            // Keep the current page underneath while the previous page opens
+            // from the spine. Snapshot the committed destination, not the old page.
+            scrollView.layoutIfNeeded()
+            guard let incomingPage = snapshotReaderPage(afterScreenUpdates: true) else {
+                outgoingPage.removeFromSuperview()
+                isPageTransitioning = false
+                return
+            }
+            incomingPage.frame = frame
+            turningPage = incomingPage
+            view.addSubview(incomingPage)
+        }
+        turningPage.accessibilityIdentifier = "reader.pageCurl"
+        turningPage.isAccessibilityElement = true
+        turningPage.accessibilityLabel = "Page turning"
+        turningPage.layer.isDoubleSided = false
+        turningPage.layer.anchorPoint = CGPoint(x: 0, y: 0.5)
+        turningPage.layer.position = CGPoint(x: frame.minX, y: frame.midY)
 
         let foldShadow = CAGradientLayer()
-        foldShadow.frame = outgoingPage.bounds
-        foldShadow.colors = forward
-            ? [UIColor.black.withAlphaComponent(0.30).cgColor, UIColor.clear.cgColor]
-            : [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.30).cgColor]
-        foldShadow.startPoint = CGPoint(x: forward ? 1 : 0, y: 0.5)
-        foldShadow.endPoint = CGPoint(x: forward ? 0 : 1, y: 0.5)
-        outgoingPage.layer.addSublayer(foldShadow)
-        view.addSubview(outgoingPage)
+        foldShadow.frame = turningPage.bounds
+        foldShadow.colors = [UIColor.black.withAlphaComponent(0.30).cgColor, UIColor.clear.cgColor]
+        foldShadow.startPoint = CGPoint(x: 0, y: 0.5)
+        foldShadow.endPoint = CGPoint(x: 1, y: 0.5)
+        turningPage.layer.addSublayer(foldShadow)
 
         var fold = CATransform3DIdentity
         fold.m34 = -1 / 900
-        fold = CATransform3DRotate(fold, forward ? -.pi / 2 : .pi / 2, 0, 1, 0)
+        fold = CATransform3DRotate(fold, -.pi / 2, 0, 1, 0)
+        if !forward { turningPage.layer.transform = fold }
         UIView.animate(
             withDuration: 0.35,
             delay: 0,
             options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
         ) {
-            outgoingPage.layer.transform = fold
-            outgoingPage.alpha = 0.92
+            turningPage.layer.transform = forward ? fold : CATransform3DIdentity
+            foldShadow.opacity = forward ? 1 : 0
         } completion: { _ in
+            turningPage.removeFromSuperview()
             outgoingPage.removeFromSuperview()
             self.isPageTransitioning = false
         }
+    }
+
+    /// Edge masks live outside the scroll view. Carry them with its snapshot
+    /// so a raw offset restored by a chrome transition cannot expose half a glyph.
+    private func snapshotReaderPage(afterScreenUpdates: Bool) -> UIView? {
+        updatePageOverflowGuard()
+        guard let surface = scrollView.snapshotView(afterScreenUpdates: afterScreenUpdates) else { return nil }
+        let viewport = scrollView.convert(scrollView.bounds, to: view)
+        let page = UIView(frame: CGRect(origin: .zero, size: viewport.size))
+        page.backgroundColor = scrollView.backgroundColor
+        page.clipsToBounds = true
+        surface.frame = page.bounds
+        page.addSubview(surface)
+        for mask in [pageUnderflowGuard, pageOverflowGuard] where !mask.isHidden {
+            let cover = UIView(frame: mask.frame.offsetBy(dx: -viewport.minX, dy: -viewport.minY))
+            cover.backgroundColor = mask.backgroundColor
+            page.addSubview(cover)
+        }
+        return page
     }
 
     // MARK: - Selection → bookmark/highlight/note
@@ -2807,6 +2880,7 @@ private struct ReaderTextSettings: Equatable {
     let suppressesItalic: Bool
     let letterSpacing: Double
     let wordSpacing: Double
+    let customColors: [Double]
 
     init(settings: AppSettings) {
         fontSize = settings.readerFontSize
@@ -2821,6 +2895,18 @@ private struct ReaderTextSettings: Equatable {
         suppressesItalic = settings.readerSuppressItalic
         letterSpacing = settings.readerLetterSpacing
         wordSpacing = settings.readerWordSpacing
+        let colors = settings.readerCustomColors
+        customColors = [colors.background.0, colors.background.1, colors.background.2,
+                        colors.foreground.0, colors.foreground.1, colors.foreground.2]
+    }
+
+    func hasSameGeometry(as other: Self) -> Bool {
+        fontSize == other.fontSize && fontFamily == other.fontFamily
+            && lineSpacing == other.lineSpacing && alignment == other.alignment
+            && overridesFontFamily == other.overridesFontFamily
+            && overridesFontSize == other.overridesFontSize
+            && boldOverride == other.boldOverride && suppressesItalic == other.suppressesItalic
+            && letterSpacing == other.letterSpacing && wordSpacing == other.wordSpacing
     }
 }
 

@@ -1,0 +1,222 @@
+name: Packaged CLI Faber golden
+
+on:
+  push:
+    branches: [master, 'feature/**']
+    paths:
+      - '.github/workflows/cli-faber-golden.yml'
+      - 'scripts/verify_cli_faber.rb'
+      - 'scripts/test_verify_cli_faber.rb'
+      - 'scripts/package_rust_cli.rb'
+      - 'scripts/package_linux_onnxruntime.rb'
+      - 'scripts/test_package_linux_onnxruntime.rb'
+      - 'crates/converter-cli/**'
+  pull_request:
+    paths:
+      - '.github/workflows/cli-faber-golden.yml'
+      - 'scripts/verify_cli_faber.rb'
+      - 'scripts/test_verify_cli_faber.rb'
+      - 'scripts/package_rust_cli.rb'
+      - 'scripts/package_linux_onnxruntime.rb'
+      - 'scripts/test_package_linux_onnxruntime.rb'
+      - 'crates/converter-cli/**'
+      - 'crates/converter-core/**'
+      - 'crates/converter-ffi/**'
+      - 'native/**'
+      - 'mise.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-faber-golden-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  packaged-cli:
+    name: Public packaged CLI offline Faber
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby
+      ORT_PREFER_DYNAMIC_LINK: '1'
+      ORT_SKIP_DOWNLOAD: '1'
+      CARGO_BUILD_JOBS: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install scoped project tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Test the golden runner's failure and artifact identity boundaries
+        run: |
+          set -o pipefail
+          mkdir -p .reports/cli-faber
+          mise exec -- ruby scripts/test_verify_cli_faber.rb 2>&1 | tee .reports/cli-faber/harness-tests.log
+      - name: Install native build and full audio decoding prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg unzip binutils
+      - name: Test real ELF dependency relocation and rejection boundaries
+        run: |
+          set -o pipefail
+          mise exec -- ruby scripts/test_package_linux_onnxruntime.rb 2>&1 | tee .reports/cli-faber/linux-package-tests.log
+      - name: Install the checksum-pinned host ONNX Runtime
+        run: |
+          archive="$RUNNER_TEMP/cli-onnxruntime-linux-x64-1.24.4.tgz"
+          curl --fail --location --retry 3 \
+            https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz \
+            --output "$archive"
+          echo '3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747  '"$archive" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/cli-onnxruntime"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/cli-onnxruntime"
+          library_directory="$RUNNER_TEMP/cli-onnxruntime/onnxruntime-linux-x64-1.24.4/lib"
+          test -f "$library_directory/libonnxruntime.so"
+          echo "ORT_LIB_LOCATION=$library_directory" >> "$GITHUB_ENV"
+      - name: Resolve the native build cache primary key
+        id: cli-cache-key
+        run: echo "cache-primary-key=cli-faber-ubuntu24-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}" >> "$GITHUB_OUTPUT"
+      - name: Cache native build prerequisites
+        id: cli-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cli-cache-key.outputs.cache-primary-key }}
+          restore-keys: cli-faber-ubuntu24-
+      - name: Build the actual public CLI package
+        id: cli-build
+        run: mise run cli:package
+      - name: Retain a successful native build before later runtime acceptance
+        if: success() && steps.cli-build.outcome == 'success' && steps.cli-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cli-cache-key.outputs.cache-primary-key }}
+      - name: Verify the public convert task starts its packaged Linux CLI without a development loader
+        run: |
+          set -euo pipefail
+          public_root=$(mktemp -d "$RUNNER_TEMP/cli-public-entrypoint.XXXXXX")
+          printf '%s\n' "$public_root" > .reports/cli-faber/public-entrypoint-owned-root.txt
+          # ORT_LIB_LOCATION is needed only by the build repeated inside the task;
+          # the existing wrapper removes it from the final CLI child's environment.
+          env -u LD_LIBRARY_PATH -u LD_PRELOAD -u ORT_DYLIB_PATH \
+            -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
+            -u ESPEAK_DATA_DIRECTORY -u PIPER_ESPEAKNG_DATA_DIRECTORY \
+            PERSISTENT_ROOT="$public_root/persistent" \
+            mise run convert -- preferences show \
+            > .reports/cli-faber/public-entrypoint.stdout.json \
+            2> .reports/cli-faber/public-entrypoint.stderr.log
+          mise exec -- ruby -rjson -e '
+            expected = {"primary" => {"engine" => "piper", "model_id" => "pt_BR-faber-medium", "voice" => nil},
+              "secondary" => nil, "allow_online_fallback" => false}
+            actual = JSON.parse(File.read(ARGV.fetch(0)))
+            abort "Public convert task preferences differ from offline Faber" unless actual == expected
+            File.write(ARGV.fetch(1), JSON.pretty_generate({"entrypoint" => "mise run convert -- preferences show",
+              "preferences" => actual, "developmentLoaderRemoved" => true, "synthesisPerformed" => false}))
+            puts "CLI_PUBLIC_ENTRYPOINT offline_faber=true development_loader=false"
+          ' .reports/cli-faber/public-entrypoint.stdout.json .reports/cli-faber/public-entrypoint-evidence.json
+      - name: Explicitly install Faber through the CLI and convert exactly two public chapters
+        run: |
+          set -o pipefail
+          mise exec -- ruby scripts/verify_cli_faber.rb 2>&1 | tee .reports/cli-faber/run.log
+          grep -Fx 'CLI_FABER_GOLDEN chapters=2 engine=piper model=pt_BR-faber-medium fallback=false' .reports/cli-faber/run.log
+      - name: Clean only owned temporary models and generated audio
+        if: always()
+        run: |
+          if [ -f .reports/cli-faber/owned-root.txt ]; then
+            mise exec -- ruby scripts/verify_cli_faber.rb --cleanup-owned
+          fi
+      - name: Remove the explicitly downloaded temporary runtime
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/cli-onnxruntime" "$RUNNER_TEMP/cli-onnxruntime-linux-x64-1.24.4.tgz"
+      - name: Remove only the owned public-entrypoint preferences directory
+        if: always()
+        run: |
+          mise exec -- ruby -e '
+            require "fileutils"
+            registry = ".reports/cli-faber/public-entrypoint-owned-root.txt"
+            exit 0 unless File.file?(registry)
+            owned = File.expand_path(File.read(registry).strip)
+            parent = File.realpath(ENV.fetch("RUNNER_TEMP"))
+            abort "Refusing public-entrypoint cleanup outside its owned root" unless
+              File.dirname(owned) == parent && File.basename(owned).match?(/\Acli-public-entrypoint\.[A-Za-z0-9]+\z/) && !File.symlink?(owned)
+            FileUtils.remove_entry(owned) if File.exist?(owned)
+          '
+      - name: Retain metadata and command logs without models or generated audio
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: packaged-cli-faber-evidence
+          path: .reports/cli-faber
+          if-no-files-found: warn
+      - name: Archive only the verified Linux CLI product
+        if: success()
+        env:
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mise exec -- ruby -rjson -rdigest -rfileutils -rrbconfig -e '
+            root = Dir.pwd
+            package = File.join(root, "dist/epub-to-mp3-cli")
+            abort "CLI package must be a canonical directory" unless File.directory?(package) && File.realpath(package) == package
+            manifest_path = File.join(package, "package.json")
+            metadata = JSON.parse(File.read(manifest_path))
+            files = metadata.fetch("files")
+            abort "Unexpected CLI package identity" unless metadata["runtime"] == "native Rust/Piper" &&
+              metadata["model_weights_included"] == false && files.is_a?(Hash) && !files.empty?
+            inventory = Dir.glob(File.join(package, "**", "*"), File::FNM_DOTMATCH).reject { |path| %w[. ..].include?(File.basename(path)) }
+            abort "CLI package contains a symlink or special file" unless inventory.all? { |path| stat = File.lstat(path); stat.file? || stat.directory? }
+            actual_files = inventory.select { |path| File.file?(path) }.map { |path| path.delete_prefix(package + "/") }.sort
+            abort "CLI package inventory differs from its manifest" unless actual_files == (files.keys + ["package.json"]).sort
+            files.each do |name, digest|
+              abort "Unsafe CLI package member" unless name.is_a?(String) && name.start_with?("bin/") &&
+                !name.include?("\\") && !name.include?("\0") && name.split("/", -1).none? { |part| part.empty? || %w[. ..].include?(part) }
+              abort "Invalid CLI package checksum" unless digest.is_a?(String) && digest.match?(/\A[0-9a-f]{64}\z/) &&
+                Digest::SHA256.file(File.join(package, name)).hexdigest == digest
+            end
+            executable = File.join(package, "bin/converter-cli")
+            abort "Packaged CLI executable is missing" unless files.key?("bin/converter-cli") && File.executable?(executable)
+            abort "Unexpected Linux CLI build host" unless RUBY_PLATFORM.include?("linux") && RbConfig::CONFIG.fetch("host_cpu") == "x86_64" && metadata["host"] == RbConfig::CONFIG.fetch("host")
+            source = IO.popen(%w[git rev-parse HEAD], &:read).strip
+            abort "Cannot identify checked-out source" unless $?.success? && source.match?(/\A[0-9a-f]{40}\z/)
+            evidence = File.join(root, ".reports/cli-package")
+            FileUtils.mkdir_p(evidence)
+            archive_name = "epub-to-mp3-cli-linux-x86_64.tar.gz"
+            archive = File.join(evidence, archive_name)
+            abort "Cannot archive the verified CLI package" unless system("tar", "-czf", archive, "-C", File.join(root, "dist"), "epub-to-mp3-cli")
+            archive_hash = Digest::SHA256.file(archive).hexdigest
+            File.write(archive + ".sha256", "#{archive_hash}  #{archive_name}\n")
+            identity = {
+              sourceCommit: source, eventHeadCommit: ENV.fetch("EVENT_HEAD_SHA"),
+              eventName: ENV.fetch("GITHUB_EVENT_NAME"), runId: ENV.fetch("GITHUB_RUN_ID"),
+              runAttempt: ENV.fetch("GITHUB_RUN_ATTEMPT"), host: RbConfig::CONFIG.fetch("host"),
+              architecture: RbConfig::CONFIG.fetch("host_cpu"),
+              packageManifestSha256: Digest::SHA256.file(manifest_path).hexdigest,
+              executableSha256: files.fetch("bin/converter-cli"),
+              archive: archive_name, archiveSha256: archive_hash,
+              packagedOnnxruntime: files.select { |name, _| name.start_with?("bin/libonnxruntime.so") },
+              modelWeightsIncluded: false, privateBookTestsExecuted: false
+            }
+            File.write(File.join(evidence, "build-identity.json"), JSON.pretty_generate(identity))
+          '
+      - name: Retain the verified executable package separately from golden logs
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: packaged-cli-faber-linux-x86_64
+          path: .reports/cli-package
+          if-no-files-found: error

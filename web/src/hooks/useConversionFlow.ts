@@ -1,3 +1,4 @@
+import { buildCliReproduction } from "../utils/cliReproduction";
 import {
   useCallback,
   useEffect,
@@ -236,81 +237,13 @@ const isNetworkError = (error: unknown): boolean => {
   );
 };
 
-function buildCliCommand(values: ConversionFormValues): string {
-  const parts = ["python python_app/convert"];
-  const displayFileName = values.file?.name || values.fileName;
-  if (displayFileName) {
-    parts.push(displayFileName);
-  }
-
-  if (values.engine) {
-    parts.push("--engine", values.engine);
-  }
-
-  if (values.voice) {
-    parts.push("--voice", values.voice);
-  }
-  if (values.model) {
-    parts.push("--model", values.model);
-  }
-
-  if (values.chapters) {
-    parts.push("--chapter", values.chapters);
-  }
-  if (values.sections) {
-    parts.push("--section", values.sections);
-  }
-  if (values.priority) {
-    parts.push("--priority", values.priority);
-  }
-
-  if (typeof values.verbose === "boolean") {
-    parts.push(values.verbose ? "--verbose" : "--no-verbose");
-  }
-
-  if (typeof values.formattingCues === "boolean") {
-    parts.push(
-      values.formattingCues ? "--formatting-cues" : "--no-formatting-cues",
-    );
-  }
-
-  if (values.noParallel) {
-    parts.push("--no-parallel");
-  }
-
-  if (values.multiEngineParallel) {
-    parts.push("--multi-engine");
-  }
-
-  if (values.filterChapters) {
-    parts.push("--filter-chapters");
-  }
-
-  if (values.clearCache) {
-    parts.push("--clear-cache");
-  }
-
-  if (values.footnoteMode && values.footnoteMode !== "inline") {
-    if (values.footnoteMode === "skip") {
-      parts.push("--no-footnote");
-    } else if (values.footnoteMode === "chapter_end") {
-      parts.push("--footnote-chapter-end");
-    }
-  }
-
-  if (values.language) {
-    parts.push("--language", values.language);
-  }
-
-  return parts.join(" ");
-}
-
 type Action =
   | { type: "reset" }
   | {
       type: "start";
       entry: StatusEntry;
-      cliCommand: string;
+      cliCommand?: string;
+      cliShell?: ConversionState["cliShell"];
       startedAt?: string;
     }
   | { type: "job-created"; entry: StatusEntry; jobId: string }
@@ -365,6 +298,7 @@ const initialState: ConversionState = {
   etaSeconds: undefined,
   summary: undefined,
   cliCommand: undefined,
+  cliShell: undefined,
   bookTitle: undefined,
   bookAuthor: undefined,
   coverUrl: undefined,
@@ -389,6 +323,7 @@ function reducer(state: ConversionState, action: Action): ConversionState {
         phase: "submitting",
         log: [action.entry],
         cliCommand: action.cliCommand,
+        cliShell: action.cliShell,
         startedAt: action.startedAt ?? new Date().toISOString(),
         completedAt: undefined,
         totalDurationSeconds: undefined,
@@ -811,7 +746,7 @@ export function useConversionFlow(
   const [healthStatus, setHealthStatus] = useState<
     "unknown" | "ok" | "fail" | "restarting"
   >("unknown");
-  const systemStats = useSystemStats(client ? 0 : 5000);
+  const systemStats = useSystemStats(client || api.mode === "embedded" ? 0 : 5000);
   const recentSpeed = useMemo(
     () => resolveRecentSpeed(state.summary),
     [state.summary?.chapterProgress],
@@ -963,6 +898,7 @@ export function useConversionFlow(
     return true;
   }, [state.phase]);
   const waitForBackendReady = useCallback(async () => {
+    if (api.mode === "embedded") return true;
     const tolerances = adaptiveTolerancesRef.current;
     const maxAttempts = Math.max(3, tolerances.healthFailureLimit + 2);
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -980,7 +916,7 @@ export function useConversionFlow(
     }
     markApiOffline();
     return false;
-  }, [markApiOffline, markApiOnline]);
+  }, [api, markApiOffline, markApiOnline]);
   const appendSnapshotEvents = useCallback(
     (events?: string[]) => {
       if (!events || events.length === 0) {
@@ -1101,7 +1037,7 @@ export function useConversionFlow(
       if (removeFn && apiAvailable) {
         void (async () => {
           try {
-            await removeFn(jobId);
+            await removeFn.call(api, jobId);
           } catch (error) {
             console.warn(
               "[useConversionFlow] Failed to purge cancelled job on backend",
@@ -1116,7 +1052,7 @@ export function useConversionFlow(
   );
 
   useEffect(() => {
-    if (client) {
+    if (client || api.mode === "embedded") {
       setApiAvailable(true);
       return undefined;
     }
@@ -1216,7 +1152,7 @@ export function useConversionFlow(
         window.clearTimeout(timeoutId);
       }
     };
-  }, [client, markApiOffline, markApiOnline, state.phase]);
+  }, [api, client, markApiOffline, markApiOnline, state.phase]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1594,12 +1530,13 @@ export function useConversionFlow(
           : startMessage;
 
       // Generate CLI command
-      const cliCommand = buildCliCommand(values);
+      const recipe = buildCliReproduction(values);
 
       dispatch({
         type: "start",
         entry: entryFactoryRef.current(label),
-        cliCommand,
+        cliCommand: recipe?.command,
+        cliShell: recipe?.shell,
         startedAt: startedAtIso,
       });
       if (values.bookTitle || values.bookAuthor || values.coverUrl) {
@@ -2446,7 +2383,7 @@ export function useConversionFlow(
     if (jobId && !removeFn && typeof cancelFn === "function") {
       void (async () => {
         try {
-          await cancelFn(jobId);
+          await cancelFn.call(api, jobId);
         } catch (error) {
           const message =
             error instanceof Error && error.message
@@ -2511,7 +2448,7 @@ export function useConversionFlow(
       if (!removeFn && typeof cancelFn === "function") {
         void (async () => {
           try {
-            await cancelFn(jobId);
+            await cancelFn.call(api, jobId);
           } catch (error) {
             console.warn(
               "[skipCurrent] Failed to cancel job on backend:",
@@ -2591,7 +2528,7 @@ export function useConversionFlow(
       if (jobId && removeFn && apiAvailable) {
         void (async () => {
           try {
-            await removeFn(jobId);
+            await removeFn.call(api, jobId);
           } catch (error) {
             console.warn(
               "[useConversionFlow] Failed to remove job on backend",

@@ -7,13 +7,13 @@ enum ConversionHistoryReader {
     }
 
     private struct EmbeddedManifestEnvelope: Decodable {
-        let manifest: Manifest
+        let manifest: EmbeddedManifest
+    }
 
-        struct Manifest: Decodable {
-            let jobId: String
-            let title: String
-            let chapters: [Chapter]
-        }
+    private struct EmbeddedManifest: Decodable {
+        let jobId: String
+        let title: String
+        let chapters: [Chapter]
 
         struct Chapter: Decodable {}
     }
@@ -120,17 +120,21 @@ enum ConversionHistoryReader {
                 try? handle.close()
                 continue
             }
-            guard data.count <= 1_048_576,
-                  let envelope = try? decoder.decode(EmbeddedManifestEnvelope.self, from: data),
-                  !envelope.manifest.chapters.isEmpty else { continue }
+            guard data.count <= 1_048_576 else { continue }
+            // Rust persists the bare manifest; older records may retain the FFI envelope.
+            let decoded = (try? decoder.decode(EmbeddedManifest.self, from: data))
+                ?? (try? decoder.decode(EmbeddedManifestEnvelope.self, from: data).manifest)
+            guard let manifest = decoded,
+                  manifest.jobId == directory.lastPathComponent,
+                  !manifest.chapters.isEmpty else { continue }
             let modifiedAt = (try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
                 ?? .distantPast
             let session = SessionRecord(
                 timestamp: ISO8601DateFormatter().string(from: modifiedAt),
-                bookTitle: envelope.manifest.title,
-                jobId: envelope.manifest.jobId,
+                bookTitle: manifest.title,
+                jobId: manifest.jobId,
                 engine: "Rust",
-                chaptersConverted: envelope.manifest.chapters.count,
+                chaptersConverted: manifest.chapters.count,
                 durationSeconds: nil,
                 outcome: "finished",
                 mode: "embedded"

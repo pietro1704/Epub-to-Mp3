@@ -14,7 +14,7 @@ final class PlatformFallbackNoticeTracker: @unchecked Sendable {
 
     func shouldNotify(progress: Data) -> Bool {
         guard let fields = try? JSONSerialization.jsonObject(with: progress) as? [String: Any],
-              fields["engine"] as? String == "system" else { return false }
+              ((fields["fallbackUsed"] as? Bool) ?? (fields["engine"] as? String == "system")) else { return false }
         lock.lock(); defer { lock.unlock() }
         guard !notified else { return false }
         notified = true
@@ -25,9 +25,10 @@ final class PlatformFallbackNoticeTracker: @unchecked Sendable {
 /// A passive notice: changing providers never pauses playback or asks permission.
 @MainActor
 enum PlatformFallbackNotice {
-    static func show() {
+    static func show(engine: String? = nil) {
 #if !APP_FOUNDATION_HOST_TESTS
-        let message = L10n.string("conversion.systemVoiceFallback")
+        let message = engine.map { L10n.string("conversion.secondaryVoiceUsed", $0 == "piper" ? "Faber medium" : $0) }
+            ?? L10n.string("conversion.systemVoiceFallback")
 #if os(iOS)
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows).first(where: \.isKeyWindow),

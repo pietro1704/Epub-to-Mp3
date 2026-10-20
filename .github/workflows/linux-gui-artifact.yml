@@ -1,0 +1,282 @@
+name: Normal Flutter Linux verification package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/linux-gui-artifact.yml'
+      - 'flutter_app/**'
+      - 'crates/**'
+      - 'native/**'
+      - 'scripts/build_flutter_desktop.rb'
+      - 'scripts/native_job.rb'
+      - 'scripts/native_build_preflight.rb'
+      - 'mise.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    paths:
+      - '.github/workflows/linux-gui-artifact.yml'
+      - 'flutter_app/**'
+      - 'crates/**'
+      - 'native/**'
+      - 'scripts/build_flutter_desktop.rb'
+      - 'scripts/native_job.rb'
+      - 'scripts/native_build_preflight.rb'
+      - 'mise.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-gui-artifact-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-package:
+    name: Build and audit the normal Linux app without launching it
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby,flutter
+      CARGO_BUILD_JOBS: '1'
+      CMAKE_BUILD_PARALLEL_LEVEL: '1'
+      LC_ALL: C
+      EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install scoped project tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Install hosted desktop build and ELF inspection prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake ninja-build pkg-config libgtk-3-dev liblzma-dev binutils
+      - name: Snapshot tracked generated-source provenance before building
+        run: |
+          mise exec -- python - <<'PY'
+          import hashlib
+          import json
+          import subprocess
+          from pathlib import Path
+
+          paths = ['flutter_app/lib/l10n/app_localizations.dart',
+                   'flutter_app/lib/l10n/app_localizations_en.dart',
+                   'voice_samples/README.md']
+          changed = subprocess.check_output(['git', 'diff', '--name-only', '-z', 'HEAD']).decode().split('\0')
+          if set(filter(None, changed)) - set(paths):
+              raise RuntimeError('Unexpected tracked changes before building')
+          records = {}
+          for name in paths:
+              path = Path(name)
+              if path.is_symlink() or not path.is_file():
+                  raise RuntimeError(f'Expected regular provenance input: {name}')
+              head = subprocess.check_output(['git', 'show', f'HEAD:{name}'])
+              records[name] = {'headSha256': hashlib.sha256(head).hexdigest(),
+                               'rawBeforeSha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+          evidence = Path('.reports/linux-gui')
+          evidence.mkdir(parents=True, exist_ok=True)
+          snapshot = {'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip(),
+                      'files': records}
+          (evidence / 'source-before.json').write_text(json.dumps(snapshot, indent=2))
+          PY
+      - name: Build the normal lib/main.dart app once through its guarded task
+        run: |
+          set -euo pipefail
+          unset ORT_LIB_LOCATION ORT_DYLIB_PATH ORT_SKIP_DOWNLOAD ORT_PREFER_DYNAMIC_LINK LD_LIBRARY_PATH LD_PRELOAD
+          mkdir -p .reports/linux-gui
+          build_cpu="$(mise exec -- python -c 'import os; print(min(os.sched_getaffinity(0)))')"
+          printf '%s\n' "$build_cpu" > .reports/linux-gui/build-cpu.txt
+          taskset --cpu-list "$build_cpu" mise run flutter:build-linux 2>&1 | tee .reports/linux-gui/build.log
+      - name: Audit and archive only the actual normal product bundle
+        run: |
+          set -euo pipefail
+          unset ORT_LIB_LOCATION ORT_DYLIB_PATH ORT_SKIP_DOWNLOAD ORT_PREFER_DYNAMIC_LINK LD_LIBRARY_PATH LD_PRELOAD
+          mise exec -- python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import platform
+          import re
+          import stat
+          import subprocess
+          import tarfile
+          from pathlib import Path
+
+          root = Path.cwd()
+          bundle = root / 'flutter_app/build/linux/x64/release/bundle'
+          evidence = root / '.reports/linux-gui'
+          product = root / '.reports/linux-gui-product'
+          product.mkdir()
+
+          def command(argv, *, env=None):
+              return subprocess.run(argv, check=True, capture_output=True, text=True,
+                                    timeout=60, env=env).stdout
+
+          def digest(path):
+              with path.open('rb') as source:
+                  return hashlib.file_digest(source, 'sha256').hexdigest()
+
+          if not bundle.is_dir() or bundle.resolve() != bundle:
+              raise RuntimeError('Normal app bundle is missing or noncanonical')
+          source = command(['git', 'rev-parse', 'HEAD']).strip()
+          if source != os.environ['EVENT_HEAD_SHA'] or not re.fullmatch('[0-9a-f]{40}', source):
+              raise RuntimeError('Checked-out source differs from the requested head')
+          before_path = evidence / 'source-before.json'
+          provenance = json.loads(before_path.read_text())
+          if provenance['sourceCommit'] != source:
+              raise RuntimeError('Pre-build source identity differs from the audited head')
+          generated_paths = ['flutter_app/lib/l10n/app_localizations.dart',
+                             'flutter_app/lib/l10n/app_localizations_en.dart']
+          allowed_paths = {*generated_paths, 'voice_samples/README.md'}
+          if set(provenance['files']) != allowed_paths:
+              raise RuntimeError('Unexpected pre-build provenance inputs')
+          changed_paths = command(['git', 'diff', '--name-only', '-z', 'HEAD']).split('\0')
+          tracked_changes = list(filter(None, changed_paths))
+          if set(tracked_changes) - allowed_paths:
+              raise RuntimeError('Unexpected tracked changes after building')
+          for name, record in provenance['files'].items():
+              path = root / name
+              if path.is_symlink() or not path.is_file():
+                  raise RuntimeError(f'Expected regular provenance output: {name}')
+              record['rawAfterSha256'] = digest(path)
+          patch = product / 'generated-localizations.patch'
+          patch.write_bytes(subprocess.check_output(
+              ['git', 'diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD', '--', *generated_paths]))
+          provenance.update(sourceDescription='HEAD plus recorded generated-localizations patch',
+                            generatedPatch=patch.name, generatedPatchSha256=digest(patch),
+                            beforeSnapshotSha256=digest(before_path))
+          provenance_path = product / 'generated-source-provenance.json'
+          provenance_path.write_text(json.dumps(provenance, indent=2))
+          records = []
+          paths = [bundle, *sorted(bundle.rglob('*'))]
+          for path in paths:
+              relative = path.relative_to(bundle)
+              info = path.lstat()
+              if '\\' in str(relative) or any(part in ('.', '..') for part in relative.parts):
+                  raise RuntimeError(f'Unsafe bundle path: {relative}')
+              if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+                  raise RuntimeError(f'Unsupported bundle member type: {relative}')
+              if path.suffix.lower() in {'.onnx', '.epub', '.pdf', '.mp3', '.wav', '.safetensors', '.gguf'}:
+                  raise RuntimeError(f'Unexpected model, book or audio payload: {relative}')
+              record = {'path': relative.as_posix(), 'type': 'file' if path.is_file() else 'directory',
+                        'mode': oct(stat.S_IMODE(info.st_mode))}
+              if path.is_file():
+                  record.update(bytes=info.st_size, sha256=digest(path))
+              records.append(record)
+
+          executable = bundle / 'flutter_app'
+          library = bundle / 'lib/libconverter_ffi.so'
+          if not executable.is_file() or not os.access(executable, os.X_OK) or not library.is_file():
+              raise RuntimeError('Missing normal app executable or embedded Rust library')
+          compiled_library = root / 'target/flutter-Linux-x86_64/release/libconverter_ffi.so'
+          if not compiled_library.is_file() or digest(compiled_library) != digest(library):
+              raise RuntimeError('Bundle Rust library differs from this task output')
+          required_assets = ['phontab', 'phondata', 'phonindex', 'lang/roa/pt']
+          for name in required_assets:
+              path = bundle / 'data/espeak-ng-data' / name
+              if not path.is_file() or not path.stat().st_size:
+                  raise RuntimeError(f'Missing packaged phoneme asset: {name}')
+          exports = command(['nm', '-D', '--defined-only', str(library)])
+          required_symbols = ['converter_session_open', 'converter_session_free',
+                              'converter_session_set_desktop_platform_tts_v1',
+                              'converter_session_convert_controlled_job_options_json_v1',
+                              'converter_session_convert_streaming_job_options_json_v1',
+                              'converter_string_free']
+          for symbol in required_symbols:
+              if not re.search(r'\b' + re.escape(symbol) + r'$', exports, re.MULTILINE):
+                  raise RuntimeError(f'Missing packaged ABI: {symbol}')
+          elf_audit = []
+          loader_environment = os.environ.copy()
+          loader_environment['LD_LIBRARY_PATH'] = str(bundle / 'lib')
+          for path in paths:
+              if not path.is_file():
+                  continue
+              with path.open('rb') as candidate:
+                  if candidate.read(4) != b'\x7fELF':
+                      continue
+              header = command(['readelf', '--file-header', str(path)])
+              if not re.search(r'Class:\s+ELF64', header) or not re.search(r'Machine:\s+Advanced Micro Devices X86-64', header):
+                  raise RuntimeError(f'Expected ELF64 x86_64: {path.relative_to(bundle)}')
+              dynamic = command(['readelf', '--dynamic', str(path)])
+              needed = re.findall(r'\(NEEDED\).*?\[([^\]]+)\]', dynamic)
+              if any('onnxruntime' in name for name in needed):
+                  raise RuntimeError('Linux product unexpectedly requires dynamic ONNX Runtime')
+              closure = command(['ldd', str(path)], env=loader_environment) if needed else ''
+              if 'not found' in closure:
+                  raise RuntimeError(f'Unresolved ELF dependency: {path.relative_to(bundle)}')
+              elf_audit.append({'path': path.relative_to(bundle).as_posix(),
+                                'needed': needed, 'resolvedDependencies': closure})
+          audited_paths = {entry['path'] for entry in elf_audit}
+          if not {'flutter_app', 'lib/libconverter_ffi.so'} <= audited_paths:
+              raise RuntimeError('Critical app or Rust library was not audited as ELF')
+          if platform.system() != 'Linux' or platform.machine() != 'x86_64':
+              raise RuntimeError('Unexpected verification host')
+
+          archive = product / 'epub-to-mp3-flutter-linux-x86_64.tar.gz'
+          with tarfile.open(archive, 'w:gz') as output:
+              for path in paths:
+                  relative = path.relative_to(bundle)
+                  member = tarfile.TarInfo(str(Path('epub-to-mp3-linux') / relative))
+                  member.mode = stat.S_IMODE(path.stat().st_mode)
+                  if path.is_dir():
+                      member.type = tarfile.DIRTYPE
+                      output.addfile(member)
+                  else:
+                      member.size = path.stat().st_size
+                      with path.open('rb') as contents:
+                          output.addfile(member, contents)
+          archive_hash = digest(archive)
+          (product / (archive.name + '.sha256')).write_text(f'{archive_hash}  {archive.name}\n')
+          (product / 'files.json').write_text(json.dumps(records, indent=2))
+          identity = {
+              'sourceCommit': source, 'eventHeadCommit': os.environ['EVENT_HEAD_SHA'],
+              'eventName': os.environ['GITHUB_EVENT_NAME'], 'runId': os.environ['GITHUB_RUN_ID'],
+              'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'], 'architecture': platform.machine(),
+              'target': 'lib/main.dart', 'task': 'mise run flutter:build-linux',
+              'cargoTargetDirectory': 'target/flutter-Linux-x86_64',
+              'flags': {'CARGO_BUILD_JOBS': 1, 'CMAKE_BUILD_PARALLEL_LEVEL': 1,
+                        'ORT_PREFER_DYNAMIC_LINK': 0, 'buildCpu': int((evidence / 'build-cpu.txt').read_text())},
+              'toolchains': {'rust': command(['rustc', '-vV']), 'ruby': command(['ruby', '--version']),
+                             'flutter': json.loads(command(['flutter', '--version', '--machine'])),
+                             'cmake': command(['cmake', '--version'])},
+              'cargoLockSha256': digest(root / 'Cargo.lock'),
+              'executableSha256': digest(executable), 'embeddedLibrarySha256': digest(library),
+              'archive': archive.name, 'archiveSha256': archive_hash,
+              'filesManifestSha256': digest(product / 'files.json'), 'elfAudit': elf_audit,
+              'dependencyAuditLibraryPath': str(bundle / 'lib'),
+              'trackedChangesAfterBuild': tracked_changes,
+              'sourceDescription': provenance['sourceDescription'],
+              'generatedSourceProvenance': provenance_path.name,
+              'generatedSourceProvenanceSha256': digest(provenance_path),
+              'generatedSourcePatch': patch.name, 'generatedSourcePatchSha256': digest(patch),
+              'modelsIncluded': False, 'applicationLaunched': False,
+              'guiAcceptancePerformed': False, 'privateBookTestsExecuted': False,
+          }
+          (product / 'build-identity.json').write_text(json.dumps(identity, indent=2))
+          PY
+      - name: Retain the audited normal Linux product
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: flutter-linux-normal-product
+          path: .reports/linux-gui-product
+          if-no-files-found: error
+      - name: Retain build logs separately from the product
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: flutter-linux-normal-build-logs
+          path: .reports/linux-gui
+          if-no-files-found: warn

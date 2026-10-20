@@ -3,6 +3,7 @@ import Foundation
 /// Configuration transported to Rust; validation and provider selection belong to Rust.
 struct ConversionOptions: Codable, Sendable, Equatable {
     let schemaVersion: UInt32
+    var ttsPreferences: TtsPreferences? = nil
     var engine: String?
     var voice: String?
     var language: String?
@@ -44,18 +45,19 @@ struct ConversionOptions: Codable, Sendable, Equatable {
     }
 
     static func selectedEngine(_ engine: AudioEnginePreference, modelsRoot: URL? = nil) -> ConversionOptions {
-        let resolvedEngine = AudioEnginePreference.supportedPreferences.contains(engine) ? engine : .edge
+        let resolvedEngine = AudioEnginePreference.supportedPreferences.contains(engine) ? engine : .piper
         return ConversionOptions(
             engine: resolvedEngine.rawValue,
-            language: resolvedEngine == .piper ? "pt-BR" : nil,
+            language: nil,
             modelsRoot: resolvedEngine == .piper ? modelsRoot?.path : nil,
-            modelID: resolvedEngine == .piper ? "pt_BR-edresson-low" : nil,
+            modelID: resolvedEngine == .piper ? "pt_BR-faber-medium" : nil,
             espeakDataDirectory: resolvedEngine == .piper ? Bundle.main.resourceURL?.path : nil,
         )
     }
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
+        case ttsPreferences = "tts_preferences"
         case engine, voice, language
         case clearCache = "clear_cache"
         case forceReprocess = "force_reprocess"
