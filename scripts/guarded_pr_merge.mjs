@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { assertPrGatePolicy } from './pr_gate_policy.mjs';
 const SHA = /^[0-9a-f]{40}$/;
 const ensure = (condition, message) => { if (!condition) throw new Error(message); };
 
@@ -62,10 +63,13 @@ export function guardedMerge({ repo, pr, head, runId, merge = false, invoke = in
   };
   const first = capture();
   if (!first.eligible || !merge) return { ...first, merged: false };
+  const verifyProtection = () => assertPrGatePolicy(JSON.parse(invoke(['api', `repos/${repo}/branches/master/protection`])));
+  verifyProtection();
   // Re-read immediately before mutation. GitHub also checks the expected head
   // atomically; a pushed replacement cannot inherit this authorization.
   const final = capture();
   if (!final.eligible) return { ...final, merged: false };
+  verifyProtection();
   invoke(['pr', 'merge', pr, '--repo', repo, '--squash', '--match-head-commit', head]);
   // An accepted merge command may enqueue under a server merge queue. Its exit
   // code does not prove the PR has merged; the caller must inspect delivery.

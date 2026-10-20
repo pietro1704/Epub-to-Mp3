@@ -61,11 +61,10 @@ native performance evidence.
 ## Environment and resumption
 
 Use the exact native destinations required by the task and native reader contract.
-Apply build/Simulator phase separation from `docs/agent-workflow.md` on this Intel
-Mac; a physical device does not replace required SE1/iOS 15.5 verification. Stop the previous app before
-another native conversion run. Serialize builds, tests, and conversions through
-the existing scripts/heavy_job_guard.py task integration; do not bypass its lock
-or stack heavy jobs to maximize CPU/RAM use.
+Apply [execution policy](docs/agents/execution-policy.md), including Simulator
+quarantine and guarded single-job Mac compilation. A physical device does not
+replace required SE1/iOS 15.5 verification. A reviewer must preserve blocked
+acceptance rather than accepting an alternate runtime as equivalent.
 
 On resume, read the saved state and report, then check the recorded live PID once.
 Continue from that evidence. Repeat a state query only after changed evidence
@@ -73,7 +72,7 @@ Continue from that evidence. Repeat a state query only after changed evidence
 unchanged state alone does not justify another polling loop or a duplicate run.
 
 Reuse valid incremental artifacts when compatible and report cache reuse.
-Retain at most one useful active build cache. Before cleanup, verify ownership,
+Respect the shared build-storage budget. Before cleanup, verify ownership,
 tracked status, active processes, and whether the target is a release artifact.
 Preserve inputs, models, .cache/, and output/ unless cleanup is authorized.
 Report retained/removed temporary artifacts after a build/test cycle.
@@ -81,9 +80,22 @@ Report retained/removed temporary artifacts after a build/test cycle.
 ## Review and handoff
 
 Review the complete owned diff against the goal and matching plan, including
-scope, runtime boundaries, evidence, and resource cost. Stop after focused
-verification passes unless new changes, failures, or uncertainty justify more.
+scope, runtime boundaries, evidence, and resource cost. The reviewer owns this
+enforcement; implementation needs the affected seam and acceptance, not another
+copy of every review rule. Require a concrete unresolved failure or acceptance
+gap before expanding a focused fix into broader suites, tooling work or redesign.
+Stop after focused verification passes unless new evidence justifies more.
 Report changed paths, exact checks/results, skips, and unresolved limits.
+
+For signing, linking and packaging changes, require an executable check using
+the actual platform tool on a preserved copy of a representative real binary.
+Mock success alone cannot establish Mach-O loadability, signature validity or
+app launch. Distinguish packaging, build, test execution and visible-app evidence;
+record each phase's duration when claiming a faster feedback loop. Confirm cache
+identity before reuse and explain fresh dependency compilation before it begins.
+
+Identity-sensitive temporary fixtures use canonical paths (`File.realpath`);
+macOS `/var` and `/private/var` aliases must not produce false regression failures.
 
 For host workflow tooling, review the executable boundaries: a failed or
 cancelled command must prevent later work and retain its real status; index
@@ -93,9 +105,9 @@ failure coverage at those seams. Use `mise run host:workflow:test` and the
 controls documented in `docs/agent-workflow.md`; host fixtures do not certify
 native apps, Xcode descriptor propagation or kernel/driver stability.
 
-Commit/push requires authorization; prior authorization within the task persists.
-The user has standing commit/push authorization by default. Use Gitflow feature
-branches from `master`; follow the PR, green-check, explicit auto-merge
-authorization, and post-merge reconciliation rules in `AGENTS.md` and
-`docs/agent-workflow.md`. CI/PR monitoring remains opt-in. Do not turn local
-review into remote audits, issue triage, publication, or merge operations.
+Apply commit, PR, merge and monitoring boundaries from
+[execution policy](docs/agents/execution-policy.md). Reviewers verify the minimal
+exact-head PR gate and server enforcement before accepting an auto-merge claim;
+optional post-merge work must not silently become a pre-merge requirement.
+A successful API request or `--auto` invocation is not evidence that checks
+blocked merging. Preserve explicit publication authorization boundaries.

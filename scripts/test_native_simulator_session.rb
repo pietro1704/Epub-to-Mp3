@@ -33,7 +33,7 @@ class NativeSimulatorSessionTest < Minitest::Test
   end
 
   def setup
-    @directory = Dir.mktmpdir("simulator-session-contract-")
+    @directory = File.realpath(Dir.mktmpdir("simulator-session-contract-"))
     @lease = File.join(@directory, "heavy.lease")
     @report = File.join(@directory, "session.json")
     @plan_path = File.join(@directory, "plan.json")

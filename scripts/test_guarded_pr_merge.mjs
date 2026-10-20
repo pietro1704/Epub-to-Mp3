@@ -15,6 +15,8 @@ for (const state of ['CLEAN', 'BEHIND']) {
       mkdirSync(join(directory, 'scripts'));
       writeFileSync(join(directory, 'scripts/guarded_pr_merge.mjs'),
         readFileSync(new URL('./guarded_pr_merge.mjs', import.meta.url)));
+      writeFileSync(join(directory, 'scripts/pr_gate_policy.mjs'),
+        readFileSync(new URL('./pr_gate_policy.mjs', import.meta.url)));
       const data = fixture();
       data.pr.mergeStateStatus = state;
       writeFileSync(join(directory, 'fixture.json'), JSON.stringify({ ...data, candidates: [{
@@ -144,6 +146,12 @@ function harness(options = {}) {
     return guardedMerge({ repo, pr: '802', head, runId: '90', merge, invoke(args) {
       calls.push(args);
       if (options.failCall === calls.length) throw new Error('private metadata');
+      if (args[0] === 'api' && args.at(-1).endsWith('/protection')) {
+        if (options.unprotected || (options.policyOnRecheck && reads === 2)) return '{}';
+        return JSON.stringify({ enforce_admins: { enabled: true }, required_status_checks: {
+          strict: true, contexts: ['PR gate'], checks: [{ context: 'PR gate', app_id: 15368 }],
+        } });
+      }
       if (args[0] === 'api' && args.at(-1).includes('/compare/')) return JSON.stringify(data.comparison);
       if (args[0] === 'api') return options.badPages ? '{}' : JSON.stringify([{ workflow_runs: args.at(-1).includes('codeql.yml') ? data.securityRuns : data.runs }]);
       if (args[1] === 'view') {
@@ -161,7 +169,7 @@ function harness(options = {}) {
 test('mutation is explicitly requested, twice verified and pinned to approved head', () => {
   const h = harness(); const report = h.run();
   assert.deepEqual(h.calls.at(-1), ['pr', 'merge', '802', '--repo', repo, '--squash', '--match-head-commit', head]);
-  assert.equal(h.calls.length, 7);
+  assert.equal(h.calls.length, 9);
   assert.equal(report.merge_requested, true);
   assert.equal(report.merged, false, 'accepted command is not proof of merged delivery');
   assert.ok(!h.calls.flat().some(value => ['--auto', '--admin', '--delete-branch'].includes(value)));
@@ -175,8 +183,15 @@ test('read-only mode never mutates; changed head or checks on reread never merge
   const h = harness(); assert.equal(h.run(false).merged, false); assert.equal(h.calls.length, 3);
 });
 test('infrastructure failures and malformed metadata have no mutation fallback', () => {
-  for (const options of [{ failCall: 1 }, { failCall: 2 }, { failCall: 3 }, { failCall: 4 }, { failCall: 5 }, { failCall: 6 }, { badPages: true }]) {
+  for (const options of [...Array.from({ length: 8 }, (_, index) => ({ failCall: index + 1 })), { badPages: true }]) {
     const h = harness(options); assert.throws(() => h.run());
+    assert.equal(h.calls.some(args => args[1] === 'merge'), false);
+  }
+});
+test('absent or changed server protection blocks mutation even after green exact-head checks', () => {
+  for (const options of [{ unprotected: true }, { policyOnRecheck: true }]) {
+    const h = harness(options);
+    assert.throws(() => h.run(), /protection|Master/);
     assert.equal(h.calls.some(args => args[1] === 'merge'), false);
   }
 });

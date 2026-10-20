@@ -10,7 +10,7 @@ require 'tmpdir'
 
 class DirectRuntimeBoundaryTest < Minitest::Test
   def setup
-    @directory = Dir.mktmpdir('runtime boundary ')
+    @directory = File.realpath(Dir.mktmpdir('runtime boundary '))
     @root = File.join(@directory, 'project with spaces')
     @bin = File.join(@directory, 'bin')
     FileUtils.mkdir_p([File.join(@root, 'scripts'), File.join(@root, 'flutter_app'), @bin])
