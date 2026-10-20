@@ -354,6 +354,10 @@ jobs:
             abort "Player seek case did not pass: #{name}" unless log.match?(/Test Case '[^'\n]*AudioPlayerDivergenceTests[ .]#{Regexp.escape(name)}\]' passed/)
           end
           puts "PLAYER_SEEK_XCTEST total=#{suite[1]} failed=0 skipped=0 sharedResult=#{result}"
+      - name: Verify packaging with real Apple tools and the built runtime
+        run: |
+          mise run mac:validate -- package --derived-data ios/EpubToMp3/.build/faber-ci \
+            > .reports/tts-preferences/real-packaging.json
       - name: Capture sanitized existing test build metadata without execution
         if: always()
         env:

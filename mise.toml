@@ -455,6 +455,18 @@ echo "  - .mise-cache"
 description = "Inspect Mac free space and project build caches across linked worktrees"
 run = "ruby scripts/mac_build_budget.rb status"
 
+[tasks."mac:validate"]
+description = "Inspect or explicitly package, build or launch an existing macOS artifact without Rust task dependencies"
+run = "ruby scripts/mac_validate.rb"
+
+[tasks."mac:validate:test"]
+description = "Verify macOS validation selection, reuse identity and failure behavior without native compilation"
+run = "ruby scripts/test_mac_validate.rb"
+
+[tasks."pr:gate:policy"]
+description = "Verify master requires only the trusted PR gate; explicit --apply updates only required status checks"
+run = "node scripts/pr_gate_policy.mjs"
+
 [tasks."build:storage:test"]
 description = "Verify build storage refusal, monitoring and cleanup exclusion without compiling"
 run = "ruby scripts/test_mac_build_budget.rb"

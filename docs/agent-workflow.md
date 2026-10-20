@@ -1,133 +1,112 @@
 # Delivery workflow
 
-Use this workflow for changes that must survive review and future agent runs.
+Read [execution policy](agents/execution-policy.md) for current platform,
+resource, safety and authorization rules. This document describes the work
+sequence; historical campaign permissions are not execution authorization.
 
-## Model and prompt selection
+## Focused implementation
 
-For day-to-day work in Codex, use **GPT-5.6 Terra** as the default: it is the
-best cost/capability balance for this repository's Swift, Rust, FFI, and test
-work. Use **GPT-5.6 Sol** for difficult root-cause analysis, architecture, or
-changes spanning several runtimes. Use **GPT-5.6 Luna** for bounded edits,
-documentation, summaries, and routine questions; its speed and low price are
-useful, but it is not the default for long autonomous coding tasks when those
-tasks are looping or missing constraints. Start with medium reasoning; raise it
-for a hard diagnosis instead of switching every task to the most expensive
-model.
+1. Recover the requested outcome, affected runtime and acceptance. Inspect the
+   current implementation and relevant diff while preserving unrelated edits.
+   Use an existing task definition and compatible artifacts before adding tools.
+2. For a reported failure, use the project diagnosing-bugs skill: reproduce with
+   the real tool/app, apply the smallest fix, exercise a meaningful regression,
+   and rerun the original journey. Expand investigation only when evidence
+   leaves the cause or acceptance unresolved.
+3. Keep one coherent change on its feature branch. Write a short dependency and
+   acceptance list only when multiple steps need coordination. Keep private task
+   plans and progress evidence local, outside the published diff.
+4. Run focused checks, inspect the complete owned diff and obtain review against
+   [coding standards](../CODING_STANDARDS.md). Documentation-only changes need
+   content/link checks; host fixtures do not prove native runtime behavior.
+5. Commit/push the verified scope and create/update its PR. Apply the merge and
+   monitoring boundaries in execution policy, then report exact evidence and
+   any pending acceptance without implying completion from a plan or percentage.
 
-At the 2026-10-07 API list prices, Luna was $0.20/$1.20, Terra $2/$12, and Sol
-$4/$20 per million input/output tokens. These are API prices, not Codex plan
-quota rates. Check the linked current model pages before budgeting because
-availability and prices change:
+For macOS packaging/build/GUI work, use the
+[macOS validation path](agents/macos-validation.md) and the existing DerivedData.
+A focused `-only-testing` selection can still compile its entire test target;
+choose packaging or an incremental app build when that is the actual seam.
+For native reader changes, use the reader instructions and skill. Their required
+SE1 acceptance stays pending while Simulator execution is quarantined.
 
-- [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
-- [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra)
-- [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)
-- [Model availability in Codex](https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt)
-
-Give the agent one observable outcome, the platform/runtime, hard constraints,
-acceptance checks, and the requested delivery actions. Let repository
-instructions supply project-wide rules rather than pasting them into every
-prompt. A reusable prompt for this project:
-
-```text
-Objetivo: [resultado observável]
-Contexto: [iOS/macOS + Swift/Rust/FFI, ou CLI/web; inclua os livros/capítulos se relevante]
-Restrições: [dados a preservar, dispositivo, cache, limites de execução, ações proibidas]
-Aceitação: [comportamentos e artefatos que precisam estar corretos]
-Verificação: [teste/build mínimo que prova isso; sem alegar execução não feita]
-Entrega: [resumo, limitações e se commit/push estão autorizados]
-Faça uma investigação focada, implemente a menor fatia completa e pare quando a aceitação for provada.
-Se faltar acesso a dispositivo/serviço ou houver falha sem causa clara, informe a evidência e o próximo passo concreto; não repita tentativas sem nova evidência.
-```
-
-For a task that is already clear and small, send the request directly. Use a
-skill only when its trigger fits; the skills are a router, not a checklist to
-run all at once:
-
-- `$ask-matt` when unsure which workflow/skill applies.
-- `$diagnosing-bugs` for a reported failure, regression, or slow path; then use
-  `$tdd` when the fix needs a regression test.
-- `$grill-with-docs` for an unresolved design or multi-session idea; use
-  `$to-spec` and `$to-tickets` when it needs a durable spec and task graph.
-- `$implement` for a planned ticket; `$implement-spec` for executing a whole
-  ticket graph. Use `$code-review` against the matching plan before delivery.
-- `$domain-modeling` or `$codebase-design` when domain language or module
-  boundaries are the actual problem; `$retro` after a workflow went sideways.
-
-Keep the workflow proportional: do not invoke every role for a focused fix.
-Make progress visible in the worktree or in verified evidence each turn. After
-the focused verification, report exact commands/results and unresolved
-blockers; do not narrate repeated exploration as progress. Commit, push, or
-perform device/service actions only when authorized for that task.
+Use the active model configuration rather than pinning model names/prices in
+workflow prose. Discover skills by their actual descriptions; a focused fix
+needs the matching skill, not every available role. For external-project
+research, retain sources, revisions, license boundaries and adoption evidence
+under an indexed `docs/research/<date>-<topic>/` reference.
 
 ## Operational guardrails
 
-For file synchronization, privileged maintenance, instruction-file edits, or
-completion claims, use the [local guardrails toolkit](../../agent-guardrails/README.md).
-It supplies fail-closed scope manifests, real-path checks, unit/privilege
-preflight, bounded evidence capture, and a paired-response evaluation rubric.
-The controls are explicit, not automatic interception of all agent tools.
+Use the repository-owned host tools below for command sequences, scoped index
+changes and instruction patches. Their public CLI regressions run through
+`mise run host:workflow:test`, the local `mise run preflight`, `hooks-test` and
+main CI. They do not launch native apps or Simulators. Inspect exact logs on
+failure; a successful wrapper is not evidence that an unexecuted step passed.
 
-Before applying writes, validate the exact current authorized destinations;
-separate profiles need separate approval. During review, inspect acceptance
-artifacts and read-back, test duration, and limits before accepting runtime
-or optimization claims. Use the same rubric and real baseline/candidate
-responses for prompt comparisons; shorter instructions alone prove no quality gain.
+- `mise exec -- ruby scripts/run_steps.rb PLAN.json NEW_OUTPUT_DIRECTORY`
+  executes a JSON plan with an existing `cwd` and ordered `steps`, each containing
+  a literal `argv` array and optional `timeout_seconds` (default 120). It stops
+  on the first failure, preserves status, supervises its process group, and
+  saves exact stdout/stderr plus duration/status in `report.json`. Console
+  previews are bounded; existing evidence directories are never overwritten.
+- `mise exec -- ruby scripts/scoped_git_index.rb capture MANIFEST -- FILE...`
+  captures repository/HEAD/index/file identity and candidate index images.
+  Use explicit `--stage-from DEST SOURCE` before `--` for reviewed prepared
+  content when a file also contains unrelated work. `stage`, `untrack` and
+  `verify` take that manifest. Resolve preexisting staged changes first. The
+  real Git index lock and revalidated baselines reject concurrent changes;
+  no checkout, reset, or working-file rewrite occurs. Review the exact staged
+  scope before commit. External writes after verification remain possible.
+- `mise exec -- ruby scripts/update_instruction.rb --root ROOT --destination FILE
+  --baseline BASELINE --sha256 HASH --old OLD_TEXT_FILE --new NEW_TEXT_FILE`
+  applies one unique byte patch from a separate immutable baseline. Reapplying
+  is a no-op, including mtime; stale targets and ambiguous patches are blocked.
+  An instruction alias updates its authorized real target while retaining the
+  symlink. Use the canonical ai-memory installer for its managed block/skills;
+  this helper does not replace that installer or infer replacements.
 
-The local pre-commit hook is a read-only staged-whitespace gate. Existing CI
-owns language lint/tests. `preflight.sh` no longer bootstraps the legacy Apple
-Python vendor, but its build/test commands may still generate artifacts or invoke
-setup when dependencies are absent; inspect task definitions before execution.
+Before applying writes, validate current authorized destinations and preserve
+unrelated changes. The reviewer checks exact scope, failure/cancellation/identity
+coverage, repeated-application evidence, duration and limitations. A changed
+index does not establish preserved local bytes without read-back. Shorter
+instructions alone prove no quality improvement. The optional local
+[guardrails toolkit](../../agent-guardrails/README.md) remains available for
+privileged maintenance and paired prompt evaluations outside these repo tools.
 
-## Before implementation
+For tool discovery, filter names first and load descriptions/schemas only for
+bounded candidates. Save lengthy command output with an exact recovery path;
+read relevant ranges rather than dumping registries, whole logs or unrelated
+instructions. Preserve failure status when reducing output. Use argv interfaces
+or a deliberate shell script with `set -euo pipefail` for dependent operations.
 
-For substantial feature delivery requested by Pietro, use Gitflow from current
-`master` and a `feature/*` branch. Keep modules cohesive and
-small, apply SOLID where responsibilities have distinct owners, and optimize
-measured hot paths instead of imposing arbitrary file-length limits. When a task
-explicitly authorizes a PR and merge, open a PR to `master`. Merge only after
-required checks are green. Enable auto-merge only with explicit user
-authorization and after that green-check gate is satisfied. CI/PR monitoring
-remains opt-in; report pending checks without polling unless requested. PR
-authorization alone does not authorize merge.
+For ai-memory channel diagnostics, configuration delivery or transport-only
+revalidation, follow [collaboration operations](agents/collaboration-operations.md).
+These deterministic checks invoke no model. Use the existing actual-agent
+handshake only for initial integration or changed interpretation requirements.
 
-For a feature larger than one focused change, write a short spec and split it
-into vertical tickets. Each ticket names its dependencies, acceptance evidence,
-regression test, and verification command. Keep one behavior change per branch;
-do not combine feature work, refactors, dependency upgrades, and CI changes.
+Collect native result evidence through `mise run native:xcresult -- BUNDLE --
+xcrun xcresulttool ... --path BUNDLE`. The wrapper locks the canonical bundle,
+including path aliases, so summary/export reads cannot race SQLite initialization.
+Independent bundles retain parallelism. `XCRESULT_LOCK_TIMEOUT_SECONDS` defaults
+to 30 and accepts a positive value up to 60; timeout returns 75, invalid input 2,
+and tool errors/signals retain their actual status. The lease follows the tool
+if its supervisor dies. It does not compile or launch an app.
 
-## During implementation
+The local pre-commit hook remains a read-only whitespace gate. Native pairing
+and language checks keep their existing owners. Inspect task definitions before
+running build/test commands that may generate artifacts or set up dependencies.
 
-For every feature or bug fix, use this exact native iOS runtime: iPhone SE (1st
-generation) Simulator on iOS 15.5. Check it and the native macOS target before
-coding, then install, launch, and exercise both real apps. Automated tests are
-additional evidence. If either app is unavailable, document the blocker and leave
-runtime verification incomplete. Native Apple development and verification stay
-on this Mac. Authorized Flutter Linux and Android/Samsung implementation and
-verification run on Arch. Close iOS Simulator before macOS app verification;
-stop the Mac app whenever idle. Close and shut down the Simulator whenever
-active verification ends, preserving screenshots/reports rather than idle apps.
+## Review and delivery
 
-Start each bug fix with a failing regression test. Keep the implementation and
-its test in the same commit when practical. Preserve unrelated local changes by
-using a detached worktree instead of stashing or resetting them.
+The reviewer owns enforcement of scope, resource cost, regression quality and
+acceptance evidence. Review the final diff against the user's actual request;
+check that claimed behavior was exercised at its runtime and that original data
+and unrelated work remain intact. Follow the execution policy for the minimal
+PR gate, explicit merge/auto-merge authorization and no-monitoring default.
+Comprehensive post-merge validation and publishers are separate from PR checks.
 
-Before pushing, update the branch from `master`, run `git diff --check`, and run
-`mise run preflight`. A source-level test is not evidence for a native runtime
-behavior; use the platform's executable test path for native changes.
-
-## Review, merge, and post-merge reconciliation
-
-Every PR has one scope and a concrete acceptance checklist. Review the complete
-diff against the ticket and project standards. Merge only after all required
-checks are green, the PR is not behind `master`, security checks are green, and
-the merge is visible in `master`. Follow the explicit authorization and
-auto-merge rule above; do not monitor CI/PR unless requested.
-
-After merging, verify current branch and worktree status, preserve local changes,
-and fetch `origin`. Fast-forward local `master` to `origin/master` and confirm
-the merge commit is present. Integrate documentation-only changes by fast-forward
-when histories align or cherry-pick when they do not. Inspect the staged diff to
-ensure no product files are included. Never push stale local `master` or rewrite
-history. Remove stale branches only after confirming they are merged. Report
-check failures and act only within authorized scope; do not poll unless requested.
+After an authorized merge, read back its identity and confirm it belongs to
+`origin/master`. Preserve local overlays, fast-forward local `master`, then remove
+only confirmed-integrated branches. Keep useful evidence and compatible outputs.
+Report implementation, local checks, app acceptance and delivery state separately.

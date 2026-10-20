@@ -7,6 +7,7 @@ require 'open3'
 require 'rbconfig'
 require 'tmpdir'
 require_relative 'fetch_onnxruntime_android'
+require_relative 'android_jni_exports'
 
 root = File.expand_path('..', __dir__)
 Dir.chdir(root)
@@ -35,10 +36,7 @@ abort 'Cannot inspect Android native exports' unless status.success?
 imports, status = Open3.capture2(nm, '--dynamic', '--undefined-only', source)
 abort 'Cannot inspect Android native imports' unless status.success?
 abort 'Android converter imports the incompatible GNU C++ ABI' if imports.match?(/__cxx11|GLIBCXX/)
-required_symbols = %w[piper_runtime_init piper_synthesize Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertWithOptions Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePiperSynthesizeWithOptions Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativeConvertWithOptions Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativeCancelConversion Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativePrepareConversion]
-required_symbols.each do |symbol|
-  abort "Missing native Piper/JNI export: #{symbol}" unless symbols.match?(/\b#{Regexp.escape(symbol)}$/)
-end
+AndroidJniExports.verify!(symbols, label: 'Built Android Piper/JNI library')
 dynamic, status = Open3.capture2(readelf, '--dynamic', source)
 abort 'Cannot inspect Android ELF dependencies' unless status.success?
 needed = dynamic.scan(/\(NEEDED\).*?\[([^\]]+)\]/).flatten
@@ -106,7 +104,7 @@ if (apk_index = ARGV.index('--apk'))
     apk_library = File.join(directory, 'lib/arm64-v8a/libconverter_ffi.so')
     apk_symbols, status = Open3.capture2(nm, '--dynamic', '--defined-only', apk_library)
     abort 'Cannot inspect APK JNI exports' unless status.success?
-    required_symbols.each { |symbol| abort "APK JNI library lacks #{symbol}" unless apk_symbols.match?(/\b#{Regexp.escape(symbol)}$/) }
+    AndroidJniExports.verify!(apk_symbols, label: 'APK JNI library')
     inspected_assets.each do |name|
       packed = File.join(directory, 'assets/espeak-ng-data', name)
       abort "APK phonemizer asset is stale: #{name}" unless Digest::SHA256.file(packed).hexdigest == Digest::SHA256.file(File.join(asset_source, name)).hexdigest

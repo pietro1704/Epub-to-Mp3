@@ -5,13 +5,16 @@ description: Execute non-trivial repository goals through specialist inspection,
 
 # Goal plan execute
 
-Use this workflow for multi-file features, user-visible fixes, parser changes,
-or work spanning more than one client surface.
+Use this workflow for substantial features or coordinated changes across runtime
+boundaries. For a focused bug or configuration fix, use the short path in the
+project diagnosing-bugs skill. Changing both production code and its regression
+test does not by itself require a planning campaign.
 
 1. Inspect the current worktree and read project instructions before editing.
-2. Split discovery into independent specialist passes with explicit ownership:
-   parser/data contract, UI/state flow, and tests/runtime verification. If no
-   subagent tool is available, run these passes in parallel and label them.
+2. Delegate independent questions with explicit file ownership when the scope
+   needs specialist inspection. Choose affected seams rather than imposing
+   parser, UI and runtime passes on every task. If delegation is unavailable,
+   inspect those actual seams sequentially.
 3. Write a short plan containing scope, non-goals, affected files, risks, and
    acceptance evidence. Review the plan against the user's exact wording before
    touching code.

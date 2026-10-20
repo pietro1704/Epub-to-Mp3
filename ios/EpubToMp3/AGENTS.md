@@ -18,24 +18,21 @@ Read this file, [`../../CONTEXT.md`](../../CONTEXT.md), and relevant files in
 
 ## Reader changes
 
-For every feature or bug fix, verify the real iOS app on the iPhone SE
-(1st generation) Simulator running iOS 15.5 and verify the native macOS app.
-For this project, run iOS Simulator builds, tests, and launches with Xcode 16.4
-(`/Applications/Xcode-16.4.0.app`); newer Xcode installations may not list this
-legacy destination. The physical iPhone is not a substitute for this required
-Simulator target.
-Run only one native app/Simulator target at a time. Before switching targets, quit the
-active app and shut down its Simulator; verify it exited before opening the next.
-After verification or whenever idle, close the app, shut down its Simulator, quit Simulator.app and confirm shutdown. Retain screenshots/reports as evidence.
-Check that this exact Simulator destination and the macOS target are available
-before implementation; do not substitute another runtime or device. Install,
-launch, and exercise the affected behavior in each app. XCTest/UI tests supplement
-this evidence. If either app cannot be run, record the blocker and keep the change
-unverified.
+Follow [execution policy](../../docs/agents/execution-policy.md) for current
+native safety and acceptance. Simulator execution is quarantined; the required
+SE1/iOS 15.5 check stays blocked until explicitly reauthorized and reviewed.
+This reader contract does not authorize launching the Simulator.
+
+Reader acceptance requires the native macOS app and iPhone SE (1st generation)
+Simulator on iOS 15.5 with Xcode 16.4 (`/Applications/Xcode-16.4.0.app`). A physical
+iPhone or another runtime cannot substitute for that required target. Verify
+available targets without booting a device; record unavailable or prohibited
+runtime acceptance as pending. XCTest supplements the actual visible app journey.
 
 Use `$native-reader-regression` for reader, pagination, chrome, safe-area,
-page-turn, EPUB/PDF-open, or expanded-player layout changes. Its evidence
-gate uses the seeded Lord of the Rings EPUB and retained screenshots/reports; close the Simulator after active verification.
+page-turn, EPUB/PDF-open or expanded-player layout changes. Its seeded Lord of
+the Rings EPUB and retained screenshots/reports provide the evidence contract.
+Use [macOS validation](../../docs/agents/macos-validation.md) for the Mac path.
 
 For architecture work, keep a single deep module at each real seam. The
 viewport transition owns transition ordering and restoration; paginated layout

@@ -51,7 +51,7 @@ function protectedPath(filename) {
     /(^|\/)(AGENTS\.md|CLAUDE\.md|CODEOWNERS|SECURITY\.md|mise\.toml|\.gitmodules|\.gitattributes|\.gitignore|\.netrc|\.npmrc|\.pypirc|auth\.json|\.env[^/]*|[^/]*(credential|secret)[^/]*|[^/]*\.(pem|key|p12|mobileprovision|entitlements))$/i.test(filename) ||
     /^scripts\/(guard_remediation_changes\.py|guarded_pr_merge\.mjs|native_job\.rb|native_build_preflight\.rb|native_codex_tool_guard\.rb|native_build_command\.rb|mac_build_budget\.rb|native_simulator_session\.rb|simulator_resource_monitor\.py|device-workflow\.sh|ios_simulator_smoke\.swift|guard_ios_simulator_resources\.py|guard_no_python_production\.sh|heavy_job_guard\.py|ios_disk_guard\.sh|preflight\.sh)$/.test(filename) ||
     filename === 'config/mac-build-budget.json' ||
-    /^scripts\/(validated_merge\.mjs|post_merge_validation\.mjs|run_ci_contracts\.rb|check_codeql_swift_tool_scope\.rb)$/.test(filename) ||
+    /^scripts\/(validated_merge\.mjs|post_merge_validation\.mjs|pr_gate_policy\.mjs|mac_validate\.rb|run_ci_contracts\.rb|check_codeql_swift_tool_scope\.rb)$/.test(filename) ||
     /^(docs\/agents\/|docs\/agent-workflow\.md$|TODO_APP\.md$|Dockerfile(?:\.|$)|docker-compose[^/]*$|compose\.[^/]+$|deploy\/|infra\/)/.test(filename);
 }
 

@@ -60,4 +60,35 @@ class CiContractsTest < Minitest::Test
     refute CiContracts.steps.any? { |step| %w[cargo swift swiftc xcodebuild simctl docker].include?(step.fetch("argv").first) }
     assert_equal paths.uniq, paths
   end
+
+  def test_only_the_two_independent_slow_node_files_run_concurrently_and_each_file_runs_once
+    node = CiContracts.steps.select { |entry| entry.fetch("argv").first == "node" }
+    scheduled = node.flat_map { |entry| entry.fetch("argv").drop(1).reject { |argument| argument.start_with?("--") } }
+    host_node = CiContracts::RUBY_SUITES.map { |name| HostChecks.suite_argv("scripts/#{name}") }.select { |argv| argv.first == "node" }.map(&:last)
+    assert_equal (host_node + CiContracts::NODE_SUITES).sort, scheduled.sort
+    assert_equal scheduled.length, scheduled.uniq.length
+    grouped = node.select { |entry| entry.fetch("argv").include?("--test-concurrency=2") }
+    assert_equal 1, grouped.length
+    assert_equal ["node", "--test", "--test-concurrency=2", *CiContracts::CONCURRENT_NODE_SUITES], grouped.first.fetch("argv")
+    assert_equal %w[.github/scripts/dependency-audit-results.test.cjs .github/scripts/pr-repair-safety.test.cjs], CiContracts::CONCURRENT_NODE_SUITES
+    assert node.reject { |entry| entry == grouped.first }.all? { |entry| entry.fetch("argv").length == 3 }
+  end
+
+  def test_missing_git_lfs_fails_before_expensive_fixture_checks
+    prerequisite = CiContracts.steps.first
+    assert_equal ["git", "lfs", "version"], prerequisite.fetch("argv")
+    fake_git = File.join(@root, "git")
+    File.write(fake_git, "#!/bin/sh\nexit 127\n")
+    File.chmod(0o755, fake_git)
+    previous = ENV["PATH"]
+    ENV["PATH"] = "#{@root}:#{previous}"
+    output = File.join(@root, "missing-lfs")
+    assert_equal 127, CiContracts.execute(@root, output,
+      [prerequisite, step("expensive fixture", "File.write('unexpected', 'ran')")])
+    refute File.exist?(File.join(@root, "unexpected"))
+    report = JSON.parse(File.read(File.join(output, "results/report.json")))
+    assert_equal ["Git LFS prerequisite"], report.fetch("steps").map { |entry| entry.fetch("name") }
+  ensure
+    ENV["PATH"] = previous if previous
+  end
 end

@@ -357,7 +357,8 @@ test('concrete policy and deployment paths are refused untracked and staged', as
     'config/mac-build-budget.json', 'scripts/mac_build_budget.rb',
     'scripts/native_simulator_session.rb', 'scripts/simulator_resource_monitor.py',
     'scripts/validated_merge.mjs', 'scripts/post_merge_validation.mjs',
-    'scripts/run_ci_contracts.rb', 'scripts/check_codeql_swift_tool_scope.rb']) {
+    'scripts/run_ci_contracts.rb', 'scripts/check_codeql_swift_tool_scope.rb',
+    'scripts/pr_gate_policy.mjs', 'scripts/mac_validate.rb']) {
     await t.test(filename, child => {
       const f = fixture(child), full = path.join(f.work, filename);
       fs.mkdirSync(path.dirname(full), { recursive: true });

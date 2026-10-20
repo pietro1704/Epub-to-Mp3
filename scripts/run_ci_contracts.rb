@@ -7,6 +7,8 @@ module CiContracts
   RUBY_SUITES = (HostChecks::SUITES + %w[
     test_run_ci_contracts.rb test_ci_runtime_scope.rb test_codeql_swift_build.rb test_direct_runtime_boundary.rb
     test_bundle_onnxruntime_apple.rb
+    test_mac_validate.rb
+    test_android_jni_exports.rb
     test_device_workflow_entrypoint.rb test_native_faber_entrypoints.rb
     test_native_codex_tool_guard.rb test_native_simulator_session.rb
     test_hf_snapshot_workflow.rb test_hf_snapshot.rb
@@ -18,8 +20,13 @@ module CiContracts
     .github/scripts/repository-health-watchdog.test.cjs
     .github/scripts/rollback-target.test.cjs
     scripts/test_guarded_pr_merge.mjs
+    scripts/test_pr_gate_policy.mjs
     scripts/test_validated_merge.mjs
     scripts/test_post_merge_validation.mjs
+  ].freeze
+  CONCURRENT_NODE_SUITES = %w[
+    .github/scripts/dependency-audit-results.test.cjs
+    .github/scripts/pr-repair-safety.test.cjs
   ].freeze
   PYTHON_SUITES = %w[
     scripts/test_android_ui_session.py
@@ -35,8 +42,15 @@ module CiContracts
 
   def self.steps
     ruby = RUBY_SUITES.map { |name| { "name" => name, "argv" => HostChecks.suite_argv("scripts/#{name}") } }
-    node = NODE_SUITES.map { |path| { "name" => path, "argv" => ["node", "--test", path] } }
-    ruby + node + [
+    node = NODE_SUITES.filter_map do |path|
+      next if path == CONCURRENT_NODE_SUITES.last
+      if path == CONCURRENT_NODE_SUITES.first
+        { "name" => "Independent dependency and repair contracts", "argv" => ["node", "--test", "--test-concurrency=2", *CONCURRENT_NODE_SUITES] }
+      else
+        { "name" => path, "argv" => ["node", "--test", path] }
+      end
+    end
+    [{ "name" => "Git LFS prerequisite", "argv" => ["git", "lfs", "version"] }] + ruby + node + [
       { "name" => "Workflow YAML syntax", "argv" => [RbConfig.ruby, "-ryaml", "-e", 'Dir[".github/workflows/*.yml"].each { |path| YAML.parse_file(path) }'] },
       { "name" => "Actual Swift tool scope", "argv" => [RbConfig.ruby, "scripts/check_codeql_swift_tool_scope.rb"] },
       { "name" => "Shell safety syntax", "argv" => ["bash", "-n", "scripts/device-workflow.sh", ".claude/hooks/swift_test_after_edit.sh", ".claude/hooks/xcode_build_smoke.sh"] },

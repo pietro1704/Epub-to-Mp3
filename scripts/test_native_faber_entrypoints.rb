@@ -47,6 +47,19 @@ class NativeFaberEntrypointsTest < Minitest::Test
         end
       end
     RUBY
+    # Keep this driver fixture independent of host caches and disk capacity;
+    # the real storage policy has its own fixture suite.
+    File.write(File.join(@scripts, 'mac_build_budget.rb'), <<~RUBY)
+      module MacBuildBudget
+        def self.check
+          'Fixture: build storage budget exceeded' if ENV['FIXTURE_STORAGE_BLOCKED'] == '1'
+        end
+
+        def self.interval
+          10
+        end
+      end
+    RUBY
     File.write(File.join(@scripts, 'prepare_onnxruntime_macos.rb'), <<~RUBY)
       File.open(ENV.fetch('FIXTURE_EVENTS'), 'a') { |file| file.puts('prepare') }
       exit 23
@@ -70,7 +83,7 @@ class NativeFaberEntrypointsTest < Minitest::Test
     FileUtils.chmod(0o755, File.join(@bin, 'mise'))
     @environment = {
       'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'FIXTURE_LOCK' => @lock,
-      'FIXTURE_EVENTS' => @events, 'FIXTURE_BLOCKED' => '0',
+      'FIXTURE_EVENTS' => @events, 'FIXTURE_BLOCKED' => '0', 'FIXTURE_STORAGE_BLOCKED' => '0',
       'EPUB_NATIVE_LEASE_FD' => nil, 'EPUB_NATIVE_LEASE_PATH' => nil
     }
   end
@@ -101,6 +114,15 @@ class NativeFaberEntrypointsTest < Minitest::Test
                                              'EPUB_NATIVE_LEASE_PATH' => @lock })
       assert_equal 75, status.exitstatus, "#{driver}: #{output}#{error}"
       refute File.exist?(@events), "#{driver} accepted forged inherited metadata"
+    end
+  end
+
+  def test_storage_refusal_precedes_every_preparation_or_compiler
+    DRIVERS.each_key do |driver|
+      output, error, status = invoke(driver, { 'FIXTURE_STORAGE_BLOCKED' => '1' })
+      assert_equal 75, status.exitstatus, "#{driver}: #{output}#{error}"
+      assert_includes error, 'Fixture: build storage budget exceeded'
+      refute File.exist?(@events), "#{driver} started preparation or a compiler after storage refusal"
     end
   end
 
