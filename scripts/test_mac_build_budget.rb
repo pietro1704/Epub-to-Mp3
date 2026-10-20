@@ -279,8 +279,8 @@ class MacBuildBudgetTest < Minitest::Test
   def test_apple_build_tasks_route_through_the_serial_guard
     %w[mac:build ios:build ios:device:build converter-ffi:build].each do |name|
       body = task_body(name)
-      assert_match(/native_job.rb.*build --/, body, name)
-      assert_match(/(?:-jobs|--jobs) 1/, body, name)
+      assert_match(/(?:native_job\.rb["']?\s+build\s+--|native_build_command\.rb["']?\s+--)/, body, name)
+      assert_match(/(?:-jobs|--jobs)(?:["']\s*,\s*["']|\s+)1/, body, name)
       refute_match(/-parallelizeTargets/, body, name)
       _, error, status = Open3.capture3("/bin/bash", "-n", stdin_data: body)
       assert status.success?, error

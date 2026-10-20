@@ -23,6 +23,7 @@ describe.runIf(env.GITHUB_ACTIONS === "true" && env.RUNNER_OS === "Linux")("CLI 
         : "C:\\Books\\Jane's $(New-Item marker) & livro.epub";
       if (shell === "bash") writeFileSync(source, "fixture");
       const preferences: TtsPreferences = {
+        policy_version: 2,
         primary: { engine: "edge", model_id: null, voice: "pt-BR-Jane's \"voz\" \\á $(echo unexpected)" },
         secondary: { engine: "piper", model_id: "pt_BR-faber-medium", voice: null },
         allow_online_fallback: false,

@@ -19,7 +19,7 @@ class NativeTaskWiringTest < Minitest::Test
   end
 
   def setup
-    @dir = Dir.mktmpdir("native-task-wiring-")
+    @dir = File.realpath(Dir.mktmpdir("native-task-wiring-"))
     @bin = File.join(@dir, "bin")
     @events = File.join(@dir, "events")
     @target_dir = File.join(@dir, "custom-target")

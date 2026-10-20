@@ -4,6 +4,7 @@ import DownloadsPanel from "../components/DownloadsPanel";
 import { renderWithProviders } from "./testUtils";
 import { screen } from "@testing-library/react";
 import { buildCliReproduction } from "../utils/cliReproduction";
+import { loadTtsPreferences } from "../services/TtsPreferences";
 import type { ConversionFormValues, TtsPreferences } from "../types/conversion";
 
 const buildCliCommand = (values: ConversionFormValues) => buildCliReproduction(values)?.command;
@@ -19,6 +20,48 @@ const request: ConversionFormValues = {
 };
 
 describe("CLI reproduction", () => {
+  it("preserves the current default Piper/System recovery policy", () => {
+    localStorage.clear();
+    const captured = loadTtsPreferences();
+    expect(captured.policy_version).toBe(2);
+    expect(captured.secondary?.engine).toBe("system");
+    expect(buildCliCommand({ ...request, tts_preferences: captured }))
+      .toContain("--tts-preferences-json '" + JSON.stringify(captured) + "'");
+  });
+
+  it("preserves policy v2 with an explicit no-fallback choice", () => {
+    const captured: TtsPreferences = { ...preferences, policy_version: 2 };
+    expect(buildCliCommand({ ...request, tts_preferences: captured }))
+      .toContain("--tts-preferences-json '" + JSON.stringify(captured) + "'");
+  });
+
+  it("supports a valid System primary without inventing a secondary", () => {
+    const captured: TtsPreferences = {
+      ...preferences, policy_version: 2,
+      primary: { engine: "system", model_id: null, voice: null },
+    };
+    expect(buildCliCommand({ ...request, tts_preferences: captured }))
+      .toContain(JSON.stringify(captured));
+  });
+
+  it.each([1, 3, 0, -1, 2.5, "2", null])("rejects unsupported policy version %j", policy_version => {
+    const captured = Object.assign({}, preferences, { policy_version }) as unknown as TtsPreferences;
+    expect(buildCliCommand({ ...request, tts_preferences: captured })).toBeUndefined();
+  });
+
+  it("rejects System model IDs, explicit voices and duplicate System selections", () => {
+    const system = { engine: "system" as const, model_id: null, voice: null };
+    for (const secondary of [
+      { ...system, model_id: "pt_BR-faber-medium" },
+      { ...system, voice: "Luciana" },
+    ]) {
+      expect(buildCliCommand({ ...request, tts_preferences: { ...preferences, secondary } })).toBeUndefined();
+    }
+    expect(buildCliCommand({ ...request, tts_preferences: {
+      ...preferences, primary: system, secondary: system,
+    } })).toBeUndefined();
+  });
+
   it("shows the selected shell separately from the copyable command", () => {
     const recipe = buildCliReproduction({ ...request, localPath: "C:\\Books\\book.epub" });
     expect(recipe?.shell).toBe("PowerShell");

@@ -14,8 +14,9 @@ function validSelection(value: TtsSelection | null | undefined): boolean {
     return typeof model === "string" && model.length > 0 &&
       !/[\\/]/.test(model) && model !== "." && model !== ".." && value.voice === null;
   }
-  return value.engine === "edge" && value.model_id === null &&
-    (value.voice === null || typeof value.voice === "string");
+  if (value.model_id !== null) return false;
+  return value.engine === "system" ? value.voice === null :
+    value.engine === "edge" && (value.voice === null || typeof value.voice === "string");
 }
 
 /** Render only captured jobs with a local source and faithfully representable options. */
@@ -31,7 +32,8 @@ export function buildCliReproduction(values: ConversionFormValues): { command: s
   const preferences = values.tts_preferences;
   if (!preferences || !validSelection(preferences.primary) ||
       typeof preferences.allow_online_fallback !== "boolean" ||
-      Object.keys(preferences).some(key => !["primary", "secondary", "allow_online_fallback"].includes(key))) return undefined;
+      (preferences.policy_version !== undefined && preferences.policy_version !== 2) ||
+      Object.keys(preferences).some(key => !["policy_version", "primary", "secondary", "allow_online_fallback"].includes(key))) return undefined;
   const secondary = preferences.secondary;
   if (secondary !== null && (!validSelection(secondary) ||
       (secondary.engine === "edge" && !preferences.allow_online_fallback) ||

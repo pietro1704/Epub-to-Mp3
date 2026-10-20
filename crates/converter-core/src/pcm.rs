@@ -119,7 +119,7 @@ fn encode_wav_mp3_at_rate(data: &[u8], target_rate: Option<u32>) -> Result<Vec<u
         .filter(|pcm| !pcm.is_empty() && pcm.len() % 2 == 0)
         .ok_or("Missing or invalid WAV PCM")?;
     let sample_count = pcm.len() / 2;
-    if sample_count > rate as usize * 120 {
+    if target_rate.is_some() && sample_count > rate as usize * 120 {
         return Err("System speech PCM exceeds the segment duration limit".into());
     }
     let target_rate = target_rate.unwrap_or(rate);
@@ -193,6 +193,41 @@ mod tests {
             assert_eq!(decoder.next_frame().unwrap().sample_rate, rate);
         }
         assert!(encode_wav_mp3_at_source_rate(&wav(12_345)).is_err());
+    }
+
+    #[test]
+    fn standalone_chapters_above_segment_duration_limit_remain_playable() {
+        let rate = 22_050u32;
+        let mut input = wav(rate);
+        let payload = input[44..].to_vec();
+        input.truncate(44);
+        // Repeat the quarter-second fixture to produce a 121-second chapter.
+        for _ in 0..485 {
+            input.extend_from_slice(&payload);
+        }
+        input.truncate(44 + rate as usize * 121 * 2);
+        let payload_len = (input.len() - 44) as u32;
+        input[4..8].copy_from_slice(&(36 + payload_len).to_le_bytes());
+        input[40..44].copy_from_slice(&payload_len.to_le_bytes());
+        assert!(payload_len as usize / 2 > rate as usize * 120);
+        assert_eq!(
+            encode_wav_mp3(&input).unwrap_err(),
+            "System speech PCM exceeds the segment duration limit"
+        );
+
+        let encoded = encode_wav_mp3_at_source_rate(&input).unwrap();
+        let header =
+            rusty_mp3::header::FrameHeader::parse(encoded[..4].try_into().unwrap()).unwrap();
+        let field = 4 + usize::from(header.crc_protected) * 2 + header.side_info_len() + 8;
+        let declared_bytes = u32::from_be_bytes(encoded[field + 4..field + 8].try_into().unwrap());
+        assert_eq!(declared_bytes as usize, encoded.len());
+        let mut decoder = rusty_mp3::Mp3Decoder::new();
+        decoder.push(&encoded);
+        decoder.flush();
+        let frame = decoder.next_frame().unwrap();
+        assert_eq!(frame.sample_rate, rate);
+        assert_eq!(frame.channels, 1);
+        assert!(!frame.samples.is_empty());
     }
 
     #[test]
