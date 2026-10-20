@@ -12,6 +12,19 @@ private typealias PlatformApplicationDelegate = NSApplicationDelegate
 enum EpubToMp3WindowConfiguration {
     static let macOSMinimumSize = CGSize(width: 1000, height: 700)
     static let macOSDefaultSize = CGSize(width: 1100, height: 760)
+
+    @MainActor
+    static func makeMacOSWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: macOSDefaultSize),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.minSize = macOSMinimumSize
+        window.isRestorable = false
+        return window
+    }
 }
 #else
 private typealias PlatformApplicationDelegate = UIApplicationDelegate
@@ -244,6 +257,14 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
     }
+
+    func applicationShouldSaveSecureApplicationState(_ app: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldRestoreSecureApplicationState(_ app: NSApplication) -> Bool {
+        false
+    }
 #endif
 
     private func configureMainWindowIfNeeded() {
@@ -256,19 +277,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
             playerPresentation: playerPresentation
         )
         rootController = root
-        let window = NSWindow(
-            contentRect: NSRect(
-                x: 0,
-                y: 0,
-                width: EpubToMp3WindowConfiguration.macOSDefaultSize.width,
-                height: EpubToMp3WindowConfiguration.macOSDefaultSize.height
-            ),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
+        let window = EpubToMp3WindowConfiguration.makeMacOSWindow()
         window.title = "Epub-to-Mp3"
-        window.minSize = EpubToMp3WindowConfiguration.macOSMinimumSize
         window.contentViewController = root
         root.configureWindowToolbar(window)
         // Pin the programmatic split view to the content view. Its intrinsic

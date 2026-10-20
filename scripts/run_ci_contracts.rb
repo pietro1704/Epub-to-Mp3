@@ -6,6 +6,7 @@ require_relative "run_host_checks"
 module CiContracts
   RUBY_SUITES = (HostChecks::SUITES + %w[
     test_run_ci_contracts.rb test_ci_runtime_scope.rb test_codeql_swift_build.rb test_direct_runtime_boundary.rb
+    test_bundle_onnxruntime_apple.rb
     test_device_workflow_entrypoint.rb test_native_faber_entrypoints.rb
     test_native_codex_tool_guard.rb test_native_simulator_session.rb
     test_hf_snapshot_workflow.rb test_hf_snapshot.rb
