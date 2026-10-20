@@ -78,3 +78,53 @@ class NativeBuildPreflightTest < Minitest::Test
     end
   end
 end
+
+class RepositoryPreflightTest < Minitest::Test
+  def run_preflight(branch:, behind: false, suite_status: 0)
+    Dir.mktmpdir("epub-preflight-test-") do |dir|
+      git = File.join(dir, "git")
+      File.write(git, <<~'SH')
+        #!/bin/bash
+        case "$1" in
+          diff) exit 0 ;;
+          branch) echo "$TEST_BRANCH" ;;
+          show-ref) exit 1 ;;
+          rev-parse) [[ "$3" == master ]] ;;
+          merge-base) [[ "$3" == master && "$TEST_BEHIND" == 0 ]] ;;
+          *) exit 99 ;;
+        esac
+      SH
+      File.chmod(0o755, git)
+      mise = File.join(dir, "mise")
+      File.write(mise, "#!/bin/bash\nprintf '%s\\n' \"$*\" > \"$TEST_CALL_LOG\"\nexit \"$TEST_SUITE_STATUS\"\n")
+      File.chmod(0o755, mise)
+      calls = File.join(dir, "calls")
+      env = { "PATH" => "#{dir}:#{ENV.fetch('PATH')}", "TEST_BRANCH" => branch,
+              "TEST_BEHIND" => behind ? "1" : "0", "CI" => "false",
+              "TEST_CALL_LOG" => calls, "TEST_SUITE_STATUS" => suite_status.to_s }
+      result = Open3.capture3(env, "bash", File.expand_path("preflight.sh", __dir__))
+      result + [File.exist?(calls) ? File.read(calls) : ""]
+    end
+  end
+
+  def test_master_integration_accepts_current_feature
+    output, error, status = run_preflight(branch: "feature/configuration")
+    assert status.success?, error
+    assert_match(/Branch: feature\/configuration/, output)
+  end
+
+  def test_master_and_behind_feature_are_rejected
+    _, error, status = run_preflight(branch: "master")
+    refute status.success?
+    assert_match(/not 'master'/, error)
+    _, error, status = run_preflight(branch: "feature/configuration", behind: true)
+    refute status.success?
+    assert_match(/behind master/, error)
+  end
+
+  def test_host_check_failure_stops_local_preflight_with_original_status
+    _, _, status, calls = run_preflight(branch: "feature/configuration", suite_status: 17)
+    assert_equal 17, status.exitstatus
+    assert_equal "run host:workflow:test\n", calls
+  end
+end
