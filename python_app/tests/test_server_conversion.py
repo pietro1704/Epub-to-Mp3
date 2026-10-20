@@ -1237,6 +1237,128 @@ def test_job_status_rehydrates_outputs(tmp_path, monkeypatch):
     assert job_state_path.exists()
 
 
+@pytest.mark.parametrize("layout", ["recorded", "legacy"])
+@pytest.mark.parametrize("foreign_location", ["outside-output", "prefix-sibling", "sibling-book"])
+@pytest.mark.parametrize("request_kind", ["get", "head", "range"])
+def test_download_output_rejects_symlink_to_foreign_file(
+    tmp_path, monkeypatch, layout, foreign_location, request_kind
+):
+    output_root = tmp_path / "outputs"
+    _configure_server_paths(output_root, monkeypatch)
+    job_id = str(uuid4())
+    job_dir = output_root / ("Download Book" if layout == "recorded" else job_id)
+    job_dir.mkdir()
+    foreign_dir = {
+        "outside-output": tmp_path / "foreign",
+        "prefix-sibling": tmp_path / "outputs-other",
+        "sibling-book": output_root / "Other Book",
+    }[foreign_location]
+    foreign_dir.mkdir()
+    foreign = foreign_dir / "chapter-001.mp3"
+    foreign_bytes = b"owned foreign fixture must not be downloaded"
+    foreign.write_bytes(foreign_bytes)
+    link = job_dir / "chapter-001.mp3"
+    link.symlink_to(foreign)
+    monkeypatch.setattr(
+        server,
+        "jobs",
+        {job_id: {"jobId": job_id, "state": "finished", "outputDir": str(job_dir)}}
+        if layout == "recorded"
+        else {},
+    )
+
+    client = TestClient(server.app)
+    response = client.request(
+        "HEAD" if request_kind == "head" else "GET",
+        f"/api/outputs/{job_id}/chapter-001.mp3",
+        headers={"Range": "bytes=0-9"} if request_kind == "range" else {},
+    )
+
+    assert response.status_code == 404
+    assert "content-range" not in response.headers
+    assert foreign_bytes not in response.content
+    assert link.is_symlink()
+    assert foreign.read_bytes() == foreign_bytes
+
+
+@pytest.mark.parametrize("layout", ["recorded", "legacy"])
+@pytest.mark.parametrize("member_kind", ["nested", "internal-symlink"])
+@pytest.mark.parametrize("request_kind", ["get", "head", "range"])
+def test_download_output_serves_confined_nested_member(
+    tmp_path, monkeypatch, layout, member_kind, request_kind
+):
+    output_root = tmp_path / "outputs"
+    _configure_server_paths(output_root, monkeypatch)
+    job_id = str(uuid4())
+    job_dir = output_root / ("Download Book" if layout == "recorded" else job_id)
+    nested = job_dir / "nested"
+    nested.mkdir(parents=True)
+    target = nested / ("actual.mp3" if member_kind == "internal-symlink" else "chapter-001.mp3")
+    target.write_bytes(MINIMAL_MP3)
+    if member_kind == "internal-symlink":
+        (nested / "chapter-001.mp3").symlink_to(target)
+    monkeypatch.setattr(
+        server,
+        "jobs",
+        {job_id: {"jobId": job_id, "state": "finished", "outputDir": str(job_dir)}}
+        if layout == "recorded"
+        else {},
+    )
+
+    client = TestClient(server.app)
+    response = client.request(
+        "HEAD" if request_kind == "head" else "GET",
+        f"/api/outputs/{job_id}/chapter-001.mp3",
+        headers={"Range": "bytes=0-9"} if request_kind == "range" else {},
+    )
+
+    assert response.status_code == (206 if request_kind == "range" else 200)
+    expected = {"get": MINIMAL_MP3, "head": b"", "range": MINIMAL_MP3[:10]}[request_kind]
+    assert response.content == expected
+    expected_length = 10 if request_kind == "range" else len(MINIMAL_MP3)
+    assert response.headers["content-length"] == str(expected_length)
+    assert target.read_bytes() == MINIMAL_MP3
+
+
+@pytest.mark.parametrize("valid_location", ["later-member", "legacy-fallback"])
+@pytest.mark.parametrize("request_kind", ["get", "head", "range"])
+def test_download_output_skips_foreign_member_before_valid_match(
+    tmp_path, monkeypatch, valid_location, request_kind
+):
+    output_root = tmp_path / "outputs"
+    _configure_server_paths(output_root, monkeypatch)
+    job_id = str(uuid4())
+    job_dir = output_root / "Download Book"
+    first = job_dir / "a-first"
+    first.mkdir(parents=True)
+    foreign = tmp_path / "foreign.mp3"
+    foreign_bytes = b"owned foreign fixture remains outside the job"
+    foreign.write_bytes(foreign_bytes)
+    (first / "chapter-001.mp3").symlink_to(foreign)
+    valid_dir = job_dir / "z-last" if valid_location == "later-member" else output_root / job_id
+    valid_dir.mkdir()
+    target = valid_dir / "chapter-001.mp3"
+    target.write_bytes(MINIMAL_MP3)
+    monkeypatch.setattr(
+        server,
+        "jobs",
+        {job_id: {"jobId": job_id, "state": "finished", "outputDir": str(job_dir)}},
+    )
+
+    client = TestClient(server.app)
+    response = client.request(
+        "HEAD" if request_kind == "head" else "GET",
+        f"/api/outputs/{job_id}/chapter-001.mp3",
+        headers={"Range": "bytes=0-9"} if request_kind == "range" else {},
+    )
+
+    assert response.status_code == (206 if request_kind == "range" else 200)
+    expected = {"get": MINIMAL_MP3, "head": b"", "range": MINIMAL_MP3[:10]}[request_kind]
+    assert response.content == expected
+    assert foreign.read_bytes() == foreign_bytes
+    assert target.read_bytes() == MINIMAL_MP3
+
+
 def test_download_output_serves_named_file_from_job_directory(tmp_path, monkeypatch):
     _configure_server_paths(tmp_path, monkeypatch)
     job_id = str(uuid4())
