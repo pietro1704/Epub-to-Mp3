@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "minimum_free_gib": 20,
+  "maximum_cache_gib": 12,
+  "check_interval_seconds": 10
+}

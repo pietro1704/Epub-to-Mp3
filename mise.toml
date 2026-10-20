@@ -85,7 +85,11 @@ run = "mise exec -- python scripts/build_converter_ffi.py --list"
 
 [tasks."converter-ffi:build"]
 description = "Build the shared converter-ffi Rust library for the host"
-run = "mise exec -- cargo build -p converter-ffi --release"
+run = "mise exec -- ruby scripts/native_job.rb build -- mise exec -- cargo build -p converter-ffi --release --jobs 1"
+
+[tasks."native:build:preflight"]
+description = "Inspect native host state and Mac build storage before compilation"
+run = "ruby scripts/native_build_preflight.rb && ruby -r ./scripts/mac_build_budget -e 'error = MacBuildBudget.check; abort(error) if error'"
 
 [tasks."native-tts:rust:test"]
 description = "Verify platform speech policy, native PCM encoding and C callback under the shared lease"
@@ -340,64 +344,21 @@ echo "  - book cache (.cache/<book>), models preserved"
 echo "  - .mise-cache"
 """
 
+[tasks."build:storage"]
+description = "Inspect Mac free space and project build caches across linked worktrees"
+run = "ruby scripts/mac_build_budget.rb status"
+
+[tasks."build:storage:test"]
+description = "Verify build storage refusal, monitoring and cleanup exclusion without compiling"
+run = "ruby scripts/test_mac_build_budget.rb"
+
 [tasks."clean:build"]
-description = "Reclaim disk from iOS/macOS/Flutter build artifacts (DerivedData, .build, dist, flutter build/) — run periodically or when disk is low, NOT wired into mac:build itself since mac:run/CI consume its .build output immediately after."
-run = """
-#!/bin/bash
-set -e
-
-echo "🧹 Cleaning build artifacts..."
-
-# xcodebuild -derivedDataPath output for the headless mac:build/ios:build
-# tasks. Not auto-run after mac:build/mac:build:dev — mac:run and other
-# immediate consumers read the just-built .app straight out of here.
-echo "  → Removing ios/EpubToMp3/.build..."
-rm -rf ios/EpubToMp3/.build 2>/dev/null || true
-
-# Xcode.app's own DerivedData for this project, only if Xcode.app was ever
-# opened directly on it (headless builds above never populate this — see
-# "Build Artifact Hygiene" in CLAUDE.md: don't let two build caches for the
-# same project accumulate in parallel).
-echo "  → Removing Xcode DerivedData for EpubToMp3..."
-rm -rf "$HOME/Library/Developer/Xcode/DerivedData"/EpubToMp3-* 2>/dev/null || true
-
-echo "  → Removing Rust sidecar dist/..."
-rm -rf dist 2>/dev/null || true
-
-echo "  → Removing flutter_app/build..."
-rm -rf flutter_app/build 2>/dev/null || true
-
-echo "✅ Build artifacts cleaned!"
-"""
+description = "Prune superseded project Xcode caches under the native lease; preserve current artifacts"
+run = "ruby scripts/mac_build_budget.rb prune"
 
 [tasks."clean:build:if-low"]
-description = "Run clean:build only when free disk is below threshold and no build is active. Invoked every 6h by the com.pietro.epub-to-mp3-disk-guard LaunchAgent (~/bin/epub-to-mp3-disk-guard.sh)."
-run = """
-#!/bin/bash
-set -e
-
-THRESHOLD_GB="${DISK_GUARD_THRESHOLD_GB:-20}"
-# /System/Volumes/Data, not /: `df /` reports the sealed System snapshot
-# (barely moves regardless of real usage) — actual builds/caches live on
-# the Data volume. Checking `/` made this threshold nearly meaningless.
-AVAIL_GB="$(df -g /System/Volumes/Data | tail -1 | awk '{print $4}')"
-
-echo "Available: ${AVAIL_GB}Gi (threshold: ${THRESHOLD_GB}Gi)"
-
-if [ "$AVAIL_GB" -ge "$THRESHOLD_GB" ]; then
-  echo "Above threshold — nothing to do."
-  exit 0
-fi
-
-# Never delete a build's own output out from under it.
-if pgrep -f xcodebuild >/dev/null 2>&1; then
-  echo "xcodebuild is running — skipping this cycle."
-  exit 0
-fi
-
-echo "Below threshold — running clean:build"
-mise run clean:build
-"""
+description = "Prune superseded Xcode caches below the configured free-space floor, only without active jobs"
+run = "ruby scripts/mac_build_budget.rb prune-if-low"
 
 [tasks.install]
 description = "Install Python and web dependencies (venv + npm)"
@@ -684,13 +645,14 @@ xcodegen generate
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
 # Hold the single-heavy-job lock around xcodebuild (CPU CATERR / PCIe panic
 # guard on constrained Intel Macs — never let it race another heavy job).
-python3 "${MISE_PROJECT_ROOT:-../..}/scripts/heavy_job_guard.py" mac:build -- \\
+mise exec -- ruby "${MISE_PROJECT_ROOT:-../..}/scripts/native_job.rb" build -- \\
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
   -configuration "$CONFIG" \\
   -destination 'platform=macOS' \\
   -derivedDataPath ./.build \\
+  -jobs 1 \\
   -showBuildTimingSummary \\
   build | tail -20
 
@@ -770,7 +732,7 @@ python3 ../../scripts/guard_ios_simulator_resources.py
 # xcodebuild fails with a generic "Unable to find a destination
 # matching..." 50 seconds into the run — surface the real cause now
 # instead.
-if ! xcodebuild \\
+if ! mise exec -- ruby "${MISE_PROJECT_ROOT:-../..}/scripts/native_job.rb" build -- xcodebuild \\
        -project EpubToMp3.xcodeproj \\
        -scheme EpubToMp3 \\
        -showdestinations 2>&1 \\
@@ -812,12 +774,13 @@ fi
 echo "ios:build → destination: ${DEST}"
 
 BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-build.log"
-if ! xcodebuild \\
+if ! mise exec -- ruby "${MISE_PROJECT_ROOT:-../..}/scripts/native_job.rb" build -- xcodebuild \\
        -project EpubToMp3.xcodeproj \\
        -scheme EpubToMp3 \\
        -configuration Debug \\
        -destination "${DEST}" \\
        -derivedDataPath ./.build \\
+       -jobs 1 \\
        -showBuildTimingSummary \\
        build >"${BUILD_LOG}" 2>&1; then
   echo "** BUILD FAILED **"
@@ -929,7 +892,7 @@ fi
 # callers can use the same IOS_DEVICE_ID for build, install, and launch.
 XCODE_DEVICE="${IOS_XCODE_DEVICE_ID:-}"
 if [[ -z "$XCODE_DEVICE" ]]; then
-  XCODE_DEVICE=$(xcrun devicectl device info details --device "$DEVICE" 2>/dev/null \
+  XCODE_DEVICE=$(xcrun devicectl device info details --device "$DEVICE" 2>/dev/null \\
     | awk -F': ' '/• udid:/ { print $2 }')
 fi
 if [[ -z "$XCODE_DEVICE" ]]; then
@@ -946,13 +909,13 @@ else
 fi
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
 BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-build.log"
-if ! xcodebuild \\
+if ! mise exec -- ruby "${MISE_PROJECT_ROOT:-../..}/scripts/native_job.rb" build -- xcodebuild \\
        -project EpubToMp3.xcodeproj \\
        -scheme EpubToMp3 \\
        -configuration Debug \\
        -destination "id=$XCODE_DEVICE" \\
        -derivedDataPath ./.build-device \\
-       -parallelizeTargets \\
+       -jobs 1 \\
        -showBuildTimingSummary \\
        build >"${BUILD_LOG}" 2>&1; then
   echo "** DEVICE BUILD FAILED **"

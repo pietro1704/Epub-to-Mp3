@@ -72,6 +72,13 @@ class NativeHookSafetyTest < Minitest::Test
           ENV.fetch("FIXTURE_STATE") == "Shutdown" ? nil : "Shutdown required; fixture preflight refused compilation"
         end
       end
+      # Keep hook fixtures independent of the host's actual storage state;
+      # storage refusals have their own executable launcher regressions.
+      module MacBuildBudget
+        def self.metrics
+          { free_bytes: 30 * GIB, cache_bytes: 0 }
+        end
+      end
       File.write(ENV.fetch("FIXTURE_GUARD"), JSON.generate(ARGV))
       exit NativeJob.main(["--lock-path", ENV.fetch("FIXTURE_LEASE"), *ARGV])
     RUBY

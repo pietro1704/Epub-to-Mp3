@@ -3,6 +3,7 @@
 
 require "optparse"
 require_relative "native_build_preflight"
+require_relative "mac_build_budget"
 
 # One lease spans inspection and execution. Descendants receive the actual open
 # file description, never an environment-only permission to skip coordination.
@@ -52,11 +53,32 @@ module NativeJob
     nil
   end
 
+  def self.parallelism_error(command)
+    return nil unless RUBY_PLATFORM.include?("darwin")
+    compiler = command.index { |part| %w[cargo xcodebuild swift cmake].include?(File.basename(part)) }
+    return nil unless compiler
+    arguments = command.drop(compiler + 1)
+    arguments.each_with_index do |part, index|
+      return "Parallel native targets are disabled on this Mac" if part == "-parallelizeTargets"
+      flag = %w[-jobs --jobs -j].include?(part)
+      flag ||= File.basename(command[compiler]) == "cmake" && part == "--parallel"
+      compact = part.match(/\A-j(-?\d+)\z/) || part.match(/\A--(?:jobs|parallel)=(.+)\z/)
+      next unless flag || compact
+      number = flag ? arguments[index + 1] : compact[1]
+      return "Mac compilation requires exactly one job" unless number == "1"
+    end
+    nil
+  end
+
   def self.run(phase:, command:, path: LOCK_PATH)
+    if phase == "build" && (error = parallelism_error(command))
+      warn error
+      return 75
+    end
     path = File.expand_path(path)
     handle, inherited = lease(path)
     if phase == "build"
-      error = NativeBuildPreflight.check
+      error = NativeBuildPreflight.check || MacBuildBudget.check
       if error
         warn error
         return 75
@@ -65,11 +87,24 @@ module NativeJob
     signal = nil
     previous = {}
     %w[INT TERM HUP].each { |name| previous[name] = Signal.trap(name) { signal ||= name } }
-    environment = { FD_ENV => CHILD_FD.to_s, PATH_ENV => path }
+    environment = { FD_ENV => CHILD_FD.to_s, PATH_ENV => path,
+                    "CARGO_BUILD_JOBS" => "1", "CMAKE_BUILD_PARALLEL_LEVEL" => "1" }
     pid = Process.spawn(environment, [command.first, command.first], *command.drop(1), CHILD_FD => handle, pgroup: true)
     status = nil
     cancelled_at = nil
+    storage_error = nil
+    storage_interval = MacBuildBudget.interval
+    next_storage_check = Process.clock_gettime(Process::CLOCK_MONOTONIC) + storage_interval
     until status
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      if phase == "build" && now >= next_storage_check && !storage_error
+        storage_error = MacBuildBudget.check
+        if storage_error
+          warn storage_error
+          signal ||= "TERM"
+        end
+        next_storage_check = now + storage_interval
+      end
       if signal && !cancelled_at
         Process.kill(signal, -pid) rescue Errno::ESRCH
         cancelled_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -86,7 +121,7 @@ module NativeJob
       # before killing descendants that ignored it.
       stop_group(pid)
     end
-    signal ? 128 + Signal.list.fetch(signal) : (status.exitstatus || 128 + status.termsig)
+    storage_error ? 75 : (signal ? 128 + Signal.list.fetch(signal) : (status.exitstatus || 128 + status.termsig))
   rescue StandardError => error
     warn "native_job: #{error.message}"
     75
