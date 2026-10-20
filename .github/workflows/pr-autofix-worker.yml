@@ -218,7 +218,7 @@ jobs:
           export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           node "$RUNNER_TEMP/pr-repair-guard.cjs" publish "$PR_NUMBER" "$EXPECTED_SHA" "$GITHUB_WORKSPACE/repair"
-      - name: Explicitly dispatch and observe new-head CI and CodeQL
+      - name: Explicitly dispatch and observe scoped new-head CI
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}

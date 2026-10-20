@@ -1,132 +1,52 @@
 name: Native hook safety
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 on:
-  push:
-    paths:
-      - '.claude/hooks/swift_test_after_edit.sh'
-      - '.claude/hooks/xcode_build_smoke.sh'
-      - 'scripts/native_build_preflight.rb'
-      - 'scripts/native_job.rb'
-      - 'scripts/mac_build_budget.rb'
-      - 'scripts/test_mac_build_budget.rb'
-      - 'config/mac-build-budget.json'
-      - 'mise.toml'
-      - 'native/vendor/espeak-rs-sys/build.rs'
-      - 'scripts/test_native_build_preflight.rb'
-      - 'scripts/test_native_job.rb'
-      - 'scripts/test_native_hook_safety.rb'
-      - 'scripts/native_simulator_session.rb'
-      - 'scripts/test_native_simulator_session.rb'
-      - 'scripts/simulator_resource_monitor.py'
-      - 'scripts/test_simulator_resource_monitor.py'
-      - 'mise.toml'
-      - '.github/workflows/native-hook-safety.yml'
-  pull_request:
-    paths:
-      - '.claude/hooks/swift_test_after_edit.sh'
-      - '.claude/hooks/xcode_build_smoke.sh'
-      - 'scripts/native_build_preflight.rb'
-      - 'scripts/native_job.rb'
-      - 'scripts/mac_build_budget.rb'
-      - 'scripts/test_mac_build_budget.rb'
-      - 'config/mac-build-budget.json'
-      - 'mise.toml'
-      - 'native/vendor/espeak-rs-sys/build.rs'
-      - 'scripts/test_native_build_preflight.rb'
-      - 'scripts/test_native_job.rb'
-      - 'scripts/test_native_hook_safety.rb'
-      - 'scripts/native_simulator_session.rb'
-      - 'scripts/test_native_simulator_session.rb'
-      - 'scripts/simulator_resource_monitor.py'
-      - 'scripts/test_simulator_resource_monitor.py'
-      - 'mise.toml'
-      - '.github/workflows/native-hook-safety.yml'
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: native-hook-safety-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  native-hook-safety:
-    name: Native hook safety host regressions
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "4.0"
-          bundler-cache: false
-      - name: Install host test dependency
-        run: gem install minitest --version 6.0.6 --no-document
-      - name: Check hook shell syntax
-        run: bash -n .claude/hooks/swift_test_after_edit.sh .claude/hooks/xcode_build_smoke.sh
-      - name: Verify read-only preflight contracts
-        run: ruby scripts/test_native_build_preflight.rb
-      - name: Verify native lease and cancellation contracts
-        run: ruby scripts/test_native_job.rb
-      - name: Verify hooks with isolated compiler fixtures
-        run: ruby scripts/test_native_hook_safety.rb
-      - name: Verify quarantined session ownership and cleanup with host fixtures
-        run: ruby scripts/test_native_simulator_session.rb
-
-  simulator-resources:
-    name: Simulator resource monitor host contracts
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      MISE_ENABLE_TOOLS: python
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@v5
-        with:
-          version: 2026.9.14
-          install: false
-      - run: mise install
-      - name: Install the repository-pinned formatter
-        run: mise exec -- python -m pip install --disable-pip-version-check ruff==0.6.9
-      - name: Check monitor style
-        run: |
-          mise exec -- ruff check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
-          mise exec -- ruff format --check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
-      - name: Verify monitor runtime contracts without Apple execution
-        run: mise run host:simulator-resources:test
-
-  mac-build-storage:
-    name: Mac build storage regressions
+  mac-host-contracts:
+    name: Mac storage, lease and native host regressions
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
+      MISE_ENABLE_TOOLS: python,ruby,rust
       CARGO_BUILD_JOBS: '1'
       CMAKE_BUILD_PARALLEL_LEVEL: '1'
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '4.0'
-          bundler-cache: false
-      - run: gem install minitest --version 6.0.6 --no-document
       - uses: jdx/mise-action@v5
         with:
           version: 2026.9.14
           install: false
-      - name: Exercise storage refusals, monitoring and protected cleanup
-        run: ruby scripts/test_mac_build_budget.rb
-      - name: Preserve existing lease and cancellation contracts
-        run: ruby scripts/test_native_job.rb
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build the actual eSpeak native dependency serially
-        run: ruby scripts/native_job.rb build -- cargo check --locked -p espeak-rs-sys --jobs 1
+      - run: mise install python ruby rust
+      - run: mise exec -- gem install minitest --version 6.0.6 --no-document
+      - name: Verify real Mac filesystem, storage and native fixture contracts
+        run: |
+          mise exec -- ruby scripts/test_mac_build_budget.rb
+          mise exec -- ruby scripts/test_native_job.rb
+          mise exec -- ruby scripts/test_native_build_preflight.rb
+          mise exec -- ruby scripts/test_native_hook_safety.rb
+          mise exec -- ruby scripts/test_native_entrypoint_safety.rb
+          mise exec -- ruby scripts/test_native_faber_entrypoints.rb
+          mise exec -- ruby scripts/test_native_task_wiring.rb
+          mise exec -- ruby scripts/test_native_codex_tool_guard.rb
+          mise exec -- ruby scripts/test_native_simulator_session.rb
+          mise exec -- ruby scripts/test_device_workflow_entrypoint.rb
+      - name: Verify resource monitor contracts and style without Apple execution
+        run: |
+          mise exec -- python -m pip install --disable-pip-version-check ruff==0.6.9
+          mise exec -- ruff check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
+          mise exec -- ruff format --check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
+          mise exec -- python scripts/test_simulator_resource_monitor.py
+      - name: Type-check inherited-lease adapter without launching it
+        run: mise exec -- ruby scripts/native_job.rb build -- xcrun swiftc -typecheck scripts/ios_simulator_smoke.swift
+      - name: Test the actual DeviceWorkflow Swift package serially
+        run: mise exec -- ruby scripts/native_job.rb build -- xcrun swift test --package-path tools/DeviceWorkflow --jobs 1
+      - name: Build the actual eSpeak dependency serially
+        run: mise exec -- ruby scripts/native_job.rb build -- cargo check --locked -p espeak-rs-sys --jobs 1

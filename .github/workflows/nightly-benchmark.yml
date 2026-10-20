@@ -1,11 +1,11 @@
 name: Nightly Benchmark
 
 env:
+  MISE_ENABLE_TOOLS: python,node,npm
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  schedule:
-    - cron: "0 7 * * *"
+  # Legacy network benchmarks require an explicit operator decision.
   workflow_dispatch:
 
 permissions:

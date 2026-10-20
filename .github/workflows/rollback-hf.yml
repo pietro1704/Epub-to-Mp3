@@ -11,6 +11,12 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: sync-hf
+  cancel-in-progress: false
 
 jobs:
   rollback:
@@ -23,6 +29,9 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Snapshot trusted publication helper
+        run: cp scripts/validated_merge.mjs "$RUNNER_TEMP/validated_merge.mjs"
 
       - name: Resolve target commit
         id: target
@@ -53,12 +62,20 @@ jobs:
           printf 'sha=%s\n' "$SHA" >> "$GITHUB_OUTPUT"
           printf 'Rolling back to commit %s\n' "$SHA"
 
+      - name: Require a previously validated master merge
+        id: validated
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_REF: ${{ steps.target.outputs.sha }}
+        run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF"
+
       - name: Checkout target commit
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ steps.target.outputs.sha }}
+          ref: ${{ steps.validated.outputs.sha }}
           lfs: false
+          persist-credentials: false
 
       - name: Build HF-only repo snapshot
         env:
@@ -91,6 +108,8 @@ jobs:
         env:
           HF_SSH_PRIVATE_KEY: ${{ secrets.HF_SSH_PRIVATE_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATED_SHA: ${{ steps.validated.outputs.sha }}
         run: |
           set -euo pipefail
           cd "$HF_SYNC_DIR"
@@ -113,6 +132,7 @@ jobs:
           fi
 
           git remote add hf "$REMOTE_URL" || true
+          node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$VALIDATED_SHA"
           git push --force hf "HEAD:refs/heads/main"
 
       - name: Wait and verify rollback

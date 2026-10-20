@@ -1,11 +1,10 @@
 name: Weekly Feature History
 
 env:
+  MISE_ENABLE_TOOLS: python,node,npm
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  schedule:
-    - cron: "0 8 * * 1"
   workflow_dispatch:
 
 permissions:

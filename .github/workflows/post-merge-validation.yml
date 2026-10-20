@@ -1,0 +1,115 @@
+name: Post-merge validation
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: post-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    name: Confirm the integrated source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require an actual merge into master
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/post_merge_validation.mjs
+
+  ci:
+    needs: merge
+    uses: ./.github/workflows/ci.yml
+    with:
+      full_validation: true
+
+  codeql:
+    needs: merge
+    uses: ./.github/workflows/codeql.yml
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+  ffi:
+    needs: merge
+    uses: ./.github/workflows/converter-ffi.yml
+
+  faber:
+    needs: merge
+    uses: ./.github/workflows/faber-integration.yml
+
+  flutter:
+    needs: merge
+    uses: ./.github/workflows/flutter-rust-faber.yml
+
+  fallback:
+    needs: merge
+    uses: ./.github/workflows/native-fallback.yml
+
+  native:
+    needs: merge
+    uses: ./.github/workflows/native-hook-safety.yml
+
+  snapshot:
+    needs: merge
+    uses: ./.github/workflows/hf-snapshot-regression.yml
+
+  cli:
+    needs: merge
+    uses: ./.github/workflows/cli-faber-golden.yml
+
+  linux:
+    needs: merge
+    uses: ./.github/workflows/linux-gui-artifact.yml
+
+  isolation:
+    needs: merge
+    uses: ./.github/workflows/native-ffi-test-isolation.yml
+
+  offline:
+    needs: merge
+    uses: ./.github/workflows/offline-audio-contracts.yml
+
+  audit:
+    needs: merge
+    uses: ./.github/workflows/rust-dependency-audit.yml
+
+  ruby:
+    needs: merge
+    uses: ./.github/workflows/ruby-rust-integration.yml
+
+  validated:
+    name: Validated merged source
+    if: always()
+    needs: [merge, ci, codeql, ffi, faber, flutter, fallback, native, snapshot, cli, linux, isolation, offline, audit, ruby]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require every runtime and security result
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: >-
+          node --input-type=module -e
+          'import { assertValidationResults } from "./scripts/post_merge_validation.mjs";
+          assertValidationResults(JSON.parse(process.env.NEEDS_JSON));'
+      - name: Reconfirm merged ancestry before making publication eligible
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/post_merge_validation.mjs

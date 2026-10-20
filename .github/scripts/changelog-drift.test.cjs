@@ -25,7 +25,7 @@ test('Dependabot comparison is informational and has no GitHub write capability'
   const events = drift.on ?? drift.true;
   assert.deepEqual(Object.keys(events), ['pull_request']);
   for (const path of ['web/package.json', 'python_app/**', '.github/workflows/changelog-drift.yml',
-    '.github/workflows/changelog-drift-contracts.yml', '.github/scripts/changelog-drift.test.cjs']) {
+    '.github/scripts/changelog-drift.test.cjs']) {
     assert.ok(events.pull_request.paths.includes(path), `Missing trigger: ${path}`);
   }
   assert.equal(drift.jobs.drift['continue-on-error'], true);
@@ -36,19 +36,21 @@ test('Dependabot comparison is informational and has no GitHub write capability'
   assert.doesNotMatch(JSON.stringify(drift), /createComment|pull_request_target|gh\s+(api|pr)|issues:\s*write/);
 });
 
-test('focused contract workflow is read only and tests its actual checked-out revision', () => {
-  const contract = workflow('changelog-drift-contracts.yml');
+test('central contract job is read only and tests its actual checked-out revision', () => {
+  const contract = workflow('ci.yml');
   const events = contract.on ?? contract.true;
-  assert.deepEqual(Object.keys(events).sort(), ['pull_request', 'workflow_dispatch']);
+  assert.ok(Object.hasOwn(events, 'pull_request'));
+  assert.equal(events.pull_request?.paths, undefined);
   assert.deepEqual(contract.permissions, { contents: 'read' });
-  assert.deepEqual(events.pull_request.paths, (drift.on ?? drift.true).pull_request.paths.slice(-3));
-  const steps = contract.jobs.contracts.steps;
+  const job = contract.jobs['production-packaging-guard'];
+  assert.deepEqual(job.permissions, { contents: 'read' });
+  const steps = job.steps;
   const checkout = steps.find(step => step.uses?.startsWith('actions/checkout@'));
   assert.equal(checkout.with.ref, undefined);
   assert.equal(checkout.with['persist-credentials'], false);
-  assert.equal(steps.find(step => step.uses?.startsWith('actions/setup-node@')).with['node-version'], '24');
-  assert.equal(steps.find(step => step.uses?.startsWith('actions/setup-node@')).with['package-manager-cache'], false);
-  assert.ok(steps.some(step => step.run === 'node --test .github/scripts/changelog-drift.test.cjs'));
+  assert.ok(steps.some(step => step.run?.startsWith('mise exec -- ruby scripts/run_ci_contracts.rb')));
+  assert.match(readFileSync(resolve(__dirname, '../../scripts/run_ci_contracts.rb'), 'utf8'), /\.github\/scripts\/changelog-drift\.test\.cjs/);
+  assert.doesNotMatch(JSON.stringify(job), /issues.*write|HF_TOKEN|HF_SSH/);
 });
 
 function execute({ committed = 'same\n', generated = committed, brokenOutput = false, brokenSummary = false } = {}) {

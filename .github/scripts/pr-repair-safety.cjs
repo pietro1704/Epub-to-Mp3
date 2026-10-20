@@ -26,7 +26,7 @@ function validate(pr, repository, expected) {
       branch.includes('..') || branch.includes('//') || branch.endsWith('/') || branch.endsWith('.lock')) {
     throw new Error('PR is outside the trusted current-head repair scope');
   }
-  return { number: pr.number, sha: expected, branch };
+  return { number: pr.number, sha: expected, branch, baseSha: pr.base?.sha };
 }
 
 function readiness({ credentials, writers }) {
@@ -51,6 +51,7 @@ function protectedPath(filename) {
     /(^|\/)(AGENTS\.md|CLAUDE\.md|CODEOWNERS|SECURITY\.md|mise\.toml|\.gitmodules|\.gitattributes|\.gitignore|\.netrc|\.npmrc|\.pypirc|auth\.json|\.env[^/]*|[^/]*(credential|secret)[^/]*|[^/]*\.(pem|key|p12|mobileprovision|entitlements))$/i.test(filename) ||
     /^scripts\/(guard_remediation_changes\.py|guarded_pr_merge\.mjs|native_job\.rb|native_build_preflight\.rb|native_codex_tool_guard\.rb|native_build_command\.rb|mac_build_budget\.rb|native_simulator_session\.rb|simulator_resource_monitor\.py|device-workflow\.sh|ios_simulator_smoke\.swift|guard_ios_simulator_resources\.py|guard_no_python_production\.sh|heavy_job_guard\.py|ios_disk_guard\.sh|preflight\.sh)$/.test(filename) ||
     filename === 'config/mac-build-budget.json' ||
+    /^scripts\/(validated_merge\.mjs|post_merge_validation\.mjs|run_ci_contracts\.rb|check_codeql_swift_tool_scope\.rb)$/.test(filename) ||
     /^(docs\/agents\/|docs\/agent-workflow\.md$|TODO_APP\.md$|Dockerfile(?:\.|$)|docker-compose[^/]*$|compose\.[^/]+$|deploy\/|infra\/)/.test(filename);
 }
 
@@ -243,11 +244,14 @@ async function dispatchVerification(api, repository, number, sha,
   if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) throw new Error('Invalid observation bound');
   const current = inspect(api, repository, number, sha);
   const evidence = [];
-  for (const workflow of ['ci.yml', 'codeql.yml']) {
+  for (const workflow of ['ci.yml']) {
     const endpoint = `/actions/workflows/${workflow}/runs?event=workflow_dispatch&branch=${encodeURIComponent(current.branch)}&per_page=100`;
     const before = new Set(api(endpoint).workflow_runs.map(run => run.id));
-    inspect(api, repository, number, sha);
-    api(`/actions/workflows/${workflow}/dispatches`, 'POST', { ref: current.branch });
+    const ready = inspect(api, repository, number, sha);
+    if (!/^[a-f0-9]{40}$/.test(ready.baseSha || '')) throw new Error('Verification requires the exact PR base SHA');
+    api(`/actions/workflows/${workflow}/dispatches`, 'POST', {
+      ref: current.branch, inputs: { full_validation: 'false', base_sha: ready.baseSha }
+    });
     let observed;
     for (let attempt = 0; attempt < attempts; attempt++) {
       inspect(api, repository, number, sha);

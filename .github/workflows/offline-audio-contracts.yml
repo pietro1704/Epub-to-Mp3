@@ -1,12 +1,7 @@
 name: Offline audio contracts
 
 on:
-  pull_request:
-    paths:
-      - 'python_app/tests/test_audio_pause_integration.py'
-      - 'python_app/tests/test_audio_pause_policy.py'
-      - 'python_app/src/audio_postprocess.py'
-      - '.github/workflows/offline-audio-contracts.yml'
+  workflow_call:
   workflow_dispatch:
 
 permissions:

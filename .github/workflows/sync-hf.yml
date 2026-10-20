@@ -4,74 +4,57 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  # Auto-sync only after CI succeeds on master
+  # Auto-sync only after post-merge validation succeeds on master
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Post-merge validation"]
     types: [completed]
   # Manual trigger only if needed
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: sync-hf
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  changes:
-    runs-on: ubuntu-24.04
-    outputs:
-      should_sync: ${{ steps.paths.outputs.should_sync }}
-    steps:
-      - name: Checkout validated revision
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 2
-          lfs: false
-          persist-credentials: false
-          # Check out the exact successful CI revision, not whichever commit
-          # happens to be current on master when this workflow starts.
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-
-      - name: Detect Space-relevant changes
-        id: paths
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            # A successful CI workflow_run is already the trust boundary.
-            # Do not re-derive changed paths from a shallow checkout.
-            echo "should_sync=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "should_sync=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          base=$(git rev-parse HEAD^)
-          changed=$(git diff --name-only "$base" HEAD)
-          if grep -Eq '^(crates/|Cargo\.toml$|Cargo\.lock$|web/|Dockerfile$|\.github/workflows/sync-hf\.yml$)' <<< "$changed"; then
-            echo "should_sync=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_sync=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  sync:
-    needs: changes
-    runs-on: ubuntu-24.04
-    # Run automatically on successful CI for master; allow manual override
-    if: >
-      ((github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
+  gate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'master' &&
-       github.event.workflow_run.head_repository.full_name == github.repository) ||
-      github.event_name == 'workflow_dispatch') &&
-      needs.changes.outputs.should_sync == 'true'
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.validated.outputs.sha }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          persist-credentials: false
+      - name: Require validated current merge
+        id: validated
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        run: node scripts/validated_merge.mjs --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest
+
+  sync:
+    needs: gate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout trusted publication policy
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          path: publication-policy
+          persist-credentials: false
+      - name: Snapshot trusted publication helper
+        run: cp publication-policy/scripts/validated_merge.mjs "$RUNNER_TEMP/validated_merge.mjs"
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
@@ -79,8 +62,8 @@ jobs:
           # Avoid LFS fetch (budget exceeded)
           lfs: false
           persist-credentials: false
-          # The job only syncs the exact trusted revision after successful CI.
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          # The job only syncs the exact trusted revision after successful post-merge validation.
+          ref: ${{ needs.gate.outputs.sha }}
 
       - uses: jdx/mise-action@v5
         env:
@@ -107,6 +90,8 @@ jobs:
       - name: Push to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATED_SHA: ${{ needs.gate.outputs.sha }}
         run: |
           set -euo pipefail
           if [ -z "${HF_TOKEN:-}" ]; then
@@ -126,6 +111,7 @@ jobs:
           ASKPASS
           chmod 700 "$auth_dir/askpass"
           export GIT_ASKPASS="$auth_dir/askpass" GIT_TERMINAL_PROMPT=0
+          node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$VALIDATED_SHA" --latest
           bash scripts/hf_push.sh "$HF_SYNC_DIR" https://huggingface.co/spaces/pi1704/epub-to-mp3
 
       - name: Remove owned snapshot

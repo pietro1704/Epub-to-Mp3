@@ -1,44 +1,14 @@
 name: Flutter real Rust Faber
 
 on:
+  workflow_call:
   workflow_dispatch:
-  push:
-    branches: [master, 'feature/**']
-    paths:
-      - '.github/workflows/flutter-rust-faber.yml'
-      - 'flutter_app/test/desktop_faber_integration_test.dart'
-      - 'flutter_app/lib/services/local_conversion_job.dart'
-      - 'flutter_app/test/local_conversion_job_test.dart'
-      - 'flutter_app/lib/services/desktop_embedded_converter.dart'
-      - 'flutter_app/windows/**'
-      - 'flutter_app/cmake/**'
-      - 'scripts/build_flutter_desktop.rb'
-      - 'crates/converter-ffi/**'
-      - 'crates/converter-core/**'
-      - 'native/piper-runtime/**'
-      - 'native/vendor/**'
-      - 'mise.toml'
-  pull_request:
-    paths:
-      - '.github/workflows/flutter-rust-faber.yml'
-      - 'flutter_app/test/desktop_faber_integration_test.dart'
-      - 'flutter_app/lib/services/local_conversion_job.dart'
-      - 'flutter_app/test/local_conversion_job_test.dart'
-      - 'flutter_app/lib/services/desktop_embedded_converter.dart'
-      - 'flutter_app/windows/**'
-      - 'flutter_app/cmake/**'
-      - 'scripts/build_flutter_desktop.rb'
-      - 'crates/converter-ffi/**'
-      - 'crates/converter-core/**'
-      - 'native/piper-runtime/**'
-      - 'native/vendor/**'
-      - 'mise.toml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  group: flutter-rust-faber-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/master') }}
 
 jobs:

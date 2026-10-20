@@ -1,18 +1,7 @@
 name: Rust Dependency Audit
 
 on:
-  pull_request:
-    branches: [master]
-    paths:
-      - Cargo.lock
-      - '**/Cargo.toml'
-      - .github/workflows/rust-dependency-audit.yml
-  push:
-    branches: [master]
-    paths:
-      - Cargo.lock
-      - '**/Cargo.toml'
-      - .github/workflows/rust-dependency-audit.yml
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -47,6 +36,14 @@ jobs:
         run: mise exec -- cargo check --locked -p converter-core --features kokoro-sherpa-runtime
       - name: Verify locked dependency resolution
         run: mise exec -- cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
+      - name: Cache pinned auditor
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: cargo-audit-${{ runner.os }}-${{ runner.arch }}-0.22.2
       - name: Install pinned auditor
         run: mise exec -- cargo install cargo-audit --version 0.22.2 --locked
       - name: Audit exact checked-out lockfile

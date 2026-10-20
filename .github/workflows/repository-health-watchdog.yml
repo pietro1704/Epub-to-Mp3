@@ -5,7 +5,7 @@ on:
     - cron: '11,41 * * * *'
   workflow_dispatch:
   workflow_run:
-    workflows: ['CI', 'Release Desktop', 'Converter FFI portability', 'CodeQL']
+    workflows: ['CI', 'Post-merge validation', 'Release Desktop', 'Converter FFI portability', 'CodeQL']
     types: [completed]
   issues:
     types: [opened, reopened, closed, labeled, unlabeled]
@@ -22,6 +22,7 @@ concurrency:
 
 jobs:
   regression:
+    if: vars.REPOSITORY_HEALTH_WATCHDOG_ENABLED == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-24.04

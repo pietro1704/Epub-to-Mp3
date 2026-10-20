@@ -69,30 +69,34 @@ process.stdout.write(JSON.stringify(response));
 function fixture() {
   return { repo, head, runId: '90', comparison: { status: 'ahead', behind_by: 0 }, pr: { state: 'OPEN', isDraft: false, baseRefName: 'master', headRefOid: head,
     isCrossRepository: false, reviewDecision: '', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [
-      { __typename: 'CheckRun', name: 'Python', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS' },
+      { __typename: 'CheckRun', name: 'PR gate', detailsUrl: `https://github.com/${repo}/actions/runs/80/job/12`, status: 'COMPLETED', conclusion: 'SUCCESS' },
       { __typename: 'CheckRun', name: 'CodeQL', status: 'COMPLETED', conclusion: 'SUCCESS' },
     ] }, runs: [{ id: 80, head_sha: head, status: 'completed', conclusion: 'success' }],
     securityRuns: [{ id: 81, head_sha: head, status: 'completed', conclusion: 'success' }] };
 }
-test('exact-head successful complete CI and every observed check permit merge', () => {
+test('exact-head successful scoped CI and its PR gate permit merge', () => {
   const f = fixture();
   assert.equal(evaluate(f).eligible, true);
   f.pr.statusCheckRollup.push({ __typename: 'StatusContext', state: 'SUCCESS' });
   assert.equal(evaluate(f).eligible, true);
 });
-test('pending, failed, cancelled, skipped, neutral or unknown checks block merge', () => {
+test('pending, failed, cancelled, skipped, neutral or unknown PR gates block merge', () => {
   for (const conclusion of ['FAILURE', 'CANCELLED', 'SKIPPED', 'NEUTRAL', 'TIMED_OUT', null, 'OTHER']) {
-    const f = fixture(); f.pr.statusCheckRollup[1].conclusion = conclusion;
+    const f = fixture(); f.pr.statusCheckRollup[0].conclusion = conclusion;
     assert.equal(evaluate(f).eligible, false);
   }
   for (const status of ['QUEUED', 'IN_PROGRESS', null]) {
-    const f = fixture(); f.pr.statusCheckRollup[1].status = status;
+    const f = fixture(); f.pr.statusCheckRollup[0].status = status;
     assert.equal(evaluate(f).eligible, false);
   }
-  for (const check of [{ __typename: 'StatusContext', state: 'PENDING' }, {}, { __typename: 'Unknown', conclusion: 'SUCCESS' }]) {
-    const f = fixture(); f.pr.statusCheckRollup.push(check);
-    assert.equal(evaluate(f).eligible, false);
-  }
+});
+test('nonblocking checks and postmerge security do not delay a successful PR gate', () => {
+  const f = fixture(); f.pr.mergeStateStatus = 'UNSTABLE';
+  f.securityRuns = [];
+  f.pr.statusCheckRollup[1].status = 'QUEUED';
+  f.pr.statusCheckRollup[1].conclusion = null;
+  f.pr.statusCheckRollup.push({ __typename: 'StatusContext', state: 'FAILURE' });
+  assert.equal(evaluate(f).eligible, true);
 });
 test('a single green CI job cannot hide unfinished or failed whole workflow', () => {
   for (const [status, conclusion] of [['in_progress', null], ['queued', null], ['completed', 'failure'], ['completed', 'cancelled']]) {
@@ -120,19 +124,17 @@ test('drafts, forks, closed PRs, review rejection and changed heads block merge'
     assert.equal(evaluate(f).eligible, false);
   }
 });
-test('exclude only this automation run to avoid waiting for itself, never another run', () => {
-  const f = fixture();
-  const own = { __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null,
-    detailsUrl: `https://github.com/${repo}/actions/runs/90/job/12` };
-  f.pr.statusCheckRollup.push(own);
-  assert.equal(evaluate(f).eligible, true);
-  for (const url of [`https://github.com/${repo}/actions/runs/901/job/12`, `https://evil.test/${repo}/actions/runs/90/job/12`,
-    'not a URL', `https://github.com/other/repo/actions/runs/90/job/12`]) {
-    own.detailsUrl = url;
+test('only the named gate from the latest exact CI run can authorize merge', () => {
+  for (const url of [`https://github.com/${repo}/actions/runs/801/job/12`, `https://evil.test/${repo}/actions/runs/80/job/12`,
+    'not a URL', `https://github.com/other/repo/actions/runs/80/job/12`]) {
+    const f = fixture(); f.pr.statusCheckRollup[0].detailsUrl = url;
     assert.equal(evaluate(f).eligible, false);
   }
-  f.pr.statusCheckRollup = [{ ...own, detailsUrl: `https://github.com/${repo}/actions/runs/90/job/12` }];
-  assert.equal(evaluate(f).eligible, false, 'self exclusion cannot manufacture a nonempty successful check set');
+  const f = fixture();
+  f.pr.statusCheckRollup.push({ ...f.pr.statusCheckRollup[0] });
+  assert.equal(evaluate(f).eligible, false, 'ambiguous gate identity fails closed');
+  f.pr.statusCheckRollup = [{ __typename: 'StatusContext', name: 'PR gate', state: 'SUCCESS' }];
+  assert.equal(evaluate(f).eligible, false);
 });
 function harness(options = {}) {
   const data = fixture();
@@ -147,8 +149,8 @@ function harness(options = {}) {
       if (args[1] === 'view') {
         reads++;
         if (options.changeOnRecheck && reads === 2) data.pr.headRefOid = 'b'.repeat(40);
-        if (options.failOnRecheck && reads === 2) data.pr.statusCheckRollup[1].conclusion = 'FAILURE';
-        if (options.securityOnRecheck && reads === 2) data.securityRuns[0].status = 'in_progress';
+        if (options.failOnRecheck && reads === 2) data.pr.statusCheckRollup[0].conclusion = 'FAILURE';
+        if (options.securityOnRecheck && reads === 2) data.runs[0].status = 'in_progress';
         if (options.baseOnRecheck && reads === 2) data.pr.mergeStateStatus = 'BEHIND';
         return JSON.stringify(data.pr);
       }
@@ -159,7 +161,7 @@ function harness(options = {}) {
 test('mutation is explicitly requested, twice verified and pinned to approved head', () => {
   const h = harness(); const report = h.run();
   assert.deepEqual(h.calls.at(-1), ['pr', 'merge', '802', '--repo', repo, '--squash', '--match-head-commit', head]);
-  assert.equal(h.calls.length, 9);
+  assert.equal(h.calls.length, 7);
   assert.equal(report.merge_requested, true);
   assert.equal(report.merged, false, 'accepted command is not proof of merged delivery');
   assert.ok(!h.calls.flat().some(value => ['--auto', '--admin', '--delete-branch'].includes(value)));
@@ -170,10 +172,10 @@ test('read-only mode never mutates; changed head or checks on reread never merge
     assert.equal(h.run().eligible, false);
     assert.equal(h.calls.some(args => args[1] === 'merge'), false);
   }
-  const h = harness(); assert.equal(h.run(false).merged, false); assert.equal(h.calls.length, 4);
+  const h = harness(); assert.equal(h.run(false).merged, false); assert.equal(h.calls.length, 3);
 });
 test('infrastructure failures and malformed metadata have no mutation fallback', () => {
-  for (const options of [{ failCall: 1 }, { failCall: 2 }, { failCall: 3 }, { failCall: 4 }, { failCall: 5 }, { failCall: 6 }, { failCall: 7 }, { failCall: 8 }, { badPages: true }]) {
+  for (const options of [{ failCall: 1 }, { failCall: 2 }, { failCall: 3 }, { failCall: 4 }, { failCall: 5 }, { failCall: 6 }, { badPages: true }]) {
     const h = harness(options); assert.throws(() => h.run());
     assert.equal(h.calls.some(args => args[1] === 'merge'), false);
   }
@@ -196,8 +198,10 @@ test('policy inspection uses the trusted base and the repair worker cannot merge
     assert.doesNotMatch(text, /--merge/);
     assert.doesNotMatch(text, /gh pr merge/);
   }
-  const gate = readFileSync(new URL('../.github/workflows/merge-policy.yml', import.meta.url), 'utf8');
-  assert.match(gate, /node --test scripts\/test_guarded_pr_merge\.mjs/);
+  const gate = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const runner = readFileSync(new URL('./run_ci_contracts.rb', import.meta.url), 'utf8');
+  assert.match(runner, /scripts\/test_guarded_pr_merge\.mjs/);
+  assert.match(gate, /scripts\/run_ci_contracts\.rb/);
   assert.match(gate, /pull_request:/);
 });
 
@@ -209,24 +213,20 @@ test('behind, dirty, blocked or unknown mergeability and base freshness fail clo
     assert.equal(evaluate(f).eligible, false, JSON.stringify(changed));
   }
 });
-test('missing or incomplete exact-head CodeQL evidence blocks otherwise green CI', () => {
+test('missing, queued or failed postmerge security does not replace the PR gate', () => {
   for (const securityRuns of [undefined, [],
     [{ id: 81, head_sha: head, status: 'queued', conclusion: null }],
-    [{ id: 81, head_sha: head, status: 'in_progress', conclusion: null }],
-    [{ id: 81, head_sha: head, status: 'completed', conclusion: 'failure' }],
-    [{ id: 81, head_sha: head, status: 'completed', conclusion: 'cancelled' }],
-    [{ id: 81, head_sha: 'b'.repeat(40), status: 'completed', conclusion: 'success' }]]) {
+    [{ id: 81, head_sha: head, status: 'completed', conclusion: 'failure' }]]) {
     const f = fixture(); f.securityRuns = securityRuns;
+    assert.equal(evaluate(f).eligible, true);
+    f.pr.statusCheckRollup[0].conclusion = 'FAILURE';
     assert.equal(evaluate(f).eligible, false);
   }
-  const f = fixture();
-  f.securityRuns.push({ id: 82, head_sha: head, status: 'queued', conclusion: null });
-  assert.equal(evaluate(f).eligible, false, 'a newer CodeQL rerun invalidates an older success');
 });
-test('non-green security and stale base never reach a merge mutation', () => {
+test('non-green PR CI and stale base never reach a merge mutation', () => {
   for (const change of ['security', 'base']) {
     const h = harness();
-    if (change === 'security') h.data.securityRuns = [];
+    if (change === 'security') h.data.runs = [];
     else h.data.pr.mergeStateStatus = 'BEHIND';
     assert.equal(h.run().eligible, false);
     assert.equal(h.calls.some(args => args[1] === 'merge'), false);

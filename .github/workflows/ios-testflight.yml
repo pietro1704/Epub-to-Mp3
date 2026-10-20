@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: ios-testflight-${{ github.ref }}
@@ -25,7 +27,23 @@ env:
   EXPORT_PATH: ${{ github.workspace }}/build/export
 
 jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.validated.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          persist-credentials: false
+      - name: Require validated merge before signing
+        id: validated
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_REF: ${{ github.sha }}
+        run: node scripts/validated_merge.mjs --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF"
   credentials:
+    needs: gate
     name: Check TestFlight credentials
     runs-on: ubuntu-24.04
     outputs:
@@ -65,14 +83,26 @@ jobs:
 
   archive-and-upload:
     name: Archive and upload iOS build
-    needs: credentials
+    needs: [gate, credentials]
     if: needs.credentials.outputs.available == 'true'
     runs-on: macos-15
     timeout-minutes: 60
 
     steps:
+      - name: Checkout trusted publication policy
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          path: publication-policy
+          persist-credentials: false
+      - name: Snapshot trusted publication helper
+        run: cp publication-policy/scripts/validated_merge.mjs "$RUNNER_TEMP/validated_merge.mjs"
       - name: Check out source
         uses: actions/checkout@v7
+
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
 
       # iOS 27 devices require a current Xcode toolchain. The app is built on
       # GitHub's macOS runner, so developers do not need Xcode locally.
@@ -181,6 +211,13 @@ jobs:
           name: EpubToMp3-iOS-IPA
           path: ${{ env.EXPORT_PATH }}/*.ipa
           if-no-files-found: error
+
+      - name: Revalidate immediately before TestFlight publication
+        if: inputs.upload_to_testflight
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_REF: ${{ needs.gate.outputs.sha }}
+        run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF"
 
       - name: Upload to TestFlight
         if: inputs.upload_to_testflight
