@@ -2,7 +2,7 @@
 # Install via: mise run install (preferred) or pip install -r python_app/requirements.txt
 
 # Core TTS engines
-edge-tts>=7.2.8
+edge-tts>=7.3.1
 piper-tts>=1.8.0
 
 # PyTorch + audio (Piper)
