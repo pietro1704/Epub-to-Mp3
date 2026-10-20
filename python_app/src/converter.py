@@ -6277,7 +6277,7 @@ class AudioConverter(
                     if not validation_result.is_valid:
                         cache_valid = False
                         if self.verbose:
-                            print(f"⚠️ Chapter {index} cache INVALID: {validation_result.message}")
+                            print(f"⚠️ Chapter {index} cache INVALID: {validation_result.error_message}")
                             print(f"   Re-converting chapter {index}...")
                         # Delete invalid cached file
                         try:
@@ -6648,8 +6648,8 @@ class AudioConverter(
                         from .audio_validator import AudioValidator
 
                         validator = AudioValidator()
-                        file_result = validator.validate_audio_file(converted)
-                        if not file_result.is_valid:
+                        file_valid = validator.validate_audio_file(converted)
+                        if not file_valid:
                             recovered = await self._attempt_segment_retry(
                                 tts_engine,
                                 index,
@@ -6658,15 +6658,15 @@ class AudioConverter(
                                 config=config,
                             )
                             if recovered:
-                                file_result = validator.validate_audio_file(converted)
-                        if not file_result.is_valid:
+                                file_valid = validator.validate_audio_file(converted)
+                        if not file_valid:
                             if self.verbose:
                                 print(
-                                    f"⚠️ Chapter {index} validation warning: {file_result.message}"
+                                    f"⚠️ Chapter {index} validation warning: Invalid audio"
                                 )
                             if getattr(config, "strict_validate", False):
                                 converted.unlink(missing_ok=True)
-                                status_holder["text"] = file_result.message or "Invalid audio"
+                                status_holder["text"] = "Invalid audio"
                                 self._announce_stage(index, chapter_label, status_holder["text"])
                                 outcome = ChapterConversionOutcome(
                                     index=index,
@@ -6701,12 +6701,12 @@ class AudioConverter(
                                 if not validation_result.is_valid:
                                     if self.verbose:
                                         print(
-                                            f"⚠️ Chapter {index} validation warning: {validation_result.message}"
+                                            f"⚠️ Chapter {index} validation warning: {validation_result.error_message}"
                                         )
                                     if getattr(config, "strict_validate", False):
                                         converted.unlink(missing_ok=True)
                                         status_holder["text"] = (
-                                            validation_result.message or "Invalid duration"
+                                            validation_result.error_message or "Invalid duration"
                                         )
                                         self._announce_stage(
                                             index, chapter_label, status_holder["text"]
@@ -6785,17 +6785,21 @@ class AudioConverter(
 
                                         # Create simple validation report
                                         import json
-                                        from datetime import datetime
+                                        from datetime import datetime, timezone
 
                                         validation_data = {
                                             "chapter_number": index,
                                             "chapter_title": chapter_label,
-                                            "validated_at": datetime.utcnow().isoformat(),
+                                            "validated_at": (
+                                                datetime.now(timezone.utc)
+                                                .replace(tzinfo=None)
+                                                .isoformat()
+                                            ),
                                             "is_valid": validation_result.is_valid,
                                             "expected_duration": validation_result.expected_duration,
                                             "actual_duration": validation_result.actual_duration,
                                             "duration_diff_percent": validation_result.duration_diff_percent,
-                                            "message": validation_result.message,
+                                            "message": validation_result.error_message,
                                             "text_length": len(chapter_payload),
                                         }
 
