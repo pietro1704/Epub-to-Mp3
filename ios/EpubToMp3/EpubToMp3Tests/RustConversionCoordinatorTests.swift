@@ -30,6 +30,7 @@ final class RustConversionCoordinatorTests: XCTestCase {
         XCTAssertEqual(contents, previousTrace + "[Rust] conversion resumed\n")
     }
 
+    @MainActor
     func testOptInImportedLordOfTheRingsConvertsAndPublishesPlayableAudio() async throws {
         let bookPath = ProcessInfo.processInfo.environment["EPUB2MP3_LOTR_IMPORTED_EPUB"]
         let resolvedBookPath = bookPath.flatMap { $0.contains("${") ? nil : $0 }
@@ -67,6 +68,7 @@ final class RustConversionCoordinatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: firstAudioPath))
     }
 
+    @MainActor
     func testOptInImportedLordOfTheRingsChapterNineConvertsAndPublishesPlayableAudio() async throws {
         let bookPath = ProcessInfo.processInfo.environment["EPUB2MP3_LOTR_IMPORTED_EPUB"]
         let resolvedBookPath = bookPath.flatMap { $0.contains("${") ? nil : $0 }
@@ -97,6 +99,7 @@ final class RustConversionCoordinatorTests: XCTestCase {
         XCTAssertTrue(isPlayable)
     }
 
+    @MainActor
     func testOptInTwoChaptersFromBothImportedBooksArePlayable() async throws {
         let applicationSupport = NSHomeDirectory() + "/Library/Application Support/EpubToMp3/ImportedBooks/"
         let cases: [(title: String, path: String, positions: ClosedRange<Int>)] = [
