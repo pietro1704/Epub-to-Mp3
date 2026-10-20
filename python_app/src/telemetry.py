@@ -15,7 +15,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque, Dict, List, Optional
 
@@ -91,7 +91,9 @@ class TelemetryRecorder:
             audio_seconds=float(audio_seconds) if audio_seconds else None,
             job_id=job_id,
             chapter=chapter,
-            timestamp=datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            timestamp=(
+                datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds") + "Z"
+            ),
             language=_normalize_lang(language),
         )
         encoded = json.dumps(asdict(sample), ensure_ascii=False, separators=(",", ":"))

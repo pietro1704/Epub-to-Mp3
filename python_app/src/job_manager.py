@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -51,7 +51,7 @@ class JobManager:
         # Add timestamp for cleanup purposes
         job_data_with_meta = {
             **job_data,
-            "_saved_at": datetime.utcnow().isoformat(),
+            "_saved_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
 
         try:
@@ -170,13 +170,13 @@ class JobManager:
             Number of jobs deleted
         """
         try:
-            cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
             deleted_count = 0
 
             for job_file in self.jobs_dir.glob("*.json"):
                 try:
                     # Check file modification time
-                    mtime = datetime.utcfromtimestamp(job_file.stat().st_mtime)
+                    mtime = datetime.fromtimestamp(job_file.stat().st_mtime, timezone.utc)
 
                     if mtime < cutoff_time:
                         job_id = job_file.stem
