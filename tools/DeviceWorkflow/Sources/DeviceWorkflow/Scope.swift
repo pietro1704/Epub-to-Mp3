@@ -17,6 +17,8 @@ public struct Options {
     public var wholeBook = false
     public var preview = false
     public var rawCases: [[String]] = []
+    public private(set) var testFilters: [String] = []
+    public private(set) var expectedTestCount = 0
 
     public init(arguments: [String], root: URL, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
         guard let first = arguments.first, let action = Action(rawValue: first) else {
@@ -59,6 +61,65 @@ public struct Options {
             throw WorkflowError("Scope options require benchmark.")
         }
         guard !explicitState || action == .status else { throw WorkflowError("--state requires status.") }
+        if action == .test {
+            guard !skipBuild else {
+                throw WorkflowError("Device tests require a current incremental build; IOS_SKIP_BUILD and --skip-build are not accepted.")
+            }
+            let selection = try Self.validateTestFilters(environment["IOS_TESTS"])
+            testFilters = selection.filters
+            expectedTestCount = selection.expectedCount
+        }
+    }
+
+    private static func validateTestFilters(_ supplied: String?) throws -> (filters: [String], expectedCount: Int) {
+        guard let supplied, !supplied.isEmpty else {
+            throw WorkflowError("Set IOS_TESTS explicitly to audited focused device tests.")
+        }
+        // Keep exact method selectors aligned with the audited device test classes.
+        let allowedMethods: [String: Set<String>] = [
+            "ReaderViewportTransitionTests": [
+                "testRepeatedTargetIsIdempotentAndCapturesOnce",
+                "testReplacementMakesPreviousCommitStaleWithoutRecapturing",
+                "testReentrantGeometryChangeInvalidatesItsOwnCommit",
+                "testCancelInvalidatesOutstandingToken",
+            ],
+            "ReaderProgressStoreTests": [
+                "testSaveAndReadRoundTrip", "testReadMissingBookReturnsNil", "testOffsetFractionIsClamped",
+                "testNegativeChapterIndexIsClampedForNewAndLegacyProgress",
+                "testInitialChapterSelectionRejectsEmptyContentAndClampsProgress", "testFirstOpenSkipsCoverBoilerplate",
+                "testPlaybackAnchorUsesCanonicalEpubIndexForManyMeetings",
+                "testPublishedPlaybackAnchorMakesTocSelectionStartAtSelectedPage",
+                "testSaveOverwritesPreviousEntryForSameBook", "testEvictRemovesSingleBook",
+                "testPruneOrphansDropsMissingBooks", "testPruneOrphansNoOpWhenAllValid",
+                "testCorruptDataIsIgnoredNotCrashing", "testLegacyEntryWithoutCharacterOffsetStillDecodes",
+                "testCharacterOffsetRoundTrips", "testPlaybackPriorityUsesLiveChapterForBookOpenInReader",
+                "testPlaybackPriorityUsesSavedProgressForDifferentBook",
+                "testPlaybackPriorityMapsSavedManyMeetingsPositionToEpubIndex",
+            ],
+        ]
+        let filters = supplied.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        var seen = Set<String>()
+        var expectedCount = 0
+        for filter in filters {
+            let parts = filter.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            guard (parts.count == 2 || parts.count == 3), parts[0] == "EpubToMp3Tests",
+                  let methods = allowedMethods[parts[1]], seen.insert(filter).inserted else {
+                throw WorkflowError("IOS_TESTS must contain distinct audited EpubToMp3Tests class or method selectors.")
+            }
+            if parts.count == 3 {
+                guard methods.contains(parts[2]) else {
+                    throw WorkflowError("IOS_TESTS method selectors must name an audited test method.")
+                }
+            }
+            expectedCount += parts.count == 3 ? 1 : methods.count
+        }
+        for filter in filters where filter.split(separator: "/").count == 3 {
+            let classSelector = filter.split(separator: "/").prefix(2).joined(separator: "/")
+            guard !seen.contains(classSelector) else {
+                throw WorkflowError("IOS_TESTS must not combine a class with one of its methods.")
+            }
+        }
+        return (filters, expectedCount)
     }
 }
 

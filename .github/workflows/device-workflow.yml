@@ -6,11 +6,13 @@ on:
     paths:
       - 'tools/DeviceWorkflow/**'
       - 'scripts/device-workflow.sh'
+      - 'scripts/test_device_workflow_entrypoint.rb'
       - '.github/workflows/device-workflow.yml'
   pull_request:
     paths:
       - 'tools/DeviceWorkflow/**'
       - 'scripts/device-workflow.sh'
+      - 'scripts/test_device_workflow_entrypoint.rb'
       - '.github/workflows/device-workflow.yml'
   workflow_dispatch:
 
@@ -26,5 +28,7 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
+      - name: Test explicit device workflow preparation boundary
+        run: ruby scripts/test_device_workflow_entrypoint.rb
       - name: Test native workflow without a device or TTS requests
         run: xcrun swift test --package-path tools/DeviceWorkflow --jobs 1

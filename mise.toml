@@ -1243,6 +1243,10 @@ run = "bash scripts/device-workflow.sh test"
 description = "Check physical device readiness once; fail immediately when locked"
 run = "bash scripts/device-workflow.sh preflight"
 
+[tasks."ios:device:prepare"]
+description = "Explicitly build the physical-device workflow CLI under the native build guard"
+run = "bash scripts/device-workflow.sh prepare"
+
 [tasks."ios:device:benchmark"]
 description = "Benchmark explicit EPUB/ranges on iPhone; --case BOOK START END, at most two chapters unless --whole-book"
 run = "bash scripts/device-workflow.sh benchmark"

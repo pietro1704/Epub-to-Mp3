@@ -16,6 +16,7 @@ public final class Workflow {
     private var cases: [BenchmarkCase] = []
     private var timings: [String: Double] = ["deviceWaitSeconds": 0]
     private var staged: String?
+    private var testStarted = false
     private var started = ProcessInfo.processInfo.systemUptime
 
     public init(root: URL, options: Options, runID: String = UUID().uuidString,
@@ -67,6 +68,17 @@ public final class Workflow {
             if report["status"] as? String != "blocked" { report["status"] = "failed" }
             report["nextAction"] = "Inspect persisted logs/xcresult; retry only explicitly after changed evidence."
         }
+        if options.action == .test && testStarted {
+            do {
+                try stopTestApp()
+                report["appCleanupVerified"] = true
+            } catch {
+                report["appCleanupVerified"] = false
+                report["appCleanupError"] = String(describing: error)
+                report["status"] = "failed"
+                if primary == nil { primary = error; report["error"] = String(describing: error) }
+            }
+        }
         if staged != nil {
             do {
                 try cleanupStagedInputs()
@@ -106,6 +118,7 @@ public final class Workflow {
         let request = Command(arguments: arguments, environment: extra, directory: root, log: log, timeout: timeout, phase: phase)
         do {
             let result = try runner(request) { pid in
+                if phase == "testWall", pid != nil { self.testStarted = true }
                 if let pid { self.report["childPid"] = pid } else { self.report.removeValue(forKey: "childPid") }
                 try self.checkpoint()
             }
@@ -160,14 +173,15 @@ public final class Workflow {
         let app = products.appendingPathComponent("Debug-iphoneos/EpubToMp3.app")
         let scheme = benchmark ? "EpubToMp3-IntegrationTests" : "EpubToMp3"
         let destination = ["-destination", "platform=iOS,id=\(udid)", "-parallel-testing-enabled", "NO"]
-        let common = ["xcodebuild", "-quiet", "-project", project.appendingPathComponent("EpubToMp3.xcodeproj").path,
+        let common = ["xcodebuild", "-quiet", "-jobs", "1", "-project", project.appendingPathComponent("EpubToMp3.xcodeproj").path,
                       "-scheme", scheme, "-derivedDataPath", project.appendingPathComponent(".build").path] + destination
-        let filters = (environment["IOS_TESTS"] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }.map { "-only-testing:\($0)" }
+        let selected = options.action == .test ? options.testFilters : (environment["IOS_TESTS"] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        let filters = selected.filter { !$0.isEmpty }.map { "-only-testing:\($0)" }
         report["status"] = "preparing"
         if !options.skipBuild {
             let buildStart = ProcessInfo.processInfo.systemUptime
             report["status"] = "building"
+            try command(["mise", "exec", "--", "ruby", root.appendingPathComponent("scripts/native_build_preflight.rb").path], "nativeBuildPreflight")
             try command(["bash", root.appendingPathComponent("scripts/ios_disk_guard.sh").path], "diskGuard")
             try command(["xcodegen", "generate", "--spec", project.appendingPathComponent("project.yml").path, "--project", project.path], "projectGeneration")
             try command(["bash", root.appendingPathComponent("scripts/verify_converter_ffi_ios.sh").path], "rustArtifactVerification")
@@ -235,6 +249,12 @@ public final class Workflow {
             throw WorkflowError("Missing/invalid xcresult summary; inspect testSummary.log and testWall.log.")
         }
         try Evidence.verifySummary(summary, benchmark: benchmark)
+        if options.action == .test {
+            guard Evidence.integer(summary["passedTests"]) == options.expectedTestCount,
+                  Evidence.integer(summary["skippedTests"]) == 0 else {
+                throw WorkflowError("Focused device tests require exactly \(options.expectedTestCount) passing tests and zero skips.")
+            }
+        }
         guard test.code == 0 else { throw WorkflowError("xcodebuild failed (\(test.code)); inspect testWall.log.") }
         if benchmark {
             guard let native = report["nativeEvidence"] as? [String: Any] else { throw WorkflowError("Native report missing from device and attachments.") }
@@ -242,6 +262,42 @@ public final class Workflow {
         }
         report["status"] = "passed"
         report["nextAction"] = "Inspect report.json; no further polling needed."
+    }
+
+    private func testAppProcesses(_ phase: String) throws -> [(pid: Int, executable: String)] {
+        let response = try deviceJSON(["info", "processes"], phase)
+        guard let rows = response["runningProcesses"] as? [[String: Any]] else {
+            throw WorkflowError("Cannot verify app shutdown: invalid device process inventory.")
+        }
+        let matches = try rows.compactMap { row -> (pid: Int, executable: String)? in
+            guard let executable = row["executable"] as? String else {
+                throw WorkflowError("Cannot identify a device process executable.")
+            }
+            guard executable.hasSuffix("/EpubToMp3.app/EpubToMp3") else { return nil }
+            guard let pid = Evidence.integer(row["processIdentifier"]), pid > 0 else {
+                throw WorkflowError("Cannot identify the test app PID.")
+            }
+            return (pid, executable)
+        }
+        guard matches.count <= 1 else { throw WorkflowError("Ambiguous test app process identity; refusing termination.") }
+        return matches
+    }
+
+    private func stopTestApp() throws {
+        let initial = try testAppProcesses("appCleanupInspection")
+        if let app = initial.first {
+            let current = try testAppProcesses("appCleanupRevalidation")
+            if let candidate = current.first {
+                guard candidate.pid == app.pid, candidate.executable == app.executable else {
+                    throw WorkflowError("Test app process identity changed; refusing termination.")
+                }
+                try command(["xcrun", "devicectl", "device", "process", "terminate", "--device", options.device,
+                             "--pid", String(app.pid)], "appCleanupTermination")
+            }
+        }
+        guard try testAppProcesses("appCleanupVerification").isEmpty else {
+            throw WorkflowError("Test app is still running after cleanup.")
+        }
     }
 
     private var container: [String] { ["--domain-type", "appDataContainer", "--domain-identifier", Evidence.appID] }
