@@ -40,8 +40,13 @@ final class SettingsStorageActionTests: XCTestCase {
             defaults.removePersistentDomain(forName: identifier)
         }
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        let controller = SettingsScreenController(settings: AppSettings(defaults: defaults),
-            library: LibraryStore(defaults: defaults), player: player, playbackClock: PlaybackClock(),
+        let settings = AppSettings(defaults: defaults)
+        let library = LibraryStore(defaults: defaults)
+        let originalBooks = library.books
+        let originalPlayback = player.snapshot
+        let originalBudget = settings.offlineCacheBudgetBytes
+        let controller = SettingsScreenController(settings: settings,
+            library: library, player: player, playbackClock: PlaybackClock(),
             diagnosticsSession: StreamingDiagnosticsSession())
         let previousKeyWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows).first(where: \.isKeyWindow)
@@ -77,6 +82,7 @@ final class SettingsStorageActionTests: XCTestCase {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         let alert = try XCTUnwrap(controller.presentedViewController as? UIAlertController)
+        XCTAssertEqual(alert.preferredStyle, .alert)
         XCTAssertEqual(alert.title, L10n.string(title),
                        "The confirmation must describe the removal scope selected in Settings.")
         XCTAssertEqual(alert.message, L10n.string(message))
@@ -84,9 +90,17 @@ final class SettingsStorageActionTests: XCTestCase {
                        [L10n.string("settings.clearCacheConfirmButton")])
         XCTAssertEqual(alert.actions.filter { $0.style == .cancel }.map(\.title),
                        [L10n.string("library.cancel")])
-        // Inspect the real confirmation only. No protected or temporary audio
-        // is created, removed, or used as a sacrificial test fixture.
+        // This unit seam dismisses the real alert without invoking deletion.
+        // SettingsStorageActionUITests exercises the actual Cancel button.
         alert.dismiss(animated: false)
+        for _ in 0..<100 {
+            if controller.presentedViewController == nil { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertNil(controller.presentedViewController)
+        XCTAssertEqual(library.books, originalBooks)
+        XCTAssertEqual(player.snapshot, originalPlayback)
+        XCTAssertEqual(settings.offlineCacheBudgetBytes, originalBudget)
     }
 }
 #endif
