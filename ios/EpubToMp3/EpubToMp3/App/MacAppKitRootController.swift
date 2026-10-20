@@ -558,7 +558,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 }
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = AppErrorReporter.message(error, context: "Reader listening")
                 alert.addButton(withTitle: L10n.string("common.ok"))
                 alert.runModal()
             }

@@ -601,6 +601,15 @@ final class MainReaderScreenController: UIViewController {
         let priority = readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
         guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
+        // Capture the page before asynchronous file access or player teardown
+        // can publish another chapter. Never borrow another book's anchor.
+        let pageRatio: Double? = {
+            guard sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id,
+                  sessionDefaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int == priority,
+                  let ratio = sessionDefaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double,
+                  ratio.isFinite, ratio > 0, ratio <= 1 else { return nil }
+            return ratio
+        }()
         // The playback control schedules only the active chapter and one ahead.
         let chapterEnd: Int32 = -1
         let jobID = UUID().uuidString
@@ -648,7 +657,11 @@ final class MainReaderScreenController: UIViewController {
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
                 installedPending = true
                 player.isConverting = true
-                player.resume()
+                if let pageRatio {
+                    player.startFromReaderPage(priority, sentenceOffsetRatio: pageRatio)
+                } else {
+                    player.resume()
+                }
                 let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
                 let result = try await conversionExecutor(
                     url, jobID, chapterStart, chapterEnd, playbackControl,
@@ -685,6 +698,11 @@ final class MainReaderScreenController: UIViewController {
                             data,
                             chapterIndex: chapterIndex,
                             chunkIndex: chunkIndex,
+                            // A page ratio needs the complete chapter duration.
+                            // Rust still writes the complete canonical artifact;
+                            // chapter callbacks queue it without replaying a prefix
+                            // or blocking conversion on the segment backlog.
+                            buffersAudio: pageRatio == nil,
                             isCurrent: { [weak self] in
                                 guard let self else { return false }
                                 return self.listeningJobID == jobID
@@ -726,7 +744,7 @@ final class MainReaderScreenController: UIViewController {
                 guard currentBook?.id == book.id else { return }
                 let alert = UIAlertController(
                     title: L10n.string("bookDetail.listenStart"),
-                    message: error.localizedDescription,
+                    message: AppErrorReporter.message(error, context: "Reader listening"),
                     preferredStyle: .alert
                 )
                 alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
@@ -751,7 +769,7 @@ final class MainReaderScreenController: UIViewController {
     private func presentStorageManagementAlert(_ error: StoragePressureError) {
         let alert = UIAlertController(
             title: L10n.string("settings.insufficientStorageTitle"),
-            message: error.localizedDescription,
+            message: AppErrorReporter.message(error, context: #function),
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(

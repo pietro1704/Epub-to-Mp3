@@ -1,4 +1,4 @@
-"""Tests for scripts/ios_disk_guard.sh (age + size cap eviction)."""
+"""The compatibility disk guard preserves reusable and user-owned build caches."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def _run(
     )
 
 
-def test_evicts_build_dir_older_than_age_cap(tmp_path: Path) -> None:
+def test_preserves_build_dir_older_than_legacy_age_cap(tmp_path: Path) -> None:
     derived = tmp_path / "DerivedData"
     ios_dir = tmp_path / "EpubToMp3"
     old_build = ios_dir / ".build-old"
@@ -52,11 +52,11 @@ def test_evicts_build_dir_older_than_age_cap(tmp_path: Path) -> None:
 
     _run(derived, ios_dir, IOS_DISK_GUARD_MAX_AGE_DAYS="3", IOS_DISK_GUARD_MAX_TOTAL_MB="4096")
 
-    assert not old_build.exists(), "build dir older than the age cap must be evicted"
+    assert old_build.exists(), "age alone must never authorize cache deletion"
     assert fresh_build.exists(), "recently built dir must survive the age cap"
 
 
-def test_evicts_oldest_first_when_over_size_cap(tmp_path: Path) -> None:
+def test_preserves_all_caches_above_legacy_size_cap(tmp_path: Path) -> None:
     derived = tmp_path / "DerivedData"
     ios_dir = tmp_path / "EpubToMp3"
     oldest = ios_dir / ".build-a"
@@ -67,7 +67,7 @@ def test_evicts_oldest_first_when_over_size_cap(tmp_path: Path) -> None:
 
     _run(derived, ios_dir, IOS_DISK_GUARD_MAX_AGE_DAYS="30", IOS_DISK_GUARD_MAX_TOTAL_MB="6")
 
-    assert not oldest.exists(), "oldest dir must be evicted first once over the size cap"
+    assert oldest.exists(), "the legacy size cap must never authorize cache deletion"
     assert newest.exists(), "newest dir must be kept when it alone fits under the size cap"
 
 

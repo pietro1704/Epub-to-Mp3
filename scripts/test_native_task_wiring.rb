@@ -135,6 +135,7 @@ class NativeTaskWiringTest < Minitest::Test
       esac
     SH
     @env = {
+      "APPLE_DERIVED_DATA_PATH" => File.join(@dir, "ios/EpubToMp3/.build"),
       "PATH" => "#{@bin}:#{ENV.fetch('PATH')}", "MISE_PROJECT_ROOT" => @dir, "CARGO_TARGET_DIR" => @target_dir,
       "FIXTURE_RUBY" => RbConfig.ruby, "FIXTURE_EVENTS" => @events,
       "FIXTURE_LOCK" => File.join(@dir, "lease"), "TMPDIR" => @dir,
@@ -322,6 +323,39 @@ class NativeTaskWiringTest < Minitest::Test
     assert_match(/Shut down all Simulators/, error)
     assert_empty events
     assert_unlocked
+  end
+
+  def test_ios_device_project_generation_uses_real_project_and_preserves_nested_artifact
+    # Exercise only the real generation decision; no native command or device
+    # lookup may run while validating project cache freshness.
+    decision = TASKS.fetch("ios:device:build").match(/^PROJECT_YML=.*?^fi$/m)
+    refute_nil decision
+    project = File.join(@dir, "ios/EpubToMp3")
+    source = File.join(project, "project.yml")
+    generated = File.join(project, "EpubToMp3.xcodeproj/project.pbxproj")
+    nested = File.join(project, "EpubToMp3.xcodeproj/EpubToMp3.xcodeproj/project.pbxproj")
+    FileUtils.mkdir_p(File.dirname(nested))
+    File.write(source, "project specification")
+    File.write(nested, "preserved legacy nested artifact")
+    File.utime(Time.now + 60, Time.now + 60, nested)
+
+    _, error, status = Open3.capture3(@env, "/bin/bash", "-euo", "pipefail", "-c", decision[0], chdir: project)
+    assert status.success?, error
+    assert_equal ["generate"], events, "A nested artifact must not stand in for the real project"
+
+    File.write(generated, "current generated project")
+    File.utime(Time.now + 120, Time.now + 120, generated)
+    File.delete(@events)
+    output, error, status = Open3.capture3(@env, "/bin/bash", "-euo", "pipefail", "-c", decision[0], chdir: project)
+    assert status.success?, error
+    assert_empty events
+    assert_match(/reusing generated Xcode project/, output)
+
+    File.utime(Time.now + 180, Time.now + 180, source)
+    _, error, status = Open3.capture3(@env, "/bin/bash", "-euo", "pipefail", "-c", decision[0], chdir: project)
+    assert status.success?, error
+    assert_equal ["generate"], events, "Changed project specification must invalidate the generated project"
+    assert_equal "preserved legacy nested artifact", File.binread(nested)
   end
 
   def test_ios_packaging_preflight_precedes_clang_entrypoint

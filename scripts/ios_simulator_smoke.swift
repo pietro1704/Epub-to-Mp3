@@ -81,7 +81,7 @@ let project = environment["IOS_SIMULATOR_PROJECT_PATH"] ?? root + "/ios/EpubToMp
 let scheme = environment["IOS_SIMULATOR_SCHEME"] ?? "EpubToMp3"
 var arguments = ["xcodebuild", "-quiet", "-project", project,
                  "-scheme", scheme, "-configuration", "Debug", "-jobs", "1",
-                 "-parallel-testing-enabled", "NO", "-derivedDataPath", root + "/ios/EpubToMp3/.build",
+                 "-parallel-testing-enabled", "NO", "-derivedDataPath", environment["IOS_DERIVED_DATA_PATH"] ?? environment["APPLE_DERIVED_DATA_PATH"] ?? root + "/ios/EpubToMp3/.build",
                  "-resultBundlePath", report.appendingPathComponent("tests.xcresult").path] + filters
 if let modelRoot = environment["EPUB2MP3_PIPER_TEST_MODEL_ROOT"], !modelRoot.isEmpty {
     arguments += ["EPUB2MP3_PIPER_TEST_MODEL_ROOT=\(modelRoot)"]

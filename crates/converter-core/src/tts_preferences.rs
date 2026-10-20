@@ -66,10 +66,10 @@ pub struct TtsPreferences {
     pub allow_online_fallback: bool,
 }
 impl TtsPreferences {
-    /// Fresh app settings only. Headless defaults and saved explicit choices stay strict.
+    /// App settings opt into recovery; unversioned headless/job selections stay strict.
     pub fn app_default(system_audio_available: bool) -> Self {
         Self {
-            policy_version: Some(2),
+            policy_version: system_audio_available.then_some(2),
             secondary: system_audio_available.then(|| TtsSelection {
                 engine: "system".into(),
                 model_id: None,
@@ -80,11 +80,6 @@ impl TtsPreferences {
     }
     pub fn continues_native(&self) -> bool {
         self.policy_version == Some(2)
-            && self.primary.engine == "piper"
-            && self
-                .secondary
-                .as_ref()
-                .is_some_and(|s| s.engine == "system")
     }
 
     pub fn validate(&self, language: Option<&str>) -> Result<(), String> {
@@ -101,7 +96,7 @@ impl TtsPreferences {
         };
         self.primary.validate(primary_language)?;
         if let Some(secondary) = &self.secondary {
-            secondary.validate(language)?;
+            secondary.validate(primary_language)?;
             if secondary == &self.primary {
                 return Err("Secondary voice must differ from primary".into());
             }
@@ -117,7 +112,11 @@ impl TtsPreferences {
         use_secondary: bool,
     ) -> Self {
         Self {
-            policy_version: self.policy_version,
+            policy_version: if use_secondary {
+                self.policy_version
+            } else {
+                None
+            },
             primary: override_selection.unwrap_or_else(|| self.primary.clone()),
             secondary: if use_secondary {
                 self.secondary.clone()
@@ -139,6 +138,20 @@ pub struct SegmentPolicy {
     consecutive_failures: usize,
     #[serde(default, skip_serializing_if = "is_zero")]
     recovery_remaining: usize,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    primary_retry_at_ms: u64,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    secondary_retry_at_ms: u64,
+}
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
+}
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
 }
 fn is_zero(value: &usize) -> bool {
     *value == 0
@@ -150,6 +163,10 @@ struct SegmentPolicyState {
     consecutive_failures: usize,
     #[serde(default)]
     recovery_remaining: usize,
+    #[serde(default)]
+    primary_retry_at_ms: u64,
+    #[serde(default)]
+    secondary_retry_at_ms: u64,
 }
 impl TryFrom<SegmentPolicyState> for SegmentPolicy {
     type Error = String;
@@ -160,22 +177,48 @@ impl TryFrom<SegmentPolicyState> for SegmentPolicy {
         Ok(Self {
             consecutive_failures: state.consecutive_failures,
             recovery_remaining: state.recovery_remaining,
+            primary_retry_at_ms: state.primary_retry_at_ms,
+            secondary_retry_at_ms: state.secondary_retry_at_ms,
         })
     }
 }
 impl SegmentPolicy {
     pub fn is_initial(&self) -> bool {
-        self.consecutive_failures == 0 && self.recovery_remaining == 0
+        self.consecutive_failures == 0
+            && self.recovery_remaining == 0
+            && self.primary_retry_at_ms == 0
+            && self.secondary_retry_at_ms == 0
     }
 
     pub fn primary_succeeded(&mut self) {
         self.consecutive_failures = 0;
         self.recovery_remaining = 0;
+        self.primary_retry_at_ms = 0;
+    }
+    pub fn secondary_succeeded(&mut self) {
+        self.secondary_retry_at_ms = 0;
+    }
+    pub fn should_try_secondary(&self) -> bool {
+        self.secondary_retry_at_ms <= now_ms()
+    }
+    pub fn defer_primary_for(&mut self, delay: std::time::Duration) {
+        self.primary_retry_at_ms =
+            now_ms().saturating_add(delay.as_millis().min(u128::from(u64::MAX)) as u64);
+    }
+    pub fn defer_secondary_for(&mut self, delay: std::time::Duration) {
+        self.secondary_retry_at_ms =
+            now_ms().saturating_add(delay.as_millis().min(u128::from(u64::MAX)) as u64);
     }
     /// Recovery counters are persisted with the job; cancellation never consumes a retry.
     pub fn should_try_primary(&mut self, preferences: &TtsPreferences) -> bool {
+        if preferences.continues_native() && self.primary_retry_at_ms > now_ms() {
+            return false;
+        }
         if preferences.continues_native() && self.recovery_remaining > 0 {
-            self.recovery_remaining -= 1;
+            // Older jobs persisted an eight-segment cooldown. A single
+            // fallback segment now bounds recovery latency without probing
+            // concurrently or synthesizing throwaway health-check audio.
+            self.recovery_remaining = 0;
             false
         } else {
             true
@@ -192,7 +235,7 @@ impl SegmentPolicy {
         if preferences.continues_native() {
             self.consecutive_failures = (self.consecutive_failures + 1).min(2);
             if self.consecutive_failures >= 2 {
-                self.recovery_remaining = 8;
+                self.recovery_remaining = 1;
             }
             Ok(())
         } else {
@@ -219,6 +262,25 @@ impl SegmentPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rate_limit_health_checks_wait_and_survive_job_restart() {
+        let preferences = TtsPreferences::app_default(true);
+        let mut policy = SegmentPolicy::default();
+        policy.defer_primary_for(std::time::Duration::from_secs(60));
+        policy.defer_secondary_for(std::time::Duration::from_secs(60));
+        let saved = serde_json::to_string(&policy).unwrap();
+        let mut resumed: SegmentPolicy = serde_json::from_str(&saved).unwrap();
+        assert!(!resumed.should_try_primary(&preferences));
+        assert!(!resumed.should_try_secondary());
+        assert_eq!(saved, serde_json::to_string(&resumed).unwrap());
+        assert!(resumed.provider_failed(true, &preferences).is_err());
+        assert_eq!(saved, serde_json::to_string(&resumed).unwrap());
+        resumed.primary_succeeded();
+        resumed.secondary_succeeded();
+        assert!(resumed.should_try_primary(&preferences));
+        assert!(resumed.should_try_secondary());
+        assert!(resumed.is_initial());
+    }
     #[test]
     fn app_policy_is_opt_in_and_legacy_snapshot_is_unchanged() {
         let app = TtsPreferences::app_default(true);
@@ -266,9 +328,7 @@ mod tests {
         assert!(policy.provider_failed(true, &preferences).is_err());
         assert_eq!(snapshot, serde_json::to_string(&policy).unwrap());
         let mut resumed: SegmentPolicy = serde_json::from_str(&snapshot).unwrap();
-        for _ in 0..8 {
-            assert!(!resumed.should_try_primary(&preferences));
-        }
+        assert!(!resumed.should_try_primary(&preferences));
         assert!(resumed.should_try_primary(&preferences));
         resumed.provider_failed(false, &preferences).unwrap();
         resumed.primary_succeeded();

@@ -227,7 +227,11 @@ final class AudioPlayer: ObservableObject {
     /// notice silence about (e.g. `play(snapshot:)` invoked on an
     /// empty snapshot). Set back to `nil` by the consumer after it
     /// displays the toast / banner. Views observe via @Published.
-    @Published var lastError: PlayerError?
+    @Published var lastError: PlayerError? {
+        didSet {
+            if let lastError { AppErrorReporter.message(lastError, context: "Playback") }
+        }
+    }
 
     /// Errors the player can surface back to a native controller. Kept
     /// minimal — anything more granular belongs in a category-specific
@@ -1203,6 +1207,13 @@ final class AudioPlayer: ObservableObject {
             // user intent armed `pendingAutoPlay`.
             self.snapshot = newSnapshot
             if !newSnapshot.playableChapters.isEmpty {
+                if pendingChapterSeek?.jobID == newSnapshot.jobId {
+                    // Keep the pending page, seek journey and current Pause
+                    // intent through first queue creation. This path suppresses
+                    // autoplay until the full-file seek has completed.
+                    finishStreaming(snapshot: newSnapshot)
+                    return
+                }
                 let startIndex = pendingSnapshotStartIndex ?? currentChapterIndex
                 let pendingReaderPage = pendingProportionalSeek
                 play(snapshot: newSnapshot, startingAt: startIndex, restoreAutoplay: false)
@@ -1853,6 +1864,19 @@ final class AudioPlayer: ObservableObject {
     ) {
         rememberReaderPlaybackAnchor()
         guard let snapshot else { resume(); return }
+        if player == nil, snapshot.playableChapters.isEmpty, !snapshot.isTerminal {
+            pendingProportionalSeek = nil
+            pendingAutoPlay = false
+            beginSeekJourney()
+            let ratio = sentenceOffsetRatio.flatMap { $0.isFinite ? max(0, min(1, $0)) : nil }
+            pendingChapterSeek = PendingChapterSeek(id: UUID(), jobID: snapshot.jobId,
+                chapterIndex: readerChapterIndex, autoplay: true, position: 0,
+                readerPageRatio: ratio)
+            isSeeking = true
+            isPlaying = false
+            updateNowPlayingInfo()
+            return
+        }
         if isSegmentMode, player != nil {
             let target = readerChapterIndex
             let chapterDuration = confirmedSegmentChapterEnd(for: target)
@@ -2275,6 +2299,9 @@ final class AudioPlayer: ObservableObject {
     }
 
     func nextChapter() {
+        // Navigation has no playable destination before the first chapter.
+        // Preserve a waiting page seek and its Pause intent until audio arrives.
+        if player == nil, pendingChapterSeek != nil { return }
         if isSegmentMode, let next = nextCanonicalChapterIndex {
             navigateToSegmentChapter(next)
             return
@@ -2309,6 +2336,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     func previousChapter() {
+        if player == nil, pendingChapterSeek != nil { return }
         if isSegmentMode {
             if positionSeconds > 3 {
                 seek(to: 0)
