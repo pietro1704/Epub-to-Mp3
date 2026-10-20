@@ -3697,6 +3697,10 @@ mod tests {
         preferences.policy_version = Some(2);
         preferences.secondary = None;
         options["tts_preferences"] = serde_json::to_value(&preferences).unwrap();
+        assert!(validate(&options));
+        preferences = preferences.effective_selection(None, false);
+        assert!(!preferences.continues_native());
+        options["tts_preferences"] = serde_json::to_value(&preferences).unwrap();
         assert!(!validate(&options));
     }
     #[test]
