@@ -149,6 +149,27 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func bind() {
+        player.$snapshot
+            .sink { [weak self] snapshot in
+                guard let self, let snapshot, let jobID = self.listeningJobID,
+                      snapshot.jobId != jobID else { return }
+                self.cancelListeningSession()
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: RustConversionOutputStore.willRemoveAudio)
+            .sink { [weak self] notification in
+                let bookID = notification.userInfo?["bookID"] as? String
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let playingBook = self.listeningBookID
+                        ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+                    guard bookID == nil || playingBook == bookID else { return }
+                    self.cancelListeningSession()
+                    self.player.stop()
+                    self.player.clearConversionState()
+                }
+            }
+            .store(in: &cancellables)
         player.$pendingNavigation
             .compactMap { $0 }
             .removeDuplicates()
@@ -407,6 +428,7 @@ final class MainReaderScreenController: UIViewController {
     /// of leaving an old AVQueuePlayer behind while the new reader updates
     /// the persisted book pointer.
     private func replaceActivePlaybackIfNeeded(for book: BookEntity) {
+        if let listeningBookID, listeningBookID != book.id { cancelListeningSession() }
         let activeBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
         let hasActivePlayback = player.snapshot != nil || player.hasLoadedAudioQueue || player.isConverting
         guard Self.shouldReplaceActivePlayback(
@@ -417,9 +439,19 @@ final class MainReaderScreenController: UIViewController {
             return
         }
 
-        // Backend jobs are cancelled through the API job lifecycle.
+        cancelListeningSession()
         player.stop()
         player.clearConversionState()
+    }
+
+    private func cancelListeningSession() {
+        listeningJobID = nil
+        listeningBookID = nil
+        let retiring = listeningPlaybackControl
+        listeningPlaybackControl = nil
+        listeningChapters.removeAll()
+        hasDeliveredListeningChapter = false
+        retiring?.cancel()
     }
 
     static func shouldReplaceActivePlayback(
@@ -565,8 +597,7 @@ final class MainReaderScreenController: UIViewController {
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
         guard listeningJobID == nil || listeningBookID != book.id else { return }
-        listeningPlaybackControl?.cancel()
-        listeningPlaybackControl = nil
+        cancelListeningSession()
         let priority = readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
         guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
@@ -621,7 +652,12 @@ final class MainReaderScreenController: UIViewController {
                 let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
                 let result = try await conversionExecutor(
                     url, jobID, chapterStart, chapterEnd, playbackControl,
-                    conversionOptions, nil,
+                    conversionOptions,
+                    { [weak self] event in
+                        guard let self, self.listeningJobID == jobID, event.jobId == jobID,
+                              let current = self.player.snapshot, current.jobId == jobID else { return }
+                        self.player.updateSnapshot(event.updating(current))
+                    },
                     { [weak self] event in
                         guard let self, self.listeningJobID == jobID,
                               self.player.snapshot?.jobId == jobID, event.jobId == jobID,
@@ -637,7 +673,7 @@ final class MainReaderScreenController: UIViewController {
                         } else { self.listeningChapters.append(chapter) }
                         self.listeningChapters.sort { $0.index < $1.index }
                         guard self.listeningChapters.contains(where: { $0.index == priority && $0.downloadUrl != nil }) else { return }
-                        self.player.updateSnapshot(event.snapshot(chapters: self.listeningChapters))
+                        self.player.updateSnapshot(event.snapshot(chapters: self.listeningChapters, preserving: self.player.snapshot))
                         if !self.hasDeliveredListeningChapter {
                             self.hasDeliveredListeningChapter = true
                             if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
@@ -662,6 +698,7 @@ final class MainReaderScreenController: UIViewController {
                         )
                     }
                 )
+                guard listeningJobID == jobID else { return }
                 let snapshot = try result.snapshot()
                 guard result.jobID == jobID, snapshot.jobId == jobID else {
                     throw EmbeddedConverterError.conversionFailed("Conversion returned a different listening job.")

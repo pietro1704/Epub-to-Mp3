@@ -566,6 +566,7 @@
 "settings.clearAllDownloadsConfirmTitle" = "¿Eliminar todas las descargas?";
 "settings.storageRemovalFailedTitle" = "No se pudo completar la eliminación del audio";
 "settings.storageRemovalFailedMessage" = "Es posible que algunos archivos ya se hayan eliminado. Comprueba el almacenamiento y los permisos e inténtalo de nuevo.";
+"settings.storageUnrecognizedAudioMessage" = "Se ha conservado el audio que no se pudo identificar de forma segura. Carpetas conservadas: %d.";
 "settings.clearAllDownloadsConfirmMessage" = "Se eliminarán todos los MP3 offline y cachés de audio generados de los capítulos.";
 "settings.exportPerformanceDiagnostics" = "Exportar diagnósticos de rendimiento";
 "settings.exportPerformanceDiagnosticsDescription" = "Comparte observaciones locales y privadas de tiempo para soporte.";

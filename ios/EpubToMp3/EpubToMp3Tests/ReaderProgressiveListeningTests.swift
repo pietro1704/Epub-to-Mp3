@@ -1,5 +1,8 @@
 import AVFoundation
 import XCTest
+#if os(iOS)
+import UIKit
+#endif
 @testable import EpubToMp3
 
 @MainActor
@@ -151,6 +154,64 @@ private final class ProgressiveListeningFixture {
 
 @MainActor
 final class ReaderProgressiveListeningTests: XCTestCase {
+    func testExpandedPlayerDisplaysActualFallbackVoiceAndRefreshesOnPrimaryRecovery() throws {
+        let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
+        let fallback = try JSONDecoder().decode(JobSnapshot.self, from: Data(#"{"jobId":"voice-fixture","state":"running","engine":"system","voice":"Luciana (installed.luciana)"}"#.utf8))
+        f.player.setSnapshot(fallback)
+        let controller = FullPlayerScreenController(player: f.player, playbackClock: f.player.playbackClock,
+            library: f.library, playerPresentation: f.presentation, settings: AppSettings(defaults: f.defaults))
+        func labels(in view: UIView) -> [String] {
+            ((view as? UILabel)?.text.map { [$0] } ?? []) + view.subviews.flatMap { labels(in: $0) }
+        }
+        XCTAssertTrue(labels(in: controller.view).contains { $0.contains("Luciana") })
+        XCTAssertFalse(labels(in: controller.view).contains { $0.contains("installed.luciana") })
+        let recovered = try JSONDecoder().decode(JobSnapshot.self, from: Data(#"{"jobId":"voice-fixture","state":"running","engine":"piper","voice":"pt_BR-faber-medium"}"#.utf8))
+        f.player.setSnapshot(recovered)
+        controller.refresh(library: f.library)
+        XCTAssertTrue(labels(in: controller.view).contains { $0.contains("Faber medium") })
+        XCTAssertFalse(labels(in: controller.view).contains { $0.contains("Luciana") })
+    }
+
+    func testBookReplacementCancelsRustControlAndRetiredCompletionDoesNotRecordJob() async throws {
+        let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
+        f.controller.startListeningFromMiniPlayer()
+        try await f.wait { f.calls == 1 }
+        let retiring = try XCTUnwrap(f.playbackControl)
+        let source = try EpubFixture.createWithChapters(["Another book first", "Another book second"])
+        defer { try? FileManager.default.removeItem(at: source) }
+        let replacement = try f.library.importBook(from: source)
+        f.defaults.set(replacement.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        // Rendering a replacement reader is the normal context replacement boundary.
+        f.controller.loadViewIfNeeded()
+        XCTAssertTrue(retiring.isCancellationRequested)
+        XCTAssertNil(f.player.snapshot)
+        f.release.finish()
+        try await f.wait { f.finished }
+        await Task.yield()
+        XCTAssertNil(f.library.books.first(where: { $0.id == f.book.id })?.lastJobId)
+        XCTAssertNil(f.player.snapshot)
+    }
+
+    func testExplicitAudioRemovalCancelsOnlyMatchingListeningJob() async throws {
+        let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
+        f.controller.loadViewIfNeeded()
+        try await f.wait { !f.controller.isLoadingBookContent }
+        f.controller.startListeningFromMiniPlayer()
+        try await f.wait { f.calls == 1 }
+        let control = try XCTUnwrap(f.playbackControl)
+        NotificationCenter.default.post(name: RustConversionOutputStore.willRemoveAudio,
+                                         object: nil, userInfo: ["bookID": "another-book"])
+        XCTAssertFalse(control.isCancellationRequested)
+        NotificationCenter.default.post(name: RustConversionOutputStore.willRemoveAudio,
+                                         object: nil, userInfo: ["bookID": f.book.id])
+        XCTAssertTrue(control.isCancellationRequested)
+        XCTAssertNil(f.player.snapshot)
+        f.release.finish()
+        try await f.wait { f.finished }
+        await Task.yield()
+        XCTAssertNil(f.library.books.first(where: { $0.id == f.book.id })?.lastJobId)
+    }
+
     func testNextBeforeSecondChapterDeliveryPreservesPauseAndUpdatesPlaybackWindow() async throws {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         let payload = try JSONDecoder().decode(EbookFulltext.self, from: JSONSerialization.data(withJSONObject: [

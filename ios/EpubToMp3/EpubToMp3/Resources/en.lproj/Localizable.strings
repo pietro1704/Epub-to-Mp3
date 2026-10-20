@@ -568,6 +568,7 @@
 "settings.clearAllDownloadsConfirmTitle" = "Clear all downloads?";
 "settings.storageRemovalFailedTitle" = "Could not finish removing audio";
 "settings.storageRemovalFailedMessage" = "Some files may already have been removed. Check storage and permissions, then try again.";
+"settings.storageUnrecognizedAudioMessage" = "Audio that could not be safely identified was preserved. Folders preserved: %d.";
 "settings.clearAllDownloadsConfirmMessage" = "All offline MP3s and generated chapter audio caches will be deleted.";
 "settings.exportPerformanceDiagnostics" = "Export performance diagnostics";
 "settings.exportPerformanceDiagnosticsDescription" = "Share private local timing observations for support.";

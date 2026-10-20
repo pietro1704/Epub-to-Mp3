@@ -36,6 +36,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private var fullPlayerController: MacFullPlayerViewController?
     private var controllers: [Destination: NSViewController] = [:]
     private var sidebarButtons: [Destination: NSButton] = [:]
+    private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
+    private var localPlaybackBookID: String?
     private var isStartingLocalPlayback = false
     private var localPlaybackGeneration: String?
     private var localPlaybackChapters: [JobSnapshot.Chapter] = []
@@ -54,8 +56,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         library: LibraryStore,
         player: AudioPlayer,
         bookmarkStore: BookmarkStore,
-        playerPresentation: PlayerPresentation? = nil
+        playerPresentation: PlayerPresentation? = nil,
+        conversionExecutor: @escaping RustConversionCoordinator.StreamingExecutor = RustConversionCoordinator.executeStreaming
     ) {
+        self.conversionExecutor = conversionExecutor
         self.settings = settings
         self.library = library
         self.player = player
@@ -98,6 +102,13 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         playerPresentation.objectWillChange
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
+        player.$snapshot
+            .sink { [weak self] snapshot in
+                guard let self, let snapshot, let jobID = self.localPlaybackGeneration,
+                      snapshot.jobId != jobID else { return }
+                self.cancelLocalPlayback(stopPlayer: false)
+            }
+            .store(in: &cancellables)
         player.$activeStreamingChapterIndex
             .compactMap { $0 }
             .removeDuplicates()
@@ -106,6 +117,20 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                       let control = self.localPlaybackControl else { return }
                 control.updatePlaybackWindow(currentChapter: chapterIndex, chaptersAhead: 1)
                 _ = control.prioritize(chapterIndex: chapterIndex)
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: RustConversionOutputStore.willRemoveAudio)
+            .sink { [weak self] notification in
+                let bookID = notification.userInfo?["bookID"] as? String
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let playingBook = self.localPlaybackBookID
+                        ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+                    guard bookID == nil || playingBook == bookID else { return }
+                    self.cancelLocalPlayback()
+                    self.player.stop()
+                    self.player.clearConversionState()
+                }
             }
             .store(in: &cancellables)
         restoreLocalPlaybackControls()
@@ -147,7 +172,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             } else {
                 restoredSnapshot = nil
             }
-            guard let snapshot = embeddedSnapshot ?? restoredSnapshot else {
+            guard localPlaybackGeneration == nil, player.snapshot == nil,
+                  UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == bookID
+                    || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
+                  let snapshot = embeddedSnapshot ?? restoredSnapshot else {
                 return
             }
             player.play(
@@ -331,6 +359,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
 
     private func showBookDetail(bookID: String) {
         guard let book = library.books.first(where: { $0.id == bookID }) else { return }
+        cancelLocalPlayback(ifReplacingBook: bookID)
         updateSidebarSelection(.library)
         let detail = MacBookDetailViewController(
             book: book,
@@ -359,7 +388,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         detailController = detail
     }
 
-    private func showReader(bookID: String) {
+    func showReader(bookID: String) {
+        cancelLocalPlayback(ifReplacingBook: bookID)
         updateSidebarSelection(.library)
         let reader = MacReaderViewController(
             library: library,
@@ -388,20 +418,30 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         refreshPlayerBar()
     }
 
-    private func startPlaybackForCurrentBook() {
+    func startPlaybackForCurrentBook() {
         playerPresentation.dismissFullPlayer()
-        guard !isStartingLocalPlayback else { return }
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               let book = library.books.first(where: { $0.id == bookID }) else { return }
+        cancelLocalPlayback(ifReplacingBook: bookID)
+        guard !isStartingLocalPlayback, localPlaybackGeneration == nil else { return }
+        let jobID = UUID().uuidString
+        localPlaybackGeneration = jobID
+        localPlaybackBookID = bookID
         isStartingLocalPlayback = true
         let conversionOptions = settings.conversionOptions
         Task { [weak self] in
             guard let self else { return }
-            defer { isStartingLocalPlayback = false }
-            let jobID = UUID().uuidString
+            defer {
+                if localPlaybackGeneration == jobID {
+                    localPlaybackGeneration = nil
+                    localPlaybackBookID = nil
+                    localPlaybackControl = nil
+                    isStartingLocalPlayback = false
+                }
+            }
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
-                localPlaybackGeneration = jobID
+                guard localPlaybackGeneration == jobID, localPlaybackBookID == book.id else { return }
                 localPlaybackChapters.removeAll()
                 let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
                 let playbackControl = try RustConversionCoordinator.makePlaybackControl()
@@ -417,7 +457,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                     bookAuthor: book.author,
                     coverUrl: nil,
                     coverMimeType: nil,
-                    engine: settings.audioEngine.rawValue,
+                    engine: nil,
                     voice: nil,
                     language: nil,
                     progressPercent: 0,
@@ -433,23 +473,20 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 player.isConverting = true
                 player.resume()
                 let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
-                let result = try await RustConversionCoordinator.executeStreaming(
-                    bookURL: url,
-                    jobID: jobID,
-                    chapterStart: chapterStart,
-                    chapterEnd: -1,
-                    control: playbackControl,
-                    options: conversionOptions,
-                    onProgress: { [weak self] event in
+                isStartingLocalPlayback = false
+                let result = try await conversionExecutor(
+                    url, jobID, chapterStart, -1, playbackControl, conversionOptions,
+                    { [weak self] event in
                         guard let self,
-                              self.localPlaybackGeneration == jobID,
+                              self.localPlaybackGeneration == jobID, event.jobId == jobID,
                               event.state == "running",
                               let snapshot = self.player.snapshot,
                               snapshot.jobId == jobID else { return }
                         self.player.updateSnapshot(event.updating(snapshot))
                     },
-                    onChapterCompleted: { [weak self] event in
-                        guard let self, self.localPlaybackGeneration == event.jobId else { return }
+                    { [weak self] event in
+                        guard let self, self.localPlaybackGeneration == jobID, event.jobId == jobID,
+                              self.player.snapshot?.jobId == jobID else { return }
                         let activeChapter = self.player.activeStreamingChapterIndex
                             ?? Int(chapterStart)
                         guard event.chapterIndex >= activeChapter,
@@ -463,13 +500,13 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                         }
                         self.localPlaybackChapters.sort { $0.index < $1.index }
                         self.player.updateSnapshot(
-                            event.snapshot(chapters: self.localPlaybackChapters)
+                            event.snapshot(chapters: self.localPlaybackChapters, preserving: self.player.snapshot)
                         )
                         if firstPlayableChapter {
                             self.playerPresentation.showFullPlayer()
                         }
                     },
-                    onAudioChunk: { chapterIndex, chunkIndex, data in
+                    { chapterIndex, chunkIndex, data in
                         return chunkDelivery.enqueue(
                             data,
                             chapterIndex: chapterIndex,
@@ -487,18 +524,17 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                         )
                     }
                 )
+                guard localPlaybackGeneration == jobID, player.snapshot?.jobId == jobID else { return }
                 let snapshot = try result.snapshot()
-                library.recordConversion(jobId: result.jobID, for: book.id)
-                localPlaybackGeneration = nil
-                localPlaybackControl = nil
-                await MainActor.run {
-                    self.player.finishStreaming(snapshot: snapshot)
-                    self.playerPresentation.showFullPlayer()
+                guard result.jobID == jobID, snapshot.jobId == jobID else {
+                    throw EmbeddedConverterError.conversionFailed("Conversion returned a different listening job.")
                 }
+                library.recordConversion(jobId: result.jobID, for: book.id)
+                self.player.finishStreaming(snapshot: snapshot)
+                self.playerPresentation.showFullPlayer()
             } catch {
-                localPlaybackGeneration = nil
+                guard localPlaybackGeneration == jobID else { return }
                 localPlaybackControl?.cancel()
-                localPlaybackControl = nil
                 if let current = player.snapshot, current.jobId == jobID {
                     player.finishStreaming(snapshot: JobSnapshot(
                         jobId: current.jobId,
@@ -526,6 +562,23 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 alert.addButton(withTitle: L10n.string("common.ok"))
                 alert.runModal()
             }
+        }
+    }
+
+    /// Invalidate before cancellation so retiring callbacks cannot touch a replacement session.
+    private func cancelLocalPlayback(ifReplacingBook incomingBookID: String? = nil, stopPlayer: Bool = true) {
+        guard localPlaybackGeneration != nil,
+              incomingBookID == nil || incomingBookID != localPlaybackBookID else { return }
+        localPlaybackGeneration = nil
+        localPlaybackBookID = nil
+        isStartingLocalPlayback = false
+        let retiring = localPlaybackControl
+        localPlaybackControl = nil
+        localPlaybackChapters.removeAll()
+        retiring?.cancel()
+        if stopPlayer {
+            player.stop()
+            player.clearConversionState()
         }
     }
 
@@ -878,6 +931,7 @@ final class MacFullPlayerViewController: NSViewController {
         titleLabel.font = .boldSystemFont(ofSize: 24)
         titleLabel.alignment = .center
         statusLabel.textColor = .secondaryLabelColor
+        statusLabel.setAccessibilityIdentifier("fullPlayer.chapterAndVoice")
         statusLabel.alignment = .center
         elapsedLabel.textColor = .secondaryLabelColor
         remainingLabel.textColor = .secondaryLabelColor
@@ -932,7 +986,9 @@ final class MacFullPlayerViewController: NSViewController {
             timeControls.widthAnchor.constraint(equalTo: content.widthAnchor),
         ])
         view = background
-        cancellable = player.objectWillChange.sink { [weak self] _ in self?.refresh() }
+        cancellable = player.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refresh() }
         refresh()
     }
 
@@ -946,6 +1002,7 @@ final class MacFullPlayerViewController: NSViewController {
         statusLabel.stringValue = player.isConverting
             ? L10n.string("player.preparingAudio")
             : (player.snapshot == nil ? L10n.string("player.nothingPlaying") : player.effectiveChapterTitle)
+        if let voice = player.snapshot?.activeVoiceDisplayName { statusLabel.stringValue += "\n" + voice }
         playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
         playButton.setAccessibilityLabel(L10n.string(player.isPlaying ? "player.pause" : "player.play"))
         playButton.toolTip = L10n.string(player.isPlaying ? "player.pause" : "player.play")

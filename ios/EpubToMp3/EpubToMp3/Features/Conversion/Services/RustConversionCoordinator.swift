@@ -9,7 +9,7 @@ private struct RustConversionInvocation: @unchecked Sendable {
 extension RustConversionCoordinator.ChapterCompletionEvent {
     private enum CodingKeys: String, CodingKey {
         case jobId, bookTitle, bookAuthor, chapterIndex, chaptersTotal, chaptersCompleted
-        case chapterTitle, filename, audioPath, textChars
+        case chapterTitle, filename, audioPath, textChars, engine, modelId, voice
     }
 
     init(from decoder: Decoder) throws {
@@ -23,6 +23,9 @@ extension RustConversionCoordinator.ChapterCompletionEvent {
         chapterTitle = try values.decode(String.self, forKey: .chapterTitle)
         filename = try values.decode(String.self, forKey: .filename)
         textChars = try values.decode(Int.self, forKey: .textChars)
+        engine = try values.decodeIfPresent(String.self, forKey: .engine)
+        modelId = try values.decodeIfPresent(String.self, forKey: .modelId)
+        voice = try values.decodeIfPresent(String.self, forKey: .voice)
         let path = try values.decode(String.self, forKey: .audioPath)
         guard path.hasPrefix("/"), !path.contains("\0") else {
             throw DecodingError.dataCorruptedError(forKey: .audioPath, in: values,
@@ -82,15 +85,19 @@ final class RustConversionCoordinator {
         let message: String
 
         func updating(_ snapshot: JobSnapshot) -> JobSnapshot {
-            JobSnapshot(
+            guard jobId == snapshot.jobId else { return snapshot }
+            let resolvedEngine = engine ?? snapshot.engine
+            // A provider change without voice metadata must not retain the old provider's voice.
+            let resolvedVoice = modelId ?? voice ?? (resolvedEngine == snapshot.engine ? snapshot.voice : nil)
+            return JobSnapshot(
                 jobId: snapshot.jobId,
                 state: "running",
                 bookTitle: snapshot.bookTitle,
                 bookAuthor: snapshot.bookAuthor,
                 coverUrl: snapshot.coverUrl,
                 coverMimeType: snapshot.coverMimeType,
-                engine: engine ?? snapshot.engine,
-                voice: modelId ?? voice ?? snapshot.voice,
+                engine: resolvedEngine,
+                voice: resolvedVoice,
                 language: snapshot.language,
                 progressPercent: percent,
                 chaptersTotal: chaptersTotal,
@@ -115,6 +122,9 @@ final class RustConversionCoordinator {
         let filename: String
         let audioPath: URL
         let textChars: Int
+        var engine: String? = nil
+        var modelId: String? = nil
+        var voice: String? = nil
 
         var progressPercent: Double {
             Double(chaptersCompleted) / Double(max(chaptersTotal, 1)) * 100
@@ -135,24 +145,27 @@ final class RustConversionCoordinator {
             )
         }
 
-        func snapshot(chapters: [JobSnapshot.Chapter]) -> JobSnapshot {
-            JobSnapshot(
+        func snapshot(chapters: [JobSnapshot.Chapter], preserving current: JobSnapshot? = nil) -> JobSnapshot {
+            if let current, current.jobId != jobId { return current }
+            let resolvedEngine = engine ?? current?.engine
+            let resolvedVoice = modelId ?? voice ?? (resolvedEngine == current?.engine ? current?.voice : nil)
+            return JobSnapshot(
                 jobId: jobId,
                 state: "running",
                 bookTitle: bookTitle,
                 bookAuthor: bookAuthor,
-                coverUrl: nil,
-                coverMimeType: nil,
-                // Chapter events do not carry resolved provider configuration.
-                engine: nil,
-                voice: nil,
-                language: nil,
+                coverUrl: current?.coverUrl,
+                coverMimeType: current?.coverMimeType,
+                // Chapter events add artifacts without replacing resolved provider metadata.
+                engine: resolvedEngine,
+                voice: resolvedVoice,
+                language: current?.language,
                 progressPercent: progressPercent,
                 chaptersTotal: chaptersTotal,
                 chaptersCompleted: chaptersCompleted,
                 chapterProgress: chapters,
-                outputs: nil,
-                logUrl: nil,
+                outputs: current?.outputs,
+                logUrl: current?.logUrl,
                 error: nil,
                 lastActivityAt: Date().timeIntervalSince1970
             )
@@ -245,6 +258,7 @@ final class RustConversionCoordinator {
 
     private let adapter: ConverterFFIAdapter
     private let fileManager: FileManager
+    private let outputStore: RustConversionOutputStore
 
     typealias Executor = @MainActor (
         URL, String, Int32, Int32, ConversionOptions?,
@@ -302,10 +316,12 @@ final class RustConversionCoordinator {
 
     init(
         adapter: ConverterFFIAdapter = ConverterFFIAdapter(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        outputStore: RustConversionOutputStore = .shared
     ) {
         self.adapter = adapter
         self.fileManager = fileManager
+        self.outputStore = outputStore
     }
 
     func convert(
@@ -327,69 +343,73 @@ final class RustConversionCoordinator {
             chapterStart: chapterStart,
             chapterEnd: chapterEnd
         )
-        let root = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let outputDirectory = root
-            .appendingPathComponent("EpubToMp3", isDirectory: true)
-            .appendingPathComponent("RustConversions", isDirectory: true)
-            .appendingPathComponent(jobID, isDirectory: true)
-        try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        let effectiveControl: ConverterPlaybackControl
+        if let playbackControl {
+            effectiveControl = playbackControl
+        } else {
+            effectiveControl = try await Self.makePlaybackControl()
+        }
+        let lease = try await outputStore.begin(bookURL: bookURL, jobID: jobID,
+                                               cancel: { effectiveControl.cancel() })
+        let outputDirectory = lease.outputDirectory
         let logURL = outputDirectory.appendingPathComponent("conversion.log")
-        try? appendLogLine("[Rust] conversion started: \(bookURL.lastPathComponent)", to: logURL)
 
         do {
-            let manifest = try await withCheckedThrowingContinuation { continuation in
-                let invocation = RustConversionInvocation(adapter: self.adapter)
-                rustConversionQueue.async {
-                    do {
-                        let data = try invocation.adapter.convertBook(
-                            at: bookURL,
-                            outputDirectory: outputDirectory,
-                            jobID: jobID,
-                            chapterStart: chapterStart,
-                            chapterEnd: chapterEnd,
-                            options: options,
-                            playbackControl: playbackControl,
-                            onProgress: { data in
-                                guard let onProgress,
-                                      let event = try? JSONDecoder().decode(
-                                        ConversionProgressEvent.self,
-                                        from: data
-                                      ) else {
-                                    return
-                                }
-                                Task { @MainActor in onProgress(event) }
-                            },
-                            onChapterCompleted: { data in
-                                guard let onChapterCompleted,
-                                      let event = try? JSONDecoder().decode(
-                                        ChapterCompletionEvent.self,
-                                        from: data
-                                      ) else {
-                                    return
-                                }
-                                Task { @MainActor in onChapterCompleted(event) }
-                            },
-                            onAudioChunk: onAudioChunk
-                        )
-                        continuation.resume(returning: data)
-                    } catch {
-                        continuation.resume(throwing: error)
+            try Task.checkCancellation()
+            try? appendLogLine("[Rust] conversion started: \(bookURL.lastPathComponent)", to: logURL)
+            let manifest = try await withTaskCancellationHandler(operation: {
+                try await withCheckedThrowingContinuation { continuation in
+                    let invocation = RustConversionInvocation(adapter: self.adapter)
+                    rustConversionQueue.async {
+                        do {
+                            let data = try invocation.adapter.convertBook(
+                                at: bookURL,
+                                outputDirectory: outputDirectory,
+                                jobID: jobID,
+                                chapterStart: chapterStart,
+                                chapterEnd: chapterEnd,
+                                options: options,
+                                playbackControl: effectiveControl,
+                                onProgress: { data in
+                                    guard let onProgress,
+                                          let event = try? JSONDecoder().decode(
+                                            ConversionProgressEvent.self,
+                                            from: data
+                                          ) else {
+                                        return
+                                    }
+                                    Task { @MainActor in onProgress(event) }
+                                },
+                                onChapterCompleted: { data in
+                                    guard let onChapterCompleted,
+                                          let event = try? JSONDecoder().decode(
+                                            ChapterCompletionEvent.self,
+                                            from: data
+                                          ) else {
+                                        return
+                                    }
+                                    Task { @MainActor in onChapterCompleted(event) }
+                                },
+                                onAudioChunk: onAudioChunk
+                            )
+                            continuation.resume(returning: data)
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
                     }
                 }
-            }
+            }, onCancel: { effectiveControl.cancel() })
+            try Task.checkCancellation()
             let result = Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
             if let requestedChapterPositions {
                 try result.validateSelectedChapters(requestedChapterPositions)
             }
             try? appendLogLine("[Rust] conversion finished", to: logURL)
+            await outputStore.finish(lease)
             return result
         } catch {
             try? appendLogLine("[Rust] conversion failed: \(error.localizedDescription)", to: logURL)
+            await outputStore.finish(lease)
             throw error
         }
     }

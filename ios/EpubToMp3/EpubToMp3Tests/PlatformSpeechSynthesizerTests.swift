@@ -7,6 +7,60 @@ import XCTest
 #endif
 
 final class PlatformSpeechSynthesizerTests: XCTestCase {
+    func testActualVoiceReceiptIsPerInvocationAndClearsProviderOnRecovery() throws {
+        let first = PlatformSpeechVoiceReceipt()
+        let unrelated = PlatformSpeechVoiceReceipt()
+        let system = Data(#"{"chapterIndex":0,"engine":"system","modelId":null,"voice":null}"#.utf8)
+        func fields(_ data: Data) throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        _ = first.progress(system)
+        // Selection alone is not recorded: the provider records only after WAV write succeeds.
+        XCTAssertNil(try fields(first.chapter(Data(#"{"chapterIndex":0}"#.utf8)))["voice"] as? String)
+        first.record(.init(identifier: "installed.luciana", name: "Luciana", language: "pt-BR", isCompact: false))
+        _ = first.progress(Data(#"{"chapterIndex":1,"engine":"piper","modelId":"pt_BR-faber-medium"}"#.utf8))
+        let chapter = try fields(first.chapter(Data(#"{"chapterIndex":0}"#.utf8)))
+        XCTAssertEqual(chapter["engine"] as? String, "system")
+        XCTAssertEqual(chapter["voice"] as? String, "Luciana (installed.luciana)")
+        XCTAssertNil(try fields(unrelated.progress(system))["voice"] as? String,
+                     "Another conversion must not inherit this invocation's system voice")
+        _ = first.progress(Data(#"{"chapterIndex":0,"engine":"piper","modelId":"pt_BR-faber-medium","voice":null}"#.utf8))
+        let recovered = try fields(first.chapter(Data(#"{"chapterIndex":0}"#.utf8)))
+        XCTAssertEqual(recovered["engine"] as? String, "piper")
+        XCTAssertEqual(recovered["modelId"] as? String, "pt_BR-faber-medium")
+        XCTAssertNil(recovered["voice"] as? String)
+    }
+
+    func testVoiceReceiptEnrichesOnlySuccessfulSystemSelectionsInResult() throws {
+        let receipt = PlatformSpeechVoiceReceipt()
+        let manifest = Data(#"{"manifest":{"usedSelections":[{"engine":"piper","model_id":"pt_BR-faber-medium"},{"engine":"system","voice":null}]}}"#.utf8)
+        XCTAssertEqual(receipt.manifest(manifest), manifest)
+        receipt.record(.init(identifier: "installed.luciana", name: "Luciana", language: "pt-BR", isCompact: false))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: receipt.manifest(manifest)) as? [String: Any])
+        let inner = try XCTUnwrap(object["manifest"] as? [String: Any])
+        let selections = try XCTUnwrap(inner["usedSelections"] as? [[String: Any]])
+        XCTAssertEqual(selections[0]["model_id"] as? String, "pt_BR-faber-medium")
+        XCTAssertEqual(selections[1]["voice"] as? String, "Luciana (installed.luciana)")
+        XCTAssertEqual(receipt.progress(Data("invalid".utf8)), Data("invalid".utf8))
+    }
+
+    func testCancelledSynthesisNeverRecordsAnInstalledVoice() async throws {
+        let receipt = PlatformSpeechVoiceReceipt()
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        defer { try? FileManager.default.removeItem(at: output) }
+        let failed = await Task.detached {
+            let provider = PlatformSpeechSynthesizer(onVoiceUsed: { receipt.record($0) })
+            do {
+                try provider.synthesizeWAV(text: "Cancelled", language: "pt-BR", output: output, cancelled: { true })
+                return false
+            } catch { return true }
+        }.value
+        XCTAssertTrue(failed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        let original = Data(#"{"manifest":{"usedSelections":[{"engine":"system","voice":null}]}}"#.utf8)
+        XCTAssertEqual(receipt.manifest(original), original)
+    }
+
     func testFallbackNoticeOccursOncePerJobAndNeverForEdge() {
         let edge = Data("{\"engine\":\"edge\"}".utf8)
         let system = Data("{\"engine\":\"system\"}".utf8)

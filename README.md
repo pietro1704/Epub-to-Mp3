@@ -43,14 +43,14 @@ surface has cut over.
 | Surface | Platforms | Where | Status |
 |---|---|---|---|
 | **Native Apple** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader; follows the local shared Rust conversion contract. |
-| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase. Its current transport still has legacy HTTP/Python references; verify cutover with the migration audit. macOS/iOS are handled by SwiftUI, not Flutter. |
+| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — embedded Rust bindings; legacy bridge sources are compatibility material. Apple platforms use the native Swift client. |
 
 ### Native Apple apps
 
 Headless build (no Xcode UI needed):
 
 ```bash
-mise run mac:build      # builds the AppKit app with the Rust converter-server sidecar
+mise run mac:build      # builds the AppKit app with embedded Rust FFI
 ```
 
 Or open the project in Xcode:
@@ -61,8 +61,11 @@ xcodegen generate
 open EpubToMp3.xcodeproj
 ```
 
-The `mise run sidecar:build` task builds the embedded Rust server
-that the macOS build copies inside the `.app`'s Resources.
+The Apple app calls `converter-core` through `converter-ffi` in-process.
+`mise run sidecar:build` builds the separate compatibility HTTP server; it is
+not an Apple runtime dependency. Mac compilation uses the project build guard
+and one compiler job; preserve compatible artifacts rather than rebuilding them
+for inspection.
 
 #### Build artifact hygiene
 
@@ -83,21 +86,22 @@ that cleanup.
 | **Shared types** | `ConversionActivityAttributes.swift` is compiled into both the main app target and `EpubToMp3Widget` — ActivityKit serialises by name + Codable, so the type must be identical on both sides. |
 | **App Group** | `group.com.pietrocode.epubtomp3` — shared `UserDefaults` suite for widget ↔ app state sync (`WidgetDataSync`). |
 
-### Flutter app
+### Platform development
 
 ```bash
 mise run mac:run                    # native macOS app, Debug
 mise run ios:run                    # native iOS app on the paired iPhone, Debug
-IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1 IOS_TARGET=simulator mise run ios:run # iOS Simulator, Debug (accepts the risk on this Intel 8 GiB Mac)
-mise run flutter:run                # Android phone, or the lightest available Android AVD, Debug
+mise run flutter:run                # explicit Android target on the authorized Android host
 mise run flutter:build-linux        # Linux desktop release
 mise run flutter:build-windows      # Windows desktop release
 mise run flutter:build-apk          # Android (release)
 ```
 
-The Flutter conversion boundary is migrating. Before changing transport or
-claiming parity, read `CONTEXT.md` and run
-`mise run migration:product-boundary-audit`.
+Apple development runs on the Mac; Android/Linux development runs on Arch.
+Simulator execution on this Mac is quarantined after host panics. An environment
+flag does not authorize bypassing that gate. Read the current execution rules in
+`CLAUDE.md` before launching targets. Before changing Flutter transport or claiming
+runtime parity, read `CONTEXT.md` and inspect `mise run migration:product-boundary-audit`.
 
 ---
 
@@ -107,12 +111,12 @@ The list below spans native and compatibility surfaces; it is not a claim that
 every client currently has feature parity. Check the migration audit and the
 relevant implementation before relying on a surface-specific behavior.
 
-- **Two TTS engines**: Edge-TTS (cloud, multilingual) and Piper (offline ONNX, one model per language). `auto` is an alias for the Edge-first selection.
-- **Edge-first by default**: per-chunk single-sentence fallback recovers transient failures and returns to Edge. Opt-in to the legacy Edge → Piper cascade via `--engine-chain-fallback` or `ENGINE_CHAIN_FALLBACK=1`.
-- **Smart cache**: parsed text cached per-book — re-runs skip re-parsing
+- **Default narration**: Piper `pt_BR-faber-medium` primary with installed platform speech as fallback. Keep Piper selected and retry at bounded recovery points after fallback; report the provider and voice actually used.
+- **Explicit online selection**: Edge requires user selection or consent for online fallback. Models are installed only by an explicit user action. Browser native speech supports listening; browser MP3 conversion/export requires Piper.
+- **Audio reuse**: completed chapter audio is reused only after its source and provider identity are validated
 - **Chapter structure**: preserves TOC hierarchy (NCX / EPUB3 nav), numbered `1.0 / 1.1 / 1.2`
-- **Batch conversion**: queue multiple EPUB/PDF files or entire folders
-- **Web UI**: Browser/HF React surface with legacy HTTP integration; Rust/WASM conversion cutover is tracked by the migration audit
+- **Batch conversion**: the Rust CLI accepts EPUB inputs; format support is surface-specific
+- **Web UI**: React browser client with Rust/WASM book processing and local Piper synthesis; the HTTP server remains a compatibility surface
 - **Audio validation**: WPM-based truncation detection, auto-retry with engine fallback
 - **Progress ETA**: per-chapter telemetry + chunk tracking for accurate estimates
 
@@ -125,10 +129,16 @@ relevant implementation before relying on a surface-specific behavior.
 ```bash
 git clone https://github.com/pietro1704/Epub-to-Mp3.git
 cd Epub-to-Mp3
-mise run install        # Sets up the Python 3.12.10 venv, npm, and Piper binary
+mise run convert           # Print native CLI usage; the task builds/packages it when needed
 ```
 
-### Manual
+Select the build/run task for the intended platform in `mise.toml`; avoid setting
+up every toolchain for a single client. Native Apple and packaged Rust conversion
+do not require a Python runtime. Install a voice model explicitly through the
+client or the CLI model command before requesting that voice. On this Mac, use
+the guarded tasks and keep Android work on Arch.
+
+### Legacy Python compatibility setup
 
 ```bash
 pip install -r requirements.txt
@@ -151,21 +161,23 @@ mise run convert -- convert book.epub --engine piper
 mise run convert -- convert book.epub --chapter 3
 mise run convert -- convert book.epub --chapter 5.1,5.2,5.3
 
-# Preview chapter structure (saves parsed text to cache)
+# Preview chapter structure without synthesis
 mise run convert -- convert book.epub --show-structure
 
 # Force re-parse (ignore cache)
 mise run convert -- convert book.epub --clear-cache
 
 # Batch: multiple files or folder
-mise run convert -- convert book1.epub book2.pdf --batch ~/folder/
+mise run convert -- convert book1.epub book2.epub --batch ~/epub-folder/
 
-# Interactive menu (pick engine/voice/settings)
-mise run convert -- convert book.epub --menu
 ```
 
 The Python CLI remains in `python_app/` as the migration oracle until
 differential coverage and the final cutover validation are complete.
+PDF conversion is not implemented by the embedded Rust CLI; it reports an
+unsupported-format error instead of attempting to parse a PDF as EPUB. Native
+reader format support is a separate capability. Unsupported legacy CLI flags
+are rejected explicitly; `--verify` verifies the output after conversion.
 
 ### Shell Autocomplete (Optional)
 
@@ -182,13 +194,12 @@ Tab-completes `.epub`/`.pdf` file paths and `--engine` values.
 
 ```bash
 mise run rust:server                   # Native Rust server (canonical)
-mise exec -- cargo run --release -p converter-server # Direct Rust server
 ```
 
-The Python server and HF entrypoint are compatibility/migration surfaces and
-may still back browser/demo flows. They are not the required architecture for
-native client conversion. Check the migration audit and current code before
-claiming a particular client has stopped using them.
+The Docker deployment builds `converter-server` and serves the browser bundle.
+Its HTTP conversion endpoints are compatibility routes with their own provider
+capabilities; they are not required for the browser's local WASM conversion or
+for native clients. Python server/entrypoint sources remain compatibility material.
 
 Frontend dev server (hot reload):
 
@@ -277,14 +288,19 @@ mise run audit          # Scan Python dependencies for CVEs
 
 ## TTS Engine Details
 
-| Engine | Languages | Quality | Speed | Requires |
-|--------|-----------|---------|-------|----------|
-| **Edge-TTS** | All | ⭐⭐⭐ | Fastest | Internet |
-| **Piper** | pt, en, es, fr, de, it | ⭐⭐ | Moderate | Piper binary + ONNX model |
+| Provider | Role | Requires |
+|----------|------|----------|
+| **Piper** | Default primary, Faber medium for Brazilian Portuguese | Explicitly installed model and the client's embedded runtime |
+| **Platform speech** | Default fallback, preferring installed Luciana on Apple for Brazilian Portuguese | An installed compatible system voice |
+| **Edge-TTS** | Explicit online primary or consented online fallback where supported | Internet and user selection/consent |
 
-**Default behavior (CLI + web):** Edge-first. Per-chunk failures are retried as a single sentence and synthesis returns to Edge. Piper is available when its binary and model are installed.
+Preferences are captured per job. A fallback must report its active provider and
+voice without silently changing the configured primary. Web platform speech is
+for listening only and cannot be used to claim an MP3 export succeeded.
 
-**Optional legacy cascade:** set `ENGINE_CHAIN_FALLBACK=1` (or pass `--engine-chain-fallback` on the CLI) to enable Edge → Piper fallback. Use `FALLBACK_ENGINE_OVERRIDE=piper|none|auto` to control that offline tier.
+The legacy Python compatibility engine has separate Edge-first configuration,
+including `ENGINE_CHAIN_FALLBACK` and `FALLBACK_ENGINE_OVERRIDE`. Those variables
+do not define the native app, Rust CLI or browser defaults.
 
 ---
 
@@ -308,10 +324,11 @@ Epub-to-Mp3/
 ├── Cargo.toml / crates/     # Shared Rust runtime, CLI, server, FFI and WASM
 ├── mise.toml                # Tool versions and authoritative task definitions
 ├── ios/EpubToMp3/           # Native Apple client
-├── flutter_app/             # Non-Apple client; transport migration in progress
-├── web/                     # Browser surface; WASM plus legacy integration
+├── flutter_app/             # Non-Apple client with embedded Rust bindings
+├── web/                     # Local browser WASM/Piper surface and compatibility adapters
 ├── python_app/              # Python compatibility/migration path
-├── hf_app.py / Dockerfile   # HF compatibility/demo deployment
+├── hf_app.py                # Legacy Python HF compatibility entrypoint
+├── Dockerfile               # Rust server and browser bundle deployment
 ├── docs/adr/                # Accepted architecture decisions
 └── scripts/                 # Audits, validation and build helpers
 ```

@@ -77,11 +77,13 @@ enum EmbeddedConverterError: Error, LocalizedError, Equatable {
 
 private final class ChapterCallbackBox: @unchecked Sendable {
     private let fallbackNotice = PlatformFallbackNoticeTracker()
+    let voiceReceipt: PlatformSpeechVoiceReceipt
     let progressHandler: (@Sendable (Data) -> Void)?
     let chapterHandler: (@Sendable (Data) -> Void)?
     let audioChunkHandler: (@Sendable (Int, Int, Data) -> Bool)?
 
-    func progress(_ data: Data) {
+    func progress(_ raw: Data) {
+        let data = voiceReceipt.progress(raw)
         if fallbackNotice.shouldNotify(progress: data) {
             let fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             let engine = fields?["fallbackUsed"] as? Bool == true ? fields?["engine"] as? String : nil
@@ -91,10 +93,12 @@ private final class ChapterCallbackBox: @unchecked Sendable {
     }
 
     init(
+        voiceReceipt: PlatformSpeechVoiceReceipt,
         progressHandler: (@Sendable (Data) -> Void)?,
         chapterHandler: (@Sendable (Data) -> Void)?,
         audioChunkHandler: (@Sendable (Int, Int, Data) -> Bool)? = nil
     ) {
+        self.voiceReceipt = voiceReceipt
         self.progressHandler = progressHandler
         self.chapterHandler = chapterHandler
         self.audioChunkHandler = audioChunkHandler
@@ -103,6 +107,12 @@ private final class ChapterCallbackBox: @unchecked Sendable {
 
 final class ConverterPlaybackControl: @unchecked Sendable {
     fileprivate let rawHandle: UnsafeMutableRawPointer
+    private let cancellationLock = NSLock()
+    private var cancellationRequested = false
+    var isCancellationRequested: Bool {
+        cancellationLock.lock(); defer { cancellationLock.unlock() }
+        return cancellationRequested
+    }
     private let free: ConverterJobControlFree
     private let cancelJob: ConverterJobControlCancel
     private let prioritizeChapter: ConverterJobControlPrioritize
@@ -126,7 +136,12 @@ final class ConverterPlaybackControl: @unchecked Sendable {
     }
 
     deinit { free(rawHandle) }
-    func cancel() { cancelJob(rawHandle) }
+    func cancel() {
+        cancellationLock.lock()
+        cancellationRequested = true
+        cancellationLock.unlock()
+        cancelJob(rawHandle)
+    }
     @discardableResult func prioritize(chapterIndex: Int) -> Bool {
         prioritizeChapter(rawHandle, chapterIndex)
     }
@@ -143,7 +158,6 @@ struct EmbeddedBook { let metadataJSON: Data }
 
 /// Loads and invokes the stable C ABI only when the bundled dylib is present.
 final class ConverterFFIAdapter: EmbeddedConverter {
-    private let platformSpeech = PlatformSpeechSynthesizer()
     private var setPlatformTts: ConverterSetPlatformTts?
     private var handle: UnsafeMutableRawPointer?
     private let close: (UnsafeMutableRawPointer?) -> Void
@@ -205,7 +219,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         let box = Unmanaged<ChapterCallbackBox>
             .fromOpaque(context)
             .takeUnretainedValue()
-        box.chapterHandler?(Data(String(cString: eventJSON).utf8))
+        box.chapterHandler?(box.voiceReceipt.chapter(Data(String(cString: eventJSON).utf8)))
     }
 
     private static let audioChunkCallback: ConverterAudioChunkCallback = {
@@ -335,6 +349,9 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             throw EmbeddedConverterError.conversionFailed(readError())
         }
         defer { close(session) }
+        let voiceReceipt = PlatformSpeechVoiceReceipt()
+        let platformSpeech = PlatformSpeechSynthesizer(onVoiceUsed: { voiceReceipt.record($0) })
+        defer { withExtendedLifetime(platformSpeech) {} }
         guard let setPlatformTts,
               setPlatformTts(session, Self.platformTtsCallback,
                              Unmanaged.passUnretained(platformSpeech).toOpaque()) else {
@@ -348,7 +365,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
                 throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks playback streaming ABI.")
             }
             let callbackBox = ChapterCallbackBox(
-                progressHandler: onProgress, chapterHandler: onChapterCompleted,
+                voiceReceipt: voiceReceipt, progressHandler: onProgress, chapterHandler: onChapterCompleted,
                 audioChunkHandler: onAudioChunk
             )
             let context = Unmanaged.passRetained(callbackBox).toOpaque()
@@ -375,7 +392,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
                 }
             }
         } else if optionsJSON != nil || convertJobOptionsJSON != nil || convertJobJSON != nil {
-            let callbackBox = ChapterCallbackBox(progressHandler: onProgress, chapterHandler: onChapterCompleted)
+            let callbackBox = ChapterCallbackBox(voiceReceipt: voiceReceipt, progressHandler: onProgress, chapterHandler: onChapterCompleted)
             let context = Unmanaged.passRetained(callbackBox).toOpaque()
             defer { Unmanaged<ChapterCallbackBox>.fromOpaque(context).release() }
             result = try outputDirectory.path.withCString { outputPointer in
@@ -420,7 +437,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         guard let json = String(validatingUTF8: value) else {
             throw EmbeddedConverterError.conversionFailed("Rust returned invalid UTF-8 manifest JSON.")
         }
-        return Data(json.utf8)
+        return voiceReceipt.manifest(Data(json.utf8))
     }
 
     /// Capability check before book access or output reservation; never discard explicit options.

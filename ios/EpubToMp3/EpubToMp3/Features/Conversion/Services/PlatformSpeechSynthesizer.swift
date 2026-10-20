@@ -4,7 +4,7 @@ import Foundation
 /// Pure selection over installed voices; never resolves an identifier that could
 /// trigger a voice download. A segment retains the selected voice object.
 enum InstalledSpeechVoicePolicy {
-    struct Voice: Equatable {
+    struct Voice: Equatable, Sendable {
         let identifier: String
         let name: String
         let language: String
@@ -38,9 +38,12 @@ enum InstalledSpeechVoicePolicy {
 /// Apple supplies PCM only; Rust owns provider policy, encoding, and artifacts.
 final class PlatformSpeechSynthesizer: @unchecked Sendable {
     private let requestLock: NSLock
+    private let onVoiceUsed: @Sendable (InstalledSpeechVoicePolicy.Voice) -> Void
 
-    init(requestLock: NSLock = NSLock()) {
+    init(requestLock: NSLock = NSLock(),
+         onVoiceUsed: @escaping @Sendable (InstalledSpeechVoicePolicy.Voice) -> Void = { _ in }) {
         self.requestLock = requestLock
+        self.onVoiceUsed = onVoiceUsed
     }
 
     func synthesizeWAV(text: String, language: String, output: URL,
@@ -70,6 +73,7 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
         if cancelled() { throw Failure("System speech cancelled.") }
         let wav = try request.wav()
         try wav.write(to: output, options: .atomic)
+        if let voice = request.usedVoice() { onVoiceUsed(voice) }
     }
 
     struct Failure: Error, LocalizedError {
@@ -86,6 +90,12 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
         private var samples = Data()
         private var sampleRate: UInt32 = 0
         private var synthesizer: AVSpeechSynthesizer?
+        private var selectedVoice: InstalledSpeechVoicePolicy.Voice?
+
+        func usedVoice() -> InstalledSpeechVoicePolicy.Voice? {
+            lock.lock(); defer { lock.unlock() }
+            return selectedVoice
+        }
 
         func start(text: String, language: String) {
             lock.lock(); let alreadyFinished = finished; lock.unlock()
@@ -99,6 +109,10 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
             guard let voice = voices.first(where: { $0.identifier == selected }) else {
                 finish(error: Failure("No installed system voice for \(locale).")); return
             }
+            lock.lock()
+            selectedVoice = .init(identifier: voice.identifier, name: voice.name, language: voice.language,
+                                  isCompact: voice.quality == .default)
+            lock.unlock()
             let synth = AVSpeechSynthesizer()
             synthesizer = synth
             let utterance = AVSpeechUtterance(string: text)
@@ -181,5 +195,69 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
             result.append(Data("data".utf8)); append(UInt32(samples.count)); result.append(samples)
             return result
         }
+    }
+}
+
+/// One conversion owns one receipt; successful PCM production is the only source of voice identity.
+final class PlatformSpeechVoiceReceipt: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latestVoice: InstalledSpeechVoicePolicy.Voice?
+    private var usedVoices: [String: InstalledSpeechVoicePolicy.Voice] = [:]
+    private var providers: [Int: [String: Any]] = [:]
+
+    func record(_ voice: InstalledSpeechVoicePolicy.Voice) {
+        lock.lock(); defer { lock.unlock() }
+        latestVoice = voice
+        usedVoices[voice.identifier] = voice
+    }
+
+    func progress(_ data: Data) -> Data {
+        guard var fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return data }
+        lock.lock(); defer { lock.unlock() }
+        if let chapter = fields["chapterIndex"] as? Int {
+            var provider = providers[chapter] ?? [:]
+            if let engine = fields["engine"] as? String, engine != provider["engine"] as? String {
+                provider.removeAll()
+            }
+            for key in ["engine", "modelId", "voice"] {
+                if let value = fields[key] { provider[key] = value }
+            }
+            providers[chapter] = provider
+        }
+        if fields["engine"] as? String == "system", let voice = latestVoice {
+            fields["voice"] = voice.name + " (" + voice.identifier + ")"
+            fields["modelId"] = NSNull()
+        }
+        return (try? JSONSerialization.data(withJSONObject: fields)) ?? data
+    }
+
+    func chapter(_ data: Data) -> Data {
+        guard var fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return data }
+        lock.lock(); defer { lock.unlock() }
+        guard let chapter = fields["chapterIndex"] as? Int, let provider = providers[chapter] else { return data }
+        for key in ["engine", "modelId", "voice"] {
+            if let value = provider[key] { fields[key] = value }
+        }
+        if provider["engine"] as? String == "system", let voice = latestVoice {
+            fields["voice"] = voice.name + " (" + voice.identifier + ")"
+            fields["modelId"] = NSNull()
+        }
+        return (try? JSONSerialization.data(withJSONObject: fields)) ?? data
+    }
+
+    func manifest(_ data: Data) -> Data {
+        guard var envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var manifest = envelope["manifest"] as? [String: Any],
+              var selections = manifest["usedSelections"] as? [[String: Any]] else { return data }
+        lock.lock()
+        let voices = usedVoices.values.sorted { $0.identifier < $1.identifier }
+        lock.unlock()
+        guard !voices.isEmpty else { return data }
+        for index in selections.indices where selections[index]["engine"] as? String == "system" {
+            selections[index]["voice"] = voices.map { $0.name + " (" + $0.identifier + ")" }.joined(separator: " + ")
+        }
+        manifest["usedSelections"] = selections
+        envelope["manifest"] = manifest
+        return (try? JSONSerialization.data(withJSONObject: envelope)) ?? data
     }
 }

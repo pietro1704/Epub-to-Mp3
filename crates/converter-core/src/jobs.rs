@@ -173,14 +173,9 @@ impl JobManager {
     pub fn create(&self, record: JobRecord) -> Result<JobRecord, JobError> {
         let _mutation = self.mutation_guard()?;
         validate_job_id(&record.job_id)?;
-        let path = self.job_path(&record.job_id);
-        if path.exists() {
-            return Err(JobError::Io(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                record.job_id,
-            )));
-        }
-        self.persist(&record)?;
+        // Independent workers do not share this manager's mutex. Publish the
+        // complete initial record without replacing another worker's claim.
+        self.persist_record(&record, true)?;
         Ok(record)
     }
 
@@ -326,6 +321,10 @@ impl JobManager {
     }
 
     fn persist(&self, record: &JobRecord) -> Result<(), JobError> {
+        self.persist_record(record, false)
+    }
+
+    fn persist_record(&self, record: &JobRecord, create: bool) -> Result<(), JobError> {
         validate_job_id(&record.job_id)?;
         let target = self.job_path(&record.job_id);
         let bytes = serde_json::to_vec_pretty(record)?;
@@ -334,7 +333,13 @@ impl JobManager {
             .tempfile_in(self.jobs_dir())?;
         staging.write_all(&bytes)?;
         staging.as_file().sync_all()?;
-        staging.persist(&target).map_err(|error| error.error)?;
+        if create {
+            staging
+                .persist_noclobber(&target)
+                .map_err(|error| error.error)?;
+        } else {
+            staging.persist(&target).map_err(|error| error.error)?;
+        }
         sync_directory(self.jobs_dir())?;
         Ok(())
     }
@@ -395,6 +400,79 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let manager = JobManager::with_ttl(directory.path(), Duration::from_secs(60)).unwrap();
         (directory, manager)
+    }
+
+    #[test]
+    fn independent_managers_claim_one_job_without_overwriting_the_winner() {
+        let directory = tempfile::tempdir().unwrap();
+        let barrier = Arc::new(std::sync::Barrier::new(16));
+        let writers: Vec<_> = (0..16)
+            .map(|owner| {
+                let manager = JobManager::new(directory.path()).unwrap();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    let mut metadata = serde_json::Map::new();
+                    metadata.insert("owner".into(), serde_json::json!(owner));
+                    barrier.wait();
+                    manager.create(JobRecord::new("shared-identity", metadata))
+                })
+            })
+            .collect();
+        let mut winner = None;
+        for writer in writers {
+            match writer.join().unwrap() {
+                Ok(record) => {
+                    assert!(
+                        winner.replace(record).is_none(),
+                        "only one claim may succeed"
+                    );
+                }
+                Err(JobError::Io(error)) => assert_eq!(error.kind(), io::ErrorKind::AlreadyExists),
+                other => panic!("unexpected creation result: {other:?}"),
+            }
+        }
+        let manager = JobManager::new(directory.path()).unwrap();
+        assert_eq!(manager.load("shared-identity").unwrap(), winner.unwrap());
+        assert_eq!(manager.list().unwrap().len(), 1);
+        // Legitimate updates still atomically replace the owning record.
+        manager
+            .transition("shared-identity", JobState::Running)
+            .unwrap();
+        assert_eq!(
+            manager.load("shared-identity").unwrap().state,
+            JobState::Running
+        );
+    }
+
+    #[test]
+    fn independent_claims_and_interrupted_staging_do_not_block_fresh_jobs() {
+        let directory = tempfile::tempdir().unwrap();
+        let abandoned = directory.path().join(".job-interrupted.tmp");
+        fs::write(
+            &abandoned,
+            b"incomplete staging owned by a previous process",
+        )
+        .unwrap();
+        let writers: Vec<_> = (0..8)
+            .map(|index| {
+                let manager = JobManager::new(directory.path()).unwrap();
+                std::thread::spawn(move || {
+                    manager.create(JobRecord::new(
+                        format!("independent-{index}"),
+                        Default::default(),
+                    ))
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap().unwrap();
+        }
+        let manager = JobManager::new(directory.path()).unwrap();
+        assert_eq!(manager.list().unwrap().len(), 8);
+        assert_eq!(
+            fs::read(abandoned).unwrap(),
+            b"incomplete staging owned by a previous process"
+        );
     }
 
     #[test]
