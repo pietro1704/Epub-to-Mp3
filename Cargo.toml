@@ -20,6 +20,7 @@ version = "0.1.0"
 [workspace.dependencies]
 
 [patch.crates-io]
+piper-rs = { path = "native/vendor/piper-rs" }
 # Published 1.13.8 source with the upstream ZIP security dependency fix:
 # https://github.com/k2-fsa/sherpa-onnx/commit/1a9d234ab95567eba8c2e89873a87d70b79633e2
 sherpa-onnx-sys = { path = "native/vendor/sherpa-onnx-sys" }

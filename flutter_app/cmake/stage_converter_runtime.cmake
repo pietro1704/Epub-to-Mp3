@@ -1,0 +1,40 @@
+# Runs after Cargo; packaging must fail if phonemizer assets are incomplete.
+set(_profile "${CONVERTER_CARGO_TARGET_DIR}/release")
+set(_library "${_profile}/${CONVERTER_FFI_FILENAME}")
+if(NOT EXISTS "${_library}")
+  message(FATAL_ERROR "Cargo did not produce the embedded Piper runtime: ${_library}")
+endif()
+file(GLOB_RECURSE _phontabs "${_profile}/build/*/phontab")
+set(_data_source "")
+foreach(_phontab IN LISTS _phontabs)
+  if(_phontab MATCHES "/espeak-ng-data/phontab$")
+    get_filename_component(_candidate "${_phontab}" DIRECTORY)
+    if(EXISTS "${_candidate}/phondata" AND EXISTS "${_candidate}/phonindex"
+        AND EXISTS "${_candidate}/lang/roa/pt")
+      set(_data_source "${_candidate}")
+      break()
+    endif()
+  endif()
+endforeach()
+if(_data_source STREQUAL "")
+  message(FATAL_ERROR "Piper build did not produce complete eSpeak NG data including Portuguese")
+endif()
+file(REMOVE_RECURSE "${CONVERTER_RUNTIME_STAGE}")
+file(MAKE_DIRECTORY "${CONVERTER_RUNTIME_STAGE}/lib" "${CONVERTER_RUNTIME_STAGE}/data")
+file(COPY "${_library}" DESTINATION "${CONVERTER_RUNTIME_STAGE}/lib")
+file(COPY "${_data_source}" DESTINATION "${CONVERTER_RUNTIME_STAGE}/data")
+# ORT normally links statically. Preserve any provider/shared dependencies emitted
+# by the selected host distribution or supplied ORT_LIB_LOCATION.
+file(GLOB _runtime_libraries "${_profile}/*onnxruntime*.dll" "${_profile}/*onnxruntime*.so*")
+if(DEFINED ENV{ORT_LIB_LOCATION})
+  file(GLOB _external_runtime_libraries
+    "$ENV{ORT_LIB_LOCATION}/*onnxruntime*.dll" "$ENV{ORT_LIB_LOCATION}/*onnxruntime*.so*"
+    "$ENV{ORT_LIB_LOCATION}/lib/*onnxruntime*.dll" "$ENV{ORT_LIB_LOCATION}/lib/*onnxruntime*.so*"
+    "$ENV{ORT_LIB_LOCATION}/bin/*onnxruntime*.dll")
+  list(APPEND _runtime_libraries ${_external_runtime_libraries})
+endif()
+foreach(_runtime_library IN LISTS _runtime_libraries)
+  get_filename_component(_resolved_runtime "${_runtime_library}" REALPATH)
+  get_filename_component(_runtime_name "${_runtime_library}" NAME)
+  configure_file("${_resolved_runtime}" "${CONVERTER_RUNTIME_STAGE}/lib/${_runtime_name}" COPYONLY)
+endforeach()

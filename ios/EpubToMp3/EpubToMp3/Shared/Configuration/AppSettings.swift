@@ -174,6 +174,27 @@ final class AppSettings: ObservableObject {
             create: true
         ).appendingPathComponent("EpubToMp3/TTSModels", isDirectory: true)
     }
+    /// Installation UI reports readiness only for a complete catalog installation.
+    static func isFaberInstalled(modelsRoot: URL? = ttsModelsRoot(), fileManager: FileManager = .default) -> Bool {
+        guard let modelsRoot else { return false }
+        let directory = modelsRoot.appendingPathComponent("pt_BR-faber-medium", isDirectory: true)
+        guard let metadata = try? Data(contentsOf: directory.appendingPathComponent("metadata.json")),
+              let fields = try? JSONSerialization.jsonObject(with: metadata) as? [String: Any],
+              fields["id"] as? String == "pt_BR-faber-medium",
+              let artifacts = fields["artifacts"] as? [[String: String]] else { return false }
+        let expected = [
+            "model.onnx": "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7",
+            "model.onnx.json": "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f",
+        ]
+        return expected.allSatisfy { name, digest in
+            guard artifacts.contains(where: { $0["path"] == name && $0["sha256"] == digest }),
+                  let attributes = try? fileManager.attributesOfItem(atPath: directory.appendingPathComponent(name).path),
+                  attributes[.type] as? FileAttributeType == .typeRegular,
+                  let bytes = attributes[.size] as? NSNumber else { return false }
+            return bytes.int64Value > 0
+        }
+    }
+
     static let playbackForwardSecondsKey = "playbackForwardSeconds"
     static let playbackBackwardSecondsKey = "playbackBackwardSeconds"
     static let playbackSkipIntervals: Set<Double> = [15, 30, 45, 60]
@@ -190,12 +211,29 @@ final class AppSettings: ObservableObject {
         // it on Wi-Fi by default; the user may opt into cellular explicitly.
         self.allowCellularAudioConversion =
             defaults.object(forKey: "allowCellularAudioConversion") as? Bool ?? false
-        let storedAudioEngine = AudioEnginePreference(
-            rawValue: defaults.string(forKey: Self.audioEngineKey) ?? ""
-        ) ?? .edge
-        self.audioEngine = AudioEnginePreference.supportedPreferences.contains(storedAudioEngine)
-            ? storedAudioEngine
-            : .edge
+        self.audioEngine = AudioEnginePreference(
+            rawValue: defaults.string(forKey: Self.audioEngineKey) ?? "piper"
+        ) ?? .piper
+        let storedSecondaryAudioEngine = defaults.string(forKey: "secondaryAudioEngine")
+            .flatMap(AudioEnginePreference.init(rawValue:))
+        let storedOnlineFallbackConsent = defaults.bool(forKey: "allowOnlineAudioFallback")
+        // A missing secondary in old settings may be an explicit no-fallback
+        // choice. Only an entirely unconfigured speech policy adopts defaults.
+        let hasSavedSpeechPolicy = [Self.audioEngineKey, "secondaryAudioEngine",
+                                    "allowOnlineAudioFallback", "ttsPreferencesVersion"]
+            .contains { defaults.object(forKey: $0) != nil }
+        self.secondaryAudioEngine = hasSavedSpeechPolicy ? storedSecondaryAudioEngine : .system
+        if !hasSavedSpeechPolicy {
+            defaults.set("piper", forKey: Self.audioEngineKey)
+            defaults.set("system", forKey: "secondaryAudioEngine")
+            defaults.set(2, forKey: "ttsPreferencesVersion")
+        }
+        self.allowOnlineAudioFallback = storedOnlineFallbackConsent
+        if storedSecondaryAudioEngine == self.audioEngine
+            || (!storedOnlineFallbackConsent && storedSecondaryAudioEngine == .edge) {
+            self.secondaryAudioEngine = nil
+            defaults.removeObject(forKey: "secondaryAudioEngine")
+        }
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
         )
@@ -300,8 +338,63 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(allowCellularAudioConversion, forKey: "allowCellularAudioConversion") }
     }
 
-    @Published var audioEngine: AudioEnginePreference = .edge {
-        didSet { defaults.set(audioEngine.rawValue, forKey: Self.audioEngineKey) }
+    @Published var audioEngine: AudioEnginePreference = .piper {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            adoptCurrentSpeechPolicyIfEdited()
+            defaults.set(audioEngine.rawValue, forKey: Self.audioEngineKey)
+            if secondaryAudioEngine == audioEngine { secondaryAudioEngine = nil }
+        }
+    }
+
+    @Published var secondaryAudioEngine: AudioEnginePreference? = nil {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            adoptCurrentSpeechPolicyIfEdited()
+            if secondaryAudioEngine == audioEngine
+                || (secondaryAudioEngine == .edge && !allowOnlineAudioFallback) {
+                secondaryAudioEngine = nil
+                defaults.removeObject(forKey: "secondaryAudioEngine")
+                return
+            }
+            defaults.set(secondaryAudioEngine?.rawValue, forKey: "secondaryAudioEngine")
+        }
+    }
+    @Published var allowOnlineAudioFallback = false {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            adoptCurrentSpeechPolicyIfEdited()
+            defaults.set(allowOnlineAudioFallback, forKey: "allowOnlineAudioFallback")
+            if !allowOnlineAudioFallback && secondaryAudioEngine == .edge {
+                secondaryAudioEngine = nil
+            }
+        }
+    }
+    var selectableSecondaryAudioEngines: [AudioEnginePreference] {
+        AudioEnginePreference.supportedPreferences.filter {
+            $0 != audioEngine && ($0 != .edge || allowOnlineAudioFallback)
+        }
+    }
+    var ttsPreferences: TtsPreferences {
+        let secondary = secondaryAudioEngine.flatMap { engine -> TtsSelection? in
+            guard engine != .edge || allowOnlineAudioFallback else { return nil }
+            return .selected(engine)
+        }
+        return TtsPreferences(primary: .selected(audioEngine),
+                              secondary: secondary,
+                              allowOnlineFallback: allowOnlineAudioFallback,
+                              policyVersion: (defaults.object(forKey: "ttsPreferencesVersion") as? NSNumber)?.uint32Value)
+    }
+    private func adoptCurrentSpeechPolicyIfEdited() {
+        guard !loadingPersistedValues else { return }
+        defaults.set(2, forKey: "ttsPreferencesVersion")
+    }
+    var conversionOptions: ConversionOptions {
+        var options = ConversionOptions.selectedEngine(audioEngine, modelsRoot: Self.ttsModelsRoot())
+        options.ttsPreferences = ttsPreferences
+        options.modelsRoot = Self.ttsModelsRoot()?.path
+        options.espeakDataDirectory = Bundle.main.resourceURL?.path
+        return options
     }
 
     @Published var playbackForwardSeconds: Double = 15 {

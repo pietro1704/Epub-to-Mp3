@@ -3,6 +3,7 @@ import {
   downloadFile,
   installUpdate,
   isTauri,
+  openTauriBooks,
   sendNotification,
 } from "../lib/tauri";
 
@@ -207,5 +208,31 @@ describe("installUpdate", () => {
     });
 
     await expect(installUpdate()).rejects.toThrow("install failed");
+  });
+});
+
+describe("Tauri book opening capability", () => {
+  it("uses the HTML File picker for embedded conversion without native paths or HTTP", async () => {
+    const native = vi.fn().mockResolvedValue(["/books/book.epub"]);
+    setTauri({ core: { invoke: native }, event: {} });
+    const pickFiles = vi.fn();
+    const paths = vi.fn();
+    const network = vi.spyOn(globalThis, "fetch");
+    await openTauriBooks("embedded", pickFiles, paths);
+    expect(pickFiles).toHaveBeenCalledTimes(1);
+    expect(native).not.toHaveBeenCalled();
+    expect(paths).not.toHaveBeenCalled();
+    expect(network).not.toHaveBeenCalled();
+  });
+
+  it("retains explicit legacy native-path selection only for HTTP mode", async () => {
+    const native = vi.fn().mockResolvedValue(["/books/book.epub"]);
+    setTauri({ core: { invoke: native }, event: {} });
+    const pickFiles = vi.fn();
+    const paths = vi.fn();
+    await openTauriBooks("http", pickFiles, paths);
+    expect(native).toHaveBeenCalledWith("pick_books", undefined);
+    expect(paths).toHaveBeenCalledWith(["/books/book.epub"]);
+    expect(pickFiles).not.toHaveBeenCalled();
   });
 });

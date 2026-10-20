@@ -1,0 +1,272 @@
+name: Flutter real Rust Faber
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, 'feature/**']
+    paths:
+      - '.github/workflows/flutter-rust-faber.yml'
+      - 'flutter_app/test/desktop_faber_integration_test.dart'
+      - 'flutter_app/lib/services/local_conversion_job.dart'
+      - 'flutter_app/test/local_conversion_job_test.dart'
+      - 'flutter_app/lib/services/desktop_embedded_converter.dart'
+      - 'flutter_app/windows/**'
+      - 'flutter_app/cmake/**'
+      - 'scripts/build_flutter_desktop.rb'
+      - 'crates/converter-ffi/**'
+      - 'crates/converter-core/**'
+      - 'native/piper-runtime/**'
+      - 'native/vendor/**'
+      - 'mise.toml'
+  pull_request:
+    paths:
+      - '.github/workflows/flutter-rust-faber.yml'
+      - 'flutter_app/test/desktop_faber_integration_test.dart'
+      - 'flutter_app/lib/services/local_conversion_job.dart'
+      - 'flutter_app/test/local_conversion_job_test.dart'
+      - 'flutter_app/lib/services/desktop_embedded_converter.dart'
+      - 'flutter_app/windows/**'
+      - 'flutter_app/cmake/**'
+      - 'scripts/build_flutter_desktop.rb'
+      - 'crates/converter-ffi/**'
+      - 'crates/converter-core/**'
+      - 'native/piper-runtime/**'
+      - 'native/vendor/**'
+      - 'mise.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/master') }}
+
+jobs:
+  windows-package-faber:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby,flutter
+      MISE_YES: '1'
+      ORT_PREFER_DYNAMIC_LINK: '1'
+      ORT_SKIP_DOWNLOAD: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install scoped project tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Verify durable history and Windows output path projection
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location flutter_app
+          mise exec -- flutter test test/local_conversion_job_test.dart --reporter expanded
+          if ($LASTEXITCODE -ne 0) { throw 'Windows durable history regression failed' }
+      - name: Explicitly provision pinned Windows runtime, decoder and model
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $owned = Join-Path $env:RUNNER_TEMP 'windows-dart-faber'
+          New-Item -ItemType Directory -Force $owned | Out-Null
+          function Get-VerifiedFile($url, $path, $bytes, $sha256) {
+            Invoke-WebRequest -Uri $url -OutFile $path -TimeoutSec 180
+            if ((Get-Item $path).Length -ne $bytes) { throw "Unexpected artifact size: $path" }
+            if ((Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant() -ne $sha256) {
+              throw "Artifact checksum mismatch: $path"
+            }
+          }
+          # Digests are published by the provider release API. Gyan is a Windows
+          # binary provider linked by https://ffmpeg.org/download.html.
+          $ortZip = Join-Path $owned 'ort.zip'
+          Get-VerifiedFile 'https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-win-x64-1.24.4.zip' $ortZip 74442783 'd2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357'
+          Expand-Archive -LiteralPath $ortZip -DestinationPath (Join-Path $owned 'ort')
+          $ort = Join-Path $owned 'ort/onnxruntime-win-x64-1.24.4'
+          if (!(Test-Path (Join-Path $ort 'lib/onnxruntime.lib'))) { throw 'Missing ORT import library' }
+          if (!(Test-Path (Join-Path $ort 'lib/onnxruntime.dll'))) { throw 'Missing ORT runtime DLL' }
+          "ORT_LIB_LOCATION=$(Join-Path $ort 'lib')" >> $env:GITHUB_ENV
+          $decoderZip = Join-Path $owned 'ffmpeg.zip'
+          Get-VerifiedFile 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip' $decoderZip 114768076 '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
+          Expand-Archive -LiteralPath $decoderZip -DestinationPath (Join-Path $owned 'decoder')
+          $decoder = Join-Path $owned 'decoder/ffmpeg-9.0.2-essentials_build/bin'
+          if (!(Test-Path (Join-Path $decoder 'ffmpeg.exe'))) { throw 'Missing pinned decoder' }
+          $decoder >> $env:GITHUB_PATH
+          $models = Join-Path $owned 'models'
+          $voice = Join-Path $models 'pt_BR-faber-medium'
+          New-Item -ItemType Directory -Force $voice | Out-Null
+          $base = 'https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
+          Get-VerifiedFile "$base/pt_BR-faber-medium.onnx" (Join-Path $voice 'model.onnx') 63201294 '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7'
+          Get-VerifiedFile "$base/pt_BR-faber-medium.onnx.json" (Join-Path $voice 'model.onnx.json') 4855 '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f'
+          "EPUB_DART_FABER_MODELS=$models" >> $env:GITHUB_ENV
+          $clang = 'C:/Program Files/LLVM/bin'
+          if (!(Test-Path (Join-Path $clang 'libclang.dll'))) { throw 'Missing runner libclang' }
+          "LIBCLANG_PATH=$clang" >> $env:GITHUB_ENV
+          $clang >> $env:GITHUB_PATH
+      - name: Build the actual supported Flutter Windows package
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force .reports/windows-faber | Out-Null
+          mise run flutter:build-windows 2>&1 | Tee-Object .reports/windows-faber/build.log
+          if ($LASTEXITCODE -ne 0) { throw 'Windows package build failed' }
+      - name: Audit packaged architecture, ABI, dependencies and phoneme assets
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = (Resolve-Path 'flutter_app/build/windows/x64/runner/Release').Path
+          if (!(Test-Path (Join-Path $package 'flutter_app.exe'))) { throw 'Missing actual Flutter application package' }
+          $library = Join-Path $package 'converter_ffi.dll'
+          $runtime = Join-Path $package 'onnxruntime.dll'
+          foreach ($path in @($library, $runtime)) {
+            if (!(Test-Path $path) -or (Get-Item $path).Length -eq 0) { throw "Missing packaged library: $path" }
+          }
+          $packagedOrtHash = (Get-FileHash -Algorithm SHA256 $runtime).Hash
+          $extractedOrtHash = (Get-FileHash -Algorithm SHA256 (Join-Path $env:ORT_LIB_LOCATION 'onnxruntime.dll')).Hash
+          if ($packagedOrtHash -ne $extractedOrtHash) { throw 'Packaged ORT differs from the verified distribution' }
+          foreach ($asset in @('phontab', 'phondata', 'phonindex', 'lang/roa/pt')) {
+            if (!(Test-Path (Join-Path $package "data/espeak-ng-data/$asset"))) { throw "Missing packaged phoneme asset: $asset" }
+          }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$vs) { throw 'Missing MSVC toolchain' }
+          $msvc = Get-ChildItem (Join-Path $vs 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $dumpbin = Join-Path $msvc.FullName 'bin/Hostx64/x64/dumpbin.exe'
+          $exports = & $dumpbin /exports $library | Out-String
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged ABI' }
+          foreach ($symbol in @('converter_session_open', 'converter_session_free', 'converter_session_convert_controlled_job_options_json_v1', 'converter_session_convert_streaming_job_options_json_v1', 'converter_string_free')) {
+            if ($exports -notmatch "\b$symbol\b") { throw "Missing packaged ABI: $symbol" }
+          }
+          $ortExports = & $dumpbin /exports $runtime | Out-String
+          if ($LASTEXITCODE -ne 0 -or $ortExports -notmatch '\bOrtGetApiBase\b') { throw 'Missing packaged ORT API' }
+          $audit = @()
+          foreach ($path in @($library, $runtime)) {
+            $headers = & $dumpbin /headers $path | Out-String
+            if ($LASTEXITCODE -ne 0 -or $headers -notmatch '(?i)8664 machine') { throw "Expected x64 PE: $path" }
+            $dependencies = & $dumpbin /dependents $path | Out-String
+            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect dependencies: $path" }
+            foreach ($line in ($dependencies -split "`n")) {
+              if ($line -match '^\s+([\w.-]+\.dll)\s*$') {
+                $name = $Matches[1]
+                if ($name -notmatch '^(?i)(api-ms-win-|ext-ms-win-)' -and
+                    !(Test-Path (Join-Path $package $name)) -and
+                    !(Test-Path (Join-Path $env:WINDIR "System32/$name"))) {
+                  throw "Unpackaged dependency: $name"
+                }
+              }
+            }
+            $audit += @{ file = [IO.Path]::GetFileName($path); sha256 = (Get-FileHash -Algorithm SHA256 $path).Hash; dependencies = $dependencies }
+          }
+          @{ architecture = $env:PROCESSOR_ARCHITECTURE; runtimeVersion = '1.24.4'; packagedOrtSha256 = $packagedOrtHash; extractedOrtSha256 = $extractedOrtHash; libraries = $audit } |
+            ConvertTo-Json -Depth 6 | Set-Content .reports/windows-faber/package.json
+          "EPUB_DART_FABER_LIBRARY=$library" >> $env:GITHUB_ENV
+          "PIPER_ESPEAKNG_DATA_DIRECTORY=$(Join-Path $package 'data')" >> $env:GITHUB_ENV
+          $package >> $env:GITHUB_PATH
+      - name: Convert exactly two chapters through the packaged Windows DLL
+        env:
+          EPUB_DART_FABER_INTEGRATION: '1'
+          EPUB_DART_FABER_REPORT: ${{ github.workspace }}/.reports/windows-faber/evidence.json
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location flutter_app
+          mise exec -- flutter test test/desktop_faber_integration_test.dart --reporter expanded 2>&1 |
+            Tee-Object ../.reports/windows-faber/runtime.log
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows Faber integration failed' }
+          if (!(Test-Path ../.reports/windows-faber/evidence.json)) { throw 'Missing positive conversion evidence' }
+          if (!(Select-String -LiteralPath ../.reports/windows-faber/runtime.log -SimpleMatch 'DART_FABER_NATIVE: model=pt_BR-faber-medium chapters=2' -Quiet)) { throw 'Missing real inference marker' }
+      - name: Retain Windows metadata and logs only
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dart-rust-faber-windows
+          path: .reports/windows-faber
+          if-no-files-found: warn
+      - name: Remove only the owned temporary runtime, decoder and models
+        if: always()
+        run: |
+          $owned = Join-Path $env:RUNNER_TEMP 'windows-dart-faber'
+          if (Test-Path $owned) { Remove-Item -LiteralPath $owned -Recurse -Force }
+
+  dart-rust-faber:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby,flutter
+      MISE_YES: '1'
+      ORT_PREFER_DYNAMIC_LINK: '1'
+      ORT_SKIP_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install scoped project tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Install native build and audio verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg
+      - name: Explicitly provision checksum-pinned offline runtime and model
+        run: |
+          set -euo pipefail
+          owned="$RUNNER_TEMP/ah13-dart-faber"
+          mkdir -p "$owned/ort" "$owned/models/pt_BR-faber-medium"
+          archive="$owned/onnxruntime-linux-x64-1.24.4.tgz"
+          curl --fail --location --retry 3 --max-time 180 \
+            https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz -o "$archive"
+          echo '3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747  '"$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$owned/ort"
+          runtime="$owned/ort/onnxruntime-linux-x64-1.24.4/lib"
+          test -f "$runtime/libonnxruntime.so"
+          echo "ORT_LIB_LOCATION=$runtime" >> "$GITHUB_ENV"
+          echo "ORT_DYLIB_PATH=$runtime/libonnxruntime.so" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$runtime" >> "$GITHUB_ENV"
+          base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
+          curl --fail --location --retry 3 --max-time 180 "$base/pt_BR-faber-medium.onnx" -o "$owned/models/pt_BR-faber-medium/model.onnx"
+          curl --fail --location --retry 3 --max-time 60 "$base/pt_BR-faber-medium.onnx.json" -o "$owned/models/pt_BR-faber-medium/model.onnx.json"
+          printf '%s  %s\n' \
+            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$owned/models/pt_BR-faber-medium/model.onnx" \
+            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$owned/models/pt_BR-faber-medium/model.onnx.json" \
+            | sha256sum --check --status
+          echo "EPUB_DART_FABER_MODELS=$owned/models" >> "$GITHUB_ENV"
+      - name: Build the real Piper-enabled Rust FFI and phoneme data
+        run: mise run converter-ffi:build
+      - name: Resolve the actual phoneme data and Rust library
+        run: |
+          set -euo pipefail
+          phontab=$(find "$GITHUB_WORKSPACE/target/espeak-data" -path '*/out/build/espeak-ng-data/phontab' -type f -print -quit)
+          test -n "$phontab"
+          data=$(dirname "$phontab")
+          test -f "$data/phondata"
+          echo "PIPER_ESPEAKNG_DATA_DIRECTORY=$(dirname "$data")" >> "$GITHUB_ENV"
+          test -f "$GITHUB_WORKSPACE/target/release/libconverter_ffi.so"
+          echo "EPUB_DART_FABER_LIBRARY=$GITHUB_WORKSPACE/target/release/libconverter_ffi.so" >> "$GITHUB_ENV"
+      - name: Convert exactly two public chapters through Dart and real Rust FFI
+        env:
+          EPUB_DART_FABER_INTEGRATION: '1'
+          EPUB_DART_FABER_REPORT: ${{ github.workspace }}/.reports/desktop-faber/evidence.json
+        run: |
+          set -o pipefail
+          mkdir -p .reports/desktop-faber
+          cd flutter_app
+          mise exec -- flutter test test/desktop_faber_integration_test.dart --reporter expanded \
+            2>&1 | tee ../.reports/desktop-faber/runtime.log
+          test -s ../.reports/desktop-faber/evidence.json
+          grep -F 'DART_FABER_NATIVE: model=pt_BR-faber-medium chapters=2' ../.reports/desktop-faber/runtime.log
+      - name: Retain metadata and logs only
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dart-rust-faber-linux
+          path: .reports/desktop-faber
+          if-no-files-found: warn
+      - name: Remove only the owned temporary runtime and model
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ah13-dart-faber"

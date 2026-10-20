@@ -75,14 +75,14 @@
 "settings.audioEngine" = "Audio engine";
 "settings.audioEngineChoice" = "Voice engine";
 "settings.audioEngineChoiceDescription" = "Edge uses online speech. Piper uses the installed local model.";
-"settings.piperInstall" = "Install Portuguese Piper model";
-"settings.piperInstalled" = "Piper model installed";
+"settings.piperInstall" = "Install Faber medium";
+"settings.piperInstalled" = "Faber medium installed";
 "settings.piperNotInstalled" = "Piper model not installed";
 "settings.useBuiltInEngine" = "Use built-in audio engine";
 "settings.useBuiltInEngineDescription" = "Synthesises chapters on this device. No backend needed.";
 "settings.allowCellularAudio" = "Allow cellular audio conversion";
 "settings.allowCellularAudioDescription" = "By default, chapter conversion waits for Wi-Fi.";
-"settings.audioEngineFooter" = "Reading works offline either way — this only affects how chapters are converted to audio. Turn off only to force the legacy remote-backend mode.";
+"settings.audioEngineFooter" = "Faber medium works offline after installation. Edge requires internet. The secondary voice is used only for isolated failed segments.";
 "settings.remoteBackend" = "Remote backend";
 "settings.urlNotValid" = "URL is not valid";
 "settings.remoteBackendFooterMac" = "Used when the embedded server is off. Common targets: a `mise run web` instance on this machine, or a Hugging Face Space URL.";
@@ -601,3 +601,14 @@
 "settings.seconds" = "%d seconds";
 
 "conversion.systemVoiceFallback" = "Using the device voice temporarily for this segment. Edge will be retried next.";
+
+"settings.secondaryVoice" = "Secondary voice";
+"settings.noSecondary" = "None";
+"settings.onlineFallback" = "Allow online fallback";
+"settings.onlineFallbackDescription" = "Permit sending failed segments to an online voice.";
+"convert.usePreferences" = "Use preferences";
+"convert.allowSecondary" = "Allow secondary voice";
+"convert.allowSecondaryDescription" = "Applies to this conversion when choosing a voice.";
+
+"conversion.secondaryVoiceUsed" = "Using secondary voice %@ for a failed segment.";
+"settings.systemTts" = "System voice (Luciana when available)";

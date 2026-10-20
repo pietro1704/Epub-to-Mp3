@@ -13,6 +13,8 @@ pub mod config;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod conversion_control;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod desktop_tts;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod embedded;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod engine;
@@ -29,6 +31,7 @@ pub mod model_catalog;
 pub mod model_store;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod paths;
+pub mod pcm;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod piper;
 #[cfg(not(target_arch = "wasm32"))]
@@ -38,6 +41,7 @@ pub mod text;
 pub mod toc;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tts;
+pub mod tts_preferences;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tts_runtime;
 #[cfg(not(target_arch = "wasm32"))]

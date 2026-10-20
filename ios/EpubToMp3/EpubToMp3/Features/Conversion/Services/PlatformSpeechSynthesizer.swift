@@ -1,6 +1,40 @@
 import AVFoundation
 import Foundation
 
+/// Pure selection over installed voices; never resolves an identifier that could
+/// trigger a voice download. A segment retains the selected voice object.
+enum InstalledSpeechVoicePolicy {
+    struct Voice: Equatable {
+        let identifier: String
+        let name: String
+        let language: String
+        let isCompact: Bool
+    }
+
+    static func select(language: String, voices: [Voice]) -> String? {
+        let locale = language.replacingOccurrences(of: "_", with: "-").lowercased()
+        let regionSpecified = locale.contains("-")
+        let preferredLocale = ["pt": "pt-br", "en": "en-us", "es": "es-es"][locale]
+        let compatible = voices.filter {
+            let voiceLocale = $0.language.replacingOccurrences(of: "_", with: "-").lowercased()
+            return regionSpecified ? voiceLocale == locale
+                : voiceLocale.split(separator: "-").first.map(String.init) == locale
+        }
+        func rank(_ voice: Voice) -> Int {
+            let voiceLocale = voice.language.replacingOccurrences(of: "_", with: "-").lowercased()
+            if (locale == "pt" || locale == "pt-br"), voiceLocale == "pt-br",
+               voice.name.caseInsensitiveCompare("Luciana") == .orderedSame {
+                return 0
+            }
+            return (voiceLocale == preferredLocale ? 1 : 3) + (voice.isCompact ? 0 : 1)
+        }
+        return compatible.sorted {
+            let lhs = rank($0), rhs = rank($1)
+            return lhs == rhs ? $0.identifier < $1.identifier : lhs < rhs
+        }.first?.identifier
+    }
+}
+
 /// Apple supplies PCM only; Rust owns provider policy, encoding, and artifacts.
 final class PlatformSpeechSynthesizer: @unchecked Sendable {
     private let requestLock: NSLock
@@ -57,15 +91,12 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
             lock.lock(); let alreadyFinished = finished; lock.unlock()
             guard !alreadyFinished else { return }
             let locale = language.replacingOccurrences(of: "_", with: "-")
-            let regionSpecified = locale.contains("-")
-            let voices = AVSpeechSynthesisVoice.speechVoices().filter {
-                regionSpecified ? $0.language.caseInsensitiveCompare(locale) == .orderedSame
-                    : $0.language.split(separator: "-").first?.lowercased() == locale.lowercased()
-            }
-            let preferredLocale = ["pt": "pt-BR", "en": "en-US", "es": "es-ES"][locale.lowercased()]
-            let compact = voices.filter { $0.quality == .default }
-            let candidates = compact.isEmpty ? voices : compact
-            guard let voice = candidates.first(where: { $0.language == preferredLocale }) ?? candidates.first else {
+            let voices = AVSpeechSynthesisVoice.speechVoices()
+            let selected = InstalledSpeechVoicePolicy.select(language: locale, voices: voices.map {
+                .init(identifier: $0.identifier, name: $0.name, language: $0.language,
+                      isCompact: $0.quality == .default)
+            })
+            guard let voice = voices.first(where: { $0.identifier == selected }) else {
                 finish(error: Failure("No installed system voice for \(locale).")); return
             }
             let synth = AVSpeechSynthesizer()

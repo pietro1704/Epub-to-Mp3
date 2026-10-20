@@ -1,3 +1,4 @@
+import '../models/tts_preferences.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -39,6 +40,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final notifier = ref.read(settingsProvider.notifier);
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final preferences = settings.ttsPreferences;
+    final primaryOptions = <String, TtsSelection>{
+      for (final selection in [
+        TtsSelection.faber,
+        TtsSelection.edge,
+        TtsSelection.system,
+        preferences.primary,
+      ])
+        jsonEncode(selection.toJson()): selection,
+    };
+    final secondaryOptions = <String, TtsSelection>{
+      for (final selection in [
+        TtsSelection.faber,
+        TtsSelection.edge,
+        TtsSelection.system,
+        ?preferences.secondary,
+      ])
+        if (jsonEncode(selection.toJson()) !=
+            jsonEncode(preferences.primary.toJson()))
+          jsonEncode(selection.toJson()): selection,
+    };
+    String selectionLabel(TtsSelection selection) {
+      if (jsonEncode(selection.toJson()) ==
+          jsonEncode(TtsSelection.faber.toJson())) {
+        return t.ttsFaberOffline;
+      }
+      if (jsonEncode(selection.toJson()) ==
+          jsonEncode(TtsSelection.edge.toJson())) {
+        return t.ttsEdgeOnline;
+      }
+      if (selection.engine == 'system') return t.ttsSystemOffline;
+      return selection.displayName;
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(t.settingsTitle)),
@@ -48,15 +82,102 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // ── Audio Engine ──
           _SectionHeader(t.audioEngineSection),
           Card(
-            child: SwitchListTile(
-              secondary: Icon(Icons.memory, color: cs.primary),
-              title: Text(t.useBuiltInEngine),
-              subtitle: Text(t.useBuiltInEngineDesc, style: tt.bodySmall),
-              value: settings.useEmbeddedRuntime,
-              onChanged: (v) => notifier.setUseEmbeddedRuntime(v),
+            child: Column(
+              children: [
+                DropdownButtonFormField<String>(
+                  key: ValueKey(
+                    'primary-${jsonEncode(preferences.primary.toJson())}',
+                  ),
+                  initialValue: jsonEncode(preferences.primary.toJson()),
+                  decoration: InputDecoration(labelText: t.ttsPrimaryNarration),
+                  items: primaryOptions.entries
+                      .map(
+                        (entry) => DropdownMenuItem(
+                          value: entry.key,
+                          child: Text(selectionLabel(entry.value)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (key) {
+                    final selected = primaryOptions[key];
+                    if (selected == null) return;
+                    notifier.setTtsPreferences(
+                      TtsPreferences(
+                        primary: selected,
+                        secondary:
+                            jsonEncode(preferences.secondary?.toJson()) == key
+                            ? null
+                            : preferences.secondary,
+                        allowOnlineFallback: preferences.allowOnlineFallback,
+                        policyVersion: preferences.policyVersion,
+                      ),
+                    );
+                  },
+                ),
+                DropdownButtonFormField<String>(
+                  key: ValueKey(
+                    'secondary-${jsonEncode(preferences.primary.toJson())}-${jsonEncode(preferences.secondary?.toJson())}',
+                  ),
+                  initialValue: preferences.secondary == null
+                      ? 'none'
+                      : jsonEncode(preferences.secondary!.toJson()),
+                  decoration: InputDecoration(
+                    labelText: t.ttsSecondaryNarration,
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: 'none',
+                      child: Text(t.ttsNoSecondary),
+                    ),
+                    ...secondaryOptions.entries.map(
+                      (entry) => DropdownMenuItem(
+                        value: entry.key,
+                        enabled:
+                            entry.value.engine != 'edge' ||
+                            preferences.allowOnlineFallback,
+                        child: Text(selectionLabel(entry.value)),
+                      ),
+                    ),
+                  ],
+                  onChanged: (key) {
+                    notifier.setTtsPreferences(
+                      TtsPreferences(
+                        primary: preferences.primary,
+                        secondary: secondaryOptions[key],
+                        allowOnlineFallback: preferences.allowOnlineFallback,
+                        policyVersion: 2,
+                      ),
+                    );
+                  },
+                ),
+                SwitchListTile(
+                  title: Text(t.ttsAllowOnlineSecondary),
+                  subtitle: Text(t.ttsOnlineSecondaryDescription),
+                  value: settings.ttsPreferences.allowOnlineFallback,
+                  onChanged: (value) {
+                    final prefs = settings.ttsPreferences;
+                    notifier.setTtsPreferences(
+                      TtsPreferences(
+                        primary: prefs.primary,
+                        secondary: !value && prefs.secondary?.engine == 'edge'
+                            ? null
+                            : prefs.secondary,
+                        allowOnlineFallback: value,
+                        policyVersion: prefs.policyVersion,
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
-          _FooterText(t.audioEngineFooter),
+          TextButton(
+            key: const ValueKey('tts-use-recommended-defaults'),
+            onPressed: () => notifier.setTtsPreferences(
+              const TtsPreferences.appDefaults(),
+            ),
+            child: Text(t.ttsUseRecommendedDefaults),
+          ),
           const _TtsModelManagerCard(),
           const SizedBox(height: 20),
 

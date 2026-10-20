@@ -209,65 +209,11 @@ fn invalid_audio(message: impl Into<String>) -> AudioError {
     AudioError::Validation(message.into())
 }
 
-/// Collect a finished rusty_mp3 1.0.0 encoder without changing MPEG audio payloads.
-/// That producer counts the Info/Xing metadata frame itself, unlike the audio-frame
-/// count consumed by MPEG readers. Normalize only this known encoder's output.
+/// Collect native encoder output using the same portable metadata contract as WASM.
 pub(crate) fn collect_rusty_mp3_output(
     encoder: &mut rusty_mp3::Mp3Encoder,
 ) -> Result<Vec<u8>, AudioError> {
-    let mut encoded = Vec::new();
-    let mut packets = 0u32;
-    let mut count_offset = None;
-    loop {
-        let packet = match encoder.next_packet() {
-            Ok(packet) => packet,
-            Err(rusty_mp3::Error::Eof) => break,
-            Err(error) => {
-                return Err(invalid_audio(format!(
-                    "MP3 encoder did not finish: {error}"
-                )))
-            }
-        };
-        let bytes: [u8; 4] = packet
-            .get(..4)
-            .ok_or_else(|| invalid_audio("MP3 encoder emitted a short frame"))?
-            .try_into()
-            .unwrap();
-        let header = rusty_mp3::header::FrameHeader::parse(bytes).map_err(|error| {
-            invalid_audio(format!("MP3 encoder emitted an invalid frame: {error}"))
-        })?;
-        if header.frame_size() != packet.len() {
-            return Err(invalid_audio("MP3 encoder emitted an incomplete frame"));
-        }
-        if packets == 0 {
-            let tag = 4 + usize::from(header.crc_protected) * 2 + header.side_info_len();
-            let metadata = packet
-                .get(tag..tag + 16)
-                .ok_or_else(|| invalid_audio("MP3 encoder omitted Info/Xing counts"))?;
-            if (&metadata[..4] != b"Info" && &metadata[..4] != b"Xing")
-                || metadata[4..8] != 3u32.to_be_bytes()
-            {
-                return Err(invalid_audio(
-                    "MP3 encoder emitted unexpected Info/Xing flags",
-                ));
-            }
-            count_offset = Some(tag + 8);
-        }
-        packets = packets
-            .checked_add(1)
-            .ok_or_else(|| invalid_audio("MP3 encoder frame count overflows"))?;
-        encoded.extend_from_slice(&packet);
-    }
-    let field = count_offset.ok_or_else(|| invalid_audio("MP3 encoder emitted no frames"))?;
-    let declared = u32::from_be_bytes(encoded[field..field + 4].try_into().unwrap());
-    let declared_bytes = u32::from_be_bytes(encoded[field + 4..field + 8].try_into().unwrap());
-    if packets < 2 || declared != packets || u64::from(declared_bytes) != encoded.len() as u64 {
-        return Err(invalid_audio(
-            "MP3 encoder Info/Xing counts do not match emitted frames",
-        ));
-    }
-    encoded[field..field + 4].copy_from_slice(&(packets - 1).to_be_bytes());
-    Ok(encoded)
+    crate::pcm::collect_rusty_mp3_output(encoder).map_err(invalid_audio)
 }
 
 fn native_audio_info(path: &Path) -> Result<Option<NativeAudioInfo>, AudioError> {

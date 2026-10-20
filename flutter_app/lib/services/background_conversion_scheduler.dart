@@ -12,18 +12,18 @@ class BackgroundConversionScheduler {
 
   Future<bool> enqueueChapter({
     required String jobId,
-    required String text,
-    required String voice,
+    required String inputPath,
+    required int chapterIndex,
+    required String optionsJson,
     required String outputPath,
-    String? backendUrl,
   }) async {
     if (!isSupported) return false;
     return await _channel.invokeMethod<bool>('enqueueChapter', {
           'jobId': jobId,
-          'text': text,
-          'voice': voice,
+          'inputPath': inputPath,
+          'chapterIndex': chapterIndex,
+          'optionsJson': optionsJson,
           'outputPath': outputPath,
-          'backendUrl': ?backendUrl,
         }) ??
         false;
   }

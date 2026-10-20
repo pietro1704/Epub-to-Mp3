@@ -17,11 +17,24 @@ use thiserror::Error;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EmbeddedConversionOptions {
     pub job_id: Option<String>,
+    pub tts_preferences: Option<crate::tts_preferences::TtsPreferences>,
+    pub models_root: Option<PathBuf>,
+    pub piper_model: Option<PathBuf>,
+    pub piper_config: Option<PathBuf>,
     pub engine: Option<String>,
     pub voice: Option<String>,
     pub language: Option<String>,
     pub chapter_indices: Option<Vec<String>>,
     pub no_parallel: bool,
+}
+
+/// Allocate a path-safe identity for a fresh conversion without a caller-owned ID.
+pub fn fresh_embedded_job_id() -> String {
+    format!(
+        "embedded-{}-{:032x}",
+        std::process::id(),
+        rand::random::<u128>()
+    )
 }
 
 /// Parsed EPUB metadata exposed before audio conversion.
@@ -120,17 +133,19 @@ impl EmbeddedConversionSession {
             .options
             .job_id
             .clone()
-            .unwrap_or_else(|| format!("embedded-{}", std::process::id()));
+            .unwrap_or_else(fresh_embedded_job_id);
         let worker = ConversionWorker::new(self.config.clone())?;
         worker
             .run(ConversionRequest {
                 input: self.input.clone(),
                 job_id,
+                tts_preferences: self.options.tts_preferences.clone(),
+                models_root: self.options.models_root.clone(),
                 engine: self.options.engine.clone(),
                 voice: self.options.voice.clone(),
                 language: self.options.language.clone(),
-                piper_model: None,
-                piper_config: None,
+                piper_model: self.options.piper_model.clone(),
+                piper_config: self.options.piper_config.clone(),
                 chapter_indices: self.options.chapter_indices.clone(),
                 no_parallel: self.options.no_parallel,
             })

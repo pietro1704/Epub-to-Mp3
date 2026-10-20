@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
+import '../models/tts_preferences.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../models/session_record.dart';
@@ -15,6 +16,7 @@ import '../services/download_manager.dart';
 import '../services/embedded_converter.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
+import '../services/local_conversion_job.dart';
 import '../services/playback_snapshot.dart';
 import '../services/playback_resume_persistence.dart';
 import '../services/resume_store.dart';
@@ -56,6 +58,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   /// of truth — this just nudges the state stream.
   void _emit() {
     state = MirrorAppSettings(_prefs);
+  }
+
+  Future<void> setTtsPreferences(TtsPreferences value) async {
+    await state.setTtsPreferences(value);
+    _emit();
   }
 
   Future<void> setBackendUrl(String v) async {
@@ -203,6 +210,21 @@ final fulltextStoreProvider = Provider<FulltextStore>((ref) {
 final sessionsProvider = FutureProvider<List<SessionRecord>>((ref) async {
   final api = ref.watch(apiClientProvider);
   return api.fetchSessions(last: 50);
+});
+
+/// Reload persisted local history when entering Jobs, including after a
+/// conversion finishes while the IndexedStack keeps the tab mounted.
+final localConversionJobStoreProvider = Provider<LocalConversionJobStore>((
+  ref,
+) {
+  return LocalConversionJobStore(ref.watch(sharedPrefsProvider));
+});
+
+final localConversionHistoryProvider = FutureProvider<LocalConversionHistory>((
+  ref,
+) {
+  ref.watch(rootTabIndexProvider.select((index) => index == 3));
+  return ref.watch(localConversionJobStoreProvider).loadHistory();
 });
 
 final jobSnapshotProvider = FutureProvider.family<JobSnapshot, String>((

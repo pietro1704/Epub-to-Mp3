@@ -3,11 +3,12 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(feature = "onnxruntime")]
+#[cfg(all(feature = "onnxruntime", not(feature = "piper-inference")))]
 use ort::{ep, session::Session};
 #[cfg(feature = "piper-inference")]
 use piper_rs::Piper;
 
+static SESSION_IDENTITY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "piper-inference")]
@@ -97,6 +98,25 @@ pub extern "C" fn piper_runtime_init(
         if !Path::new(config.as_ref()).is_file() {
             return Err("Piper voice config is missing".to_owned());
         }
+        let identity = [model.as_ref(), config.as_ref()]
+            .iter()
+            .map(|path| {
+                let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+                Ok(format!(
+                    "{}:{}:{:?}",
+                    path,
+                    metadata.len(),
+                    metadata.modified().map_err(|e| e.to_string())?
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?
+            .join("|");
+        let mut selected = SESSION_IDENTITY
+            .lock()
+            .map_err(|_| "Piper session lock poisoned".to_owned())?;
+        if INITIALIZED.load(Ordering::Acquire) && selected.as_deref() == Some(identity.as_str()) {
+            return Ok(());
+        }
         let config_data = fs::read_to_string(config.as_ref())
             .map_err(|error| format!("Piper voice config cannot be read: {error}"))?;
         let config_json: serde_json::Value = serde_json::from_str(&config_data)
@@ -108,7 +128,7 @@ pub extern "C" fn piper_runtime_init(
         if sample_rate == 0 {
             return Err("Piper voice config has an invalid sample rate".to_owned());
         }
-        #[cfg(feature = "onnxruntime")]
+        #[cfg(all(feature = "onnxruntime", not(feature = "piper-inference")))]
         {
             let _session = Session::builder()
                 .map_err(|error| error.to_string())?
@@ -127,6 +147,7 @@ pub extern "C" fn piper_runtime_init(
                 .map_err(|_| "Piper runtime lock poisoned".to_owned())?
                 .replace(piper);
         }
+        *selected = Some(identity);
         Ok::<(), String>(())
     });
     match result {
@@ -206,6 +227,9 @@ pub extern "C" fn piper_synthesize(
 #[no_mangle]
 pub extern "C" fn piper_runtime_shutdown() {
     INITIALIZED.store(false, Ordering::Release);
+    if let Ok(mut identity) = SESSION_IDENTITY.lock() {
+        identity.take();
+    }
     #[cfg(feature = "piper-inference")]
     if let Some(runtime) = RUNTIME.get() {
         if let Ok(mut runtime) = runtime.lock() {

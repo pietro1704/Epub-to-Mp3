@@ -10,6 +10,12 @@
   ],
   "defaultOptions" : {
     "codeCoverage" : false,
+    "environmentVariableEntries" : [
+      {
+        "key" : "EPUB2MP3_PIPER_TEST_MODEL_ROOT",
+        "value" : "$(EPUB2MP3_PIPER_TEST_MODEL_ROOT)"
+      }
+    ],
     "performanceAntipatternCheckerEnabled" : true,
     "targetForVariableExpansion" : {
       "containerPath" : "container:EpubToMp3.xcodeproj",

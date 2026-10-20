@@ -5,6 +5,7 @@ import 'dart:io';
 import '../models/ebook_fulltext.dart';
 import 'embedded_converter.dart';
 import 'local_conversion_job.dart';
+import '../models/tts_preferences.dart';
 import 'playback_chapter_window.dart';
 import 'growing_chapter_audio_source.dart';
 
@@ -27,6 +28,8 @@ class RustPlaybackConversionService {
   }
 
   Future<LocalConversionJob> convert({
+    String? optionsJson,
+    Future<void> Function(List<TtsSelection>)? onSecondaryUsed,
     required String bookId,
     required String jobId,
     required String inputPath,
@@ -61,13 +64,20 @@ class RustPlaybackConversionService {
     var currentChapter = initialChapterIndex;
     var streamClosed = false;
     var cancelledByOwner = false;
-    String? activeStreamingRequest;
-    int? activeStreamingChapter;
-    Future<void> cancelActiveStream() async {
-      final request = activeStreamingRequest;
-      if (request != null && converter is StreamingChapterConverter) {
+    String? activeNativeRequest;
+    int? activeNativeChapter;
+    var activeRequestStreams = false;
+    Future<void> cancelActiveConversion() async {
+      final request = activeNativeRequest;
+      if (request != null &&
+          activeRequestStreams &&
+          converter is StreamingChapterConverter) {
         await (converter as StreamingChapterConverter).cancelStreamingChapter(
           request,
+        );
+      } else if (request != null && converter is CancellableEmbeddedConverter) {
+        await (converter as CancellableEmbeddedConverter).cancelConversion(
+          outputPath: request,
         );
       }
     }
@@ -76,21 +86,21 @@ class RustPlaybackConversionService {
     _cancelCurrent = () async {
       cancelledByOwner = true;
       if (!windowChanged.isCompleted) windowChanged.complete();
-      await cancelActiveStream();
+      await cancelActiveConversion();
     };
     final subscription = playbackChapterChanges.listen(
       (index) {
         currentChapter = index;
-        if (activeStreamingChapter != null &&
-            !window.contains(index, activeStreamingChapter)) {
-          unawaited(cancelActiveStream());
+        if (activeNativeChapter != null &&
+            !window.contains(index, activeNativeChapter)) {
+          unawaited(cancelActiveConversion());
         }
         if (!windowChanged.isCompleted) windowChanged.complete();
         windowChanged = Completer<void>();
       },
       onDone: () {
         streamClosed = true;
-        unawaited(cancelActiveStream());
+        unawaited(cancelActiveConversion());
         if (!windowChanged.isCompleted) windowChanged.complete();
       },
     );
@@ -112,8 +122,41 @@ class RustPlaybackConversionService {
               bookId: bookId,
               jobId: jobId,
               chapters: specs,
+              conversionOptionsJson:
+                  optionsJson ?? const TtsPreferences.appDefaults().optionsJson(),
             )
           : await coordinator.reconcileChapters(restored, specs);
+
+      if (job.conversionOptionsJson == null) {
+        if (job.completedOutputs.isNotEmpty ||
+            job.chapters.any((chapter) => chapter.status == 'completed')) {
+          throw EmbeddedConversionFailure(
+            'RESUME_VOICE_UNKNOWN',
+            'This older conversion has no recorded voice. Start a new conversion to avoid mixing narration voices.',
+          );
+        }
+        job = job.copyWith(
+          conversionOptionsJson:
+              optionsJson ?? const TtsPreferences.appDefaults().optionsJson(),
+        );
+        await coordinator.store.save(job);
+      }
+      final captured = Map<String, dynamic>.from(
+        jsonDecode(job.conversionOptionsJson!) as Map,
+      );
+      if (optionsJson != null) {
+        final currentPaths = Map<String, dynamic>.from(
+          jsonDecode(optionsJson) as Map,
+        );
+        for (final key in ['models_root', 'espeak_data_directory']) {
+          if (currentPaths[key] != null) captured[key] = currentPaths[key];
+        }
+      }
+      final capturedOptionsJson = jsonEncode(captured);
+      if (capturedOptionsJson != job.conversionOptionsJson) {
+        job = job.copyWith(conversionOptionsJson: capturedOptionsJson);
+        await coordinator.store.save(job);
+      }
 
       for (final chapter in job.chapters.where(
         (chapter) => chapter.status == 'failed',
@@ -164,13 +207,22 @@ class RustPlaybackConversionService {
           final streaming =
               converter is StreamingChapterConverter &&
               onChapterStreaming != null;
-          activeStreamingRequest = streaming ? chapterDirectory.path : null;
-          activeStreamingChapter = streaming ? chapterIndex : null;
+          activeRequestStreams = streaming;
+          activeNativeRequest = chapterDirectory.path;
+          activeNativeChapter = chapterIndex;
+          final chapterOptions = Map<String, dynamic>.from(
+            jsonDecode(capturedOptionsJson) as Map,
+          );
+          if (job.ttsPolicyState != null) {
+            chapterOptions['tts_policy_state'] = job.ttsPolicyState;
+          }
+          final chapterOptionsJson = jsonEncode(chapterOptions);
           final result = streaming
               ? await (converter as StreamingChapterConverter).streamChapter(
                   inputPath: inputPath,
                   outputPath: chapterDirectory.path,
                   chapterIndex: chapterIndex,
+                  optionsJson: chapterOptionsJson,
                   onFirstAudio: (source) async {
                     if (!isActive() ||
                         cancelledByOwner ||
@@ -178,7 +230,7 @@ class RustPlaybackConversionService {
                       source.fail(
                         StateError('Chapter left the playback window'),
                       );
-                      await cancelActiveStream();
+                      await cancelActiveConversion();
                       return;
                     }
                     await onChapterStreaming(chapter, source);
@@ -189,9 +241,21 @@ class RustPlaybackConversionService {
                   inputPath: inputPath,
                   outputPath: chapterDirectory.path,
                   chapterIndex: chapterIndex,
+                  optionsJson: chapterOptionsJson,
                 );
-          activeStreamingRequest = null;
-          activeStreamingChapter = null;
+          activeNativeRequest = null;
+          activeNativeChapter = null;
+          if (result.ttsPolicyState != null) {
+            job = job.copyWith(ttsPolicyState: result.ttsPolicyState);
+            await coordinator.store.save(job);
+          }
+          if (!job.fallbackNoticeShown &&
+              onSecondaryUsed != null &&
+              result.fallbackUsed) {
+            await onSecondaryUsed(result.usedSelections);
+            job = job.copyWith(fallbackNoticeShown: true);
+            await coordinator.store.save(job);
+          }
           final audio = File(result.path);
           if (!await audio.exists() || await audio.length() == 0) {
             throw EmbeddedConversionFailure(
@@ -209,6 +273,8 @@ class RustPlaybackConversionService {
                 job,
                 chapterIndex,
                 audio.path,
+                usedSelections: result.usedSelections,
+                fallbackUsed: result.fallbackUsed,
               );
             } else {
               await chapterDirectory.delete(recursive: true);
@@ -222,13 +288,15 @@ class RustPlaybackConversionService {
             job,
             chapterIndex,
             audio.path,
+            usedSelections: result.usedSelections,
+            fallbackUsed: result.fallbackUsed,
           );
           await _writeManifest(root, job, selected);
           await onChapterCompleted?.call(chapter, audio.path, job);
           await onUpdate?.call(job);
         } catch (error) {
-          activeStreamingRequest = null;
-          activeStreamingChapter = null;
+          activeNativeRequest = null;
+          activeNativeChapter = null;
           if (streamingCancelledByWindow(
             streamClosed || cancelledByOwner,
             isActive(),
@@ -258,7 +326,7 @@ class RustPlaybackConversionService {
       }
       return job;
     } finally {
-      await cancelActiveStream();
+      await cancelActiveConversion();
       await subscription.cancel();
       _cancelCurrent = null;
     }
@@ -274,6 +342,13 @@ class RustPlaybackConversionService {
       'bookId': job.bookId,
       'jobId': job.jobId,
       'status': job.status.name,
+      'conversionOptionsJson': ?job.conversionOptionsJson,
+      'ttsPolicyState': ?job.ttsPolicyState,
+      'usedSelections': job.usedSelections
+          .map((selection) => selection.toJson())
+          .toList(),
+      'fallbackNoticeShown': job.fallbackNoticeShown,
+      'fallbackUsed': job.fallbackUsed,
       'chapters': chapters.map((chapter) {
         final state = job.chapters
             .where((item) => item.index == chapter.index)
@@ -282,6 +357,12 @@ class RustPlaybackConversionService {
           'index': chapter.index,
           'name': chapter.displayTitle,
           'status': state?.status ?? 'pending',
+          'fallbackUsed': state?.fallbackUsed ?? false,
+          'usedSelections':
+              state?.usedSelections
+                  .map((selection) => selection.toJson())
+                  .toList() ??
+              [],
           if (state?.outputPath != null) 'audioPath': state!.outputPath,
           if (state?.error != null) 'error': state!.error,
         };

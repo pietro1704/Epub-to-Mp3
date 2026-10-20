@@ -22,6 +22,9 @@ typedef bool (*ConverterPlatformTtsCallback)(
  * NULL callback removes the adapter. An unconfigured session stays Edge-only. */
 bool converter_session_set_platform_tts_v1(
     ConverterSession *session, ConverterPlatformTtsCallback callback, void *context);
+/* Configure the owned installed Linux/Windows backend while the session is idle. */
+bool converter_session_set_desktop_platform_tts_v1(ConverterSession *session);
+
 #ifdef __cplusplus
 }
 #endif

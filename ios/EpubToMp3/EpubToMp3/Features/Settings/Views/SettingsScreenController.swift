@@ -92,7 +92,7 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: section) else { return 0 }
         switch section {
         case .runtime:
-            return AudioEnginePreference.supportedPreferences.contains(.piper) ? 3 : 2
+            return 5
         case .backend:
             return 2
         case .playback:
@@ -157,6 +157,8 @@ final class SettingsScreenController: UITableViewController {
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.audioEngineChoice")
                 content.secondaryText = settings.audioEngine.displayName
+                cell.accessibilityIdentifier = "settings.tts.primary"
+                cell.accessibilityValue = settings.audioEngine.displayName
                 content.image = UIImage(systemName: "waveform")
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
@@ -176,12 +178,33 @@ final class SettingsScreenController: UITableViewController {
                 cell.accessibilityIdentifier = "settings.allowCellularAudio"
                 return cell
             }
+            if indexPath.row == 3 {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                var content = cell.defaultContentConfiguration()
+                content.text = L10n.string("settings.secondaryVoice")
+                content.secondaryText = settings.secondaryAudioEngine?.displayName ?? L10n.string("settings.noSecondary")
+                cell.accessibilityIdentifier = "settings.tts.secondary"
+                cell.accessibilityValue = content.secondaryText
+                cell.contentConfiguration = content
+                cell.accessoryType = .disclosureIndicator
+                return cell
+            }
+            if indexPath.row == 4 {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+                cell.configure(title: L10n.string("settings.onlineFallback"),
+                               subtitle: L10n.string("settings.onlineFallbackDescription"),
+                               isOn: settings.allowOnlineAudioFallback, accessibilityIdentifier: "settings.tts.onlineConsent")
+                cell.onValueChanged = { [weak self] isAllowed in
+                    guard let self else { return }
+                    self.settings.allowOnlineAudioFallback = isAllowed
+                    tableView.reloadData()
+                }
+                return cell
+            }
             let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
             var content = cell.defaultContentConfiguration()
             content.text = L10n.string("settings.piperInstall")
-            let model = AppSettings.ttsModelsRoot()?.appendingPathComponent("pt_BR-edresson-low/model.onnx")
-            content.secondaryText = model.map { FileManager.default.fileExists(atPath: $0.path) }
-                == true ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperNotInstalled")
+            content.secondaryText = AppSettings.isFaberInstalled() ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperNotInstalled")
             content.image = UIImage(systemName: "arrow.down.circle")
             cell.contentConfiguration = content
             cell.accessoryType = .disclosureIndicator
@@ -236,7 +259,7 @@ final class SettingsScreenController: UITableViewController {
             for engine in AudioEnginePreference.supportedPreferences {
                 alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
                     self?.settings.audioEngine = engine
-                    tableView.reloadRows(at: [indexPath], with: .automatic)
+                    tableView.reloadData()
                 })
             }
             alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
@@ -245,6 +268,23 @@ final class SettingsScreenController: UITableViewController {
             present(alert, animated: true)
         case .runtime where indexPath.row == 2 && AudioEnginePreference.supportedPreferences.contains(.piper):
             installPiperModel()
+        case .runtime where indexPath.row == 3:
+            let alert = UIAlertController(title: L10n.string("settings.secondaryVoice"), message: nil, preferredStyle: .actionSheet)
+            alert.addAction(UIAlertAction(title: L10n.string("settings.noSecondary"), style: .default) { [weak self] _ in
+                self?.settings.secondaryAudioEngine = nil
+                tableView.reloadData()
+            })
+            for engine in settings.selectableSecondaryAudioEngines {
+                alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
+                    guard let self, self.settings.selectableSecondaryAudioEngines.contains(engine) else { return }
+                    self.settings.secondaryAudioEngine = engine
+                    tableView.reloadData()
+                })
+            }
+            alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+            alert.popoverPresentationController?.sourceView = tableView
+            alert.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
+            present(alert, animated: true)
         case .reader:
             handleReaderSelection(row: indexPath.row)
         case .playback:
@@ -266,7 +306,7 @@ final class SettingsScreenController: UITableViewController {
         present(alert, animated: true)
         Task.detached {
             let result = Result { try ConverterFFIAdapter().installTtsModelFromCatalog(
-                modelID: "pt_BR-edresson-low", root: root.path
+                modelID: "pt_BR-faber-medium", root: root.path
             ) }
             await MainActor.run {
                 alert.dismiss(animated: true)

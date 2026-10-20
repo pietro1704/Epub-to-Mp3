@@ -13,3 +13,9 @@
     public boolean onNativeAudioChunk(java.lang.String, int, int, java.lang.String);
     native <methods>;
 }
+
+# WorkManager conversions use the same Rust-to-Kotlin speech callback.
+-keepclassmembers class com.pietrocode.epubtomp3.flutter_app.BackgroundChapterWorker {
+    public boolean synthesizeNativeSpeech(java.lang.String, java.lang.String, java.lang.String, java.lang.String, long);
+    native <methods>;
+}

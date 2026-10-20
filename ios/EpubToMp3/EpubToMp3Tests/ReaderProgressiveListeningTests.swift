@@ -80,7 +80,11 @@ private final class ProgressiveListeningFixture {
         bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onBrowseLibrary: nil,
         conversionExecutor: { [weak self] _, job, start, end, control, options, _, callback, _ in
             guard let self else { throw CancellationError() }
-            XCTAssertEqual(options?.engine, "edge")
+            XCTAssertEqual(options?.engine, "piper")
+            XCTAssertEqual(options?.ttsPreferences?.primary.modelID, "pt_BR-faber-medium")
+            XCTAssertEqual(options?.ttsPreferences?.secondary?.engine, "system")
+            XCTAssertEqual(options?.ttsPreferences?.policyVersion, 2)
+            XCTAssertEqual(options?.ttsPreferences?.allowOnlineFallback, false)
             control.updatePlaybackWindow(currentChapter: Int(start), chaptersAhead: 1)
             self.playbackControl = control
             self.calls += 1; self.job = job; self.requestedStart = start; self.requestedEnd = end

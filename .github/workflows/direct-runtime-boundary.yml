@@ -1,0 +1,39 @@
+name: Direct runtime boundary runner
+
+on:
+  push:
+    branches: [master, 'feature/**']
+    paths:
+      - 'scripts/check_direct_runtime_boundary.sh'
+      - 'scripts/test_direct_runtime_boundary.rb'
+      - '.github/workflows/direct-runtime-boundary.yml'
+  pull_request:
+    paths:
+      - 'scripts/check_direct_runtime_boundary.sh'
+      - 'scripts/test_direct_runtime_boundary.rb'
+      - '.github/workflows/direct-runtime-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      MISE_ENABLE_TOOLS: ruby
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install project Ruby toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Exercise the actual Bash runner with isolated child tools
+        run: mise exec -- ruby scripts/test_direct_runtime_boundary.rb

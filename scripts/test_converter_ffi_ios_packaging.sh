@@ -30,6 +30,19 @@ xcrun clang -target "$arch-apple-ios15.0-simulator" -dynamiclib \
   -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
   "$root/scripts/fixtures/incomplete_converter_ffi.c" -o "$bundle_root/incomplete.dylib"
 expect_rejection "$bundle_root/incomplete.dylib" "$arch" 7
+# A legacy library can expose every generic ABI symbol while lacking Piper.
+for symbol in converter_session_open converter_session_metadata_json converter_session_free \
+    converter_string_free converter_last_error converter_tts_models_json \
+    converter_tts_default_engine converter_session_convert_json; do
+  printf 'void %s(void) {}\n' "$symbol"
+done > "$bundle_root/non-piper.c"
+xcrun clang -target "$arch-apple-ios15.0-simulator" -dynamiclib \
+  -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+  "$bundle_root/non-piper.c" -o "$bundle_root/non-piper.dylib"
+CONVERTER_FFI_ENABLE_PIPER=1 expect_rejection "$bundle_root/non-piper.dylib" "$arch" 7
+CONVERTER_FFI_ENABLE_PIPER=0 CONVERTER_FFI_IOS_ARTIFACT="$bundle_root/non-piper.dylib" \
+  CONVERTER_FFI_IOS_ARCH="$arch" CONVERTER_FFI_IOS_PLATFORM=7 bash "$verify"
+
 CONVERTER_FFI_IOS_ARTIFACT="$device" bash "$verify"
 CONVERTER_FFI_IOS_ARTIFACT="$simulator" CONVERTER_FFI_IOS_ARCH="$arch" \
   CONVERTER_FFI_IOS_PLATFORM=7 bash "$verify"
