@@ -56,7 +56,8 @@ final class FaberNativeInferenceTests: XCTestCase {
         var providers: [RustConversionCoordinator.ConversionProgressEvent] = []
         let started = ProcessInfo.processInfo.systemUptime
         let result = try await RustConversionCoordinator(
-            adapter: adapter, fileManager: FaberInferenceFileManager(supportRoot: root)
+            adapter: adapter,
+            outputStore: RustConversionOutputStore(root: root.appendingPathComponent("outputs", isDirectory: true))
         ).convert(
             bookURL: book, chapterStart: 0, chapterEnd: 1, options: options, playbackControl: control,
             onProgress: { event in if event.modelId != nil { providers.append(event) } },
@@ -288,25 +289,6 @@ final class FaberNativeInferenceTests: XCTestCase {
         return peak
     }
 
-}
-
-private final class FaberInferenceFileManager: FileManager, @unchecked Sendable {
-    private let supportRoot: URL
-
-    init(supportRoot: URL) {
-        self.supportRoot = supportRoot
-        super.init()
-    }
-
-    override func url(
-        for directory: SearchPathDirectory, in domain: SearchPathDomainMask,
-        appropriateFor url: URL?, create shouldCreate: Bool
-    ) throws -> URL {
-        if directory == .applicationSupportDirectory && domain == .userDomainMask {
-            return supportRoot
-        }
-        return try super.url(for: directory, in: domain, appropriateFor: url, create: shouldCreate)
-    }
 }
 
 private final class FaberInferenceEvidence: @unchecked Sendable {
