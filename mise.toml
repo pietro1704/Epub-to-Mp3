@@ -1242,6 +1242,7 @@ if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
 fi
 DD="${IOS_DERIVED_DATA_PATH:-$APPLE_DERIVED_DATA_PATH}"
 run_simulator_tests() {
+  # Bash 3.2 with nounset needs guarded expansion for optional empty arrays.
   local only=()
   local test_settings=()
   if [[ "${EPUB2MP3_NATIVE_TTS_TEST:-0}" == "1" ]]; then
@@ -1256,13 +1257,13 @@ run_simulator_tests() {
   if [[ -n "${IOS_TESTS:-}" ]]; then
     local tests=()
     IFS=',' read -r -a tests <<< "$IOS_TESTS"
-    for test in "${tests[@]}"; do
+    for test in ${tests[@]+"${tests[@]}"}; do
       only+=("-only-testing:$test")
     done
   fi
   if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
     mise exec -- ruby ../../scripts/native_job.rb build -- xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
-      -destination "$DEST" -derivedDataPath "$DD" -jobs 1 -parallel-testing-enabled NO "${test_settings[@]}" build-for-testing
+      -destination "$DEST" -derivedDataPath "$DD" -jobs 1 -parallel-testing-enabled NO ${test_settings[@]+"${test_settings[@]}"} build-for-testing
   fi
   # The bundled Rust Simulator build must run with every Simulator shut down.
   # Build first; boot only for the XCTest execution phase.
@@ -1272,7 +1273,7 @@ run_simulator_tests() {
   if [[ -n "${IOS_TESTS:-}" ]]; then
     xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
       -destination "$DEST" -derivedDataPath "$DD" -parallel-testing-enabled NO \
-      "${test_settings[@]}" test-without-building "${only[@]}"
+      ${test_settings[@]+"${test_settings[@]}"} test-without-building ${only[@]+"${only[@]}"}
     return
   fi
   if [[ "${IOS_TEST_SHARDS:-4}" =~ ^[1-9][0-9]*$ ]]; then
@@ -1297,20 +1298,20 @@ run_simulator_tests() {
     local -a isolated_classes=()
     local -a grouped_classes=()
     local class_name
-    for class_name in "${unit_classes[@]}" "${ui_classes[@]}"; do
+    for class_name in ${unit_classes[@]+"${unit_classes[@]}"} ${ui_classes[@]+"${ui_classes[@]}"}; do
       if [[ "$class_name" == *Audiobook* || "$class_name" == *AudioPlayerStreamingTests || "$class_name" == *AudioPlayerSleepTimerTests || "$class_name" == *AudioPlayerSpeechFallbackTests || "$class_name" == *AudioUITests ]]; then
         isolated_classes+=("$class_name")
       else
         grouped_classes+=("$class_name")
       fi
     done
-    for class_name in "${isolated_classes[@]}"; do
+    for class_name in ${isolated_classes[@]+"${isolated_classes[@]}"}; do
       echo "ios:simulator:test → isolated $class_name"
       xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
         -destination "$DEST" -derivedDataPath "$DD" -parallel-testing-enabled NO \
-        "${test_settings[@]}" test-without-building "-only-testing:$class_name"
+        ${test_settings[@]+"${test_settings[@]}"} test-without-building "-only-testing:$class_name"
     done
-    local -a all_classes=("${grouped_classes[@]}")
+    local -a all_classes=(${grouped_classes[@]+"${grouped_classes[@]}"})
     for ((shard_index=0; shard_index<shard_count; shard_index++)); do
       local -a shard_only=()
       local class_position
@@ -1319,17 +1320,17 @@ run_simulator_tests() {
           shard_only+=("-only-testing:${all_classes[$class_position]}")
         fi
       done
-      if [[ -n "${shard_only[*]}" ]]; then
+      if [[ -n "${shard_only[*]-}" ]]; then
         echo "ios:simulator:test → shard $((shard_index + 1))/$shard_count"
         xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
           -destination "$DEST" -derivedDataPath "$DD" \
-          -parallel-testing-enabled NO "${test_settings[@]}" test-without-building "${shard_only[@]}"
+          -parallel-testing-enabled NO ${test_settings[@]+"${test_settings[@]}"} test-without-building ${shard_only[@]+"${shard_only[@]}"}
       fi
     done
     return 0
   fi
   xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
-    -destination "$DEST" -derivedDataPath "$DD" "${test_settings[@]}" test-without-building "${only[@]}"
+    -destination "$DEST" -derivedDataPath "$DD" ${test_settings[@]+"${test_settings[@]}"} test-without-building ${only[@]+"${only[@]}"}
 }
 
 export DEST DD IOS_SKIP_BUILD UDID
