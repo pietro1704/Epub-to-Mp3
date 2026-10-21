@@ -121,7 +121,7 @@ jobs:
   python-tests:
     if: needs.changes.outputs.python == 'true'
     name: Python tests
-    needs: [changes, production-packaging-guard]
+    needs: [changes]
     runs-on: ubuntu-24.04
     env:
       MISE_ENABLE_TOOLS: python
@@ -246,7 +246,7 @@ jobs:
   rust:
     if: needs.changes.outputs.rust == 'true'
     name: Rust
-    needs: [changes, production-packaging-guard]
+    needs: [changes]
     runs-on: ubuntu-24.04
     env:
       MISE_ENABLE_TOOLS: python,rust
@@ -340,7 +340,7 @@ jobs:
   web:
     if: needs.changes.outputs.web == 'true'
     name: Web
-    needs: [changes, production-packaging-guard]
+    needs: [changes]
     runs-on: ubuntu-24.04
     env:
       MISE_ENABLE_TOOLS: ${{ needs.changes.outputs.wasm == 'true' && 'python,node,npm,rust,cargo:wasm-bindgen-cli' || 'python,node,npm' }}
@@ -402,7 +402,7 @@ jobs:
   flutter:
     if: needs.changes.outputs.flutter == 'true'
     name: Flutter
-    needs: [changes, production-packaging-guard]
+    needs: [changes]
     runs-on: ubuntu-24.04
     env:
       MISE_ENABLE_TOOLS: python,flutter
