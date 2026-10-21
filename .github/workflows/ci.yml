@@ -189,7 +189,7 @@ jobs:
           mise exec -- python -m pytest --noconftest -q python_app/tests/test_audio_pause_policy.py
       - name: Exercise legacy HTTP response lifecycle
         if: inputs.full_validation != true
-        run: timeout --signal=TERM --kill-after=10s 60s mise exec -- python -m pytest -v --tb=short -o faulthandler_timeout=10 python_app/tests/test_stream_http_observation.py
+        run: timeout --signal=TERM --kill-after=10s 60s mise exec -- python -m pytest -v --tb=short --maxfail=1 -o faulthandler_timeout=10 python_app/tests/test_stream_http_observation.py
 
       - name: Cache pip
         if: inputs.full_validation == true

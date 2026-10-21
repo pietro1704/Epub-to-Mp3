@@ -19,7 +19,19 @@ def scope(*, headers=(), extensions=None, method="GET", asgi_version="2.0"):
 
 
 async def receive():
-    return {"type": "http.request", "body": b"", "more_body": False}
+    # The request body is consumed; an open connection waits for another event.
+    # Returning http.request repeatedly starves Starlette's disconnect listener.
+    await asyncio.Future()
+
+
+@pytest.mark.asyncio
+async def test_open_connection_receive_is_cooperative_and_cancellable():
+    task = asyncio.create_task(receive())
+    await asyncio.sleep(0)
+    assert not task.done(), "An open connection must wait instead of replaying request events"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, 1)
 
 
 def response_for(tmp_path, store):
@@ -57,18 +69,27 @@ async def test_last_body_is_not_complete_until_send_returns(tmp_path, asgi_versi
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_failed_or_cancelled_send_never_claims_body_sent(tmp_path, cancel):
+@pytest.mark.parametrize("asgi_version", ["2.0", "2.4"])
+async def test_failed_or_cancelled_send_never_claims_body_sent(tmp_path, cancel, asgi_version):
     store = StreamHTTPObservationStore()
     response = response_for(tmp_path, store)
+    entered = asyncio.Event()
 
     async def send(message):
         if message["type"] == "http.response.body":
+            entered.set()
             if cancel:
-                raise asyncio.CancelledError()
+                await asyncio.Future()
             raise OSError("transport failed")
 
+    task = asyncio.create_task(response(scope(asgi_version=asgi_version), receive, send))
+    if cancel:
+        await asyncio.wait_for(entered.wait(), 2)
+        # Cancel the request owner, rather than independently cancelling a
+        # child send task inside Starlette's legacy-ASGI task group.
+        task.cancel()
     with pytest.raises(asyncio.CancelledError if cancel else OSError):
-        await response(scope(), receive, send)
+        await asyncio.wait_for(task, 2)
     record = store.export()[0]
     assert record["outcome"] == ("cancelled" if cancel else "failed")
     assert record["responseBytes"] == 0
