@@ -29,14 +29,62 @@ class CiRuntimeScopeTest < Minitest::Test
     _, err, status = Open3.capture3({ 'PATH' => "#{@root}:#{ENV.fetch('PATH')}", 'FULL_VALIDATION' => full.to_s,
       'EVENT_NAME' => event, 'BASE_SHA' => base, 'GITHUB_OUTPUT' => output,
       'FIXTURE_PATHS' => paths.join("\n"), 'FIXTURE_GIT_EXIT' => git_exit }, RbConfig.ruby, '-e', script)
-    [File.readlines(output, chomp: true).to_h { |line| line.split('=', 2) }, status, err]
+    outputs = File.readlines(output, chomp: true).to_h { |line| line.split('=', 2) }
+    contracts = outputs.delete('contracts')
+    [outputs, status, err, contracts]
   end
 
-  def test_documentation_changes_skip_runtimes_but_not_contracts
-    result, status, err = scope(['docs/guide.md'])
+  def test_documentation_changes_skip_runtimes_and_host_contracts_but_not_packaging
+    result, status, err, contracts = scope(['docs/guide.md'])
     assert status.success?, err
     assert_equal %w[rust web flutter python wasm].to_h { |name| [name, 'false'] }, result
-    refute @workflow.fetch('jobs').fetch('production-packaging-guard').key?('if')
+    assert_equal 'false', contracts
+    guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
+    refute guard.key?('if')
+    assert_equal 'changes', guard.fetch('needs')
+    boundary = guard.fetch('steps').find { |step| step['name'] == 'Check production packaging boundary' }
+    refute boundary.key?('if')
+    assert_equal 'bash scripts/guard_no_python_production.sh', boundary.fetch('run')
+    %w[rust web flutter python wasm contracts].each do |name|
+      assert_equal "${{ steps.scope.outputs.#{name} }}", @workflow.fetch('jobs').fetch('changes').fetch('outputs').fetch(name)
+    end
+  end
+
+  def test_only_explicit_documentation_paths_skip_host_contracts
+    [['README.md'], ['CHANGELOG.md'], ['docs/reader guide.md'], ['README.md', 'docs/agents/runtime.md']].each do |paths|
+      _, status, err, contracts = scope(paths)
+      assert status.success?, err
+      assert_equal 'false', contracts, paths.inspect
+    end
+    [[], ['AGENTS.md'], ['mise.toml'], ['docs/generator.rb'], ['unknown.file'],
+      ['python_app/source.py'], ['web/src/app.tsx'], ['flutter_app/lib/main.dart'],
+      ['README.md', 'scripts/run_ci_contracts.rb'], ['scripts/deleted.rb', 'docs/moved.md']].each do |paths|
+      _, status, err, contracts = scope(paths)
+      assert status.success?, err
+      assert_equal 'true', contracts, paths.inspect
+    end
+  end
+
+  def test_guard_rejects_missing_or_malformed_host_contract_selection
+    steps = @workflow.fetch('jobs').fetch('production-packaging-guard').fetch('steps')
+    selection = steps.find { |step| step['name'] == 'Require explicit host contract selection' }
+    refute_nil selection
+    refute selection.key?('if')
+    assert_equal '${{ needs.changes.outputs.contracts }}', selection.fetch('env').fetch('HOST_CONTRACTS')
+    %w[true false].each do |value|
+      assert Open3.capture3({ 'HOST_CONTRACTS' => value }, 'bash', '-c', selection.fetch('run')).last.success?
+    end
+    ['', 'TRUE', 'unknown'].each do |value|
+      refute Open3.capture3({ 'HOST_CONTRACTS' => value }, 'bash', '-c', selection.fetch('run')).last.success?
+    end
+    names = ['Set up Ruby for host workflow checks', 'Install host test dependency',
+      'Set up mise for task metadata checks', 'Install scoped host contract tools',
+      'Install fixture-only Python dependencies', 'Verify host workflow guards and collaboration regressions']
+    names.each do |name|
+      step = steps.find { |entry| entry['name'] == name }
+      assert_equal "needs.changes.outputs.contracts == 'true'", step.fetch('if'), name
+      assert_operator steps.index(selection), :<, steps.index(step)
+    end
   end
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
@@ -68,15 +116,18 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_full_validation_uses_every_runtime_without_pr_context
-    result, status, err = scope([], full: true, base: '', event: 'push')
+    result, status, err, contracts = scope(['README.md'], full: true, base: '', event: 'push')
     assert status.success?, err
     assert result.values.all? { |value| value == 'true' }
+    assert_equal 'true', contracts
   end
 
   def test_missing_identity_and_failed_diff_fail_closed
     [['', '0'], ['a' * 40, '1'], ['refs/heads/master', '0']].each do |base, exit_code|
-      _, status, = scope([], base: base, git_exit: exit_code)
+      result, status, _, contracts = scope(['README.md'], base: base, git_exit: exit_code)
       refute status.success?
+      assert_empty result
+      assert_nil contracts
     end
   end
 
