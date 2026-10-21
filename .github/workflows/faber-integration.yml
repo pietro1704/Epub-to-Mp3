@@ -42,7 +42,7 @@ jobs:
           done
       - name: Retain JNI test artifacts
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: faber-jni-contracts
           path: .reports/tts-preferences
@@ -149,7 +149,7 @@ jobs:
           script: bash scripts/verify_android_piper_inference.sh "$ANDROID_VERIFICATION_MODE"
       - name: Retain APK, native identity and Android test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: faber-android-package
           path: |
@@ -213,7 +213,7 @@ jobs:
           '
       - name: Retain the physical-device fixture APK and build identity
         if: success() && steps.device-fixture-apk.outcome == 'success'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: faber-android-device-fixture
           path: .reports/android-device-fixture
@@ -221,7 +221,7 @@ jobs:
 
       - name: Retain the normal Android UI APK and build identity
         if: success() && steps.main-ui-apk.outcome == 'success'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: faber-android-ui
           path: .reports/android-ui
@@ -387,7 +387,7 @@ jobs:
           rm -f -- "$RUNNER_TEMP/faber-models/pt_BR-faber-medium.onnx" "$RUNNER_TEMP/faber-models/pt_BR-faber-medium.onnx.json"
       - name: Retain macOS XCTest evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: faber-macos-prefs-${{ matrix.arch }}
           path: .reports/tts-preferences
@@ -440,7 +440,7 @@ jobs:
         run: mise exec -- node web/scripts/verify-browser-tts.mjs
       - name: Retain browser reports and screenshots
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: faber-browser-runtime
           path: .reports/tts-preferences

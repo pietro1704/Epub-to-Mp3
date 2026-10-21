@@ -27,9 +27,9 @@
     "@capacitor/core": "^8",
     "@capacitor/ios": "^8",
     "@diffusionstudio/piper-wasm": "1.0.0",
-    "@mintplex-labs/piper-tts-web": "1.0.3",
+    "@mintplex-labs/piper-tts-web": "1.0.5",
     "clsx": "^2.1.0",
-    "onnxruntime-web": "1.18.0",
+    "onnxruntime-web": "1.30.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
