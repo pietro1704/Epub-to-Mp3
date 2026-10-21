@@ -1,3 +1,4 @@
 # Route this checkout to its existing ai-memory project key.
 workspace = "default"
 project = "epubtomp3"
+project_strategy = "repo-root"
