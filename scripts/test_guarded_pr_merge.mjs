@@ -8,8 +8,9 @@ import { evaluate, guardedMerge } from './guarded_pr_merge.mjs';
 const repo = 'pietro1704/Epub-to-Mp3';
 const head = 'a'.repeat(40);
 
-for (const state of ['CLEAN', 'BEHIND']) {
-  test(`automatic policy merges only current exact-head green ${state} candidates`, () => {
+for (const [state, protectionToken] of [['CLEAN', 'read-protection-fixture'], ['BEHIND', 'read-protection-fixture'],
+  ['CLEAN', ''], ['CLEAN', 'denied-fixture']]) {
+  test(`automatic policy enforces ${state} candidates with protection credential ${protectionToken || 'absent'}`, () => {
     const directory = mkdtempSync(join(tmpdir(), 'pr-policy-inspection-'));
     try {
       mkdirSync(join(directory, 'scripts'));
@@ -34,14 +35,22 @@ fs.appendFileSync('calls.jsonl', JSON.stringify(args) + '\n');
 let response;
 if (args[0] === 'pr' && args[1] === 'list') response = data.candidates;
 else if (args[0] === 'pr' && args[1] === 'view') response = data.pr;
-else if (args[0] === 'pr' && args[1] === 'merge') { data.pr.state = 'MERGED'; data.pr.mergeCommit = { oid: 'c'.repeat(40) }; fs.writeFileSync('fixture.json', JSON.stringify(data)); response = {}; }
+else if (args[0] === 'pr' && args[1] === 'merge') {
+  if (process.env.GH_TOKEN || process.env.PR_PROTECTION_READ_TOKEN) process.exit(96);
+  data.pr.state = 'MERGED'; data.pr.mergeCommit = { oid: 'c'.repeat(40) }; fs.writeFileSync('fixture.json', JSON.stringify(data)); response = {};
+}
 else if (args[0] === 'workflow' && args[1] === 'run') response = {};
 else if (args[0] === 'api' && args.includes('--method')) response = {};
-else if (args[0] === 'api' && args.at(-1).endsWith('/protection')) response = {
+else if (args[0] === 'api' && args.at(-1).endsWith('/protection')) {
+  if (process.env.GH_TOKEN !== 'read-protection-fixture' || process.env.PR_PROTECTION_READ_TOKEN) {
+    console.error('HTTP 403: protection read denied'); process.exit(1);
+  }
+  response = {
   enforce_admins: { enabled: true }, required_status_checks: {
     strict: true, contexts: ['PR gate'], checks: [{ context: 'PR gate', app_id: 15368 }],
   },
-};
+  };
+}
 else if (args[0] === 'api' && args.at(-1).includes('/compare/')) response = data.comparison;
 else if (args[0] === 'api' && args.at(-1).includes('/actions/workflows/')) {
   response = [{ workflow_runs: args.at(-1).includes('codeql.yml') ? data.securityRuns : data.runs }];
@@ -56,24 +65,29 @@ process.stdout.write(JSON.stringify(response));
       const result = spawnSync('bash', ['-c', script], {
         cwd: directory, encoding: 'utf8', timeout: 15000, maxBuffer: 65536,
         env: { PATH: `${directory}:${process.env.PATH}`, REPO: repo,
-          GITHUB_TOKEN: 'fake-token-only', GITHUB_RUN_ID: '90', HOME: directory },
+          GITHUB_TOKEN: 'fake-token-only', PR_PROTECTION_READ_TOKEN: protectionToken,
+          GITHUB_RUN_ID: '90', HOME: directory },
       });
       assert.ifError(result.error);
       assert.equal(result.signal, null);
-      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.status, state === 'CLEAN' && protectionToken !== 'read-protection-fixture' ? 2 : 0, result.stderr);
+      assert.doesNotMatch(result.stdout + result.stderr, /read-protection-fixture|denied-fixture|fake-token-only/);
+      if (state === 'CLEAN' && protectionToken !== 'read-protection-fixture') {
+        assert.match(result.stderr, /protection_read \(HTTP 403\)/);
+      }
       const calls = readFileSync(join(directory, 'calls.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
       assert.ok(calls.some(args => args[0] === 'pr' && args[1] === 'view'), 'real helper must inspect the candidate');
       const mutations = calls.filter(args =>
         (args[0] === 'pr' && args[1] === 'merge') ||
         (args[0] === 'workflow' && args[1] === 'run') ||
         (args[0] === 'api' && args.some(value => ['PUT', 'POST', 'PATCH', 'DELETE'].includes(value))));
-      if (state === 'CLEAN') {
+      if (state === 'CLEAN' && protectionToken === 'read-protection-fixture') {
         assert.deepEqual(mutations, [
           ['pr', 'merge', '802', '--repo', repo, '--squash', '--match-head-commit', head],
           ['workflow', 'run', 'post-merge-validation.yml', '--repo', repo, '--ref', 'master'],
         ]);
       } else {
-        assert.deepEqual(mutations, [], 'behind PRs cannot merge, update branches or dispatch workflows');
+        assert.deepEqual(mutations, [], 'stale bases or unverifiable protection cannot mutate');
       }
     } finally {
       rmSync(directory, { recursive: true, force: true });

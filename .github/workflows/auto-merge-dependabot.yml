@@ -30,9 +30,16 @@ jobs:
           ref: master
           persist-credentials: false
 
+      - name: Verify server protection read access
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_ADMIN_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: node scripts/pr_gate_policy.mjs --repo "$REPO"
+
       - name: Merge all eligible ready pull requests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_PROTECTION_READ_TOKEN: ${{ secrets.DEPENDABOT_ADMIN_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -40,7 +47,14 @@ jobs:
             --json number,isDraft,author,headRepository,headRefName,headRefOid,mergeStateStatus | \
             jq -c '[.[] | select(.isDraft | not)] | sort_by(.number)')
           while IFS=$'\t' read -r pr head_sha; do
-            if ! node scripts/guarded_pr_merge.mjs --repo "$REPO" --pr "$pr" --head "$head_sha" --merge; then
+            if node scripts/guarded_pr_merge.mjs --repo "$REPO" --pr "$pr" --head "$head_sha" --merge; then
+              :
+            else
+              result=$?
+              if (( result != 1 )); then
+                echo "::error::Cannot verify merge metadata for PR #$pr; queue stopped."
+                exit "$result"
+              fi
               echo "PR #$pr is not verifiably green at the inspected head; left unchanged."
               continue
             fi

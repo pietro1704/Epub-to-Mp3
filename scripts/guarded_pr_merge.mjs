@@ -40,8 +40,19 @@ export function evaluate({ pr, runs, comparison, repo, head }) {
   return { eligible: true, head, checks: checks.length, ci_run: ciRun };
 }
 function invokeGh(args) {
-  const result = spawnSync('gh', args, { encoding: 'utf8', timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
-  ensure(!result.error && !result.signal && result.status === 0, 'GitHub operation failed; no retry or fallback merge');
+  const { PR_PROTECTION_READ_TOKEN, ...environment } = process.env;
+  const protectionRead = args.length === 2 && args[0] === 'api'
+    && /^repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/branches\/master\/protection$/.test(args[1]);
+  // GITHUB_TOKEN cannot read branch protection. Keep the existing privileged
+  // credential confined to that GET; merge writes still use the workflow token.
+  if (protectionRead && PR_PROTECTION_READ_TOKEN) environment.GH_TOKEN = PR_PROTECTION_READ_TOKEN;
+  const result = spawnSync('gh', args, { env: environment, encoding: 'utf8', timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
+  if (result.error || result.signal || result.status !== 0) {
+    const error = new Error('GitHub operation failed; no retry or fallback merge');
+    error.githubOperation = protectionRead ? 'protection_read' : 'metadata_or_merge';
+    error.httpStatus = result.stderr?.match(/HTTP\s+(\d{3})/)?.[1];
+    throw error;
+  }
   return result.stdout;
 }
 export function guardedMerge({ repo, pr, head, runId, merge = false, invoke = invokeGh }) {
@@ -86,5 +97,10 @@ export function main(argv = process.argv.slice(2)) {
   if (!result.eligible) process.exitCode = 1;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); } catch { console.error('Merge blocked: invalid invocation or unverifiable GitHub metadata.'); process.exitCode = 1; }
+  try { main(); } catch (error) {
+    const operation = error.githubOperation;
+    const detail = operation ? ` ${operation}${error.httpStatus ? ` (HTTP ${error.httpStatus})` : ''}.` : '';
+    console.error(`Merge blocked: invalid invocation or unverifiable GitHub metadata.${detail}`);
+    process.exitCode = 2;
+  }
 }
