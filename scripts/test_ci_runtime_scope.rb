@@ -6,6 +6,8 @@ require 'json'
 require 'tmpdir'
 require 'open3'
 require 'rbconfig'
+require 'shellwords'
+require_relative 'run_ci_contracts'
 
 class CiRuntimeScopeTest < Minitest::Test
   def setup
@@ -132,6 +134,23 @@ class CiRuntimeScopeTest < Minitest::Test
     assert_equal ['/language:swift', '/language:swift/platform:iOS', '/language:swift/platform:macOS'], historical.filter_map { |entry| entry['legacy_category'] }.sort
     refute codeql.fetch('on', codeql[true]).key?('pull_request')
     assert codeql.fetch('on', codeql[true]).key?('workflow_call')
+  end
+
+  def test_lightweight_python_reuses_contracts_from_the_required_guard
+    guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
+    refute guard.key?('if')
+    assert_includes @workflow.fetch('jobs').fetch('pr-gate').fetch('needs'), 'production-packaging-guard'
+    assert guard.fetch('steps').any? { |step| step['run'].to_s.include?('ruby scripts/run_ci_contracts.rb') }
+    guarded = CiContracts.steps.find { |step| step.fetch('name') == 'Python offline contracts' }.fetch('argv')
+    steps = @workflow.fetch('jobs').fetch('python-tests').fetch('steps')
+    lightweight = steps.find { |step| step['name'] == 'Validate legacy syntax, lint and offline consent contracts' }
+    pytest = lightweight.fetch('run').lines.map { |line| Shellwords.split(line) }.find { |argv| argv.include?('pytest') }
+    assert_includes pytest, 'python_app/tests/test_audio_pause_policy.py'
+    %w[test_feature_ab_cache_isolation.py test_feature_ab_regression.py].each do |name|
+      path = "python_app/tests/#{name}"
+      assert_equal 1, guarded.count(path), path
+      refute_includes pytest, path
+    end
   end
 
   def test_pr_jobs_do_not_install_legacy_models_or_rebuild_unaffected_wasm

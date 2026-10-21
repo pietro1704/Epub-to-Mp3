@@ -163,7 +163,7 @@ jobs:
         run: |
           mise exec -- python -m compileall -q python_app tests scripts
           mise exec -- ruff check python_app tests
-          mise exec -- python -m pytest --noconftest -q python_app/tests/test_audio_pause_policy.py python_app/tests/test_feature_ab_cache_isolation.py python_app/tests/test_feature_ab_regression.py
+          mise exec -- python -m pytest --noconftest -q python_app/tests/test_audio_pause_policy.py
       - name: Cache pip
         if: inputs.full_validation == true
         uses: actions/cache@v6
