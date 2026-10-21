@@ -31,6 +31,7 @@ concurrency:
 jobs:
   changes:
     name: Select affected runtimes
+    timeout-minutes: 2
     runs-on: ubuntu-24.04
     outputs:
       rust: ${{ steps.scope.outputs.rust }}
@@ -78,6 +79,7 @@ jobs:
   production-packaging-guard:
     needs: changes
     name: Production packaging guard
+    timeout-minutes: 7
     runs-on: ubuntu-24.04
     env:
       MISE_ENABLE_TOOLS: node,python
@@ -145,7 +147,7 @@ jobs:
     name: Python tests
     needs: [changes]
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
     env:
       MISE_ENABLE_TOOLS: python
     permissions:
@@ -277,7 +279,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       MISE_ENABLE_TOOLS: python,rust
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
     permissions:
       contents: read
 
@@ -368,6 +370,7 @@ jobs:
     if: needs.changes.outputs.web == 'true'
     name: Web
     needs: [changes]
+    timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
     runs-on: ubuntu-24.04
     env:
       MISE_ENABLE_TOOLS: ${{ needs.changes.outputs.wasm == 'true' && 'python,node,npm,rust,cargo:wasm-bindgen-cli' || 'python,node,npm' }}
@@ -430,6 +433,7 @@ jobs:
     if: needs.changes.outputs.flutter == 'true'
     name: Flutter
     needs: [changes]
+    timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
     runs-on: ubuntu-24.04
     env:
       MISE_ENABLE_TOOLS: python,flutter
@@ -488,6 +492,7 @@ jobs:
     name: PR gate
     needs: [changes, production-packaging-guard, python-tests, rust, flutter, web]
     if: always()
+    timeout-minutes: 1
     runs-on: ubuntu-24.04
     steps:
       - name: Require every selected runtime and reject missing scope evidence
