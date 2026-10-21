@@ -161,7 +161,7 @@ jobs:
           PY
       - name: Preserve metadata only
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: hosted-legacy-ios-inventory
           path: ${{ runner.temp }}/legacy-ios-inventory.json
