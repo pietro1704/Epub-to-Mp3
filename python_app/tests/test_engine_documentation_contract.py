@@ -8,10 +8,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_web_readme_uses_the_operational_backend_command() -> None:
+def test_web_readme_documents_embedded_development_without_a_python_backend() -> None:
     readme = (REPO_ROOT / "web" / "README.md").read_text(encoding="utf-8")
-    assert "python -m uvicorn python_app.server:app --reload --port 8000" in readme
-    assert "python -m uvicorn main:app" not in readme
+    assert "mise exec -- npm run dev" in readme
+    assert "embedded Rust/WASM" in readme
+    assert "BrowserConversionClient" in readme
+    assert "python -m uvicorn" not in readme
 
 
 def test_root_readme_documents_only_exposed_engines() -> None:
@@ -21,14 +23,14 @@ def test_root_readme_documents_only_exposed_engines() -> None:
     assert not re.search(r"\b(kokoro|coqui|spark)\b", readme, re.IGNORECASE)
 
 
-def test_web_readme_documents_the_public_engine_and_voice_contract() -> None:
+def test_web_readme_documents_the_browser_provider_and_export_boundary() -> None:
     readme = (REPO_ROOT / "web" / "README.md").read_text(encoding="utf-8")
-    assert "Edge-TTS" in readme
     assert "Piper" in readme
-    assert "auto" in readme
-    assert "GET /api/voices" in readme
-    assert re.search(r"\b(kokoro|coqui|spark)\b", readme, re.IGNORECASE)
-    assert "not supported engines" in readme
+    assert "pt_BR-faber-medium" in readme
+    assert "explicit model installation" in readme
+    assert "listening-only; MP3 export requires Piper" in readme
+    assert "must fail explicitly rather than switch to an HTTP server" in readme
+    assert "GET /api/voices" not in readme
 
 
 def test_cli_completion_lists_only_supported_engine_values() -> None:
