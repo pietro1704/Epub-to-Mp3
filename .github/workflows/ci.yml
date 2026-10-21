@@ -145,6 +145,7 @@ jobs:
     name: Python tests
     needs: [changes]
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       MISE_ENABLE_TOOLS: python
     permissions:
@@ -179,13 +180,17 @@ jobs:
 
       - name: Install lightweight legacy validation dependencies
         if: inputs.full_validation != true
-        run: mise exec -- python -m pip install pytest ruff==0.6.9
+        run: mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.6.9
       - name: Validate legacy syntax, lint and offline consent contracts
         if: inputs.full_validation != true
         run: |
           mise exec -- python -m compileall -q python_app tests scripts
           mise exec -- ruff check python_app tests
           mise exec -- python -m pytest --noconftest -q python_app/tests/test_audio_pause_policy.py
+      - name: Exercise legacy HTTP response lifecycle
+        if: inputs.full_validation != true
+        run: timeout --signal=TERM --kill-after=10s 60s mise exec -- python -m pytest -v --tb=short -o faulthandler_timeout=10 python_app/tests/test_stream_http_observation.py
+
       - name: Cache pip
         if: inputs.full_validation == true
         uses: actions/cache@v6
@@ -223,7 +228,7 @@ jobs:
 
       - name: Run Python tests
         if: inputs.full_validation == true
-        run: mise exec -- python -m pytest -v --tb=short
+        run: timeout --signal=TERM --kill-after=30s 20m mise exec -- python -m pytest -v --tb=short -o faulthandler_timeout=60
 
       - name: Run Python lint
         if: inputs.full_validation == true

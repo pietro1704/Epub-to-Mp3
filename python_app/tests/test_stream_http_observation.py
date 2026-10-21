@@ -12,8 +12,9 @@ from src.stream_http_observation import (
 from starlette.responses import FileResponse
 
 
-def scope(*, headers=(), extensions=None, method="GET"):
+def scope(*, headers=(), extensions=None, method="GET", asgi_version="2.0"):
     return {"type": "http", "method": method, "headers": list(headers),
+            "asgi": {"version": "3.0", "spec_version": asgi_version},
             "extensions": extensions or {}}
 
 
@@ -28,7 +29,8 @@ def response_for(tmp_path, store):
 
 
 @pytest.mark.asyncio
-async def test_last_body_is_not_complete_until_send_returns(tmp_path):
+@pytest.mark.parametrize("asgi_version", ["2.0", "2.4"])
+async def test_last_body_is_not_complete_until_send_returns(tmp_path, asgi_version):
     store = StreamHTTPObservationStore()
     response = response_for(tmp_path, store)
     entered = asyncio.Event()
@@ -41,7 +43,7 @@ async def test_last_body_is_not_complete_until_send_returns(tmp_path):
             entered.set()
             await release.wait()
 
-    task = asyncio.create_task(response(scope(), receive, send))
+    task = asyncio.create_task(response(scope(asgi_version=asgi_version), receive, send))
     await asyncio.wait_for(entered.wait(), 2)
     assert store.export()[0]["outcome"] == "pending"
     release.set()
