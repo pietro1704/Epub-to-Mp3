@@ -173,18 +173,27 @@ class CiRuntimeScopeTest < Minitest::Test
     assert_equal false, events.fetch('workflow_dispatch').fetch('inputs').fetch('full_validation').fetch('default')
   end
 
-  def test_default_codeql_matrix_is_bounded_and_historical_identities_remain_opt_in
+  def test_codeql_builds_only_the_two_production_platform_graphs
     codeql = YAML.load_file(File.expand_path('../.github/workflows/codeql.yml', __dir__))
-    expression = codeql.fetch('jobs').fetch('swift').fetch('strategy').fetch('matrix').fetch('include')
-    historical_json, default_json = expression.scan(/'([^']*)'/).flatten
-    historical = JSON.parse(historical_json)
-    normal = JSON.parse(default_json)
-    assert_equal 2, normal.size
+    swift = codeql.fetch('jobs').fetch('swift')
+    normal = swift.fetch('strategy').fetch('matrix').fetch('include')
+    assert_kind_of Array, normal
     assert_equal %w[iOS macOS], normal.map { |entry| entry.fetch('platform') }.sort
-    assert_equal 7, historical.size
-    assert_equal ['/language:swift', '/language:swift/platform:iOS', '/language:swift/platform:macOS'], historical.filter_map { |entry| entry['legacy_category'] }.sort
-    refute codeql.fetch('on', codeql[true]).key?('pull_request')
-    assert codeql.fetch('on', codeql[true]).key?('workflow_call')
+    assert normal.all? { |entry| entry.fetch('coverage') == 'app' && entry.fetch('scheme') == 'EpubToMp3' && entry.fetch('action') == 'build' }
+    assert_equal 2, normal.size
+    assert_equal ['generic/platform=iOS', 'generic/platform=macOS'], normal.map { |entry| entry.fetch('destination') }.sort
+    events = codeql.fetch('on', codeql[true])
+    refute events.key?('pull_request')
+    assert events.key?('workflow_call')
+    refute events.fetch('workflow_dispatch', {}).to_h.key?('inputs')
+    steps = swift.fetch('steps')
+    refute steps.any? { |step| step['uses'].to_s.include?('upload-sarif') }
+    analyze = steps.find { |step| step['uses'] == 'github/codeql-action/analyze@v4' }
+    assert_equal "${{ format('/language:swift/coverage:{0}/platform:{1}', matrix.coverage, matrix.platform) }}", analyze.fetch('with').fetch('category')
+    refute analyze.fetch('with').key?('upload')
+    project = YAML.load_file(File.expand_path('../ios/EpubToMp3/project.yml', __dir__))
+    assert_equal 'all', project.fetch('schemes').fetch('EpubToMp3').fetch('build').fetch('targets').fetch('EpubToMp3')
+    assert_equal ['test'], project.fetch('schemes').fetch('EpubToMp3').fetch('build').fetch('targets').fetch('EpubToMp3Tests')
   end
 
   def test_lightweight_python_reuses_contracts_from_the_required_guard
@@ -278,10 +287,10 @@ class CiRuntimeScopeTest < Minitest::Test
     assert_includes commands, 'native_job.rb build -- cargo build --locked'
     assert_includes commands, 'test -f "$artifact"'
     codeql = YAML.load_file(File.expand_path('../.github/workflows/codeql.yml', __dir__))
-    matrices = codeql.fetch('jobs').fetch('swift').fetch('strategy').fetch('matrix').fetch('include').scan(/'([^']*)'/).flatten
-    ios = JSON.parse(matrices.last).find { |entry| entry['platform'] == 'iOS' }
+    matrices = codeql.fetch('jobs').fetch('swift').fetch('strategy').fetch('matrix').fetch('include')
+    ios = matrices.find { |entry| entry['platform'] == 'iOS' }
     assert_equal 'generic/platform=iOS', ios.fetch('destination')
-    assert_equal 'build-for-testing', ios.fetch('action')
+    assert_equal 'build', ios.fetch('action')
   end
 
 def test_reusable_jobs_cannot_share_the_callers_concurrency_group
