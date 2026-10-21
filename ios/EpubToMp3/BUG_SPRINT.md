@@ -1,5 +1,7 @@
 # Bug Sprint — iOS EPUB Reader
 
+> **Historical record (reviewed 2026-10-21).** July 8 bug-sprint snapshot. Later entries may record closure; listed open bugs, device IDs, build/install rules and “do not revert” instructions are historical evidence, not a current defect list or blanket execution authority. Use [current reader instructions](AGENTS.md) and [execution policy](../../docs/agents/execution-policy.md).
+
 > **Status (2026-07-08):** Bugs 1-6 fixed and committed. Bug 7 (long-press
 > "Tocar daqui" menu) and Bug 8 (page-curl wiring) still open — see
 > `TDD_PLAN.md` for the authoritative checklist with commit hashes.

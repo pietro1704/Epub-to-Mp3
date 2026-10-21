@@ -1,54 +1,27 @@
-# Contribuição e Segurança
+# Contribuição e segurança
 
-## Contribuindo
+Leia [AGENTS.md](../../../AGENTS.md),
+[fluxo de entrega](../../agent-workflow.md),
+[política de execução](../../agents/execution-policy.md) e
+[padrões de código](../../../CODING_STANDARDS.md). Código, comentários, logs e
+documentação técnica ficam em inglês, exceto recursos/páginas da wiki localizados
+intencionalmente. Use `CONTEXT.md` e ADRs relevantes; inspecione tarefas mise reais.
 
-## Regras práticas
+Use uma branch/PR por mudança coerente, preserve trabalho alheio, acrescente
+regressão significativa e valide proporcionalmente no runtime dono. Erros,
+cancelamento e identidade livro/capítulo relevantes importam mais que quantidade
+fixa de camadas de teste ou especialistas. Documentação exige checagem de conteúdo/
+links. Python/Ruff ficam na CI; web começa com até dois workers; guards nativos,
+responsabilidade de plataformas e quarentena do Simulator continuam valendo.
 
-- use `mise` para tarefas e toolchain
-- teste toda mudança
-- mantenha código, logs e comentários em inglês
-- preserve o espelhamento entre CLI e Web quando houver mudança de comportamento
+Commit/push e escrita de PR seguem autorização de entrega do escopo verificado.
+PRs prontos para `master` mantêm autorização de automerge com `PR gate` do head
+exato, base atual e helper confiável; preserve o workflow de merge. Monitoramento
+de CI é opt-in. Informe PR, commit, checks/CI observados e aceite pendente com
+precisão. Releases, publicação externa e fechar issues têm limites próprios.
 
-## Tarefas comuns
-
-```bash
-mise run test
-mise run test:unit
-mise run test:web
-mise run test
-```
-
-## Fluxo recomendado
-
-1. altere o código
-2. adicione ou atualize testes
-3. valide localmente
-4. abra PR
-5. acompanhe CI e CodeQL
-
-## Segurança
-
-Consulte também:
-
-- [SECURITY.md](https://github.com/pietro1704/Epub-to-Mp3/blob/master/SECURITY.md)
-
-Pontos principais:
-
-- não abra issue pública para vulnerabilidade
-- use GitHub Security Advisories
-- inclua impacto, reprodução e versões afetadas
-
-## Escopo de segurança
-
-Em escopo:
-
-- path traversal
-- RCE via EPUB/PDF malicioso
-- bypass de autenticação/autorização
-- CVEs exploráveis em dependências
-
-Fora de escopo:
-
-- acesso local à máquina
-- DoS por arquivo gigante já mitigado por limites de capítulo
-- problemas em serviços terceirizados de TTS
+Relatos de segurança seguem [SECURITY.md](../../../SECURITY.md): use canal privado,
+sem issue pública de vulnerabilidade, com impacto, reprodução e versões afetadas.
+Essa política define escopo e suporte atuais; a wiki não redefine exclusões nem
+afirma todos os alertas resolvidos. Preserve credenciais/dados privados e não os
+publique em fixtures, logs ou relatórios.

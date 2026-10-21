@@ -1,5 +1,7 @@
 # Reader Chrome Tap Toggle Fix Implementation Plan
 
+> **Historical record (reviewed 2026-10-21).** July gesture diagnosis and task instructions. Preserve callback/UI evidence; old direct builds, device IDs and staging recipes are historical. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 > For Hermes: execute task-by-task with specialist review before each implementation step.
 
 Goal: make a non-link tap on the reader reliably toggle both top and bottom chrome on the real iPhone, without page turns; preserve horizontal swipe navigation and link interaction.

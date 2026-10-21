@@ -1,31 +1,28 @@
-# Development Validation Policy
+# Development validation policy
 
-This policy applies to feature work and bug fixes across the supported client surfaces.
+[Execution policy](agents/execution-policy.md) is authoritative for platforms,
+resources, native safety and delivery. [Delivery workflow](agent-workflow.md)
+describes the implementation sequence; [coding standards](../CODING_STANDARDS.md)
+define review evidence.
 
-## Device-first validation
+Select the smallest check that proves the requested behavior at its owning
+runtime. Reproduce reported regressions before fixing them when feasible, then
+exercise success and relevant failure, cancellation and identity cases. Add
+meaningful regression coverage at that seam; there is no compulsory sequence of
+verifier, critic and test author, or universal requirement for every test tier.
 
-When a change affects a device-capable client, validate the real user flow on a real device before finalizing the implementation:
+Native UI acceptance requires the affected real app and retained source/build
+identity, logs and observed results. Host fixtures and source checks supplement
+that evidence. Use [macOS validation](agents/macos-validation.md) for Apple
+build/package/GUI work and the native reader instructions for reader changes.
+Simulator execution remains quarantined; required SE1/iOS 15.5 acceptance stays
+pending. Physical-device evidence cannot replace that specific target.
 
-- iOS/iPadOS: validate on a physical Apple device.
-- Android: validate on a physical Android/Samsung device.
-- macOS: validate in the native macOS app on the target Mac.
+Android work remains paused until resumed by the user; Android/Samsung and
+Flutter Linux work belongs on Arch. Document relevant client parity and platform
+limits without starting an unrelated platform campaign. Python/Ruff execution
+remains deferred to CI. Web tests start with at most two workers.
 
-If a platform is affected, its device validation is required; do not treat another platform's result as a substitute. Record unavailable hardware or access as an explicit limitation rather than claiming validation.
-
-## Android–iOS parity
-
-Every mobile feature and bug fix must preserve behavioral parity between Android and iOS/iPadOS. Compare the user-visible flow, state transitions, error handling, and backend contract on both platforms. A platform-specific limitation or intentional difference must be documented and justified.
-
-## Tests
-
-After device validation, add or update only the tests relevant to the changed behavior and its regression risk. Do not add speculative or duplicate coverage. The complete test suite is a CI responsibility and must run in CI; do not run the full suite locally for this workflow.
-
-## Delivery
-
-After the relevant tests pass and the device checks are complete:
-
-1. Review the focused diff and commit it with an English conventional commit message.
-2. Push the commit to the project remote.
-3. Monitor CI for the pushed commit and resolve failures before calling the work complete.
-
-Documentation-only changes may omit tests and device validation when they do not alter runtime behavior.
+Documentation-only changes need focused content/link checks. Report the exact
+checks performed, their limits and any pending acceptance. Follow atomic branch/
+PR delivery and current automatic-merge safeguards; CI monitoring is opt-in.

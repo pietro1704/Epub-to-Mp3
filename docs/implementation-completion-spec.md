@@ -1,46 +1,27 @@
-# Implementation Completion Hygiene
+# Implementation completion evidence
 
-## Intent
+A task is complete when its requested behavior, relevant checks and required
+acceptance are verified, and its scoped delivery state is reported accurately.
+The [execution policy](agents/execution-policy.md) and
+[delivery workflow](agent-workflow.md) define authorization and sequence.
 
-Every feature and bug fix ends only after the repository and its GitHub
-delivery surface are clean. Agents infer this requirement from any completed
-implementation; it does not need to be repeated by the user.
+Report:
 
-## Completion contract
+- the concrete behavior or documentation changed and its owned scope;
+- regression evidence, executed checks and source/build identity where relevant;
+- the PR link and commit, required `PR gate` result and CI state actually observed;
+- blocked, unavailable or unexecuted acceptance, including quarantined Simulator
+  checks and manual validation awaiting a user result;
+- merge SHA and branch cleanup only when those actions were performed and verified.
 
-Before reporting an implementation as complete, verify all of the following
-for the pushed commit:
+Preserve unrelated working-tree changes, open issues, PRs and alerts. Repository-
+wide cleanliness, zero open issues and zero security alerts are not implicit
+acceptance conditions for a scoped change. Investigate a concrete finding within
+its risk and authorization; do not checkpoint incomplete work or close/dismiss
+external records merely to satisfy a completion checklist.
 
-1. The working tree is clean.
-2. Required GitHub Actions runs for that commit have completed successfully.
-   A failed or cancelled run is diagnosed and fixed before completion.
-3. There are no open pull requests and no open issues. New external issues are
-   triaged: fix and close reproducible defects, or leave an evidence-backed
-   comment when a user decision is required.
-4. Code Scanning and Dependabot have no open alerts. A security finding is P0:
-   checkpoint current work, patch a known safe remediation, push it, and verify
-   the resulting scan. Unknown or high-risk remediations require escalation.
-5. The relevant local validation for the changed surface has passed.
-
-## Operating loop
-
-1. Implement and locally validate the change.
-2. Commit a focused diff and push it.
-3. Run `scripts/post_implementation_audit.sh --wait` for the pushed SHA.
-4. Repair every failing check or security finding, then repeat from step 1.
-5. Report the checked commit, validation evidence, and any external state that
-   is still genuinely pending. Do not call the work complete while an Action
-   or scan is pending.
-
-## Automation
-
-`PostToolUse` invokes `.claude/hooks/ci_watch.sh` after `git push`. The hook
-runs the same audit and returns a compact result to the agent. The hook is a
-safety net, not a substitute for an agent verifying its own final state.
-
-## Scope boundaries
-
-Closing an issue is an outcome, not a way to hide a defect. Keep an issue open
-when resolving it needs product direction, external access, or a risky change;
-record the precise blocker instead. Security alerts may only be dismissed when
-the recorded rationale is evidence-backed; otherwise remediate and rescan.
+CI monitoring is opt-in. Neither an after-push hook nor an audit script expands
+task scope or proves that the current commit passed CI. Keep pending/unobserved
+results explicit and do not claim completed delivery until required checks pass.
+All ready PRs to `master` retain current automatic-merge authorization and trusted
+helper safeguards; release/publication and issue closure have separate boundaries.

@@ -1,5 +1,7 @@
 # iPhone SE streaming, downloads and transport goal
 
+> **Historical record (reviewed 2026-10-21).** Verified historical SE Simulator campaign, not physical-device acceptance. Edge-primary and leave-Simulator-open instructions are superseded by current provider and quarantine/cleanup policy. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Scope
 
 Actual iPhone SE (1st generation), iOS 15.5, Xcode 16.4. Verify fresh Edge audio

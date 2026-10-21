@@ -1,5 +1,7 @@
 # Actual-book Simulator conversion recheck
 
+> **Historical record (reviewed 2026-10-21).** Historical repeated benchmark and unexecuted adaptive experiment proposal. Repetition is not authorization for another synthesis and throughput variation is not a proved cause. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Scope and runtime
 
 User requested resuming the quality/performance goal after confirming app launch.

@@ -1,5 +1,7 @@
 # iPhone Local Audio Implementation Specification
 
+> **Historical record (reviewed 2026-10-21).** Historical local-audio proposal. Swift-owned scheduling, Edge-only rules and offline/native-fallback exclusions are superseded by shared Rust and current provider policy; retained product intent is not shipped-support evidence. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Objective
 
 Make the iPhone audio experience reliable without an application backend: Edge

@@ -1,109 +1,36 @@
-# Uso via CLI e Web
+# CLI e Web
 
-## CLI
+A CLI do produto é Rust (`crates/converter-cli/`). A tarefa `convert` da raiz chama
+`scripts/package_rust_cli.rb --run --`, que compila/empacota runtime nativo e assets
+de fonemização antes de executar a CLI. Não é atalho somente de leitura para help;
+inspecione pré-requisitos e política de build protegido antes de usar.
 
-Ative o ambiente virtual antes de converter localmente:
+Para conversão autorizada com pré-requisitos existentes:
 
-```bash
-source .venv/bin/activate
+```sh
+mise run convert -- livro.epub
+mise run convert -- livro.epub --chapter 3
+mise run convert -- livro.epub --show-structure
 ```
 
-### Comandos comuns
+Os exemplos seguem o código atual da tarefa/parser; não são evidência de execução.
+O help atual da CLI rejeita ingestão de PDF. Consulte parser/help para batch,
+saída, verificação e preferências, sem copiar flags Python ou presumir suporte a
+todos os formatos desejados pelo produto.
 
-Conversão básica:
+Piper `pt_BR-faber-medium` é primário; seleção explícita por job prevalece sobre
+preferências salvas. Fallback Edge online exige consentimento explícito. Instalar
+modelos é ação explícita separada. Limpar cache é destrutivo e não faz parte do
+primeiro uso de conversão.
 
-```bash
-python -m python_app.main convert livro.epub
-```
+O cliente web normal usa Rust/WASM embutido com Piper no navegador. Siga
+[web/README.md](../../../web/README.md) para Vite e verificações focadas.
+Voz nativa do navegador serve para escuta; exportar MP3 exige Piper instalado.
+Inspecionar EPUB não comprova suporte a PDF ou outros formatos nativos.
 
-Forçar engine:
-
-```bash
-python -m python_app.main convert livro.epub --engine edge
-python -m python_app.main convert livro.epub --engine piper
-```
-
-Capítulo único:
-
-```bash
-python -m python_app.main convert livro.epub --chapter 3
-```
-
-Faixa ou seleção:
-
-```bash
-python -m python_app.main convert livro.epub --chapter 5.1,5.2,5.3
-```
-
-Pré-visualizar estrutura:
-
-```bash
-python -m python_app.main convert livro.epub --show-structure
-```
-
-Ignorar cache:
-
-```bash
-python -m python_app.main convert livro.epub --clear-cache
-```
-
-Batch:
-
-```bash
-python -m python_app.main convert livro1.epub livro2.pdf --batch ~/pasta/
-```
-
-## Servidor web
-
-Subir backend:
-
-```bash
-mise run dev
-```
-
-Ou diretamente:
-
-```bash
-uvicorn python_app.server:app --port 8000
-```
-
-Para Hugging Face Spaces:
-
-```bash
-python hf_app.py
-```
-
-## Frontend
-
-Desenvolvimento:
-
-```bash
-cd web && npm run dev
-```
-
-Build:
-
-```bash
-cd web && npm run build
-```
-
-## API principal
-
-- `POST /api/convert`: envia arquivo e inicia conversão
-- `GET /api/jobs/{job_id}`: estado do job
-- `POST /api/jobs/{job_id}/cancel`: cancela um job
-- `GET /api/outputs/{job_id}/{filename}`: baixa MP3 ou ZIP
-- `GET /api/voices`: lista de vozes
-- `GET /api/telemetry`: métricas agregadas
-- `GET /api/health`: health check
-
-## Limites de upload
-
-Padrão: `100 MB`
-
-Sobrescreva com:
-
-```bash
-export MAX_UPLOAD_MB=200
-export VITE_MAX_UPLOAD_MB=200
-```
+`mise run dev` inicia servidor Rust opcional e Vite, pode compilar/instalar
+pré-requisitos ausentes e gerencia processos de desenvolvimento. Use somente para
+jornada de servidor explícita após inspecionar `scripts/dev.sh` e o escopo.
+`converter-server` e o cliente HTTP retido são adaptadores de compatibilidade;
+rotas/payloads pertencem ao código atual do servidor Rust e cliente escolhido.
+Receitas Python/FastAPI e `hf_app.py` são legado, não a inicialização padrão.

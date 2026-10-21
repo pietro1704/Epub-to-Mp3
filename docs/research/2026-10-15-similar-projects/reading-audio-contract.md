@@ -1,11 +1,15 @@
 # Reading/audio contract audit and pending-seek ownership
 
+> **Research status (reviewed 2026-10-21).** Bounded audit/correction history. The execution prompt below is preserved provenance, not current instructions or authorization; apply [execution policy](../../agents/execution-policy.md) to any newly scoped work. Native test receipts do not establish audible sentence following.
+
 Date: 2026-10-15. Baseline: `5147fe1d41` with unrelated pending product work.
 User priority: reading and synchronization with audio. Delivered correction:
 a deferred page request belongs to its job/chapter and is cancelled on teardown.
 Measured sentence following remains future work.
 
-## Execution prompt
+## Historical execution prompt
+
+> The following original prompt, including “Execute now”, is a historical quotation. It does not start work or require its fixed skill/agent chain in a new task.
 
 Objective: exercise READ-1's current timing/identity contract and deliver the
 smallest demonstrated correction to reading/audio navigation.
@@ -36,7 +40,7 @@ Execute now until acceptance is verified or independent work is exhausted.
 | SEEK-1 | Root | READ-1 | Stop/job change drops stale page request; valid delayed request still applies | Verified on macOS and SE: job/chapter ownership, cancellation and valid delayed seek |
 | VERIFY-1 | Root / verification specialist | SEEK-1 | Focused runtime red/green, both native platforms, exact reports and limits | Verified: macOS 33, SE 36, host 65; diff and 29 links pass |
 
-## Current contract
+## Contract at the recorded baseline
 
 - `crates/converter-core/src/epub.rs` defines chapter text/source identity;
   `worker.rs` publishes audio chunks by source chapter and chunk index.

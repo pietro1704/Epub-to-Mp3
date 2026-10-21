@@ -1,5 +1,7 @@
 # Native reader theme correction
 
+> **Research status (reviewed 2026-10-21).** Completed bounded regression history. The skill/specialist route, Simulator steps and leave-open receipt describe the original campaign; current execution and cleanup follow [execution policy](../../agents/execution-policy.md). Preserve all observed results and failures.
+
 User request: correct dark/light colors and reader themes using specialists.
 Baseline: `b7309f78aa`; unrelated product work remains outside this delivery.
 

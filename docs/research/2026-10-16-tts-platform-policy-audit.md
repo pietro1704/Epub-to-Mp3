@@ -1,5 +1,7 @@
 # Piper primary and native fallback: implementation audit
 
+> **Research status (reviewed 2026-10-21).** Partially superseded source audit. App defaults/system fallback and Apple Luciana selection have later source changes: see [current runtime/provider policy](../../AGENTS.md), [Rust app defaults](../../crates/converter-core/src/tts_preferences.rs) and [Apple voice selection](../../ios/EpubToMp3/EpubToMp3/Features/Conversion/Services/PlatformSpeechSynthesizer.swift). Strict/headless Default remains distinct; original gaps below are as-of-baseline findings, not current cross-platform acceptance.
+
 Date: 2026-10-16. Scope: inspected current local working tree, including existing
 uncommitted changes; not a claim about master, shipped binaries or live behavior.
 

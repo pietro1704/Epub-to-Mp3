@@ -1,5 +1,12 @@
 # Epub-to-MP3 Reader — Product and Engineering Specification
 
+This document records product targets and design requirements, not an implemented
+capability inventory or a runtime acceptance report. Check the current adapter
+and affected real app before claiming a format, feature or platform is supported.
+[CONTEXT.md](../CONTEXT.md), relevant ADRs and the
+[native reader contract](../ios/EpubToMp3/AGENTS.md) govern current terminology and
+geometry; [execution policy](agents/execution-policy.md) governs validation.
+
 ## 1. Ideal product prompt
 
 Design a high-performance native book reader for iOS and macOS, later
@@ -12,15 +19,17 @@ controls, and playback that survives navigation across the app.
 The first release is local-first and offline-capable. Users can import books
 from every supported Apple file-sharing surface, add them to a local library,
 open them in a reader, and explicitly download books or generated audio for
-offline use. Text-to-speech conversion must work on-device by default, with a
-server option selected from Settings. Conversion must stream chapter audio as
+offline use. Text-to-speech conversion runs locally through the embedded shared Rust
+runtime; Settings selects supported installed or explicitly consented providers. Conversion must stream chapter audio as
 it becomes available, preserve chapter structure, and read the complete book,
 including footnotes, typography changes, paragraphs, spacing, and meaningful
-layout cues. The existing Python reader is the parsing reference and may be
-improved when required for faithful reading.
+layout cues. Shared parsing and conversion behavior belongs in Rust. Retained Python parsing
+fixtures may serve as migration references; they are not an Apple runtime
+dependency or an unquestioned fidelity oracle.
 
-The design must use UIKit/AppKit, never SwiftUI, follow Apple Human Interface
-Guidelines and Apple platform conventions, apply SOLID principles, maximize
+The main Apple application surfaces use UIKit/AppKit; WidgetKit and related
+extensions may use their required SwiftUI APIs. Follow Apple Human Interface
+Guidelines and Apple platform conventions, favor narrow concrete modules, maximize
 performance, and include product requirements, UX flows, domain architecture,
 storage, APIs, testing strategy, implementation phases, acceptance criteria,
 navigation mapping, and textual wireframes.
@@ -38,8 +47,10 @@ navigation mapping, and textual wireframes.
   structure instead of flattening a book into an opaque text blob.
 - Performance first: lazy loading, bounded memory, incremental parsing,
   chapter-level caching, streaming audio, and hardware-appropriate concurrency.
-- Backend as a contract: clients must not share implementation types across
-  platforms; future clients consume the same documented API.
+- Shared core as a contract: Rust owns parsing, conversion, provider policy,
+  progress, cancellation and artifacts; clients use native FFI, CLI or WASM
+  adapters. The standalone HTTP compatibility service remains outside the
+  native/browser local conversion contract.
 
 ## 3. Release scope
 
@@ -53,7 +64,7 @@ navigation mapping, and textual wireframes.
 - Reading progress, resume position, bookmarks, notes, and text search.
 - Light, dark, and system themes; font family, size, spacing, margins, and
   reading direction controls where the format supports them.
-- On-device TTS by default; server conversion as an explicit Settings option.
+- Local shared-Rust conversion with explicit provider preferences and model installation.
 - Chapter-level conversion, streaming playback, pause/resume, retry, cache,
   and explicit offline download.
 - Persistent audio player and all Apple media integration points.
@@ -64,8 +75,8 @@ navigation mapping, and textual wireframes.
 
 - Account and cloud synchronization of library, progress, bookmarks, notes,
   settings, generated audio, and downloads.
-- Android, Windows, Linux, and web clients derived from the same backend
-  contract and product behavior.
+- Android, Windows, Linux, and web clients using the same shared Rust
+  conversion contract and product behavior.
 
 ## 4. Core user journeys
 
@@ -78,16 +89,28 @@ navigation mapping, and textual wireframes.
 5. Reader presents paginated or continuous text and exposes TOC, search,
    bookmarks, notes, typography, and theme controls.
 
-### Convert and listen
+### Listen from the reader
 
-1. User opens the book detail page or reader player action.
-2. App presents conversion scope: current chapter, selected chapters, or all.
-3. Device conversion is selected by default; server conversion is available
-   from Settings.
-4. Conversion begins chapter by chapter.
-5. Completed chapters become playable immediately and can be downloaded.
-6. The persistent player continues across Library, book detail, reader, and
-   Settings without interrupting playback.
+1. Opening a book restores readable content and position without starting
+   conversion or playback.
+2. An explicit Play request asks the active book screen to populate the audio
+   queue through the local Rust conversion path when required.
+3. Playback starts after the first validated playable audio is queued; later
+   chapters join progressively, preserving the captured provider preferences.
+4. The persistent player continues across Library, book detail, reader and
+   Settings. Reader navigation and the current playback position remain distinct
+   until the listener explicitly chooses to move playback.
+
+### Manual conversion and full-book download
+
+1. The dedicated Convert destination owns explicit manual conversion and its
+   supported chapter scope. The reader has no separate Converter action.
+2. Library Download all opens Convert with a full-book request and no chapter
+   range.
+3. Rust converts progressively and persists artifacts. Manual conversion leaves
+   playback under the listener's explicit control; it does not autoplay.
+4. The listener can play queued output or retain available chapter audio for
+   offline listening through the existing player and download controls.
 
 ### Offline use
 
@@ -115,30 +138,34 @@ navigation mapping, and textual wireframes.
 
 ## 6. Native architecture
 
-Use a feature-oriented UIKit/AppKit application with protocol-driven services:
+Use feature-oriented UIKit/AppKit modules with narrow interfaces at real seams:
 
 - `LibraryFeature`: library screens, import, metadata, and local indexing.
 - `ReaderFeature`: layout, pagination, scrolling, selection, annotations,
   TOC, and search.
-- `AudioFeature`: conversion orchestration, chapter streaming, downloads,
-  queue, Now Playing, remote commands, and background audio.
+- `AudioFeature`: conversion intent/progress presentation and playback adapters
+  for chapter streaming, downloads, queue, Now Playing, remote commands and
+  background audio. Rust owns conversion-job orchestration, retry and cancellation.
 - `SettingsFeature`: reader, audio, storage, and provider configuration.
 - `CoreDomain`: format-neutral models and use cases.
-- `CoreStorage`: SQLite/Core Data-backed metadata plus file/blob storage.
-- `CoreParsing`: adapter around the Python reader contract and native format
-  adapters where appropriate.
-- `CoreNetworking`: versioned API client for optional server conversion and
-  future sync.
+- `CoreStorage`: existing persisted metadata and file/artifact storage, changed
+  only when a concrete persistence requirement justifies a new adapter.
+- `CoreParsing`: shared Rust parser contracts and format adapters, preserving
+  semantic fidelity through native FFI and browser/WASM boundaries.
+- `CoreNetworking`: platform networking for explicitly selected online providers
+  and separately scoped future synchronization. Conversion remains owned by
+  the embedded Rust runtime.
 
-Apply dependency inversion: view controllers depend on use-case protocols;
-use cases depend on repository protocols; concrete storage, parsing, audio,
-and network implementations are injected at composition roots.
+Keep viewport transition and pagination responsibilities in their owning deep
+modules. Use concrete services by default; introduce a protocol when actual
+adapters or an external platform seam require it. Inject platform implementations
+at composition roots without adding an interface for every layer.
 
-## 7. Python reader contract
+## 7. Semantic reader contract
 
-The Python reader remains the parsing oracle for the first implementation.
-Its output must expose a stable semantic representation rather than only
-plain text. Required fidelity includes:
+The shared parser output must expose a stable semantic representation rather
+than only plain text. Legacy fixtures can inform differential checks; assess
+disagreements against the original document. Required fidelity includes:
 
 - EPUB NCX and EPUB3 navigation hierarchy;
 - chapter titles and anchors;
@@ -174,10 +201,15 @@ annotations, and progress restoration.
   anchors, empty chapters, oversized chapters, tables, and duplicate content.
 - Integration tests for import → library → reader → annotation → conversion →
   streaming playback → offline playback.
-- Native source-contract tests proving UIKit/AppKit usage and no SwiftUI target
-  dependency.
+- Native runtime tests at the affected reader seam, covering glyph containment,
+  final viewport geometry, exact offset restoration and canonical page turns.
+  Source scans alone cannot prove rendering or interaction correctness.
 - Performance tests for first render, memory, chapter scrolling, and audio
   start latency.
+
+These are target acceptance criteria, not a claim that the listed journeys or
+formats passed. Required SE1/iOS 15.5 validation remains blocked while Simulator
+execution is quarantined; another runtime cannot substitute for it.
 
 Acceptance means a user can import a non-DRM book, read it offline, resume at
 the correct location, annotate it, start on-device conversion, hear completed
@@ -186,7 +218,7 @@ audio, and control playback from every supported Apple media surface.
 
 ## 10. Implementation phases
 
-1. Domain contracts, storage schema, format fixture suite, and Python reader
+1. Domain contracts, storage schema, format fixture suite, and shared Rust
    semantic output.
 2. Local import pipeline, library, metadata, cover handling, and indexing.
 3. Reader engine: pagination, scrolling, TOC, search, progress, themes,
@@ -194,7 +226,7 @@ audio, and control playback from every supported Apple media surface.
 4. On-device conversion, chapter streaming, cache, downloads, and retries.
 5. Persistent player, background audio, Now Playing, remote commands,
    Lock Screen, Control Center, CarPlay, and headphones.
-6. Optional server provider, API contract, diagnostics, and migration path.
+6. Diagnostics and separately scoped future synchronization contracts.
 7. Performance hardening, accessibility, localization, release validation,
    and design review against HIG.
 

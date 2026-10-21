@@ -1,5 +1,7 @@
 # iPhone 16e streaming, download and controls verification
 
+> **Historical record (reviewed 2026-10-21).** Blocked historical device campaign. Edge-primary/Piper-suspended task policy is superseded; the recorded lock/readiness blocker is not a current device state or permission to poll. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Scope and acceptance
 
 Exercise the actual iPhone 16e app with fresh Edge-first synthesis. Measure time

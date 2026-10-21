@@ -1,5 +1,7 @@
 # macOS Rust audio delivery
 
+> **Historical record (reviewed 2026-10-21).** Original delivery plan with acceptance still unclosed in this record. Its Edge/ffprobe details predate the [embedded mobile audio processing decision](2026-10-07-embedded-mobile-audio.md); a planned objective is not implementation evidence. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Objective
 
 Make macOS Listen stream locally synthesized Rust audio into the native player

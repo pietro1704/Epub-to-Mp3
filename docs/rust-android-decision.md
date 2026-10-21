@@ -1,5 +1,7 @@
 # Rust-to-Android transport decision
 
+> **Historical record (reviewed 2026-10-21).** The September 27 HTTP-only/no-offline-FFI choice is superseded by the [accepted local conversion decision](adr/2026-10-02-local-conversion-and-verified-structure.md) and [current runtime/provider policy](../AGENTS.md). Original migration evidence is retained; Android remains paused under [execution policy](agents/execution-policy.md).
+
 **Status:** accepted for Phase 5 Task 5.3 (2026-09-27)
 
 ## Decision

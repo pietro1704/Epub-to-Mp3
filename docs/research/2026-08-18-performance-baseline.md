@@ -1,5 +1,7 @@
 # End-to-end performance baseline — 2026-08-18
 
+> **Research status (reviewed 2026-10-21).** Python/SSE baseline for the August source snapshot; measured numbers and missing-runtime distinctions remain historical. Current product architecture is in [runtime navigation](../agents/runtime-navigation.md).
+
 ## Decision
 
 The repository has enough evidence to baseline **conversion throughput**, but

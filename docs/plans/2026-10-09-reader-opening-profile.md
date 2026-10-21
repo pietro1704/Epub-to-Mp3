@@ -1,5 +1,16 @@
 # Reader opening profile
 
+## Evidence navigation and limits
+
+- [Readiness correctness prerequisite](#readiness-correctness-prerequisite).
+- [Mac active-chapter integration: behavior verified, budget still red](#mac-active-chapter-integration-behavior-verified-budget-still-red).
+- [2026-10-12 Xcode 16.4 iOS 15.5 verification](#2026-10-12-xcode-164-ios-155-verification).
+- [2026-10-12 AppKit geometry and exact iOS 15.5 retest](#2026-10-12-appkit-geometry-and-exact-ios-155-retest).
+
+These links locate dated scope and later checkpoints. The record does not establish current source/build identity or close acceptance left pending in its final checkpoint.
+
+> **Historical record (reviewed 2026-10-21).** Historical profile ledger. Invalidated geometry and mixed-toolchain build failures are not test results; final geometry evidence does not close the actual-app 200 ms target. controls_usable is a specific metric, not whole-app readiness. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 Same original LOTR/Christie sources, selected chapter 8/6, two distinct native
 macOS XCTest hosts, no synthesis or edits to originals/models/downloads.
 The 200 ms across-relaunch acceptance stays unchanged and failed.

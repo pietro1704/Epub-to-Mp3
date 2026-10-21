@@ -1,5 +1,7 @@
 # Native reader deepening plan
 
+> **Historical record (reviewed 2026-10-21).** August native seam implementation record; its Python parser/OCR ownership predates the current shared Rust runtime. The retired SwiftUI black-flash hypotheses are not current defects. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Goal
 
 Deepen the three recurring UIKit reader seams without changing product behavior:

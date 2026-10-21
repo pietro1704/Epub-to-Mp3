@@ -1,5 +1,15 @@
 # App quality and performance
 
+## Evidence navigation and limits
+
+- [Original acceptance](#ordered-acceptance-checklist) and [constraints](#verification-and-constraints).
+- [Chronological progress](#progress), including superseded attempts and remaining gates.
+- [2026-10-08 checkpoint](#current-acceptance-checkpoint--2026-10-08) is dated evidence, not current task status.
+
+No campaign-wide completion, current branch identity or current app acceptance is established by this annotation.
+
+> **Historical record (reviewed 2026-10-21).** Historical campaign ledger with superseding checkpoints. Old Edge defaults, local branch permissions and whole-app gates do not define the next task; source inspection cannot close native latency acceptance. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 Scope: repair every finding from the native app audit, in independently tested
 and committed slices on `fix/app-quality-performance`, based on local develop
 including verified embedded-audio prerequisites (`0d3a8229`). No remote merges.

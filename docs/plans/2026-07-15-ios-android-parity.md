@@ -1,5 +1,7 @@
 # iOS → Android Feature Parity Plan
 
+> **Historical record (reviewed 2026-10-21).** July parity snapshot; its Python/Chaquopy inventory, platform gates and direct-master recipe are historical. Android remains paused under current platform policy; gaps need a fresh source inventory. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 > Scope: implement Android/Flutter equivalents for user-facing iOS capabilities that are genuinely absent, without duplicating existing Flutter features.
 
 ## Baseline

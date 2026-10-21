@@ -1,5 +1,7 @@
 # Plano de Correção: Retreat vai para 1ª página em vez da última
 
+> **Historical record (reviewed 2026-10-21).** Resolved July root-cause record; preserve fix hashes and failed/passing evidence. The later “fix to apply” and direct build/install sequence describe the original repair, not new work. Current native validation follows [execution policy](../../docs/agents/execution-policy.md).
+
 > **Status (2026-07-08): CORRIGIDO.** Este bug (Bug 1 do `TDD_PLAN.md`) está
 > fixado e commitado. Documento mantido como referência histórica da causa
 > raiz — não reverter os fixes descritos abaixo.

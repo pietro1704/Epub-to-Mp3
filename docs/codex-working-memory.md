@@ -12,11 +12,12 @@ language, Gitflow, authorization and test rules live in `../AGENTS.md`
 
 Durable cross-session knowledge belongs in ai-memory, scoped by the repository
 `.ai-memory.toml`; use its managed skills under `.agents/skills/ai-memory-*`.
-Historical notes cannot override current instructions. Physical-device-only
-validation, a blanket Intel Simulator ban, manual device IDs, automatic LLDB
-attachment and automatic CI monitoring from older notes are superseded.
-Reader verification uses the exact SE1/iOS 15.5 and native macOS targets with
-the build/Simulator phase separation in `agent-workflow.md`.
+Historical notes cannot override current instructions. Physical-device-only validation, manual device IDs, automatic LLDB attachment
+and automatic CI monitoring from older notes are historical session rules.
+The current [execution policy](agents/execution-policy.md) quarantines Intel
+Simulator execution after recurrent host panics; compilation is not boot
+authorization. Required SE1/iOS 15.5 acceptance remains blocked, while native
+macOS verification follows the requested scope and current cleanup policy.
 
 ## iOS lessons from this project
 

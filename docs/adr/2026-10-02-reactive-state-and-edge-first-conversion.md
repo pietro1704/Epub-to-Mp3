@@ -1,10 +1,10 @@
 # ADR: Cross-platform reactive state and Edge-first conversion
 
-The provider default and fallback policy below are superseded by the explicit
-2026-10-14 user decision recorded in `docs/plans/2026-10-14-faber-tts-preferences.md`:
-fresh preferences use Piper `pt_BR-faber-medium`, secondary is absent by default,
-and online Edge fallback requires explicit consent. Reactive state requirements
-remain applicable. Existing explicit provider choices are preserved.
+The historical Edge-first provider/default paragraphs below are superseded by
+[current runtime/provider policy](../../AGENTS.md) and the [current runtime boundary](../agents/runtime-navigation.md). Reactive state and playback identity requirements remain accepted.
+The current policy retains Piper as primary with installed system fallback and
+requires explicit consent for Edge; existing explicit per-job choices remain
+authoritative. This replaces the earlier supersession pointer to a missing plan.
 
 Date: 2026-10-02
 Status: Accepted

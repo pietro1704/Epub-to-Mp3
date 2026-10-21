@@ -1,83 +1,25 @@
-# Primeiros Passos
+# Primeiros passos
 
-## Requisitos
+Escolha o cliente primeiro. Leia [Arquitetura](Architecture.md), depois inspecione
+`mise.toml`, o manifesto relevante e a
+[política de execução](../../agents/execution-policy.md). Versões de ferramentas
+pertencem aos manifestos; a instalação não parte de uma lista Python duplicada.
 
-Recomendado:
+- Apple: siga o [guia nativo](../../../ios/EpubToMp3/README.md) e a
+  [validação macOS](../../agents/macos-validation.md), reutilizando artefatos compatíveis.
+- Navegador: siga [web/README.md](../../../web/README.md); com dependências existentes,
+  `mise exec -- npm run dev` em `web/` inicia Vite. WASM e assets de TTS devem
+  corresponder ao código atual.
+- CLI: [CLI e Web](CLI-and-Web.md) descreve a tarefa Rust `convert`.
+- Flutter: siga [flutter_app/README.md](../../../flutter_app/README.md) e os
+  pré-requisitos da plataforma; trabalho Android está pausado.
 
-- `mise`
-- a versão do Python fixada em `mise.toml` (atualmente 3.12.10)
-- `Node.js`
-- `ffmpeg`
+Instalar modelos exige ação explícita. Selecione/instale Piper
+`pt_BR-faber-medium` pela ação disponível no cliente quando desejado; preserve os
+outros modelos. Modelo ausente não autoriza download, Edge ou provedor pago
+silencioso. Recursos do navegador e dependências nativas precisam de verificação real.
 
-
-## Instalação recomendada
-
-```bash
-git clone https://github.com/pietro1704/Epub-to-Mp3.git
-cd Epub-to-Mp3
-mise run install
-```
-
-Isso prepara:
-
-- ambiente virtual Python
-- dependências web
-- binário do Piper
-
-## Instalação manual
-
-```bash
-pip install -r requirements.txt -r python_app/requirements.txt
-```
-
-No macOS:
-
-```bash
-brew install ffmpeg
-```
-
-No Linux:
-
-```bash
-sudo apt-get install -y ffmpeg
-```
-
-## Validando a instalação
-
-```bash
-mise run test:unit
-mise run test:web
-```
-
-## Primeiro uso
-
-CLI:
-
-```bash
-source .venv/bin/activate
-python -m python_app.main convert livro.epub
-```
-
-Servidor web:
-
-```bash
-mise run dev
-```
-
-Frontend em desenvolvimento:
-
-```bash
-cd web && npm run dev
-```
-
-## Downloads prontos
-
-O projeto publica builds em:
-
-- macOS
-- Windows
-- Linux
-- Android
-- iOS
-
-Consulte a página de `Releases` do repositório.
+Existir uma tarefa não comprova instalação, conversão ou release funcionando.
+Registre revisão, artefato e resultado observado. Python/Ruff locais ficam para CI;
+execução do Simulator está em quarentena. Empacotar, compilar, abrir e validar o
+app visível são etapas distintas.

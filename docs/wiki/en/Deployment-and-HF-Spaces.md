@@ -1,49 +1,25 @@
 # Deployment and Hugging Face Spaces
 
-## Deployment modes
+The current `Dockerfile` builds React/Vite and the Rust `converter-server`, then
+runs that binary in a minimal Debian image. `hf_app.py` remains legacy material,
+not the production container entry point. Inspect the exact deployed revision,
+selected client mode and workflow before diagnosing a hosted service.
 
-- local CLI
-- local web
-- public/demo deployment on `Hugging Face Spaces`
-- desktop/mobile releases via `GitHub Actions`
+The container declares `PORT=7860`, `HOST=0.0.0.0` and
+`PERSISTENT_ROOT=/data/epub-to-mp3`, and probes `/api/health`. These are source
+configuration values, not proof of a reachable deployment or persistent storage.
+Survival across restarts requires an actual persistent mount and correct paths/
+permissions on the service. Preserve cache, outputs, jobs and user data.
 
-## Hugging Face Spaces
+R2/object storage is optional and not established by this repository. See the
+[conditional R2 reference](../../R2_SETUP.md) before proposing an integration;
+old secret names, public URLs and local cleanup endpoints do not prove uploads,
+TTL, scheduled deletion or a free service tier.
 
-Entry point:
-
-- `hf_app.py`
-
-Container:
-
-- `Dockerfile`
-
-Default port:
-
-- `7860`
-
-## Persistent paths on HF
-
-On Hugging Face, the project uses `/data/epub-to-mp3` as the persistent root.
-
-That preserves:
-
-- cache
-- outputs
-- jobs
-
-across restarts.
-
-## Optional permanent storage
-
-External object storage is not configured by this repository. Keep deployment
-documentation repository-relative and do not publish machine-local paths.
-
-## Automated workflows
-
-Key workflows:
-
-- `CI`
-- `CodeQL`
-- `Sync to Hugging Face Space`
-- `Release Desktop`
-- `Auto Release`
+Inspect `.github/workflows/sync-hf.yml`, release workflows and the exact validated
+integrated SHA when publication is explicitly requested. GitHub branch delivery
+does not authorize a Hugging Face push, website publication, secret/configuration
+change, reboot or rollback. Factory reboot is not a default troubleshooting step.
+Use read-only logs/status when authorized and report unknown deployment state.
+No service configuration, wiki publication or deployment is performed by editing
+these local pages.

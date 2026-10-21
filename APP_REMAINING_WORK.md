@@ -1,5 +1,7 @@
 # Epub-to-Mp3 — o que ainda precisa ser arrumado
 
+> **Historical record (reviewed 2026-10-21).** July backlog and execution prompt. Local dirty-state, SwiftUI/Python inventory, optional-Piper decision and per-session Git requirements are historical; current requests and evidence are recorded in [TODO_APP.md](TODO_APP.md). Current scope, Git authorization and native safety follow [execution policy](docs/agents/execution-policy.md); provider/runtime decisions follow [current runtime/provider policy](AGENTS.md). Old execution prompts and commands are retained as history, not current permission.
+
 > Backlog técnico e de produto para orientar as próximas sessões com Hermes.
 >
 > Atualizado em 2026-07-21, a partir do estado live do repositório, da árvore de trabalho e dos documentos existentes.

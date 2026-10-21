@@ -1,5 +1,7 @@
 # Speed-first TTS fallback investigation
 
+> **Research status (reviewed 2026-10-21).** The Edge-primary/Piper-suspended decision and experiment authorization are historical task scope. Use [current runtime/provider policy](../../AGENTS.md) for present defaults and [execution policy](../agents/execution-policy.md) for any newly requested experiment.
+
 Date: 2026-10-13. Task: APP-20261013-03.
 
 User correction: candidates must be free of paid SDK/API requirements. The
@@ -9,7 +11,7 @@ evaluate installed offline platform TTS before adding another bundled model.
 No fallback implementation or automatic provider switch is authorized by this
 decision discussion.
 
-## Current decision and scope
+## Historical decision and scope
 
 Keep **Edge active**. Do not enable or exercise Piper in the app for this task.
 The earlier Piper-native-playback gate is deferred by the user's correction.

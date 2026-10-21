@@ -1,5 +1,7 @@
 # Collaboration retrospective controls
 
+> **Historical record (reviewed 2026-10-21).** Dated retrospective implementation record at baseline `7e346da6d6`. “Current session”, existing branch and commit/push authorization below belong to that task. Preserve executed evidence; current operation follows [execution policy](execution-policy.md) and [collaboration operations](collaboration-operations.md).
+
 Scope: implement all five candidates from the current session retrospective.
 Baseline: `7e346da6d6`; preserve unrelated dirty files and existing runtime behavior.
 Use the existing feature branch as this tooling continuation. User explicitly

@@ -1,5 +1,7 @@
 # CI/GitHub Stabilization Implementation Plan
 
+> **Historical record (reviewed 2026-10-21).** July localization/CI incident plan. Keep the ARB/generated-getter evidence; old full-matrix runs, remote dispatch and CI monitoring are task history. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 > For Hermes: execute with specialist subagents, then run the full verification gates.
 
 Goal: restore trustworthy CI and release builds by fixing the localization source-of-truth drift, validating all affected Flutter targets, and separating real failures from noisy automation.

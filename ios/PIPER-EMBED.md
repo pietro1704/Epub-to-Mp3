@@ -1,5 +1,7 @@
 # Piper on iOS — embed plan
 
+> **Historical record (reviewed 2026-10-21).** Retired Python/Swift Piper stub bring-up plan. Its “stub-only” and missing-dependency statements describe that source snapshot, not current embedded Rust capability. See [current runtime/provider policy](../AGENTS.md) and [runtime navigation](../docs/agents/runtime-navigation.md); supported-runtime inference still needs task-specific runtime evidence.
+
 Status: **stub-only seam installed**. Slice 1b lands the Python +
 Swift wiring so that ``fallback_engine="piper"`` can be requested
 through `convert_epub` and `PiperBridge.swift` gets called for every

@@ -1,5 +1,7 @@
 # Compact TTS candidates for weak devices
 
+> **Research status (reviewed 2026-10-21).** The Edge-primary premise is the October 13 task policy, superseded by [current runtime/provider policy](../../AGENTS.md). Preserve candidate/source comparisons as dated research; model installation requires an explicit user action.
+
 Research date: 2026-10-13. Scope: primary-source inventory and published measurements; no model downloads, synthesis, or device benchmarks were performed for this note. Edge remains the current requested engine. Parameter count, disk size, peak memory, first-audio latency and sustained throughput are different metrics.
 
 ## Decision supported by current evidence

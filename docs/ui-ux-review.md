@@ -1,5 +1,7 @@
 # UI/UX Audit — Native iOS/macOS App
 
+> **Historical record (reviewed 2026-10-21).** Undated static audit without a recorded source revision or runtime reproduction. “Confirmed” findings describe that snapshot; accepted [glyph-aware pagination](adr/2026-08-14-reader-paginated-text-layout.md) and [viewport ownership](adr/2026-08-14-reader-viewport-transition.md) decisions are later references. Current defects require reproduction, not inference from this list.
+
 Static review by a UI, accessibility, and UX specialist. Scope: reader,
 library, playback, mini-player, conversion/jobs, settings, loading/error
 states, localization, accessibility, and iOS/macOS parity.

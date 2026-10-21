@@ -1,51 +1,31 @@
 # Wiki: EPUB to MP3
 
-Convert EPUB/PDF ebooks into MP3 audiobooks with multiple TTS engines, automatic fallback, per-book caching, a real-time web UI, a SwiftUI app for Apple platforms, and a Flutter app for Linux/Windows/Android.
+EPUB reading and audiobook conversion across native Apple, Flutter and browser
+clients, with shared Rust conversion behavior. Format/provider support varies by
+adapter; product targets and retained legacy code do not prove current support.
 
-## Overview
+- CLI: `crates/converter-cli/`, using the embedded Rust pipeline.
+- Web: React/TypeScript plus Rust/WASM and browser Piper.
+- Apple: native UIKit/AppKit with embedded `converter-ffi`.
+- Linux/Windows/Android: Flutter with registered Rust adapters.
+- Hosted compatibility API: separate Rust `converter-server` deployment.
 
-The project supports four main usage modes:
+Piper `pt_BR-faber-medium` is primary. Installed system TTS is the default fallback
+where supported, preferring Apple Luciana for Brazilian Portuguese when available.
+Explicit job selections win. Edge requires consent; models require an explicit
+installation action. Browser native speech is listening-only; MP3 export needs Piper.
 
-- `CLI`: local terminal conversion
-- `Web`: FastAPI backend plus React frontend
-- `Apple` (`ios/EpubToMp3/`): SwiftUI app for macOS / iPadOS / iOS; macOS embeds the Python sidecar
-- `Non-Apple` (`flutter_app/`): Flutter app for Linux / Windows / Android
+## Pages
 
-By default, local CLI and web mode share the same persistent directories:
+- [Getting Started](Getting-Started.md)
+- [CLI and Web](CLI-and-Web.md)
+- [Desktop, Mobile and Releases](Desktop-Mobile-and-Releases.md)
+- [Architecture](Architecture.md)
+- [Configuration and Performance](Configuration-and-Performance.md)
+- [Deployment and Hugging Face Spaces](Deployment-and-HF-Spaces.md)
+- [Troubleshooting](Troubleshooting.md)
+- [Contributing and Security](Contributing-and-Security.md)
 
-- `.cache/` for parsed text and intermediate artifacts
-- `output/` for MP3s, ZIP files, and final outputs
-- `.jobs/` for web job metadata
-- `.uploads/` for uploaded files
-
-## Quick links
-
-- [Getting Started](./Getting-Started.md)
-- [CLI and Web Usage](./CLI-and-Web.md)
-- [Desktop, Mobile, and Releases](./Desktop-Mobile-and-Releases.md)
-- [Architecture](./Architecture.md)
-- [Configuration and Performance](./Configuration-and-Performance.md)
-- [Deployment and Hugging Face Spaces](./Deployment-and-HF-Spaces.md)
-- [Troubleshooting](./Troubleshooting.md)
-- [Contributing and Security](./Contributing-and-Security.md)
-
-## Main features
-
-- `EPUB` and `PDF` to `MP3` conversion
-- Edge-first synthesis with optional Piper fallback
-- Table of contents and chapter hierarchy preservation
-- Aggressive caching to avoid repeated parsing
-- Progressive playback while chunks are synthesized
-- Per-chapter download and full ZIP download
-- Native macOS app (SwiftUI) with embedded Python sidecar
-- Native Linux / Windows / Android apps (Flutter)
-- iOS / iPadOS sideloadable archive
-
-## Core stack
-
-- Backend: `Python`, `FastAPI`
-- Frontend: `React`, `TypeScript`, `Vite`
-- Apple client: `SwiftUI`
-- Non-Apple client: `Flutter`
-- CI/CD: `GitHub Actions`
-- Public demo: `Hugging Face Spaces`
+Legacy Python/FastAPI, SwiftUI slice notes and old sidecar guides are migration
+references. Current behavior requires source inspection and evidence from the
+actual adapter. This wiki update is local; it does not publish or validate a service.

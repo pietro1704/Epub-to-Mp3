@@ -1,32 +1,20 @@
-# Rust macOS sidecar
+# Standalone Rust server reference (historical sidecar name)
 
-The native macOS app bundles `converter-server` as
-`Contents/Resources/epub-to-mp3-server`. macOS no longer packages or launches
-the Python/PyInstaller desktop entry point. iOS uses the same HTTP contract
-against a configured Rust backend because it cannot launch a native server
-process.
+Apple production clients use native UIKit/AppKit and embedded
+`converter-core`/`converter-ffi`. They do not require a local HTTP server or a
+remote backend for their embedded conversion path. See
+[runtime navigation](agents/runtime-navigation.md) and
+[Apple client guide](../ios/EpubToMp3/README.md).
 
-## Build
+The historical `sidecar:build` task remains in `mise.toml`: it builds the separate
+`converter-server` executable and copies it to `dist/epub-to-mp3-server`.
+`mac:build` instead depends on `converter-ffi:build`; presence of a server artifact
+does not mean Xcode embeds or launches it. Use the standalone task only for a
+specifically requested server/compatibility use case after inspecting its current
+source and the [execution policy](agents/execution-policy.md).
 
-```bash
-mise run sidecar:build
-mise run mac:build
-```
-
-The sidecar task compiles the release `converter-server` workspace member and
-copies it to `dist/epub-to-mp3-server`. The Xcode post-build phase embeds that
-executable in the app Resources directory and fails if it is missing.
-
-## Runtime contract
-
-- `PORT` selects the HTTP port; the desktop default remains `47860`.
-- `HOST` defaults to `0.0.0.0`, matching the existing server contract.
-- `/health` returns HTTP 200 with `{"status":"ok"}` for readiness polling.
-- the native app must start the sidecar before issuing API requests and use
-  `http://127.0.0.1:47860` as its default base URL;
-- stdout/stderr stay attached to the native process for app log capture.
-- terminating the child shuts down the server; no PyInstaller worker or
-  temporary extraction directory is involved.
-
-The sidecar receives the same path and conversion environment variables as the
-desktop app, including `PERSISTENT_ROOT`, `CACHE_DIR`, and `OUTPUT_DIR`.
+Server configuration, endpoints, persistence and bind addresses belong to
+`crates/converter-server/src/main.rs`, `converter-core` configuration and the
+current container manifests. Inspect those before exposing a server; old port
+`47860` and sidecar-lifecycle recipes are historical details, not Apple defaults.
+No server, app or service was exercised merely by documenting this boundary.

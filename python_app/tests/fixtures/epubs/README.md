@@ -1,71 +1,23 @@
-# Test Fixtures - EPUB Files
+# EPUB test fixtures
 
-This directory contains the **source** EPUB files used for testing.
+This directory contains checked-in source fixtures, including
+`test_multifeature.epub` and `sample_multilang.epub`. Inspect byte identity before
+treating similarly named files as aliases. Preserve fixtures and user books.
 
-## Files
+The multifeature document records Portuguese content, footnotes, italic text,
+quotes, subsections and language-tagged passages (`en`, `es`, `pt-BR`). It is useful
+for source-fidelity and language-markup regressions. Legacy parsing expectations
+live in `test_epub_multifeature.py`; they do not establish that every current
+adapter preserves or synthesizes all those features.
 
-- `test_multifeature.epub` - **SOURCE** main test EPUB with multi-language support
-- `sample_multilang.epub` - Alias for the same file (used by multilang tests)
+`web/public/sample.epub` is a separate consumer artifact. The current root
+`mise.toml` and `web/package.json` do not define the old `sync:fixtures`,
+`web:build` or `web:dev` synchronization recipe, and the former
+`sync_test_fixtures.sh` is absent. Do not assume `npm run build` or `mise run dev`
+copies this fixture automatically. Inspect actual consumers and review any
+explicit fixture-copy change, preserving intended identity/content.
 
-## Build Process
-
-**These files are the SOURCE**, not copies. During build/dev:
-
-```bash
-# Using npm
-npm run build    # Copies EPUB then builds web
-npm run dev      # No auto-copy (use mise for dev)
-
-# Using mise (recommended)
-mise run web:build   # Copies EPUB then builds web
-mise run web:dev     # Copies EPUB then starts dev server
-mise run dev         # Copies EPUB then starts backend + frontend
-```
-
-The script automatically copies `test_multifeature.epub` → `web/public/sample.epub`.
-
-## Workflow
-
-1. **Edit** the test EPUB here in `fixtures/epubs/`
-2. **Run** `mise run dev` or `npm run build` - copies to `web/public/` automatically
-3. **Tests** use the files directly from `fixtures/epubs/`
-
-No manual synchronization needed! ✅
-
-## Manual Copy (if needed)
-
-```bash
-# Using mise
-mise run sync:fixtures
-
-# Using npm (build only)
-npm run build
-
-# Or run the script directly
-./sync_test_fixtures.sh
-```
-
-## File Structure
-
-The test EPUB (`sample.epub`) contains:
-
-### Chapter 1 - Começo (Portuguese only)
-- Main chapter with footnotes, italic text, and quotes
-- Sub-sections: Diário, Correspondência, Notas
-
-### Chapter 2 - Correspondências (Multi-language)
-- **Portuguese** (default)
-- **English**: `<p lang="en">The letter begins...</p>`
-- **Spanish**: `<p lang="es">Más adelante...</p>`
-- **Portuguese-BR**: `<p lang="pt-BR">O destinatário...</p>`
-
-## Testing Language Features
-
-The multi-language tags are extracted by `text_formatting.py`:
-- HTML `lang` attributes → `[[lang:xx]]` internal tags
-- Tags are processed by `LanguageMarkup.parse()`
-- Edge TTS uses different voices per language
-
-See tests in `test_epub_multifeature.py`:
-- `TestLanguageAttributeExtraction` - Tag extraction tests
-- `TestMultilangEpubParsing` - EPUB parsing tests
+The historical Python `lang` → `[[lang:xx]]` markup contract is legacy evidence,
+not permission to use online voices. Edge requires explicit consent; Piper and
+installed native fallback policy remain authoritative. Python execution is
+CI-only under [execution policy](../../../../docs/agents/execution-policy.md).

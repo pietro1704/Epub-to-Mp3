@@ -1,5 +1,7 @@
 # Reader and Audio Following Implementation Plan
 
+> **Historical record (reviewed 2026-10-21).** July product/SwiftUI plan. The later [single playback control decision](2026-10-14-single-playback-control.md) is the later continuation-control reference; this plan does not establish current shipped support. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 > **For Hermes:** Implement this plan task-by-task with tests and physical-device validation.
 
 **Goal:** Make the iOS reader behave like an audiobook reader: support phrase/paragraph playback actions, persistent reader/audio continuation, automatic audio following, word highlighting, EPUB images, and Apple Books-style typography controls.

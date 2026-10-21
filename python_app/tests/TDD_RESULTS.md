@@ -1,5 +1,7 @@
 # 📋 Resultados TDD: Verificação de Duplicação de Conteúdo
 
+> **Historical record (reviewed 2026-10-21).** 2025 legacy Python TDD result, retaining its ten-test evidence and bug narrative. Broad guarantees below describe that recorded fixture/run, not current Rust/native acceptance. Python execution is CI-only under [execution policy](../../docs/agents/execution-policy.md).
+
 ## 🎯 Objetivo
 
 Garantir que a conversão de EPUB para MP3 **NÃO gera conteúdo duplicado** através de testes TDD (Test-Driven Development).

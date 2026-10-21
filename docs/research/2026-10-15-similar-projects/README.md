@@ -1,5 +1,7 @@
 # Comparable ebook/audio projects: research and adoption
 
+> **Research status (reviewed 2026-10-21).** Dated research/adoption index; the old next-slice SE1 verification plan is historical. Current [execution policy](../../agents/execution-policy.md) quarantines Intel Simulator execution; source adoption evidence is not fresh app acceptance.
+
 Research date: 2026-10-15. Repository baseline: `a41b61ffc1` plus unrelated pending
 product work, preserved. This directory separates upstream evidence from local
 adoption decisions; upstream claims are not local benchmark results.
@@ -75,7 +77,7 @@ Rust/native app. [License](https://github.com/haydonryan/epub2audiobook/blob/0b6
 
 ## Next reading/audio verification slice
 
-READ-1's [contract inventory](reading-audio-contract.md#current-contract) found
+READ-1's [contract inventory](reading-audio-contract.md#contract-at-the-recorded-baseline) found
 no measured sentence timing in the current Rust/FFI audio callback and no visible
 consumer of the dormant sentence engine. The continuation addresses demonstrated
 pending proportional-seek ownership; it does not introduce sentence following.
