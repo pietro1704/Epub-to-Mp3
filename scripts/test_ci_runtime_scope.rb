@@ -191,6 +191,11 @@ class CiRuntimeScopeTest < Minitest::Test
     analyze = steps.find { |step| step['uses'] == 'github/codeql-action/analyze@v4' }
     assert_equal "${{ format('/language:swift/coverage:{0}/platform:{1}', matrix.coverage, matrix.platform) }}", analyze.fetch('with').fetch('category')
     refute analyze.fetch('with').key?('upload')
+    embedded = steps.find { |step| step['name'] == 'Build actual embedded Rust library' }.fetch('run')
+    assert_includes embedded, 'mise run converter-ffi:build'
+    assert_includes embedded, 'mise run converter-ffi:ios-device:verify'
+    refute steps.any? { |step| step['run'].to_s.include?('mise run sidecar:build') },
+           'Swift extraction requires the embedded FFI, not the legacy server executable'
     project = YAML.load_file(File.expand_path('../ios/EpubToMp3/project.yml', __dir__))
     assert_equal 'all', project.fetch('schemes').fetch('EpubToMp3').fetch('build').fetch('targets').fetch('EpubToMp3')
     assert_equal ['test'], project.fetch('schemes').fetch('EpubToMp3').fetch('build').fetch('targets').fetch('EpubToMp3Tests')
