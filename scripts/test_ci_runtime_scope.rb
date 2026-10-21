@@ -259,6 +259,8 @@ class CiRuntimeScopeTest < Minitest::Test
     steps = faber.fetch('jobs').fetch('macos-preferences').fetch('steps')
     run = steps.find { |step| step['name'] == 'Run real macOS preference and installation XCTest' }.fetch('run')
     assert_includes run, '-only-testing:EpubToMp3Tests/AudioPlayerDivergenceTests'
+    assert_includes run, '-only-testing:EpubToMp3Tests/FaberNativeInferenceTests'
+    assert_includes run, "grep -F 'FABER_NATIVE firstChunkSeconds='"
     script = steps.find { |step| step['name'] == 'Verify actual player seek execution in the shared XCTest result' }.fetch('run')
     evidence = File.join(@root, '.reports/tts-preferences')
     FileUtils.mkdir_p(File.join(evidence, 'macos-prefs.xcresult'))
