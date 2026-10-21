@@ -150,7 +150,7 @@ jobs:
           if (!(Select-String -LiteralPath ../.reports/windows-faber/runtime.log -SimpleMatch 'DART_FABER_NATIVE: model=pt_BR-faber-medium chapters=2' -Quiet)) { throw 'Missing real inference marker' }
       - name: Retain Windows metadata and logs only
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dart-rust-faber-windows
           path: .reports/windows-faber
@@ -232,7 +232,7 @@ jobs:
           grep -F 'DART_FABER_NATIVE: model=pt_BR-faber-medium chapters=2' ../.reports/desktop-faber/runtime.log
       - name: Retain metadata and logs only
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dart-rust-faber-linux
           path: .reports/desktop-faber
