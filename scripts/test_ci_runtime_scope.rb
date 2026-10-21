@@ -204,6 +204,27 @@ class CiRuntimeScopeTest < Minitest::Test
     end
   end
 
+  def test_flutter_sdk_cache_keeps_scope_checks_installation_and_validation_on_hits_and_misses
+    steps = @workflow.fetch('jobs').fetch('flutter').fetch('steps')
+    cache = steps.find { |step| step['name'] == 'Cache Flutter SDK' }
+    refute_nil cache
+    assert_equal 'actions/cache@v6', cache.fetch('uses')
+    assert_equal '~/.local/share/mise/installs/flutter', cache.fetch('with').fetch('path')
+    key = cache.fetch('with').fetch('key')
+    %w[runner.os runner.arch].each { |identity| assert_includes key, "${{ #{identity} }}" }
+    assert_includes key, "hashFiles('mise.toml', 'mise.lock')"
+    refute cache.fetch('with').key?('restore-keys')
+    names = steps.map { |step| step['name'] }
+    assert_operator names.index('Check Flutter toolchain scope'), :<, names.index('Cache Flutter SDK')
+    assert_operator names.index('Cache Flutter SDK'), :<, names.index('Install toolchain')
+    ['Install toolchain', 'Install Flutter dependencies', 'Run Flutter tests', 'Run Flutter analyzer'].each do |name|
+      step = steps.find { |entry| entry['name'] == name }
+      refute step.key?('if'), "#{name} must run after either a cache hit or miss"
+      refute step.key?('continue-on-error'), "#{name} failures must block validation"
+    end
+    assert_equal 'mise install', steps.find { |step| step['name'] == 'Install toolchain' }.fetch('run')
+  end
+
   def test_pr_jobs_do_not_install_legacy_models_or_rebuild_unaffected_wasm
     python_steps = @workflow.fetch('jobs').fetch('python-tests').fetch('steps')
     %w[Install\ Python\ dependencies Run\ Python\ tests Install\ system\ dependencies Install\ explicit\ pinned\ Faber\ model\ for\ offline\ CLI\ smoke].each do |name|
