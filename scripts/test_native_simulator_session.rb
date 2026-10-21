@@ -800,7 +800,9 @@ class NativeSimulatorSessionTest < Minitest::Test
       value = read_fixture_json(@report)
       value if value&.key?("elapsed_seconds")
     end
-    wait_for_fixture { !live_process?(caretaker) }
+    wait_for_fixture do
+      owned.all? { |identity| fixture_process_identity(identity.first) != identity }
+    end
     assert_equal ["inspect", "inspect"], operations.map { |operation| operation.fetch("phase") }
     assert_equal "deny", report.fetch("decision")
     assert_equal false, report.fetch("cleanup_verified")
