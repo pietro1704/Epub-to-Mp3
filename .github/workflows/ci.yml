@@ -192,6 +192,9 @@ jobs:
       - name: Exercise legacy HTTP response lifecycle
         if: inputs.full_validation != true
         run: timeout --signal=TERM --kill-after=10s 60s mise exec -- python -m pytest -v --tb=short --maxfail=1 -o faulthandler_timeout=10 python_app/tests/test_stream_http_observation.py
+      - name: Verify current documentation and publication contracts
+        if: inputs.full_validation != true
+        run: mise exec -- python -m pytest --noconftest -q python_app/tests/test_engine_documentation_contract.py python_app/tests/test_sync_hf_workflow.py
 
       - name: Cache pip
         if: inputs.full_validation == true

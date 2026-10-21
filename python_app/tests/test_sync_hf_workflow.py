@@ -1,4 +1,4 @@
-"""Regression checks for selective Hugging Face synchronization."""
+"""Regression checks for validated Hugging Face synchronization."""
 
 from pathlib import Path
 
@@ -8,24 +8,27 @@ REMEDIATION_WORKFLOW = (
 )
 
 
-def test_hf_sync_only_tracks_space_runtime_paths() -> None:
+def test_hf_sync_snapshots_only_the_validated_revision() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "Detect Space-relevant changes" in workflow
     assert "mise run hf:snapshot --" in workflow
     assert "scripts/hf_push.sh" in workflow
     assert "persist-credentials: false" in workflow
     assert '--exclude "python_app"' not in workflow
-    assert "web/" in workflow
-    assert "needs.changes.outputs.should_sync == 'true'" in workflow
+    assert "needs: gate" in workflow
+    assert "ref: ${{ needs.gate.outputs.sha }}" in workflow
+    assert 'workflows: ["Post-merge validation"]' in workflow
     assert "workflow_dispatch" in workflow
 
 
 def test_hf_sync_checks_out_the_trusted_workflow_revision() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert workflow.count("github.event.workflow_run.head_sha") == 2
-    assert "ref: master" not in workflow
+    assert "ref: master" in workflow
+    assert "scripts/validated_merge.mjs" in workflow
+    assert '--ref "$SOURCE_REF" --latest' in workflow
+    assert '--ref "$VALIDATED_SHA" --latest' in workflow
+    assert workflow.index('--ref "$VALIDATED_SHA" --latest') < workflow.index("bash scripts/hf_push.sh")
     assert "issues: write" not in workflow
 
 
