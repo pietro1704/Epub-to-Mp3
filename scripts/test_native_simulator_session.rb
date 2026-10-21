@@ -810,7 +810,9 @@ class NativeSimulatorSessionTest < Minitest::Test
     baseline.each do |role, bytes|
       assert_equal bytes, File.binread(@plan.fetch("files").fetch(role).fetch("path"))
     end
-    File.open(@lease, "a+") { |lease| assert lease.flock(File::LOCK_EX | File::LOCK_NB) }
+    File.open(@lease, "a+") do |lease|
+      wait_for_fixture { lease.flock(File::LOCK_EX | File::LOCK_NB) }
+    end
   ensure
     [ready_reader, ready_writer, resume_reader, resume_writer].compact.each { |io| io.close unless io.closed? }
     if owner
