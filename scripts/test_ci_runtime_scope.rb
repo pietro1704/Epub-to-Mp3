@@ -362,7 +362,7 @@ end
 
   def test_python_runtime_checks_are_bounded_and_cover_http_lifecycle
     python = @workflow.fetch('jobs').fetch('python-tests')
-    assert_equal 30, python.fetch('timeout-minutes')
+    assert_equal '${{ inputs.full_validation == true && 30 || 7 }}', python.fetch('timeout-minutes')
     steps = python.fetch('steps')
     dependencies = steps.find { |step| step['name'] == 'Install lightweight legacy validation dependencies' }.fetch('run')
     assert_includes dependencies, 'pytest-asyncio'
@@ -375,6 +375,21 @@ end
     assert_equal 'inputs.full_validation == true', full.fetch('if')
     assert_includes full.fetch('run'), 'timeout --signal=TERM --kill-after=30s 20m'
     assert_includes full.fetch('run'), 'faulthandler_timeout=60'
+  end
+
+  def test_scoped_pr_execution_budget_is_ten_minutes_with_parallel_runtime_jobs
+    jobs = @workflow.fetch('jobs')
+    assert_equal 2, jobs.fetch('changes').fetch('timeout-minutes')
+    assert_equal 7, jobs.fetch('production-packaging-guard').fetch('timeout-minutes')
+    assert_equal 1, jobs.fetch('pr-gate').fetch('timeout-minutes')
+    %w[python-tests rust web flutter].each do |name|
+      assert_equal '${{ inputs.full_validation == true && 30 || 7 }}', jobs.fetch(name).fetch('timeout-minutes')
+      assert_includes jobs.fetch(name).fetch('needs'), 'changes'
+      refute_includes jobs.fetch(name).fetch('needs'), 'production-packaging-guard'
+    end
+    assert_equal 10, jobs.fetch('changes').fetch('timeout-minutes') +
+                     jobs.fetch('production-packaging-guard').fetch('timeout-minutes') +
+                     jobs.fetch('pr-gate').fetch('timeout-minutes')
   end
 
 end
