@@ -227,19 +227,11 @@ jobs:
         working-directory: ios/EpubToMp3
         run: xcodegen generate
 
-      - name: Build Rust macOS sidecar
-        if: matrix.platform != 'iOS'
-        run: mise run sidecar:build
-
       - name: Report Swift coverage scope
         working-directory: ios/EpubToMp3
         run: |
           printf 'Production Swift files: '
           find EpubToMp3 EpubToMp3ShareExtension EpubToMp3Widget -type f -name '*.swift' | wc -l
-          printf 'Unit-test Swift files: '
-          find EpubToMp3Tests -type f -name '*.swift' | wc -l
-          printf 'UI-test Swift files: '
-          find EpubToMp3UITests -type f -name '*.swift' | wc -l
 
       - name: Build Swift target
         working-directory: ios/EpubToMp3
