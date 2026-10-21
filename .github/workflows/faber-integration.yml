@@ -325,6 +325,7 @@ jobs:
             -only-testing:EpubToMp3Tests/ReaderProgressiveListeningTests
             -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests
             -only-testing:EpubToMp3Tests/AudioPlayerDivergenceTests
+            -only-testing:EpubToMp3Tests/FaberNativeInferenceTests
           )
           xcodebuild build-for-testing "${test_arguments[@]}" \
             | tee ../../.reports/tts-preferences/macos-prefs-build.log
