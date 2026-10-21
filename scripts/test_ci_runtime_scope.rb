@@ -346,6 +346,24 @@ def test_shared_foundation_run_requires_executed_history_cases
   refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
 end
 
+  def test_physical_android_fixture_requires_explicit_input_instead_of_inherited_dispatch
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    steps = faber.fetch('jobs').fetch('android-package').fetch('steps')
+    fixture = steps.find { |step| step['id'] == 'device-fixture-apk' }
+    assert_equal 'inputs.physical_fixture_apk == true', fixture.fetch('if')
+    events = faber.fetch('on', faber[true])
+    %w[workflow_call workflow_dispatch].each do |event|
+      input = events.fetch(event).fetch('inputs').fetch('physical_fixture_apk')
+      assert_equal 'boolean', input.fetch('type')
+      assert_equal false, input.fetch('default')
+    end
+    refute steps.find { |step| step['id'] == 'main-ui-apk' }.key?('if')
+    refute steps.find { |step| step['name'] == 'Run actual Piper inference in the packaged ARM64 app' }.key?('if')
+    assert_includes fixture.fetch('run'), 'android_real_books_inference_test.dart'
+    retention = steps.find { |step| step['name'] == 'Retain the physical-device fixture APK and build identity' }
+    assert_includes retention.fetch('if'), "steps.device-fixture-apk.outcome == 'success'"
+  end
+
   def test_browser_runtime_has_an_independent_entrypoint_and_preserves_real_inference
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     assert_equal './.github/workflows/browser-runtime.yml', faber.fetch('jobs').fetch('browser-runtime').fetch('uses')

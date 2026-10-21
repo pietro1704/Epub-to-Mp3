@@ -2,7 +2,16 @@ name: Faber runtime integration
 
 on:
   workflow_call:
+    inputs:
+      physical_fixture_apk:
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      physical_fixture_apk:
+        description: Build the optional APK for manual physical-device verification
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -162,7 +171,7 @@ jobs:
 
       - name: Build the private-fixture APK for physical Android verification
         id: device-fixture-apk
-        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feature/piper-native-fallback' || github.ref == 'refs/heads/feature/piper-native-fallback'
+        if: inputs.physical_fixture_apk == true
         working-directory: flutter_app
         env:
           EPUB2MP3_ANDROID_VERIFICATION: "1"
