@@ -135,7 +135,7 @@ jobs:
           '
       - name: Retain metadata and command logs without models or generated audio
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packaged-cli-faber-evidence
           path: .reports/cli-faber
@@ -191,7 +191,7 @@ jobs:
           '
       - name: Retain the verified executable package separately from golden logs
         if: success()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packaged-cli-faber-linux-x86_64
           path: .reports/cli-package

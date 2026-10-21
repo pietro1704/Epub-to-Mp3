@@ -76,7 +76,7 @@ jobs:
           ' .reports/ffi-test-isolation/summary.json
       - name: Retain focused XCTest evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: native-ffi-test-isolation
           path: .reports/ffi-test-isolation

@@ -111,7 +111,7 @@ jobs:
         run: mise exec -- ruby scripts/run_ci_contracts.rb --output .reports/ci-contracts/production-guard
       - name: Retain fixture contract diagnostics
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pr-contract-diagnostics-${{ github.sha }}
           path: .reports/ci-contracts/
