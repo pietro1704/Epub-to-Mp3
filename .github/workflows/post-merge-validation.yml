@@ -12,7 +12,8 @@ permissions:
 
 concurrency:
   group: post-merge-${{ github.ref }}
-  cancel-in-progress: true
+  # Finish the active validation; keep only the newest pending run.
+  cancel-in-progress: false
 
 jobs:
   merge:

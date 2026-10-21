@@ -66,6 +66,24 @@ function workflow(file) {
   return JSON.parse(result.stdout);
 }
 
+test('postmerge finishes active CodeQL validation while keeping a single pending source', () => {
+  const post = workflow('post-merge-validation.yml');
+  const codeql = workflow('codeql.yml');
+  assert.equal(post.concurrency.group, 'post-merge-${{ github.ref }}');
+  assert.equal(post.concurrency['cancel-in-progress'], false);
+  assert.equal(post.concurrency.queue ?? 'single', 'single');
+  assert.equal(codeql.concurrency['cancel-in-progress'], false);
+  assert.notEqual(post.concurrency.group, codeql.concurrency.group);
+  assert.equal(post.jobs.codeql.needs, 'merge');
+  for (const name of ['merge', 'validated']) {
+    assert.equal(post.jobs[name].steps[0].with.ref, '${{ github.sha }}');
+  }
+  for (const job of Object.values(codeql.jobs)) {
+    if (!job.steps?.some(step => step.uses === 'github/codeql-action/analyze@v4')) continue;
+    assert.ok(job['timeout-minutes'] > 0 && job['timeout-minutes'] <= 90);
+  }
+});
+
 test('postmerge graph contains every runtime and aggregates all called workflows', () => {
   const post = workflow('post-merge-validation.yml');
   const events = post.on ?? post.true;
