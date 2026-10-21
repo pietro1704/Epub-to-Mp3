@@ -245,7 +245,7 @@ class CiRuntimeScopeTest < Minitest::Test
       assert_equal 'inputs.full_validation == true', python_steps.find { |step| step['name'] == name }.fetch('if'), name
     end
     lite = python_steps.find { |step| step['name'] == 'Install lightweight legacy validation dependencies' }
-    assert_equal 'mise exec -- python -m pip install pytest ruff==0.6.9', lite.fetch('run')
+    assert_equal "mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.6.9", lite.fetch('run')
     web = @workflow.fetch('jobs').fetch('web')
     %w[Install\ Rust\ WASM\ target Build\ direct\ Rust\ WASM\ adapter].each do |name|
       assert_equal "needs.changes.outputs.wasm == 'true'", web.fetch('steps').find { |step| step['name'] == name }.fetch('if')
@@ -358,6 +358,23 @@ end
     production = steps.find { |step| step['name'] == 'Exercise real production inference' }
     assert_equal 'production', production.fetch('env').fetch('TTS_BROWSER_MODE')
     assert_includes production.fetch('run'), 'node web/scripts/verify-browser-tts.mjs'
+  end
+
+  def test_python_runtime_checks_are_bounded_and_cover_http_lifecycle
+    python = @workflow.fetch('jobs').fetch('python-tests')
+    assert_equal 30, python.fetch('timeout-minutes')
+    steps = python.fetch('steps')
+    dependencies = steps.find { |step| step['name'] == 'Install lightweight legacy validation dependencies' }.fetch('run')
+    assert_includes dependencies, 'pytest-asyncio'
+    assert_includes dependencies, 'starlette>=1.9.0'
+    focused = steps.find { |step| step['name'] == 'Exercise legacy HTTP response lifecycle' }
+    assert_equal 'inputs.full_validation != true', focused.fetch('if')
+    assert_includes focused.fetch('run'), 'timeout --signal=TERM --kill-after=10s 60s'
+    assert_includes focused.fetch('run'), 'python_app/tests/test_stream_http_observation.py'
+    full = steps.find { |step| step['name'] == 'Run Python tests' }
+    assert_equal 'inputs.full_validation == true', full.fetch('if')
+    assert_includes full.fetch('run'), 'timeout --signal=TERM --kill-after=30s 20m'
+    assert_includes full.fetch('run'), 'faulthandler_timeout=60'
   end
 
 end
