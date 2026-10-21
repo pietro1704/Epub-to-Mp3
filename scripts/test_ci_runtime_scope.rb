@@ -330,4 +330,20 @@ def test_shared_foundation_run_requires_executed_history_cases
   refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
 end
 
+  def test_browser_runtime_has_an_independent_entrypoint_and_preserves_real_inference
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    assert_equal './.github/workflows/browser-runtime.yml', faber.fetch('jobs').fetch('browser-runtime').fetch('uses')
+    browser = YAML.load_file(File.expand_path('../.github/workflows/browser-runtime.yml', __dir__))
+    triggers = browser['on'] || browser[true]
+    assert triggers.key?('workflow_call')
+    assert triggers.key?('workflow_dispatch')
+    assert_equal ['browser-runtime'], browser.fetch('jobs').keys
+    steps = browser.fetch('jobs').fetch('browser-runtime').fetch('steps')
+    development = steps.find { |step| step['name'] == 'Exercise real browser storage and development inference' }
+    assert_includes development.fetch('run'), 'node web/scripts/verify-browser-tts.mjs'
+    production = steps.find { |step| step['name'] == 'Exercise real production inference' }
+    assert_equal 'production', production.fetch('env').fetch('TTS_BROWSER_MODE')
+    assert_includes production.fetch('run'), 'node web/scripts/verify-browser-tts.mjs'
+  end
+
 end

@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { onnxRuntimeModule } from "./plugins/onnxRuntimeModule.ts";
 
 import { readFileSync } from "fs";
 
@@ -23,7 +24,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
     },
-    plugins: [react()],
+    plugins: [react(), onnxRuntimeModule()],
     worker: { format: "es" },
     publicDir: "public",
     server: {
