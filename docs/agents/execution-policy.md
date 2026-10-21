@@ -26,6 +26,17 @@ necessary dependency rebuild before starting it. A narrow validation request
 ends after its visible app journey and focused checks; expand only for a concrete
 failure or unresolved acceptance condition.
 
+## Apple toolchain
+
+Use Xcode 16.4 for app development, builds and tests because this project
+supports iOS 15.5. On this Mac its developer directory is
+`/Applications/Xcode-16.4.0.app/Contents/Developer`; managed tasks select it
+through `DEVELOPER_DIR` and `scripts/xcode_build_paths.rb`.
+
+The system Command Line Tools selection uses Xcode 26 for terminal and
+Homebrew compatibility. Preserve that selection; it does not select the app's
+development toolchain. Use the explicit development environment for Apple work.
+
 ## Native safety
 
 Every Mac compiler invocation, including bootstrap/interpreter compilation, uses
