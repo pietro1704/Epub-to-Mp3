@@ -5,7 +5,7 @@ require_relative "run_host_checks"
 # Explicit fixture-only allowlist. Never discover tests: other suites build or launch apps.
 module CiContracts
   RUBY_SUITES = (HostChecks::SUITES + %w[
-    test_run_ci_contracts.rb test_ci_runtime_scope.rb test_codeql_swift_build.rb test_direct_runtime_boundary.rb
+    test_minitest_bootstrap.rb test_run_ci_contracts.rb test_ci_runtime_scope.rb test_codeql_swift_build.rb test_direct_runtime_boundary.rb
     test_bundle_onnxruntime_apple.rb
     test_mac_validate.rb
     test_android_jni_exports.rb

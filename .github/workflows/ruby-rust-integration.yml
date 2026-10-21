@@ -18,7 +18,7 @@ jobs:
           ruby-version: "4.0"
           bundler-cache: false
       - name: Install benchmark report test dependency
-        run: gem install minitest --version 6.0.6 --no-document
+        run: gem install minitest --version 6.0.6 --no-document --bindir "$RUNNER_TEMP/minitest-bin"
       - name: Verify TTS report identity, cancellation and artifact integrity
         run: ruby docs/research/tts-mac-20261016/test_report.rb
       - name: Install Ruby gateway dependencies
