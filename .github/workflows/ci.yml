@@ -454,6 +454,12 @@ jobs:
           print("Flutter CI tools: python, flutter")
           '
 
+      - name: Cache Flutter SDK
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/share/mise/installs/flutter
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+
       - name: Install toolchain
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
