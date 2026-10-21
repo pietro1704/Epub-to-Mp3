@@ -13,12 +13,12 @@ func excludedFiles(_ directory: String, keeping sources: [String]) -> [String] {
     }
 }
 
-let production = ["Features/Conversion/Models/SessionRecord.swift", "Features/Conversion/Services/ConversionHistoryReader.swift",
+let production = ["Features/Library/Services/BookContentIdentity.swift", "Features/Offline/Services/RustConversionOutputStore.swift", "Features/Conversion/Models/SessionRecord.swift", "Features/Conversion/Services/ConversionHistoryReader.swift",
                   "Features/Conversion/Services/AudioEnginePreference.swift", "Features/Conversion/Services/ConversionChapterSelection.swift", "Features/Conversion/Services/ConversionOptions.swift",
                   "Features/Conversion/Services/PlatformSpeechSynthesizer.swift", "Features/Conversion/Services/PlatformFallbackNotice.swift",
                   "Features/Conversion/Services/ConverterFFIAdapter.swift", "Features/Conversion/Services/RustConversionCoordinator.swift",
                   "Features/Conversion/Models/JobSnapshot.swift", "Shared/Localization/L10n.swift"]
-let tests = ["PlatformSpeechSynthesizerTests.swift", "ConversionHistoryReaderTests.swift", "ConversionChapterSelectionTests.swift", "ConversionOptionsInteropTests.swift", "EpubFixture.swift"]
+let tests = ["BookContentIdentityTests.swift", "PlatformSpeechSynthesizerTests.swift", "ConversionHistoryReaderTests.swift", "ConversionChapterSelectionTests.swift", "ConversionOptionsInteropTests.swift", "EpubFixture.swift"]
 let package = Package(
     name: "AppFoundation",
     platforms: [.macOS(.v12)],

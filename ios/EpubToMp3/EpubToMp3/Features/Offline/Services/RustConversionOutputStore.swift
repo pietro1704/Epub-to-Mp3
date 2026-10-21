@@ -49,7 +49,7 @@ actor RustConversionOutputStore {
 
     init(root: URL = defaultRoot, notificationCenter: NotificationCenter = .default,
          bookIdentity: @escaping @Sendable (URL) async throws -> String = { url in
-             try await Task.detached(priority: .utility) { try LibraryStore.contentHash(of: url) }.value
+             try await Task.detached(priority: .utility) { try BookContentIdentity.hash(of: url) }.value
          }) {
         self.root = root
         self.notificationCenter = notificationCenter
@@ -248,7 +248,7 @@ actor RustConversionOutputStore {
               let path = metadata["input"] as? String, path.hasPrefix("/") else { return nil }
         let source = URL(fileURLWithPath: path)
         return await Task.detached(priority: .utility) {
-            try? LibraryStore.contentHash(of: source)
+            try? BookContentIdentity.hash(of: source)
         }.value
     }
 }

@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import Combine
 import Darwin
 
@@ -935,11 +934,7 @@ final class LibraryStore: ObservableObject {
     /// just expired between calls, `Data(contentsOf:)` reads in one
     /// shot under the still-active scope.
     static func contentHash(of url: URL) throws -> String {
-        let data = try Data(contentsOf: url, options: [.alwaysMapped])
-        var hasher = SHA256()
-        hasher.update(data: data)
-        let digest = hasher.finalize()
-        return digest.compactMap { String(format: "%02x", $0) }.joined().prefix(32).description
+        try BookContentIdentity.hash(of: url)
     }
 
     private static func titleFromFilename(_ name: String) -> String {
