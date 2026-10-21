@@ -404,7 +404,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
-    // MARK: Pending proportional seek
+    // MARK: Pending reader-page navigation
 
     private func pendingReaderSnapshot(jobID: String) throws -> JobSnapshot {
         let data = try JSONSerialization.data(withJSONObject: [
@@ -415,164 +415,167 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     }
 
     @MainActor
-    func testStopCancelsReaderPageSeekBeforeDurationArrives() throws {
-        let player = makePlayer()
-        defer { player.stop() }
-        player.setSnapshot(try pendingReaderSnapshot(jobID: "cancelled-reader-page"))
-        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
-        XCTAssertEqual(player.testHook_pendingProportionalSeek(), 0.5,
-                       "The public reader action must create a real deferred request")
-        player.stop()
-        XCTAssertNil(player.testHook_pendingProportionalSeek(),
-                     "Stop must synchronously cancel the reader's deferred page request")
-        player.testHook_setDurationSeconds(120)
-        player.applyPendingProportionalSeek()
-        XCTAssertEqual(player.positionSeconds, 0,
-                       "A late duration must not resurrect a cancelled page seek")
-    }
-
-    @MainActor
-    func testReaderPageSeekCannotCrossJobsAtTheSameChapterIndex() throws {
-        let player = makePlayer()
-        defer { player.stop() }
-        player.setSnapshot(try pendingReaderSnapshot(jobID: "reader-page-book-a"))
-        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
-        XCTAssertEqual(player.testHook_pendingProportionalSeek(), 0.5)
-        let originalChapter = player.currentChapterIndex
-        player.setSnapshot(try pendingReaderSnapshot(jobID: "reader-page-book-b"))
-        XCTAssertEqual(player.currentChapterIndex, originalChapter)
-        player.applyPendingProportionalSeek()
-        XCTAssertNil(player.testHook_pendingProportionalSeek(),
-                     "A different job must discard the old request before duration arrives")
-        player.testHook_setDurationSeconds(120)
-        player.applyPendingProportionalSeek()
-        XCTAssertEqual(player.positionSeconds, 0,
-                       "The old book's page ratio must not seek the new book")
-    }
-
-    /// A public page request survives a same-job refresh until asset duration arrives.
-    @MainActor
-    func testPendingProportionalSeekAppliedOnceDurationLands() throws {
-        let player = makePlayer()
-        defer { player.stop() }
-        player.setSnapshot(try pendingReaderSnapshot(jobID: "delayed-reader-page"))
-        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
-        XCTAssertEqual(player.testHook_pendingProportionalSeek(), 0.5)
-        player.setSnapshot(try pendingReaderSnapshot(jobID: "delayed-reader-page"))
-        // Duration still 0 — applying should be a no-op.
-        player.applyPendingProportionalSeek()
-        XCTAssertEqual(
-            player.testHook_pendingProportionalSeek(),
-            0.5,
-            "Pending seek must persist while duration is unknown"
-        )
-        player.testHook_setDurationSeconds(120)
-        player.applyPendingProportionalSeek()
-        XCTAssertEqual(player.positionSeconds, 60,
-                       "The current book's valid page request must seek when duration arrives")
-        XCTAssertNil(
-            player.testHook_pendingProportionalSeek(),
-            "Pending seek must clear after duration-driven apply"
-        )
-        player.seek(to: 15)
-        player.applyPendingProportionalSeek()
-        XCTAssertEqual(player.positionSeconds, 15,
-                       "A consumed page request must not reapply after a later seek")
-    }
-
-    // MARK: End-to-end behavioural — full play() path with unplayable gaps
-
-    @MainActor
-    func testPendingReaderPageSeekSurvivesTheFirstPlayableSnapshot() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pending reader asset \(UUID().uuidString)", isDirectory: true)
+    private func readerAudioFixture(valid: Bool = true) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("reader seek \(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let audioURL = directory.appendingPathComponent("first chapter.wav")
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1))
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 960_000))
-        buffer.frameLength = buffer.frameCapacity
-        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
-        for frame in 0..<Int(buffer.frameLength) { samples[frame] = 0 }
-        do {
-            let file = try AVAudioFile(forWriting: audioURL, settings: format.settings)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("chapter.wav")
+        if valid {
+            let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1))
+            let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 80_000))
+            buffer.frameLength = buffer.frameCapacity
+            let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+            for frame in 0..<Int(buffer.frameLength) { samples[frame] = 0 }
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
             try file.write(from: buffer)
+        } else {
+            try Data("Invalid audio fixture".utf8).write(to: url)
         }
+        return url
+    }
 
-        let player = makePlayer()
-        defer { player.stop() }
-        let jobID = "first-asset-\(UUID().uuidString)"
-        player.setSnapshot(try pendingReaderSnapshot(jobID: jobID))
-        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
-        XCTAssertEqual(player.testHook_pendingProportionalSeek(), 0.5)
+    private func playableReaderSnapshot(jobID: String, url: URL) throws -> JobSnapshot {
         let data = try JSONSerialization.data(withJSONObject: [
             "jobId": jobID, "state": "running", "bookTitle": "Pending reader fixture",
             "chaptersTotal": 1, "chaptersCompleted": 1,
             "chapterProgress": [[
                 "index": 0, "name": "Chapter 1", "status": "completed",
-                "downloadUrl": audioURL.absoluteString, "chars": 1000,
-                "charsProcessed": 1000, "progressRatio": 1.0, "durationSeconds": 120,
-            ]],
-        ])
-        player.updateSnapshot(try JSONDecoder().decode(JobSnapshot.self, from: data))
-        // No actor suspension: queued AV duration notifications cannot race the
-        // assertions. Only their eventual duration is controlled by the hook.
-        XCTAssertEqual(player.testHook_playbackChapterCount(), 1)
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
-        XCTAssertEqual((item.asset as? AVURLAsset)?.url, audioURL)
-        XCTAssertEqual(player.testHook_pendingProportionalSeek(), 0.5,
-                       "The first playable SSE snapshot must preserve the reader's page request")
-        player.testHook_setDurationSeconds(120)
-        player.applyPendingProportionalSeek()
-        XCTAssertEqual(player.positionSeconds, 60)
-        XCTAssertNil(player.testHook_pendingProportionalSeek())
-        player.seek(to: 15)
-        player.applyPendingProportionalSeek()
-        XCTAssertEqual(player.positionSeconds, 15,
-                       "The restored request must be consumed exactly once")
-    }
-
-    @MainActor
-    func testPendingReaderPageSeekDoesNotSurviveFirstSnapshotFromAnotherJob() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("stale reader asset \(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let audioURL = directory.appendingPathComponent("new book chapter.wav")
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1))
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 80_000))
-        buffer.frameLength = buffer.frameCapacity
-        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
-        for frame in 0..<Int(buffer.frameLength) { samples[frame] = 0 }
-        do {
-            let file = try AVAudioFile(forWriting: audioURL, settings: format.settings)
-            try file.write(from: buffer)
-        }
-
-        let player = makePlayer()
-        defer { player.stop() }
-        player.setSnapshot(try pendingReaderSnapshot(jobID: "previous-book-\(UUID().uuidString)"))
-        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
-        XCTAssertEqual(player.testHook_pendingProportionalSeek(), 0.5)
-        let newJobID = "new-book-\(UUID().uuidString)"
-        let data = try JSONSerialization.data(withJSONObject: [
-            "jobId": newJobID, "state": "running", "bookTitle": "New book",
-            "chaptersTotal": 1, "chaptersCompleted": 1,
-            "chapterProgress": [[
-                "index": 0, "name": "Chapter 1", "status": "completed",
-                "downloadUrl": audioURL.absoluteString, "chars": 1000,
+                "downloadUrl": url.absoluteString, "chars": 1000,
                 "charsProcessed": 1000, "progressRatio": 1.0, "durationSeconds": 10,
             ]],
         ])
-        player.updateSnapshot(try JSONDecoder().decode(JobSnapshot.self, from: data))
+        return try JSONDecoder().decode(JobSnapshot.self, from: data)
+    }
+
+    @MainActor
+    private func waitForReaderState(_ description: String, _ predicate: () -> Bool) async throws {
+        for _ in 0..<200 {
+            if predicate() { return }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Timed out waiting for \(description)")
+    }
+
+    @MainActor
+    func testStopCancelsReaderPageSeekBeforeDurationArrives() async throws {
+        let player = makePlayer()
+        defer { player.stop() }
+        let jobID = "cancelled-reader-\(UUID().uuidString)"
+        let url = try readerAudioFixture()
+        player.setSnapshot(try pendingReaderSnapshot(jobID: jobID))
+        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
+        XCTAssertEqual(player.pendingNavigation?.jobID, jobID)
+        XCTAssertTrue(player.isSeeking)
+        player.stop()
+        XCTAssertNil(player.pendingNavigation, "Stop must synchronously cancel the public page request")
+        player.updateSnapshot(try playableReaderSnapshot(jobID: jobID, url: url))
+        try await waitForReaderState("cancelled request's late chapter") { player.durationSeconds > 0 }
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertFalse(player.isSeeking)
+        XCTAssertEqual(player.positionSeconds, 0, accuracy: 0.05,
+                       "A late asset must not resurrect a cancelled page seek")
+    }
+
+    @MainActor
+    func testReaderPageSeekCannotCrossJobsAtTheSameChapterIndex() async throws {
+        let player = makePlayer()
+        defer { player.stop() }
+        let originalJob = "reader-a-\(UUID().uuidString)"
+        let nextJob = "reader-b-\(UUID().uuidString)"
+        let url = try readerAudioFixture()
+        player.setSnapshot(try pendingReaderSnapshot(jobID: originalJob))
+        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
+        XCTAssertEqual(player.pendingNavigation?.jobID, originalJob)
+        player.updateSnapshot(try pendingReaderSnapshot(jobID: nextJob))
+        XCTAssertNil(player.pendingNavigation, "Another job must discard the request before audio arrives")
+        player.updateSnapshot(try playableReaderSnapshot(jobID: nextJob, url: url))
+        try await waitForReaderState("new book's duration") { player.durationSeconds > 0 }
+        XCTAssertEqual(player.snapshot?.jobId, nextJob)
+        XCTAssertEqual(player.currentChapterIndex, 0)
+        XCTAssertEqual(player.positionSeconds, 0, accuracy: 0.05)
+        XCTAssertFalse(player.isPlaying)
+    }
+
+    /// The public page request survives refresh, uses real asset duration, and is consumed once.
+    @MainActor
+    func testPendingProportionalSeekAppliedOnceDurationLands() async throws {
+        let player = makePlayer()
+        defer { player.stop() }
+        let jobID = "delayed-reader-\(UUID().uuidString)"
+        let url = try readerAudioFixture()
+        player.setSnapshot(try pendingReaderSnapshot(jobID: jobID))
+        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
+        let request = try XCTUnwrap(player.pendingNavigation)
+        player.pause()
+        player.updateSnapshot(try pendingReaderSnapshot(jobID: jobID))
+        XCTAssertEqual(player.pendingNavigation, request,
+                       "A same-job refresh must retain the same navigation request")
+        player.updateSnapshot(try playableReaderSnapshot(jobID: jobID, url: url))
+        try await waitForReaderState("duration-based page seek") {
+            !player.isSeeking && player.pendingNavigation == nil && abs(player.positionSeconds - 5) < 0.1
+        }
+        XCTAssertEqual(player.positionSeconds, 5, accuracy: 0.1)
+        XCTAssertFalse(player.isPlaying, "Arrival must preserve Pause while waiting")
+        player.seek(to: 2)
+        try await waitForReaderState("replacement seek") { !player.isSeeking && abs(player.positionSeconds - 2) < 0.1 }
+        player.updateSnapshot(try playableReaderSnapshot(jobID: jobID, url: url))
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(player.positionSeconds, 2, accuracy: 0.1,
+                       "A consumed page request must not reapply on refresh")
+    }
+
+    @MainActor
+    func testPendingReaderPageSeekSurvivesTheFirstPlayableSnapshot() async throws {
+        let player = makePlayer()
+        defer { player.stop() }
+        let jobID = "first-asset-\(UUID().uuidString)"
+        let url = try readerAudioFixture()
+        player.setSnapshot(try pendingReaderSnapshot(jobID: jobID))
+        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
+        XCTAssertEqual(player.pendingNavigation?.jobID, jobID)
+        player.pause()
+        player.updateSnapshot(try playableReaderSnapshot(jobID: jobID, url: url))
+        try await waitForReaderState("first file's reader-page seek") {
+            !player.isSeeking && player.pendingNavigation == nil && abs(player.positionSeconds - 5) < 0.1
+        }
         XCTAssertEqual(player.testHook_playbackChapterCount(), 1)
-        XCTAssertEqual(player.snapshot?.jobId, newJobID)
-        XCTAssertNil(player.testHook_pendingProportionalSeek(),
-                     "A first playable snapshot from a different job must discard the old request")
-        player.testHook_setDurationSeconds(10)
-        player.applyPendingProportionalSeek()
-        XCTAssertEqual(player.positionSeconds, 0,
-                       "A late duration for the new book must not apply the old book's page ratio")
+        XCTAssertEqual((player.testHook_currentPlayerItem()?.asset as? AVURLAsset)?.url, url)
+        XCTAssertEqual(player.positionSeconds, 5, accuracy: 0.1)
+        XCTAssertFalse(player.isPlaying)
+    }
+
+    @MainActor
+    func testPendingReaderPageSeekDoesNotSurviveFirstSnapshotFromAnotherJob() async throws {
+        let player = makePlayer()
+        defer { player.stop() }
+        let previousJob = "previous-\(UUID().uuidString)"
+        let nextJob = "new-\(UUID().uuidString)"
+        let url = try readerAudioFixture()
+        player.setSnapshot(try pendingReaderSnapshot(jobID: previousJob))
+        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
+        XCTAssertEqual(player.pendingNavigation?.jobID, previousJob)
+        player.updateSnapshot(try playableReaderSnapshot(jobID: nextJob, url: url))
+        XCTAssertNil(player.pendingNavigation)
+        try await waitForReaderState("different book's first file") { player.durationSeconds > 0 }
+        XCTAssertEqual(player.snapshot?.jobId, nextJob)
+        XCTAssertEqual(player.positionSeconds, 0, accuracy: 0.05)
+        XCTAssertFalse(player.isPlaying)
+    }
+
+    @MainActor
+    func testInvalidFirstReaderAssetCancelsPendingPageSeek() async throws {
+        let player = makePlayer()
+        defer { player.stop() }
+        let jobID = "invalid-asset-\(UUID().uuidString)"
+        let url = try readerAudioFixture(valid: false)
+        player.setSnapshot(try pendingReaderSnapshot(jobID: jobID))
+        player.startFromReaderPage(0, sentenceOffsetRatio: 0.5)
+        XCTAssertEqual(player.pendingNavigation?.jobID, jobID)
+        player.updateSnapshot(try playableReaderSnapshot(jobID: jobID, url: url))
+        try await waitForReaderState("invalid asset cancellation") { player.pendingNavigation == nil && !player.isSeeking }
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.positionSeconds, 0)
     }
 
     /// Real end-to-end exercise of `play(snapshot:startingAt:)` →
