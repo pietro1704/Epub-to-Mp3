@@ -244,14 +244,14 @@ jobs:
           PY
       - name: Retain the audited normal Linux product
         if: success()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flutter-linux-normal-product
           path: .reports/linux-gui-product
           if-no-files-found: error
       - name: Retain build logs separately from the product
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flutter-linux-normal-build-logs
           path: .reports/linux-gui

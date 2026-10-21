@@ -144,7 +144,7 @@ jobs:
           node "$RUNNER_TEMP/pr-repair-guard.cjs" validate-changes "$PR_NUMBER" "$EXPECTED_SHA" "$GITHUB_WORKSPACE/repair"
           node "$RUNNER_TEMP/pr-repair-guard.cjs" stage-changes "$PR_NUMBER" "$EXPECTED_SHA" "$GITHUB_WORKSPACE/repair"
           git -C repair diff --no-ext-diff --no-textconv --cached --binary > "$RUNNER_TEMP/repair.patch"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: steps.claim.outputs.state == 'claimed'
         with:
           name: pr-repair-${{ github.run_id }}
