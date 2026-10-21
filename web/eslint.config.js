@@ -7,7 +7,7 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", "src/wasm/**"],
+    ignores: ["dist/**", "node_modules/**", "src/wasm/**", "public/tts/**"],
   },
   js.configs.recommended,
   {
