@@ -124,6 +124,11 @@ module MacBuildBudget
   end
 
   def self.main(arguments)
+    if arguments == ["check"]
+      error = check
+      warn error if error
+      return error ? 75 : 0
+    end
     raise "Mac build storage commands require macOS" unless RUBY_PLATFORM.include?("darwin")
     case arguments
     when ["status"]
@@ -132,7 +137,7 @@ module MacBuildBudget
       puts JSON.pretty_generate({ policy: limits, **snapshot, blocked: evaluate(limits, **snapshot) })
     when ["prune"] then prune
     when ["prune-if-low"] then prune if metrics.fetch(:free_bytes) < policy.fetch("minimum_free_gib") * GIB
-    else raise "Usage: mac_build_budget.rb status|prune|prune-if-low"
+    else raise "Usage: mac_build_budget.rb check|status|prune|prune-if-low"
     end
     0
   rescue StandardError => error

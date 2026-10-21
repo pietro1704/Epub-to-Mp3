@@ -49,7 +49,7 @@ actor RustConversionOutputStore {
 
     init(root: URL = defaultRoot, notificationCenter: NotificationCenter = .default,
          bookIdentity: @escaping @Sendable (URL) async throws -> String = { url in
-             try await Task.detached(priority: .utility) { try LibraryStore.contentHash(of: url) }.value
+             try await Task.detached(priority: .utility) { try BookContentIdentity.hash(of: url) }.value
          }) {
         self.root = root
         self.notificationCenter = notificationCenter
@@ -214,11 +214,17 @@ actor RustConversionOutputStore {
     }
 
     nonisolated private static func hasCanonicalRoot(_ root: URL) -> Bool {
-        // Reject aliases in every existing ancestor, including an app-support override.
+        // Foundation canonicalizes /private/var back to /var on Darwin, even
+        // after resolvingSymlinksInPath(). Accept only that system alias;
+        // custom aliases in the root or any ancestor remain forbidden.
         var ancestor = root.standardizedFileURL
         while ancestor.path != "/" {
             if (try? ancestor.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-                return false
+                guard ancestor.path == "/var",
+                      let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: ancestor.path),
+                      destination == "private/var" || destination == "/private/var" else {
+                    return false
+                }
             }
             ancestor.deleteLastPathComponent()
         }
@@ -242,7 +248,7 @@ actor RustConversionOutputStore {
               let path = metadata["input"] as? String, path.hasPrefix("/") else { return nil }
         let source = URL(fileURLWithPath: path)
         return await Task.detached(priority: .utility) {
-            try? LibraryStore.contentHash(of: source)
+            try? BookContentIdentity.hash(of: source)
         }.value
     }
 }

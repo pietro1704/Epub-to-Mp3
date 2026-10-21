@@ -235,6 +235,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     }
 
     private func presentImportError(_ error: Error) {
+        AppErrorReporter.message(error, context: "Library import")
         let alert = NSAlert(error: error)
         alert.runModal()
     }
@@ -329,7 +330,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
                 guard let window = view.window else { return }
                 let alert = NSAlert()
                 alert.messageText = L10n.string("settings.storageRemovalFailedTitle")
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = AppErrorReporter.message(error, context: #function)
                 alert.beginSheetModal(for: window, completionHandler: nil)
             }
         }

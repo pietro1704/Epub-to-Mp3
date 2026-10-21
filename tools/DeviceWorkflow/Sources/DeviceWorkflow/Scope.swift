@@ -76,7 +76,35 @@ public struct Options {
             throw WorkflowError("Set IOS_TESTS explicitly to audited focused device tests.")
         }
         // Keep exact method selectors aligned with the audited device test classes.
+        // Partial method audits must never authorize a whole-class selector.
+        let allowedClasses: Set<String> = ["ReaderViewportTransitionTests", "ReaderProgressStoreTests"]
         let allowedMethods: [String: Set<String>] = [
+            "ReaderProgressiveListeningTests": [
+                "testMiniPlayerPreservesPageUntilCompleteChapterArrives",
+                "testMiniPlayerPageStartKeepsPauseWhileWaitingForChapter",
+                "testMiniPlayerRejectsNonfinitePageAnchorAndStreamsImmediately",
+                "testMiniPlayerPageAnchorDoesNotSurviveReplacementSession",
+                "testTerminalEmptySnapshotDoesNotWaitForReaderPageForever",
+                "testRequestedChapterPlaysBeforeConversionFinishesWithoutRestart",
+                "testPauseWhileWaitingPreventsChapterAutoplay",
+            ],
+            "AppErrorReporterTests": [
+                "testAlertMessageAlsoWritesErrorIdentityAndCauseToTerminal",
+                "testStringFailureRetainsLocalizedAlertAndPrefixesEveryDiagnosticLine",
+            ],
+            "RustOutputRootValidationTests": [
+                "testSystemTemporaryRootSupportsWritingCountingAndOwnedRemoval",
+                "testCustomSymlinkAncestorStillRejectsWritesAndRemoval",
+                "testCanonicalRootStillRejectsTraversalAndPreservesAnotherBooksOutput",
+            ],
+            "ToolbarSettingsParityTests": [
+                "testInstalledSystemVoiceCanBeSelectedAsSecondaryWithoutChangingPrimary",
+                "testNewSpeechSettingsUseFaberWithNativeFallbackAndPersistExplicitNone",
+                "testLoadingConsentedEdgeFallbackAdoptsNativeRecoveryWithoutChangingSelections",
+                "testExistingSpeechSettingsRetainPrimaryAndRecoverThroughSystem",
+                "testExistingExplicitNativeFallbackAdoptsRecoveryWithoutSettingsEdit",
+                "testLoadingDuplicateLegacyFallbackClearsOnlySecondary",
+            ],
             "ReaderViewportTransitionTests": [
                 "testRepeatedTargetIsIdempotentAndCapturesOnce",
                 "testReplacementMakesPreviousCommitStaleWithoutRecapturing",
@@ -109,6 +137,10 @@ public struct Options {
             if parts.count == 3 {
                 guard methods.contains(parts[2]) else {
                     throw WorkflowError("IOS_TESTS method selectors must name an audited test method.")
+                }
+            } else {
+                guard allowedClasses.contains(parts[1]) else {
+                    throw WorkflowError("IOS_TESTS requires exact method selectors for partially audited classes.")
                 }
             }
             expectedCount += parts.count == 3 ? 1 : methods.count

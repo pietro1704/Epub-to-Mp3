@@ -169,12 +169,14 @@ public final class Workflow {
         }
         let benchmark = options.action == .benchmark
         let project = root.appendingPathComponent("ios/EpubToMp3")
-        let products = project.appendingPathComponent(".build/Build/Products")
+        let derivedData = URL(fileURLWithPath: environment["IOS_DERIVED_DATA_PATH"]
+            ?? environment["APPLE_DERIVED_DATA_PATH"] ?? project.appendingPathComponent(".build").path)
+        let products = derivedData.appendingPathComponent("Build/Products")
         let app = products.appendingPathComponent("Debug-iphoneos/EpubToMp3.app")
         let scheme = benchmark ? "EpubToMp3-IntegrationTests" : "EpubToMp3"
         let destination = ["-destination", "platform=iOS,id=\(udid)", "-parallel-testing-enabled", "NO"]
         let common = ["xcodebuild", "-quiet", "-jobs", "1", "-project", project.appendingPathComponent("EpubToMp3.xcodeproj").path,
-                      "-scheme", scheme, "-derivedDataPath", project.appendingPathComponent(".build").path] + destination
+                      "-scheme", scheme, "-derivedDataPath", derivedData.path] + destination
         let selected = options.action == .test ? options.testFilters : (environment["IOS_TESTS"] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         let filters = selected.filter { !$0.isEmpty }.map { "-only-testing:\($0)" }
         report["status"] = "preparing"

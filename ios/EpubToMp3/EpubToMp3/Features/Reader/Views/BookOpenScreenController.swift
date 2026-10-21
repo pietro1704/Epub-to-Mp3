@@ -1664,7 +1664,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         loadGenerationID = nil
         pendingLoadingCompletionID = nil
         loadingSpinner.stopAnimating()
-        loadingStatusLabel.text = message
+        loadingStatusLabel.text = AppErrorReporter.message(message, context: "Reader loading")
         loadingRetryButton.isHidden = false
         isLoadingContent = false
         onLoadStateChanged?(false)
@@ -2789,7 +2789,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             } catch {
                 guard !Task.isCancelled, reimportRequestID == request, book.id == originalBookID,
                       sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection else { return }
-                let alert = UIAlertController(title: L10n.string("bookOpen.error"), message: error.localizedDescription, preferredStyle: .alert)
+                let alert = UIAlertController(title: L10n.string("bookOpen.error"), message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
                 present(alert, animated: true)
             }

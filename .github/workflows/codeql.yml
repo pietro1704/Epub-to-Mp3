@@ -115,7 +115,8 @@ jobs:
 
   swift:
     name: CodeQL · swift (${{ matrix.coverage }} · ${{ matrix.platform }})
-    runs-on: macos-latest
+    # Xcode 16.4 is available on macOS 15; newer images may omit it.
+    runs-on: macos-15
     env:
       # Nested mise exec calls in Xcode build phases must not install XcodeGen.
       # The project generator is installed separately through Homebrew below.
@@ -175,6 +176,34 @@ jobs:
       - name: Install Rust iOS target
         if: matrix.platform != 'macOS'
         run: mise exec -- rustup target add aarch64-apple-ios
+
+      - name: Identify compatible Apple dependency artifacts
+        id: apple-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity=$({
+            mise exec -- rustc -vV
+            mise exec -- xcodebuild -version
+            mise exec -- xcrun --sdk macosx --show-sdk-path
+            mise exec -- xcrun --sdk iphoneos --show-sdk-path
+            printf '%s\n' "${RUSTFLAGS:-}" "${CARGO_ENCODED_RUSTFLAGS:-}" "${RUSTC_WRAPPER:-}"
+          } | shasum -a 256 | cut -d ' ' -f 1)
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+
+      # GitHub scopes PR-written caches to their merge ref. No test results,
+      # app objects or CodeQL databases are restored; this HEAD is still built.
+      - name: Reuse compatible Rust dependencies across Apple jobs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs') }}-${{ matrix.platform }}
+          restore-keys: |
+            apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs') }}-
+            apple-rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.apple-cache.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'mise.toml', 'scripts/apple_target_clang.sh') }}-
 
       - name: Build actual embedded Rust library
         env:

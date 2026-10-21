@@ -26,6 +26,8 @@ requires an explicit user action; preserve existing models and never require a p
 
 - Execution, local/remote platforms, native safety and delivery authorization:
   read [execution policy](docs/agents/execution-policy.md) before executing work.
+- PR delivery: all ready PRs to `master` have standing automatic-merge
+  authorization under that policy; keep the repository merge workflow enabled.
 - Multi-file changes, regressions and integration: read
   [delivery workflow](docs/agent-workflow.md).
 - Review: read [coding standards](CODING_STANDARDS.md).

@@ -404,7 +404,7 @@ final class MacBookDetailViewController: NSViewController {
                 localConversionGeneration = nil
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = AppErrorReporter.message(error, context: #function)
                 alert.addButton(withTitle: L10n.string("common.ok"))
                 alert.runModal()
             }
@@ -550,7 +550,7 @@ final class MacBookDetailViewController: NSViewController {
     private func presentListenError(_ error: Error) {
         let alert = NSAlert()
         alert.messageText = L10n.string("bookDetail.listenStart")
-        alert.informativeText = error.localizedDescription
+        alert.informativeText = AppErrorReporter.message(error, context: #function)
         alert.addButton(withTitle: L10n.string("common.ok"))
         alert.runModal()
     }

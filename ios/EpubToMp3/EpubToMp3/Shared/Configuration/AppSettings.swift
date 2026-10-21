@@ -446,7 +446,7 @@ final class AppSettings: ObservableObject {
         return TtsPreferences(primary: .selected(audioEngine),
                               secondary: secondary,
                               allowOnlineFallback: allowOnlineAudioFallback,
-                              policyVersion: (defaults.object(forKey: "ttsPreferencesVersion") as? NSNumber)?.uint32Value)
+                              policyVersion: 2)
     }
     private func adoptCurrentSpeechPolicyIfEdited() {
         guard !loadingPersistedValues else { return }

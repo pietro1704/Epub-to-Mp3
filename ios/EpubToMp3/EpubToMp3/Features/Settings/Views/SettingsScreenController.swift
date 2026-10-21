@@ -311,7 +311,7 @@ final class SettingsScreenController: UITableViewController {
             await MainActor.run {
                 alert.dismiss(animated: true)
                 if case .failure(let error) = result {
-                    let failure = UIAlertController(title: L10n.string("settings.piperInstall"), message: error.localizedDescription, preferredStyle: .alert)
+                    let failure = UIAlertController(title: L10n.string("settings.piperInstall"), message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
                     failure.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
                     self.present(failure, animated: true)
                 }
@@ -636,7 +636,7 @@ final class SettingsScreenController: UITableViewController {
             } catch {
                 presentInfoAlert(
                     title: L10n.string("settings.exportPerformanceDiagnostics"),
-                    message: L10n.string("settings.exportPerformanceDiagnosticsError")
+                    message: AppErrorReporter.message(L10n.string("settings.exportPerformanceDiagnosticsError"), context: "Diagnostics export: \(error.localizedDescription)")
                 )
             }
         }
@@ -703,7 +703,7 @@ final class SettingsScreenController: UITableViewController {
                 }
             } catch {
                 self.presentInfoAlert(title: L10n.string("settings.storageRemovalFailedTitle"),
-                    message: L10n.string("settings.storageRemovalFailedMessage") + "\n\n" + error.localizedDescription)
+                    message: L10n.string("settings.storageRemovalFailedMessage") + "\n\n" + AppErrorReporter.message(error, context: "Audio removal"))
             }
             self.refreshStorageUsage()
             self.tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
@@ -717,7 +717,7 @@ final class SettingsScreenController: UITableViewController {
                 try await AudioStorageMaintenance().clearTemporaryAudio()
             } catch {
                 self.presentInfoAlert(title: L10n.string("settings.storageRemovalFailedTitle"),
-                    message: L10n.string("settings.storageRemovalFailedMessage") + "\n\n" + error.localizedDescription)
+                    message: L10n.string("settings.storageRemovalFailedMessage") + "\n\n" + AppErrorReporter.message(error, context: "Audio removal"))
             }
             self.refreshStorageUsage()
             self.tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)

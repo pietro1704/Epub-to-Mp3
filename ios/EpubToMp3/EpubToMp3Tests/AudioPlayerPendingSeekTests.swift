@@ -356,7 +356,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             let mini = MiniPlayerBarUIKitView()
             mini.configure(player: player, playbackClock: player.playbackClock,
                            library: LibraryStore(defaults: defaults), onTap: {})
-            func buttons(_ view: UIView) -> [UIButton] {
+            @MainActor func buttons(_ view: UIView) -> [UIButton] {
                 view.subviews.flatMap { ($0 as? UIButton).map { [$0] } ?? buttons($0) }
             }
             let transport = try XCTUnwrap(buttons(mini).first {

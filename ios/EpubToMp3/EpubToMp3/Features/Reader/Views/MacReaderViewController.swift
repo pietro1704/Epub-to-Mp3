@@ -432,7 +432,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     private func showLoadingError(_ error: Error) {
         cancelActiveBookOpenJourney()
-        loadingStatusLabel.stringValue = error.localizedDescription
+        loadingStatusLabel.stringValue = AppErrorReporter.message(error, context: "Reader loading")
         loadingRetryButton.isHidden = false
         loadingOverlay.isHidden = false
         loadingSpinner.stopAnimation(nil)

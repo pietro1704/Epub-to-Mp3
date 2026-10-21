@@ -49,7 +49,7 @@ enum LocalAudiobookShareCoordinator {
             } catch {
                 let alert = UIAlertController(
                     title: L10n.string("player.exportAudio"),
-                    message: error.localizedDescription,
+                    message: AppErrorReporter.message(error, context: "Audiobook sharing"),
                     preferredStyle: .alert
                 )
                 alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))

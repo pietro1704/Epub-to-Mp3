@@ -34,7 +34,8 @@ class MacValidateTest < Minitest::Test
       SH
       File.chmod(0o755, File.join(@bin, name))
     end
-    @environment = { 'PATH' => "#{@bin}:/usr/bin:/bin", 'MAC_VALIDATE_TEST_TRACE' => @trace }
+    @environment = { 'PATH' => "#{@bin}:/usr/bin:/bin", 'MAC_VALIDATE_TEST_TRACE' => @trace,
+                     'DEVELOPER_DIR' => nil }
   end
 
   def teardown
@@ -75,6 +76,19 @@ class MacValidateTest < Minitest::Test
     assert status.success?, error
     assert_includes File.read(@trace), "open #{@app}"
     refute_includes File.read(@trace), '-jobs'
+  end
+
+  def test_project_developer_override_defines_identity_instead_of_global_selection
+    @environment['DEVELOPER_DIR'] = '/Applications/Xcode-16.4.0.app/Contents/Developer'
+    receipt
+    File.write(File.join(@bin, 'xcode-select'), "#!/bin/sh\necho /Global/Xcode26\n")
+    out, error, status = invoke('inspect')
+    assert status.success?, error
+    assert_equal true, JSON.parse(out).fetch('compatible')
+    @environment['DEVELOPER_DIR'] = '/Different/Developer'
+    out, error, status = invoke('inspect')
+    assert status.success?, error
+    assert_equal false, JSON.parse(out).fetch('compatible')
   end
 
   def test_changed_source_binary_configuration_and_flags_each_refuse_gui

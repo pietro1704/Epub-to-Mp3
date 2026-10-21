@@ -248,7 +248,7 @@ final class MacSettingsViewController: NSViewController {
             if case .failure(let error) = result {
                 let alert = NSAlert()
                 alert.messageText = L10n.string("settings.piperInstall")
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = AppErrorReporter.message(error, context: #function)
                 alert.addButton(withTitle: L10n.string("common.ok"))
                 alert.runModal()
             }
@@ -269,6 +269,7 @@ final class MacSettingsViewController: NSViewController {
             } catch {
                 let alert = NSAlert()
                 alert.messageText = L10n.string("settings.exportPerformanceDiagnostics")
+                AppErrorReporter.message(error, context: "Diagnostics export")
                 alert.informativeText = L10n.string("settings.exportPerformanceDiagnosticsError")
                 alert.addButton(withTitle: L10n.string("common.ok"))
                 alert.runModal()
@@ -356,12 +357,13 @@ final class MacSettingsViewController: NSViewController {
                     library.update(book)
                 }
             } catch {
+                let message = AppErrorReporter.message(error, context: "Download removal")
                 guard let window = view.window else { return }
                 let alert = NSAlert()
                 alert.alertStyle = .warning
                 alert.messageText = L10n.string("settings.storageRemovalFailedTitle")
                 alert.informativeText = L10n.string("settings.storageRemovalFailedMessage")
-                    + "\n\n" + error.localizedDescription
+                    + "\n\n" + message
                 alert.addButton(withTitle: L10n.string("library.ok"))
                 alert.beginSheetModal(for: window, completionHandler: nil)
             }

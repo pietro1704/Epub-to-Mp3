@@ -210,6 +210,7 @@ fn invalid_audio(message: impl Into<String>) -> AudioError {
 }
 
 /// Collect native encoder output using the same portable metadata contract as WASM.
+#[cfg(test)]
 pub(crate) fn collect_rusty_mp3_output(
     encoder: &mut rusty_mp3::Mp3Encoder,
 ) -> Result<Vec<u8>, AudioError> {

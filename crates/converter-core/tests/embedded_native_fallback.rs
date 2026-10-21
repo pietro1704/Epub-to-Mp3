@@ -124,8 +124,11 @@ fn installed_native_speech_produces_valid_audio_through_embedded_fallback() {
 #[test]
 fn explicit_no_secondary_remains_strict_in_embedded_conversion() {
     let root = tempfile::tempdir().unwrap();
-    let mut preferences = TtsPreferences::app_default(true);
-    preferences.secondary = None;
+    // Capture the explicit per-job opt-out, including its strict policy.
+    // Removing secondary alone retains the app's implicit native recovery.
+    let preferences = TtsPreferences::app_default(true).effective_selection(None, false);
+    assert!(preferences.secondary.is_none());
+    assert!(!preferences.continues_native());
     let (session, output) = session(root.path(), "strict-native-disabled", preferences.clone());
     let error = session
         .convert()
