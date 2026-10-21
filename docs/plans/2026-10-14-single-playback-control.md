@@ -1,5 +1,7 @@
 # Single reader playback control
 
+> **Historical record (reviewed 2026-10-21).** Retained product decision and bounded native evidence. This supersedes the [separate-button plan](2026-10-14-reader-page-playback-choice.md); Simulator/leave-open/no-PR execution details describe that session. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Scope
 User approved removing the separate current-page button, which is too small
 on the SE. Keep the existing large Play/Pause control. While playing, tapping

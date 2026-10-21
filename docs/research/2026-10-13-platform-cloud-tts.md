@@ -1,5 +1,7 @@
 # Platform and cloud TTS evidence for weak phones
 
+> **Research status (reviewed 2026-10-21).** The Edge-primary recommendation describes October 13, superseded by [current runtime/provider policy](../../AGENTS.md). Vendor/API inventory and listening/export distinctions are retained as research, not provider activation authority.
+
 Research date: 2026-10-13. Scope: native platform engines, traditional compact engines, and cloud alternatives. This is a source review, not an executed mobile benchmark. No service synthesis, downloads, installs, or production changes were performed.
 
 ## Decision implications

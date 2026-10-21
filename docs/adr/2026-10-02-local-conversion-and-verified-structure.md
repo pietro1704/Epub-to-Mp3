@@ -1,5 +1,7 @@
 # ADR: Local conversion and verified source structure
 
+> **ADR status (reviewed 2026-10-21).** Partially superseded: the Edge-first provider paragraph below is historical; [current runtime/provider policy](../../AGENTS.md) defines Piper primary, installed system fallback and consented Edge. Shared local Rust ownership and verified source-structure decisions remain accepted.
+
 Status: Accepted
 Date: 2026-10-02
 

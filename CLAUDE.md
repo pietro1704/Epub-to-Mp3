@@ -24,6 +24,8 @@ requires an explicit user action; preserve existing models and never require a p
 
 ## Navigation
 
+- Engineering skill selection or generic Matt workflow conflicts: read
+  [project skill adapter](docs/agents/skill-routing.md).
 - Execution, local/remote platforms, native safety and delivery authorization:
   read [execution policy](docs/agents/execution-policy.md) before executing work.
 - PR delivery: all ready PRs to `master` have standing automatic-merge

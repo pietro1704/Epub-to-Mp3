@@ -1,5 +1,7 @@
 # UIKit Performance Migration Plan
 
+> **Historical record (reviewed 2026-10-21).** Historical partially verified migration proposal. The old Claude sandbox restriction and assumed framework performance are not present facts; pending device/Instruments evidence is retained. Further migration needs a current measured hotspot. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 > Goal: maximize runtime performance and UI fluidity of the iOS/macOS
 > app by replacing most SwiftUI surfaces with UIKit (AppKit on macOS),
 > dropping to Swift-with-manual-layout and, where it measurably helps,

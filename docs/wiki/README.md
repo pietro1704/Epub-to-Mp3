@@ -1,24 +1,20 @@
-# Project Wiki
+# Project wiki sources
 
-This folder contains a local, versioned wiki for the project in:
+Versioned local pages are available in [English](en/Home.md) and
+[Português do Brasil](pt-BR/Home.md). Preserve each language intentionally and
+update both when product facts change. Pages describe source ownership and
+capability limits; they do not certify deployment, release or runtime success.
 
-- [Português do Brasil](./pt-BR/Home.md)
-- [English](./en/Home.md)
+Local edits are reviewed in the same scoped PR as the relevant change.
+[AGENTS.md](../../AGENTS.md) and
+[execution policy](../agents/execution-policy.md) remain canonical for development
+and delivery. Wiki prose is not an additional agent permission source.
 
-Publishing model:
+GitHub Wiki publication is a separate external action. Inspect the current
+`scripts/github-ci-wiki-wizard.sh` before any explicitly authorized publication;
+do not run it merely to validate Markdown or update local pages. Its other
+workflow/commit actions must fit the authorized scope. TestFlight publication
+likewise requires its own task and actual signing/account prerequisites.
 
-1. Use the files in `docs/wiki/` as the source of truth.
-2. Run `bash scripts/github-ci-wiki-wizard.sh` from the repository root to publish them safely to the GitHub Wiki. It asks for confirmation before overwriting wiki content and stages only the TestFlight workflow, `docs/wiki/`, and the wizard itself when committing. TestFlight remains manual-only until an active Apple Developer Program membership and its signing credentials are available.
-3. Keep product and architecture changes documented here in the same PR as the code change.
-
-Recommended page order:
-
-1. Home
-2. Getting Started
-3. CLI and Web Usage
-4. Desktop, Mobile, and Releases
-5. Architecture
-6. Configuration and Performance
-7. Deployment and Hugging Face Spaces
-8. Troubleshooting
-9. Contributing and Security
+Recommended reading order: Home, Getting Started, CLI and Web, Desktop/Mobile,
+Architecture, Configuration, Deployment, Troubleshooting, Contribution/Security.

@@ -1,5 +1,7 @@
 # Hugging Face patterns worth adopting
 
+> **Research status (reviewed 2026-10-21).** Original proposal retained. The mutable-URL gap below was addressed by the adoption recorded in this [research index](README.md); current [model catalog](../../../crates/converter-core/src/model_catalog.rs) pins Faber revisions. This status note does not add runtime acceptance.
+
 Research date: 2026-10-15. Scope: primary model cards, artifact metadata and actual Space source, compared with the current Rust implementation. This review downloaded only text/JSON metadata; no weights, audio samples, builds or inference were downloaded or executed. Publisher claims are distinguished from local measurements. Current canonical policy remains offline Piper `pt_BR-faber-medium`, optional user-selected providers, consent for Edge, and explicit installation.
 
 ## 1. Pin the existing Piper release before adding another provider

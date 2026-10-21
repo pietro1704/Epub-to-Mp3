@@ -1,5 +1,7 @@
 # EpubToMp3 — plano de QA e correção
 
+> **Historical record (reviewed 2026-10-21).** July QA campaign and evidence, including later macOS checkpoint; “plano vivo” below describes that period. Python-sidecar, hybrid shell and direct-build recipes are historical; full acceptance remains unclosed in this record. Current scope, Git authorization and native safety follow [execution policy](docs/agents/execution-policy.md); provider/runtime decisions follow [current runtime/provider policy](AGENTS.md). Old execution prompts and commands are retained as history, not current permission.
+
 Data: 2026-07-22 21:56 -03:00
 Status: plano vivo; correções e infraestrutura UIKit/SwiftUI locais até 2026-07-23 08:50 -03:00; a continuidade macOS de 2026-07-26 validou build Release/Debug, smoke visual, fixture local de download/offline/eviction e build genérico iOS, mas o aceite funcional completo ainda está pendente. Evidências: [QA_MACOS_SESSION_2026-07-26.md](docs/QA_MACOS_SESSION_2026-07-26.md).
 

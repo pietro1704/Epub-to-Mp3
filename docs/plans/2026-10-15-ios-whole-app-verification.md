@@ -1,5 +1,7 @@
 # Whole-app iOS 15 verification campaign
 
+> **Historical record (reviewed 2026-10-21).** Unclosed historical whole-app campaign. Intel Simulator quarantine blocks its boot-after-build recipe and required SE1/iOS 15.5 acceptance remains pending. An old unattended campaign prompt does not start a new campaign. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Scope and authorization
 
 Verify the current native app on iPhone SE (1st generation), iOS 15.5,

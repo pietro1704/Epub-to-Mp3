@@ -1,5 +1,7 @@
 # Embedded mobile audio
 
+> **Historical record (reviewed 2026-10-21).** Verified bounded audio-processing slice. Preserve the exact runtime/artifact evidence and cleanup failure; its live Edge runs do not define the current default provider. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 Repair the native Rust conversion failure reproduced on iPhone:
 `audio error: I/O error: No such file or directory (os error 2)` after TTS
 finishes, before validated chapter publication. The worker invokes ffprobe for

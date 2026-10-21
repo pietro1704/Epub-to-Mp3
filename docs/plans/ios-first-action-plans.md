@@ -1,5 +1,7 @@
 # Planos de Atuação — iOS primeiro
 
+> **Historical record (reviewed 2026-10-21).** Historical July campaign, not the canonical plan for every task. Plano/step labels, physical-only sequencing, blanket CI monitoring and session Git permissions belong to that campaign. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 > Plano canônico para a evolução do app Epub-to-Mp3. Toda nova tarefa deve indicar qual plano e qual etapa está executando.
 
 ## Regra de execução

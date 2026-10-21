@@ -1,5 +1,7 @@
 # Uso de IA no desenvolvimento — lições aplicáveis ao Epub-to-Mp3
 
+> **Historical record (reviewed 2026-10-21).** August source synthesis and proposed local application. The cited author research is retained; Python dual-pipeline mirroring, broad mandatory suites, old memory files and security/performance interruption rules in the local checklist are superseded by [runtime navigation](agents/runtime-navigation.md), [delivery workflow](agent-workflow.md) and [current memory routing](agents/memory.md). Local interpretations are not author-prescribed project policy.
+
 Data: 17/08/2026
 Escopo: síntese prática de textos e vídeos publicados pelo próprio Fábio Akita, adaptada ao fluxo deste repositório. As recomendações abaixo são decisões operacionais propostas para este projeto, não afirmações de que Akita prescreveu cada detalhe dele.
 

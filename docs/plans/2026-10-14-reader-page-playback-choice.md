@@ -1,5 +1,7 @@
 # Reader page playback choice
 
+> **Historical record (reviewed 2026-10-21).** The separate current-page button is superseded by the [single reader playback control decision](2026-10-14-single-playback-control.md). Preserve the original red/green and timing evidence; session-specific no-PR and leave-open boundaries are historical. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Scope and acceptance
 
 Keep audio and reader navigation independent until the listener explicitly

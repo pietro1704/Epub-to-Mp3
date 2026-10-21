@@ -1,5 +1,7 @@
 # Changelog
 
+> **Historical record (reviewed 2026-10-21).** Release history. Old architecture, provider, test and CI descriptions remain as recorded; current architecture/provider policy is in [current runtime/provider policy](AGENTS.md) and current delivery/safety rules are in [execution policy](docs/agents/execution-policy.md).
+
 ## [Unreleased]
 
 ## [0.5.8] — 2026-05-19

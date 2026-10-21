@@ -1,50 +1,30 @@
 # Troubleshooting
 
-## The web server does not start
+Identify the adapter, source revision and artifact before selecting a diagnostic.
+Preserve the original error/log and use the smallest check at the failing seam.
+Read [execution policy](../../agents/execution-policy.md) for platform and safety limits.
 
-Check:
+- Browser: inspect generated WASM exports, TTS assets, browser storage support and
+  explicit model installation/checksum state. A missing model does not authorize
+  downloading one or switching to HTTP/Edge. Native browser speech cannot export MP3.
+- Apple: inspect embedded FFI/ONNX packaging, architecture/platform and signatures;
+  use `mac:validate` inspection/packaging before a justified rebuild. Follow native
+  app logs and the exact build receipt rather than searching for a Python sidecar.
+- Flutter: inspect registered Android/desktop adapter and packaged native-library
+  identity. Keep Android paused and use authorized Arch work for its platform.
+- Optional server: inspect the Rust server/container revision, configured port,
+  paths and logs. Legacy Python dependencies are not the normal product diagnosis.
 
-- Python dependencies
-- `ffmpeg`
-- local port availability
-- backend logs
+Report the actual active fallback voice and explicit job preferences when Piper
+fails. Keep Piper primary and use bounded recovery according to shared policy.
+Do not start a benchmark, install models or clear user caches as an inferred fix.
 
-Useful commands:
+Upload limits and HTTP error behavior belong to the selected adapter/server;
+verify the current config before recommending legacy environment overrides.
+For security findings, reproduce safely, inspect confinement/sanitization and
+use [SECURITY.md](../../../SECURITY.md). Do not dismiss alerts or close issues
+without the applicable authorization and evidence.
 
-```bash
-mise run dev
-uvicorn python_app.server:app --port 8000
-```
-
-
-## Piper does not work
-
-Check:
-
-- active virtual environment
-- available binary/model
-
-## macOS native app fails during startup
-
-Check:
-
-- the bundled Python runtime and app resources
-- Console.app filtered by `EpubToMp3` for embedded-server stderr
-- rerun `mise run mac:build` to refresh the app bundle
-
-## CodeQL reports path-injection
-
-This project uses path sanitization and root confinement in several places. If an alert appears:
-
-1. validate the real flow
-2. make sanitization more explicit in code when possible
-3. only then dismiss as a justified false positive
-
-## Upload fails because of size
-
-Adjust:
-
-```bash
-export MAX_UPLOAD_MB=200
-export VITE_MAX_UPLOAD_MB=200
-```
+Simulator execution remains quarantined; required SE1/iOS 15.5 acceptance stays
+pending. A new host panic is a stop event under execution policy. Do not retry a
+launcher, reboot a service/host or change runtime/hardware to bypass a failure.

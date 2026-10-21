@@ -1,5 +1,7 @@
 # Adaptive TTS throughput and full macOS conversion
 
+> **Historical record (reviewed 2026-10-21).** Original adaptive-throughput/full-book campaign plan; no final acceptance result is recorded here. Its synthesis and cache-cleanup scope is task-specific. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Scope
 
 - Add provider-neutral per-conversion throughput feedback; Edge reports chunk

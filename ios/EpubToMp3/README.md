@@ -1,81 +1,58 @@
-# EpubToMp3 — native UIKit/AppKit iOS/macOS app
+# EpubToMp3 — native UIKit/AppKit Apple app
 
-## Build
+The application uses UIKit on iOS/iPadOS and AppKit on macOS, with embedded
+`converter-core`/`converter-ffi`. Shared Rust owns conversion, provider/model
+selection, progress, cancellation and artifacts. Apple conversion does not
+require the historical HTTP sidecar or a configured remote backend.
 
-```bash
-# Recommended — headless, no Xcode UI needed
-mise run mac:build          # sidecar:build + xcodebuild → Release .app
+Start in `EpubToMp3/App/` for native composition roots and
+`EpubToMp3/Features/` for library, reader, playback, conversion and settings.
+`Features/Conversion/Services/RustConversionCoordinator.swift` and
+`ConverterFFIAdapter.swift` are the embedded conversion seam. See
+[runtime navigation](../../docs/agents/runtime-navigation.md) and
+[FFI integration](docs/converter-ffi-ios.md).
 
-# Sidecar only (Rust binary for macOS)
-mise run sidecar:build      # → dist/epub-to-mp3-server
+## Build and validation
 
-# Xcode GUI
-xcodegen generate           # regenerate .xcodeproj from project.yml
-open EpubToMp3.xcodeproj
-```
+Read [execution policy](../../docs/agents/execution-policy.md) and
+[macOS validation](../../docs/agents/macos-validation.md) first. Use the smallest
+`mac:validate` mode against an explicitly identified existing DerivedData tree;
+inspection, packaging, guarded incremental compilation and GUI validation are
+separate modes. `mac:build` is the full app task and depends on the host
+`converter-ffi:build`, not `sidecar:build`. Inspect current task prerequisites
+before starting a dependency rebuild.
 
-`mise run mac:build` chains the Rust `sidecar:build` before
-`xcodebuild -scheme EpubToMp3 -configuration Release`. The
-resulting `.app` is reported by the task after build; with the current
-`SYMROOT` layout it is usually at `ios/EpubToMp3/.build/Release/EpubToMp3.app`.
+`project.yml` defines the generated Xcode project, targets, deployments,
+entitlements and platform-specific embedding. `xcode:generate` regenerates and
+opens that project; do not create a replacement scaffold or edit generated
+`.xcodeproj` structure as the source of truth. All Mac compilation uses guarded
+tasks with one compiler job and the shared storage budget. Build output paths
+and receipts come from the selected task, not a fixed `.build/Release` guess.
 
-## Targets
+Simulator execution is quarantined. For reader/pagination/chrome/player work,
+follow [AGENTS.md](AGENTS.md), `CONTEXT.md`, relevant ADRs and the native reader
+skill. Required SE1/iOS 15.5 acceptance stays pending; source wiring or compilation
+alone is not evidence that reader, conversion or playback acceptance passed.
 
-| Target | Type | Deployment | Bundle ID |
-|---|---|---|---|
-| `EpubToMp3` | Application | iOS 15.0 / macOS 12.0 | `com.pietrocode.epubtomp3` |
-| `EpubToMp3Widget` | App Extension | iOS 17.0 | `com.pietrocode.epubtomp3.widget` |
-| `EpubToMp3ShareExtension` | App Extension | iOS 15.0 | _(in `EpubToMp3ShareExtension/`)_ |
-| `EpubToMp3Tests` | Unit Test Bundle | iOS 15.0 / macOS 12.0 | — |
+## Voice and playback policy
 
-The `EpubToMp3Widget` target requires iOS 17+ because it uses `.containerBackground` (WidgetKit API added in iOS 17).
+Piper `pt_BR-faber-medium` is primary. Installed system TTS is the default
+fallback, preferring Luciana for Brazilian Portuguese when available. Report the
+actual voice, retain Piper as primary and retry only at bounded recovery points;
+explicit job choices remain authoritative. Edge fallback needs explicit consent.
+Install models only through an explicit user action and preserve existing models.
+Playback requires an explicit user gesture.
 
-Before a physical-device release validation, configure the Rust backend URL in
-Settings (or pass `-backendURL https://...` at launch). For macOS, the bundled
-sidecar must be built and started by the app from
-`Contents/Resources/epub-to-mp3-server` on port `47860`.
+## Shared Apple resources
 
-macOS uses the Rust `converter-server` binary as its canonical local backend.
-iOS uses the same HTTP contract against a configured remote Rust backend. No
-Apple production target embeds PythonKit, CPython, Python stdlib, or Python
-site-packages.
+App Group `group.com.pietrocode.epubtomp3` connects main-app and widget state.
+`EpubToMp3/Models/ConversionActivityAttributes.swift` is shared with the widget;
+ActivityKit Codable identity and target membership must stay consistent when
+changing it. Inspect `project.yml` and current widget sources for platform
+availability rather than inferring that all application UI uses the widget's UI
+framework or supports the same deployment target.
 
-## App Group
-
-`group.com.pietrocode.epubtomp3`
-
-Used by the main app (`LibraryStore`, `SharedContainerImporter`, `WidgetDataSync`) and `EpubToMp3Widget` to share `UserDefaults` state (now-playing book ID, chapter index, progress, cover art).
-
-## Shared types
-
-`EpubToMp3/Models/ConversionActivityAttributes.swift` is compiled into **both** `EpubToMp3` and `EpubToMp3Widget`. ActivityKit serialises by name + Codable — the struct must be bit-for-bit identical in both targets. Do not move or rename it without updating `project.yml`.
-
-## Widgets
-
-| Widget | Kind | Surface |
-|---|---|---|
-| `NowPlayingWidget` | `NowPlayingWidget` | Home screen (medium / large) |
-| `NowPlayingLockScreenWidget` | _(lock)_ | Lock screen |
-| `ConversionLiveActivityWidget` | Live Activity | Dynamic Island + lock-screen banner |
-
-## Key features (post immersive-reader sprint)
-
-- **Immersive reader** — tap centre of page to toggle chrome (nav bar + status bar). Auto-hides on page turn. Shared `ChromeVisibilityModifier` in `InstantReaderView` and `PlayerReaderView`.
-- **No-autoplay policy** — audio never starts without an explicit user gesture (lock-screen controls, widget Play, or in-app Play button).
-- **Live Activity** — `ConversionLiveActivityWidget` pushes chapter progress to Dynamic Island and lock-screen banner during active conversions.
-- **Haptic scrubber** — timeline scrub in `NowPlayingView` triggers `.selectionChanged` haptic feedback.
-- **Bookmark guard** — prevents duplicate bookmarks on the same chapter offset.
-- **Landscape reader** — page layout adapts to landscape without chrome overlap.
-
-## Entitlements
-
-| Config | File | Notes |
-|---|---|---|
-| Debug (macOS / Simulator) | `EpubToMp3-Debug.entitlements` | App Sandbox disabled; security-scoped bookmarks still listed for iOS device builds |
-| Release | `EpubToMp3.entitlements` | Hardened Runtime + App Sandbox enabled |
-
-macOS local Debug builds use unsigned code (`CODE_SIGN_IDENTITY = "-"`). iOS device Debug builds require `Apple Development` signing; the Release config uses Automatic.
-
-## Project file
-
-`project.yml` is the source of truth for Xcode project structure (xcodegen). Run `xcodegen generate` after editing it. Never edit `.xcodeproj` directly.
+Entitlements and signing differ by configuration/platform. Verify the current
+entitlement files, bundled FFI/ONNX artifacts, platform identity and signatures
+at the packaging seam. A source exclusion or retained vendor directory alone
+does not establish the contents of an installed app.

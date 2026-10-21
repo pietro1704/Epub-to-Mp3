@@ -1,5 +1,7 @@
 # Actual-book Simulator validation checkpoint
 
+> **Historical record (reviewed 2026-10-21).** Failed real-book checkpoint, not a present defect inventory. Later [opening-profile evidence](2026-10-09-reader-opening-profile.md) records further reader work; preserve the original swipe failure and unmet gates. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 Continuing the full quality/performance goal, not redefining its acceptance.
 Inputs are the original LOTR/Christie EPUBs, SHA256 respectively
 `3e1c676b270dfa3fe555eba4d0cb993486e9f00facb7cc92eef250e64efb7c9e` and

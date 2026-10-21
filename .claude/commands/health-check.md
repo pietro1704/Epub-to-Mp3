@@ -1,25 +1,20 @@
 ---
-description: Run health-monitor + ci-watcher + performance-speed-monitor in parallel to surface anything that needs attention before a session starts
+description: Take one requested read-only snapshot of relevant project jobs and local resources
 ---
 
-You are about to start a session on the Epub-to-Mp3 project. Run a triage sweep.
+Read root `AGENTS.md`, `docs/agents/execution-policy.md` and the
+`.claude/agents/telemetry-analyst.md` health-snapshot branch.
 
-Invoke these three sub-agents in parallel (single message, multiple Agent tool calls):
+Take one bounded read-only snapshot for the user's requested surface. Inspect
+current job/run identity, persisted activity, recent terminal outcomes and local
+resource evidence that bear on the question. Discover actual data paths/schemas;
+missing logs or stale job metadata mean uncertain health, not success.
 
-1. **`health-monitor`** — read-only system snapshot (jobs, disk, recent conversions). Prompt: "Snapshot now. Surface any HIGH/MED alerts. Under 200 words."
-2. **`ci-watcher`** — CI + PR + CodeQL state. Prompt: "List failing CI runs on master, open Dependabot PRs, open CodeQL alerts. Auto-merge what's safe (patch/minor with green CI). Report what was actioned and what's pending. Under 300 words."
-3. **`performance-speed-monitor`** — only if there were recent conversions worth analysing. Prompt: "Analyse the last 3 conversions in conversions.jsonl. Skip if there is nothing recent. Under 200 words."
+Report observed jobs/activity, disk/resource concerns, evidence timestamps and
+any concrete next action proposed. Build eligibility follows the canonical
+storage guard. Redact unnecessary book paths, source text and credentials.
 
-After the agents return, summarise in a single section:
-
-```
-## Triagem (sessão iniciando)
-- Health: <verdict>
-- CI/PRs: <verdict>
-- Perf: <verdict ou "n/a">
-
-## Pendente
-- <items que precisam decisão do usuário>
-```
-
-Do not start any other work after this — just hand control back.
+Inspect CI/PR state only when the request explicitly includes it. A single
+snapshot does not authorize polling, fixes, merges, cleanup, service/device
+actions, new benchmarks or delegation. Apply existing task authorization and
+canonical policy before any separately requested action. End after the snapshot.

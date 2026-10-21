@@ -1,79 +1,26 @@
 # Arquitetura
 
-## Visão de alto nível
+Conversão compartilhada pertence a `crates/converter-core/`: parsing, estrutura/
+texto, política de provedores/modelos, progresso, cancelamento, persistência e
+artefatos. `converter-ffi` expõe a ABI C nativa; `converter-cli` é entrada direta;
+`converter-wasm` expõe bindings do navegador. Dependências nativas têm compilação
+condicional; processos e rede nativos não formam uma API do navegador.
 
-O projeto é dividido em quatro camadas:
+| Superfície | Entrada no código | Responsabilidade do adaptador |
+| --- | --- | --- |
+| Apple | `ios/EpubToMp3/EpubToMp3/Features/` | UIKit/AppKit, arquivos locais, mídia e FFI |
+| Web | `web/src/services/BrowserConversionClient.ts` | I/O, Piper e armazenamento do navegador em torno de sessões Rust |
+| Flutter | `flutter_app/lib/main.dart`, `lib/services/embedded_converter.dart` | Canal nativo Android e FFI Linux/Windows registrados |
+| Servidor opcional | `crates/converter-server/src/main.rs` | Contrato HTTP hospedado de compatibilidade |
+| Legado | `python_app/`, `hf_app.py` | Fixtures de compatibilidade e referência de migração |
 
-1. `python_app/`: backend e pipeline de conversão
-2. `web/`: frontend React/TypeScript
-3. `ios/EpubToMp3/`: cliente UIKit/AppKit (macOS · iPadOS · iOS) com runtime Python embutido no macOS
-4. `flutter_app/`: cliente Flutter (Linux · Windows · Android)
+Apple não exige Python ou sidecar HTTP para conversão embutida. A conversão do
+navegador não deve selecionar silenciosamente o adaptador HTTP retido. Flutter
+registra conversores embutidos; bridges/assets Python retidos não comprovam uso
+em produção. Verifique os chamadores antes de remover material legado.
 
-## Dois pipelines de conversão
-
-Existe um detalhe crítico:
-
-- `python_app/src/converter.py`: pipeline da CLI
-- `python_app/server.py`: pipeline da Web/API
-
-Eles são separados. Mudanças de comportamento relevantes precisam ser espelhadas nos dois fluxos quando aplicável.
-
-## Backend
-
-Arquivos principais:
-
-- `python_app/main.py`: entrada CLI
-- `python_app/server.py`: API FastAPI
-- `python_app/src/config.py`: configuração da conversão
-- `python_app/src/ebook_reader.py`: parsing de EPUB/PDF
-- `python_app/src/cache_manager.py`: cache por livro/capítulo
-- `python_app/src/job_manager.py`: persistência e fila de jobs
-- `python_app/src/tts/`: motores de TTS
-
-## Frontend
-
-Arquivos principais:
-
-- `web/src/App.tsx`: composição principal da aplicação
-- `web/src/hooks/useConversionFlow.ts`: máquina de estado de conversão
-- `web/src/services/ConversionService.ts`: cliente HTTP/SSE/polling
-- `web/src/i18n/translations.ts`: traduções
-
-## Clientes nativos
-
-- `ios/EpubToMp3/project.yml`: descritor XcodeGen do cliente Apple nativo e do runtime Python embutido
-- `flutter_app/lib/`: código do cliente Flutter (Linux · Windows · Android)
-
-
-## Persistência
-
-Por padrão, o projeto usa:
-
-- `.cache/`
-- `output/`
-- `.jobs/`
-- `.uploads/`
-
-Esses diretórios podem ser alterados por variáveis de ambiente.
-
-## Cadeia de fallback de engines
-
-CLI:
-
-- Edge multilíngue
-- Edge monolíngue
-- Piper
-
-Web:
-
-- Edge
-- Piper
-
-## Fluxo de runtime
-
-1. arquivo é enviado ou lido
-2. parser extrai capítulos
-3. cache é consultado
-4. capítulos são convertidos por TTS
-5. chunks podem ser publicados progressivamente
-6. arquivos finais são gravados em `output/`
+Paths, schemas e persistência dependem do adaptador e da configuração; os antigos
+padrões Python `.jobs/`/`.uploads/` não são paths universais das plataformas.
+Consulte [navegação do runtime](../../agents/runtime-navigation.md),
+[CONTEXT.md](../../../CONTEXT.md) e ADRs relevantes para detalhes.
+Código conectado não comprova migração concluída ou aceite em runtime.

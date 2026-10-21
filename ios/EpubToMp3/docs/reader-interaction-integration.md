@@ -1,5 +1,7 @@
 # Reader interaction components integration notes
 
+> **Historical record (reviewed 2026-10-21).** Historical unintegrated-component proposal for SwiftUI-era hosts. Confirm current native controller seams in [runtime navigation](../../../docs/agents/runtime-navigation.md) before adapting any component; these host-edit steps do not establish current missing integration or request a renderer rewrite.
+
 The reusable interaction layer is intentionally not wired into `ReaderView.swift`, `InstantReaderView.swift`, or `PlayerReaderView.swift` in this change. The existing hosts have different pagination/scrolling and UIKit/TextKit ownership, and broad edits would risk changing selection and follow behavior.
 
 ## Minimal host edits

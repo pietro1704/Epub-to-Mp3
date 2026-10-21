@@ -1,62 +1,27 @@
-# Configuração e Performance
+# Configuração e performance
 
-## Objetivo principal
+Política de provedores/modelos pertence a preferências, catálogo e runtime Rust
+compartilhados e ao adaptador escolhido. Piper `pt_BR-faber-medium` é primário.
+TTS nativo instalado é o fallback padrão quando disponível, preferindo Luciana
+para pt-BR na Apple. Informe backend/voz ativos; mantenha Piper primário e tente
+recuperá-lo em pontos limitados. Seleções explícitas do job prevalecem. Edge é opt-in.
 
-O projeto privilegia throughput e uso agressivo de CPU/RAM.
+Instalar modelos exige ação explícita e preserva os existentes. Voz nativa do
+navegador permite escuta, mas não produz MP3; exportação exige Piper no navegador.
+Amostra estática ou catálogo legado não comprova disponibilidade de modelo.
 
-## Variáveis mais importantes
+Inspecione `crates/converter-core/src/config.rs`, `paths.rs`, `tts_preferences.rs`,
+módulos de modelo/runtime e configurações do cliente antes de citar variáveis de
+ambiente ou paths persistentes. Overrides Python antigos de concorrência Edge não
+são perfil universal atual. Preferência salva, escolha do job e ambiente podem ter
+precedências distintas; teste a interface afetada.
 
-### Edge-TTS
+Cache é estado do runtime: preserve livros, modelos e artefatos utilizáveis.
+Evite limpeza ou rebuild amplo sem escopo. Build no Mac usa lease compartilhado,
+um job e política de armazenamento; testes web começam com até dois workers.
+Limites e volumes persistentes hospedados exigem verificação da implantação.
 
-Estes overrides suportados são exemplos para ambiente local. O runtime usa
-valores seguros diferentes no Hugging Face Spaces e conforme o hardware.
-
-```bash
-EDGE_CHUNK_CHARS=12000
-EDGE_MAX_CONCURRENCY=12
-EDGE_MAX_SEGMENT_SECONDS=85
-CHAPTER_PARALLEL_COUNT=0
-```
-
-### Detecção de lentidão / fallback
-
-```bash
-EDGE_MIN_CHARS_PER_SECOND=45
-EDGE_SLOW_RATIO_THRESHOLD=2.5
-
-```
-
-### Capítulos grandes
-
-```bash
-MAX_CHAPTER_CHARS=0
-```
-
-### Engines locais
-
-```bash
-
-PIPER_MAX_PROCS=0
-```
-
-## Perfis especiais
-
-Em Hugging Face Spaces, o projeto reduz paralelismo e endurece timeouts para sobreviver melhor ao ambiente compartilhado.
-
-## Cache
-
-O cache evita:
-
-- reparsear o mesmo livro
-- retrabalho entre runs
-- custos desnecessários em fallback e validação
-
-## Telemetria
-
-O sistema mede desempenho por engine e usa esses dados para melhorar ETA e ordem de fallback no servidor web.
-
-## Boas práticas
-
-- deixe `CHAPTER_PARALLEL_COUNT=0` para auto scale
-- só reduza concorrência quando houver rate limit ou recursos limitados
-- use `MAX_CHAPTER_CHARS` para livros com capítulos anômalos
+Alegações de desempenho exigem identidade comparável de código/toolchain/modelo/
+entrada, medições antes/depois e limites conhecidos. Número de campanha histórica
+não comprova velocidade atual nem autoriza benchmark novo. Leia a
+[política de execução](../../agents/execution-policy.md) antes de trabalho pesado.

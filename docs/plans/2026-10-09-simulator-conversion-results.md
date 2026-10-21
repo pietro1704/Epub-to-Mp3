@@ -1,5 +1,7 @@
 # Scoped Simulator conversion result
 
+> **Historical record (reviewed 2026-10-21).** Bounded historical Edge/Simulator benchmark. Keep original hashes, selected range and limits; it does not establish acoustic latency, peak memory or whole-reader acceptance. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 Continuing the full quality/performance goal; this closes only the bounded
 Simulator conversion evidence slice, not reader, warm-open or cross-client gates.
 

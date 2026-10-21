@@ -1,5 +1,16 @@
 # Progressive reading and narration session
 
+## Evidence navigation and limits
+
+- [Scope and ownership](#scope-and-ownership).
+- [Evidence and dependencies](#evidence-and-dependencies).
+- [Acceptance](#acceptance).
+- [Checkpoint](#checkpoint).
+
+These links locate dated scope and later checkpoints. The record does not establish current source/build identity or close acceptance left pending in its final checkpoint.
+
+> **Historical record (reviewed 2026-10-21).** Rolling historical checkpoint log. Earlier remaining-work lists, local branches and final Edge-default statement are snapshots; completion and current delivery identity require fresh verification. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 ## Scope and ownership
 
 Implement on `feature/progressive-reading-session`, based on develop 0effe3a52f,

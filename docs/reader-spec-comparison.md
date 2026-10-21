@@ -1,5 +1,7 @@
 # Reader Specification — Comparison with Current App
 
+> **Historical record (reviewed 2026-10-21).** Undated static comparison against an earlier source snapshot; its “current app”, Python-canonical and pagination-gap claims are not current implementation status. See [runtime navigation](agents/runtime-navigation.md) and the [accepted native pagination decision](adr/2026-08-14-reader-paginated-text-layout.md). Reproduce before acting on old gaps.
+
 This comparison was performed after the product specification and wireframes
 were completed. It describes the current repository without changing its
 implementation.

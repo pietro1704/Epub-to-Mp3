@@ -1,67 +1,30 @@
 # Troubleshooting
 
-## O servidor web não sobe
+Identifique adaptador, revisão e artefato antes de escolher diagnóstico. Preserve
+erro/log original e use a menor verificação na interface afetada. Consulte a
+[política de execução](../../agents/execution-policy.md) para limites e plataformas.
 
-Verifique:
+- Navegador: inspecione exports WASM, assets TTS, suporte de armazenamento e estado
+  da instalação/checksum do modelo. Modelo ausente não autoriza download ou troca
+  para HTTP/Edge. Voz nativa do navegador não exporta MP3.
+- Apple: inspecione FFI/ONNX embutidos, arquitetura/plataforma e assinaturas;
+  use inspeção/empacotamento de `mac:validate` antes de rebuild justificado. Siga
+  logs nativos e receipt exato em vez de procurar sidecar Python.
+- Flutter: confira adaptador Android/desktop registrado e identidade da biblioteca
+  nativa empacotada. Mantenha Android pausado e trabalho autorizado dessa plataforma no Arch.
+- Servidor opcional: inspecione revisão Rust/container, porta, paths e logs.
+  Dependências Python legadas não são o diagnóstico padrão do produto.
 
-- dependências Python instaladas
-- `ffmpeg` presente
-- porta local disponível
-- logs do backend
+Informe fallback/voz ativos e preferências explícitas do job quando Piper falhar.
+Mantenha Piper primário e recuperação limitada conforme política compartilhada.
+Não inicie benchmark, instalação de modelos ou limpeza de cache como correção inferida.
 
-Comandos úteis:
+Limites de upload e erros HTTP pertencem ao adaptador/servidor selecionado;
+confirme configuração atual antes de sugerir overrides antigos. Para segurança,
+reproduza com cuidado, inspecione confinamento/sanitização e siga
+[SECURITY.md](../../../SECURITY.md). Dismiss de alertas e fechamento de issues
+exigem autorização aplicável e evidência.
 
-```bash
-mise run dev
-uvicorn python_app.server:app --port 8000
-```
-
-
-## Piper não funciona
-
-Verifique:
-
-- ambiente virtual ativo
-- binário/modelo disponível
-
-## App nativo no macOS falha no startup
-
-Verifique:
-
-- runtime Python e recursos do app empacotados
-- Console.app filtrando por `EpubToMp3` para ver stderr do servidor embutido
-- refaça `mise run mac:build` para atualizar o bundle
-
-## CodeQL acusa path-injection
-
-Esse projeto usa sanitização e confinamento por raiz em vários pontos. Se surgir alerta:
-
-1. valide o fluxo real
-2. tente deixar a sanitização mais explícita no código
-3. só então faça dismiss justificado, se for falso positivo
-
-## Hugging Face não atualiza
-
-Verifique:
-
-- workflow de sync
-- logs do Space
-- factory reboot
-
-## Upload falha por tamanho
-
-Ajuste:
-
-```bash
-export MAX_UPLOAD_MB=200
-export VITE_MAX_UPLOAD_MB=200
-```
-
-## Testes úteis
-
-```bash
-mise run test
-mise run test:unit
-mise run test:web
-mise run test
-```
+Simulator está em quarentena; aceite SE1/iOS 15.5 segue pendente. Kernel panic novo
+exige parada conforme a política. Não tente outro launcher, reinicie serviço/host
+ou altere runtime/hardware para contornar uma falha.

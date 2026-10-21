@@ -1,5 +1,7 @@
 # TTS model selection for EpubToMp3
 
+> **Historical record (reviewed 2026-10-21).** October 2 model/architecture research. The Edge-first/Piper-fallback recommendation is superseded by [current runtime/provider policy](../AGENTS.md). Retain sources, hashes and feasibility limits; no implicit installation or override of explicit per-job selections follows from old profiles.
+
 ## Scope and method
 
 Research date: 2026-10-02. Goal: compare local/open TTS candidates for audiobook conversion by quality, throughput, footprint, language coverage, and fit with the existing Edge-first/Piper-fallback architecture. Primary sources are official repositories/model cards/docs. Published speed figures are not directly comparable across hardware; validate on representative Mac, Android, and server targets.

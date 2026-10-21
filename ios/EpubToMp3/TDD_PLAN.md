@@ -1,5 +1,7 @@
 # TDD Bug Sprint — iOS EPUB Reader
 
+> **Historical record (reviewed 2026-10-21).** July bug-sprint checklist and results, not the current universal test protocol. Old physical-only installs, task ordering and outstanding checkboxes require source/runtime revalidation. Use [current reader instructions](AGENTS.md) and [execution policy](../../docs/agents/execution-policy.md).
+
 ## Protocolo obrigatório para cada bug
 
 ```

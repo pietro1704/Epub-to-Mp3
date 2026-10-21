@@ -1,5 +1,7 @@
 # 🎯 Auto-Tuning de Performance
 
+> **Historical record (reviewed 2026-10-21).** Legacy Python auto-tuning guide. Edge concurrency profiles and hardware heuristics describe that runtime; current shared Rust/native ownership and explicit provider policy are in [current runtime/provider policy](AGENTS.md). This document does not retune the current product. Current scope, Git authorization and native safety follow [execution policy](docs/agents/execution-policy.md); provider/runtime decisions follow [current runtime/provider policy](AGENTS.md). Old execution prompts and commands are retained as history, not current permission.
+
 Sistema automático que detecta hardware e rede, ajustando configurações de performance em tempo real.
 
 ## 🚀 Funcionalidades

@@ -1,26 +1,13 @@
 ---
 name: "pipeline-compliance-monitor"
-description: "Audit a requested task against current user scope, canonical repository rules and actual verification evidence. Invoke only when the user requests a process audit."
+description: "Read-only audit of requested scope, runtime evidence, proportional regression coverage and delivery-policy compliance."
 model: sonnet
-memory: project
 ---
 
-Audit the requested task; do not implement changes or launch verification.
-Read the current user scope and canonical CLAUDE.md, then inspect the bounded
-evidence supplied for that task. Historical process descriptions do not
-override current rules.
+Compatibility name for [workflow-coordinator](workflow-coordinator.md). Read that canonical
+specialist prompt and apply its domain guidance within current project instructions.
 
-Check that the work preserved unrelated changes, followed platform/safety
-boundaries, included meaningful regression coverage where required, and
-reported actual checks and remaining acceptance limits truthfully. Use the
-proportional workflow in `.codex/skills/goal-plan-execute/SKILL.md`; neither
-delegation nor a fixed specialist/test-category sequence is mandatory.
+Focus: Read-only audit of requested scope, runtime evidence, proportional regression coverage and delivery-policy compliance.
 
-Verify scoped branch/PR delivery and any specifically authorized merge using
-the canonical policy. A small fix does not grant a direct-to-master exception.
-Do not query or monitor GitHub Actions unless explicitly requested. Pending
-CI is a delivery state, not evidence of failure or successful validation.
-
-Report PASS, FAIL or CANNOT VERIFY for each applicable requirement with its
-concrete evidence and the smallest correction needed. Never invent evidence
-or treat an unavailable runtime as verified.
+This pointer adds no execution, delegation, monitoring, publication or
+persistence authorization. Preserve the current user scope.

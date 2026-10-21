@@ -23,8 +23,8 @@ when changed interpretation/authorization requires it.
 The other agent may review or test shared Rust but does not edit the same files
 concurrently. Assign owned paths before changing them. Preserve books, models,
 progress, preferences, pending changes and active sessions. Device actions require
-authorization in that task. This setup authorizes a configuration handshake only;
-it does not itself request an app run or change a device.
+authorization in that task. The initial setup authorized a configuration handshake only;
+that dated setup permission is not a new request for an app run or device change.
 
 ## Routing and history
 
@@ -130,7 +130,12 @@ Do not tick cross-platform acceptance until its required results are observed.
 Normal inbox checks occur at task start, explicit user requests and handoff points;
 no automatic polling service or CI monitoring is installed.
 
-## Setup board and acceptance
+## Historical setup board and acceptance — 2026-10-15
+
+The setup permissions, versions, branch states, message IDs and evidence below
+are preserved as the October 15 record. The protocol above remains the current
+reference; any new task uses [execution policy](execution-policy.md) for platform/safety authorization,
+including the Android pause and Intel Simulator quarantine.
 
 | ID | Owner | Acceptance | Status |
 | --- | --- | --- | --- |
@@ -149,7 +154,7 @@ References: [ai-memory agent messaging](https://github.com/akitaonrails/ai-memor
 Verify the installed CLI's help: Mac is 2.6.2, Arch is 3.0.0 at setup time;
 upstream documentation may describe features absent from either installed build.
 
-## Verified setup evidence
+## Historical setup evidence — 2026-10-15
 
 - The actual Arch Codex consumed that exact request and replied with
   `01a141b2-6780-7a61-ad05-5427f9fc6435`. Mac claimed the reply and verified

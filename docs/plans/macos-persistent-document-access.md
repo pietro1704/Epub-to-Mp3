@@ -1,5 +1,7 @@
 # macOS Persistent Document Access Implementation Plan
 
+> **Historical record (reviewed 2026-10-21).** Historical session handoff and red/green evidence. Its read-before-every-change and per-action Git restrictions are retired session instructions; the signed TCC journey remains unverified in this record despite unsigned test success. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 > **For Claude:** Read this file before changing the repository. Continue from the current working tree; do not reset, checkout, clean, pull, merge, commit, or push unless the human explicitly asks for that exact action.
 
 **Goal:** Make the macOS app request access to user-selected documents only once, while keeping app-owned cache and imported-book data inside the app container so normal launches do not trigger macOS Documents-folder privacy prompts.

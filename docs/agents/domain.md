@@ -12,16 +12,11 @@ How engineering skills should consume this repository's domain documentation whe
 
 If these files do not exist, proceed silently. Do not create them preemptively; domain-modeling work creates them when terminology or decisions are actually resolved.
 
-## File structure
+## Existing layout
 
-This repository uses the single-context layout:
-
-```
-/
-├── CONTEXT.md
-├── docs/adr/
-└── src/
-```
+This repository uses one root `CONTEXT.md` and `docs/adr/`. Consult actual module
+paths in the relevant runtime navigation; the domain layout does not prescribe
+one source directory. Keep this naming when adapting generic GLOSSARY examples.
 
 ## Vocabulary and ADRs
 

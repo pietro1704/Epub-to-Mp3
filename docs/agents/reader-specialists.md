@@ -6,7 +6,7 @@ Use these roles only when the work can be split without overlapping files.
 | --- | --- | --- |
 | `reader-layout` | paginated layout, glyph protection, clipping probe, page offsets | layout/unit tests and native pagination probe |
 | `reader-transition` | chrome intent, safe-area geometry, navigation, mini-player, transition generation | repeated and interrupted chrome-toggle UI tests |
-| `reader-runtime-qa` | simulator/device choreography, seeded LOTR, screenshots and LLDB evidence | real app behavior; app remains open after the run |
+| `reader-runtime-qa` | simulator/device choreography, seeded LOTR, screenshots and LLDB evidence | real app behavior and verified shutdown after validation; keep open only for a requested review under [execution policy](execution-policy.md) |
 | `apple-import` | EPUB/PDF opening, library seed and persisted reader entry | import/open no-crash tests |
 
 The ownership table is not a reason to fan out automatically. Split only when

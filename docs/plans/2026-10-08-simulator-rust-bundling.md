@@ -1,5 +1,7 @@
 # Simulator Rust bundling
 
+> **Historical record (reviewed 2026-10-21).** Historical packaging/test evidence with explicit failed attempts and remaining real-book gates. The recorded Simulator startup permission is superseded by the current Intel Simulator quarantine. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 Scope: one Apple packaging slice on the existing Gitflow fix branch. User authorizes
 the otherwise Arch-owned Rust build here solely for the Apple Simulator artifact.
 No FFI/API/conversion behavior changes, Flutter execution, device runs or user-data edits.

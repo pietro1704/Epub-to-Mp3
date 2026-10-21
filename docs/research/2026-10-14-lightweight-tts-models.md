@@ -1,5 +1,7 @@
 # Lightweight TTS shortlist for the native Apple app
 
+> **Research status (reviewed 2026-10-21).** The Edge-primary/Piper-suspended premise is superseded by [current runtime/provider policy](../../AGENTS.md). Keep exact-artifact feasibility and benchmark hypotheses as dated research; this note does not install models or choose a current default.
+
 Research date: 2026-10-14. This note records the primary-source review phase; subsequent authorized physical-phone measurements are reported in [the benchmark results](2026-10-14-tts-phone-benchmark.md). The five entries below are benchmark candidates, not a measured quality ranking. Two Piper checkpoints are deliberately separate entries: both explicitly support Brazilian Portuguese, unlike the smallest Kitten release. The user subsequently authorized downloads, an Edge baseline, isolated benchmarking, and deletion of downloaded test assets. Edge remains primary and Piper remains suspended in production.
 
 ## Five Portuguese candidates

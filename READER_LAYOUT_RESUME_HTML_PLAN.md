@@ -1,5 +1,7 @@
 # Plano de continuidade — Reader, resume e layout EPUB
 
+> **Historical record (reviewed 2026-10-21).** July 17 continuation snapshot. Its direct compiler/asset workaround and push-master recipe are historical; old auto-resume goals do not override the current playback contract. See the [later playback control decision](docs/plans/2026-10-14-single-playback-control.md). Current scope, Git authorization and native safety follow [execution policy](docs/agents/execution-policy.md); provider/runtime decisions follow [current runtime/provider policy](AGENTS.md). Old execution prompts and commands are retained as history, not current permission.
+
 Atualizado em 2026-07-17.
 
 ## Objetivo

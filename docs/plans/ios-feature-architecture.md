@@ -1,5 +1,7 @@
 # iOS Feature Architecture Organization Plan
 
+> **Historical record (reviewed 2026-10-21).** Undated historical organization plan; its SwiftUI shell/Python-sidecar structure predates the native concrete seams and embedded Rust runtime. This record does not request another folder migration. Use [execution policy](../agents/execution-policy.md) for current scope, guarded builds and Simulator quarantine, and [runtime navigation](../agents/runtime-navigation.md) for architecture; old commands and authorizations are retained only as evidence.
+
 **Goal:** Organize the iOS/macOS Swift target by feature ownership while preserving current behavior, target membership, source-contract tests, and the existing SwiftUI/UIKit split.
 
 **Architecture:** Use feature-first directories with local `Views`, `Models`, and `Services` only where those boundaries are real. Keep SwiftUI as the composition shell, UIKit/TextKit/UIPageViewController for document-rendering hot paths, and the existing `ConvertViewModel`/`JobsListViewModel` as the only ViewModels unless a new state boundary is demonstrated by tests.

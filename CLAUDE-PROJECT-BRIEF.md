@@ -8,6 +8,6 @@ The required product contract is local conversion through the shared Rust runtim
 
 Use `APP_REMAINING_WORK.md` for the backlog, acceptance criteria, and recorded evidence; its status may be stale, so revalidate each item against the live checkout. Python/FastAPI, React, and HF paths may still be compatibility or migration surfaces; verify the code and task results.
 
-Work on the requested slice only. Preserve existing changes, use the repository's relevant skill and narrowest valid verification, and report observed evidence and limitations. Ask only when a missing detail changes the goal, scope, risk, authorization, compatibility, or acceptance. Do not assume permission for builds, simulator/device actions, external writes, commits, or pushes.
+Work on the requested slice only. Preserve existing changes, use the repository's relevant skill and narrowest valid verification, and report observed evidence and limitations. Ask only when a missing detail changes the goal, scope, risk, authorization, compatibility, or acceptance. Use current canonical standing authorization and task-specific overrides for builds, devices, Git delivery and external writes; do not infer broader authority from this brief.
 
 For task-specific prompt wording, use `CLAUDE-MINI-PROMPT.md` only if its fields add clarity; do not repeat this brief or the repository rules in every prompt.

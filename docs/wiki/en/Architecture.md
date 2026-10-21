@@ -1,46 +1,26 @@
 # Architecture
 
-## High-level view
+Shared conversion belongs in `crates/converter-core/`: parsing, structure/text,
+provider/model policy, progress, cancellation, persistence and artifacts.
+`converter-ffi` exposes the native C ABI; `converter-cli` is a direct entry point;
+`converter-wasm` exposes browser-safe bindings. Native-only dependencies are
+conditionally compiled; the full native process/network pipeline is not a browser API.
 
-The project is split into four layers:
+| Surface | Source entry | Adapter responsibility |
+| --- | --- | --- |
+| Apple | `ios/EpubToMp3/EpubToMp3/Features/` | UIKit/AppKit, local files, media and FFI |
+| Web | `web/src/services/BrowserConversionClient.ts` | Browser I/O/Piper/storage around Rust sessions |
+| Flutter | `flutter_app/lib/main.dart`, `lib/services/embedded_converter.dart` | Registered Android native channel and Linux/Windows FFI |
+| Optional server | `crates/converter-server/src/main.rs` | Hosted HTTP compatibility contract |
+| Legacy | `python_app/`, `hf_app.py` | Compatibility fixtures and migration reference |
 
-1. `python_app/`: backend and conversion pipeline
-2. `web/`: React/TypeScript frontend
-3. `ios/EpubToMp3/`: SwiftUI client (macOS · iPadOS · iOS) with embedded Rust server on macOS
-4. `flutter_app/`: Flutter client (Linux · Windows · Android)
+Apple does not require Python or an HTTP sidecar for embedded conversion.
+Browser conversion does not silently select the retained HTTP adapter. Flutter
+startup registers embedded converters; retained Python bridge/assets do not prove
+that production calls them. Check actual callers before removing legacy material.
 
-## Two conversion pipelines
-
-There is a critical design detail:
-
-- `python_app/src/converter.py`: CLI pipeline
-- `python_app/server.py`: Web/API pipeline
-
-They are separate. Relevant behavior changes must be mirrored across both paths when applicable.
-
-## Backend
-
-Main files:
-
-- `python_app/main.py`: CLI entrypoint
-- `python_app/server.py`: FastAPI API
-- `python_app/src/config.py`: conversion configuration
-- `python_app/src/ebook_reader.py`: EPUB/PDF parsing
-- `python_app/src/cache_manager.py`: per-book/per-chapter cache
-- `python_app/src/job_manager.py`: job persistence and queue
-- `python_app/src/tts/`: TTS engines
-
-## Frontend
-
-Main files:
-
-- `web/src/App.tsx`: main composition
-- `web/src/hooks/useConversionFlow.ts`: conversion state machine
-- `web/src/services/ConversionService.ts`: HTTP/SSE/polling client
-- `web/src/i18n/translations.ts`: translations
-
-## Native clients
-
-- `ios/EpubToMp3/project.yml`: xcodegen project descriptor; the `Embed Rust converter sidecar (macOS only)` post-build script copies `dist/epub-to-mp3-server` into the `.app` Resources
-- `flutter_app/lib/`: Flutter client source (Linux · Windows · Android)
-- `crates/converter-server/`: Rust server sidecar built via `mise run sidecar:build`
+Paths, schemas and persistence depend on the adapter and configuration; do not
+reuse old Python `.jobs/`/`.uploads/` defaults as universal platform paths.
+Use [runtime navigation](../../agents/runtime-navigation.md),
+[CONTEXT.md](../../../CONTEXT.md) and relevant ADRs for detailed ownership.
+Source wiring alone is not a passing migration or runtime acceptance report.

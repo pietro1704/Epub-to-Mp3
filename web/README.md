@@ -1,60 +1,62 @@
-# Web Frontend
+# Web frontend
 
-Static frontend for EPUB/PDF to MP3 conversion. Uses real Python backend - **no mocks** (except sample.epub file).
+React/TypeScript/Vite UI with an embedded Rust/WASM conversion path.
+`src/services/ConversionService.ts` exports `BrowserConversionClient`, backed by
+`src/wasm/`, browser Piper synthesis and browser storage. Retained HTTP and mock
+clients are separate adapters; do not infer Python backend dependence or HTTP
+fallback from their presence.
 
-## Batch uploads
+## Local development
 
-Step 1 of the UI now accepts multiple EPUB/PDF files. Drop several books, drag or use the arrow controls to reorder them, then click **Converter** to send everything sequentially while reusing the same engine/voice configuration for every title. During Step 2 you can also drop new files into the inline “Add to queue” card and they will run right after the current conversion.
+Inspect `package.json`, `mise.toml` and the
+[execution policy](../docs/agents/execution-policy.md) before running tasks.
+With existing managed tools/dependencies, from `web/`:
 
-## Development
-
-### 1. Start Python Backend
-
-```bash
-# From project root
-python -m uvicorn python_app.server:app --reload --port 8000
+```sh
+mise exec -- npm run dev
+mise exec -- npm run lint
+mise exec -- npm run test -- --maxWorkers=2
+mise exec -- npm run build
 ```
 
-### 2. Start Frontend (in another terminal)
+The `predev`/`prebuild` scripts prepare browser TTS assets; inspect their current
+inputs when diagnosing a missing artifact. A Rust/WASM rebuild uses the guarded
+`web:wasm-build` task, not a direct compiler command. Start tests with at most two
+workers. The broad `test:web` task currently has a legacy Python-install precheck;
+inspect it before use, since local Python execution remains deferred to CI.
+Dependency installation, model downloads and service startup require appropriate
+scope; they are not implicit in a documentation or source inspection.
 
-```bash
-cd web
-npm install
-VITE_API_BASE=http://localhost:8000 npm run dev
-```
+## Capabilities and providers
 
-Frontend will run at `http://localhost:5173` and connect to Python backend at `http://localhost:8000`.
+The browser adapter inspects EPUB and uses Rust `ConversionSession` for segment
+ordering, policy, cancellation and accepted audio. Piper `pt_BR-faber-medium`
+requires explicit model installation and verification. Browser system speech is
+listening-only; MP3 export requires Piper. Edge/other unavailable browser
+providers must fail explicitly rather than switch to an HTTP server. Check the
+actual adapter before claiming PDF or native-only format support.
 
-**Note**: Without backend running, frontend will show 404 errors. Only `sample.epub` is mocked for file upload testing.
+## Queue EPUB files
 
-### Supported TTS engines
+1. Add supported EPUB files in the upload step. Use drag or order controls to
+   reorder pending books before starting conversion.
+2. Start the queue to process books sequentially with the selected provider
+   configuration. Model installation remains a separate explicit action.
+3. During progress, add more EPUB files through the queue control; they follow
+   the current conversion. Use the existing progress, cancel and playback controls.
 
-The backend currently exposes **Edge-TTS** (`edge`) and **Piper** (`piper`).
-`auto` is an alias for the Edge-first selection. Piper is only listed when
-its binary is available; models are downloaded or discovered on demand.
-The frontend's engine and voice choices come from `GET /api/voices`.
-Kokoro, Coqui, and Spark are not supported engines.
+Batch queue UI, progress, chapter playback and stored jobs must be verified at
+the browser runtime when changed. See
+[WASM capability boundary](../docs/wasm-capability-boundary.md) and current
+`BrowserConversionClient`, `BrowserPiper`, `EmbeddedConverter` and
+`BrowserJobStore` sources. Wiring and generated files alone do not prove browser
+synthesis, cancellation, persistence or export acceptance.
 
-## Build & Deploy
+## Optional HTTP compatibility
 
-```bash
-npm run build
-```
-
-Set the environment variable `VITE_API_BASE` to the public URL of your Python backend. The frontend will automatically connect to it.
-
-Example:
-
-```bash
-VITE_API_BASE=https://your-backend.example.com npm run build
-```
-
-## API Expectations
-
-The frontend expects a Python backend running with these endpoints:
-
-- `POST /api/convert` → accepts `multipart/form-data` with fields `file`, `engine`, optional `voice`, `chapters`. Returns `{ jobId }`.
-- `GET /api/jobs/:id` → returns `{ state: "queued" | "running" | "finished" | "failed" | "interrupted", events: string[], outputs: [{ name, url }], error? }`.
-- `GET /api/jobs/resumable` → returns list of jobs that can be resumed.
-
-The Python backend implementation is in `python_app/` directory.
+`VITE_API_BASE` and the retained HTTP client concern an explicitly selected
+compatibility/server mode. For such work, inspect
+`crates/converter-server/src/main.rs` and the actual frontend call sites for
+current routes/payloads. The optional Rust development server/container is a
+separate deployment surface; Python/FastAPI is legacy material. Building the UI
+does not authorize publication or server changes.

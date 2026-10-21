@@ -1,97 +1,50 @@
-# Flutter Companion App
+# Flutter client
 
-Cross-platform (Linux + Windows + Android) companion for the Epub-to-Mp3
-backend. Talks to the same backend server documented in the root
-`CLAUDE.md` and mirrors the SwiftUI slice 3 feature set: jobs list,
-settings, synchronized audio + reader, TOC drawer, offline fulltext cache.
+Flutter owns the Linux, Windows and Android client. Apple clients live in
+`ios/EpubToMp3/` and use native UIKit/AppKit. Shared conversion behavior belongs
+in Rust, with platform adapters for UI, files, speech and playback.
 
-**macOS / iOS are NOT supported here** — those platforms are owned by the
-SwiftUI app at `ios/EpubToMp3/`. Do not re-introduce a `macos/` or `ios/`
-scaffold under `flutter_app/`.
+`lib/main.dart` registers `AndroidEmbeddedConverter` on Android and
+`DesktopEmbeddedConverter` on Linux/Windows before providers resolve the runtime.
+`lib/services/embedded_converter.dart` defines the seam; desktop uses direct
+`converter-ffi`, Android uses its registered native platform channel/JNI path.
+`RustPlaybackConversionService` handles the moving Listen window over that seam.
+The retained `api_client.dart`, Python bridge source/assets and backend settings
+are compatibility surfaces, not proof that normal local conversion uses HTTP or
+Python. Missing native artifacts are explicit failures, not permission to select
+a different backend silently.
 
-## Quick start
+## Development and platform ownership
 
-```bash
-mise install                       # ensures Flutter 3.41.9 is on PATH
-mise run flutter:test              # run unit tests
-mise run flutter:analyze           # static analysis
-mise run flutter:run               # launch on the connected device
-mise run flutter:build-apk-debug   # debug Android APK
-mise run flutter:build-apk         # release Android APK
-mise run flutter:build-linux       # Linux desktop release
-mise run flutter:build-windows     # Windows desktop release
-```
+Read [execution policy](../docs/agents/execution-policy.md) and inspect
+`mise.toml`, `pubspec.yaml` and platform packaging scripts before execution.
+Android work remains paused until the user resumes it. Android/Samsung and
+Flutter Linux builds/tests/artifacts belong on Arch; Windows packaging needs a
+compatible Windows toolchain. Do not start an Android emulator from a general
+quickstart or run Flutter builds on this Mac as a diagnostic shortcut.
 
-Android needs the Android SDK + an emulator or USB device. Linux/Windows
-desktop need their respective Flutter desktop deps (GTK on Linux, Visual
-Studio on Windows).
+Existing tasks include `flutter:test`, `flutter:analyze`,
+`flutter:build-apk-debug`, `flutter:build-apk`, `flutter:build-linux` and
+`flutter:build-windows`. Availability is not authorization or evidence of passing
+results. Android build tasks depend on native FFI installation; desktop tasks own
+their platform packaging. Inspect before invoking; no Python bootstrap is a
+production prerequisite.
 
-### Embedded Python (Android only)
+## Application seams
 
-The Android build embeds CPython 3.13 via Chaquopy so the app can call
-`python_app/src/` directly (EPUB parser, Edge-TTS pipeline) instead of
-relying on the remote FastAPI backend for everything. Before any APK
-build, sync the Python source set into the Android tree:
+- `lib/state/providers.dart`: runtime and state composition.
+- `lib/services/local_conversion_job.dart`: local history from Rust manifests.
+- `lib/services/audio_player_service.dart`: playback and progressive sources.
+- `lib/services/resume_store.dart`: persisted playback position.
+- `lib/services/desktop_tts_model_adapter.dart`: shared model catalog/store adapter.
+- `lib/l10n/`: locale resources; keep intended locale values literal.
 
-```bash
-mise run android:bootstrap-python   # mirrors python_app/src into android/app/src/main/python
-mise run flutter:build-apk-debug    # APK build; Chaquopy pip-installs edge-tts + aiohttp
-```
+Piper `pt_BR-faber-medium` remains primary, with installed system TTS fallback
+where supported, explicit active voice reporting and bounded Piper recovery.
+Explicit job choices win. Edge requires consent; model installation requires an
+explicit action. Tests should exercise registered runtime behavior, success and
+relevant error/cancellation/book-chapter identity. Source registration alone does
+not establish device, audio, packaging or release acceptance.
 
-Expect the APK to land around **~150 MB** because Chaquopy bundles
-CPython + stdlib + `edge_tts` + `aiohttp` for `arm64-v8a` and `x86_64`.
-Architecture and trimming notes live in
-[`PYTHON-EMBED-ANDROID.md`](PYTHON-EMBED-ANDROID.md).
-
-## Backend URL
-
-Default: `http://localhost:8000`. Configurable in **Settings → Backend
-URL**, persisted via `shared_preferences`. For HF Spaces, use the public
-Space URL (e.g. `https://<user>-epub-to-mp3.hf.space`).
-
-## Screens
-
-- `lib/screens/jobs_list_screen.dart` — pull-to-refresh sessions list
-  (`GET /api/sessions`).
-- `lib/screens/settings_screen.dart` — backend URL, WPM, audio rate,
-  font size, dark mode.
-- `lib/screens/player_reader_screen.dart` — split layout (reader on top,
-  player controls on bottom; side-by-side at >700dp).
-- `lib/screens/reader_view.dart` — sentence-highlighted text driven by
-  `currentSentenceProvider`.
-- `lib/screens/toc_drawer.dart` — chapter list with jump-to-chapter.
-
-## Architecture
-
-- **State**: Riverpod 2 (`lib/state/providers.dart`).
-- **Models**: freezed + json_serializable (`lib/models/`). Wire format
-  matches the SwiftUI client — `JobSnapshot` and `EbookFulltext` use
-  camelCase; `SessionRecord` uses snake_case.
-- **Services** (`lib/services/`):
-  - `api_client.dart` — dio wrapper, SSE parser, fulltext error mapping
-    (503 → `FulltextTransient`, 404 → `FulltextGone`, 422 →
-    `FulltextEmpty`).
-  - `fulltext_store.dart` — retry ladder `[800, 1500, 3000, 6000,
-    12000]ms` with on-disk cache.
-  - `sync_engine.dart` — pure Dart port of the SwiftUI `SyncEngine.swift`.
-  - `audio_player_service.dart` — just_audio `ConcatenatingAudioSource`.
-  - `download_manager.dart` — dio download with persisted queue.
-  - `resume_store.dart` — shared_preferences-based per-chapter resume.
-
-## i18n
-
-ARB files live in `lib/l10n/` (`app_en.arb`, `app_pt.arb`). Generated
-delegate is created on `flutter pub get` (set via `l10n.yaml` +
-`generate: true` in `pubspec.yaml`). Mirror keys exist in both locales.
-
-## Tests
-
-```bash
-mise run flutter:test
-```
-
-Coverage:
-- `test/models_roundtrip_test.dart` — JSON decoding for all models.
-- `test/sync_engine_test.dart` — timing distribution + WPM fallback +
-  segment walk + empty chapter.
-- `test/resume_store_test.dart` — save/load round-trip.
+See [behavior map](MIRROR-MAP.md) for cross-client ownership and historical
+`PYTHON-EMBED-*` paths for compatibility context, not current setup recipes.

@@ -1,30 +1,18 @@
-# Deploy & Verify
+---
+name: deploy-verify
+description: Verify an authorized native Apple change in the affected real app.
+---
 
-After every iOS build, always: build → install → **launch** on the physical iPhone. Never stop at just build or install.
+# Deploy and verify
 
-```bash
-# 1. Generate project
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3
-xcodegen generate
+Read `docs/agents/execution-policy.md`. For macOS, read
+`docs/agents/macos-validation.md`; for iOS, read `ios/EpubToMp3/AGENTS.md`
+and the applicable guidance in `docs/agents/runtime-navigation.md`. Use the
+repository's guarded tasks and the current target identity.
 
-# 2. Build
-xcodebuild \
-  -project EpubToMp3.xcodeproj \
-  -scheme EpubToMp3 \
-  -configuration Debug \
-  -destination 'platform=iOS,id=00008140-001128A022BA801C' \
-  -derivedDataPath .build \
-  build 2>&1 | tail -5
+Match verification to the requested outcome. Exercise the affected real app for
+behavior changes; documentation and build-only work keep their scoped checks.
+Retain source/build identity, commands, logs and observed acceptance evidence.
 
-# 3. Install
-xcrun devicectl device install app \
-  --device 00008140-001128A022BA801C \
-  .build/Build/Products/Debug-iphoneos/EpubToMp3.app 2>&1 | tail -5
-
-# 4. Launch
-xcrun devicectl device process launch \
-  --device 00008140-001128A022BA801C \
-  com.pietrocode.epubtomp3 2>&1 | tail -5
-```
-
-Only declare a fix done after the user confirms on-device.
+When the user owns manual validation, report acceptance as pending until their
+result arrives. Follow the canonical app cleanup and device safety policy.

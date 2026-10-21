@@ -43,15 +43,15 @@ Use native XCTest/UI automation and the pagination probe. Assert all of these:
   space.
 
 Add the narrowest permanent native test that is red on the reported behavior.
-Run the matching native test target only after explicit user authorization for
-the local simulator/device. Respect the repository resource guard; do not
-override it from this skill. Follow `docs/agent-workflow.md`: verify all
-Simulators are shut down and SimMetalHost has exited before compiling; finish
-build-for-testing before booting, then run test-without-building from valid
-artifacts with one job and parallel testing disabled.
+Read `docs/agents/execution-policy.md` before selecting any execution path and
+use the affected runtime's guarded tasks. Ordinary reader-task consent does
+not lift the current Intel Simulator quarantine. Keep required SE1/iOS 15.5
+acceptance pending while that gate remains closed; another device does not
+replace it. A newly authorized safety review must precede any re-enablement.
+For scoped macOS verification, follow `docs/agents/macos-validation.md`.
 
 ## Hand off visible evidence
 
 Capture the seeded Lord of the Rings state, test command and relevant probe
-values. When active verification ends, close the app, shut down its Simulator,
-quit Simulator.app and confirm shutdown; retain screenshots/reports for inspection.
+values. Follow the canonical cleanup policy when authorized verification ends;
+retain screenshots/reports and distinguish executed checks from blocked ones.

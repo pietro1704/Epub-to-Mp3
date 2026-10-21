@@ -1,50 +1,25 @@
-# Desktop, Mobile, and Releases
+# Desktop, mobile and releases
 
-## Apple (macOS / iPadOS / iOS) — UIKit/AppKit
+Apple clients use native UIKit/AppKit plus embedded Rust FFI. Start with the
+[Apple guide](../../../ios/EpubToMp3/README.md) and
+[macOS validation](../../agents/macos-validation.md). The full `mac:build` task
+builds embedded FFI prerequisites; `sidecar:build` is a separate standalone-server
+task and is not the Apple application dependency.
 
-The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the Rust
-`converter-server` inside the `.app`; iPadOS and iOS talk to a remote backend.
+Flutter owns Linux/Windows/Android with registered native Rust adapters. Follow
+[the Flutter guide](../../../flutter_app/README.md); do not infer a system-Python
+or remote-server requirement from retained compatibility files. Linux Flutter and
+Android/Samsung work belongs on Arch; Android remains paused until resumed.
+Windows packaging requires the matching toolchain.
 
-Headless macOS build:
+All Mac compilation uses guarded tasks. Simulator execution remains quarantined;
+required SE1/iOS 15.5 reader acceptance stays pending and cannot be replaced by a
+physical device or another runtime. A native build, unit test or source registration
+does not establish visible reader, conversion or audio acceptance.
 
-```bash
-mise run mac:build
-# → task prints the produced .app path, usually ios/EpubToMp3/.build/Release/EpubToMp3.app
-```
-
-Sidecar-only build (Rust release binary):
-
-```bash
-mise run sidecar:build
-# → dist/epub-to-mp3-server
-```
-
-Open in Xcode:
-
-```bash
-cd ios/EpubToMp3
-xcodegen generate
-open EpubToMp3.xcodeproj
-```
-
-## Non-Apple (Linux / Windows / Android) — Flutter
-
-The official non-Apple client lives in `flutter_app/`. Single Dart codebase,
-same FastAPI contract.
-
-```bash
-mise run flutter:build-linux        # Linux desktop release
-mise run flutter:build-windows      # Windows desktop release
-mise run flutter:build-apk          # Android (release)
-```
-
-## Releases
-
-`release-desktop.yml` runs on every `v*.*.*` tag and publishes:
-
-- macOS `.zip` (native Apple app with embedded Python runtime)
-- Linux `.tar.gz` (Flutter)
-- Windows `.zip` (Flutter)
-- Android `.apk` (Flutter)
-- Docker image (`ghcr.io/<owner>/epub-to-mp3:latest`)
-- iOS unsigned archive (sideload via AltStore)
+Release workflows and artifacts must be checked at their exact revision. Read
+`.github/workflows/release-desktop.yml` and relevant platform workflows rather
+than assuming every tag publishes every platform or bundles Python. Signing,
+architecture, runtime dependencies and model assets require artifact evidence.
+Release/tag creation, store/TestFlight publishing and deployment need separate
+authorization; a documentation update triggers none of them.

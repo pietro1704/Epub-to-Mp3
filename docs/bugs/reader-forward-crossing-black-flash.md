@@ -1,5 +1,7 @@
 # Reader: black flash on forward chapter-boundary page turns
 
+> **Historical record (reviewed 2026-10-21).** Undated static-analysis report for retired SwiftUI paths; hypotheses were not reproduced as runtime defects. The [native reader deepening record](../plans/2026-08-17-native-reader-deepening.md) identifies that retirement. Reproduce against current native seams via [runtime navigation](../agents/runtime-navigation.md) and apply [execution policy](../agents/execution-policy.md) before acting.
+
 **Status:** static-analysis diagnosis only. No device instrumentation was run. Confirm with `FlickerProbe.shared` counters (`.emptyPagesShown`, `.spuriousRenavigation`, `.staleSlicePushed`) on-device before implementing a fix.
 
 ## Scope confirmed by user
