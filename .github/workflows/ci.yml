@@ -93,7 +93,7 @@ jobs:
           bundler-cache: false
 
       - name: Install host test dependency
-        run: gem install minitest --version 6.0.6 --no-document
+        run: gem install minitest --version 6.0.6 --no-document --bindir "$RUNNER_TEMP/minitest-bin"
 
       - name: Set up mise for task metadata checks
         uses: jdx/mise-action@v5
