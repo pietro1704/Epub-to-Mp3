@@ -37,6 +37,15 @@ class CiRuntimeScopeTest < Minitest::Test
     refute @workflow.fetch('jobs').fetch('production-packaging-guard').key?('if')
   end
 
+  def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
+    jobs = @workflow.fetch('jobs')
+    runtimes = %w[python-tests rust flutter web]
+    runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
+    assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
+      jobs.fetch('pr-gate').fetch('needs').sort
+    assert_equal 'always()', jobs.fetch('pr-gate').fetch('if')
+  end
+
   def test_platform_and_shared_runtime_dependencies
     { 'web/src/app.tsx' => %w[web], 'flutter_app/lib/main.dart' => %w[flutter],
       'python_app/src/converter.py' => %w[python], 'crates/converter-server/src/main.rs' => %w[rust],
@@ -92,7 +101,9 @@ class CiRuntimeScopeTest < Minitest::Test
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'web' => result).success? }
     refute gate(scopes, 'changes' => 'failure').success?
-    refute gate(scopes, 'production-packaging-guard' => 'cancelled').success?
+    %w[failure cancelled skipped].each do |result|
+      refute gate(scopes, 'production-packaging-guard' => result).success?
+    end
     refute gate(scopes.reject { |name, _| name == 'rust' }).success?
     refute gate(scopes, 'rust' => 'success').success?
   end
