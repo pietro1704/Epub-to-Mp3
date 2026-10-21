@@ -38,6 +38,7 @@ jobs:
       flutter: ${{ steps.scope.outputs.flutter }}
       python: ${{ steps.scope.outputs.python }}
       wasm: ${{ steps.scope.outputs.wasm }}
+      contracts: ${{ steps.scope.outputs.contracts }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,13 +54,18 @@ jobs:
         run: |
           require 'open3'
           scopes = %w[rust web flutter python wasm].to_h { |name| [name, false] }
+          contracts = true
           if ENV.fetch('FULL_VALIDATION') == 'true'
             scopes.transform_values! { true }
           else
             abort 'A scoped run requires a pull request base' unless %w[pull_request workflow_dispatch].include?(ENV.fetch('EVENT_NAME')) && ENV.fetch('BASE_SHA').match?(/\A[0-9a-f]{40}\z/)
             changed, status = Open3.capture2('git', 'diff', '--no-renames', '--name-only', '-z', "#{ENV.fetch('BASE_SHA')}...HEAD")
             abort 'Cannot establish the actual PR diff' unless status.success?
-            changed.split("\0").each do |path|
+            paths = changed.split("\0")
+            contracts = paths.empty? || paths.any? do |path|
+              !((path.start_with?('docs/') && path.end_with?('.md')) || %w[README.md CHANGELOG.md].include?(path))
+            end
+            paths.each do |path|
               shared = path.match?(/\A(?:Cargo\.(?:toml|lock)|mise\.toml|\.mise\.toml|rust-toolchain(?:\.toml)?|native\/|crates\/(?:converter-core|converter-ffi)\/)/)
               scopes['rust'] ||= shared || path.start_with?('crates/') || path.end_with?('.rs')
               scopes['web'] ||= path.start_with?('web/', 'crates/converter-wasm/') || path.match?(/\Ascripts\/(?:build_web|check_direct_runtime)/)
@@ -68,8 +74,9 @@ jobs:
               scopes['wasm'] ||= path.start_with?('crates/converter-wasm/', 'web/src/wasm/') || path == 'scripts/build_web_wasm.sh'
             end
           end
-          File.open(ENV.fetch('GITHUB_OUTPUT'), 'a') { |file| scopes.each { |name, value| file.puts "#{name}=#{value}" } }
+          File.open(ENV.fetch('GITHUB_OUTPUT'), 'a') { |file| scopes.merge('contracts' => contracts).each { |name, value| file.puts "#{name}=#{value}" } }
   production-packaging-guard:
+    needs: changes
     name: Production packaging guard
     runs-on: ubuntu-24.04
     env:
@@ -86,28 +93,43 @@ jobs:
       - name: Check production packaging boundary
         run: bash scripts/guard_no_python_production.sh
 
+      - name: Require explicit host contract selection
+        env:
+          HOST_CONTRACTS: ${{ needs.changes.outputs.contracts }}
+        run: |
+          case "$HOST_CONTRACTS" in
+            true|false) ;;
+            *) echo "Missing host contract selection" >&2; exit 1 ;;
+          esac
+
       - name: Set up Ruby for host workflow checks
+        if: needs.changes.outputs.contracts == 'true'
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "4.0"
           bundler-cache: false
 
       - name: Install host test dependency
+        if: needs.changes.outputs.contracts == 'true'
         run: gem install minitest --version 6.0.6 --no-document --bindir "$RUNNER_TEMP/minitest-bin"
 
       - name: Set up mise for task metadata checks
+        if: needs.changes.outputs.contracts == 'true'
         uses: jdx/mise-action@v5
         with:
           version: 2026.9.14
           install: false
 
       - name: Install scoped host contract tools
+        if: needs.changes.outputs.contracts == 'true'
         run: mise install
 
       - name: Install fixture-only Python dependencies
+        if: needs.changes.outputs.contracts == 'true'
         run: mise exec -- python -m pip install pytest
 
       - name: Verify host workflow guards and collaboration regressions
+        if: needs.changes.outputs.contracts == 'true'
         run: mise exec -- ruby scripts/run_ci_contracts.rb --output .reports/ci-contracts/production-guard
       - name: Retain fixture contract diagnostics
         if: failure()
