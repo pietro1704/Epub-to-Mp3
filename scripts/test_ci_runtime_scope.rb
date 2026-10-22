@@ -400,7 +400,7 @@ end
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     mac = faber.fetch('jobs').fetch('macos-preferences')
     steps = mac.fetch('steps')
-    assert_equal "${{ matrix.arch == 'x86_64' && 'python,rust' || 'python,rust,ruby' }}", mac.fetch('env').fetch('MISE_ENABLE_TOOLS')
+    assert_equal "${{ matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'python' || matrix.arch == 'x86_64' && 'python,rust' || 'python,rust,ruby' }}", mac.fetch('env').fetch('MISE_ENABLE_TOOLS')
     setup = steps.find { |step| step['name'] == 'Install official prebuilt Ruby for Intel' }
     verify = steps.find { |step| step['name'] == 'Verify official Intel Ruby selection through mise' }
     install = steps.find { |step| step['run'] == 'mise install' }
@@ -431,7 +431,7 @@ end
     verify = steps.find { |step| step['id'] == 'ffi-architecture' }
     save = steps.find { |step| step['name'] == 'Save Intel Rust build cache' }
     [identity, restore, build, verify, save].each { |step| refute_nil step }
-    [identity, restore].each { |step| assert_equal "matrix.arch == 'x86_64'", step.fetch('if') }
+    [identity, restore].each { |step| assert_equal "matrix.arch == 'x86_64' && !inputs.intel_prebuilt", step.fetch('if') }
     assert_pinned_action('actions/cache/restore', restore.fetch('uses'))
     assert_pinned_action('actions/cache/save', save.fetch('uses'))
     paths = ["~/.cargo/registry", 'target/release', 'target/espeak-data']
@@ -452,11 +452,13 @@ end
     refute_includes restore_prefix, "'crates/**/*.rs'"
     assert_equal "${{ steps.rust-cache.outputs.cache-primary-key }}", save.fetch('with').fetch('key')
     assert_match(/matrix\.arch == 'x86_64'/, save.fetch('if'))
+    assert_includes save.fetch('if'), '!inputs.intel_prebuilt'
     assert_includes save.fetch('if'), 'success()'
     assert_includes save.fetch('if'), "steps.rust-cache.outputs.cache-hit != 'true'"
     assert_includes save.fetch('if'), "steps.ffi-build.outcome == 'success'"
     assert_includes save.fetch('if'), "steps.ffi-architecture.outcome == 'success'"
-    [build, verify].each { |step| refute step.key?('if'), step.fetch('name') }
+    assert_equal "matrix.arch != 'x86_64' || !inputs.intel_prebuilt", build.fetch('if')
+    refute verify.key?('if')
     assert_equal 'mise run converter-ffi:build', build.fetch('run')
     assert_includes verify.fetch('run'), 'xcrun lipo -archs target/release/libconverter_ffi.dylib'
     assert_includes identity.fetch('run'), 'rustc -vV'
@@ -474,6 +476,31 @@ end
     assert_operator steps.index(restore), :<, steps.index(build)
     assert_operator steps.index(build), :<, steps.index(verify)
     assert_operator steps.index(verify), :<, steps.index(save)
+  end
+
+  def test_faber_intel_prebuilt_is_opt_in_and_has_no_rust_build_fallback
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    triggers = faber.fetch('on', faber[true])
+    %w[workflow_call workflow_dispatch].each do |event|
+      inputs = triggers.fetch(event).fetch('inputs')
+      assert_equal false, inputs.fetch('intel_prebuilt').fetch('default')
+      assert_equal '', inputs.fetch('intel_prebuilt_run_id').fetch('default')
+      assert_equal '', inputs.fetch('intel_prebuilt_run_attempt').fetch('default')
+    end
+    assert_equal 'read', faber.fetch('permissions').fetch('actions')
+    steps = faber.fetch('jobs').fetch('macos-preferences').fetch('steps')
+    download = steps.find { |step| step['name'] == 'Download and verify the pinned Intel converter-ffi artifact' }
+    build = steps.find { |step| step['id'] == 'ffi-build' }
+    verify = steps.find { |step| step['id'] == 'ffi-architecture' }
+    assert_equal "matrix.arch == 'x86_64' && inputs.intel_prebuilt", download.fetch('if')
+    assert_includes download.fetch('run'), 'test -n "$FFI_RUN_ID"'
+    assert_includes download.fetch('run'), 'test -n "$FFI_RUN_ATTEMPT"'
+    assert_includes download.fetch('run'), 'mise run onnxruntime:host'
+    assert_includes download.fetch('run'), 'scripts/download_converter_ffi_macos.rb'
+    assert_equal "matrix.arch != 'x86_64' || !inputs.intel_prebuilt", build.fetch('if')
+    refute verify.key?('if')
+    assert_operator steps.index(download), :<, steps.index(verify)
+    assert_operator steps.index(build), :<, steps.index(verify)
   end
 
   def test_physical_android_fixture_requires_explicit_input_instead_of_inherited_dispatch
