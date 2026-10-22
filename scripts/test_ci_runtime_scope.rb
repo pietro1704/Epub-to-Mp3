@@ -396,33 +396,30 @@ def test_shared_foundation_run_requires_executed_history_cases
   refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
 end
 
-  def test_faber_intel_ruby_cache_is_toolchain_scoped_and_does_not_affect_arm
+  def test_faber_uses_official_prebuilt_ruby_for_intel_only
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
-    steps = faber.fetch('jobs').fetch('macos-preferences').fetch('steps')
-    identity = steps.find { |step| step['id'] == 'ruby-cache-identity' }
-    restore = steps.find { |step| step['id'] == 'ruby-cache' }
-    save = steps.find { |step| step['name'] == 'Save Intel Ruby 4.0.7' }
-    [identity, restore, save].each { |step| refute_nil step }
-    [identity, restore].each { |step| assert_equal "matrix.arch == 'x86_64'", step.fetch('if') }
-    assert_pinned_action('actions/cache/restore', restore.fetch('uses'))
-    assert_pinned_action('actions/cache/save', save.fetch('uses'))
-    path = '~/.local/share/mise/installs/ruby/4.0.7'
-    assert_equal path, restore.fetch('with').fetch('path')
-    assert_equal path, save.fetch('with').fetch('path')
-    key = restore.fetch('with').fetch('key')
-    %w[runner.arch steps.ruby-cache-identity.outputs.xcode steps.ruby-cache-identity.outputs.sdk
-       steps.ruby-cache-identity.outputs.clang steps.ruby-cache-identity.outputs.openssl
-       steps.ruby-cache-identity.outputs.mise].each { |identity_key| assert_includes key, "${{ #{identity_key} }}" }
-    assert_includes key, "hashFiles('mise.toml', 'mise.lock')"
-    refute_match(/xcode-[^ $]+ Build version/, key)
-    assert_includes identity.fetch('run'), 'xcodebuild -version | shasum -a 256'
-    assert_includes identity.fetch('run'), 'mise --version | awk \'{print $NF}\''
-    refute restore.fetch('with').key?('restore-keys')
-    assert_equal "matrix.arch == 'x86_64' && steps.ruby-cache.outputs.cache-hit != 'true'", save.fetch('if')
+    mac = faber.fetch('jobs').fetch('macos-preferences')
+    steps = mac.fetch('steps')
+    assert_equal "${{ matrix.arch == 'x86_64' && 'python,rust' || 'python,rust,ruby' }}", mac.fetch('env').fetch('MISE_ENABLE_TOOLS')
+    setup = steps.find { |step| step['name'] == 'Install official prebuilt Ruby for Intel' }
+    verify = steps.find { |step| step['name'] == 'Verify official Intel Ruby selection through mise' }
     install = steps.find { |step| step['run'] == 'mise install' }
-    assert_operator steps.index(identity), :<, steps.index(restore)
-    assert_operator steps.index(restore), :<, steps.index(install)
-    assert_operator steps.index(install), :<, steps.index(save)
+    [setup, verify, install].each { |step| refute_nil step }
+    [setup, verify].each { |step| assert_equal "matrix.arch == 'x86_64'", step.fetch('if') }
+    assert_pinned_action('ruby/setup-ruby', setup.fetch('uses'))
+    assert_equal({ 'ruby-version' => '4.0.7', 'bundler-cache' => false }, setup.fetch('with'))
+    assert_operator steps.index(steps.find { |step| step['uses'].to_s.start_with?('jdx/mise-action@') }), :<, steps.index(setup)
+    assert_operator steps.index(setup), :<, steps.index(install)
+    assert_operator steps.index(install), :<, steps.index(verify)
+    check = verify.fetch('run')
+    assert_includes check, 'RUBY_VERSION == "4.0.7"'
+    assert_includes check, 'RbConfig::CONFIG.fetch("host_cpu") == "x86_64"'
+    assert_includes check, 'File.realpath(RbConfig.ruby)'
+    assert_includes check, 'RUNNER_TOOL_CACHE'
+    assert_includes check, 'mise exec -- ruby'
+    assert_includes check, 'cmp "$RUNNER_TEMP/faber-ruby-direct.txt" "$RUNNER_TEMP/faber-ruby-mise.txt"'
+    refute steps.any? { |step| step['id'].to_s.start_with?('ruby-cache') || step['name'].to_s.match?(/Ruby.*cache/i) }
+    assert_equal ['macos-15', 'macos-15-intel'], selected_faber_matrix(faber, event_name: 'workflow_call', workflow_inputs: {}).map { |entry| entry.fetch('os') }
   end
 
   def test_faber_intel_rust_cache_is_toolchain_scoped_and_saved_only_after_architecture_validation

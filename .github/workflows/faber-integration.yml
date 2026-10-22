@@ -251,7 +251,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
-      MISE_ENABLE_TOOLS: python,rust,ruby
+      MISE_ENABLE_TOOLS: ${{ matrix.arch == 'x86_64' && 'python,rust' || 'python,rust,ruby' }}
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
       EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
@@ -266,31 +266,36 @@ jobs:
         with:
           version: 2026.9.14
           install: false
-      - name: Identify Intel Ruby cache inputs
+      - name: Install official prebuilt Ruby for Intel
         if: matrix.arch == 'x86_64'
-        id: ruby-cache-identity
+        uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
+        with:
+          ruby-version: '4.0.7'
+          bundler-cache: false
+      - run: mise install
+      - name: Verify official Intel Ruby selection through mise
+        if: matrix.arch == 'x86_64'
         shell: bash
         run: |
           set -euo pipefail
-          printf 'xcode=%s\n' "$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          printf 'sdk=%s\n' "$(xcrun --sdk macosx --show-sdk-version)" >> "$GITHUB_OUTPUT"
-          printf 'clang=%s\n' "$(xcrun --find clang | xargs shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          printf 'openssl=%s\n' "$(brew info --json=v2 openssl@3 | ruby -rjson -e 'puts JSON.parse(STDIN.read).fetch("formulae").first.fetch("versions").fetch("stable")')" >> "$GITHUB_OUTPUT"
-          printf 'mise=%s\n' "$(mise --version | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
-      - name: Restore Intel Ruby 4.0.7
-        if: matrix.arch == 'x86_64'
-        id: ruby-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.local/share/mise/installs/ruby/4.0.7
-          key: faber-ruby-macos-15-intel-${{ runner.arch }}-xcode-${{ steps.ruby-cache-identity.outputs.xcode }}-sdk-${{ steps.ruby-cache-identity.outputs.sdk }}-clang-${{ steps.ruby-cache-identity.outputs.clang }}-openssl-${{ steps.ruby-cache-identity.outputs.openssl }}-mise-${{ steps.ruby-cache-identity.outputs.mise }}-${{ hashFiles('mise.toml', 'mise.lock') }}
-      - run: mise install
-      - name: Save Intel Ruby 4.0.7
-        if: matrix.arch == 'x86_64' && steps.ruby-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.local/share/mise/installs/ruby/4.0.7
-          key: ${{ steps.ruby-cache.outputs.cache-primary-key }}
+          ruby -rrbconfig -e '
+            abort "Ruby version mismatch: #{RUBY_VERSION}" unless RUBY_VERSION == "4.0.7"
+            abort "Ruby architecture mismatch: #{RbConfig::CONFIG.fetch("host_cpu")}" unless RbConfig::CONFIG.fetch("host_cpu") == "x86_64"
+            ruby_path = File.realpath(RbConfig.ruby)
+            tool_cache = File.realpath(ENV.fetch("RUNNER_TOOL_CACHE")) + File::SEPARATOR
+            abort "Ruby is outside RUNNER_TOOL_CACHE: #{ruby_path}" unless ruby_path.start_with?(tool_cache)
+            puts "#{RUBY_VERSION}\t#{ruby_path}"
+          ' > "$RUNNER_TEMP/faber-ruby-direct.txt"
+          mise exec -- ruby -rrbconfig -e '
+            abort "Ruby version mismatch: #{RUBY_VERSION}" unless RUBY_VERSION == "4.0.7"
+            abort "Ruby architecture mismatch: #{RbConfig::CONFIG.fetch("host_cpu")}" unless RbConfig::CONFIG.fetch("host_cpu") == "x86_64"
+            ruby_path = File.realpath(RbConfig.ruby)
+            tool_cache = File.realpath(ENV.fetch("RUNNER_TOOL_CACHE")) + File::SEPARATOR
+            abort "Ruby is outside RUNNER_TOOL_CACHE: #{ruby_path}" unless ruby_path.start_with?(tool_cache)
+            puts "#{RUBY_VERSION}\t#{ruby_path}"
+          ' > "$RUNNER_TEMP/faber-ruby-mise.txt"
+          cmp "$RUNNER_TEMP/faber-ruby-direct.txt" "$RUNNER_TEMP/faber-ruby-mise.txt"
+          cat "$RUNNER_TEMP/faber-ruby-direct.txt"
       - name: Install Xcode project generator
         run: brew install xcodegen
       - name: Identify Intel Rust cache inputs
