@@ -1,7 +1,7 @@
 // AsyncTimeoutTests.swift
 //
 // Verifies the `withTimeout(seconds:_:)` shim used across the iOS
-// resilience surface (PythonBridge.parseEpub, EdgeTTSBridge per-frame).
+// resilience surface for asynchronous native document and audio work.
 // We test:
 //   - Fast operations return their value without firing the timeout.
 //   - Slow operations throw `TimeoutError` after the configured budget.

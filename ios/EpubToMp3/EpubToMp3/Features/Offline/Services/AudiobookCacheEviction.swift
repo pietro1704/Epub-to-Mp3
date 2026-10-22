@@ -63,11 +63,11 @@ struct StorageUsageSnapshot: Equatable, Sendable {
 enum StorageUsageScanner {
     static func current(budgetBytes: Int64 = defaultOfflineCacheBudgetBytes,
                         rustOutputsRoot: URL = RustConversionOutputStore.defaultRoot) -> StorageUsageSnapshot {
-        let legacyOffline = directorySize(DownloadManager.audiobooksRoot())
+        let legacyOffline = directorySize(AudiobookDownloadStorage.audiobooksRoot())
         let ttsRoot = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts", isDirectory: true)
-        let artifacts = LocalAudioArtifactStore.storageUsage()
+        let artifacts = LocalAudioStorageUsage.storageUsage()
         let offline = legacyOffline + artifacts.downloadedBytes
             + RustConversionOutputStore.storageBytes(at: rustOutputsRoot)
         let tts = directorySize(ttsRoot) + artifacts.temporaryBytes
@@ -148,7 +148,7 @@ enum AudiobookCacheEviction {
     /// Touch the last-access timestamp for `jobId`.
     /// Safe to call from any thread — no shared mutable state.
     static func touchLastAccess(jobId: String) {
-        let url = lastAccessURL(for: jobId, root: DownloadManager.audiobooksRoot())
+        let url = lastAccessURL(for: jobId, root: AudiobookDownloadStorage.audiobooksRoot())
         let iso = ISO8601DateFormatter().string(from: Date())
         try? iso.write(to: url, atomically: true, encoding: .utf8)
     }
@@ -165,7 +165,7 @@ enum AudiobookCacheEviction {
     /// Returns an array of `AudiobookCacheEntry` sorted oldest-accessed first
     /// (LRU ordering for eviction candidates).
     static func scanEntries() -> [AudiobookCacheEntry] {
-        scanEntries(root: DownloadManager.audiobooksRoot())
+        scanEntries(root: AudiobookDownloadStorage.audiobooksRoot())
     }
 
     /// Enumerate entries under an explicit root. Keeping the root injectable
@@ -238,9 +238,9 @@ enum AudiobookCacheEviction {
         books.compactMap { book in
             guard book.cachedOffline else { return nil }
             guard let jobId = book.lastJobId,
-                  let manifest = DownloadManager.loadManifest(for: jobId),
+                  let manifest = AudiobookDownloadStorage.loadManifest(for: jobId),
                   manifest.completedAt != nil,
-                  DownloadManager.locallyDownloadedIndices(for: jobId).count == manifest.chapters.count else {
+                  AudiobookDownloadStorage.locallyDownloadedIndices(for: jobId).count == manifest.chapters.count else {
                 return book.id
             }
             return nil
@@ -260,7 +260,7 @@ enum AudiobookCacheEviction {
     /// Returns `true` on success. Errors are logged and swallowed.
     @discardableResult
     static func deleteAudiobook(jobId: String) -> Bool {
-        deleteAudiobook(jobId: jobId, root: DownloadManager.audiobooksRoot())
+        deleteAudiobook(jobId: jobId, root: AudiobookDownloadStorage.audiobooksRoot())
     }
 
     private static func deleteAudiobook(jobId: String, root: URL) -> Bool {
@@ -281,7 +281,7 @@ enum AudiobookCacheEviction {
     /// Delete every downloaded audiobook folder under the audiobooks root.
     /// Used by Settings → "Clear downloaded audio".
     static func deleteAllAudiobooks() {
-        let root = DownloadManager.audiobooksRoot()
+        let root = AudiobookDownloadStorage.audiobooksRoot()
         guard let items = try? FileManager.default.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: nil,

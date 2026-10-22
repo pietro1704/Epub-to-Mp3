@@ -133,7 +133,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         let player = AudioPlayer()
         defer { player.stop() }
         let bytes = fakeMP3()
-        let total = AudioPlayer.testHook_maxQueueAhead() + SegmentBacklog.maximumDeferredSegmentCount
+        let total = PlaybackQueueSession.maximumAhead + SegmentBacklog.maximumDeferredSegmentCount
         for segment in 0..<total {
             player.enqueueSegment(data: bytes, chapterIndex: 0, segmentIndex: segment)
         }
@@ -372,7 +372,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     @MainActor
     func testSegmentProducerWaitsAtBoundedBacklogUntilQueueAdvances() async {
         let player = AudioPlayer()
-        let total = AudioPlayer.testHook_maxQueueAhead()
+        let total = PlaybackQueueSession.maximumAhead
             + SegmentBacklog.maximumDeferredSegmentCount
         for segmentIndex in 0..<total {
             player.enqueueSegment(
@@ -409,7 +409,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     @MainActor
     func testTeardownCancelsAProducerWaitingForSegmentCapacity() async {
         let player = AudioPlayer()
-        let total = AudioPlayer.testHook_maxQueueAhead()
+        let total = PlaybackQueueSession.maximumAhead
             + SegmentBacklog.maximumDeferredSegmentCount
         for segmentIndex in 0..<total {
             player.enqueueSegment(

@@ -112,7 +112,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
     @MainActor
     func testNowPlayingChapterTitleStripsGenericChapterPrefix() {
         XCTAssertEqual(
-            AudioPlayer.preferredChapterTitle(
+            ChapterNavigationDecision.preferredChapterTitle(
                 primary: "Chapter 2: The Shadow of the Past",
                 secondary: "Chapter 2",
                 fallback: "Chapter"

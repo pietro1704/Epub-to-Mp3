@@ -4,7 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_app/services/download_manager.dart';
+import 'package:flutter_app/services/audiobook_downloads.dart';
 import 'package:flutter_app/services/protected_audio_storage_guard.dart';
 
 class _FileWritingDio implements Dio {
@@ -33,7 +33,7 @@ void main() {
   const channel = MethodChannel('plugins.flutter.io/path_provider');
   late Directory documents;
   late _FileWritingDio dio;
-  late DownloadManager manager;
+  late AudiobookDownloads manager;
   late int guardCalls;
 
   setUp(() async {
@@ -42,7 +42,7 @@ void main() {
         .setMockMethodCallHandler(channel, (_) async => documents.path);
     dio = _FileWritingDio();
     guardCalls = 0;
-    manager = DownloadManager(
+    manager = AudiobookDownloads(
       dio: dio,
       storageGuard: ProtectedAudioStorageGuard(
         availableBytes: () async {

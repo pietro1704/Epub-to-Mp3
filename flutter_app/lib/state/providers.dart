@@ -12,7 +12,7 @@ import '../services/android_speech_fallback.dart';
 import '../services/audio_player_service.dart';
 import '../services/background_audio_handler.dart';
 import '../services/bookmark_store.dart';
-import '../services/download_manager.dart';
+import '../services/audiobook_downloads.dart';
 import '../services/embedded_converter.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
@@ -189,10 +189,10 @@ final localConverterAdapterProvider = Provider<LocalConverterAdapter>((ref) {
     },
   );
 });
-final downloadManagerProvider = Provider<DownloadManager>((ref) {
-  final dm = DownloadManager();
-  ref.onDispose(dm.dispose);
-  return dm;
+final downloadManagerProvider = Provider<AudiobookDownloads>((ref) {
+  final downloads = AudiobookDownloads();
+  ref.onDispose(downloads.dispose);
+  return downloads;
 });
 
 final resumeStoreProvider = Provider<ResumeStore>((ref) {

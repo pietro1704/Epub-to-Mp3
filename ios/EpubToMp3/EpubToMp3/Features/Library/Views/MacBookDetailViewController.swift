@@ -10,6 +10,8 @@ import Combine
 @MainActor
 final class MacBookDetailViewController: NSViewController {
     private let book: BookEntity
+    private lazy var detailContent = MacBookDetailContent()
+    private lazy var manualConversionPresentation = MacBookConversionPresentation(settings: settings)
     private let library: LibraryStore
     private let settings: AppSettings
     private let player: AudioPlayer
@@ -23,23 +25,20 @@ final class MacBookDetailViewController: NSViewController {
     private var streamDeliveryGeneration: UUID?
     private var autoPlayStream = false
     private var localConversionGeneration: String?
-    private var localPlaybackGeneration: String?
     private var localConversionProgress: Int?
     private var localConversionChapters: [JobSnapshot.Chapter] = []
-    private var localPlaybackChapters: [JobSnapshot.Chapter] = []
-    private var localPlaybackControl: ConverterPlaybackControl?
-    private var hasDeliveredLocalPlaybackSegment = false
     private var playbackCancellables: Set<AnyCancellable> = []
 
-    private let coverView = NSImageView()
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let authorLabel = NSTextField(labelWithString: "")
-    private let progressLabel = NSTextField(labelWithString: "")
-    private let readButton = NSButton()
-    private let listenButton = NSButton()
-    private let convertButton = NSButton()
-    private let downloadButton = NSButton()
-    private let logButton = NSButton()
+    private lazy var listeningSession = MacBookListeningSession(
+        book: book, library: library, settings: settings, player: player,
+        playerPresentation: playerPresentation, streamingExecutor: streamingExecutor,
+        onShowJobs: onShowJobs,
+        onError: { [weak self] error in self?.presentListenError(error) },
+        onProgress: { [weak self] percent, message in
+            self?.localConversionProgress = percent
+            if let message { self?.detailContent.progressLabel.stringValue = message }
+        }
+    )
 
     init(
         book: BookEntity,
@@ -70,52 +69,38 @@ final class MacBookDetailViewController: NSViewController {
 
 
     override func loadView() {
-        view = NSView()
+        view = detailContent
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         configureStreamingCallbacks()
         observeLocalPlaybackChapterChanges()
-        configureLayout()
-        render()
+        detailContent.readButton.target = self
+        detailContent.readButton.action = #selector(tapRead)
+        detailContent.listenButton.target = self
+        detailContent.listenButton.action = #selector(tapListen)
+        detailContent.convertButton.target = self
+        detailContent.convertButton.action = #selector(tapConvert)
+        detailContent.downloadButton.target = self
+        detailContent.downloadButton.action = #selector(tapDownload)
+        detailContent.logButton.target = self
+        detailContent.logButton.action = #selector(tapLog)
+        detailContent.render(book: book, localConversionProgress: localConversionProgress)
     }
 
     private func observeLocalPlaybackChapterChanges() {
+        listeningSession.observePlaybackChanges()
         NotificationCenter.default.publisher(for: RustConversionOutputStore.willRemoveAudio)
             .sink { [weak self] notification in
                 let bookID = notification.userInfo?["bookID"] as? String
                 MainActor.assumeIsolated {
                     guard let self, bookID == nil || bookID == self.book.id else { return }
-                    let ownsPlayer = self.player.snapshot?.jobId == self.localPlaybackGeneration
                     self.localConversionGeneration = nil
                     self.localConversionProgress = nil
                     self.localConversionChapters.removeAll()
-                    self.progressLabel.stringValue = ""
-                    self.localPlaybackGeneration = nil
-                    self.localPlaybackControl?.cancel()
-                    self.localPlaybackControl = nil
-                    if ownsPlayer { self.player.stop(); self.player.clearConversionState() }
+                    self.detailContent.progressLabel.stringValue = ""
                 }
-            }
-            .store(in: &playbackCancellables)
-        player.$snapshot
-            .sink { [weak self] snapshot in
-                guard let self, let snapshot, let jobID = self.localPlaybackGeneration,
-                      snapshot.jobId != jobID else { return }
-                self.localPlaybackGeneration = nil
-                self.localPlaybackControl?.cancel()
-                self.localPlaybackControl = nil
-            }
-            .store(in: &playbackCancellables)
-        player.$activeStreamingChapterIndex
-            .compactMap { $0 }
-            .removeDuplicates()
-            .sink { [weak self] chapterIndex in
-                guard let self, self.localPlaybackGeneration != nil,
-                      let control = self.localPlaybackControl else { return }
-                control.updatePlaybackWindow(currentChapter: chapterIndex, chaptersAhead: 1)
-                _ = control.prioritize(chapterIndex: chapterIndex)
             }
             .store(in: &playbackCancellables)
     }
@@ -160,173 +145,16 @@ final class MacBookDetailViewController: NSViewController {
         }
     }
 
-    private func configureLayout() {
-        coverView.imageScaling = .scaleProportionallyUpOrDown
-        coverView.wantsLayer = true
-        coverView.layer?.cornerRadius = 8
-        coverView.layer?.backgroundColor = NSColor.underPageBackgroundColor.cgColor
-
-        titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
-        titleLabel.alignment = .center
-        titleLabel.lineBreakMode = .byWordWrapping
-
-        authorLabel.font = .systemFont(ofSize: 13)
-        authorLabel.textColor = .secondaryLabelColor
-        authorLabel.alignment = .center
-
-        progressLabel.font = .systemFont(ofSize: 12)
-        progressLabel.textColor = .secondaryLabelColor
-        progressLabel.alignment = .center
-        progressLabel.setAccessibilityIdentifier("bookDetail.progress")
-
-        readButton.title = L10n.string("bookDetail.read")
-        readButton.bezelStyle = .rounded
-        readButton.target = self
-        readButton.action = #selector(tapRead)
-
-        listenButton.bezelStyle = .rounded
-        listenButton.target = self
-        listenButton.action = #selector(tapListen)
-
-        convertButton.title = L10n.string("convert.title")
-        convertButton.bezelStyle = .rounded
-        convertButton.setAccessibilityIdentifier("bookDetail.convert")
-        convertButton.target = self
-        convertButton.action = #selector(tapConvert)
-
-        downloadButton.title = L10n.string("bookDetail.download")
-        downloadButton.bezelStyle = .rounded
-        downloadButton.target = self
-        downloadButton.action = #selector(tapDownload)
-
-        logButton.title = L10n.string("conversion.log")
-        logButton.bezelStyle = .rounded
-        logButton.target = self
-        logButton.action = #selector(tapLog)
-
-        [titleLabel, authorLabel, progressLabel].forEach {
-            $0.maximumNumberOfLines = 0
-            $0.lineBreakMode = .byWordWrapping
-            $0.cell?.wraps = true
-            $0.cell?.isScrollable = false
-        }
-
-        let actions = NSStackView(views: [readButton, listenButton, convertButton, downloadButton, logButton])
-        actions.orientation = .vertical
-        actions.spacing = 12
-        actions.distribution = .fill
-
-        let stack = NSStackView(views: [coverView, titleLabel, authorLabel, progressLabel, actions])
-        stack.orientation = .vertical
-        stack.spacing = 12
-        stack.alignment = .centerX
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        MacScrollableStack.install(stack, in: view, maximumWidth: 480)
-        NSLayoutConstraint.activate([
-            coverView.widthAnchor.constraint(equalToConstant: 180),
-            coverView.heightAnchor.constraint(equalToConstant: 240),
-            titleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            authorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            progressLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            actions.widthAnchor.constraint(equalTo: stack.widthAnchor),
-        ])
-
-    }
-
-    private func render() {
-        titleLabel.stringValue = book.resolvedTitle
-        authorLabel.stringValue = book.author ?? ""
-        authorLabel.isHidden = (book.author ?? "").isEmpty
-        coverView.image = book.coverPNG.flatMap(NSImage.init(data:))
-        if let localConversionProgress {
-            progressLabel.stringValue = L10n.string("bookDetail.progressPercent", localConversionProgress)
-        } else if let entry = ReaderProgressStore.read(bookId: book.id) {
-            let percent = Int((entry.offsetFraction * 100).rounded())
-            progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
-        } else {
-            progressLabel.stringValue = L10n.string("bookDetail.notStarted")
-        }
-        if book.fileType.supportsAudioConversion {
-            listenButton.isEnabled = true
-            listenButton.title = book.lastJobId != nil
-                ? L10n.string("bookDetail.listenResume")
-                : L10n.string("bookDetail.listenStart")
-        } else {
-            // Comics (CBZ/CBR) are read visually — there's no text to
-            // narrate without OCR, which is out of scope.
-            listenButton.isEnabled = false
-            listenButton.title = L10n.string("bookDetail.listenUnavailableComic")
-        }
-    }
-
     @objc private func tapRead() {
         onRead(book.id)
     }
 
-    /// macOS starts conversion directly from Book Detail. Embedded conversion
-    /// stays local by default; server-only formats and the explicit remote
-    /// provider use the same API/SSE contract as iOS.
-    @objc private func tapListen() {
-        guard localPlaybackGeneration == nil else { return }
-        let jobID = UUID().uuidString
-        localPlaybackGeneration = jobID
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let url = try await library.openBookFileAsync(id: book.id)
-                guard !Task.isCancelled, localPlaybackGeneration == jobID else { return }
-                startRustStreaming(url: url, jobID: jobID)
-            } catch {
-                guard !Task.isCancelled, localPlaybackGeneration == jobID else { return }
-                localPlaybackGeneration = nil
-                onShowJobs()
-            }
-        }
-    }
+    /// macOS starts local Rust streaming directly from Book Detail.
+    @objc private func tapListen() { listeningSession.start() }
 
     @objc private func tapConvert() {
-        let alert = NSAlert()
-        alert.messageText = L10n.string("convert.title")
-        alert.addButton(withTitle: L10n.string("convert.title"))
-        alert.addButton(withTitle: L10n.string("common.cancel"))
-        let choice = NSPopUpButton(frame: NSRect(x: 0, y: 40, width: 300, height: 28))
-        choice.addItems(withTitles: [L10n.string("convert.usePreferences")] + AudioEnginePreference.supportedPreferences.map(\.displayName))
-        choice.setAccessibilityLabel(L10n.string("settings.audioEngineChoice"))
-        choice.setAccessibilityIdentifier("convert.tts.primary")
-        choice.target = self
-        choice.action = #selector(manualConversionEngineChanged(_:))
-        let secondary = NSButton(checkboxWithTitle: L10n.string("convert.allowSecondary"), target: nil, action: nil)
-        secondary.frame = NSRect(x: 0, y: 0, width: 300, height: 28)
-        secondary.setAccessibilityIdentifier("convert.tts.useSecondary")
-        secondary.state = settings.secondaryAudioEngine == nil ? .off : .on
-        secondary.isEnabled = false
-        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 80))
-        accessory.addSubview(choice)
-        accessory.addSubview(secondary)
-        alert.accessoryView = accessory
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        var options = settings.conversionOptions
-        if choice.indexOfSelectedItem > 0 {
-            let engine = AudioEnginePreference.supportedPreferences[choice.indexOfSelectedItem - 1]
-            options = .selectedEngine(engine, modelsRoot: AppSettings.ttsModelsRoot())
-            let distinctSecondary = settings.ttsPreferences.secondary.flatMap { $0 == .selected(engine) ? nil : $0 }
-            options.ttsPreferences = TtsPreferences(primary: .selected(engine),
-                secondary: secondary.state == .on ? distinctSecondary : nil,
-                allowOnlineFallback: secondary.state == .on && distinctSecondary != nil && settings.allowOnlineAudioFallback,
-                policyVersion: secondary.state == .on ? settings.ttsPreferences.policyVersion : nil)
-            options.modelsRoot = AppSettings.ttsModelsRoot()?.path
-            options.espeakDataDirectory = Bundle.main.resourceURL?.path
-        }
+        guard let options = manualConversionPresentation.chooseOptions() else { return }
         convertWholeBook(options: options)
-    }
-
-    @objc private func manualConversionEngineChanged(_ sender: NSPopUpButton) {
-        guard let secondary = sender.superview?.subviews.compactMap({ $0 as? NSButton })
-            .first(where: { $0.accessibilityIdentifier() == "convert.tts.useSecondary" }) else { return }
-        let selected = sender.indexOfSelectedItem > 0
-            ? TtsSelection.selected(AudioEnginePreference.supportedPreferences[sender.indexOfSelectedItem - 1]) : nil
-        secondary.isEnabled = selected != nil && settings.ttsPreferences.secondary.map { $0 != selected } == true
-        secondary.state = sender.indexOfSelectedItem == 0 && settings.secondaryAudioEngine != nil ? .on : .off
     }
 
     func convertWholeBook() {
@@ -356,7 +184,7 @@ final class MacBookDetailViewController: NSViewController {
         guard localConversionGeneration == jobID else { return }
         localConversionProgress = 0
         localConversionChapters.removeAll()
-        progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 0)
+        detailContent.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 0)
 
         Task { [weak self] in
             guard let self else { return }
@@ -369,7 +197,7 @@ final class MacBookDetailViewController: NSViewController {
                         if event.message.hasPrefix("converting chapter"),
                            let chapterIndex = event.chapterIndex,
                            event.chaptersTotal > 0 {
-                            self.progressLabel.stringValue = L10n.string(
+                            self.detailContent.progressLabel.stringValue = L10n.string(
                                 "bookDetail.progressChapter",
                                 chapterIndex + 1,
                                 event.chaptersTotal
@@ -377,7 +205,7 @@ final class MacBookDetailViewController: NSViewController {
                         } else if event.chaptersTotal > 0 {
                             let percent = Int(event.percent.rounded())
                             self.localConversionProgress = percent
-                            self.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
+                            self.detailContent.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
                         }
                     },
                     { [weak self] event in
@@ -391,7 +219,7 @@ final class MacBookDetailViewController: NSViewController {
                         self.localConversionChapters.sort { $0.index < $1.index }
                         let percent = Int(event.progressPercent.rounded())
                         self.localConversionProgress = percent
-                        self.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
+                        self.detailContent.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
                     }
                 )
                 guard !Task.isCancelled, localConversionGeneration == jobID else { return }
@@ -411,142 +239,6 @@ final class MacBookDetailViewController: NSViewController {
         }
     }
 
-    private func startRustStreaming(url: URL, jobID: String) {
-        guard localPlaybackGeneration == jobID else { return }
-        localPlaybackControl?.cancel()
-        let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
-        do {
-            let control = try RustConversionCoordinator.makePlaybackControl()
-            control.updatePlaybackWindow(currentChapter: Int(chapterStart), chaptersAhead: 1)
-            localPlaybackControl = control
-            localPlaybackGeneration = jobID
-            localConversionProgress = 0
-            localPlaybackChapters.removeAll()
-            hasDeliveredLocalPlaybackSegment = false
-
-            let pending = JobSnapshot(
-                jobId: jobID,
-                state: "running",
-                bookTitle: book.resolvedTitle,
-                bookAuthor: book.author,
-                coverUrl: nil,
-                coverMimeType: nil,
-                engine: settings.audioEngine.rawValue,
-                voice: nil,
-                language: nil,
-                progressPercent: 0,
-                chaptersTotal: nil,
-                chaptersCompleted: 0,
-                chapterProgress: [],
-                outputs: nil,
-                logUrl: nil,
-                error: nil,
-                lastActivityAt: Date().timeIntervalSince1970
-            )
-            player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
-            player.isConverting = true
-            player.resume()
-        } catch {
-            guard localPlaybackGeneration == jobID else { return }
-            localPlaybackGeneration = nil
-            presentListenError(error)
-            return
-        }
-
-        let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
-        let conversionOptions = settings.conversionOptions
-        Task { [weak self] in
-            guard let self, let control = self.localPlaybackControl,
-                  self.localPlaybackGeneration == jobID else { return }
-            do {
-                let result = try await streamingExecutor(
-                url, jobID, chapterStart, -1, control,
-                conversionOptions,
-                    { [weak self] event in
-                        guard let self, self.localPlaybackGeneration == jobID,
-                              let snapshot = self.player.snapshot, snapshot.jobId == jobID else { return }
-                        self.player.updateSnapshot(event.updating(snapshot))
-                        if event.chaptersTotal > 0 {
-                            let percent = Int(event.percent.rounded())
-                            self.localConversionProgress = percent
-                            self.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
-                        }
-                    },
-                    { [weak self] event in
-                        guard let self, self.localPlaybackGeneration == jobID,
-                              self.player.snapshot?.jobId == jobID else { return }
-                        let activeChapter = self.player.activeStreamingChapterIndex ?? Int(chapterStart)
-                        guard event.chapterIndex >= activeChapter,
-                              event.chapterIndex <= activeChapter + 1 else { return }
-                        let chapter = event.playableChapter
-                        if let existing = self.localPlaybackChapters.firstIndex(where: { $0.index == chapter.index }) {
-                            self.localPlaybackChapters[existing] = chapter
-                        } else {
-                            self.localPlaybackChapters.append(chapter)
-                        }
-                        self.localPlaybackChapters.sort { $0.index < $1.index }
-                        self.localConversionProgress = Int(event.progressPercent.rounded())
-                        self.progressLabel.stringValue = L10n.string(
-                            "bookDetail.progressPercent", self.localConversionProgress ?? 0
-                        )
-                        self.player.updateSnapshot(event.snapshot(chapters: self.localPlaybackChapters, preserving: self.player.snapshot))
-                    },
-                    { [weak self] chapterIndex, chunkIndex, data in
-                        guard let self else { return false }
-                        return chunkDelivery.enqueue(
-                            data,
-                            chapterIndex: chapterIndex,
-                            chunkIndex: chunkIndex,
-                            isCurrent: { [weak self] in
-                                guard let self, let control = self.localPlaybackControl else { return false }
-                                let activeChapter = self.player.activeStreamingChapterIndex ?? Int(chapterStart)
-                                return self.localPlaybackGeneration == jobID
-                                    && self.player.snapshot?.jobId == jobID
-                                    && control.contains(chapterIndex: chapterIndex)
-                                    && chapterIndex >= activeChapter
-                                    && chapterIndex <= activeChapter + 1
-                            },
-                            onAccepted: { [weak self] in
-                                guard let self, self.localPlaybackGeneration == jobID else { return }
-                                if !self.hasDeliveredLocalPlaybackSegment {
-                                    self.hasDeliveredLocalPlaybackSegment = true
-                                    self.playerPresentation.showFullPlayer()
-                                }
-                            }
-                        )
-                    }
-                )
-                guard localPlaybackGeneration == jobID, player.snapshot?.jobId == jobID else { return }
-                let snapshot = try result.snapshot()
-                let indices = snapshot.playableChapters.map(\.index)
-                guard result.jobID == jobID, snapshot.jobId == jobID,
-                      indices.first == Int(chapterStart), indices == indices.sorted(),
-                      Set(indices).count == indices.count else {
-                    throw EmbeddedConverterError.conversionFailed(
-                        "Conversion did not preserve the requested listening chapter order."
-                    )
-                }
-                library.recordConversion(jobId: result.jobID, for: book.id)
-                guard localPlaybackGeneration == jobID, player.snapshot?.jobId == jobID else { return }
-                localPlaybackGeneration = nil
-                localPlaybackControl = nil
-                localConversionProgress = 100
-                progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 100)
-                player.finishStreaming(snapshot: snapshot)
-                playerPresentation.showFullPlayer()
-            } catch {
-                guard localPlaybackGeneration == jobID else { return }
-                localPlaybackGeneration = nil
-                localPlaybackControl?.cancel()
-                localPlaybackControl = nil
-                if let current = player.snapshot, current.jobId == jobID {
-                    player.finishStreaming(snapshot: terminalSnapshot(from: current, state: "failed", error: error.localizedDescription))
-                }
-                presentListenError(error)
-            }
-        }
-    }
-
     private func presentListenError(_ error: Error) {
         let alert = NSAlert()
         alert.messageText = L10n.string("bookDetail.listenStart")
@@ -562,37 +254,15 @@ final class MacBookDetailViewController: NSViewController {
         library.recordConversion(jobId: result.jobID, for: book.id)
         localConversionGeneration = nil
         localConversionProgress = 100
-        progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 100)
-        render()
+        detailContent.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 100)
+        detailContent.render(book: book, localConversionProgress: localConversionProgress)
         return snapshot
-    }
-
-    private func terminalSnapshot(from snapshot: JobSnapshot, state: String, error: String) -> JobSnapshot {
-        JobSnapshot(
-            jobId: snapshot.jobId,
-            state: state,
-            bookTitle: snapshot.bookTitle,
-            bookAuthor: snapshot.bookAuthor,
-            coverUrl: snapshot.coverUrl,
-            coverMimeType: snapshot.coverMimeType,
-            engine: snapshot.engine,
-            voice: snapshot.voice,
-            language: snapshot.language,
-            progressPercent: snapshot.progressPercent,
-            chaptersTotal: snapshot.chaptersTotal,
-            chaptersCompleted: snapshot.chaptersCompleted,
-            chapterProgress: snapshot.chapterProgress,
-            outputs: snapshot.outputs,
-            logUrl: snapshot.logUrl,
-            error: error,
-            lastActivityAt: Date().timeIntervalSince1970
-        )
     }
 
     @objc private func tapDownload() {
         if let snapshot = player.snapshot, snapshot.bookTitle == book.resolvedTitle {
             Task {
-                await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
+                await AudiobookDownloads.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
             }
             return
         }

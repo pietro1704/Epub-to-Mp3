@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import EpubToMp3
 
@@ -148,32 +149,40 @@ final class WidgetDataSyncTests: XCTestCase {
     /// `AudioPlayer.pause()`/`resume()` must keep the real App Group flag
     /// in sync via `updateNowPlayingInfo() -> syncWidgetNowPlaying()`.
     @MainActor
-    func test_audioPlayerPauseResume_syncsRealAppGroupIsPlayingFlag() {
+    func test_audioPlayerPauseResume_syncsRealAppGroupIsPlayingFlag() throws {
         let appGroupID = "group.com.pietrocode.epubtomp3"
         guard let group = UserDefaults(suiteName: appGroupID) else {
             XCTFail("App Group suite must be constructible even without the real entitlement in a test host")
             return
         }
-        let standardKey = "currentlyPlayingBookID"
+        let standardKey = AudioPlayer.currentBookIDDefaultsKey
         let groupKey = "widget.nowPlayingIsPlaying"
-
-        // Save/restore so this test doesn't leak state into other tests
-        // or a real device's App Group.
-        let previousStandard = UserDefaults.standard.string(forKey: standardKey)
-        let previousGroupValue = group.object(forKey: groupKey)
+        let standardKeys = [standardKey, AudioPlayer.currentChapterIndexDefaultsKey,
+            ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+            AudioPlayer.readerCurrentPageRatioDefaultsKey, AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+        let groupKeys = ["currentlyPlayingBookId", "widget.nowPlayingChapterName", "widget.nowPlayingAuthor",
+            "widget.nowPlayingProgress", groupKey, "widget.nowPlayingPositionSeconds",
+            "widget.nowPlayingDurationSeconds", "widget.nowPlayingChapterRemainingSeconds",
+            "widget.nowPlayingBookRemainingSeconds", "widget.nowPlayingTotalChapters"]
+        let previousStandard = standardKeys.map { UserDefaults.standard.object(forKey: $0) }
+        let previousGroup = groupKeys.map { group.object(forKey: $0) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("widget-audio-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer {
-            if let previousStandard {
-                UserDefaults.standard.set(previousStandard, forKey: standardKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: standardKey)
-            }
-            if let previousGroupValue {
-                group.set(previousGroupValue, forKey: groupKey)
-            } else {
-                group.removeObject(forKey: groupKey)
-            }
+            for (key, value) in zip(standardKeys, previousStandard) { UserDefaults.standard.set(value, forKey: key) }
+            for (key, value) in zip(groupKeys, previousGroup) { group.set(value, forKey: key) }
+            try? FileManager.default.removeItem(at: root)
         }
-
+        // A silent, local WAV exercises the real queue without network access.
+        let source = root.appendingPathComponent("silent.wav")
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 800))
+        buffer.frameLength = 800
+        try XCTUnwrap(buffer.floatChannelData)[0].initialize(repeating: 0, count: 800)
+        do {
+            let file = try AVAudioFile(forWriting: source, settings: format.settings)
+            try file.write(from: buffer)
+        }
         UserDefaults.standard.set("book-sync-test", forKey: standardKey)
 
         let json = """
@@ -190,7 +199,7 @@ final class WidgetDataSyncTests: XCTestCase {
               "index": 0,
               "name": "Prologue",
               "status": "completed",
-              "downloadUrl": "https://example.com/ch0.mp3",
+              "downloadUrl": "\(source.absoluteString)",
               "progressRatio": 1.0,
               "durationSeconds": 120.0
             }
@@ -199,7 +208,9 @@ final class WidgetDataSyncTests: XCTestCase {
         """.data(using: .utf8)!
         let snapshot = try! JSONDecoder().decode(JobSnapshot.self, from: json)
 
-        let player = AudioPlayer()
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
+            artifactStore: LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts")))
+        defer { player.stop() }
         player.updateSnapshot(snapshot)
         player.resume()
         XCTAssertTrue(
@@ -230,7 +241,7 @@ final class WidgetDataSyncTests: XCTestCase {
     func test_widgetSyncNeedsReload_falseForUnchangedProgressTick() {
         let state = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
         XCTAssertFalse(
-            AudioPlayer.widgetSyncNeedsReload(last: state, current: state),
+            NowPlayingPublication.widgetSyncNeedsReload(last: state, current: state),
             "A repeated tick with the same book/chapter/isPlaying must not force a WidgetKit reload"
         )
     }
@@ -238,7 +249,7 @@ final class WidgetDataSyncTests: XCTestCase {
     func test_widgetSyncNeedsReload_trueOnFirstSync() {
         let state = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
         XCTAssertTrue(
-            AudioPlayer.widgetSyncNeedsReload(last: nil, current: state),
+            NowPlayingPublication.widgetSyncNeedsReload(last: nil, current: state),
             "The very first sync (no prior state) must always reload so the widget picks up the book"
         )
     }
@@ -246,19 +257,19 @@ final class WidgetDataSyncTests: XCTestCase {
     func test_widgetSyncNeedsReload_trueOnIsPlayingChange() {
         let last = (bookId: "book-1", chapterName: "Chapter One", isPlaying: false)
         let current = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
-        XCTAssertTrue(AudioPlayer.widgetSyncNeedsReload(last: last, current: current))
+        XCTAssertTrue(NowPlayingPublication.widgetSyncNeedsReload(last: last, current: current))
     }
 
     func test_widgetSyncNeedsReload_trueOnChapterChange() {
         let last = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
         let current = (bookId: "book-1", chapterName: "Chapter Two", isPlaying: true)
-        XCTAssertTrue(AudioPlayer.widgetSyncNeedsReload(last: last, current: current))
+        XCTAssertTrue(NowPlayingPublication.widgetSyncNeedsReload(last: last, current: current))
     }
 
     func test_widgetSyncNeedsReload_trueOnBookChange() {
         let last = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
         let current = (bookId: "book-2", chapterName: "Chapter One", isPlaying: true)
-        XCTAssertTrue(AudioPlayer.widgetSyncNeedsReload(last: last, current: current))
+        XCTAssertTrue(NowPlayingPublication.widgetSyncNeedsReload(last: last, current: current))
     }
 
     // MARK: - App Group boundary (never UserDefaults.standard)

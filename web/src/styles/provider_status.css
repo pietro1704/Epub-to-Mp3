@@ -1,0 +1,134 @@
+/* Engine status display */
+.engine-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.engine-status__icon {
+  font-size: 0.9rem;
+}
+
+.engine-status__engine {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.engine-status__label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.engine-status__message {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.engine-status__progress {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.status-chip--idle {
+  background: var(--status-idle-bg);
+  color: var(--status-idle-color);
+}
+
+.status-chip--submitting {
+  background: var(--status-submitting-bg);
+  color: var(--status-submitting-color);
+}
+
+.status-chip--polling {
+  background: var(--status-polling-bg);
+  color: var(--status-polling-color);
+}
+
+.status-chip--success {
+  background: var(--status-success-bg);
+  color: var(--status-success-color);
+}
+
+.status-chip--error {
+  background: var(--status-error-bg);
+  color: var(--status-error-color);
+}
+
+.status-chip--cancelling {
+  background: var(--status-cancelling-bg);
+  color: var(--status-cancelling-color);
+}
+
+.status-chip--cancelled {
+  background: var(--status-cancelled-bg);
+  color: var(--status-cancelled-color);
+}
+
+.status-panel__skip {
+  margin-left: auto;
+  padding: 0.55rem 1.4rem;
+  border-radius: 999px;
+  border: 2px solid rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.22);
+  color: rgb(217, 119, 6);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.status-panel__skip:not(:disabled):hover {
+  background: rgba(245, 158, 11, 0.32);
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.25);
+}
+
+.status-panel__skip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.status-panel__cancel {
+  margin-left: 0.5rem;
+  padding: 0.55rem 1.4rem;
+  border-radius: 999px;
+  border: 2px solid rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.22);
+  color: var(--status-error-color);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.status-panel__cancel:not(:disabled):hover {
+  background: rgba(239, 68, 68, 0.32);
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.25);
+}
+
+.status-panel__cancel:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.status-panel__reader-actions {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin: 1rem 0 0.75rem;
+}

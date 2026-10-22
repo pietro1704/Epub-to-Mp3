@@ -18,24 +18,24 @@
 
 Build/deploy:
 ```bash
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3
+cd <REPOSITORY_ROOT>/ios/EpubToMp3
 xcodegen generate
 xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \
   -configuration Debug \
-  -destination 'platform=iOS,id=00008140-001128A022BA801C' \
+  -destination 'platform=iOS,id=<DEVICE_UDID>' \
   -derivedDataPath .build build
 xcrun devicectl device install app \
-  --device 00008140-001128A022BA801C \
+  --device <DEVICE_UDID> \
   .build/Build/Products/Debug-iphoneos/EpubToMp3.app
 xcrun devicectl device process launch \
-  --device 00008140-001128A022BA801C com.pietrocode.epubtomp3
+  --device <DEVICE_UDID> com.pietrocode.epubtomp3
 ```
 
 Rodar testes no device:
 ```bash
 xcodebuild test \
   -project EpubToMp3.xcodeproj -scheme EpubToMp3 \
-  -destination 'platform=iOS,id=00008140-001128A022BA801C' \
+  -destination 'platform=iOS,id=<DEVICE_UDID>' \
   -derivedDataPath .build \
   -only-testing:EpubToMp3Tests/<TestClass>/<testMethod>
 ```

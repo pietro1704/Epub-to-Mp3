@@ -5,7 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_app/services/download_manager.dart';
+import 'package:flutter_app/services/audiobook_downloads.dart';
 import 'package:flutter_app/services/protected_audio_storage_guard.dart';
 
 class _DownloadDio implements Dio {
@@ -47,7 +47,7 @@ void main() {
     return file;
   }
 
-  DownloadManager managerWith(_DownloadDio dio) => DownloadManager(
+  AudiobookDownloads managerWith(_DownloadDio dio) => AudiobookDownloads(
     dio: dio,
     storageGuard: ProtectedAudioStorageGuard(availableBytes: () async => null),
   );
@@ -227,7 +227,7 @@ void main() {
 
   group('DownloadManager', () {
     test('events stream is broadcast', () {
-      final dm = DownloadManager();
+      final dm = AudiobookDownloads();
       final s1 = dm.events.listen((_) {});
       final s2 = dm.events.listen((_) {});
       s1.cancel();

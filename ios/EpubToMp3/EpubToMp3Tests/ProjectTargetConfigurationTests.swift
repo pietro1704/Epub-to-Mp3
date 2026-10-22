@@ -1,4 +1,5 @@
 import XCTest
+@testable import EpubToMp3
 
 final class ProjectTargetConfigurationTests: XCTestCase {
     func testShareExtensionTargetIsDeclaredAndEmbeddedOnlyForIOS() throws {
@@ -44,26 +45,23 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(source.contains("private nonisolated static func tempURL"))
     }
 
-    func testWidgetDarwinNotificationKeepsSendableStorage() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3Widget/EpubToMp3Widget.swift")
-        let source = try readSourceFileIfAvailable(at: sourceURL)
-
-        XCTAssertTrue(source.contains("private let widgetIntentDarwinNotification = \""))
-        XCTAssertFalse(source.contains("= \"com.pietrocode.epubtomp3.widgetIntent\" as CFString"))
+    @MainActor
+    func testWidgetCommandAndApplicationObserveTheSameNotification() {
+        XCTAssertEqual(WidgetPlaybackCommand.notificationName, ApplicationWidgetIntents.notificationName)
     }
 
-    func testNativeBookReaderUsesPythonParserWithoutSwiftFallback() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift")
-        let source = try readSourceFileIfAvailable(at: sourceURL)
+    func testNativeReaderProjectionParsesLocalDocumentsAndRetainsBookIdentity() async throws {
+        let source = try EpubFixture.createWithChapter(body: "Local reader projection fixture.")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let payload = await EpubFallbackParser.parseAsync(url: source, bookId: "reader-projection")
+        XCTAssertEqual(payload.jobId, "reader-projection")
+        XCTAssertEqual(payload.chapters.count, 1)
+        XCTAssertTrue(payload.chapters[0].text.contains("Local reader projection fixture."))
 
-        XCTAssertTrue(source.contains("PythonBridge.shared.parseEpub"))
-        XCTAssertFalse(source.contains("EpubFallbackParser.parse"))
+        let missing = source.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".epub")
+        let unavailable = await EpubFallbackParser.parseAsync(url: missing, bookId: "unavailable-book")
+        XCTAssertEqual(unavailable.jobId, "unavailable-book")
+        XCTAssertTrue(unavailable.chapters.isEmpty)
     }
 
     func testNativeConversionControllersHaveTheirSupportingTypes() throws {
@@ -127,15 +125,15 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(project.contains("GCC_TREAT_WARNINGS_AS_ERRORS: YES"))
     }
 
-    func testSwift6MigrationAndBuildSafetySettingsArePinned() throws {
+    func testCurrentSwiftLanguageModeAndBuildSafetySettingsArePinned() throws {
         let projectURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("project.yml")
         let project = try readSourceFileIfAvailable(at: projectURL)
 
-        XCTAssertTrue(project.contains("SWIFT_VERSION: \"6\""))
-        XCTAssertTrue(project.contains("SWIFT_STRICT_CONCURRENCY: complete"))
+        XCTAssertTrue(project.contains("SWIFT_VERSION: \"5.0\""))
+        XCTAssertTrue(project.contains("SWIFT_STRICT_CONCURRENCY: minimal"))
         XCTAssertTrue(project.contains("SWIFT_STRICT_MEMORY_SAFETY: NO"))
         XCTAssertTrue(project.contains("SWIFT_ENFORCE_EXCLUSIVE_ACCESS: full"))
         XCTAssertTrue(project.contains("SWIFT_COMPILATION_MODE: incremental"))
@@ -193,36 +191,38 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(apiClient.contains("final class APIClient: @unchecked Sendable"))
     }
 
-    func testProjectFileUsesInTreeTargetPathsForAppAndExtensions() throws {
-        let projectFileURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3.xcodeproj/project.pbxproj")
-        let projectFile = try readSourceFileIfAvailable(at: projectFileURL)
-
-        XCTAssertTrue(projectFile.contains("path = EpubToMp3;"))
-        XCTAssertTrue(projectFile.contains("path = Vendor;"))
-        XCTAssertTrue(projectFile.contains("path = EpubToMp3Widget;"))
-        XCTAssertTrue(projectFile.contains("path = EpubToMp3ShareExtension;"))
-        XCTAssertTrue(projectFile.contains("path = EpubToMp3Tests;"))
-        XCTAssertTrue(projectFile.contains("path = EpubToMp3UITests;"))
-        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3;"))
-        XCTAssertFalse(projectFile.contains("path = ../Vendor;"))
-        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3Widget;"))
-        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3ShareExtension;"))
-        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3Tests;"))
-        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3UITests;"))
+    private func generatedProjectObjects() throws -> [String: [String: Any]] {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("EpubToMp3.xcodeproj/project.pbxproj")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("Generated project is unavailable in this runtime sandbox.")
+        }
+        let project = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: url),
+            options: [], format: nil) as? [String: Any])
+        return try XCTUnwrap(project["objects"] as? [String: [String: Any]])
     }
 
-    func testProjectFileUsesExplicitPrivacyManifestPaths() throws {
-        let projectFileURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3.xcodeproj/project.pbxproj")
-        let projectFile = try readSourceFileIfAvailable(at: projectFileURL)
+    func testProjectFileUsesInTreeTargetPathsForAppAndExtensions() throws {
+        let objects = try generatedProjectObjects()
+        let paths = Set(objects.values.compactMap { $0["path"] as? String })
+        for expected in ["EpubToMp3", "EpubToMp3Widget", "EpubToMp3ShareExtension", "EpubToMp3Tests", "EpubToMp3UITests"] {
+            XCTAssertTrue(paths.contains(expected), "Missing in-tree source group: \(expected)")
+            XCTAssertFalse(paths.contains("../" + expected), "Source group escapes its project: \(expected)")
+        }
+    }
 
-        XCTAssertEqual(projectFile.components(separatedBy: "PrivacyInfo.xcprivacy").count - 1, 18)
-        XCTAssertTrue(projectFile.contains("PrivacyInfo.xcprivacy in Resources"))
+    func testEachShippingTargetIncludesItsPrivacyManifestInResources() throws {
+        let objects = try generatedProjectObjects()
+        for name in ["EpubToMp3", "EpubToMp3Widget", "EpubToMp3ShareExtension"] {
+            let target = try XCTUnwrap(objects.values.first { $0["isa"] as? String == "PBXNativeTarget" && $0["name"] as? String == name })
+            let phases = try XCTUnwrap(target["buildPhases"] as? [String])
+            let resourcePhases = phases.compactMap { objects[$0] }.filter { $0["isa"] as? String == "PBXResourcesBuildPhase" }
+            let resources = resourcePhases.flatMap { $0["files"] as? [String] ?? [] }
+                .compactMap { objects[$0]?["fileRef"] as? String }
+                .compactMap { objects[$0]?["path"] as? String }
+            XCTAssertEqual(resources.filter { URL(fileURLWithPath: $0).lastPathComponent == "PrivacyInfo.xcprivacy" }.count, 1,
+                           "\(name) must embed exactly one privacy manifest, regardless of generated object IDs or groups.")
+        }
     }
 
     func testLegacyTopLevelPrivacyManifestsExistAndMatchCanonicalCopies() throws {

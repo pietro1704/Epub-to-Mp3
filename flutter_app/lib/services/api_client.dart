@@ -74,8 +74,8 @@ class ApiClient {
       '/api/sessions',
       queryParameters: {'last': last},
     );
-    final data = r.data ?? const {};
-    return SessionsResponse.fromJson(data).sessions;
+    final sessionPayload = r.data ?? const {};
+    return SessionsResponse.fromJson(sessionPayload).sessions;
   }
 
   Future<JobSnapshot> fetchJob(String jobId) async {

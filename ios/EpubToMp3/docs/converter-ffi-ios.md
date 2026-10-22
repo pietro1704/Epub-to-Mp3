@@ -71,13 +71,18 @@ lease, refusing a booted Simulator. `mise run converter-ffi:ios-packaging:test`
 exercises real artifact rejection and isolated signed bundling, without launching
 Simulator. These do not prove app startup or native UI behavior.
 
-For this Intel Mac/iOS 16 runtime, build with the selected Xcode 26 toolchain,
-then reuse that build with the installed Xcode 16.4 test controller via a per-command
-`DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer`. Do not change global
-Xcode selection or open Xcode GUI. Two native smoke tests passed using this route.
-The native smoke task requires explicit low-resource opt-in and a Simulator UUID;
-startup grace defaults to zero and cannot exceed the explicitly selected operation
-budget (`IOS_SIMULATOR_OPERATION_TIMEOUT`, 300 s default, 1200 s maximum). It does
-not disable thermal/memory or deadline stops. `IOS_TESTS` selects focused cases;
-an isolated `IOS_SIMULATOR_XCTESTRUN_PATH` can carry the scoped native benchmark
-specification. The global quality/performance goal is not complete.
+Use Xcode 16.4 for Apple development, builds and tests through the guarded
+project tasks and their explicit
+`DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer`. Preserve the
+global Xcode 26 Command Line Tools selection; it serves terminal/Homebrew
+compatibility and does not select the app development toolchain.
+
+Intel Simulator execution is quarantined. Do not launch a Simulator, reuse an
+old artifact to bypass the gate, or follow earlier smoke-test instructions.
+Simulator artifact compilation does not authorize runtime execution. Required
+SE1/iOS 15.5 reader acceptance remains pending until separately reauthorized;
+a physical device or another runtime does not replace that requirement.
+
+See [execution policy](../../../docs/agents/execution-policy.md) for toolchain,
+platform ownership, guarded compilation and current safety boundaries. Historical
+smoke-test results do not establish current runtime acceptance.

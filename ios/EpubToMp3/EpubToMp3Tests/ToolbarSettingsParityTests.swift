@@ -184,9 +184,9 @@ final class ToolbarSettingsParityTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try Data([1]).write(to: directory.appendingPathComponent("model.onnx"))
-        XCTAssertFalse(AppSettings.isFaberInstalled(modelsRoot: root), "An ONNX file alone is not a complete voice installation.")
+        XCTAssertFalse(LocalSpeechModelReadiness.isFaberInstalled(modelsRoot: root), "An ONNX file alone is not a complete voice installation.")
         try Data([1]).write(to: directory.appendingPathComponent("model.onnx.json"))
-        XCTAssertFalse(AppSettings.isFaberInstalled(modelsRoot: root), "Unverified files must not claim a catalog installation.")
+        XCTAssertFalse(LocalSpeechModelReadiness.isFaberInstalled(modelsRoot: root), "Unverified files must not claim a catalog installation.")
     }
 
     func testEdgeSecondaryRequiresConsentAndRevocationClearsPreference() throws {

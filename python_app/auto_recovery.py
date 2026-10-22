@@ -20,20 +20,13 @@ from typing import Any, Callable, Dict, List, Optional
 
 import psutil
 
+if __package__:
+    from . import recovery_thread_watchdog as _watchdog
+else:
+    import recovery_thread_watchdog as _watchdog
 
-@dataclass
-class ThreadActivity:
-    """Atividade de uma thread."""
 
-    thread_id: int
-    name: str
-    alive: bool
-    daemon: bool
-    last_cpu_time: float
-    last_check_time: float
-    stack_frames: List[str]
-    stuck_count: int = 0
-    recoveries: int = 0
+ThreadActivity = _watchdog.ThreadActivity
 
 
 @dataclass
@@ -149,43 +142,11 @@ class AutoRecoverySystem:
 
     def _is_idle_worker_thread(self, stack_frames: List[str]) -> bool:
         """Check if thread is idle waiting for work (normal behaviour)."""
-        if not stack_frames:
-            return False
-
-        stack_text = "\n".join(stack_frames)
-
-        # Idle thread patterns (expected behaviour)
-        idle_patterns = [
-            "work_queue.get(block=True)",  # ThreadPoolExecutor esperando trabalho
-            "self.work_queue.get(block=True)",
-            "_worker\n    work_item = work_queue.get(block=True)",
-            "Queue.get",  # asyncio Queue esperando
-            "Condition.wait",  # Waiting on condition variable
-            "time.sleep(",  # Sleep loops (monitoring threads)
-            "_stop_event.wait(",  # Event wait
-            "waiter.acquire(",  # Lock/Event acquisition
-            "Event.wait",  # Threading event wait
-            "self.interval)",  # Sleep com self.interval
-        ]
-
-        return any(pattern in stack_text for pattern in idle_patterns)
+        return _watchdog.is_idle_worker_thread(stack_frames)
 
     def _is_event_loop_stack(self, stack_frames: List[str]) -> bool:
         """Detecta stack de event loop/servidor (comportamento normal)."""
-        if not stack_frames:
-            return False
-        stack_text = "\n".join(stack_frames)
-        event_loop_markers = [
-            "asyncio/base_events.py",
-            "asyncio/runners.py",
-            "uvicorn/server.py",
-            "uvicorn/_subprocess.py",
-            "starlette/routing.py",
-        ]
-        if any(marker in stack_text for marker in event_loop_markers):
-            # Loop threads can stay stable for a long time without being stuck.
-            return True
-        return False
+        return _watchdog.is_event_loop_stack(stack_frames)
 
     def _get_thread_cpu_times(self) -> Dict[int, float]:
         """Return aggregated CPU time (user+sys) per thread."""
@@ -199,133 +160,24 @@ class AutoRecoverySystem:
 
     def _check_deadlocks(self) -> None:
         """Detecta e resolve deadlocks em threads."""
-        current_threads = threading.enumerate()
-        current_time = time.time()
-        cpu_times = self._get_thread_cpu_times()
-
-        for thread in current_threads:
-            if not thread.is_alive():
-                continue
-
-            if self._ignored_prefixes:
-                name_lower = thread.name.lower()
-                if any(name_lower.startswith(prefix) for prefix in self._ignored_prefixes):
-                    continue
-
-            thread_id = thread.ident
-            if thread_id is None:
-                continue
-
-            if thread.name == "AutoRecovery":
-                continue
-
-            # Capturar stack frames da thread
-            frame = sys._current_frames().get(thread_id)
-            stack_frames = []
-            if frame:
-                stack_frames = traceback.format_stack(frame)
-
-            # **NOVO**: Ignorar threads idle esperando por trabalho (comportamento normal)
-            if self._is_idle_worker_thread(stack_frames) or self._is_event_loop_stack(stack_frames):
-                # Reset contador se estava travada antes
-                if thread_id in self._thread_activities:
-                    self._thread_activities[thread_id].stuck_count = 0
-                continue
-
-            # Check if thread is stuck in the same place
-            if thread_id in self._thread_activities:
-                prev_activity = self._thread_activities[thread_id]
-                current_cpu = cpu_times.get(thread_id, prev_activity.last_cpu_time)
-                cpu_unchanged = abs(current_cpu - prev_activity.last_cpu_time) < 0.0001
-
-                # Comparar stack frames
-                if stack_frames == prev_activity.stack_frames and cpu_unchanged:
-                    prev_activity.stuck_count += 1
-
-                    # Thread travada por muito tempo?
-                    if prev_activity.stuck_count >= self.thresholds["thread_stuck_cycles"]:
-                        self._recover_stuck_thread(thread, prev_activity)
-                else:
-                    prev_activity.stuck_count = 0
-                    prev_activity.stack_frames = stack_frames
-                    prev_activity.last_check_time = current_time
-                prev_activity.last_cpu_time = current_cpu
-            else:
-                # Nova thread
-                current_cpu = cpu_times.get(thread_id, 0.0)
-                self._thread_activities[thread_id] = ThreadActivity(
-                    thread_id=thread_id,
-                    name=thread.name,
-                    alive=thread.is_alive(),
-                    daemon=thread.daemon,
-                    last_cpu_time=current_cpu,
-                    last_check_time=current_time,
-                    stack_frames=stack_frames,
-                    stuck_count=0,
-                )
+        _watchdog.check_deadlocks(
+            threading.enumerate(), time.time(), self._get_thread_cpu_times(),
+            self._thread_activities, self._ignored_prefixes, self.thresholds,
+            current_frames=sys._current_frames, format_stack=traceback.format_stack,
+            idle_check=self._is_idle_worker_thread,
+            event_loop_check=self._is_event_loop_stack,
+            recover_thread=self._recover_stuck_thread,
+        )
 
     def _recover_stuck_thread(self, thread: threading.Thread, activity: ThreadActivity) -> None:
         """Tenta recuperar thread travada."""
-        print(f"🚨 [AutoRecovery] Thread travada detectada: {thread.name}")
-        print("   Stack trace:")
-        for line in activity.stack_frames[-5:]:  # Last 5 lines
-            print(f"   {line.strip()}")
-
-        # Recovery actions
-        action_taken = "none"
-        success = False
-        interrupted = False
-
-        # 1. Try forcing GC (may release locks)
-        print("   → Trying forced GC...")
-        gc.collect()
-        action_taken = "gc_collect"
-        success = True
-
-        # 2. Boost process priority to avoid CPU starvation
-        self._boost_process_priority()
-
-        # 3. Inject exception into thread to release locks
-        interrupted = self._interrupt_thread(activity.thread_id)
-        if interrupted:
-            action_taken = "interrupt_thread"
-            success = True
-            print(f"   ✅ Interrupt requested for thread {thread.name}")
-        else:
-            print(f"   ⚠️ Could not interrupt thread {thread.name}")
-
-        # 2. If thread is not a daemon and is stuck, alert
-        if not thread.daemon:
-            activity.recoveries += 1
-            print(f"   ⚠️ Non-daemon thread stuck: {thread.name}")
-            threshold = self.thresholds.get("thread_hard_restart_cycles", 2)
-            if activity.recoveries >= threshold:
-                print("   ⏱️ Recovery failed more than once — requesting soft restart")
-                self._request_process_restart(
-                    reason="thread_deadlock",
-                    thread_name=thread.name,
-                    thread_id=activity.thread_id,
-                )
-            else:
-                print("   → Automatic retry soon")
-
-        # Record action
-        self._log_recovery_action(
-            problem="thread_deadlock",
-            action=action_taken,
-            success=success,
-            details={
-                "thread_name": thread.name,
-                "thread_id": activity.thread_id,
-                "stuck_cycles": activity.stuck_count,
-                "stack_sample": activity.stack_frames[-1] if activity.stack_frames else None,
-                "recoveries": activity.recoveries,
-                "interrupted": interrupted,
-            },
+        _watchdog.recover_stuck_thread(
+            thread, activity, self.thresholds, collect_garbage=gc.collect,
+            boost_priority=self._boost_process_priority,
+            interrupt_thread=self._interrupt_thread,
+            request_restart=self._request_process_restart,
+            log_action=self._log_recovery_action,
         )
-
-        # Reset counter
-        activity.stuck_count = 0
 
     def _check_thread_starvation(self) -> None:
         """Detect thread starvation (threads unable to get CPU time)."""

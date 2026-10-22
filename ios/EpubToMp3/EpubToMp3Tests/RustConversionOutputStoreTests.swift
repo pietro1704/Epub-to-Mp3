@@ -111,7 +111,7 @@ final class RustConversionOutputStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: jobs, withIntermediateDirectories: true)
         let source = root.appendingPathComponent("source.epub")
         try Data([8, 9]).write(to: source)
-        let bookID = try LibraryStore.contentHash(of: source)
+        let bookID = try LibraryImportFiles.contentHash(of: source)
         for job in ["old-a1", "old-a2"] {
             let directory = outputs.appendingPathComponent(job)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -213,7 +213,7 @@ final class RustConversionOutputStoreTests: XCTestCase {
         }
         let source = root.appendingPathComponent("book-b.epub")
         try Data([8, 9]).write(to: source)
-        let sourceHash = try LibraryStore.contentHash(of: source)
+        let sourceHash = try LibraryImportFiles.contentHash(of: source)
         let record = jobs.appendingPathComponent("foreign-job.json")
         let originalRecord = try JSONSerialization.data(withJSONObject: [
             "job_id": "foreign-job", "metadata": ["input": source.path]

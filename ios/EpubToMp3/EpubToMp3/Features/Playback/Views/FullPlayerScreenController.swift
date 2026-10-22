@@ -5,11 +5,6 @@ import Combine
 import MediaPlayer
 import UIKit
 
-enum FullPlayerLayoutMetrics {
-    static let elementSpacing: CGFloat = 4
-    static let bottomInset: CGFloat = 0
-}
-
 @MainActor
 final class FullPlayerScreenController: UIViewController {
     private let player: AudioPlayer
@@ -17,47 +12,19 @@ final class FullPlayerScreenController: UIViewController {
     private var library: LibraryStore
     private let playerPresentation: PlayerPresentation
     private let settings: AppSettings
+    private let content = FullPlayerContent()
+    private lazy var dismissInteraction = FullPlayerDismissInteraction(
+        view: view,
+        controls: { [weak self] in self?.nonDraggableViews ?? [] },
+        onDismiss: { [weak self] in self?.playerPresentation.dismissFullPlayer() }
+    )
+    private var renderedRate: PlaybackRate?
 
     private var cancellables: Set<AnyCancellable> = []
     private var isScrubbing = false
     private var currentBookID: String? {
         UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
     }
-
-    private let closeButton = UIButton(type: .system)
-    private let dragHandle = UIView()
-    private lazy var dismissPanGesture = UIPanGestureRecognizer(
-        target: self,
-        action: #selector(handleDismissPan(_:))
-    )
-    private let coverContainer = UIView()
-    private let coverImageView = UIImageView()
-    private let titleLabel = UILabel()
-    private let authorLabel = UILabel()
-    private let chapterLabel = UILabel()
-    private let slider = CompactSlider()
-    private let elapsedLabel = UILabel()
-    private let remainingLabel = UILabel()
-    private let previousChapterButton = UIButton(type: .system)
-    private let skipBackButton = UIButton(type: .system)
-    private let playPauseButton = UIButton(type: .system)
-    private let skipForwardButton = UIButton(type: .system)
-    private let nextChapterButton = UIButton(type: .system)
-    private let rateButton = UIButton(type: .system)
-    private var renderedRate: PlaybackRate?
-    private let tocButton = UIButton(type: .system)
-    private let sleepButton = UIButton(type: .system)
-    private let airPlayContainer = UIView()
-    // The legacy route-button configuration is intentionally omitted.
-    // since iOS 13 (this project builds with SWIFT_TREAT_WARNINGS_AS_ERRORS,
-    // so the deprecation is a hard build failure, not just a warning).
-    // `AVRoutePickerView` is Apple's replacement and is exactly an AirPlay
-    // route button by design — no extra config needed to hide the volume
-    // slider like MPVolumeView required.
-    private let airPlayView = AVRoutePickerView(frame: .zero)
-    private let volumeView = MPVolumeView(frame: .zero)
-    private let contentScrollView = UIScrollView()
-    private let stackView = UIStackView()
 
     init(
         player: AudioPlayer,
@@ -85,7 +52,18 @@ final class FullPlayerScreenController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        buildUI()
+        content.install(in: view, actionTarget: self, actions: FullPlayerControlActions(
+            closeTapped: #selector(closeTapped),
+            scrubBegan: #selector(scrubBegan),
+            scrubChanged: #selector(scrubChanged),
+            scrubEnded: #selector(scrubEnded),
+            previousChapterTapped: #selector(previousChapterTapped),
+            skipBackTapped: #selector(skipBackTapped),
+            playPauseTapped: #selector(playPauseTapped),
+            skipForwardTapped: #selector(skipForwardTapped),
+            nextChapterTapped: #selector(nextChapterTapped),
+            tocTapped: #selector(tocTapped)
+        ), traits: traitCollection)
         bind()
         render()
 
@@ -96,273 +74,12 @@ final class FullPlayerScreenController: UIViewController {
         // interactive control's frame so the scrubber, transport buttons,
         // volume slider, and AirPlay button keep receiving their own touches
         // untouched.
-        dismissPanGesture.delegate = self
-        dismissPanGesture.cancelsTouchesInView = false
-        view.addGestureRecognizer(dismissPanGesture)
+        dismissInteraction.install()
     }
 
     func refresh(library: LibraryStore) {
         self.library = library
         render()
-    }
-
-    private func buildUI() {
-        let background = AdaptiveMaterialView()
-        view.addSubview(background)
-        NSLayoutConstraint.activate([
-            background.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            background.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            background.topAnchor.constraint(equalTo: view.topAnchor),
-            background.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
-        // HIG-standard grabber affordance signalling "this can be dragged" —
-        // purely visual, the pan gesture is attached to `view` itself (see
-        // viewDidLoad) so dragging also works from the background/labels.
-        dragHandle.translatesAutoresizingMaskIntoConstraints = false
-        dragHandle.backgroundColor = .tertiaryLabel
-        dragHandle.layer.cornerRadius = 2.5
-        dragHandle.isUserInteractionEnabled = false
-        dragHandle.accessibilityIdentifier = "fullPlayer.dragHandle"
-        view.addSubview(dragHandle)
-
-        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
-        closeButton.tintColor = .label
-        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.accessibilityIdentifier = "fullPlayer.close"
-        closeButton.accessibilityLabel = L10n.string("player.close")
-        view.addSubview(closeButton)
-
-        coverContainer.translatesAutoresizingMaskIntoConstraints = false
-        coverContainer.layer.cornerRadius = 16
-        coverContainer.layer.masksToBounds = true
-        coverContainer.backgroundColor = UIColor.tintColor.withAlphaComponent(0.15)
-
-        coverImageView.translatesAutoresizingMaskIntoConstraints = false
-        coverImageView.contentMode = .scaleAspectFit
-        coverImageView.image = UIImage(systemName: "headphones")
-        coverImageView.tintColor = .tintColor
-        coverContainer.addSubview(coverImageView)
-        NSLayoutConstraint.activate([
-            coverImageView.leadingAnchor.constraint(equalTo: coverContainer.leadingAnchor),
-            coverImageView.trailingAnchor.constraint(equalTo: coverContainer.trailingAnchor),
-            coverImageView.topAnchor.constraint(equalTo: coverContainer.topAnchor),
-            coverImageView.bottomAnchor.constraint(equalTo: coverContainer.bottomAnchor),
-        ])
-
-        titleLabel.font = .preferredFont(forTextStyle: .title2, compatibleWith: traitCollection).bold()
-        titleLabel.numberOfLines = 0
-        titleLabel.textAlignment = .center
-        titleLabel.accessibilityIdentifier = "fullPlayer.bookTitle"
-
-        authorLabel.font = .preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
-        authorLabel.numberOfLines = 0
-        authorLabel.textColor = .secondaryLabel
-        authorLabel.textAlignment = .center
-        authorLabel.accessibilityIdentifier = "fullPlayer.bookAuthor"
-
-        chapterLabel.font = .preferredFont(forTextStyle: .footnote, compatibleWith: traitCollection)
-        chapterLabel.textColor = .tertiaryLabel
-        chapterLabel.numberOfLines = 0
-        chapterLabel.textAlignment = .center
-
-        [titleLabel, authorLabel, chapterLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
-
-        // Keep the book and chapter metadata visible on compact iPhone
-        // heights. Without explicit vertical priorities, the stack can
-        // compress these labels to zero while preserving the cover and
-        // transport controls.
-        titleLabel.setContentHuggingPriority(.required, for: .vertical)
-        titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        authorLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        chapterLabel.setContentHuggingPriority(.required, for: .vertical)
-        chapterLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        titleLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 26).isActive = true
-        chapterLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 20).isActive = true
-        authorLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 18).isActive = true
-
-        slider.addTarget(self, action: #selector(scrubBegan), for: .touchDown)
-        slider.addTarget(self, action: #selector(scrubChanged), for: .valueChanged)
-        slider.addTarget(self, action: #selector(scrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
-        slider.addTarget(self, action: #selector(scrubEnded), for: .editingDidEnd)
-
-        [elapsedLabel, remainingLabel].forEach {
-            $0.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedDigitSystemFont(ofSize: 12, weight: .regular))
-            $0.adjustsFontForContentSizeCategory = true
-            $0.textColor = .secondaryLabel
-        }
-        slider.accessibilityIdentifier = "fullPlayer.progress"
-        slider.accessibilityLabel = L10n.string("player.playbackPosition")
-        elapsedLabel.accessibilityIdentifier = "fullPlayer.elapsed"
-        remainingLabel.accessibilityIdentifier = "fullPlayer.remaining"
-
-        configureTransportButton(previousChapterButton, image: "backward.end.fill", action: #selector(previousChapterTapped))
-        previousChapterButton.accessibilityIdentifier = "fullPlayer.previousChapter"
-        configureTransportButton(skipBackButton, image: "gobackward.15", action: #selector(skipBackTapped), pointSize: 28)
-        skipBackButton.accessibilityIdentifier = "fullPlayer.skipBack"
-        configureTransportButton(playPauseButton, image: "play.fill", action: #selector(playPauseTapped), pointSize: 64)
-        let playWidth = playPauseButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64)
-        let playHeight = playPauseButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 64)
-        playWidth.priority = .required - 2
-        playHeight.priority = .required - 2
-        NSLayoutConstraint.activate([playWidth, playHeight])
-        configureTransportButton(skipForwardButton, image: "goforward.15", action: #selector(skipForwardTapped), pointSize: 28)
-        skipForwardButton.accessibilityIdentifier = "fullPlayer.skipForward"
-        configureTransportButton(nextChapterButton, image: "forward.end.fill", action: #selector(nextChapterTapped))
-        nextChapterButton.accessibilityIdentifier = "fullPlayer.nextChapter"
-
-        let transport = UIStackView(arrangedSubviews: [
-            previousChapterButton, skipBackButton, playPauseButton, skipForwardButton, nextChapterButton
-        ])
-        transport.axis = .horizontal
-        transport.alignment = .center
-        transport.distribution = .equalSpacing
-        transport.spacing = FullPlayerLayoutMetrics.elementSpacing
-
-        var rateConfig = UIButton.Configuration.plain()
-        rateConfig.contentInsets = .init(top: 8, leading: 12, bottom: 8, trailing: 12)
-        rateConfig.background.backgroundColor = .secondarySystemFill
-        rateConfig.background.cornerRadius = 10
-        rateButton.configuration = rateConfig
-        rateButton.translatesAutoresizingMaskIntoConstraints = false
-        rateButton.accessibilityIdentifier = "fullPlayer.playbackRateButton"
-        rateButton.accessibilityLabel = L10n.string("player.speed")
-        rateButton.showsMenuAsPrimaryAction = true
-
-        configureSecondaryButton(tocButton, image: "list.bullet", title: nil, action: #selector(tocTapped))
-        configureSecondaryButton(sleepButton, image: "moon.zzz", title: nil, action: nil)
-        tocButton.accessibilityLabel = L10n.string("reader.toc")
-        sleepButton.showsMenuAsPrimaryAction = true
-
-        airPlayView.translatesAutoresizingMaskIntoConstraints = false
-        airPlayContainer.translatesAutoresizingMaskIntoConstraints = false
-        airPlayContainer.addSubview(airPlayView)
-        // Same narrow-screen conflict as the transport/secondary buttons —
-        // a hard `== 44` here left Auto Layout no room to shrink and forced
-        // it to break an arbitrary constraint elsewhere in the row instead.
-        let airPlayWidth = airPlayContainer.widthAnchor.constraint(equalToConstant: 44)
-        let airPlayHeight = airPlayContainer.heightAnchor.constraint(equalToConstant: 44)
-        airPlayWidth.priority = .required - 1
-        airPlayHeight.priority = .required - 1
-        NSLayoutConstraint.activate([
-            airPlayView.leadingAnchor.constraint(equalTo: airPlayContainer.leadingAnchor),
-            airPlayView.trailingAnchor.constraint(equalTo: airPlayContainer.trailingAnchor),
-            airPlayView.topAnchor.constraint(equalTo: airPlayContainer.topAnchor),
-            airPlayView.bottomAnchor.constraint(equalTo: airPlayContainer.bottomAnchor),
-            airPlayWidth,
-            airPlayHeight,
-        ])
-
-        let secondary = UIStackView(arrangedSubviews: [rateButton, UIView(), tocButton, sleepButton, airPlayContainer])
-        secondary.axis = .horizontal
-        secondary.alignment = .center
-        secondary.spacing = FullPlayerLayoutMetrics.elementSpacing
-        secondary.translatesAutoresizingMaskIntoConstraints = false
-
-        volumeView.showsVolumeSlider = true
-        volumeView.translatesAutoresizingMaskIntoConstraints = false
-
-        let timeRow = UIStackView(arrangedSubviews: [elapsedLabel, UIView(), remainingLabel])
-        timeRow.axis = .horizontal
-        timeRow.alignment = .fill
-
-        let playbackControls = UIStackView(arrangedSubviews: [
-            slider, timeRow, transport, volumeView
-        ])
-        playbackControls.axis = .vertical
-        playbackControls.alignment = .fill
-        playbackControls.spacing = FullPlayerLayoutMetrics.elementSpacing
-        playbackControls.translatesAutoresizingMaskIntoConstraints = false
-
-        // `coverContainer` must NOT be an arranged subview directly: the
-        // vertical stack's default `.fill` alignment pins every arranged
-        // subview's leading/trailing to the stack's own edges (full width),
-        // which unconditionally contradicts the explicit 0.7-multiplier
-        // width + centerX constraints below — "Unable to simultaneously
-        // satisfy constraints" on every single appearance, regardless of
-        // device width. A plain full-width wrapper absorbs the stack's fill
-        // pinning; `coverContainer` sizes itself against the wrapper instead.
-        let coverRow = UIView()
-        coverRow.translatesAutoresizingMaskIntoConstraints = false
-        coverRow.addSubview(coverContainer)
-
-        stackView.axis = .vertical
-        stackView.spacing = FullPlayerLayoutMetrics.elementSpacing
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.addArrangedSubview(coverRow)
-
-        let metadata = UIStackView(arrangedSubviews: [titleLabel, authorLabel, chapterLabel])
-        metadata.axis = .vertical
-        metadata.alignment = .fill
-        metadata.spacing = FullPlayerLayoutMetrics.elementSpacing
-        metadata.translatesAutoresizingMaskIntoConstraints = false
-
-        // Keep controls together and allow the whole player to scroll when text grows.
-        let bottomContent = UIStackView(arrangedSubviews: [metadata, playbackControls, secondary])
-        bottomContent.axis = .vertical
-        bottomContent.alignment = .fill
-        bottomContent.spacing = FullPlayerLayoutMetrics.elementSpacing
-        bottomContent.translatesAutoresizingMaskIntoConstraints = false
-
-        contentScrollView.translatesAutoresizingMaskIntoConstraints = false
-        contentScrollView.alwaysBounceVertical = false
-        contentScrollView.showsVerticalScrollIndicator = false
-        contentScrollView.contentInsetAdjustmentBehavior = .never
-        view.addSubview(contentScrollView)
-        let flexibleSpace = UIView()
-        flexibleSpace.setContentHuggingPriority(.defaultLow, for: .vertical)
-        stackView.addArrangedSubview(flexibleSpace)
-        stackView.addArrangedSubview(bottomContent)
-        contentScrollView.addSubview(stackView)
-        view.bringSubviewToFront(dragHandle)
-        view.bringSubviewToFront(closeButton)
-
-        let preferredCoverWidth = coverContainer.widthAnchor.constraint(
-            equalTo: coverRow.widthAnchor,
-            multiplier: 0.7
-        )
-        preferredCoverWidth.priority = .defaultLow
-        let preferredContentHeight = stackView.heightAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.heightAnchor)
-        preferredContentHeight.priority = .defaultHigh
-        NSLayoutConstraint.activate([
-            dragHandle.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            dragHandle.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            dragHandle.widthAnchor.constraint(equalToConstant: 36),
-            dragHandle.heightAnchor.constraint(equalToConstant: 5),
-
-            closeButton.topAnchor.constraint(equalTo: dragHandle.bottomAnchor, constant: 6),
-            closeButton.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 44),
-            closeButton.heightAnchor.constraint(equalToConstant: 44),
-
-            contentScrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            contentScrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            contentScrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
-            contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                                                     constant: -FullPlayerLayoutMetrics.bottomInset),
-            preferredContentHeight,
-            stackView.heightAnchor.constraint(greaterThanOrEqualTo: contentScrollView.frameLayoutGuide.heightAnchor),
-            secondary.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-
-            stackView.leadingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.trailingAnchor),
-            stackView.topAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.bottomAnchor),
-            stackView.widthAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.widthAnchor),
-
-            preferredCoverWidth,
-            coverContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 72),
-            coverContainer.heightAnchor.constraint(equalTo: coverContainer.widthAnchor, multiplier: 1.5),
-            coverContainer.heightAnchor.constraint(
-                lessThanOrEqualTo: contentScrollView.frameLayoutGuide.heightAnchor,
-                multiplier: 0.70
-            ),
-            coverContainer.topAnchor.constraint(equalTo: coverRow.topAnchor),
-            coverContainer.bottomAnchor.constraint(equalTo: coverRow.bottomAnchor),
-            coverContainer.centerXAnchor.constraint(equalTo: coverRow.centerXAnchor),
-            volumeView.heightAnchor.constraint(equalToConstant: 34),
-        ])
     }
 
     private func bind() {
@@ -385,78 +102,27 @@ final class FullPlayerScreenController: UIViewController {
 
     }
 
-    private func configureTransportButton(
-        _ button: UIButton,
-        image: String,
-        action: Selector,
-        pointSize: CGFloat = 22
-    ) {
-        button.setImage(UIImage(systemName: image), for: .normal)
-        button.tintColor = .label
-        button.addTarget(self, action: action, for: .touchUpInside)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.imageView?.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
-        // 44pt is the HIG minimum tap target, but on a standard-width iPhone
-        // five transport buttons (the 64pt play/pause icon alone needs more
-        // than 44pt) cannot all satisfy it plus their minimum spacing at
-        // once — that combination produced "Unable to simultaneously
-        // satisfy constraints" every time the full player appeared. Priority
-        // just below required lets Auto Layout shrink below 44pt on narrow
-        // screens instead of throwing, while still holding 44pt whenever
-        // there's room for it.
-        let width = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
-        let height = button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
-        width.priority = .required - 1
-        height.priority = .required - 1
-        NSLayoutConstraint.activate([width, height])
-    }
-
-    private func configureSecondaryButton(
-        _ button: UIButton,
-        image: String,
-        title: String?,
-        action: Selector?
-    ) {
-        var config = UIButton.Configuration.plain()
-        config.image = UIImage(systemName: image)
-        config.title = title
-        config.imagePadding = 6
-        button.configuration = config
-        button.tintColor = .label
-        button.translatesAutoresizingMaskIntoConstraints = false
-        if let action {
-            button.addTarget(self, action: action, for: .touchUpInside)
-        }
-        // See configureTransportButton: same narrow-screen conflict applies
-        // to the secondary row (rate/TOC/sleep/AirPlay).
-        let width = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
-        let height = button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
-        width.priority = .required - 1
-        height.priority = .required - 1
-        NSLayoutConstraint.activate([width, height])
-    }
-
     private func render() {
         let currentBook = currentBookID.flatMap { id in
             library.books.first(where: { $0.id == id })
         }
 
-        titleLabel.text = currentBook?.resolvedTitle ?? (player.snapshot?.bookTitle ?? L10n.string("player.audiobookFallback"))
-        authorLabel.text = currentBook?.author
-        authorLabel.isHidden = (authorLabel.text?.isEmpty ?? true)
-        chapterLabel.text = player.snapshot == nil
+        content.titleLabel.text = currentBook?.resolvedTitle ?? (player.snapshot?.bookTitle ?? L10n.string("player.audiobookFallback"))
+        content.authorLabel.text = currentBook?.author
+        content.authorLabel.isHidden = (content.authorLabel.text?.isEmpty ?? true)
+        content.chapterLabel.text = player.snapshot == nil
             ? L10n.string("player.chapter", UserDefaults.standard.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey) + 1)
             : player.effectiveChapterTitle
         if let voice = player.snapshot?.activeVoiceDisplayName {
-            chapterLabel.text = (chapterLabel.text ?? "") + "\n" + voice
+            content.chapterLabel.text = (content.chapterLabel.text ?? "") + "\n" + voice
         }
 
         if let data = currentBook?.coverPNG, let image = UIImage(data: data) {
-            coverImageView.image = image
-            coverImageView.contentMode = .scaleAspectFit
+            content.coverImageView.image = image
+            content.coverImageView.contentMode = .scaleAspectFit
         } else {
-            coverImageView.image = UIImage(systemName: "headphones")
-            coverImageView.contentMode = .scaleAspectFit
+            content.coverImageView.image = UIImage(systemName: "headphones")
+            content.coverImageView.contentMode = .scaleAspectFit
         }
 
         renderPlaybackPosition()
@@ -467,69 +133,64 @@ final class FullPlayerScreenController: UIViewController {
     }
 
     private func renderSkipButtons() {
-        let backward = Self.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey)
-        let forward = Self.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey)
-        skipBackButton.setImage(UIImage(systemName: "gobackward.\(backward)"), for: .normal)
-        skipForwardButton.setImage(UIImage(systemName: "goforward.\(forward)"), for: .normal)
-        skipBackButton.accessibilityLabel = L10n.string("player.skipBack.seconds", backward)
-        skipForwardButton.accessibilityLabel = L10n.string("player.skipForward.seconds", forward)
-    }
-
-    private static func configuredSkipInterval(forKey key: String) -> Int {
-        let value = UserDefaults.standard.object(forKey: key) as? Double ?? 15
-        return AppSettings.playbackSkipIntervals.contains(value) ? Int(value) : 15
+        let backward = PlayerTransportPresentation.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey)
+        let forward = PlayerTransportPresentation.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey)
+        content.skipBackButton.setImage(UIImage(systemName: "gobackward.\(backward)"), for: .normal)
+        content.skipForwardButton.setImage(UIImage(systemName: "goforward.\(forward)"), for: .normal)
+        content.skipBackButton.accessibilityLabel = L10n.string("player.skipBack.seconds", backward)
+        content.skipForwardButton.accessibilityLabel = L10n.string("player.skipForward.seconds", forward)
     }
 
     private func renderPlaybackPosition(_ clockSnapshot: PlaybackClock.Snapshot? = nil) {
         let snapshot = clockSnapshot ?? playbackClock.snapshot
-        slider.maximumValue = Float(max(snapshot.durationSeconds, 1))
+        content.slider.maximumValue = Float(max(snapshot.durationSeconds, 1))
         let position = player.isSeeking ? player.positionSeconds : snapshot.positionSeconds
         if !isScrubbing && !player.isSeeking {
-            slider.value = Float(position)
+            content.slider.value = Float(position)
         }
-        elapsedLabel.text = formatTime(position)
+        content.elapsedLabel.text = PlayerTransportPresentation.formatTime(position)
         let remaining = max(0, snapshot.durationSeconds - position)
         let rateAdjusted = remaining / Double(player.rate.rawValue)
-        remainingLabel.text = "-" + formatTime(rateAdjusted)
+        content.remainingLabel.text = "-" + PlayerTransportPresentation.formatTime(rateAdjusted)
     }
 
     private func renderPlayPauseButton() {
         if player.isLoading {
-            playPauseButton.setImage(nil, for: .normal)
+            content.playPauseButton.setImage(nil, for: .normal)
             let spinner = UIActivityIndicatorView(style: .medium)
             spinner.startAnimating()
-            playPauseButton.configuration = nil
-            playPauseButton.subviews.forEach { subview in
+            content.playPauseButton.configuration = nil
+            content.playPauseButton.subviews.forEach { subview in
                 if subview is UIActivityIndicatorView { subview.removeFromSuperview() }
             }
             spinner.translatesAutoresizingMaskIntoConstraints = false
-            playPauseButton.addSubview(spinner)
+            content.playPauseButton.addSubview(spinner)
             NSLayoutConstraint.activate([
-                spinner.centerXAnchor.constraint(equalTo: playPauseButton.centerXAnchor),
-                spinner.centerYAnchor.constraint(equalTo: playPauseButton.centerYAnchor),
+                spinner.centerXAnchor.constraint(equalTo: content.playPauseButton.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: content.playPauseButton.centerYAnchor),
             ])
         } else {
-            playPauseButton.subviews.forEach {
+            content.playPauseButton.subviews.forEach {
                 if $0 is UIActivityIndicatorView { $0.removeFromSuperview() }
             }
-            playPauseButton.setImage(
+            content.playPauseButton.setImage(
                 UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill"),
                 for: .normal
             )
-            playPauseButton.imageView?.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 64, weight: .regular)
+            content.playPauseButton.imageView?.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 64, weight: .regular)
         }
-        playPauseButton.accessibilityLabel = player.isPlaying
+        content.playPauseButton.accessibilityLabel = player.isPlaying
             ? L10n.string("player.pause")
             : L10n.string("player.play")
     }
 
     private func renderRateMenu() {
-        guard renderedRate != player.rate || rateButton.menu == nil else { return }
+        guard renderedRate != player.rate || content.rateButton.menu == nil else { return }
         renderedRate = player.rate
-        var config = rateButton.configuration ?? UIButton.Configuration.plain()
+        var config = content.rateButton.configuration ?? UIButton.Configuration.plain()
         config.title = player.rate.shortLabel
-        rateButton.configuration = config
-        rateButton.menu = UIMenu(children: PlaybackRate.primaryRates.map { rate in
+        content.rateButton.configuration = config
+        content.rateButton.menu = UIMenu(children: PlaybackRate.primaryRates.map { rate in
             UIAction(title: rate.shortLabel, state: rate == player.rate ? .on : .off) { [weak self] _ in
                 self?.player.setRate(rate)
                 self?.render()
@@ -539,7 +200,7 @@ final class FullPlayerScreenController: UIViewController {
 
     private func renderSleepMenu() {
         let minutes = [0, 5, 15, 30, 45, 60]
-        sleepButton.menu = UIMenu(children: minutes.map { minute in
+        content.sleepButton.menu = UIMenu(children: minutes.map { minute in
             if minute == 0 {
                 return UIAction(title: L10n.string("player.sleepTimerOption.off")) { [weak self] _ in
                     self?.player.setSleepTimer(seconds: 0)
@@ -551,7 +212,7 @@ final class FullPlayerScreenController: UIViewController {
                 self?.render()
             }
         })
-        sleepButton.accessibilityLabel = L10n.string("player.sleepTimer")
+        content.sleepButton.accessibilityLabel = L10n.string("player.sleepTimer")
     }
 
     @objc
@@ -565,79 +226,10 @@ final class FullPlayerScreenController: UIViewController {
     /// frames/visibility without needing invalidation on layout changes.
     private var nonDraggableViews: [UIView] {
         [
-            slider, volumeView, airPlayContainer,
-            previousChapterButton, skipBackButton, playPauseButton, skipForwardButton, nextChapterButton,
-            rateButton, tocButton, sleepButton,
+            content.slider, content.volumeView, content.airPlayContainer,
+            content.previousChapterButton, content.skipBackButton, content.playPauseButton, content.skipForwardButton, content.nextChapterButton,
+            content.rateButton, content.tocButton, content.sleepButton,
         ]
-    }
-
-    @objc
-    private func handleDismissPan(_ gesture: UIPanGestureRecognizer) {
-        let translation = gesture.translation(in: view)
-        let velocity = gesture.velocity(in: view)
-
-        switch gesture.state {
-        case .changed:
-            // Only downward drags are meaningful — there's nowhere "more
-            // full" to go, so upward translation is clamped to zero.
-            let clampedY = max(0, translation.y)
-            view.transform = CGAffineTransform(translationX: 0, y: clampedY)
-
-        case .ended, .cancelled:
-            let dismissDistanceThreshold: CGFloat = 120
-            let dismissVelocityThreshold: CGFloat = 800
-            let shouldDismiss = translation.y > dismissDistanceThreshold || velocity.y > dismissVelocityThreshold
-
-            guard shouldDismiss else {
-                resetTransformToIdentity(animated: !UIAccessibility.isReduceMotionEnabled, velocity: velocity.y)
-                return
-            }
-
-            if UIAccessibility.isReduceMotionEnabled {
-                // Snap instead of sliding when the user has asked for less
-                // motion — the dismissal itself still happens immediately.
-                view.transform = .identity
-                playerPresentation.dismissFullPlayer()
-            } else {
-                UIView.animate(
-                    withDuration: 0.25,
-                    delay: 0,
-                    options: [.curveEaseIn],
-                    animations: {
-                        self.view.transform = CGAffineTransform(translationX: 0, y: self.view.bounds.height)
-                    },
-                    completion: { [weak self] _ in
-                        guard let self else { return }
-                        self.playerPresentation.dismissFullPlayer()
-                        // `IOSRootContainer.refreshOverlayState()` only toggles
-                        // isHidden/alpha and never resets transform, so this
-                        // view must restore its own resting transform here —
-                        // otherwise it reappears off-screen next time it's shown.
-                        self.view.transform = .identity
-                    }
-                )
-            }
-
-        default:
-            break
-        }
-    }
-
-    private func resetTransformToIdentity(animated: Bool, velocity: CGFloat) {
-        guard animated else {
-            view.transform = .identity
-            return
-        }
-        UIView.animate(
-            withDuration: 0.3,
-            delay: 0,
-            usingSpringWithDamping: 0.8,
-            initialSpringVelocity: abs(velocity) / 1000,
-            options: [.allowUserInteraction],
-            animations: {
-                self.view.transform = .identity
-            }
-        )
     }
 
     @objc
@@ -677,13 +269,13 @@ final class FullPlayerScreenController: UIViewController {
 
     @objc
     private func scrubChanged() {
-        elapsedLabel.text = formatTime(TimeInterval(slider.value))
+        content.elapsedLabel.text = PlayerTransportPresentation.formatTime(TimeInterval(content.slider.value))
     }
 
     @objc
     private func scrubEnded() {
         isScrubbing = false
-        player.seek(to: TimeInterval(slider.value))
+        player.seek(to: TimeInterval(content.slider.value))
         render()
     }
 
@@ -711,14 +303,14 @@ final class FullPlayerScreenController: UIViewController {
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)
                 },
                 onRemoveDownload: { chapterIndex in
-                    DownloadManager.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
+                    AudiobookDownloadStorage.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
                 },
                 onDownloadAll: { [weak self] in
                     guard let self else { return }
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: nil)
                 },
-                onCancelDownloads: { Task { await DownloadManager.shared.cancel(jobId: snapshot.jobId) } },
-                onClearDownloads: { Task { await DownloadManager.shared.clearDownloadedBook(jobId: snapshot.jobId) } },
+                onCancelDownloads: { Task { await AudiobookDownloads.shared.cancel(jobId: snapshot.jobId) } },
+                onClearDownloads: { Task { await AudiobookDownloads.shared.clearDownloadedBook(jobId: snapshot.jobId) } },
                 onRetryFailed: nil,
                 onExport: nil
             )
@@ -737,46 +329,14 @@ final class FullPlayerScreenController: UIViewController {
     private func requestAudioDownload(snapshot: JobSnapshot, chapterIndex: Int?) {
         Task {
             if let chapterIndex {
-                await DownloadManager.shared.enqueueSelected(snapshot: snapshot, epubZeroBasedIndices: [chapterIndex], baseURL: settings.resolvedBaseURL)
+                await AudiobookDownloads.shared.enqueueSelected(snapshot: snapshot, epubZeroBasedIndices: [chapterIndex], baseURL: settings.resolvedBaseURL)
             } else {
-                await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
+                await AudiobookDownloads.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
             }
         }
     }
 
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let s = total % 60
-        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
-        return String(format: "%d:%02d", m, s)
-    }
+
 }
 
-extension FullPlayerScreenController: UIGestureRecognizerDelegate {
-    /// Rejects touches that land on the scrubber, transport buttons, volume
-    /// slider, or AirPlay button so `dismissPanGesture` never competes with
-    /// their own gesture/target-action handling — only `dismissPanGesture`
-    /// itself is filtered here; any other recognizer is left untouched.
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard gestureRecognizer === dismissPanGesture else { return true }
-        let location = touch.location(in: view)
-        for control in nonDraggableViews where !control.isHidden {
-            let frameInView = control.convert(control.bounds, to: view)
-            if frameInView.contains(location) {
-                return false
-            }
-        }
-        return true
-    }
-}
-
-private extension UIFont {
-    func bold() -> UIFont {
-        let descriptor = fontDescriptor.withSymbolicTraits(.traitBold) ?? fontDescriptor
-        return UIFont(descriptor: descriptor, size: pointSize)
-    }
-}
 #endif

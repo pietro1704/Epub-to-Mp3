@@ -184,7 +184,7 @@ enum SharedContainerImporter {
         groupID: String = appGroupID
     ) async -> [ImportOutcome] {
         let resources = LibraryStore.ImportResources(fileManager: fileManager, defaults: nil)
-        let urls = (try? await LibraryStore.performImportIO {
+        let urls = (try? await LibraryImportExecutor.perform {
             pendingFiles(fileManager: resources.fileManager, groupID: groupID)
         }) ?? []
         return await drainAsync(urls: urls, into: library, fileManager: fileManager)
@@ -199,7 +199,7 @@ enum SharedContainerImporter {
         // Preserve failed/cancelled sources. Only a published durable copy permits
         // deleting a payload owned by this inbox handoff.
         let completed = results.filter { $0.book != nil }.map(\.url)
-        _ = try? await LibraryStore.performImportIO {
+        _ = try? await LibraryImportExecutor.perform {
             for url in completed { try? resources.fileManager.removeItem(at: url) }
         }
         return results.map { ImportOutcome(url: $0.url, importedBookID: $0.book?.id, error: $0.error) }

@@ -68,12 +68,23 @@ struct SystemSpeechAudioSession: SpeechAudioSessionConfiguring {
 @MainActor
 final class SpeechFallbackPlayer: NSObject, ObservableObject {
 
+    /// Accessibility-grade speech fallback. Used only when MP3 audio is
+    /// not yet ready or not playable AND the chapter text is available.
+    /// The MP3 path remains primary — fallback is opt-in per chapter via
+    /// `playFallbackSpeech(text:languageCode:)`.
+
     enum State: Equatable {
         case idle
         case speaking
         case paused
     }
 
+    /// `true` while the speech fallback owns the transport. Flips to
+    /// `true` on a successful `playFallbackSpeech` and back to `false`
+    /// the moment an MP3 takeover happens (`play(snapshot:)`) or the
+    /// user explicitly stops playback. Drives UI controls so callers
+    /// know which subsystem to drive — without this flag every play /
+    /// pause tap would race the MP3 queue against the synthesizer.
     @Published private(set) var state: State = .idle
 
     // Deferred to first use: AVSpeechSynthesizer init loads the TTS

@@ -178,7 +178,7 @@ struct NativePlaybackBenchmarkReport: Encodable {
 }
 
 #if os(iOS)
-private final class AudioSessionEventTrace: @unchecked Sendable {
+final class AudioSessionEventTrace: @unchecked Sendable {
     private let lock = NSLock()
     private let started = DispatchTime.now().uptimeNanoseconds
     private var events: [String] = []
@@ -198,7 +198,7 @@ private final class AudioSessionEventTrace: @unchecked Sendable {
 }
 #endif
 
-private final class ObservationPrivacyProtocol: URLProtocol {
+final class ObservationPrivacyProtocol: URLProtocol {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var interceptedHost = ""
     nonisolated(unsafe) private static var requests: [URLRequest] = []
@@ -243,110 +243,10 @@ private final class ObservationPrivacyProtocol: URLProtocol {
 }
 
 final class AudioPlayerObservationPrivacyTests: XCTestCase {
-    func testBenchmarkInputScopeAndHashesWithoutMeasuringPerformance() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let books = try ["lotr", "christie"].map { name -> NativePlaybackBenchmarkInput.Book in
-            let source = root.appendingPathComponent("\(name).epub")
-            try Data(name.utf8).write(to: source)
-            let range = name == "lotr" ? 8...9 : 6...7
-            let chapters = try range.map { index -> NativePlaybackBenchmarkInput.Chapter in
-                let path = root.appendingPathComponent("\(name)-\(index).mp3")
-                try Data("\(name)-\(index)".utf8).write(to: path)
-                return .init(sourceIndex: index, path: path.path, sha256: try NativePlaybackBenchmarkInput.hash(path.path))
-            }
-            return .init(name: name, sourcePath: source.path, sourceSHA256: try NativePlaybackBenchmarkInput.hash(source.path),
-                         chapterStart: range.lowerBound, chapterEnd: range.upperBound, chapters: chapters)
-        }
-        var input = NativePlaybackBenchmarkInput(schemaVersion: 1, phase: "candidate", baselineExecutablePath: nil, books: books)
-        XCTAssertThrowsError(try input.validateRequestedBooks(), "Named synthetic fixtures must not impersonate requested books")
-        try input.validateScope()
-        let roundTrip = try JSONDecoder().decode(NativePlaybackBenchmarkInput.self, from: JSONEncoder().encode(input))
-        let report = try NativePlaybackBenchmarkReport(input: roundTrip)
-        let executable = try XCTUnwrap(Bundle.main.executableURL).resolvingSymlinksInPath()
-        let payload = executable.deletingLastPathComponent()
-            .appendingPathComponent(executable.lastPathComponent + ".debug.dylib")
-        let code = FileManager.default.isReadableFile(atPath: payload.path) ? payload : executable
-        XCTAssertEqual(report.appCodeSHA256, try NativePlaybackBenchmarkInput.hash(code.path))
-        try roundTrip.validateScope()
-        try roundTrip.validateFiles()
-        XCTAssertEqual(try NativePlaybackBenchmarkInput.hash(books[0].chapters[0].path), books[0].chapters[0].sha256)
-        try Data("changed fixture bytes".utf8).write(to: URL(fileURLWithPath: books[0].chapters[0].path))
-        XCTAssertThrowsError(try roundTrip.validateFiles())
-        input.books[0].chapterEnd = 10
-        XCTAssertThrowsError(try input.validateScope())
-        input.books[0] = books[0]
-        input.books[0].chapters.append(books[0].chapters[0])
-        XCTAssertThrowsError(try input.validateScope())
-    }
+
 
     @MainActor
-    func testOptInExistingChapterPlaybackLatencyAndMemory() async throws {
-        let input = try NativePlaybackBenchmarkInput.optIn()
-        var report = try NativePlaybackBenchmarkReport(input: input)
-        let identifier = "NativePlaybackBenchmark-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: identifier))
-        let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.currentBookIDDefaultsKey,
-                    AudioPlayer.currentChapterIndexDefaultsKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey,
-                    AudioPlayer.readerCurrentPageRatioDefaultsKey, AudioPlayer.readerCurrentSentenceIdDefaultsKey]
-        let saved = keys.map { standard.object(forKey: $0) }
-        let widget = UserDefaults(suiteName: WidgetDataSync.appGroupID)
-        let previousWidgetBook = widget?.object(forKey: "currentlyPlayingBookId")
-        widget?.set("", forKey: "currentlyPlayingBookId")
-        defer {
-            for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
-            widget?.set(previousWidgetBook, forKey: "currentlyPlayingBookId")
-            defaults.removePersistentDomain(forName: identifier)
-            do { add(try report.attachment("native-existing-audio-benchmark.json")) }
-            catch { XCTFail("Could not attach playback measurements: \(error)") }
-        }
-        for book in input.books {
-            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-            defer { player.stop() }
-            let knownIDs = Set(LatencyObservationStore.shared.snapshot().map(\.id))
-            let chapters = try await book.chapters.asyncBenchmarkChapters()
-            let snapshot = JobSnapshot(jobId: UUID().uuidString, state: "finished", bookTitle: book.name, bookAuthor: nil,
-                coverUrl: nil, coverMimeType: nil, engine: nil, voice: nil, language: nil,
-                progressPercent: 100, chaptersTotal: 2, chaptersCompleted: 2, chapterProgress: chapters,
-                outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil)
-            standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
-            standard.set(identifier, forKey: AudioPlayer.currentBookIDDefaultsKey)
-            let started = DispatchTime.now().uptimeNanoseconds
-            report.points.append(.capture(book: book.name, event: "before_play", started: started))
-            player.play(snapshot: snapshot, restoreAutoplay: false)
-            player.resume()
-            try await benchmarkWait {
-                player.positionSeconds > 0 && LatencyObservationStore.shared.snapshot().contains {
-                    !knownIDs.contains($0.id) && $0.records.contains { $0.transition == .audioAudible }
-                }
-            }
-            report.points.append(.capture(book: book.name, event: "first_progressing_audio", started: started,
-                                          journeys: LatencyObservationStore.shared.snapshot().filter { !knownIDs.contains($0.id) }))
-            player.pause()
-            for (event, expectedIndex, target) in [("seek", 0, 2.0), ("next_chapter", 1, 0.0), ("previous_chapter", 0, 0.0)] {
-                let actionStart = DispatchTime.now().uptimeNanoseconds
-                if event == "seek" { player.seek(to: target) }
-                else if event == "next_chapter" { player.nextChapter() }
-                else { player.previousChapter() }
-                try await benchmarkWait {
-                    guard let item = player.testHook_currentPlayerItem(), let asset = item.asset as? AVURLAsset else { return false }
-                    let time = item.currentTime().seconds
-                    return !player.isSeeking && asset.url == URL(fileURLWithPath: book.chapters[expectedIndex].path)
-                        && item.status == .readyToPlay && time.isFinite
-                        && (event != "seek" || abs(time - target) < 0.1)
-                }
-                XCTAssertFalse(player.isPlaying, "Paused navigation must not autoplay.")
-                report.points.append(.capture(book: book.name, event: event, started: actionStart,
-                                              journeys: LatencyObservationStore.shared.snapshot().filter { !knownIDs.contains($0.id) }))
-            }
-        }
-        report.status = "completed"
-    }
-
-    @MainActor
-    private func benchmarkWait(_ ready: () -> Bool) async throws {
+    func benchmarkWait(_ ready: @escaping () -> Bool) async throws {
         for _ in 0..<200 {
             if ready() { return }
             try await Task.sleep(nanoseconds: 10_000_000)
@@ -354,134 +254,9 @@ final class AudioPlayerObservationPrivacyTests: XCTestCase {
         throw NativePlaybackBenchmarkInput.invalid("Real AVPlayer readiness timed out; do not report a latency success")
     }
 
-    @MainActor
-    func testPlaybackAndSeekKeepJourneyDiagnosticsLocalByDefault() async throws {
-#if os(iOS)
-        let sessionTrace = AudioSessionEventTrace()
-        let session = AVAudioSession.sharedInstance()
-        let sessionObservers = [
-            (AVAudioSession.interruptionNotification, AVAudioSessionInterruptionTypeKey),
-            (AVAudioSession.routeChangeNotification, AVAudioSessionRouteChangeReasonKey),
-        ].map { name, key in
-            NotificationCenter.default.addObserver(forName: name, object: session, queue: nil) { note in
-                let value = (note.userInfo?[key] as? NSNumber)?.intValue ?? -1
-                let reason = (note.userInfo?[AVAudioSessionInterruptionReasonKey] as? NSNumber)?.intValue ?? -1
-                let options = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.intValue ?? -1
-                sessionTrace.append("\(name.rawValue)=\(value):reason=\(reason):options=\(options)")
-            }
-        }
-        defer { sessionObservers.forEach { NotificationCenter.default.removeObserver($0) } }
-#endif
-        let identifier = "ObservationPrivacy-\(UUID().uuidString)"
-        let host = "\(UUID().uuidString.lowercased()).invalid"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: identifier))
-        let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
-                    AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey,
-                    AudioPlayer.readerCurrentChapterIndexDefaultsKey,
-                    AudioPlayer.readerCurrentPageRatioDefaultsKey,
-                    AudioPlayer.readerCurrentSentenceIdDefaultsKey]
-        let saved = keys.map { standard.object(forKey: $0) }
-        let widgetDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
-        let savedWidgetBook = widgetDefaults?.object(forKey: "currentlyPlayingBookId")
-        widgetDefaults?.set("", forKey: "currentlyPlayingBookId")
-        let audioURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(identifier).wav")
-        ObservationPrivacyProtocol.configure(host: host)
-        XCTAssertTrue(URLProtocol.registerClass(ObservationPrivacyProtocol.self))
-        defer {
-            URLProtocol.unregisterClass(ObservationPrivacyProtocol.self)
-            ObservationPrivacyProtocol.configure(host: "")
-            for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
-            widgetDefaults?.set(savedWidgetBook, forKey: "currentlyPlayingBookId")
-            defaults.removePersistentDomain(forName: identifier)
-            try? FileManager.default.removeItem(at: audioURL)
-        }
-
-        // A zero-request assertion is meaningful only if the shared-session
-        // interception has first proved that it sees requests from this host.
-        let baseURL = try XCTUnwrap(URL(string: "https://\(host)/"))
-        var probe = URLRequest(url: baseURL.appendingPathComponent("privacy-probe"))
-        probe.timeoutInterval = 3
-        _ = try await URLSession.shared.data(for: probe)
-        XCTAssertEqual(ObservationPrivacyProtocol.capturedRequests().map { $0.url?.path }, ["/privacy-probe"])
-
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1))
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 120_000))
-        buffer.frameLength = buffer.frameCapacity
-        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
-        for frame in 0..<Int(buffer.frameLength) {
-            samples[frame] = Float(sin(Double(frame) * 2 * .pi * 440 / 8_000)) * 0.01
-        }
-        do {
-            let file = try AVAudioFile(forWriting: audioURL, settings: format.settings)
-            try file.write(from: buffer)
-        }
-        let player = AudioPlayer(
-            resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
-            backendBaseURL: baseURL)
-        defer { player.stop() }
-        standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
-        standard.set(identifier, forKey: AudioPlayer.currentBookIDDefaultsKey)
-        let originalIDs = Set(LatencyObservationStore.shared.snapshot().map(\.id))
-        let snapshot = JobSnapshot(
-            jobId: identifier, state: "finished", bookTitle: "Local privacy fixture", bookAuthor: nil,
-            coverUrl: nil, coverMimeType: nil, engine: nil, voice: nil, language: "en",
-            progressPercent: 100, chaptersTotal: 1, chaptersCompleted: 1,
-            chapterProgress: [.init(index: 0, name: "Chapter", status: "completed",
-                downloadUrl: audioURL.absoluteString, chars: 100, charsProcessed: 100,
-                progressRatio: 1, durationSeconds: 15, startedAt: nil, completedAt: nil)],
-            outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil)
-        player.play(snapshot: snapshot, startingAt: 0)
-#if os(iOS)
-        sessionTrace.append("resumeRequested")
-#endif
-        player.resume()
-        for _ in 0..<100 {
-            if player.positionSeconds > 0 { break }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        let item = player.testHook_currentPlayerItem()
-        let itemError = item?.error as NSError?
-        var sessionState = ""
-#if os(iOS)
-        sessionState = " sessionEvents=\(sessionTrace.snapshot())"
-#endif
-        XCTAssertGreaterThan(player.positionSeconds, 0,
-            "The local fixture must actually advance. "
-            + "itemTime=\(item?.currentTime().seconds ?? -1) status=\(item?.status.rawValue ?? -1) "
-            + "playing=\(player.isPlaying) duration=\(player.durationSeconds) "
-            + "empty=\(item?.isPlaybackBufferEmpty ?? false) "
-            + "error=\(itemError?.domain ?? "none"):\(itemError?.code ?? 0)\(sessionState)")
-        player.seek(to: 2)
-        for _ in 0..<100 {
-            let reached = LatencyObservationStore.shared.snapshot().contains { journey in
-                !originalIDs.contains(journey.id) && journey.kind == .seek &&
-                    journey.records.contains { $0.transition == .seekTargetReached }
-            }
-            if reached { break }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        player.pause()
-        // Allow already scheduled URLSession work to reach the interceptor.
-        try await Task.sleep(nanoseconds: 500_000_000)
-        let exported = try JSONDecoder().decode([LatencyObservation.Journey].self,
-                                               from: LatencyObservationStore.shared.exportData())
-        let journeys = exported.filter { !originalIDs.contains($0.id) }
-        let playback = journeys.filter { $0.kind == .progressivePlayback }.flatMap(\.records).map(\.transition)
-        let seeks = journeys.filter { $0.kind == .seek }.flatMap(\.records).map(\.transition)
-        XCTAssertTrue(playback.contains(.playRequested))
-        XCTAssertTrue(playback.contains(.audioQueued))
-        XCTAssertTrue(playback.contains(.audioAudible))
-        XCTAssertTrue(seeks.contains(.seekRequested))
-        XCTAssertTrue(seeks.contains(.seekTargetReached))
-        let diagnosticRequests = ObservationPrivacyProtocol.capturedRequests().filter {
-            $0.url?.lastPathComponent == "journey-observations"
-        }
-        XCTAssertTrue(diagnosticRequests.isEmpty, "Routine playback must not upload local journey diagnostics.")
-    }
 }
 
-private extension Array where Element == NativePlaybackBenchmarkInput.Chapter {
+extension Array where Element == NativePlaybackBenchmarkInput.Chapter {
     func asyncBenchmarkChapters() async throws -> [JobSnapshot.Chapter] {
         var chapters: [JobSnapshot.Chapter] = []
         for (offset, input) in enumerated() {

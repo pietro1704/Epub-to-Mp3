@@ -53,52 +53,55 @@ speech representations.
 | Accessibility | Dynamic Type-compatible controls, VoiceOver identifiers and contrast tests exist | Mostly aligned; needs reader acceptance pass |
 | Performance | Python call serialization, lazy caches, chapter caches, eviction and watchdogs exist | Strong foundation; reader rendering still needs profiling |
 
+Historical source links below are pinned to the pre-refactor repository revision;
+they document this comparison and do not claim current implementation parity.
+
 ## Evidence by area
 
 ### Native platform shell
 
-- [IOSRootContainer.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/App/IOSRootContainer.swift)
+- [IOSRootContainer.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/App/IOSRootContainer.swift)
   owns the UIKit iOS shell, reader, mini-player, and full player overlays.
-- [MacAppKitRootController.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/App/MacAppKitRootController.swift)
+- [MacAppKitRootController.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/App/MacAppKitRootController.swift)
   owns the native macOS split-view shell and player bar.
-- [IOSAppShellTests.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3Tests/IOSAppShellTests.swift)
+- [IOSAppShellTests.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3Tests/IOSAppShellTests.swift)
   explicitly protects the no-SwiftUI main-app contract.
 
 ### Library and offline storage
 
-- [LibraryStore.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Library/Services/LibraryStore.swift)
+- [LibraryStore.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Library/Services/LibraryStore.swift)
   hashes imported content, copies it into app-owned storage, persists access,
   extracts metadata, and de-duplicates books.
-- [BookEntity.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Library/Models/BookEntity.swift)
+- [BookEntity.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Library/Models/BookEntity.swift)
   already models file type, progress, cover, conversion and offline state.
-- [DownloadManager.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Offline/Services/DownloadManager.swift)
+- [DownloadManager.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Offline/Services/DownloadManager.swift)
   provides background-capable download and storage handling.
 
 ### Reader and Python reference
 
-- [PythonBridge.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Conversion/Services/PythonBridge.swift)
+- [PythonBridge.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Conversion/Services/PythonBridge.swift)
   routes Apple parsing/conversion through the embedded Python pipeline.
-- [ebook_reader.py](/Users/pietropugliesi/Developer/Epub-to-Mp3/python_app/src/ebook_reader.py)
+- [ebook_reader.py](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/python_app/src/ebook_reader.py)
   already handles EPUB/PDF, TOC structure, formatting segments, footnotes,
   speech cues, duplicate detection, and persistent parsing cache.
-- [BookOpenScreenController.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift)
+- [BookOpenScreenController.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift)
   currently renders the iOS text path through a `UITextView` and exposes EPUB
   and PDF import types only.
-- [MacReaderViewController.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Reader/Views/MacReaderViewController.swift)
+- [MacReaderViewController.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Reader/Views/MacReaderViewController.swift)
   currently renders the macOS text path through an `NSTextView` and supports
   keyboard page-like scrolling.
-- [EpubHtmlRenderer.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Reader/Services/EpubHtmlRenderer.swift)
+- [EpubHtmlRenderer.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Reader/Services/EpubHtmlRenderer.swift)
   is capable of preserving HTML/CSS formatting, but the main reader flow must
   use it consistently instead of assigning only plain chapter text.
 
 ### Audio player
 
-- [AudioPlayer.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Playback/Services/AudioPlayer.swift)
+- [AudioPlayer.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Playback/Services/AudioPlayer.swift)
   already integrates audio sessions, remote commands, Now Playing metadata,
   interruptions, chapter progression, conversion streaming, and resume state.
-- [MiniPlayerBarHost.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift)
+- [MiniPlayerBarHost.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift)
   provides the persistent iOS mini-player.
-- [FullPlayerScreenController.swift](/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/EpubToMp3/Features/Playback/Views/FullPlayerScreenController.swift)
+- [FullPlayerScreenController.swift](https://github.com/pietro1704/Epub-to-Mp3/blob/7b1f922e5291f077a3aa38ca91b157829a868feb/ios/EpubToMp3/EpubToMp3/Features/Playback/Views/FullPlayerScreenController.swift)
   provides the native full-player surface.
 
 ## Priority gaps

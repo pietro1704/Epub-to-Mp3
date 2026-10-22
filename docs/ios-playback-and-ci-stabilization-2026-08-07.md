@@ -1,5 +1,7 @@
 # Apple Playback and CI Stabilization — 2026-08-07
 
+> **Historical record.** The incidents and operating procedure below describe the August campaign. CI monitoring now requires task authorization; publishing a change alone does not authorize polling every workflow. Historical Simulator runs do not release the current quarantine. See [execution policy](agents/execution-policy.md) and [runtime navigation](agents/runtime-navigation.md) for current operation and ownership.
+
 ## Scope
 
 This record captures the Apple playback validation and CI reliability repairs

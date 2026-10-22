@@ -18,7 +18,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
     /// This is not a real MP3 but is sufficient for `AVPlayerItem` to
     /// accept the URL without crashing during probe; actual audio would
     /// require a real encoded frame.
-    private func fakeMP3(size: Int = 512) -> Data {
+    func fakeMP3(size: Int = 512) -> Data {
         // MPEG1, Layer3, 128 kbps, 44100 Hz, stereo header bytes.
         var d = Data([0xFF, 0xFB, 0x90, 0x00])
         d.append(contentsOf: [UInt8](repeating: 0x00, count: max(0, size - 4)))
@@ -27,457 +27,48 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - firstSegmentReady
 
-    @MainActor
-    func testFirstSegmentReadyFalseInitially() {
-        let player = AudioPlayer()
-        XCTAssertFalse(player.firstSegmentReady,
-            "firstSegmentReady must be false before any segment arrives")
-    }
 
-    @MainActor
-    func testFirstSegmentReadyTrueAfterFirstEnqueue() {
-        let player = AudioPlayer()
-        let mp3 = fakeMP3()
-        player.enqueueSegment(data: mp3, chapterIndex: 0, segmentIndex: 0)
-        XCTAssertTrue(player.firstSegmentReady,
-            "firstSegmentReady must flip to true after the first enqueueSegment call")
-    }
 
-    @MainActor
-    func testFirstSegmentReadyIsLatch() {
-        let player = AudioPlayer()
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 1)
-        XCTAssertTrue(player.firstSegmentReady,
-            "firstSegmentReady must remain true after multiple segments")
-    }
 
     // MARK: - No-autoplay guarantee
 
-    /// Regression: `enqueueSegment` used to call `queue.play()` + flip
-    /// `isPlaying = true` the moment the first chunk arrived from SSE,
-    /// even though the user had never tapped Play. Media must never
-    /// auto-start without explicit user intent (in-app Play button,
-    /// lock-screen, or widget remote command).
-    @MainActor
-    func testEnqueueSegmentDoesNotAutoStartPlayback() {
-        let player = AudioPlayer()
-        XCTAssertFalse(player.isPlaying, "fresh AudioPlayer must be paused")
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertFalse(player.isPlaying,
-            "enqueueSegment must NOT auto-start playback — only resume()/togglePlayPause() may")
-    }
 
-    /// A Listen action is explicit media intent even when the conversion has
-    /// not produced its first segment yet. The queued intent must carry over
-    /// so the first arriving segment starts without a second tap.
-    @MainActor
-    func testResumeBeforeFirstSegmentStartsStreamingPlayback() {
-        let player = AudioPlayer()
-        player.resume()
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertTrue(player.isPlaying,
-                      "A queued explicit Listen action must start the first streamed segment")
-    }
 
-    @MainActor
-    func testValidatedRustChapterSnapshotsStartOnListenAndAppendInOrder() throws {
-        let player = AudioPlayer()
-        let jobID = UUID().uuidString
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("rust-chapter-stream-\(jobID)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer {
-            player.stop()
-            try? FileManager.default.removeItem(at: root)
-        }
-        let firstURL = root.appendingPathComponent("0001-first.mp3")
-        let secondURL = root.appendingPathComponent("0002-second.mp3")
-        try fakeMP3().write(to: firstURL)
-        try fakeMP3().write(to: secondURL)
 
-        let pending = JobSnapshot(
-            jobId: jobID, state: "running", bookTitle: "Rust stream", bookAuthor: "Author",
-            coverUrl: nil, coverMimeType: nil, engine: "edge", voice: nil, language: "en",
-            progressPercent: 0, chaptersTotal: 2, chaptersCompleted: 0,
-            chapterProgress: [], outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
-        )
-        player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
-        player.isConverting = true
-        player.resume()
 
-        let first = JobSnapshot.Chapter(
-            index: 0, name: "First", status: "completed", downloadUrl: firstURL.path,
-            chars: 3_000, charsProcessed: 3_000, progressRatio: 1,
-            durationSeconds: nil, startedAt: nil, completedAt: nil
-        )
-        let firstUpdate = JobSnapshot(
-            jobId: jobID, state: "running", bookTitle: "Rust stream", bookAuthor: "Author",
-            coverUrl: nil, coverMimeType: nil, engine: "edge", voice: nil, language: "en",
-            progressPercent: 50, chaptersTotal: 2, chaptersCompleted: 1,
-            chapterProgress: [first], outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
-        )
-        player.updateSnapshot(firstUpdate)
-
-        XCTAssertTrue(player.isPlaying, "Listen intent must start as soon as a validated Rust chapter is queued.")
-        XCTAssertEqual(player.testHook_playbackChapterCount(), 1)
-        XCTAssertEqual((player.testHook_currentPlayerItem()?.asset as? AVURLAsset)?.url, firstURL)
-
-        let second = JobSnapshot.Chapter(
-            index: 1, name: "Second", status: "completed", downloadUrl: secondURL.path,
-            chars: 3_200, charsProcessed: 3_200, progressRatio: 1,
-            durationSeconds: nil, startedAt: nil, completedAt: nil
-        )
-        let secondUpdate = JobSnapshot(
-            jobId: jobID, state: "running", bookTitle: "Rust stream", bookAuthor: "Author",
-            coverUrl: nil, coverMimeType: nil, engine: "edge", voice: nil, language: "en",
-            progressPercent: 100, chaptersTotal: 2, chaptersCompleted: 2,
-            chapterProgress: [first, second], outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
-        )
-        player.updateSnapshot(secondUpdate)
-
-        XCTAssertTrue(player.isPlaying)
-        XCTAssertEqual(player.testHook_playbackChapterCount(), 2,
-                       "Later validated chapters must append without resetting the active chapter.")
-        XCTAssertTrue(player.isConverting, "The stream remains live until Rust reports a terminal snapshot.")
-    }
-
-    /// Regression: `play(snapshot:startingAt:)` used to call `queue.play()`
-    /// unconditionally. Now it only sets up the queue; playback only starts
-    /// on explicit user intent.
-    @MainActor
-    func testPlaySnapshotPreparesWithoutAutoStart() {
-        let player = AudioPlayer()
-        XCTAssertFalse(player.isPlaying)
-        let snap = JobSnapshot.previewSample
-        player.play(snapshot: snap, startingAt: 0)
-        XCTAssertFalse(player.isPlaying,
-            "play(snapshot:startingAt:) must load without auto-starting playback")
-    }
-
-    @MainActor
-    func testManualRustConversionSnapshotStaysPaused() throws {
-        let player = AudioPlayer()
-        let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("manual-rust-\(UUID().uuidString).mp3")
-        try fakeMP3().write(to: fileURL)
-        defer {
-            player.stop()
-            try? FileManager.default.removeItem(at: fileURL)
-        }
-        let snapshot = JobSnapshot(
-            jobId: UUID().uuidString, state: "finished", bookTitle: "Manual Rust",
-            bookAuthor: nil, coverUrl: nil, coverMimeType: nil, engine: "edge",
-            voice: nil, language: "en", progressPercent: 100, chaptersTotal: 1,
-            chaptersCompleted: 1,
-            chapterProgress: [.init(
-                index: 0, name: "Chapter", status: "completed", downloadUrl: fileURL.path,
-                chars: 3_000, charsProcessed: 3_000, progressRatio: 1,
-                durationSeconds: nil, startedAt: nil, completedAt: nil
-            )],
-            outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
-        )
-
-        player.play(snapshot: snapshot, restoreAutoplay: false)
-
-        XCTAssertNotNil(player.testHook_currentPlayerItem())
-        XCTAssertFalse(player.isPlaying, "Manual conversion prepares audio without autoplay.")
-    }
 
     // MARK: - firstChapterReady co-advancement
 
-    @MainActor
-    func testFirstChapterReadyAlsoSetAfterFirstSegment() {
-        let player = AudioPlayer()
-        XCTAssertFalse(player.firstChapterReady)
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertTrue(player.firstChapterReady,
-            "enqueueSegment must also set firstChapterReady so MiniPlayerBar shows play/pause")
-    }
 
     // MARK: - isLoading respects firstSegmentReady
 
-    @MainActor
-    func testIsLoadingFalseAfterFirstSegmentArrives() {
-        let player = AudioPlayer()
-        player.isConverting = true
-        // isLoading = isConverting && !firstChapterReady; after a segment
-        // firstChapterReady becomes true, so isLoading must be false.
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertFalse(player.isLoading,
-            "isLoading must be false once the first segment is enqueued")
-    }
 
     // MARK: - Empty data ignored
 
-    @MainActor
-    func testEmptyDataIsIgnored() {
-        let player = AudioPlayer()
-        player.enqueueSegment(data: Data(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertFalse(player.firstSegmentReady,
-            "Empty data must not trigger firstSegmentReady")
-    }
 
     // MARK: - Multiple segments enqueued
 
-    @MainActor
-    func testMultipleSegmentsQueued() {
-        let player = AudioPlayer()
-        for i in 0..<4 {
-            player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: i)
-        }
-        XCTAssertTrue(player.firstSegmentReady)
-        // Updated contract: enqueueSegment never auto-starts playback.
-        // The player stays paused until the user taps Play / lock-screen /
-        // widget, regardless of how many segments are queued.
-        XCTAssertFalse(player.isPlaying,
-            "Streaming segments must never auto-start playback")
-    }
 
-    @MainActor
-    func testDeferredSegmentsRemainRetainedPastAdvisoryHighWaterMark() {
-        let player = AudioPlayer()
-        let total = SegmentBacklog.advisoryHighWaterMark + 4
 
-        for segmentIndex in 0..<total {
-            player.enqueueSegment(
-                data: fakeMP3(),
-                chapterIndex: 0,
-                segmentIndex: segmentIndex
-            )
-        }
 
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), total,
-            "Conversion may outpace listening, but every file must remain available")
-        XCTAssertGreaterThan(player.testHook_deferredSegmentCount(), 0,
-            "Segments beyond AVQueuePlayer's small look-ahead must wait instead of being deleted")
-        XCTAssertNotNil(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0))
-        XCTAssertNotNil(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: total - 1))
-    }
 
-    @MainActor
-    func testBufferedLaterChapterDoesNotOverwriteAudibleSegmentState() {
-        let player = AudioPlayer()
-        player.enqueueSegment(
-            data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "chapter-0"
-        )
-        player.enqueueSegment(
-            data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "chapter-1"
-        )
-
-        XCTAssertEqual(player.currentChapterIndex, 0)
-        XCTAssertEqual(
-            player.testHook_activeSegmentIdentity(),
-            .init(chapterIndex: 0, segmentIndex: 0),
-            "A buffered chapter must not claim the audible chapter cursor"
-        )
-        XCTAssertEqual(player.activeSentenceId, "chapter-0")
-
-        // This simulates AVQueuePlayer's current-item transition. The
-        // buffered chapter becomes active only at this point.
-        player.testHook_activateSegment(chapterIndex: 1, segmentIndex: 0)
-        XCTAssertEqual(player.currentChapterIndex, 1)
-        XCTAssertEqual(player.activeSentenceId, "chapter-1")
-    }
-
-    @MainActor
-    func testSameSegmentIdentityUsesDifferentTempFileInNewStreamSession() {
-        let player = AudioPlayer()
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        let firstURL = player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0)
-        XCTAssertNotNil(firstURL)
-        XCTAssertEqual(
-            firstURL.flatMap(AudioPlayer.segmentIdentityForSegmentItem),
-            .init(chapterIndex: 0, segmentIndex: 0),
-            "Collision-safe filenames must retain the producer identity used for playback reconciliation"
-        )
-
-        player.prepareSegmentRestart()
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        let secondURL = player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0)
-
-        XCTAssertNotNil(secondURL)
-        XCTAssertNotEqual(firstURL, secondURL,
-            "Restarted streams must never overwrite the AVFoundation asset from a prior session")
-    }
-
-    @MainActor
-    func testSessionTeardownIsTheOnlyDeferredSegmentDiscardPoint() {
-        let player = AudioPlayer()
-        for segmentIndex in 0..<(SegmentBacklog.advisoryHighWaterMark + 1) {
-            player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: segmentIndex)
-        }
-        let deferredURL = player.testHook_segmentURL(
-            chapterIndex: 0,
-            segmentIndex: SegmentBacklog.advisoryHighWaterMark
-        )
-        XCTAssertNotNil(deferredURL)
-        XCTAssertTrue(deferredURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
-
-        player.prepareSegmentRestart()
-
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), 0)
-        XCTAssertEqual(player.testHook_deferredSegmentCount(), 0)
-        XCTAssertFalse(deferredURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? true,
-            "Session teardown releases deferred files only after their queue can no longer consume them")
-    }
 
     // MARK: - clearConversionState resets firstSegmentReady
 
-    @MainActor
-    func testClearConversionStateResetsFirstSegmentReady() {
-        let player = AudioPlayer()
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertTrue(player.firstSegmentReady)
-
-        // `clearConversionState` deliberately preserves readiness flags
-        // while a player is mounted (so we don't clobber an active session).
-        // A real "new book" flow calls `stop()` first, which tears down
-        // the player; then clearConversionState resets the flags.
-        player.stop()
-        player.clearConversionState()
-
-        XCTAssertFalse(player.firstSegmentReady,
-            "clearConversionState must reset firstSegmentReady once the player is torn down")
-        XCTAssertFalse(player.firstChapterReady,
-            "clearConversionState must also reset firstChapterReady")
-    }
 
     // MARK: - Streaming then whole-chapter play interop
 
-    /// Verifies that calling `play(snapshot:)` after segments were
-    /// enqueued via streaming replaces the queue cleanly (teardown + rebuild).
-    @MainActor
-    func testPlaySnapshotAfterStreamingTeardownSegments() {
-        let player = AudioPlayer()
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertTrue(player.firstSegmentReady)
-
-        // Simulate the whole-chapter MP3 arriving and the caller doing a
-        // full snapshot-based play. This teardowns the segment queue.
-        let snap = JobSnapshot.stub(playableCount: 0)
-        player.play(snapshot: snap, startingAt: 0)
-
-        // After teardown, segment temp dir should be wiped (we can't
-        // inspect it directly, but firstSegmentReady is already latched
-        // true until clearConversionState is called — that's correct:
-        // the player is now playing via snapshot path, not streaming).
-        XCTAssertTrue(player.firstSegmentReady,
-            "firstSegmentReady stays true after switching to snapshot playback " +
-            "(it is a session-level latch, not a mode indicator)")
-    }
 
     // MARK: - SSE snapshot streaming
 
-    @MainActor
-    func testUpdateSnapshotBuildsQueueWhenFirstPlayableChapterArrives() {
-        let player = AudioPlayer(backendBaseURL: URL(string: "https://example.com")!)
-        let pending = snapshot(chapters: [chapter(index: 0, url: nil)], state: "running")
-        let playable = snapshot(chapters: [chapter(index: 0, url: "/audio/ch0.mp3")], state: "running")
 
-        player.play(snapshot: pending, startingAt: 0)
-        XCTAssertFalse(player.isPlaying)
 
-        player.updateSnapshot(playable)
-        player.resume()
-
-        XCTAssertTrue(player.isPlaying,
-            "The first playable SSE snapshot must create an AVQueuePlayer so a normal Play tap can start audio without reopening the reader.")
-    }
-
-    @MainActor
-    func testResumeBeforeFirstPlayableChapterAutoplaysWhenSnapshotArrives() {
-        let player = AudioPlayer(backendBaseURL: URL(string: "https://example.com")!)
-        let pending = snapshot(chapters: [chapter(index: 2, url: nil)], state: "running")
-        let playable = snapshot(chapters: [chapter(index: 2, url: "/audio/ch2.mp3")], state: "running")
-
-        player.play(snapshot: pending, startingAt: 2)
-        player.resume()
-        XCTAssertFalse(player.isPlaying,
-            "No player exists yet, but resume() should remember the user's intent to play.")
-
-        player.updateSnapshot(playable)
-
-        XCTAssertTrue(player.isPlaying,
-            "If the user tapped Play while waiting for streaming audio, the first playable chapter should start as soon as the queue is built.")
-    }
-
-    @MainActor
-    func testChaptersToAppendUsesChapterIdentityForPriorityWraparound() {
-        let old = [chapter(index: 10, url: "/audio/ch10.mp3"),
-                   chapter(index: 11, url: "/audio/ch11.mp3")]
-        let new = [chapter(index: 0, url: "/audio/ch0.mp3"),
-                   chapter(index: 10, url: "/audio/ch10.mp3"),
-                   chapter(index: 11, url: "/audio/ch11.mp3")]
-
-        let appended = AudioPlayer.chaptersToAppend(old: old, new: new)
-
-        XCTAssertEqual(appended.map(\.index), [0],
-            "Priority streaming can wrap to earlier EPUB indices; append decisions must diff by chapter identity instead of suffix(count).")
-    }
 
     // MARK: - AsyncStream multi-consumer (TSan-compatible)
 
-    /// Subscribes two consumers to `position` in parallel, enqueues a segment
-    /// to drive a position broadcast, then verifies both consumers received
-    /// values without a data race.
-    ///
-    /// TSan compatibility: all stream mutations go through MainActor.run
-    /// (continuation dict writes are serialised on MainActor). The test
-    /// uses structured concurrency (`async let`) so there are no unstructured
-    /// Task escapes that could race against XCTest teardown.
-    @MainActor
-    func testPositionStreamMultipleConsumersParallel() async {
-        let player = AudioPlayer()
 
-        // Collect first value emitted on each consumer.
-        let s1 = player.position
-        let s2 = player.position
 
-        async let first: TimeInterval = {
-            var iter = s1.makeAsyncIterator()
-            return await iter.next() ?? -1
-        }()
-
-        async let second: TimeInterval = {
-            var iter = s2.makeAsyncIterator()
-            return await iter.next() ?? -1
-        }()
-
-        let (v1, v2) = await (first, second)
-
-        // Both consumers must have received the initial position (0 at construction).
-        XCTAssertEqual(v1, 0, accuracy: 0.001,
-            "First consumer should receive initial position 0")
-        XCTAssertEqual(v2, 0, accuracy: 0.001,
-            "Second consumer should receive initial position 0")
-    }
-
-    /// Subscribes two consumers to `currentChapter` in parallel and verifies
-    /// both receive the initial nil value without a data race.
-    @MainActor
-    func testCurrentChapterStreamMultipleConsumersParallel() async {
-        let player = AudioPlayer()
-
-        let s1 = player.currentChapter
-        let s2 = player.currentChapter
-
-        async let first: JobSnapshot.Chapter? = {
-            var iter = s1.makeAsyncIterator()
-            return await iter.next() ?? nil
-        }()
-
-        async let second: JobSnapshot.Chapter? = {
-            var iter = s2.makeAsyncIterator()
-            return await iter.next() ?? nil
-        }()
-
-        let (ch1, ch2) = await (first, second)
-        XCTAssertNil(ch1, "Consumer 1 should see nil chapter before any snapshot is set")
-        XCTAssertNil(ch2, "Consumer 2 should see nil chapter before any snapshot is set")
-    }
-
-    private func chapter(index: Int, url: String?) -> JobSnapshot.Chapter {
+    func chapter(index: Int, url: String?) -> JobSnapshot.Chapter {
         JobSnapshot.Chapter(
             index: index,
             name: "Chapter \(index + 1)",
@@ -492,7 +83,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
         )
     }
 
-    private func snapshot(chapters: [JobSnapshot.Chapter], state: String) -> JobSnapshot {
+    func snapshot(chapters: [JobSnapshot.Chapter], state: String) -> JobSnapshot {
         JobSnapshot(
             jobId: "streaming-snapshot-job",
             state: state,
@@ -517,7 +108,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
 // MARK: - JobSnapshot test stubs
 
-private extension JobSnapshot {
+extension JobSnapshot {
     static func stub(playableCount: Int) -> JobSnapshot {
         let chapters = (0..<playableCount).map { i in
             JobSnapshot.Chapter(

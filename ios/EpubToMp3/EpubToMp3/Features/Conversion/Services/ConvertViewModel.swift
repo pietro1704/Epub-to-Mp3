@@ -79,7 +79,7 @@ final class ConvertViewModel {
                 clearCache: clearCache,
                 forceReprocess: forceReprocess,
                 maxPerformance: maxPerformance,
-                modelsRoot: modelsRoot ?? AppSettings.ttsModelsRoot()?.path,
+                modelsRoot: modelsRoot ?? LocalSpeechModelReadiness.ttsModelsRoot()?.path,
                 modelID: engine == "piper" ? "pt_BR-faber-medium" : nil,
                 espeakDataDirectory: Bundle.main.resourceURL?.path
             )

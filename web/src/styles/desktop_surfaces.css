@@ -1,0 +1,138 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   Desktop overrides — applied when running inside Tauri webview.
+   Makes the UI feel like a native desktop app: system fonts, flat colors,
+   tight spacing, no web-marketing aesthetics (gradients, blur, pills).
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.app-shell--desktop {
+  --bg-gradient-start: var(--bg-color);
+  --bg-gradient-end: var(--bg-color);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'Helvetica Neue',
+    sans-serif;
+  line-height: 1.4;
+  /* Solid surface colors — no transparency */
+  --panel-bg: #1c2333;
+  --surface: #1c2333;
+  --surface-2: #1a2030;
+  --tab-trigger-bg: #1a2030;
+  --tab-active-bg: #2d3555;
+  --input-bg: #151b2a;
+  --terminal-bg: #0d1117;
+  --downloads-item-bg: #1a2030;
+  --topbar-bg: #1c2333;
+}
+
+.theme-light .app-shell--desktop {
+  --panel-bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --tab-trigger-bg: #f8fafc;
+  --tab-active-bg: #eef2ff;
+  --input-bg: #ffffff;
+  --terminal-bg: #f8fafc;
+  --downloads-item-bg: #ffffff;
+  --topbar-bg: #ffffff;
+}
+
+/* Flat background */
+.app-shell--desktop body,
+body:has(.app-shell--desktop) {
+  background: var(--bg-color);
+}
+
+/* Panels: flat, tight, no blur */
+.app-shell--desktop .panel {
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  backdrop-filter: none;
+  box-shadow: 0 1px 3px var(--panel-shadow);
+  gap: 1rem;
+}
+
+.app-shell--desktop .panel__title {
+  font-size: 1.1rem;
+}
+
+/* Tabs: compact, no float */
+.app-shell--desktop .tabs__trigger {
+  padding: 0.6rem 0.85rem;
+  border-radius: 4px;
+  transition:
+    border 0.15s ease,
+    background 0.15s ease;
+}
+
+.app-shell--desktop .tabs__trigger:hover,
+.app-shell--desktop .tabs__trigger:focus-visible {
+  transform: none;
+}
+
+.app-shell--desktop .tabs__trigger--active {
+  box-shadow: none;
+}
+
+/* Hero: compact, no decorative shadow */
+.app-shell--desktop .hero--active {
+  border-radius: 6px;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  box-shadow: 0 1px 3px var(--panel-shadow);
+}
+
+.app-shell--desktop .hero__book-cover {
+  width: clamp(100px, 15vw, 140px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.app-shell--desktop .hero__book-cover img {
+  max-height: clamp(180px, 25vw, 240px);
+}
+
+/* Submit button: flat accent */
+.app-shell--desktop .form-submit {
+  background: var(--accent);
+  box-shadow: none;
+  border-radius: 4px;
+}
+
+.app-shell--desktop .form-submit:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+/* Content area: tighter spacing */
+.app-shell--desktop .content-shell {
+  padding: 0.75rem var(--content-padding-inline) 2rem;
+  gap: 0.75rem;
+}
+
+/* Global radius reset — kill all pills and large rounds */
+.app-shell--desktop *:not(img):not(video):not(svg) {
+  border-radius: clamp(0px, var(--_r, 4px), 6px) !important;
+}
+
+/* Explicitly set desired radii */
+.app-shell--desktop .panel,
+.app-shell--desktop .hero--active,
+.app-shell--desktop .hero--collapsed,
+.app-shell--desktop .system-control,
+.app-shell--desktop .system-stats,
+.app-shell--desktop .chapter-item,
+.app-shell--desktop .form-advanced,
+.app-shell--desktop .ebook-reader__panel,
+.app-shell--desktop .reader-modal__panel {
+  --_r: 6px;
+}
+
+.app-shell--desktop .tabs__trigger,
+.app-shell--desktop .badge,
+.app-shell--desktop .form-submit,
+.app-shell--desktop button,
+.app-shell--desktop input,
+.app-shell--desktop select,
+.app-shell--desktop textarea {
+  --_r: 4px;
+}

@@ -4,7 +4,7 @@ import XCTest
 final class DownloadManagerStorageTests: XCTestCase {
     func testMacOSAudiobookCacheIsInsideApplicationSupport() {
         #if os(macOS)
-        let root = DownloadManager.audiobooksRoot().standardizedFileURL.path
+        let root = AudiobookDownloadStorage.audiobooksRoot().standardizedFileURL.path
         let applicationSupport = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .standardizedFileURL
@@ -24,7 +24,7 @@ final class DownloadManagerStorageTests: XCTestCase {
         )
         #else
         XCTAssertTrue(
-            DownloadManager.audiobooksRoot().path.contains("Audiobooks"),
+            AudiobookDownloadStorage.audiobooksRoot().path.contains("Audiobooks"),
             "iOS audiobook storage must retain its app-local Documents layout"
         )
         #endif

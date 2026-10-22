@@ -1,5 +1,7 @@
 # iOS in-process Edge conversion and playback research — 2026-07-30
 
+> **Historical record.** The embedded Python boundary and scheduler recommendations below describe the July implementation. Current Apple clients embed converter-ffi; shared Rust owns conversion policy, scheduling, progress, cancellation and artifacts. See [execution policy](agents/execution-policy.md) and [runtime navigation](agents/runtime-navigation.md) for current operation and ownership.
+
 Status: the macOS embedded-runtime streaming test and arm64 iPhone bundle
 installation have passed; a real iPhone Listen/stream/playback smoke remains
 pending while the connected device is locked.

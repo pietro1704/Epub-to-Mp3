@@ -1,10 +1,9 @@
 #if os(macOS) && !targetEnvironment(simulator)
 import AppKit
-import PDFKit
-import Combine
 
 @MainActor
-final class MacReaderViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+final class MacReaderViewController: NSViewController {
+    private let document = MacReaderDocument()
     private let library: LibraryStore
     private let settings: AppSettings
     private let player: AudioPlayer
@@ -16,49 +15,30 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
-    private let chaptersTable = NSTableView()
-    private let textView = MacReaderTextView()
-    private let comicPageImageView = NSImageView()
-    private let contentScrollView = NSScrollView()
-    private let toolbar = NSStackView()
-    private let bookTitleLabel = NSTextField(labelWithString: "")
-    private let chapterTitleLabel = NSTextField(labelWithString: "")
-    private let statusLabel = NSTextField(labelWithString: "")
-    private let loadingOverlay = NSVisualEffectView()
-    private let loadingCoverView = NSImageView()
-    private let loadingSpinner = NSProgressIndicator()
-    private let loadingTitleLabel = NSTextField(labelWithString: "")
-    private let loadingStatusLabel = NSTextField(labelWithString: "")
-    private let loadingRetryButton = NSButton()
-    private let tocPopover = NSPopover()
-    private let settingsPopover = NSPopover()
-    private var settingsCancellables: Set<AnyCancellable> = []
-    private var loadTask: Task<Void, Never>?
-    private var catalogReadTask: Task<EbookFulltext?, Never>?
-    private var chapterReadTask: Task<Void, Never>?
-    private var loadGeneration = UUID()
-    private var presentationGeneration = UUID()
-    private var activeBookOpenJourneyID: UUID?
-    private var pendingPDFPageJourneyID: UUID?
-    private var firstPDFPageReadyJourneyID: UUID?
-    private var controlsReadyJourneyID: UUID?
-    private var pdfView: PDFView?
-    private var fulltext: EbookFulltext?
-    private var activePreparedChapter: PreparedReaderChapterStore.Snapshot?
-    private var lastPreparedChapterOrdinal: Int?
-    private var selectedChapter = 0
-    private var isSynchronizingTOCSelection = false
-    private var currentBookId: String?
-    /// Guards against re-seeking scroll position on every manual chapter
-    /// selection — restoration only makes sense once per book load.
-    private var hasRestoredInitialPosition = false
-    private var isRestoringInitialPosition = false
-    private var pendingAppearanceRefresh = false
+    private lazy var composition: MacReaderViewComposition = MacReaderViewComposition(
+        view: view, target: self, settings: settings,
+        actions: .init(close: #selector(closeReader), contents: #selector(showTOC(_:)),
+            search: #selector(promptSearch), settings: #selector(showSettings(_:)),
+            retryLoading: #selector(retryLoadingBook)),
+        cancelJourney: { [weak self] in self?.cancelActiveBookOpenJourney() },
+        onLink: { [weak self] in self?.handleReaderLink($0, linkText: $1) ?? true },
+        onKeyDown: { [weak self] in self?.handleKeyboardEvent($0) ?? false },
+        onPageTap: { [weak self] in self?.scrollPage(forward: $0) },
+        onBuildSelectionMenu: { [weak self] in self?.buildSelectionMenuItems(range: $0) ?? [] }
+    )
+    private func configureReader() { composition.configure() }
+    private func showLoading(for book: BookEntity) { composition.loading.showLoading(for: book) }
+    private func hideLoading() { composition.loading.hideLoading() }
+    private func showLoadingError(_ error: Error) { composition.loading.showLoadingError(error) }
 
-    private enum PreparedLoadEvent: Sendable {
-        case catalog(EbookFulltext?)
-        case chapter(PreparedReaderChapterStore.Snapshot?)
-    }
+    private var chaptersTable: NSTableView { composition.chaptersTable }
+    private var textView: MacReaderTextView { composition.textView }
+    private var comicPageImageView: NSImageView { composition.comicPageImageView }
+    private var contentScrollView: NSScrollView { composition.contentScrollView }
+    private var bookTitleLabel: NSTextField { composition.bookTitleLabel }
+    private var chapterTitleLabel: NSTextField { composition.chapterTitleLabel }
+    private var statusLabel: NSTextField { composition.statusLabel }
+    private var settingsPopover: NSPopover { composition.settingsPopover }
 
     init(
         library: LibraryStore,
@@ -97,12 +77,6 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     deinit {
-        loadTask?.cancel()
-        catalogReadTask?.cancel()
-        chapterReadTask?.cancel()
-        if let journeyID = activeBookOpenJourneyID {
-            _ = LatencyObservationStore.shared.cancel(journeyID)
-        }
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -138,18 +112,6 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         observeOpenStage("reader_view_did_layout_completed")
     }
 
-    private func applyCurrentReaderTheme() {
-        guard isViewLoaded else { return }
-        MacReaderTheme.apply(
-            settings: settings,
-            surface: view,
-            scrollView: contentScrollView,
-            textView: textView,
-            toolbar: toolbar,
-            labels: [bookTitleLabel, chapterTitleLabel, statusLabel]
-        )
-    }
-
     override func viewWillDisappear() {
         super.viewWillDisappear()
         persistReadingProgress()
@@ -161,25 +123,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         observeOpenStage("reader_configure_started")
         configureReader()
         observeOpenStage("reader_configure_completed")
-        settings.objectWillChange
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self, self.chapter(at: self.selectedChapter) != nil else { return }
-                if self.isRestoringInitialPosition {
-                    self.pendingAppearanceRefresh = true
-                    return
-                }
-                // @Published emits before mutation. The queued delivery above
-                // reads the committed settings and preserves the exact viewport
-                // while regenerating authored colors when returning to light.
-                let origin = self.contentScrollView.contentView.bounds.origin
-                self.applyCurrentReaderTheme()
-                self.showChapter(self.selectedChapter)
-                self.contentScrollView.contentView.scroll(to: origin)
-                self.contentScrollView.reflectScrolledClipView(self.contentScrollView.contentView)
-                self.persistReadingProgress()
-            }
-            .store(in: &settingsCancellables)
+        textPresentation.observeAppearance()
         loadCurrentBook()
         NotificationCenter.default.addObserver(
             self,
@@ -195,627 +139,63 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         loadCurrentBook()
     }
 
-    private var tocRows: [ReaderTocRow] {
-        guard let fulltext else { return [] }
-        return ReaderTocFlattener.rows(toc: fulltext.toc, chapters: fulltext.chapters)
-    }
+    private lazy var contentsPresentation: MacReaderContentsPresentation = MacReaderContentsPresentation(
+        document: document, composition: composition,
+        persistProgress: { [weak self] in self?.persistReadingProgress() },
+        showChapter: { [weak self] in self?.showChapter($0) }
+    )
+    @objc private func showTOC(_ sender: NSButton) { contentsPresentation.showTOC(sender) }
+    func numberOfRows(in tableView: NSTableView) -> Int { contentsPresentation.numberOfRows(in: tableView) }
+    private func selectCurrentTOCRow() { contentsPresentation.selectCurrentTOCRow() }
 
-    func numberOfRows(in tableView: NSTableView) -> Int { tocRows.count }
+    private lazy var settingsPresentation: MacReaderSettingsPresentation = MacReaderSettingsPresentation(settings: settings, popover: composition.settingsPopover)
+    @objc private func showSettings(_ sender: NSButton) { settingsPresentation.showSettings(sender) }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let identifier = NSUserInterfaceItemIdentifier("MacChapterCell")
-        let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView) ?? NSTableCellView()
-        cell.identifier = identifier
-        if cell.textField == nil {
-            let textField = NSTextField(labelWithString: "")
-            textField.lineBreakMode = .byTruncatingTail
-            textField.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(textField)
-            cell.textField = textField
-            NSLayoutConstraint.activate([
-                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 10),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -10),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
-        }
-        let tocRow = tocRows[safe: row]
-        cell.textField?.stringValue = tocRow.map { String(repeating: "    ", count: $0.level) + $0.title } ?? ""
-        return cell
-    }
-
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        guard !isSynchronizingTOCSelection else { return }
-        let row = chaptersTable.selectedRow
-        guard row >= 0, let chapterIndex = tocRows[safe: row]?.chapterIndex else { return }
-        persistReadingProgress()
-        selectedChapter = chapterIndex
-        showChapter(chapterIndex)
-        tocPopover.performClose(nil)
-    }
-
-    private func configureReader() {
-        let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L10n.string("reader.close")) ?? NSImage(), target: self, action: #selector(closeReader))
-        close.bezelStyle = .texturedRounded
-        close.toolTip = L10n.string("reader.close")
-        close.setAccessibilityIdentifier("reader.close")
-
-        let toc = NSButton(title: L10n.string("reader.toc"), target: self, action: #selector(showTOC(_:)))
-        toc.bezelStyle = .texturedRounded
-        toc.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: L10n.string("reader.toc"))
-        toc.imagePosition = .imageLeading
-        toc.toolTip = L10n.string("reader.toc")
-        toc.setAccessibilityIdentifier("reader.toc.toggle")
-
-        let search = NSButton(
-            image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: L10n.string("reader.search.placeholder")) ?? NSImage(),
-            target: self, action: #selector(promptSearch)
-        )
-        search.bezelStyle = .texturedRounded
-        search.toolTip = L10n.string("reader.search.placeholder")
-        search.setAccessibilityIdentifier("reader.search")
-
-        let appearance = NSButton(title: "Aa", target: self, action: #selector(showSettings(_:)))
-        appearance.bezelStyle = .texturedRounded
-        appearance.font = .systemFont(ofSize: 13, weight: .semibold)
-        appearance.toolTip = L10n.string("reader.settings")
-        appearance.setAccessibilityLabel(L10n.string("reader.settings"))
-        appearance.setAccessibilityIdentifier("reader.settings.toggle")
-
-        bookTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        bookTitleLabel.alignment = .center
-        bookTitleLabel.lineBreakMode = .byTruncatingTail
-        bookTitleLabel.setAccessibilityIdentifier("reader.title")
-        bookTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let leadingControls = NSStackView(views: [close, toc, search, appearance])
-        leadingControls.orientation = .horizontal
-        leadingControls.spacing = 8
-        let leadingSpacer = NSView()
-        leadingSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let trailingSpacer = NSView()
-        trailingSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        toolbar.addArrangedSubview(leadingControls)
-        toolbar.addArrangedSubview(leadingSpacer)
-        toolbar.addArrangedSubview(bookTitleLabel)
-        toolbar.addArrangedSubview(trailingSpacer)
-        toolbar.orientation = .horizontal
-        toolbar.alignment = .centerY
-        toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
-        toolbar.spacing = 10
-        toolbar.distribution = .fill
-        toolbar.wantsLayer = true
-        toolbar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        toolbar.setAccessibilityIdentifier("reader.toolbar")
-
-        chapterTitleLabel.font = .systemFont(ofSize: 24, weight: .bold)
-        chapterTitleLabel.lineBreakMode = .byTruncatingTail
-        chapterTitleLabel.setAccessibilityIdentifier("reader.chapterTitle")
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.font = .systemFont(ofSize: 13)
-        statusLabel.setAccessibilityIdentifier("reader.status")
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.onLinkClick = { [weak self] url, linkText in
-            self?.handleReaderLink(url, linkText: linkText) ?? true
-        }
-        textView.setAccessibilityIdentifier("reader.content")
-        textView.font = .systemFont(ofSize: settings.readerPointSize)
-        textView.textContainerInset = NSSize(width: 32, height: 24)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        contentScrollView.documentView = textView
-        contentScrollView.hasVerticalScroller = true
-        MacReaderTheme.apply(
-            settings: settings,
-            surface: view,
-            scrollView: contentScrollView,
-            textView: textView,
-            toolbar: toolbar,
-            labels: [bookTitleLabel, chapterTitleLabel, statusLabel]
-        )
-
-        toolbar.translatesAutoresizingMaskIntoConstraints = false
-        chapterTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentScrollView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(toolbar)
-        view.addSubview(chapterTitleLabel)
-        view.addSubview(statusLabel)
-        view.addSubview(contentScrollView)
-        NSLayoutConstraint.activate([
-            toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbar.topAnchor.constraint(equalTo: view.topAnchor),
-            chapterTitleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 34),
-            chapterTitleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -34),
-            chapterTitleLabel.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 22),
-            statusLabel.leadingAnchor.constraint(equalTo: chapterTitleLabel.leadingAnchor),
-            statusLabel.trailingAnchor.constraint(equalTo: chapterTitleLabel.trailingAnchor),
-            statusLabel.topAnchor.constraint(equalTo: chapterTitleLabel.bottomAnchor, constant: 8),
-            contentScrollView.leadingAnchor.constraint(equalTo: chapterTitleLabel.leadingAnchor),
-            contentScrollView.trailingAnchor.constraint(equalTo: chapterTitleLabel.trailingAnchor),
-            contentScrollView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 8),
-            contentScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -22),
-        ])
-        configureLoadingOverlay()
-        textView.onKeyDown = { [weak self] event in
-            self?.handleKeyboardEvent(event) ?? false
-        }
-        textView.onPageTap = { [weak self] forward in
-            self?.scrollPage(forward: forward)
-            return true
-        }
-        textView.onBuildSelectionMenu = { [weak self] range in
-            self?.buildSelectionMenuItems(range: range) ?? []
-        }
-    }
-
-    private func configureLoadingOverlay() {
-        loadingOverlay.material = .contentBackground
-        loadingOverlay.blendingMode = .withinWindow
-        loadingOverlay.state = .active
-        loadingOverlay.isHidden = true
-        loadingOverlay.setAccessibilityIdentifier("reader.loadingOverlay")
-        loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
-
-        loadingCoverView.imageScaling = .scaleProportionallyUpOrDown
-        loadingCoverView.wantsLayer = true
-        loadingCoverView.layer?.cornerRadius = 12
-        loadingCoverView.layer?.masksToBounds = true
-        loadingCoverView.translatesAutoresizingMaskIntoConstraints = false
-
-        loadingSpinner.style = .spinning
-        loadingSpinner.controlSize = .regular
-        loadingSpinner.isIndeterminate = true
-        loadingSpinner.translatesAutoresizingMaskIntoConstraints = false
-
-        loadingTitleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
-        loadingTitleLabel.alignment = .center
-        loadingTitleLabel.lineBreakMode = .byTruncatingTail
-        loadingStatusLabel.textColor = .secondaryLabelColor
-        loadingStatusLabel.alignment = .center
-        loadingStatusLabel.setAccessibilityIdentifier("reader.loadingStatus")
-        loadingRetryButton.title = L10n.string("reader.retry")
-        loadingRetryButton.bezelStyle = .rounded
-        loadingRetryButton.target = self
-        loadingRetryButton.action = #selector(retryLoadingBook)
-        loadingRetryButton.isHidden = true
-
-        let stack = NSStackView(views: [
-            loadingCoverView,
-            loadingSpinner,
-            loadingTitleLabel,
-            loadingStatusLabel,
-            loadingRetryButton,
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 14
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        loadingOverlay.addSubview(stack)
-        view.addSubview(loadingOverlay)
-
-        let preferredCoverWidth = loadingCoverView.widthAnchor.constraint(
-            equalTo: loadingOverlay.widthAnchor,
-            multiplier: 0.28
-        )
-        preferredCoverWidth.priority = .defaultHigh
-        NSLayoutConstraint.activate([
-            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
-            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            stack.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: loadingOverlay.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: loadingOverlay.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlay.trailingAnchor, constant: -32),
-            preferredCoverWidth,
-            loadingCoverView.widthAnchor.constraint(lessThanOrEqualToConstant: 240),
-            loadingCoverView.heightAnchor.constraint(equalTo: loadingCoverView.widthAnchor, multiplier: 1.5),
-            loadingCoverView.heightAnchor.constraint(lessThanOrEqualTo: loadingOverlay.heightAnchor, multiplier: 0.45),
-        ])
-        // The reader toolbar remains available for closing the book while
-        // parsing continues underneath the loading surface.
-        view.addSubview(toolbar, positioned: .above, relativeTo: loadingOverlay)
-    }
-
-    private func showLoading(for book: BookEntity) {
-        loadingCoverView.image = book.coverPNG.flatMap(NSImage.init(data:))
-            ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
-        loadingTitleLabel.stringValue = book.resolvedTitle
-        loadingStatusLabel.stringValue = L10n.string("reader.loading")
-        loadingRetryButton.isHidden = true
-        loadingOverlay.isHidden = false
-        loadingSpinner.startAnimation(nil)
-    }
-
-    private func showLoadingError(_ error: Error) {
-        cancelActiveBookOpenJourney()
-        loadingStatusLabel.stringValue = AppErrorReporter.message(error, context: "Reader loading")
-        loadingRetryButton.isHidden = false
-        loadingOverlay.isHidden = false
-        loadingSpinner.stopAnimation(nil)
-    }
-
-    private func hideLoading() {
-        loadingSpinner.stopAnimation(nil)
-        loadingOverlay.isHidden = true
-    }
-
-    private func isActiveLoad(_ generation: UUID, bookID: String) -> Bool {
-        !Task.isCancelled && loadGeneration == generation && currentBookId == bookID
-    }
-
-    private func configureTOCPopover() {
-        chaptersTable.headerView = nil
-        chaptersTable.delegate = self
-        chaptersTable.dataSource = self
-        chaptersTable.usesAlternatingRowBackgroundColors = true
-        chaptersTable.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("chapter")))
-        let scrollView = NSScrollView()
-        scrollView.documentView = chaptersTable
-        scrollView.hasVerticalScroller = true
-        let controller = NSViewController()
-        controller.view = scrollView
-        tocPopover.contentViewController = controller
-        tocPopover.contentSize = NSSize(width: 320, height: 480)
-        tocPopover.behavior = .transient
-    }
-
-    private func configureSettingsPopover() {
-        let font = NSPopUpButton()
-        font.addItems(withTitles: ReaderFontFamily.allCases.map(\.displayName))
-        font.selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0)
-        font.setAccessibilityLabel(L10n.string("reader.font"))
-        font.setAccessibilityIdentifier("readerSettings.font")
-        font.target = self
-        font.action = #selector(fontChanged(_:))
-
-        let theme = NSPopUpButton()
-        theme.addItems(withTitles: ReaderTheme.allCases.map(\.displayName))
-        theme.selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0)
-        theme.setAccessibilityLabel(L10n.string("reader.theme"))
-        theme.setAccessibilityIdentifier("readerSettings.theme")
-        theme.target = self
-        theme.action = #selector(themeChanged(_:))
-
-        let layout = NSPopUpButton()
-        layout.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
-        layout.selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0)
-        layout.setAccessibilityLabel(L10n.string("reader.layout"))
-        layout.setAccessibilityIdentifier("readerSettings.layout")
-        layout.target = self
-        layout.action = #selector(layoutChanged(_:))
-
-        let smaller = NSButton(title: "A−", target: self, action: #selector(decreaseFont))
-        let larger = NSButton(title: "A+", target: self, action: #selector(increaseFont))
-        smaller.setAccessibilityLabel(L10n.string("readerSettings.decreaseFontSize"))
-        larger.setAccessibilityLabel(L10n.string("readerSettings.increaseFontSize"))
-        let sizeButtons = NSStackView(views: [smaller, larger])
-        sizeButtons.spacing = 8
-        let margin = NSPopUpButton()
-        margin.addItems(withTitles: ["16", "24", "32", "48", "64"])
-        margin.selectItem(withTitle: String(Int(settings.readerMargin)))
-        margin.setAccessibilityLabel(L10n.string("reader.margins"))
-        margin.setAccessibilityIdentifier("readerSettings.margin")
-        margin.target = self
-        margin.action = #selector(marginChanged(_:))
-
-        let kerning = NSPopUpButton()
-        kerning.addItems(withTitles: ["-1", "0", "0.5", "1", "2", "3"])
-        kerning.selectItem(withTitle: String(settings.readerLetterSpacing))
-        kerning.setAccessibilityLabel(L10n.string("reader.kerning"))
-        kerning.setAccessibilityIdentifier("readerSettings.kerning")
-        kerning.target = self
-        kerning.action = #selector(kerningChanged(_:))
-
-        let columns = NSPopUpButton()
-        columns.addItems(withTitles: ["1", "2", "3", "4"])
-        columns.selectItem(withTitle: String(settings.readerColumns))
-        columns.setAccessibilityLabel(L10n.string("reader.columns"))
-        columns.setAccessibilityIdentifier("readerSettings.columns")
-        columns.target = self
-        columns.action = #selector(columnsChanged(_:))
-
-        let stack = NSStackView(views: [label("reader.font"), font, sizeButtons, label("reader.theme"), theme, label("reader.layout"), layout, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.documentView = stack
-        scrollView.drawsBackground = false
-        let controller = NSViewController()
-        controller.view = scrollView
-        settingsPopover.contentViewController = controller
-        settingsPopover.contentSize = NSSize(width: 260, height: 420)
-        settingsPopover.behavior = .transient
-    }
-
-    private func label(_ key: String) -> NSTextField {
-        let field = NSTextField(labelWithString: L10n.string(key))
-        field.setAccessibilityRole(.staticText)
-        return field
-    }
-
-    @objc private func showSettings(_ sender: NSButton) {
-        if settingsPopover.contentViewController == nil { configureSettingsPopover() }
-        settingsPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
-    }
-
-    @objc private func fontChanged(_ sender: NSPopUpButton) {
-        settings.readerFontFamily = ReaderFontFamily.allCases[sender.indexOfSelectedItem]
-    }
-
-    @objc private func themeChanged(_ sender: NSPopUpButton) {
-        settings.readerTheme = ReaderTheme.allCases[sender.indexOfSelectedItem]
-    }
-
-    @objc private func layoutChanged(_ sender: NSPopUpButton) {
-        settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
-    }
-
-    @objc private func marginChanged(_ sender: NSPopUpButton) {
-        settings.readerMargin = Double(sender.titleOfSelectedItem ?? "24") ?? 24
-    }
-
-    @objc private func kerningChanged(_ sender: NSPopUpButton) {
-        settings.readerLetterSpacing = Double(sender.titleOfSelectedItem ?? "0") ?? 0
-    }
-
-    @objc private func columnsChanged(_ sender: NSPopUpButton) {
-        settings.readerColumns = Int(sender.titleOfSelectedItem ?? "1") ?? 1
-    }
-
-    @objc private func decreaseFont() { settings.readerFontSize -= 1 }
-    @objc private func increaseFont() { settings.readerFontSize += 1 }
-
+    private lazy var openObservation: MacReaderOpenObservation = MacReaderOpenObservation(document: document, stageObserver: openStageObserver)
+    private func cancelActiveBookOpenJourney() { openObservation.cancelActiveBookOpenJourney() }
+    private lazy var bookLoad: MacReaderBookLoad = MacReaderBookLoad(
+        document: document, library: library, settings: settings,
+        renderer: preparedRenderer, store: preparedChapterStore,
+        readFulltext: preparedFulltextReader, writeFulltext: preparedFulltextWriter,
+        textPresentation: textPresentation, observation: openObservation, stageObserver: openStageObserver,
+        send: { [weak self] in self?.applyLoadEvent($0) }
+    )
     private func loadCurrentBook() {
         guard isViewLoaded else { return }
-        LocalFulltextCache.cancelPrewarming()
-        loadTask?.cancel()
-        cancelPreparedReadTasks()
-        cancelActiveBookOpenJourney()
-        let generation = UUID()
-        loadGeneration = generation
-        presentationGeneration = UUID()
-        isRestoringInitialPosition = false
-        pendingAppearanceRefresh = false
-        activePreparedChapter = nil
-        lastPreparedChapterOrdinal = nil
-        contentScrollView.documentView = textView
-        let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
-        guard let book = library.books.first(where: { $0.id == id }) else {
-            fulltext = nil
-            currentBookId = nil
+        bookLoad.loadCurrentBook()
+    }
+    private func applyLoadEvent(_ event: MacReaderBookLoad.Event) {
+        switch event {
+        case .resetTextSurface: contentScrollView.documentView = textView
+        case .empty:
             bookTitleLabel.stringValue = L10n.string("library.empty.title")
             chapterTitleLabel.stringValue = ""
             statusLabel.stringValue = L10n.string("reader.selectBook")
             textView.string = ""
             chaptersTable.reloadData()
             hideLoading()
-            return
-        }
-        if currentBookId != book.id {
-            currentBookId = book.id
-            hasRestoredInitialPosition = false
-        }
-        let journeyID = LatencyObservationStore.shared.beginBookOpen(
-            documentKind: Self.documentKind(for: book)
-        )
-        observeOpenStage("journey_started")
-        activeBookOpenJourneyID = journeyID
-        // Process-warm reader opens must not clear the visible chapter or
-        // show the loading cover. The last two prepared books are retained
-        // in memory precisely so this route can paint immediately.
-        if let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: book.id),
-           !warmPayload.chapters.isEmpty {
-            LatencyObservationStore.shared.classifyCache(.inMemoryWarm, for: journeyID)
-            fulltext = warmPayload
-            LocalFulltextCache.recordWarmOpen(bookId: book.id)
+        case let .warmHeader(book, count):
             bookTitleLabel.stringValue = book.resolvedTitle
             chapterTitleLabel.stringValue = ""
-            statusLabel.stringValue = L10n.string("reader.chapterCount", warmPayload.chapters.count)
+            statusLabel.stringValue = L10n.string("reader.chapterCount", count)
             chaptersTable.reloadData()
-            if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
-                selectedChapter = entry.chapterIndex
-            }
-            selectedChapter = min(max(selectedChapter, 0), max(0, warmPayload.chapters.count - 1))
-            if let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) {
-                chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-            }
-            if let chapter = warmPayload.chapters[safe: selectedChapter],
-               chapter.isImageOnly || preparedRenderer.cached(
-                   bookID: book.id, chapterIndex: selectedChapter, chapter: chapter,
-                   settings: settings, fontDirectoryURL: nil) != nil {
-                presentLoadedChapter(bookID: book.id)
-            } else {
-                showLoading(for: book)
-                loadTask = Task { [weak self] in
-                    guard let self else { return }
-                    await restoreSelectedChapter(bookID: book.id)
-                    guard isActiveLoad(generation, bookID: book.id) else { return }
-                    presentLoadedChapter(bookID: book.id)
-                }
-            }
-            return
-        }
-        let reader = preparedFulltextReader
-        let store = preparedChapterStore
-        observeOpenStage("reader_progress_read_started")
-        let progress = ReaderProgressStore.read(bookId: book.id)
-        observeOpenStage("reader_progress_read_completed")
-        let source = LocalFulltextCache.storageURL(bookId: book.id)
-        observeOpenStage("fulltext_url_resolved")
-        let observe = openStageObserver
-        var continuation: AsyncStream<PreparedLoadEvent>.Continuation!
-        let arrivals = AsyncStream<PreparedLoadEvent> { continuation = $0 }
-        let publisher = continuation!
-        var catalogStartContinuation: AsyncStream<Void>.Continuation!
-        let catalogStart = AsyncStream<Void> { catalogStartContinuation = $0 }
-        let catalogStartSignal = catalogStartContinuation!
-        var hasStartedCatalog = false
-        let startCatalog = {
-            guard !hasStartedCatalog else { return }
-            hasStartedCatalog = true
-            catalogStartSignal.yield(())
-        }
-        let catalogTask = Task.detached(priority: .utility) { () -> EbookFulltext? in
-            var start = catalogStart.makeAsyncIterator()
-            guard await start.next() != nil else { return nil }
-            observe?("catalog_read_started", DispatchTime.now().uptimeNanoseconds)
-            let payload = await reader(book.id)
-            observe?("catalog_read_completed", DispatchTime.now().uptimeNanoseconds)
-            publisher.yield(.catalog(payload))
-            return payload
-        }
-        let chapterOrdinal = progress?.chapterIndex
-        let chapterTask = Task.detached(priority: .userInitiated) {
-            let prepared: PreparedReaderChapterStore.Snapshot?
-            if let chapterOrdinal, let source {
-                observe?("projection_read_started", DispatchTime.now().uptimeNanoseconds)
-                prepared = await store.read(bookID: book.id,
-                    chapterOrdinal: chapterOrdinal, fulltextURL: source)
-                observe?("projection_read_completed", DispatchTime.now().uptimeNanoseconds)
-            } else {
-                prepared = nil
-                observe?("projection_read_skipped", DispatchTime.now().uptimeNanoseconds)
-            }
-            publisher.yield(.chapter(prepared))
-        }
-        catalogReadTask = catalogTask
-        chapterReadTask = chapterTask
-        observeOpenStage("prepared_read_tasks_started")
-        fulltext = nil
-        textView.string = ""
-        comicPageImageView.image = nil
-        chaptersTable.reloadData()
-        bookTitleLabel.stringValue = book.resolvedTitle
-        chapterTitleLabel.stringValue = ""
-        statusLabel.stringValue = L10n.string("reader.loading")
-        observeOpenStage("loading_overlay_show_started")
-        showLoading(for: book)
-        observeOpenStage("loading_overlay_show_completed")
-        observeOpenStage("reader_load_task_scheduled")
-        loadTask = Task { [weak self] in
-            defer {
-                publisher.finish()
-                catalogStartSignal.finish()
-                chapterTask.cancel()
-                catalogTask.cancel()
-                if let self, self.loadGeneration == generation {
-                    self.catalogReadTask = nil
-                    self.chapterReadTask = nil
-                }
-            }
-            guard !Task.isCancelled, let self else { return }
-            observeOpenStage("reader_load_task_started")
-            do {
-                var next = arrivals.makeAsyncIterator()
-                let first = await next.next()
-                observeOpenStage(first.map {
-                    if case .chapter(let prepared) = $0 {
-                        return prepared == nil ? "first_arrival_projection_miss" : "first_arrival_projection"
-                    }
-                    return "first_arrival_catalog"
-                } ?? "first_arrival_end")
-                guard isActiveLoad(generation, bookID: book.id) else { return }
-                if case .chapter(let prepared?) = first {
-                    guard isActiveLoad(generation, bookID: book.id) else { return }
-                    activePreparedChapter = prepared
-                    selectedChapter = prepared.chapterOrdinal
-                    statusLabel.stringValue = L10n.string("reader.chapterCount", prepared.chapterCount)
-                    LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
-                    await restoreSelectedChapter(bookID: book.id)
-                    guard isActiveLoad(generation, bookID: book.id) else { return }
-                    presentLoadedChapter(bookID: book.id, onControlsResolved: startCatalog)
-                } else {
-                    startCatalog()
-                }
-                let cachedPayload: EbookFulltext?
-                if case .catalog(let payload) = first { cachedPayload = payload }
-                else { cachedPayload = await catalogTask.value }
-                let payload: EbookFulltext
-                if let cachedPayload {
-                    LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
-                    payload = cachedPayload
-                } else {
-                    LatencyObservationStore.shared.classifyCache(.cold, for: journeyID)
-                    let fileURL = try await library.openBookFileAsync(id: book.id)
-                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                    if book.fileType == .pdf {
-                        pendingPDFPageJourneyID = journeyID
-                        guard let wasNormalized = await showPDF(fileURL) else { return }
-                        guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                        recordFirstPDFPage(wasNormalized: wasNormalized)
-                        self.hideLoading()
-                        recordControlsUsable()
-                        return
-                    }
-                    payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
-                }
-                guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                // A validated disk payload is already durable; do not reencode it on MainActor.
-                if cachedPayload == nil {
-                    let writer = preparedFulltextWriter
-                    await Task.detached(priority: .utility) { writer(payload, book.id) }.value
-                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                }
-                LocalFulltextCache.recordWarmOpen(bookId: book.id)
-                let prepared = activePreparedChapter
-                let catalogMatches = prepared?.catalogChapters.map { catalog in
-                    catalog.count == payload.chapters.count && zip(catalog, payload.chapters).allSatisfy { pair in
-                        pair.0.index == pair.1.index && pair.0.name == pair.1.name
-                            && pair.0.contentKind == pair.1.contentKind
-                    }
-                } ?? true
-                let alreadyPresented = prepared.map {
-                    $0.chapterCount == payload.chapters.count && $0.title == payload.bookTitle
-                        && $0.author == payload.bookAuthor && $0.toc == payload.toc
-                        && payload.chapters[safe: $0.chapterOrdinal] == $0.chapter
-                } == true && catalogMatches
-                if prepared != nil, !alreadyPresented {
-                    presentationGeneration = UUID()
-                    isRestoringInitialPosition = false
-                    hasRestoredInitialPosition = false
-                }
-                fulltext = payload
-                activePreparedChapter = nil
-                statusLabel.stringValue = L10n.string("reader.chapterCount", payload.chapters.count)
-                chaptersTable.reloadData()
-                if alreadyPresented {
-                    selectCurrentTOCRow()
-                    prepareChapterProjection(bookID: book.id, ordinal: selectedChapter)
-                    if hasRestoredInitialPosition, !isRestoringInitialPosition {
-                        recordControlsUsable()
-                    }
-                    return
-                }
-                if prepared != nil { hasRestoredInitialPosition = false }
-                if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
-                    selectedChapter = entry.chapterIndex
-                } else {
-                    let firstReadableChapter = payload.chapters.firstIndex {
-                        $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 80
-                    } ?? 0
-                    selectedChapter = min(max(selectedChapter, firstReadableChapter), max(0, payload.chapters.count - 1))
-                }
-                selectedChapter = min(max(selectedChapter, 0), max(0, payload.chapters.count - 1))
-                if let row = self.tocRows.firstIndex(where: { $0.chapterIndex == self.selectedChapter }) {
-                    chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-                }
-                await restoreSelectedChapter(bookID: book.id)
-                guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                presentLoadedChapter(bookID: book.id)
-            } catch {
-                guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                statusLabel.stringValue = error.localizedDescription
-                textView.string = ""
-                showLoadingError(error)
-            }
+        case let .clearForLoad(book):
+            textView.string = ""
+            comicPageImageView.image = nil
+            chaptersTable.reloadData()
+            bookTitleLabel.stringValue = book.resolvedTitle
+            chapterTitleLabel.stringValue = ""
+            statusLabel.stringValue = L10n.string("reader.loading")
+        case let .showLoading(book): showLoading(for: book)
+        case .hideLoading: hideLoading()
+        case .reloadContents: chaptersTable.reloadData()
+        case .selectCurrentContents: selectCurrentTOCRow()
+        case let .chapterCount(count): statusLabel.stringValue = L10n.string("reader.chapterCount", count)
+        case let .selectRow(row): chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        case let .failure(error):
+            statusLabel.stringValue = error.localizedDescription
+            textView.string = ""
+            showLoadingError(error)
         }
     }
 
@@ -823,675 +203,41 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         loadCurrentBook()
     }
 
-    private func restoreSelectedChapter(bookID: String) async {
-        guard let chapter = chapter(at: selectedChapter), !chapter.isImageOnly else { return }
-        observeOpenStage("selected_chapter_restore_started")
-        _ = await preparedRenderer.restore(bookID: bookID, chapterIndex: selectedChapter,
-                                           chapter: chapter, settings: settings, fontDirectoryURL: nil)
-        observeOpenStage("selected_chapter_restore_completed")
-    }
-
-    private func presentLoadedChapter(bookID: String, onControlsResolved: (() -> Void)? = nil) {
-        observeOpenStage("chapter_presentation_started")
-        showChapter(selectedChapter)
-        observeOpenStage("chapter_render_layout_completed")
-        let generation = loadGeneration
-        restoreReadingProgressIfNeeded(bookId: bookID) { [weak self] in
-            guard let self, self.isActiveLoad(generation, bookID: bookID) else { return }
-            self.observeOpenStage("saved_position_layout_committed")
-            self.recordReadableContent()
-            self.hideLoading()
-            if self.fulltext != nil {
-                self.recordControlsUsable()
-                onControlsResolved?()
-            } else {
-                self.recordPreparedControlsUsable(bookID: bookID, generation: generation,
-                                                  onResolved: onControlsResolved)
-            }
-        }
-    }
-
-    private func recordPreparedControlsUsable(bookID: String, generation: UUID,
-                                              onResolved: (() -> Void)?) {
-        guard let snapshot = activePreparedChapter,
-              snapshot.catalogChapters?.count == snapshot.chapterCount,
-              let source = LocalFulltextCache.storageURL(bookId: bookID) else {
-            onResolved?()
-            return
-        }
-        observeOpenStage("prepared_controls_source_check_started")
-        let matches = PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: source)
-        guard isActiveLoad(generation, bookID: bookID) else { onResolved?(); return }
-        observeOpenStage("prepared_controls_source_check_completed")
-        if matches { recordControlsUsable() }
-        onResolved?()
-    }
-
-    private func showChapter(_ index: Int, scrollToEnd: Bool = false) {
-        guard let chapter = chapter(at: index) else { return }
-        presentationGeneration = UUID()
-        chapterTitleLabel.stringValue = chapter.name ?? ""
-
-        if chapter.isImageOnly {
-            if let base64 = chapter.resources?.first?.dataBase64, let data = Data(base64Encoded: base64) {
-                comicPageImageView.image = NSImage(data: data)
-            } else {
-                comicPageImageView.image = nil
-            }
-            comicPageImageView.imageScaling = .scaleProportionallyUpOrDown
-            contentScrollView.documentView = comicPageImageView
-        } else {
-            contentScrollView.documentView = textView
-            if let bookID = currentBookId,
-               let rendered = preparedRenderer.render(
-                   bookID: bookID, chapterIndex: index, chapter: chapter,
-                   settings: settings, fontDirectoryURL: nil
-               ) {
-                textView.textStorage?.setAttributedString(NSAttributedString(attributedString: rendered))
-            } else {
-                textView.string = chapter.text
-                textView.font = .systemFont(ofSize: settings.readerPointSize)
-                textView.textColor = settings.readerColors.foreground
-            }
-            MacReaderTextLayout.fit(textView, in: contentScrollView)
-            repaintSavedHighlights(chapterIndex: index)
-            // NSTextView's responder actions need not move this read-only
-            // viewport. Commit its measured destination directly.
-            let clipView = contentScrollView.contentView
-            let end = max(0, textView.frame.height - clipView.bounds.height)
-            clipView.scroll(to: NSPoint(x: 0, y: scrollToEnd ? end : 0))
-            contentScrollView.reflectScrolledClipView(clipView)
-        }
-        ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: 0)
-        if let bookID = currentBookId { prepareChapterProjection(bookID: bookID, ordinal: index) }
-    }
-
-    private func chapter(at ordinal: Int) -> EbookFulltext.Chapter? {
-        if let fulltext { return fulltext.chapters[safe: ordinal] }
-        return activePreparedChapter?.chapterOrdinal == ordinal ? activePreparedChapter?.chapter : nil
-    }
-
-    private func prepareChapterProjection(bookID: String, ordinal: Int) {
-        guard fulltext?.chapters.indices.contains(ordinal) == true,
-              lastPreparedChapterOrdinal != ordinal,
-              let source = LocalFulltextCache.storageURL(bookId: bookID) else { return }
-        lastPreparedChapterOrdinal = ordinal
-        let store = preparedChapterStore
-        Task(priority: .utility) { try? await store.write(bookID: bookID, chapterOrdinal: ordinal, fulltextURL: source) }
-    }
-
-    private func handleReaderLink(_ url: URL, linkText: String) -> Bool {
-        guard let fulltext, let chapter = fulltext.chapters[safe: selectedChapter] else {
-            return true
-        }
-        switch ReaderLinkResolver.destination(
-            for: url,
-            linkText: linkText,
-            currentChapter: chapter,
-            chapters: fulltext.chapters
-        ) {
-        case .chapter(let index):
-            guard fulltext.chapters.indices.contains(index) else { return true }
-            persistReadingProgress()
-            selectedChapter = index
-            showChapter(index)
-            return true
-        case .footnote(let footnote):
-            showFootnote(footnote)
-            return true
-        case .external:
-            return false
-        case .unresolved:
-            return true
-        }
-    }
-
-    // MARK: - Selection → bookmark/highlight/note
-
-    private struct PendingSelection {
-        let range: NSRange
-        let text: String
-    }
-
-    /// Repaints every saved highlight for this chapter as a background
-    /// tint, resolved against the text actually on screen right now
-    /// (`ReaderTextHighlight`), not the Python `chapter.text` pipeline.
-    private func repaintSavedHighlights(chapterIndex: Int) {
-        guard let bookId = currentBookId else { return }
-        let highlights = bookmarkStore.bookmarks(for: bookId, chapterIndex: chapterIndex).filter { $0.isHighlight }
-        guard !highlights.isEmpty, let storage = textView.textStorage, storage.length > 0 else { return }
-        for bookmark in highlights {
-            let span = SentenceSpan(
-                id: bookmark.id.uuidString, text: bookmark.selectedText,
-                startChar: bookmark.startChar, endChar: bookmark.endChar
-            )
-            guard let range = ReaderTextHighlight.range(for: span, in: storage) else { continue }
-            storage.addAttribute(.backgroundColor, value: bookmark.color.platformColor, range: range)
-        }
-    }
-
-    private func buildSelectionMenuItems(range: NSRange) -> [NSMenuItem] {
-        let full = textView.string as NSString
-        guard range.location + range.length <= full.length else { return [] }
-        let selectedText = full.substring(with: range)
-        let payload = PendingSelection(range: range, text: selectedText)
-
-        let highlight = NSMenuItem(
-            title: L10n.string("reader.action.highlight"),
-            action: #selector(highlightSelectionFromMenu(_:)), keyEquivalent: ""
-        )
-        highlight.target = self
-        highlight.representedObject = payload
-
-        let note = NSMenuItem(
-            title: L10n.string("reader.action.addNote"),
-            action: #selector(addNoteForSelectionFromMenu(_:)), keyEquivalent: ""
-        )
-        note.target = self
-        note.representedObject = payload
-
-        return [highlight, note]
-    }
-
-    @objc private func highlightSelectionFromMenu(_ sender: NSMenuItem) {
-        guard let payload = sender.representedObject as? PendingSelection else { return }
-        addBookmark(range: payload.range, selectedText: payload.text, note: nil)
-    }
-
-    @objc private func addNoteForSelectionFromMenu(_ sender: NSMenuItem) {
-        guard let payload = sender.representedObject as? PendingSelection else { return }
-        promptForNote(range: payload.range, selectedText: payload.text)
-    }
-
-    private func promptForNote(range: NSRange, selectedText: String) {
-        let alert = NSAlert()
-        alert.messageText = L10n.string("reader.action.addNote")
-        alert.informativeText = selectedText
-        alert.addButton(withTitle: L10n.string("common.save"))
-        alert.addButton(withTitle: L10n.string("common.cancel"))
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.placeholderString = L10n.string("reader.note.placeholder")
-        alert.accessoryView = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        addBookmark(range: range, selectedText: selectedText, note: field.stringValue)
-    }
-
-    private func addBookmark(range: NSRange, selectedText: String, note: String?) {
-        guard let bookId = currentBookId else { return }
-        bookmarkStore.addBookmark(
-            bookId: bookId,
-            chapterIndex: selectedChapter,
-            chapterTitle: chapter(at: selectedChapter)?.name ?? "",
-            startChar: range.location,
-            endChar: range.location + range.length,
-            selectedText: selectedText,
-            note: note,
-            color: .yellow
-        )
-        repaintSavedHighlights(chapterIndex: selectedChapter)
-    }
+    private lazy var annotations: MacReaderAnnotationsPresentation = MacReaderAnnotationsPresentation(
+        document: document, composition: composition, bookmarkStore: bookmarkStore,
+        persistProgress: { [weak self] in self?.persistReadingProgress() },
+        showChapter: { [weak self] in self?.showChapter($0) }
+    )
+    private func handleReaderLink(_ url: URL, linkText: String) -> Bool { annotations.handleReaderLink(url, linkText: linkText) }
+    private func buildSelectionMenuItems(range: NSRange) -> [NSMenuItem] { annotations.buildSelectionMenuItems(range: range) }
+    @objc private func promptSearch() { annotations.promptSearch() }
+    @objc private func showFootnotes() { annotations.showFootnotes() }
 
     @objc private func closeReader() { onClose() }
 
-    private func handleKeyboardEvent(_ event: NSEvent) -> Bool {
-        switch event.keyCode {
-        case 124, 125, 49:
-            scrollPage(forward: true)
-            return true
-        case 123, 126:
-            scrollPage(forward: false)
-            return true
-        case 53:
-            closeReader()
-            return true
-        default:
-            return false
-        }
+    private lazy var textPresentation: MacReaderTextPresentation = MacReaderTextPresentation(
+        document: document, composition: composition, settings: settings, renderer: preparedRenderer,
+        initialPositionScheduler: initialPositionScheduler, stageObserver: openStageObserver,
+        repaintSavedHighlights: { [weak self] in self?.annotations.repaintSavedHighlights(chapterIndex: $0) },
+        prepareChapterProjection: { [weak self] in self?.bookLoad.prepareChapterProjection(bookID: $0, ordinal: $1) },
+        selectCurrentTOCRow: { [weak self] in self?.contentsPresentation.selectCurrentTOCRow() },
+        closeReader: { [weak self] in self?.onClose() }
+    )
+    private func applyCurrentReaderTheme() {
+        guard isViewLoaded else { return }
+        textPresentation.applyCurrentReaderTheme()
     }
-
-    private func scrollPage(forward: Bool) {
-        guard activeBookOpenJourneyID == nil, !isRestoringInitialPosition else { return }
-        guard let documentView = contentScrollView.documentView else { return }
-        contentScrollView.layoutSubtreeIfNeeded()
-        let clipView = contentScrollView.contentView
-        let visibleBounds = clipView.bounds
-        let page = max(1, visibleBounds.height * 0.9)
-        let maximumY = max(0, documentView.frame.height - visibleBounds.height)
-        let atStart = visibleBounds.origin.y <= 1
-        let atEnd: Bool
-        if let readerTextView = documentView as? NSTextView,
-           let container = readerTextView.textContainer,
-           let layoutManager = readerTextView.layoutManager {
-            layoutManager.ensureLayout(for: container)
-            let lastGlyphBottom = layoutManager.usedRect(for: container).maxY
-            atEnd = clipView.documentVisibleRect.maxY >= lastGlyphBottom
-        } else {
-            atEnd = visibleBounds.origin.y >= maximumY - 1
-        }
-        if forward && atEnd, selectedChapter + 1 < (fulltext?.chapters.count ?? 0) {
-            persistReadingProgress()
-            selectedChapter += 1
-            showChapter(selectedChapter)
-            selectCurrentTOCRow()
-            persistReadingProgress()
-            return
-        }
-        if !forward && atStart, selectedChapter > 0 {
-            persistReadingProgress()
-            selectedChapter -= 1
-            showChapter(selectedChapter, scrollToEnd: true)
-            selectCurrentTOCRow()
-            persistReadingProgress()
-            return
-        }
-        let offset = forward ? page : -page
-        let nextY = min(max(visibleBounds.origin.y + offset, 0), maximumY)
-        clipView.scroll(to: NSPoint(x: visibleBounds.origin.x, y: nextY))
-        contentScrollView.reflectScrolledClipView(clipView)
-        persistReadingProgress()
+    private func showChapter(_ index: Int, scrollToEnd: Bool = false) {
+        textPresentation.showChapter(index, scrollToEnd: scrollToEnd)
     }
-
-    private func selectCurrentTOCRow() {
-        guard let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) else { return }
-        // Updating the TOC highlight is not a request to reopen the chapter.
-        isSynchronizingTOCSelection = true
-        defer { isSynchronizingTOCSelection = false }
-        chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-    }
-
-    // MARK: - Pagination (viewport snap) + progress restoration
-
-    /// In `.paginated` mode, after a trackpad/scroll-wheel gesture ends,
-    /// rounds the scroll position to the nearest multiple of the viewport
-    /// height so it lands on a "page" boundary. `.scrolling` mode is
-    /// untouched (free continuous scroll).
-    @objc private func handleScrollDidEndLiveScroll(_ notification: Notification) {
-        guard settings.readerLayout == .paginated,
-              let documentView = contentScrollView.documentView else { return }
-        let clipView = contentScrollView.contentView
-        let pageHeight = clipView.bounds.height
-        guard pageHeight > 0 else { return }
-        let page = (clipView.bounds.origin.y / pageHeight).rounded()
-        let maxY = max(0, documentView.frame.height - pageHeight)
-        let snappedY = min(max(page * pageHeight, 0), maxY)
-        clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: snappedY))
-        contentScrollView.reflectScrolledClipView(clipView)
-        persistReadingProgress()
-    }
-
-    private func persistReadingProgress() {
-        guard activeBookOpenJourneyID == nil || (activePreparedChapter != nil && hasRestoredInitialPosition),
-              !isRestoringInitialPosition,
-              let bookId = currentBookId, let documentView = contentScrollView.documentView else { return }
-        let clipView = contentScrollView.contentView
-        let scrollable = max(documentView.frame.height - clipView.bounds.height, 1)
-        let fraction = clipView.bounds.origin.y / scrollable
-        ReaderProgressStore.save(bookId: bookId, chapterIndex: selectedChapter, offsetFraction: fraction)
-        if let chapter = chapter(at: selectedChapter) {
-            var playbackFraction = clipView.bounds.origin.y / max(documentView.frame.height, 1)
-            if let text = documentView as? NSTextView,
-               let manager = text.layoutManager, let container = text.textContainer,
-               text.string.utf16.count > 0 {
-                var visible = clipView.documentVisibleRect
-                visible.origin.y -= text.textContainerInset.height
-                let glyphs = manager.glyphRange(forBoundingRect: visible, in: container)
-                if glyphs.length > 0 {
-                    playbackFraction = Double(manager.characterIndexForGlyph(at: glyphs.location))
-                        / Double(text.string.utf16.count)
-                }
-            }
-            ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: playbackFraction)
-        }
-    }
-
-    /// Called once, right after a fresh `loadCurrentBook()`, to jump back to
-    /// the exact chapter + scroll fraction the user left off at. Runs on the
-    /// next runloop tick so the scroll view has already been laid out.
-    private func restoreReadingProgressIfNeeded(bookId: String, completion: @escaping () -> Void) {
-        let entry = hasRestoredInitialPosition ? nil : ReaderProgressStore.read(bookId: bookId)
-        let generation = loadGeneration
-        let presentation = presentationGeneration
-        let chapterIndex = selectedChapter
-        isRestoringInitialPosition = true
-        initialPositionScheduler { [weak self] in
-            guard let self, self.isActiveLoad(generation, bookID: bookId),
-                  self.presentationGeneration == presentation else { return }
-            if self.pendingAppearanceRefresh {
-                self.pendingAppearanceRefresh = false
-                self.applyCurrentReaderTheme()
-                self.showChapter(self.selectedChapter)
-            }
-            self.view.layoutSubtreeIfNeeded()
-            if self.contentScrollView.documentView === self.textView {
-                MacReaderTextLayout.fit(self.textView, in: self.contentScrollView)
-            }
-            guard let documentView = self.contentScrollView.documentView else {
-                self.isRestoringInitialPosition = false
-                return
-            }
-            let clipView = self.contentScrollView.contentView
-            let scrollable = max(documentView.frame.height - clipView.bounds.height, 0)
-            // A navigation performed while layout was pending wins over
-            // initial restoration; never move a newer chapter's viewport.
-            if let entry, self.selectedChapter == chapterIndex {
-                clipView.scroll(to: NSPoint(x: 0, y: entry.offsetFraction * scrollable))
-                self.contentScrollView.reflectScrolledClipView(clipView)
-                if let chapter = self.chapter(at: chapterIndex) {
-                    ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: entry.offsetFraction)
-                }
-            }
-            self.isRestoringInitialPosition = false
-            self.hasRestoredInitialPosition = true
-            completion()
-            if self.isActiveLoad(generation, bookID: bookId), self.selectedChapter != chapterIndex {
-                self.persistReadingProgress()
-            }
-        }
-    }
-
-    @objc private func showTOC(_ sender: NSButton) {
-        guard fulltext != nil else { return }
-        if tocPopover.contentViewController == nil { configureTOCPopover() }
-        tocPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
-    }
-
-    // MARK: - Footnotes
-
-    /// Native alert listing `{number, text}` pairs for the current
-    /// chapter — no attempt to resolve a tap-to-jump from an inline
-    /// reference (see the iOS `FootnotesSheetController` doc comment for
-    /// why that's fragile).
-    @objc private func showFootnotes() {
-        let alert = NSAlert()
-        alert.messageText = L10n.string("reader.footnotes.title")
-        let footnotes = chapter(at: selectedChapter)?.footnotes ?? []
-        if footnotes.isEmpty {
-            alert.informativeText = L10n.string("reader.footnotes.empty")
-        } else {
-            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 380, height: 220))
-            let textView = NSTextView(frame: scrollView.bounds)
-            textView.isEditable = false
-            textView.string = footnotes.enumerated()
-                .map { "\($1.number ?? String($0 + 1)). \($1.text)" }
-                .joined(separator: "\n\n")
-            scrollView.documentView = textView
-            scrollView.hasVerticalScroller = true
-            alert.accessoryView = scrollView
-        }
-        alert.addButton(withTitle: L10n.string("common.ok"))
-        alert.runModal()
-    }
-
-    private func showFootnote(_ footnote: EbookFulltext.Footnote) {
-        let alert = NSAlert()
-        alert.messageText = L10n.string("reader.footnotes.title")
-        let numberPrefix = footnote.number.map { "\($0)\n\n" } ?? ""
-        alert.informativeText = numberPrefix + footnote.text
-        alert.addButton(withTitle: L10n.string("common.ok"))
-        if let window = view.window {
-            alert.beginSheetModal(for: window)
-        } else {
-            alert.runModal()
-        }
-    }
-
-    // MARK: - In-chapter search
-
-    @objc private func promptSearch() {
-        guard fulltext != nil else { return }
-        let alert = NSAlert()
-        alert.messageText = L10n.string("reader.search.placeholder")
-        alert.addButton(withTitle: L10n.string("common.ok"))
-        alert.addButton(withTitle: L10n.string("common.cancel"))
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        alert.accessoryView = field
-        guard alert.runModal() == .alertFirstButtonReturn, !field.stringValue.isEmpty else { return }
-        performSearch(query: field.stringValue)
-    }
-
-    private func performSearch(query: String) {
-        guard let chapters = fulltext?.chapters, !chapters.isEmpty else { return }
-        let order = Array(chapters.indices.dropFirst(selectedChapter))
-            + Array(chapters.indices.prefix(selectedChapter + 1))
-        for chapterIndex in order {
-            let full = chapters[chapterIndex].text as NSString
-            let range = full.range(of: query, options: .caseInsensitive)
-            guard range.location != NSNotFound else { continue }
-            if chapterIndex != selectedChapter {
-                persistReadingProgress()
-                selectedChapter = chapterIndex
-                showChapter(chapterIndex)
-            }
-            textView.setSelectedRange(range)
-            textView.scrollRangeToVisible(range)
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = L10n.string("reader.search.noResults")
-        alert.addButton(withTitle: L10n.string("common.ok"))
-        alert.runModal()
-    }
-
-    private static func documentKind(for book: BookEntity) -> LatencyObservation.DocumentKind {
-        book.fileType == .pdf ? .selectableTextPDF : .epub
-    }
-
-    private func recordReadableContent() {
-        guard let journeyID = activeBookOpenJourneyID else { return }
-        observeOpenStage("readable_content")
-        _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
-    }
-
-    private func recordFirstPDFPage(wasNormalized: Bool) {
-        guard let journeyID = pendingPDFPageJourneyID,
-              journeyID == activeBookOpenJourneyID
-        else {
-            return
-        }
-        if wasNormalized {
-            LatencyObservationStore.shared.classifyDocument(.normalizedScannedPDF, for: journeyID)
-        }
-        _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
-        _ = LatencyObservationStore.shared.record(.firstPDFPage, for: journeyID)
-        firstPDFPageReadyJourneyID = journeyID
-        finishPDFJourneyIfReady(journeyID)
-    }
-
-    private func recordControlsUsable() {
-        guard let journeyID = activeBookOpenJourneyID else { return }
-        observeOpenStage("controls_usable")
-        _ = LatencyObservationStore.shared.record(.controlsUsable, for: journeyID)
-        if pendingPDFPageJourneyID == journeyID {
-            controlsReadyJourneyID = journeyID
-            finishPDFJourneyIfReady(journeyID)
-        } else {
-            LatencyObservationStore.shared.finish(journeyID)
-            activeBookOpenJourneyID = nil
-        }
-    }
+    private func persistReadingProgress() { textPresentation.persistReadingProgress() }
+    private func handleKeyboardEvent(_ event: NSEvent) -> Bool { textPresentation.handleKeyboardEvent(event) }
+    private func scrollPage(forward: Bool) { textPresentation.scrollPage(forward: forward) }
+    @objc private func handleScrollDidEndLiveScroll(_ notification: Notification) { textPresentation.handleScrollDidEndLiveScroll(notification) }
 
     private func observeOpenStage(_ name: String) {
         openStageObserver?(name, DispatchTime.now().uptimeNanoseconds)
     }
 
-    private func cancelPreparedReadTasks() {
-        catalogReadTask?.cancel()
-        chapterReadTask?.cancel()
-        catalogReadTask = nil
-        chapterReadTask = nil
-    }
-
-    private func finishPDFJourneyIfReady(_ journeyID: UUID) {
-        guard firstPDFPageReadyJourneyID == journeyID,
-              controlsReadyJourneyID == journeyID
-        else {
-            return
-        }
-        LatencyObservationStore.shared.finish(journeyID)
-        activeBookOpenJourneyID = nil
-        pendingPDFPageJourneyID = nil
-        firstPDFPageReadyJourneyID = nil
-        controlsReadyJourneyID = nil
-    }
-
-    private func cancelActiveBookOpenJourney() {
-        guard let journeyID = activeBookOpenJourneyID else { return }
-        _ = LatencyObservationStore.shared.cancel(journeyID)
-        activeBookOpenJourneyID = nil
-        pendingPDFPageJourneyID = nil
-        firstPDFPageReadyJourneyID = nil
-        controlsReadyJourneyID = nil
-    }
-
-    private func showPDF(_ url: URL) async -> Bool? {
-        let view = PDFView()
-        view.autoScales = true
-        view.displayMode = .singlePageContinuous
-        view.displayDirection = .vertical
-        view.displaysPageBreaks = true
-        view.pageShadowsEnabled = true
-        pdfView = view
-        statusLabel.stringValue = L10n.string("reader.pdf")
-        chapterTitleLabel.stringValue = ""
-        contentScrollView.documentView = view
-        let normalized = await Task.detached(priority: .userInitiated) {
-            PdfReadingPageNormalizer.normalizedDocument(from: url)
-        }.value
-        guard pdfView === view else { return nil }
-        view.document = normalized ?? PDFDocument(url: url)
-        return normalized != nil
-    }
-}
-
-private final class MacReaderSurfaceView: NSView {
-    var onKeyDown: ((NSEvent) -> Bool)?
-    var onPageTap: ((Bool) -> Bool)?
-    var onAppearanceChange: (() -> Void)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        onAppearanceChange?()
-    }
-
-    override func keyDown(with event: NSEvent) {
-        guard onKeyDown?(event) == true else {
-            super.keyDown(with: event)
-            return
-        }
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        let forward = location.x >= bounds.midX
-        if onPageTap?(forward) != true { super.mouseUp(with: event) }
-    }
-}
-
-final class MacReaderTextView: NSTextView, NSTextViewDelegate {
-    var onKeyDown: ((NSEvent) -> Bool)?
-    var onPageTap: ((Bool) -> Bool)?
-    var onBuildSelectionMenu: ((NSRange) -> [NSMenuItem])?
-    var onLinkClick: ((URL, String) -> Bool)?
-
-    convenience init() {
-        self.init(frame: .zero, textContainer: nil)
-    }
-
-    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
-        if let container {
-            super.init(frame: frameRect, textContainer: container)
-        } else {
-            let storage = NSTextStorage()
-            let layoutManager = NSLayoutManager()
-            let defaultContainer = NSTextContainer(size: .zero)
-            storage.addLayoutManager(layoutManager)
-            layoutManager.addTextContainer(defaultContainer)
-            super.init(frame: frameRect, textContainer: defaultContainer)
-        }
-        delegate = self
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func keyDown(with event: NSEvent) {
-        guard onKeyDown?(event) == true else {
-            super.keyDown(with: event)
-            return
-        }
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        if let characterIndex = characterIndex(at: location), shouldDeferMouseUpToTextSystem(at: characterIndex) {
-            super.mouseUp(with: event)
-            return
-        }
-        let forward = location.x >= bounds.midX
-        if onPageTap?(forward) != true { super.mouseUp(with: event) }
-    }
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        let base = super.menu(for: event)
-        let selection = selectedRange()
-        guard selection.length > 0, let extra = onBuildSelectionMenu?(selection), !extra.isEmpty else {
-            return base
-        }
-        let menu = base ?? NSMenu()
-        for (offset, item) in extra.enumerated() {
-            menu.insertItem(item, at: offset)
-        }
-        menu.insertItem(.separator(), at: extra.count)
-        return menu
-    }
-
-    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-        guard let url = Self.url(from: link),
-              charIndex != NSNotFound,
-              charIndex >= 0,
-              charIndex < string.utf16.count else {
-            return false
-        }
-        var linkRange = NSRange(location: charIndex, length: 0)
-        textStorage?.attribute(.link, at: charIndex, effectiveRange: &linkRange)
-        let linkText = (string as NSString).substring(with: linkRange)
-        return onLinkClick?(url, linkText) ?? false
-    }
-
-    func shouldDeferMouseUpToTextSystem(at characterIndex: Int) -> Bool {
-        guard characterIndex != NSNotFound,
-              characterIndex >= 0,
-              characterIndex < string.utf16.count else {
-            return false
-        }
-        return textStorage?.attribute(.link, at: characterIndex, effectiveRange: nil) != nil
-    }
-
-    private func characterIndex(at point: NSPoint) -> Int? {
-        guard let layoutManager, let textContainer else { return nil }
-        let textContainerPoint = NSPoint(
-            x: point.x - textContainerOrigin.x,
-            y: point.y - textContainerOrigin.y
-        )
-        let index = layoutManager.characterIndex(
-            for: textContainerPoint,
-            in: textContainer,
-            fractionOfDistanceBetweenInsertionPoints: nil
-        )
-        return index == NSNotFound ? nil : index
-    }
-
-    private static func url(from link: Any) -> URL? {
-        if let url = link as? URL { return url }
-        if let url = link as? NSURL { return url as URL }
-        if let value = link as? String { return URL(string: value) }
-        return nil
-    }
-}
-
-private extension Array {
-    subscript(safe index: Index) -> Element? { indices.contains(index) ? self[index] : nil }
 }
 #endif

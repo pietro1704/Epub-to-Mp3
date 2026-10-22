@@ -12,6 +12,8 @@ final class PlaybackClock: ObservableObject {
     struct Snapshot: Equatable {
         let positionSeconds: TimeInterval
         let durationSeconds: TimeInterval
+    /// Sleep-timer state. When > 0, playback auto-pauses after this
+    /// many wall-clock seconds. Decremented by the time observer.
         let sleepTimerRemaining: TimeInterval
 
         static let zero = Snapshot(

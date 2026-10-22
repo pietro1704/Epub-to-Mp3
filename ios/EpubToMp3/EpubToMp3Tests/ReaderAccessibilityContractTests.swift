@@ -1,23 +1,33 @@
 import XCTest
+@testable import EpubToMp3
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
+@MainActor
 final class ReaderAccessibilityContractTests: XCTestCase {
-    private func source(_ relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3")
-        return try readSourceFileIfAvailable(at: root.appendingPathComponent(relativePath))
-    }
-
-    func testNativeReadersExposeStableAccessibilityIdentifiers() throws {
-        let ios = try source("Features/Reader/Views/BookOpenScreenController.swift")
-        let mac = try source("Features/Reader/Views/MacReaderViewController.swift")
-        for identifier in ["reader.content", "reader.toc", "reader.search"] {
-            XCTAssertTrue(ios.contains(identifier))
+    func testNativeReaderInstallsStableContentAndNavigationIdentifiers() throws {
+        let harness = try NativeReaderTestHarness(chapters: [NativeReaderTestHarness.chapter("Readable")])
+        harness.installTeardown(in: self)
+#if os(macOS)
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let identifiers = Set(descendants(harness.controller.view).compactMap { $0.accessibilityIdentifier() })
+        for identifier in ["reader.content", "reader.toc.toggle", "reader.search", "reader.settings.toggle"] {
+            XCTAssertTrue(identifiers.contains(identifier), "Missing installed accessibility element: \(identifier)")
         }
-        XCTAssertTrue(mac.contains("reader.content"))
-        XCTAssertTrue(mac.contains("reader.toc"))
-        XCTAssertTrue(mac.contains("reader.search"))
-        XCTAssertFalse(mac.contains("accessibilityIdentifier = \"reader.footnotes\""))
+        XCTAssertFalse(identifiers.contains("reader.footnotes"))
+#else
+        XCTAssertEqual(harness.composition.textView.accessibilityIdentifier, "reader.content")
+        let reader = BookOpenScreenController(book: harness.book,
+            library: LibraryStore(defaults: harness.defaults), settings: harness.settings,
+            bookmarkStore: harness.bookmarks, player: harness.player)
+        let identifiers = Set(reader.navigationBarButtonItems.compactMap(\.accessibilityIdentifier))
+        for identifier in ["reader.toc.toggle", "reader.search", "reader.settings.toggle"] {
+            XCTAssertTrue(identifiers.contains(identifier))
+        }
+        XCTAssertFalse(reader.isViewLoaded, "Reading action metadata must not open a source or start playback")
+#endif
     }
 }

@@ -182,7 +182,7 @@ final class MacSettingsViewController: NSViewController {
             secondaryEnginePopup.item(at: index + 1)?.isEnabled = settings.selectableSecondaryAudioEngines.contains(engine)
         }
         onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
-        piperInstallButton.title = AppSettings.isFaberInstalled() ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
+        piperInstallButton.title = LocalSpeechModelReadiness.isFaberInstalled() ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
         statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes))
     }
@@ -238,7 +238,7 @@ final class MacSettingsViewController: NSViewController {
     }
 
     @objc private func installPiperModel() {
-        guard let root = AppSettings.ttsModelsRoot() else { return }
+        guard let root = LocalSpeechModelReadiness.ttsModelsRoot() else { return }
         let install = installPiperModelOperation
         Task { [weak self] in
             let result = await Task.detached {

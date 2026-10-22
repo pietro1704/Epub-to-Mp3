@@ -60,6 +60,27 @@ class GitHygieneTest < Minitest::Test
     ].each { |path| assert ignored?(path), "local artifact is visible: #{path}" }
   end
 
+  def test_private_session_artifacts_are_local_and_untracking_preserves_their_bytes
+    %w[
+      TODO_APP.md handoff.md
+      .hermes/plans/2026-10-15-git-hygiene.md
+      .scratch/session/plan.md
+    ].each do |path|
+      assert ignored?(path), "private session artifact is visible: #{path}"
+      absolute = File.join(@root, path)
+      FileUtils.mkdir_p(File.dirname(absolute))
+      File.binwrite(absolute, "private fixture\x00#{path}\n")
+      before = File.binread(absolute)
+      _, err, status = git("add", "--force", "--", path)
+      assert status.success?, err
+      _, err, status = git("rm", "--cached", "--quiet", "--", path)
+      assert status.success?, err
+      assert_equal before, File.binread(absolute)
+      assert_empty git("ls-files", "--", path).first
+      assert_empty git("ls-files", "--others", "--exclude-standard", "--", path).first
+    end
+  end
+
   def test_shared_agent_assets_and_portable_editor_configuration_stay_visible
     %w[
       AGENTS.md CLAUDE.md .ai-memory.toml .ai-jail
@@ -70,7 +91,7 @@ class GitHygieneTest < Minitest::Test
       .codex/skills/goal-plan-execute/SKILL.md
       .claude/skills/example/SKILL.md .claude/hooks/session_start.sh
       .claude/settings.json .hermes/skills/handoff
-      .hermes/plans/2026-10-15-git-hygiene.md
+      docs/plans/shared-engineering-plan.md
       .vscode/extensions.json .vscode/settings.json .vscode/tasks.json
     ].each { |path| refute ignored?(path), "shared asset is hidden: #{path}" }
     assert ignored?(".vscode/local-machine.json")

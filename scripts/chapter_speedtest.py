@@ -10,9 +10,8 @@ import copy
 import os
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -28,55 +27,12 @@ from python_app.src.language import ensure_bcp47, get_language_detector
 SUPPORTED_SUFFIXES = {".epub", ".pdf"}
 
 
-@dataclass(frozen=True)
-class Scenario:
-    key: str
-    label: str
-    engine: str
-    mode: str
-    description: str
-
-
-SCENARIOS: Dict[str, Scenario] = {
-    "edge_multi": Scenario(
-        key="edge_multi",
-        label="Edge multilingual",
-        engine="edge",
-        mode="edge-multilingual",
-        description="Default multilingual voice with automatic language detection [[lang:xx]].",
-    ),
-    "edge_pt": Scenario(
-        key="edge_pt",
-        label="Edge pt-BR monolingual",
-        engine="edge",
-        mode="edge-monolingual",
-        description="Forces pt-BR monolingual voice to avoid multilingual rate limiting.",
-    ),
-    "piper": Scenario(
-        key="piper",
-        label="Piper local pt-BR",
-        engine="piper",
-        mode="piper",
-        description="Offline synthesis using the recommended Piper pt-BR model.",
-    ),
-}
-
-# Publicly known community values for Edge TTS rate limits.
-EDGE_RATE_LIMIT_HINTS = {
-    "edge-multilingual": 10,  # ~10 req/s for MultilingualNeural voices
-    "edge-monolingual": 16,  # ~16 req/s for traditional pt-BR Neural voices
-}
-
-
-@dataclass
-class ScenarioResult:
-    scenario: Scenario
-    elapsed: float
-    chars_per_sec: float
-    chapter_chars: int
-    success: bool
-    output_files: List[Path]
-    errors: List[str]
+from scripts.chapter_benchmark_scenarios import (
+    Scenario as Scenario,
+    SCENARIOS as SCENARIOS,
+    EDGE_RATE_LIMIT_HINTS as EDGE_RATE_LIMIT_HINTS,
+    ScenarioResult as ScenarioResult,
+)
 
 
 def parse_args() -> argparse.Namespace:

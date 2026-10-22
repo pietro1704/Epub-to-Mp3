@@ -71,7 +71,7 @@ jobs:
               scopes['rust'] ||= shared || path.start_with?('crates/') || path.end_with?('.rs')
               scopes['web'] ||= path.start_with?('web/', 'crates/converter-wasm/') || path.match?(/\Ascripts\/(?:build_web|check_direct_runtime)/)
               scopes['flutter'] ||= path.start_with?('flutter_app/') || path.match?(/\Ascripts\/(?:build_flutter|build_converter_ffi_android|package_converter_ffi_android|check_direct_runtime)/)
-              scopes['python'] ||= path.start_with?('python_app/', 'tests/') || path.match?(/\A(?:requirements[^\/]*\.txt|pyproject\.toml|pytest\.ini|setup\.cfg|scripts\/.*\.py)\z/)
+              scopes['python'] ||= path.start_with?('python_app/', 'tests/') || path.match?(/\A(?:[^\/]+\.py|requirements[^\/]*\.txt|pyproject\.toml|pytest\.ini|setup\.cfg|(?:scripts|\.github\/scripts)\/.*\.py)\z/)
               scopes['wasm'] ||= path.start_with?('crates/converter-wasm/', 'web/src/wasm/') || path == 'scripts/build_web_wasm.sh'
             end
           end
@@ -467,7 +467,8 @@ jobs:
           '
 
       - name: Cache Flutter SDK
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: flutter-sdk-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.local/share/mise/installs/flutter
           key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
@@ -476,6 +477,13 @@ jobs:
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
+
+      - name: Retain installed Flutter SDK
+        if: steps.flutter-sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.local/share/mise/installs/flutter
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
 
       - name: Install Flutter dependencies
         working-directory: flutter_app

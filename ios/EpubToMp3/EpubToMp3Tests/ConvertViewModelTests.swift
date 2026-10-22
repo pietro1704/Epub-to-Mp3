@@ -145,7 +145,7 @@ final class ConvertViewModelTests: XCTestCase {
             return result
         })
         model.selectedFile = URL(fileURLWithPath: "/unused-manual-input.epub")
-        let modelsRoot = try XCTUnwrap(AppSettings.ttsModelsRoot()).path
+        let modelsRoot = try XCTUnwrap(LocalSpeechModelReadiness.ttsModelsRoot()).path
         model.modelsRoot = modelsRoot
         model.engine = "piper"
         model.voice = "speaker-0"

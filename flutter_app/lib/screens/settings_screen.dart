@@ -9,6 +9,10 @@ import '../l10n/app_localizations.dart';
 import '../models/app_settings.dart';
 import '../state/providers.dart';
 
+part 'voice_selection_settings.dart';
+part 'installed_narration_models.dart';
+part 'playback_preferences.dart';
+
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -40,145 +44,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final notifier = ref.read(settingsProvider.notifier);
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final preferences = settings.ttsPreferences;
-    final primaryOptions = <String, TtsSelection>{
-      for (final selection in [
-        TtsSelection.faber,
-        TtsSelection.edge,
-        TtsSelection.system,
-        preferences.primary,
-      ])
-        jsonEncode(selection.toJson()): selection,
-    };
-    final secondaryOptions = <String, TtsSelection>{
-      for (final selection in [
-        TtsSelection.faber,
-        TtsSelection.edge,
-        TtsSelection.system,
-        ?preferences.secondary,
-      ])
-        if (jsonEncode(selection.toJson()) !=
-            jsonEncode(preferences.primary.toJson()))
-          jsonEncode(selection.toJson()): selection,
-    };
-    String selectionLabel(TtsSelection selection) {
-      if (jsonEncode(selection.toJson()) ==
-          jsonEncode(TtsSelection.faber.toJson())) {
-        return t.ttsFaberOffline;
-      }
-      if (jsonEncode(selection.toJson()) ==
-          jsonEncode(TtsSelection.edge.toJson())) {
-        return t.ttsEdgeOnline;
-      }
-      if (selection.engine == 'system') return t.ttsSystemOffline;
-      return selection.displayName;
-    }
-
     return Scaffold(
       appBar: AppBar(title: Text(t.settingsTitle)),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          // ── Audio Engine ──
-          _SectionHeader(t.audioEngineSection),
-          Card(
-            child: Column(
-              children: [
-                DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    'primary-${jsonEncode(preferences.primary.toJson())}',
-                  ),
-                  initialValue: jsonEncode(preferences.primary.toJson()),
-                  decoration: InputDecoration(labelText: t.ttsPrimaryNarration),
-                  items: primaryOptions.entries
-                      .map(
-                        (entry) => DropdownMenuItem(
-                          value: entry.key,
-                          child: Text(selectionLabel(entry.value)),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (key) {
-                    final selected = primaryOptions[key];
-                    if (selected == null) return;
-                    notifier.setTtsPreferences(
-                      TtsPreferences(
-                        primary: selected,
-                        secondary:
-                            jsonEncode(preferences.secondary?.toJson()) == key
-                            ? null
-                            : preferences.secondary,
-                        allowOnlineFallback: preferences.allowOnlineFallback,
-                        policyVersion: preferences.policyVersion,
-                      ),
-                    );
-                  },
-                ),
-                DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    'secondary-${jsonEncode(preferences.primary.toJson())}-${jsonEncode(preferences.secondary?.toJson())}',
-                  ),
-                  initialValue: preferences.secondary == null
-                      ? 'none'
-                      : jsonEncode(preferences.secondary!.toJson()),
-                  decoration: InputDecoration(
-                    labelText: t.ttsSecondaryNarration,
-                  ),
-                  items: [
-                    DropdownMenuItem(
-                      value: 'none',
-                      child: Text(t.ttsNoSecondary),
-                    ),
-                    ...secondaryOptions.entries.map(
-                      (entry) => DropdownMenuItem(
-                        value: entry.key,
-                        enabled:
-                            entry.value.engine != 'edge' ||
-                            preferences.allowOnlineFallback,
-                        child: Text(selectionLabel(entry.value)),
-                      ),
-                    ),
-                  ],
-                  onChanged: (key) {
-                    notifier.setTtsPreferences(
-                      TtsPreferences(
-                        primary: preferences.primary,
-                        secondary: secondaryOptions[key],
-                        allowOnlineFallback: preferences.allowOnlineFallback,
-                        policyVersion: 2,
-                      ),
-                    );
-                  },
-                ),
-                SwitchListTile(
-                  title: Text(t.ttsAllowOnlineSecondary),
-                  subtitle: Text(t.ttsOnlineSecondaryDescription),
-                  value: settings.ttsPreferences.allowOnlineFallback,
-                  onChanged: (value) {
-                    final prefs = settings.ttsPreferences;
-                    notifier.setTtsPreferences(
-                      TtsPreferences(
-                        primary: prefs.primary,
-                        secondary: !value && prefs.secondary?.engine == 'edge'
-                            ? null
-                            : prefs.secondary,
-                        allowOnlineFallback: value,
-                        policyVersion: prefs.policyVersion,
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            key: const ValueKey('tts-use-recommended-defaults'),
-            onPressed: () => notifier.setTtsPreferences(
-              const TtsPreferences.appDefaults(),
-            ),
-            child: Text(t.ttsUseRecommendedDefaults),
-          ),
-          const _TtsModelManagerCard(),
+          const VoiceSelectionSettings(),
+          const InstalledNarrationModelsCard(),
           const SizedBox(height: 20),
 
           // ── Remote Backend ──
@@ -457,55 +329,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _FooterText(t.readerPrefsFooter),
           const SizedBox(height: 20),
 
-          // ── Playback ──
-          _SectionHeader(t.playbackSection),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: Icon(Icons.speed, color: cs.onSurfaceVariant),
-                  title: Text(t.audioRateLabel),
-                  subtitle: Slider(
-                    value: settings.audioRate,
-                    min: 0.5,
-                    max: 2.0,
-                    divisions: 30,
-                    label: '${settings.audioRate.toStringAsFixed(2)}x',
-                    onChanged: notifier.setAudioRate,
-                  ),
-                  trailing: Text(
-                    '${settings.audioRate.toStringAsFixed(2)}x',
-                    style: tt.bodyMedium?.copyWith(
-                      fontFeatures: [const FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: Icon(
-                    Icons.timer_outlined,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  title: Text(t.wpmLabel),
-                  subtitle: Slider(
-                    value: settings.wpm.toDouble(),
-                    min: 100,
-                    max: 320,
-                    divisions: 22,
-                    label: '${settings.wpm}',
-                    onChanged: (v) => notifier.setWpm(v.round()),
-                  ),
-                  trailing: Text(
-                    '${settings.wpm}',
-                    style: tt.bodyMedium?.copyWith(
-                      fontFeatures: [const FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
+          const PlaybackPreferences(),
 
           // ── About ──
           _SectionHeader(t.aboutSection),
@@ -536,151 +360,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
-  }
-}
-
-class _TtsModelManagerCard extends ConsumerStatefulWidget {
-  const _TtsModelManagerCard();
-
-  @override
-  ConsumerState<_TtsModelManagerCard> createState() =>
-      _TtsModelManagerCardState();
-}
-
-class _TtsModelManagerCardState extends ConsumerState<_TtsModelManagerCard> {
-  Future<List<Map<String, dynamic>>>? _catalog;
-  Map<String, String> _installedMetadata = const {};
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _catalog ??= _loadCatalog();
-  }
-
-  Future<List<Map<String, dynamic>>> _loadCatalog() async {
-    final raw = await ref.read(embeddedConverterProvider).ttsModels();
-    final decoded = jsonDecode(raw);
-    if (decoded is! List) {
-      throw const FormatException('Invalid TTS model catalog');
-    }
-    final models = decoded
-        .whereType<Map>()
-        .map(Map<String, dynamic>.from)
-        .toList();
-    final root = await _modelRoot();
-    final metadata = <String, String>{};
-    for (final model in models) {
-      final id = model['id'];
-      if (id is! String || id.isEmpty) continue;
-      final value = await ref
-          .read(embeddedConverterProvider)
-          .ttsModelMetadata(modelId: id, root: root);
-      if (value != null) metadata[id] = value;
-    }
-    if (mounted) _installedMetadata = metadata;
-    return models;
-  }
-
-  Future<String> _modelRoot() async {
-    final directory = await getApplicationSupportDirectory();
-    return '${directory.path}/tts-models';
-  }
-
-  Future<void> _install(String modelId) async {
-    try {
-      await ref
-          .read(embeddedConverterProvider)
-          .installTtsModelFromCatalog(
-            modelId: modelId,
-            root: await _modelRoot(),
-          );
-      if (mounted) setState(() => _catalog = _loadCatalog());
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = AppLocalizations.of(context)!;
-    return Card(
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _catalog,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const ListTile(leading: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return ListTile(
-              leading: const Icon(Icons.memory_outlined),
-              title: Text(t.downloadAll),
-              subtitle: Text(snapshot.error.toString()),
-              trailing: IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: t.refresh,
-                onPressed: () => setState(() => _catalog = _loadCatalog()),
-              ),
-            );
-          }
-          final models = snapshot.data ?? const [];
-          return Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.memory_outlined),
-                title: Text(t.downloadAll),
-                subtitle: Text(t.useBuiltInEngineDesc),
-                trailing: IconButton(
-                  icon: const Icon(Icons.refresh),
-                  tooltip: t.refresh,
-                  onPressed: () => setState(() => _catalog = _loadCatalog()),
-                ),
-              ),
-              for (final model in models)
-                ListTile(
-                  title: Text('${model['id'] ?? ''}'),
-                  subtitle: Text(
-                    _installedMetadata.containsKey(model['id'])
-                        ? t.downloadComplete
-                        : '${model['languages'] ?? ''}',
-                  ),
-                  trailing: IconButton(
-                    icon: Icon(
-                      _installedMetadata.containsKey(model['id'])
-                          ? Icons.delete_outline
-                          : Icons.download_outlined,
-                    ),
-                    tooltip: _installedMetadata.containsKey(model['id'])
-                        ? t.remove
-                        : t.downloadAll,
-                    onPressed: () => _installedMetadata.containsKey(model['id'])
-                        ? _remove('${model['id']}')
-                        : _install('${model['id']}'),
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Future<void> _remove(String modelId) async {
-    try {
-      await ref
-          .read(embeddedConverterProvider)
-          .removeTtsModel(modelId: modelId, root: await _modelRoot());
-      if (mounted) setState(() => _catalog = _loadCatalog());
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
-      }
-    }
   }
 }
 

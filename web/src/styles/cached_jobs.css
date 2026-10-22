@@ -1,0 +1,136 @@
+.cached-jobs-alert {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 14px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
+.cached-jobs-alert__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.cached-jobs-alert__header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cached-jobs-alert__close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.cached-jobs-alert__close:hover {
+  opacity: 1;
+}
+
+.cached-jobs-alert__message {
+  margin: 0 0 1rem 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.cached-jobs-alert__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.cached-jobs-alert__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem 1rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  gap: 1rem;
+}
+
+.cached-jobs-alert__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.cached-jobs-alert__filename {
+  font-weight: 500;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.cached-jobs-alert__filename-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  max-width: min(360px, 55vw);
+}
+
+.cached-jobs-alert__time {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.cached-jobs-alert__resume {
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, var(--button-gradient-start), var(--button-gradient-end));
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+
+.cached-jobs-alert__resume:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--button-shadow);
+}
+
+.cached-jobs-alert__remove {
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+.cached-jobs-alert__remove:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--status-error-color);
+}

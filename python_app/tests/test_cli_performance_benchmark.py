@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +21,20 @@ def _load_module():
 
 
 BENCH = _load_module()
+
+
+def test_literal_cli_entrypoint_resolves_manifest_module_outside_checkout(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPT_PATH), "--help"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--manifest" in result.stdout
+    assert not list(tmp_path.iterdir())
 
 
 def _manifest(**overrides: object) -> dict:

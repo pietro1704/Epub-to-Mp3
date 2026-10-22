@@ -1,0 +1,244 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  line-height: 1.6;
+
+  --bg-color: #0f172a;
+  --bg-gradient-start: #1d2943;
+  --bg-gradient-end: #0f172a;
+  --text-primary: rgba(248, 250, 252, 0.95);
+  --text-secondary: rgba(226, 232, 240, 0.75);
+  --text-muted: rgba(203, 213, 225, 0.75);
+  --content-max-width: 1100px;
+  --content-padding-inline: clamp(1rem, 4vw, 2.5rem);
+
+  --badge-bg: rgba(99, 102, 241, 0.2);
+  --badge-color: #c7d2fe;
+
+  --panel-bg: rgba(15, 23, 42, 0.78);
+  --panel-border: rgba(148, 163, 184, 0.18);
+  --panel-shadow: rgba(15, 23, 42, 0.45);
+
+  --tab-trigger-bg: rgba(15, 23, 42, 0.65);
+  --tab-trigger-border: rgba(99, 102, 241, 0.25);
+  --tab-trigger-hover-border: rgba(129, 140, 248, 0.7);
+  --tab-active-bg: rgba(79, 70, 229, 0.35);
+  --tab-active-border: rgba(165, 180, 252, 0.85);
+  --tab-active-shadow: rgba(76, 72, 200, 0.35);
+
+  --button-gradient-start: #6366f1;
+  --button-gradient-end: #8b5cf6;
+  --button-shadow: rgba(99, 102, 241, 0.35);
+
+  --input-bg: rgba(15, 23, 42, 0.82);
+  --input-border: rgba(148, 163, 184, 0.28);
+  --input-focus-border: rgba(129, 140, 248, 0.8);
+  --input-focus-shadow: rgba(99, 102, 241, 0.35);
+  --hint-color: rgba(226, 232, 240, 0.6);
+  --error-bg: rgba(239, 68, 68, 0.12);
+  --error-color: #fed7d7;
+
+  --segmented-border: rgba(148, 163, 184, 0.32);
+  --segmented-bg: rgba(15, 23, 42, 0.75);
+  --segmented-hover-border: rgba(165, 180, 252, 0.7);
+  --segmented-text: rgba(203, 213, 225, 0.75);
+
+  --status-idle-bg: rgba(129, 140, 248, 0.18);
+  --status-idle-color: #c7d2fe;
+  --status-submitting-bg: rgba(74, 222, 128, 0.15);
+  --status-submitting-color: #34d399;
+  --status-polling-bg: rgba(59, 130, 246, 0.18);
+  --status-polling-color: #93c5fd;
+  --status-success-bg: rgba(16, 185, 129, 0.25);
+  --status-success-color: #6ee7b7;
+  --status-error-bg: rgba(239, 68, 68, 0.25);
+  --status-error-color: #fca5a5;
+  --status-cancelling-bg: rgba(251, 191, 36, 0.25);
+  --status-cancelling-color: #fcd34d;
+  --status-cancelled-bg: rgba(148, 163, 184, 0.25);
+  --status-cancelled-color: #cbd5f5;
+  --status-time-color: rgba(148, 163, 184, 0.65);
+  --status-placeholder-color: rgba(148, 163, 184, 0.7);
+  --status-error-block-bg: rgba(239, 68, 68, 0.12);
+  --status-error-block-color: #fecaca;
+
+  --terminal-bg: rgba(0, 0, 0, 0.65);
+  --terminal-text: rgba(255, 255, 255, 0.95);
+  --terminal-border: rgba(148, 163, 184, 0.25);
+
+  --downloads-placeholder: rgba(148, 163, 184, 0.72);
+  --downloads-item-bg: rgba(15, 23, 42, 0.6);
+  --downloads-item-border: rgba(148, 163, 184, 0.18);
+  --downloads-link: #a855f7;
+  --downloads-meta: rgba(148, 163, 184, 0.75);
+  --downloads-button-bg: rgba(148, 163, 184, 0.18);
+  --downloads-button-hover-bg: rgba(148, 163, 184, 0.3);
+  --downloads-button-text: rgba(226, 232, 240, 0.95);
+
+  --footer-color: rgba(148, 163, 184, 0.6);
+
+  --topbar-bg: rgba(15, 23, 42, 0.6);
+  --topbar-border: rgba(148, 163, 184, 0.2);
+  --topbar-button-bg: rgba(15, 23, 42, 0.85);
+  --topbar-button-border: rgba(148, 163, 184, 0.35);
+  --topbar-button-hover-border: rgba(129, 140, 248, 0.7);
+  --topbar-button-active-bg: rgba(99, 102, 241, 0.28);
+  --topbar-button-active-border: rgba(165, 180, 252, 0.85);
+  --topbar-button-text: var(--text-primary);
+  --topbar-label-color: var(--text-secondary);
+  --hero-cover-bg: rgba(15, 23, 42, 0.35);
+  --hero-collapsed-bg: rgb(15, 23, 42);
+  --hero-collapsed-border: rgba(148, 163, 184, 0.35);
+  --hero-collapsed-shadow: rgba(15, 23, 42, 0.55);
+  --hero-highlight-bg: rgba(15, 23, 42, 0.45);
+  --hero-highlight-border: rgba(148, 163, 184, 0.25);
+  --hero-highlight-shadow: rgba(15, 23, 42, 0.35);
+  --hero-top-fill: clamp(1.25rem, 4vw, 2.25rem);
+  --hero-top-shadow: rgba(15, 23, 42, 0.35);
+  --hero-top-spacing: clamp(0.5rem, 2vw, 1rem);
+  --hero-sticky-gap: clamp(1.5rem, 3vw, 2rem);
+  --hero-gradient-start: rgba(15, 23, 42, 0.15);
+  --hero-fade-mid: rgba(15, 23, 42, 0.65);
+  --hero-collapsed-fade: rgba(15, 23, 42, 0);
+  --log-preview-bg: rgba(15, 23, 42, 0.8);
+  --log-preview-text: var(--text-secondary);
+  --progress-bar-bg: rgba(148, 163, 184, 0.18);
+  --progress-bar-border: rgba(148, 163, 184, 0.3);
+
+  --border: rgba(148, 163, 184, 0.18);
+  --surface: rgba(15, 23, 42, 0.78);
+  --surface-2: rgba(15, 23, 42, 0.55);
+  --surface-hover: rgba(15, 23, 42, 0.7);
+  --surface-secondary: rgba(30, 41, 59, 0.6);
+  --surface-tertiary: rgba(30, 41, 59, 0.4);
+  --accent: #6366f1;
+}
+
+.theme-light {
+  color-scheme: light;
+  --bg-color: #f8fafc;
+  --bg-gradient-start: #ffffff;
+  --bg-gradient-end: #e2e8f0;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  --badge-bg: rgba(59, 130, 246, 0.18);
+  --badge-color: #2563eb;
+
+  --panel-bg: rgba(255, 255, 255, 0.9);
+  --panel-border: rgba(148, 163, 184, 0.35);
+  --panel-shadow: rgba(15, 23, 42, 0.08);
+
+  --tab-trigger-bg: rgba(255, 255, 255, 0.75);
+  --tab-trigger-border: rgba(148, 163, 184, 0.4);
+  --tab-trigger-hover-border: rgba(59, 130, 246, 0.6);
+  --tab-active-bg: rgba(99, 102, 241, 0.16);
+  --tab-active-border: rgba(99, 102, 241, 0.55);
+  --tab-active-shadow: rgba(99, 102, 241, 0.25);
+
+  --input-bg: rgba(255, 255, 255, 0.95);
+  --input-border: rgba(148, 163, 184, 0.5);
+  --input-focus-border: rgba(99, 102, 241, 0.65);
+  --input-focus-shadow: rgba(99, 102, 241, 0.18);
+  --hint-color: #64748b;
+  --error-bg: rgba(254, 202, 202, 0.4);
+  --error-color: #b91c1c;
+
+  --segmented-border: rgba(148, 163, 184, 0.45);
+  --segmented-bg: rgba(255, 255, 255, 0.9);
+  --segmented-hover-border: rgba(99, 102, 241, 0.5);
+  --segmented-text: #475569;
+
+  --status-idle-bg: rgba(99, 102, 241, 0.18);
+  --status-idle-color: #4338ca;
+  --status-submitting-bg: rgba(74, 222, 128, 0.25);
+  --status-submitting-color: #166534;
+  --status-polling-bg: rgba(59, 130, 246, 0.22);
+  --status-polling-color: #1d4ed8;
+  --status-success-bg: rgba(16, 185, 129, 0.22);
+  --status-success-color: #047857;
+  --status-error-bg: rgba(239, 68, 68, 0.25);
+  --status-error-color: #b91c1c;
+  --status-cancelling-bg: rgba(251, 191, 36, 0.2);
+  --status-cancelling-color: #b45309;
+  --status-cancelled-bg: rgba(148, 163, 184, 0.2);
+  --status-cancelled-color: #475569;
+  --status-time-color: #64748b;
+  --status-placeholder-color: #64748b;
+  --status-error-block-bg: rgba(254, 202, 202, 0.6);
+  --status-error-block-color: #7f1d1d;
+
+  --terminal-bg: rgba(248, 250, 252, 0.95);
+  --terminal-text: #1e293b;
+  --terminal-border: rgba(148, 163, 184, 0.4);
+
+  --downloads-placeholder: #64748b;
+  --downloads-item-bg: rgba(255, 255, 255, 0.9);
+  --downloads-item-border: rgba(148, 163, 184, 0.45);
+  --downloads-link: #6d28d9;
+  --downloads-meta: #475569;
+  --downloads-button-bg: rgba(148, 163, 184, 0.18);
+  --downloads-button-hover-bg: rgba(99, 102, 241, 0.18);
+  --downloads-button-text: #1e293b;
+
+  --footer-color: #475569;
+
+  --topbar-bg: rgba(255, 255, 255, 0.85);
+  --topbar-border: rgba(148, 163, 184, 0.45);
+  --topbar-button-bg: rgba(255, 255, 255, 0.9);
+  --topbar-button-border: rgba(148, 163, 184, 0.45);
+  --topbar-button-hover-border: rgba(59, 130, 246, 0.6);
+  --topbar-button-active-bg: rgba(99, 102, 241, 0.18);
+  --topbar-button-active-border: rgba(99, 102, 241, 0.5);
+  --topbar-button-text: #1e293b;
+  --topbar-label-color: #475569;
+  --hero-cover-bg: rgba(226, 232, 240, 0.45);
+  --hero-collapsed-bg: rgb(248, 250, 252);
+  --hero-collapsed-border: rgba(148, 163, 184, 0.5);
+  --hero-collapsed-shadow: rgba(15, 23, 42, 0.12);
+  --hero-highlight-bg: rgba(255, 255, 255, 0.75);
+  --hero-highlight-border: rgba(148, 163, 184, 0.4);
+  --hero-highlight-shadow: rgba(15, 23, 42, 0.08);
+  --hero-top-fill: clamp(1.25rem, 4vw, 2.25rem);
+  --hero-top-shadow: rgba(15, 23, 42, 0.08);
+  --hero-top-spacing: clamp(0.5rem, 2vw, 1rem);
+  --hero-sticky-gap: clamp(1.5rem, 3vw, 2rem);
+  --hero-gradient-start: rgba(15, 23, 42, 0.05);
+  --hero-fade-mid: rgba(248, 250, 252, 0.85);
+  --hero-collapsed-fade: rgba(248, 250, 252, 0);
+  --log-preview-bg: rgba(248, 250, 252, 0.95);
+  --log-preview-text: #1e293b;
+  --progress-bar-bg: rgba(148, 163, 184, 0.25);
+  --progress-bar-border: rgba(148, 163, 184, 0.4);
+
+  --border: rgba(148, 163, 184, 0.35);
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-2: rgba(241, 245, 249, 0.9);
+  --surface-hover: rgba(226, 232, 240, 0.8);
+  --surface-secondary: rgba(226, 232, 240, 0.6);
+  --surface-tertiary: rgba(241, 245, 249, 0.5);
+  --accent: #4f46e5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(
+    circle at top,
+    var(--bg-gradient-start) 0%,
+    var(--bg-gradient-end) 65%
+  );
+  color: var(--text-primary);
+  overflow-x: hidden;
+}

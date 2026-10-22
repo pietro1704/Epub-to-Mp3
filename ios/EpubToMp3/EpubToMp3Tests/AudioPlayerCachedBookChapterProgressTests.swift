@@ -108,13 +108,21 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
             lastActivityAt: nil
         )
 
-        let target = AudioPlayer.playbackRetentionTarget(
+        let target = PlaybackResumeStore.playbackRetentionTarget(
             snapshot: snapshot,
             playableChapterOffset: 0
         )
 
         XCTAssertEqual(target?.bookID, "book-id")
         XCTAssertEqual(target?.chapterIndex, 7)
+    }
+
+    func testRetentionPreservesNonEmbeddedIdentityAndRejectsInvalidOffsets() {
+        let snapshot = snapshot(chapters: [(7, "completed", 100, "a.mp3")])
+        XCTAssertEqual(PlaybackResumeStore.playbackRetentionTarget(snapshot: snapshot, playableChapterOffset: 0)?.bookID, "job")
+        XCTAssertEqual(PlaybackResumeStore.playbackRetentionTarget(snapshot: snapshot, playableChapterOffset: 0)?.chapterIndex, 7)
+        XCTAssertNil(PlaybackResumeStore.playbackRetentionTarget(snapshot: snapshot, playableChapterOffset: -1))
+        XCTAssertNil(PlaybackResumeStore.playbackRetentionTarget(snapshot: snapshot, playableChapterOffset: 1))
     }
 
     func testRestoredPlaybackUsesPersistedEpubChapterInPartialSnapshot() {

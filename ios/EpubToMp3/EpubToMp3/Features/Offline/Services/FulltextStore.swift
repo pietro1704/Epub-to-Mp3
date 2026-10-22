@@ -10,7 +10,7 @@ import Foundation
 ///     `project_reader_fulltext.md`: [800, 1500, 3000, 6000, 12000] ms.
 ///   - 404 / 422 are surfaced as permanent errors — no retry.
 ///   - Persists JSON to `<documents>/Audiobooks/<jobId>/fulltext.json`,
-///     reusing the layout established by `DownloadManager`.
+///     reusing the layout established by `AudiobookDownloads`.
 final class FulltextStore: @unchecked Sendable {
 
     private final class EvictionState: @unchecked Sendable {
@@ -52,10 +52,10 @@ final class FulltextStore: @unchecked Sendable {
     /// Retry ladder enforced verbatim by the contract memory.
     static let retryLadderMs: [Int] = [800, 1500, 3000, 6000, 12000]
 
-    /// Storage layout shared with `DownloadManager` so a single
+    /// Storage layout shared with `AudiobookDownloads` so a single
     /// audiobook folder owns both audio and reader text.
     static func fulltextURL(for jobId: String, root: URL? = nil) -> URL {
-        let base = (root ?? DownloadManager.audiobooksRoot())
+        let base = (root ?? AudiobookDownloadStorage.audiobooksRoot())
             .appendingPathComponent(jobId, isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("fulltext.json")

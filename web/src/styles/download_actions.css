@@ -1,0 +1,150 @@
+.downloads-panel__command-section {
+  margin-bottom: 2rem;
+  padding: 1.25rem;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.downloads-panel__command-section h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.downloads-panel__command {
+  display: block;
+  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Courier New', monospace;
+  font-size: 0.85rem;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.downloads-panel__log-toggle {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--tab-trigger-border);
+  background: var(--tab-trigger-bg);
+  color: var(--text-primary);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border 0.2s ease;
+  justify-self: start;
+}
+
+.downloads-panel__log-toggle:hover {
+  border-color: var(--tab-trigger-hover-border);
+}
+
+.downloads-panel__log {
+  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Courier New', monospace;
+  font-size: 0.8rem;
+  padding: 1rem;
+  background: var(--log-preview-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: var(--log-preview-text);
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  white-space: pre;
+}
+
+.downloads-panel__cta {
+  justify-self: flex-start;
+  border: none;
+  border-radius: 999px;
+  padding: 0.6rem 1.4rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--downloads-button-bg);
+  color: var(--downloads-button-text);
+  transition: background 0.2s ease;
+}
+
+.downloads-panel__cta:hover:not(:disabled) {
+  background: var(--downloads-button-hover-bg);
+}
+
+.downloads-panel__cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* footer is now .status-bar — see desktop overrides section at bottom */
+
+@media (max-width: 720px) {
+  .panel {
+    padding: 1.6rem;
+  }
+
+  .tabs__list {
+    grid-template-columns: 1fr;
+  }
+
+  .chapter-item__header {
+    padding: 0.85rem 1rem 0.5rem 1rem;
+  }
+
+  .chapter-item__content {
+    padding: 0.5rem 1rem 1rem 1rem;
+  }
+
+  .chapter-item__name {
+    font-size: 0.95rem;
+  }
+
+  .topbar {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .topbar__group {
+    padding-right: 0.8rem;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero__copy {
+    text-align: center;
+    align-items: center;
+  }
+
+  .hero__highlights {
+    grid-template-columns: 1fr;
+  }
+
+  .cover-card {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .cover-card__image {
+    width: min(220px, 60vw);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

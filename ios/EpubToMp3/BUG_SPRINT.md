@@ -8,20 +8,20 @@
 
 ## Contexto técnico
 
-- Repo: `/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3/`
-- Device: iPhone `00008140-001128A022BA801C`, bundle `com.pietrocode.epubtomp3`
+- Repo: `<REPOSITORY_ROOT>/ios/EpubToMp3/`
+- Device: iPhone `<DEVICE_UDID>`, bundle `com.pietrocode.epubtomp3`
 - Build+deploy obrigatório após cada fix:
   ```bash
   xcodegen generate
   xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \
     -configuration Debug \
-    -destination 'platform=iOS,id=00008140-001128A022BA801C' \
+    -destination 'platform=iOS,id=<DEVICE_UDID>' \
     -derivedDataPath .build build
   xcrun devicectl device install app \
-    --device 00008140-001128A022BA801C \
+    --device <DEVICE_UDID> \
     .build/Build/Products/Debug-iphoneos/EpubToMp3.app
   xcrun devicectl device process launch \
-    --device 00008140-001128A022BA801C com.pietrocode.epubtomp3
+    --device <DEVICE_UDID> com.pietrocode.epubtomp3
   ```
 - **Nunca declarar fixed sem confirmar no device físico.**
 - **Nunca usar simulador** (risco de kernel panic no Intel 2018).

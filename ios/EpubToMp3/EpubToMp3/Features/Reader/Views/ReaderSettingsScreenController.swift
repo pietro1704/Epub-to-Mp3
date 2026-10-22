@@ -342,7 +342,7 @@ final class ReaderSettingsScreenController: UITableViewController {
             let sizes = Array(0...4)
             presentChoice(
                 title: L10n.string("readerSettings.size"),
-                options: sizes.map { "\((Int(AppSettings.pointSize(for: $0))))pt" },
+                options: sizes.map { "\((Int(ReaderFontScale.pointSize(for: $0))))pt" },
                 selectedIndex: settings.readerFontSize
             ) { [weak self] index in
                 self?.settings.readerFontSize = index

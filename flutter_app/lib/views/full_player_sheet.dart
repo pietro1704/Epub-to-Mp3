@@ -13,6 +13,10 @@ import '../services/audio_player_service.dart';
 import '../state/providers.dart';
 import '../screens/library_screen.dart';
 
+part 'player_chapter_list.dart';
+part 'player_transport_controls.dart';
+part 'player_sleep_timer.dart';
+
 class FullPlayerSheet extends ConsumerStatefulWidget {
   final AudioPlayerInterface player;
   final String? bookTitle;
@@ -210,7 +214,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
               ),
               _scrubber(context),
               const SizedBox(height: 8),
-              _transportRow(context),
+              PlayerTransportControls(player: widget.player),
               const SizedBox(height: 8),
               _secondaryRow(context),
               const SizedBox(height: 8),
@@ -327,90 +331,9 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     );
   }
 
-  Widget _transportRow(BuildContext context) {
-    final t = AppLocalizations.of(context);
-    return StreamBuilder<bool>(
-      stream: widget.player.playing,
-      builder: (context, snap) {
-        final isPlaying = snap.data ?? false;
-        return FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-            // Previous chapter
-            Semantics(
-              label: 'Previous chapter',
-              button: true,
-              child: IconButton(
-                icon: const Icon(Icons.skip_previous_rounded),
-                iconSize: 32,
-                onPressed: widget.player.previousChapter,
-                tooltip: 'Previous chapter',
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Skip -15s
-            Semantics(
-              label: 'Skip back 15 seconds',
-              button: true,
-              child: IconButton(
-                icon: const Icon(Icons.replay_10),
-                iconSize: 32,
-                onPressed: () => widget.player.skipBackward(seconds: 15),
-                tooltip: 'Skip back 15s',
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Play/pause
-            Semantics(
-              label: isPlaying ? (t?.pause ?? 'Pause') : (t?.play ?? 'Play'),
-              button: true,
-              child: IconButton(
-                icon: Icon(
-                  isPlaying
-                      ? Icons.pause_circle_filled
-                      : Icons.play_circle_filled,
-                ),
-                iconSize: 72,
-                onPressed: widget.player.togglePlayPause,
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Skip +15s
-            Semantics(
-              label: 'Skip forward 15 seconds',
-              button: true,
-              child: IconButton(
-                icon: const Icon(Icons.forward_10),
-                iconSize: 32,
-                onPressed: () => widget.player.skipForward(seconds: 15),
-                tooltip: 'Skip forward 15s',
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Next chapter
-            Semantics(
-              label: 'Next chapter',
-              button: true,
-              child: IconButton(
-                icon: const Icon(Icons.skip_next_rounded),
-                iconSize: 32,
-                onPressed: widget.player.nextChapter,
-                tooltip: 'Next chapter',
-              ),
-            ),
-          ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _secondaryRow(BuildContext context) {
     final t = AppLocalizations.of(context);
     final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-    final sleepPresets = [0.0, 15 * 60.0, 30 * 60.0, 45 * 60.0, 60 * 60.0];
     final hasChapters = widget.player.chapters.isNotEmpty;
 
     return Row(
@@ -460,29 +383,10 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
             ),
           ),
 
-        // Sleep timer
-        StreamBuilder<double>(
-          stream: widget.player.sleepTimerStream,
-          builder: (context, snap) {
-            final remaining = snap.data ?? widget.player.sleepTimerRemaining;
-            return Semantics(
-              label: t?.sleepTimer ?? 'Sleep timer',
-              button: true,
-              child: GestureDetector(
-                onTap: () {
-                  final current = widget.player.sleepTimerRemaining;
-                  final next =
-                      sleepPresets.where((p) => p > current).firstOrNull ?? 0.0;
-                  widget.player.setSleepTimer(seconds: next);
-                },
-                child: _pill(
-                  context,
-                  remaining > 0 ? _formatTime(remaining) : 'Sleep',
-                  icon: Icons.nightlight_round,
-                ),
-              ),
-            );
-          },
+        PlayerSleepTimer(
+          player: widget.player,
+          pill: _pill,
+          formatTime: _formatTime,
         ),
       ],
     );
@@ -497,7 +401,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         minChildSize: 0.3,
         maxChildSize: 0.95,
         expand: false,
-        builder: (ctx, controller) => _ChapterListSheet(
+        builder: (ctx, controller) => PlayerChapterList(
           chapters: widget.player.chapters,
           player: widget.player,
         ),
@@ -554,105 +458,5 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
       return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     }
     return '$m:${s.toString().padLeft(2, '0')}';
-  }
-}
-
-/// Sheet presenting chapters from the player queue for in-player navigation.
-/// Mirrors iOS ChapterListSheet.
-class _ChapterListSheet extends StatelessWidget {
-  const _ChapterListSheet({required this.chapters, required this.player});
-
-  final List<ChapterProgress> chapters;
-  final AudioPlayerInterface player;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = AppLocalizations.of(context);
-    final cs = Theme.of(context).colorScheme;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Column(
-        children: [
-          // Drag handle
-          Container(
-            width: 36,
-            height: 4,
-            margin: const EdgeInsets.only(top: 8, bottom: 8),
-            decoration: BoxDecoration(
-              color: Colors.grey[400],
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Text(
-                  t?.tocTitle ?? 'Chapters',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(t?.done ?? 'Done'),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: StreamBuilder<int?>(
-              stream: player.currentIndex,
-              builder: (context, snap) {
-                final currentPlayerIdx = snap.data;
-                final currentChapterIdx = currentPlayerIdx != null
-                    ? player.chapterIndexForPlayerIndex(currentPlayerIdx)
-                    : -1;
-
-                return ListView.separated(
-                  itemCount: chapters.length,
-                  separatorBuilder: (_, _) =>
-                      const Divider(height: 1, indent: 16),
-                  itemBuilder: (context, i) {
-                    final chapter = chapters[i];
-                    final isCurrent =
-                        chapter.index == currentChapterIdx ||
-                        i == currentChapterIdx;
-                    return Semantics(
-                      label: chapter.displayTitle,
-                      button: true,
-                      child: ListTile(
-                        title: Text(
-                          chapter.displayTitle,
-                          style: TextStyle(
-                            color: isCurrent ? cs.primary : null,
-                            fontWeight: isCurrent
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        trailing: isCurrent
-                            ? Icon(Icons.volume_up, size: 16, color: cs.primary)
-                            : null,
-                        onTap: () {
-                          player.seek(Duration.zero, index: i);
-                          Navigator.pop(context);
-                        },
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

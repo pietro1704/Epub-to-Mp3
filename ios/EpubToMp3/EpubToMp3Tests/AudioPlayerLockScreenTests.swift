@@ -260,7 +260,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
     @MainActor
     func testNowPlayingPrefersRealChapterNameOverGenericProgressName() {
         XCTAssertEqual(
-            AudioPlayer.preferredChapterTitle(
+            ChapterNavigationDecision.preferredChapterTitle(
                 primary: "Chapter 1",
                 secondary: "The Fellowship of the Ring",
                 fallback: "Chapter 1"
@@ -268,7 +268,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
             "The Fellowship of the Ring"
         )
         XCTAssertEqual(
-            AudioPlayer.preferredChapterTitle(
+            ChapterNavigationDecision.preferredChapterTitle(
                 primary: "Capítulo 1",
                 secondary: "Shelob's Lair",
                 fallback: "Capítulo 1"
@@ -343,7 +343,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
 
     @MainActor
     func testPlaybackURLResolvesBackendRelativeOutputPath() {
-        let url = AudioPlayer.playbackURL(
+        let url = PlaybackArtifactLocation.playbackURL(
             forDownloadPath: "/api/outputs/job-1/chapter.mp3",
             backendBaseURL: URL(string: "https://example.com:8443")
         )

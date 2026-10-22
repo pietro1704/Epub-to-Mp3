@@ -1,0 +1,178 @@
+.conversion-form {
+  display: grid;
+  gap: 1.2rem;
+  min-width: 0;
+}
+
+.conversion-form * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.conversion-form label,
+.conversion-form legend,
+.conversion-form p,
+.conversion-form span,
+.conversion-form button {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.form-advanced {
+  margin: 0.5rem 0 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.form-advanced > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.form-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.form-advanced summary::before {
+  content: '▸';
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.form-advanced[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.form-advanced__content {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.form-field,
+.form-row {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.file-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.file-input-row__input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.file-input-row__sample {
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .file-input-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .file-input-row__sample {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+.form-legend {
+  margin-bottom: 0.2rem;
+  font-weight: 600;
+  font-size: 0.98rem;
+}
+
+label {
+  font-weight: 600;
+  font-size: 0.98rem;
+}
+
+input,
+select,
+button {
+  border: 1px solid var(--input-border);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
+  background: var(--input-bg);
+  color: inherit;
+  transition:
+    border 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+input:focus,
+select:focus,
+button:focus {
+  border-color: var(--input-focus-border);
+  box-shadow: 0 0 0 3px var(--input-focus-shadow);
+  outline: none;
+}
+
+select {
+  cursor: pointer;
+}
+
+.form-hint {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--hint-color);
+}
+
+.form-hint--warning {
+  color: #b45309;
+}
+
+.form-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.form-toggle input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.form-hint--filename {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+  flex-wrap: wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.form-hint__filename {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  display: inline-block;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}

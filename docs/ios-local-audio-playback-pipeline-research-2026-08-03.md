@@ -1,5 +1,7 @@
 # iPhone Local Audio Playback Pipeline Research
 
+> **Historical record.** The Python coordinator and proposed Swift scheduler below describe the August investigation. Shared Rust now owns conversion policy and scheduling; the removed Apple Python files remain available in Git history. See [execution policy](agents/execution-policy.md) and [runtime navigation](agents/runtime-navigation.md) for current operation and ownership.
+
 Status: resolved research for [Trace the iOS embedded conversion-to-playback pipeline](https://github.com/pietro1704/Epub-to-Mp3/issues/466).
 
 ## Primary sources

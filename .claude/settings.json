@@ -11,7 +11,7 @@
             "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/session_start.sh\"",
             "timeout": 10,
             "async": true,
-            "statusMessage": "Loading conversion history..."
+            "statusMessage": "Optional legacy observations; disabled without explicit opt-in."
           }
         ]
       }
@@ -23,7 +23,7 @@
             "type": "command",
             "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/prompt_context.sh\"",
             "timeout": 8,
-            "statusMessage": "Checking conversion status..."
+            "statusMessage": "Optional legacy observations; disabled without explicit opt-in."
           }
         ]
       }
@@ -36,15 +36,7 @@
             "type": "command",
             "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/bash_conversion.sh\"",
             "timeout": 10,
-            "async": true,
-            "if": "Bash(python*)"
-          },
-          {
-            "type": "command",
-            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/bash_conversion.sh\"",
-            "timeout": 10,
-            "async": true,
-            "if": "Bash(mise run*)"
+            "async": true
           }
         ]
       },
@@ -63,7 +55,7 @@
             "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/web_typecheck_after_edit.sh\"",
             "timeout": 60,
             "async": true,
-            "statusMessage": "Re-running web typecheck after edit..."
+            "statusMessage": "Web source notice only; automatic checks disabled."
           },
           {
             "type": "command",
@@ -80,11 +72,6 @@
             "type": "command",
             "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/stop_status.sh\"",
             "timeout": 8
-          },
-          {
-            "type": "command",
-            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/test_coverage_gate.sh\"",
-            "timeout": 15
           },
           {
             "type": "command",

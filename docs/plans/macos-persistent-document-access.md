@@ -30,11 +30,11 @@ Interpretation:
 
 Repository root:
 
-`/Users/pietropugliesi/Developer/Epub-to-Mp3`
+`<REPOSITORY_ROOT>`
 
 Apple project:
 
-`/Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3`
+`<REPOSITORY_ROOT>/ios/EpubToMp3`
 
 Project tooling:
 
@@ -246,7 +246,7 @@ Summary from `xcrun xcresulttool`:
 Command shape used:
 
 ```bash
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3
+cd <REPOSITORY_ROOT>/ios/EpubToMp3
 mise exec -- xcodegen generate
 mise exec -- xcodebuild \
   -project EpubToMp3.xcodeproj \
@@ -297,7 +297,7 @@ Earlier in the architecture migration, generic iOS, Share Extension, and macOS b
 1. Rerun the Share Extension generic iOS build after the final `LibraryStore` changes:
 
 ```bash
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3
+cd <REPOSITORY_ROOT>/ios/EpubToMp3
 mise exec -- xcodebuild -quiet \
   -project EpubToMp3.xcodeproj \
   -scheme EpubToMp3ShareExtension \
@@ -311,7 +311,7 @@ mise exec -- xcodebuild -quiet \
 2. Rerun the macOS app generic build after the final `LibraryStore` changes:
 
 ```bash
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3
+cd <REPOSITORY_ROOT>/ios/EpubToMp3
 mise exec -- xcodebuild -quiet \
   -project EpubToMp3.xcodeproj \
   -scheme EpubToMp3 \

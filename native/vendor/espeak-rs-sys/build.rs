@@ -168,17 +168,17 @@ fn main() {
         },
     );
 
-    // Bindings
+    // Track original headers, not the refreshed OUT_DIR copy, for Cargo cache invalidation.
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
-        .clang_arg(format!("-I{}", espeak_dst.display()))
+        .clang_arg(format!("-I{}", espeak_src.display()))
         .clang_arg(format!(
             "-I{}",
-            espeak_dst.join("src").join("include").display()
+            espeak_src.join("src").join("include").display()
         ))
         .clang_arg(format!(
             "-I{}",
-            espeak_dst
+            espeak_src
                 .join("src")
                 .join("include")
                 .join("espeak-ng")

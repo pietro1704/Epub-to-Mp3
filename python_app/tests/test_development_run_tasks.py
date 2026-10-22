@@ -40,5 +40,9 @@ def test_vscode_exposes_debug_run_tasks() -> None:
 
     assert '"mise run mac:run"' in tasks
     assert '"mise run ios:run"' in tasks
-    assert '"IOS_TARGET=simulator mise run ios:run"' in tasks
-    assert '"mise run flutter:run"' in tasks
+    assert '"mise run ios:device:build"' in tasks
+    assert '"mise run ios:device:run"' in tasks
+    assert '"mise run ios:build"' in tasks
+    # Simulator execution is quarantined; Android work remains paused.
+    assert '"IOS_TARGET=simulator mise run ios:run"' not in tasks
+    assert '"mise run flutter:run"' not in tasks

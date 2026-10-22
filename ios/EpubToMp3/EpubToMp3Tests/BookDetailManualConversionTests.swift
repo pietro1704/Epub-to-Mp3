@@ -8,230 +8,19 @@ import AppKit
 
 @MainActor
 final class BookDetailManualConversionTests: XCTestCase {
-    func testManualCompletionAfterExplicitAudioRemovalDoesNotRestoreDeletedJob() async throws {
-        let id = "detail-removed-conversion-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(id)
-        let source = try EpubFixture.createWithChapter(body: "A conversion cancelled by explicit storage removal.")
-        let library = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: directory)
-        let book = try library.importBook(from: source)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        let presentation = PlayerPresentation(defaults: defaults)
-        let started = expectation(description: "Manual conversion is waiting for output")
-        var release: AsyncStream<Void>.Continuation!
-        let completion = AsyncStream<Void> { release = $0 }
-        var returned = false
-        var capturedProgress: (@MainActor @Sendable (RustConversionCoordinator.ConversionProgressEvent) -> Void)?
-        var requestedJob: String?
-        let executor: RustConversionCoordinator.Executor = { _, jobID, _, _, _, progress, _ in
-            requestedJob = jobID
-            capturedProgress = progress
-            started.fulfill()
-            for await _ in completion { }
-            let manifest = try JSONSerialization.data(withJSONObject: ["manifest": [
-                "jobId": jobID, "title": "Removed conversion", "author": "Author", "chapters": []]])
-            returned = true
-            return .init(jobID: jobID, manifestJSON: manifest, outputDirectory: directory)
-        }
-        defer {
-            release.finish()
-            player.stop()
-            defaults.removePersistentDomain(forName: id)
-            try? FileManager.default.removeItem(at: directory)
-            try? FileManager.default.removeItem(at: source)
-        }
-        #if os(iOS)
-        let controller = BookDetailScreenController(book: book, library: library,
-            settings: AppSettings(defaults: defaults), player: player,
-            playerPresentation: presentation, conversionExecutor: executor)
-        controller.loadViewIfNeeded()
-        controller.downloadWholeBook()
-        #else
-        let controller = MacBookDetailViewController(book: book, library: library,
-            settings: AppSettings(defaults: defaults), player: player,
-            playerPresentation: presentation, onRead: { _ in }, onShowJobs: {}, conversionExecutor: executor)
-        _ = controller.view
-        controller.convertWholeBook(options: AppSettings(defaults: defaults).conversionOptions)
-        #endif
-        await fulfillment(of: [started], timeout: 3)
-        let jobID = try XCTUnwrap(requestedJob)
-        NotificationCenter.default.post(name: RustConversionOutputStore.willRemoveAudio,
-                                         object: nil, userInfo: ["bookID": book.id])
-        capturedProgress?(.init(jobId: jobID, state: "running", chapterIndex: 0, chaptersTotal: 1,
-            chaptersCompleted: 1, percent: 100, engine: "piper", message: "Late progress"))
-        release.finish()
-        for _ in 0..<100 where !returned { try await Task.sleep(nanoseconds: 10_000_000) }
-        XCTAssertTrue(returned)
-        await Task.yield()
-        await Task.yield()
-        XCTAssertNil(library.books.first(where: { $0.id == book.id })?.lastJobId,
-                     "An output removed while conversion was pending must not be recorded again")
-        try await library.flushPersistence()
-        let reloaded = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: directory)
-        XCTAssertNil(reloaded.books.first(where: { $0.id == book.id })?.lastJobId)
-        XCTAssertNil(player.snapshot)
-        #if os(iOS)
-        XCTAssertNil(controller.presentedViewController)
-        #else
-        XCTAssertNil(NSApp.modalWindow)
-        #endif
-        withExtendedLifetime(controller) { }
-    }
 
-    private static let widgetPlaybackKeys = [
+    static let widgetPlaybackKeys = [
         "currentlyPlayingBookId", "widget.nowPlayingChapterName", "widget.nowPlayingAuthor",
         "widget.nowPlayingProgress", "widget.nowPlayingIsPlaying", "widget.nowPlayingPositionSeconds",
         "widget.nowPlayingDurationSeconds", "widget.nowPlayingChapterRemainingSeconds",
         "widget.nowPlayingBookRemainingSeconds", "widget.nowPlayingTotalChapters"
     ]
     #if os(iOS)
-    func testListenUsesStreamingExecutorInsteadOfWholeBookConversion() async throws {
-        let id = "detail-listen-streaming-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
-        defaults.set("edge", forKey: AppSettings.audioEngineKey)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let source = try EpubFixture.createWithChapter(body: "Listen should stream this chapter.")
-        let library = LibraryStore(defaults: defaults, defaultsKey: "library",
-                                   importDirectory: root.appendingPathComponent("imports"))
-        let book = try library.importBook(from: source)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        let presentation = PlayerPresentation(defaults: defaults)
-        let started = expectation(description: "Listen enters one conversion executor")
-        var conversionCalled = false
-        var streamingCalled = false
-        var pendingPlaybackInstalled = false
-        let playbackKeys = [AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
-        let savedPlayback = playbackKeys.map { UserDefaults.standard.object(forKey: $0) }
-        let widgetDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
-        let widgetKeys = ["currentlyPlayingBookId", "widget.nowPlayingChapterName", "widget.nowPlayingAuthor",
-                          "widget.nowPlayingProgress", "widget.nowPlayingIsPlaying", "widget.nowPlayingPositionSeconds",
-                          "widget.nowPlayingDurationSeconds", "widget.nowPlayingChapterRemainingSeconds",
-                          "widget.nowPlayingBookRemainingSeconds", "widget.nowPlayingTotalChapters"]
-        let savedWidget = widgetKeys.map { widgetDefaults?.object(forKey: $0) }
-        defer {
-            player.stop()
-            for (key, value) in zip(playbackKeys, savedPlayback) {
-                restore(value, forKey: key, in: .standard)
-            }
-            if let widgetDefaults {
-                for (key, value) in zip(widgetKeys, savedWidget) {
-                    restore(value, forKey: key, in: widgetDefaults)
-                }
-            }
-            defaults.removePersistentDomain(forName: id)
-            try? FileManager.default.removeItem(at: root)
-            try? FileManager.default.removeItem(at: source)
-        }
 
-        func result(jobID: String) throws -> RustConversionCoordinator.Result {
-            let manifest = ["manifest": [
-                "jobId": jobID, "title": book.resolvedTitle, "author": book.author ?? "",
-                "chapters": [["title": "Chapter", "filename": "chapter.wav",
-                              "textChars": 32, "sourceIndex": 0]],
-            ]] as [String: Any]
-            return .init(jobID: jobID,
-                         manifestJSON: try JSONSerialization.data(withJSONObject: manifest),
-                         outputDirectory: root)
-        }
 
-        let settings = AppSettings(defaults: defaults)
-        let controller = BookDetailScreenController(
-            book: book, library: library, settings: settings,
-            player: player, playerPresentation: presentation,
-            conversionExecutor: { _, jobID, _, _, _, _, _ in
-                conversionCalled = true
-                started.fulfill()
-                return try result(jobID: jobID)
-            },
-            streamingExecutor: { _, jobID, chapterStart, chapterEnd, _, options, _, _, chunk in
-                streamingCalled = true
-                XCTAssertEqual(chapterStart, 0)
-                XCTAssertEqual(chapterEnd, -1, "Listen streams from the requested chapter onward.")
-                XCTAssertEqual(options?.engine, "edge")
-                XCTAssertEqual(options?.ttsPreferences?.primary.engine, "edge",
-                               "Listen must preserve the preferences captured before opening the book.")
-                XCTAssertEqual(player.snapshot?.engine, "edge")
-                XCTAssertNotNil(chunk, "Listen must supply the incremental audio callback.")
-                pendingPlaybackInstalled = player.snapshot?.jobId == jobID && player.isConverting
-                started.fulfill()
-                return try result(jobID: jobID)
-            },
-            bookFileOpener: { _ in
-                settings.audioEngine = .piper
-                return source
-            }
-        )
-        controller.loadViewIfNeeded()
-        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? UIButton }
-            .first { $0.accessibilityIdentifier == "bookDetail.listen" })
-        button.sendActions(for: .touchUpInside)
 
-        await fulfillment(of: [started], timeout: 3)
-        XCTAssertTrue(streamingCalled, "Listen must use the streaming executor.")
-        XCTAssertFalse(conversionCalled, "Whole-book conversion belongs to Download/Convert.")
-        XCTAssertTrue(pendingPlaybackInstalled, "The pending streaming session must be installed before conversion starts.")
-        withExtendedLifetime(controller) { }
-    }
 
-    func testListenIgnoresRepeatedTapWhileBookURLIsOpening() async throws {
-        let id = "detail-listen-single-flight-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
-        defaults.set("edge", forKey: AppSettings.audioEngineKey)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let source = try EpubFixture.createWithChapter(body: "Listen opens this book only once.")
-        let library = LibraryStore(defaults: defaults, defaultsKey: "library",
-                                   importDirectory: root.appendingPathComponent("imports"))
-        let book = try library.importBook(from: source)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        let presentation = PlayerPresentation(defaults: defaults)
-        let openStarted = expectation(description: "First Listen reserves its request before opening")
-        var openContinuation: CheckedContinuation<URL, Error>?
-        var openCount = 0
-        let widgetDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
-        let savedWidget = widgetDefaults?.object(forKey: "currentlyPlayingBookId")
-        defer {
-            openContinuation?.resume(throwing: CancellationError())
-            player.stop()
-            restoreOptional(savedWidget, forKey: "currentlyPlayingBookId", in: widgetDefaults)
-            defaults.removePersistentDomain(forName: id)
-            try? FileManager.default.removeItem(at: root)
-            try? FileManager.default.removeItem(at: source)
-        }
-
-        let controller = BookDetailScreenController(
-            book: book, library: library, settings: AppSettings(defaults: defaults),
-            player: player, playerPresentation: presentation,
-            bookFileOpener: { _ in
-                openCount += 1
-                openStarted.fulfill()
-                return try await withCheckedThrowingContinuation { openContinuation = $0 }
-            }
-        )
-        controller.loadViewIfNeeded()
-        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? UIButton }
-            .first { $0.accessibilityIdentifier == "bookDetail.listen" })
-        button.sendActions(for: .touchUpInside)
-        await fulfillment(of: [openStarted], timeout: 3)
-        button.sendActions(for: .touchUpInside)
-        await Task.yield()
-
-        XCTAssertEqual(openCount, 1, "A pending Listen request must ignore repeated taps.")
-        openContinuation?.resume(throwing: CancellationError())
-        openContinuation = nil
-        withExtendedLifetime(controller) { }
-    }
-
-    func testOptInLiveEdgeListenStartsNativePlaybackBeforeConversionReturns() async throws {
-        try await verifyBookDetailListenPlayback(forceEdgeFailure: false)
-    }
-
-    func testOptInEdgeFailureListenUsesSystemVoiceBeforeConversionReturns() async throws {
-        try await verifyBookDetailListenPlayback(forceEdgeFailure: true)
-    }
-
-    private func verifyBookDetailListenPlayback(forceEdgeFailure: Bool) async throws {
+    func verifyBookDetailListenPlayback(forceEdgeFailure: Bool) async throws {
         let gate = forceEdgeFailure ? "EPUB2MP3_NATIVE_TTS_TEST" : "APP_IOS_LIVE_EDGE"
         guard ProcessInfo.processInfo.environment[gate] == "1" else {
             throw XCTSkip("Enable \(gate)=1 to exercise the actual Book Detail Listen action.")
@@ -381,215 +170,16 @@ final class BookDetailManualConversionTests: XCTestCase {
         withExtendedLifetime(controller) { }
     }
 
-    func testOptInLiveEdgeManualConvertCreatesAudioWithoutAutoplay() async throws {
-        guard ProcessInfo.processInfo.environment["APP_IOS_LIVE_EDGE"] == "1" else {
-            throw XCTSkip("Set APP_IOS_LIVE_EDGE=1 to exercise live Edge manual conversion on iOS.")
-        }
-
-        let id = "detail-live-edge-manual-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
-        defaults.set("edge", forKey: AppSettings.audioEngineKey)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let source = try EpubFixture.createWithChapter(
-            body: "Esta conversão Edge integral deve gerar um MP3 sem iniciar reprodução automática.",
-            includeCover: false
-        )
-        let library = LibraryStore(defaults: defaults, defaultsKey: "library",
-                                   importDirectory: root.appendingPathComponent("imports"))
-        let book = try library.importBook(from: source)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        let presentation = PlayerPresentation(defaults: defaults)
-        let conversionCompleted = expectation(description: "Manual whole-book Edge conversion completes")
-        var conversionResult: RustConversionCoordinator.Result?
-        var conversionStart: Int32?
-        var conversionEnd: Int32?
-        var selectedEngine: String?
-        let playbackKeys = [AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
-        let savedPlayback = playbackKeys.map { UserDefaults.standard.object(forKey: $0) }
-        let widgetDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
-        let widgetKeys = Self.widgetPlaybackKeys
-        let savedWidget = widgetKeys.map { widgetDefaults?.object(forKey: $0) }
-        defer {
-            player.stop()
-            for (key, value) in zip(playbackKeys, savedPlayback) {
-                restore(value, forKey: key, in: .standard)
-            }
-            for (key, value) in zip(widgetKeys, savedWidget) {
-                restoreOptional(value, forKey: key, in: widgetDefaults)
-            }
-            if let output = conversionResult?.outputDirectory {
-                try? FileManager.default.removeItem(at: output)
-            }
-            defaults.removePersistentDomain(forName: id)
-            try? FileManager.default.removeItem(at: root)
-            try? FileManager.default.removeItem(at: source)
-        }
-
-        let controller = BookDetailScreenController(
-            book: book, library: library, settings: AppSettings(defaults: defaults),
-            player: player, playerPresentation: presentation,
-            conversionExecutor: { url, jobID, chapterStart, chapterEnd, options, progress, chapter in
-                conversionStart = chapterStart
-                conversionEnd = chapterEnd
-                selectedEngine = options?.engine
-                let result = try await RustConversionCoordinator.execute(
-                    bookURL: url, jobID: jobID, chapterStart: chapterStart, chapterEnd: chapterEnd,
-                    options: options, onProgress: progress, onChapterCompleted: chapter
-                )
-                conversionResult = result
-                conversionCompleted.fulfill()
-                return result
-            },
-            bookFileOpener: { _ in source }
-        )
-        controller.loadViewIfNeeded()
-        let convert = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? UIButton }
-            .first { $0.accessibilityIdentifier == "bookDetail.download" })
-        convert.sendActions(for: .touchUpInside)
-
-        await fulfillment(of: [conversionCompleted], timeout: 45)
-        let result = try XCTUnwrap(conversionResult)
-        XCTAssertEqual(conversionStart, -1)
-        XCTAssertEqual(conversionEnd, -1, "Manual Convert must process the entire book.")
-        XCTAssertEqual(selectedEngine, "edge")
-        XCTAssertNil(player.snapshot, "Manual Convert must not create a playback session.")
-        XCTAssertFalse(player.isPlaying, "Manual Convert must not autoplay its generated audio.")
-        let snapshot = try result.snapshot()
-        XCTAssertEqual(snapshot.chaptersTotal, 1)
-        let chapter = try XCTUnwrap(snapshot.chapterProgress?.first)
-        let audioURL = URL(fileURLWithPath: try XCTUnwrap(chapter.downloadUrl))
-        XCTAssertTrue(audioURL.lastPathComponent.hasSuffix(".mp3"))
-        XCTAssertGreaterThan(try Data(contentsOf: audioURL).count, 0)
-        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: result.manifestJSON) as? [String: Any])
-        XCTAssertNotEqual(envelope["systemVoiceUsed"] as? Bool, true,
-                          "The live Edge download golden path must not silently substitute platform speech.")
-        let manifest = try XCTUnwrap(envelope["manifest"] as? [String: Any])
-        let archiveName = try XCTUnwrap(manifest["archive"] as? String)
-        let archiveURL = result.outputDirectory.appendingPathComponent(archiveName)
-        XCTAssertGreaterThan(try Data(contentsOf: archiveURL).count, 0)
-        XCTAssertEqual(library.books.first(where: { $0.id == book.id })?.lastJobId, result.jobID)
-        defer { DownloadManager.deleteAudiobook(jobId: result.jobID) }
-        let downloads = DownloadManager()
-        let updates = await downloads.watchProgress(jobId: result.jobID)
-        let downloadFinished = expectation(description: "Fresh Edge audio is persisted for offline playback")
-        let observation = Task {
-            for await update in updates {
-                if update.state == .completed || update.state == .failed {
-                    XCTAssertEqual(update.state, .completed)
-                    downloadFinished.fulfill()
-                    break
-                }
-            }
-        }
-        defer { observation.cancel() }
-        await downloads.enqueueAll(snapshot: snapshot, baseURL: nil)
-        await fulfillment(of: [downloadFinished], timeout: 15)
-        let localSnapshot = try XCTUnwrap(DownloadManager.localPlaybackSnapshot(jobId: result.jobID))
-        let localURL = try XCTUnwrap(DownloadManager.localAudioURL(jobId: result.jobID, chapterIndex: chapter.index))
-        let localDuration = try await AVURLAsset(url: localURL).load(.duration)
-        XCTAssertGreaterThan(localDuration.seconds, 0)
-        player.play(snapshot: localSnapshot, startingAt: 0)
-        player.resume()
-        let offlineQueue = Mirror(reflecting: player).children
-            .first { $0.label == "player" }?.value as? AVQueuePlayer
-        let retainedAsset = try XCTUnwrap(offlineQueue?.currentItem?.asset as? AVURLAsset)
-        XCTAssertEqual(retainedAsset.url, localURL,
-                       "Playback must use the protected downloaded file, not its temporary conversion source.")
-        for _ in 0..<50 where (offlineQueue?.currentTime().seconds ?? 0) < 0.02 {
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
-        XCTAssertGreaterThan(offlineQueue?.currentTime().seconds ?? 0, 0.02,
-                             "The downloaded Edge MP3 must play from its persisted local file.")
-        XCTAssertFalse(player.isUsingSpeechFallback)
-        withExtendedLifetime(controller) { }
-    }
     #endif
 
-    func testManualCompletionPreservesExistingPlaybackSession() async throws {
-        try await verifyManualConversion(existingSession: true)
-    }
 
-    func testManualCompletionDoesNotCreatePlaybackSession() async throws {
-        try await verifyManualConversion(existingSession: false)
-    }
 
     #if os(macOS)
-    func testMacListenRoutesThroughStreamingExecutor() async throws {
-        let id = "detail-streaming-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
-        defaults.set("edge", forKey: AppSettings.audioEngineKey)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let source = try EpubFixture.createWithChapter(body: "A fixture for the Mac Listen action.")
-        let library = LibraryStore(defaults: defaults, defaultsKey: "library",
-                                   importDirectory: root.appendingPathComponent("imports"))
-        let book = try library.importBook(from: source)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        let presentation = PlayerPresentation(defaults: defaults)
-        let streamingStarted = expectation(description: "Listen invokes the streaming conversion pipeline")
-        var manualExecutorCalled = false
-        var chunkCallbackWasProvided = false
-        let playbackKeys = [AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
-        let savedPlayback = playbackKeys.map { UserDefaults.standard.object(forKey: $0) }
-        let widgetDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
-        let widgetBook = widgetDefaults?.object(forKey: "currentlyPlayingBookId")
-        defer {
-            player.stop()
-            for (key, value) in zip(playbackKeys, savedPlayback) {
-                restoreMac(value, forKey: key, in: .standard)
-            }
-            restoreOptionalMac(widgetBook, forKey: "currentlyPlayingBookId", in: widgetDefaults)
-            defaults.removePersistentDomain(forName: id)
-            try? FileManager.default.removeItem(at: root)
-            try? FileManager.default.removeItem(at: source)
-        }
-        let controller = MacBookDetailViewController(
-            book: book, library: library, settings: AppSettings(defaults: defaults),
-            player: player, playerPresentation: presentation, onRead: { _ in }, onShowJobs: {},
-            conversionExecutor: { _, jobID, _, _, _, _, _ in
-                manualExecutorCalled = true
-                let manifest = try JSONSerialization.data(withJSONObject: ["manifest": [
-                    "jobId": jobID, "title": "Listen fixture", "author": "Author", "chapters": []
-                ]])
-                return .init(jobID: jobID, manifestJSON: manifest, outputDirectory: root)
-            },
-            streamingExecutor: { _, jobID, start, end, _, options, _, _, chunk in
-                XCTAssertEqual(end, -1)
-                XCTAssertEqual(options?.engine, "edge")
-                chunkCallbackWasProvided = chunk != nil
-                streamingStarted.fulfill()
-                let segment = Data([0xFF, 0xFB, 0x90, 0x00] + [UInt8](repeating: 0, count: 508))
-                try segment.write(to: root.appendingPathComponent("chapter.mp3"))
-                let manifest = try JSONSerialization.data(withJSONObject: ["manifest": [
-                    "jobId": jobID, "title": "Listen fixture", "author": "Author", "chapters": [[
-                        "title": "Chapter", "filename": "chapter.mp3", "textChars": 32,
-                        "sourceIndex": Int(start)
-                    ]]
-                ]])
-                return .init(jobID: jobID, manifestJSON: manifest, outputDirectory: root)
-            }
-        )
-        _ = controller.view
-        let listenButton = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.title == L10n.string("bookDetail.listenStart") })
-
-        listenButton.performClick(nil)
-
-        await fulfillment(of: [streamingStarted], timeout: 3)
-        XCTAssertFalse(manualExecutorCalled, "Listen must not wait for whole chapter callbacks.")
-        XCTAssertTrue(chunkCallbackWasProvided, "Listen must provide Rust with its audio chunk delivery callback.")
-        withExtendedLifetime(controller) { }
-    }
     #endif
 
     #if os(iOS)
-    func testBookDetailActionsKeepMainActorResponsiveWhileOpeningBook() async throws {
-        try await verifyBookDetailOpenIsAsynchronous(actionIdentifier: "bookDetail.listen")
-        try await verifyBookDetailOpenIsAsynchronous(actionIdentifier: "bookDetail.download")
-    }
 
-    private func verifyBookDetailOpenIsAsynchronous(actionIdentifier: String) async throws {
+    func verifyBookDetailOpenIsAsynchronous(actionIdentifier: String) async throws {
         let id = "detail-open-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
         defaults.set("edge", forKey: AppSettings.audioEngineKey)
@@ -671,11 +261,11 @@ final class BookDetailManualConversionTests: XCTestCase {
         withExtendedLifetime(controller) { }
     }
 
-    private func descendants(_ view: UIView) -> [UIView] {
+    func descendants(_ view: UIView) -> [UIView] {
         [view] + view.subviews.flatMap(descendants)
     }
 
-    private func restore(_ value: Any?, forKey key: String, in defaults: UserDefaults) {
+    func restore(_ value: Any?, forKey key: String, in defaults: UserDefaults) {
         if let value {
             defaults.set(value, forKey: key)
         } else {
@@ -683,13 +273,13 @@ final class BookDetailManualConversionTests: XCTestCase {
         }
     }
 
-    private func restoreOptional(_ value: Any?, forKey key: String, in defaults: UserDefaults?) {
+    func restoreOptional(_ value: Any?, forKey key: String, in defaults: UserDefaults?) {
         guard let defaults else { return }
         restore(value, forKey: key, in: defaults)
     }
     #endif
 
-    private func verifyManualConversion(existingSession: Bool) async throws {
+    func verifyManualConversion(existingSession: Bool) async throws {
         let id = "manual-detail-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
         defaults.set("edge", forKey: AppSettings.audioEngineKey)
@@ -808,22 +398,22 @@ final class BookDetailManualConversionTests: XCTestCase {
     }
 
     #if os(macOS)
-    private func descendants(_ view: NSView) -> [NSView] {
+    func descendants(_ view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap(descendants)
     }
 
-    private func restoreMac(_ value: Any?, forKey key: String, in defaults: UserDefaults) {
+    func restoreMac(_ value: Any?, forKey key: String, in defaults: UserDefaults) {
         if let value { defaults.set(value, forKey: key) }
         else { defaults.removeObject(forKey: key) }
     }
 
-    private func restoreOptionalMac(_ value: Any?, forKey key: String, in defaults: UserDefaults?) {
+    func restoreOptionalMac(_ value: Any?, forKey key: String, in defaults: UserDefaults?) {
         guard let defaults else { return }
         restoreMac(value, forKey: key, in: defaults)
     }
     #endif
 }
-private final class DetailNativeChunkCount: @unchecked Sendable {
+final class DetailNativeChunkCount: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
     func increment() { lock.lock(); value += 1; lock.unlock() }

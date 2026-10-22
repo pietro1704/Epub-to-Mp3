@@ -88,7 +88,7 @@ Future<void> _initializeAndroidAudio(
   AudioStartupState state,
 ) async {
   try {
-    final handler = await AudioService.init(
+    final backgroundAudio = await AudioService.init(
       builder: () => BackgroundAudioHandler(
         player,
         snapshotStore: WidgetPlaybackSnapshotStore(prefs),
@@ -102,7 +102,7 @@ Future<void> _initializeAndroidAudio(
         androidResumeOnClick: true,
       ),
     );
-    state.attach(handler);
+    state.attach(backgroundAudio);
   } catch (_) {
     // MediaSession is an enhancement. The in-app player remains available
     // when Android rejects or cannot start the background service.

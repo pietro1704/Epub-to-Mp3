@@ -6,17 +6,17 @@ struct AudioStorageMaintenance: Sendable {
     private let artifactStore: LocalAudioArtifactStore
     private let legacyAudiobooksRoot: URL
     private let legacyTTSRoot: URL
-    private let downloadManager: DownloadManager?
+    private let downloadManager: AudiobookDownloads?
     private let cancelDownloads: (@Sendable () async -> Void)?
     private let notificationCenter: NotificationCenter
     private let rustOutputs: RustConversionOutputStore
 
     init(
         artifactStore: LocalAudioArtifactStore = .shared,
-        legacyAudiobooksRoot: URL = DownloadManager.audiobooksRoot(),
+        legacyAudiobooksRoot: URL = AudiobookDownloadStorage.audiobooksRoot(),
         legacyTTSRoot: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts", isDirectory: true),
-        downloadManager: DownloadManager? = nil,
+        downloadManager: AudiobookDownloads? = nil,
         cancelDownloads: (@Sendable () async -> Void)? = nil,
         notificationCenter: NotificationCenter = .default,
         rustOutputs: RustConversionOutputStore = .shared
@@ -31,7 +31,7 @@ struct AudioStorageMaintenance: Sendable {
     }
 
     func clearAllDownloads() async throws {
-        let manager = downloadManager ?? DownloadManager.shared
+        let manager = downloadManager ?? AudiobookDownloads.shared
         try await manager.withStorageMaintenance {
             await cancelDownloads?()
             try Task.checkCancellation()

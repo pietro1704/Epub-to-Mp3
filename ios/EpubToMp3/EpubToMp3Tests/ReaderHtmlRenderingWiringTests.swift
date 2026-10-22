@@ -1,42 +1,31 @@
 import XCTest
+@testable import EpubToMp3
 
-/// Source-contract tests for the reader-1 slice: the on-device parser now
-/// emits `html`/`css` per chapter, and both native reader controllers must
-/// render it via `EpubHtmlRenderer`, falling back to plain `chapter.text`
-/// only when `html` is absent (PDF, parse failure, or an old cached
-/// payload). See `docs/reader-spec-comparison.md` P0 gap #1.
+@MainActor
 final class ReaderHtmlRenderingWiringTests: XCTestCase {
-    private func source(_ relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try readSourceFileIfAvailable(
-            at: root.appendingPathComponent("EpubToMp3/\(relativePath)")
-        )
+    func testNativeChapterSurfaceUsesAuthoredHTMLInsteadOfNarrationFallback() throws {
+        let harness = try NativeReaderTestHarness(chapters: [
+            NativeReaderTestHarness.chapter("Narration fallback", html: "<p>Authored <strong>HTML passage</strong>.</p>")
+        ])
+        harness.installTeardown(in: self)
+        harness.showChapter(0)
+        XCTAssertTrue(harness.displayed.string.contains("Authored HTML passage"))
+        XCTAssertFalse(harness.displayed.string.contains("Narration fallback"))
+        XCTAssertFalse(harness.displayed.string.contains("<strong>"))
     }
 
-    func testBookOpenScreenControllerRendersHtmlWithPlainTextFallback() throws {
-        let source = try source("Features/Reader/Views/BookOpenScreenController.swift")
-
-        XCTAssertTrue(source.contains("EpubHtmlRenderer.render("))
-        XCTAssertTrue(source.contains("textView.attributedText = NSAttributedString(rendered)"))
-        XCTAssertTrue(source.contains("textView.text = fallbackText"))
+    func testNativeChapterSurfaceRetainsPlainTextWhenHTMLIsAbsent() throws {
+        let harness = try NativeReaderTestHarness(chapters: [NativeReaderTestHarness.chapter("Plain readable passage.")])
+        harness.installTeardown(in: self)
+        harness.showChapter(0)
+        XCTAssertEqual(harness.displayed.string.trimmingCharacters(in: .whitespacesAndNewlines), "Plain readable passage.")
     }
 
-    func testMacReaderViewControllerRendersHtmlWithPlainTextFallback() throws {
-        let source = try source("Features/Reader/Views/MacReaderViewController.swift")
-
-        XCTAssertTrue(source.contains("EpubHtmlRenderer.render("))
-        XCTAssertTrue(source.contains("textView.textStorage?.setAttributedString(NSAttributedString(rendered))"))
-        XCTAssertTrue(source.contains("textView.string = chapter.text"))
-    }
-
-    func testLocalFulltextCacheDirectoryWasBumpedForHtmlCssPayloadChange() throws {
-        let source = try source("Features/Offline/Services/LocalFulltextCache.swift")
-
-        XCTAssertTrue(
-            source.contains(#"appendingPathComponent("fulltext-v5""#),
-            "Cache directory must be bumped so legacy cover/image-only payloads are re-parsed instead of served stale."
-        )
+    func testFulltextCacheUsesDurableApplicationSupportInsteadOfLegacyCaches() throws {
+        let url = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: "cache-directory-contract"))
+        XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, "ReaderFulltext-v2")
+        XCTAssertEqual(url.pathExtension, "plist")
+        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+        XCTAssertTrue(url.path.hasPrefix(support.path + "/"))
     }
 }

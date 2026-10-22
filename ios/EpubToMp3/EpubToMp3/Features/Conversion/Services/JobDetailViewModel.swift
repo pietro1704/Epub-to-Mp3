@@ -56,7 +56,7 @@ final class JobDetailViewModel: ObservableObject {
             }
         }
         progressTask = Task { [weak self] in
-            for await progress in await DownloadManager.shared.watchProgress(jobId: jobId) {
+            for await progress in await AudiobookDownloads.shared.watchProgress(jobId: jobId) {
                 guard let self, !Task.isCancelled else { return }
                 self.downloadState = progress.state
                 self.downloadProgressLabel = progress.totalChapters > 0
@@ -133,16 +133,16 @@ final class JobDetailViewModel: ObservableObject {
 
     func downloadAll(baseURL: URL?) {
         guard let snapshot else { return }
-        Task { await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: baseURL) }
+        Task { await AudiobookDownloads.shared.enqueueAll(snapshot: snapshot, baseURL: baseURL) }
     }
 
     func cancelDownloads() {
         guard let jobId = snapshot?.jobId else { return }
-        Task { await DownloadManager.shared.cancel(jobId: jobId) }
+        Task { await AudiobookDownloads.shared.cancel(jobId: jobId) }
     }
 
     func clearDownloads() {
         guard let jobId = snapshot?.jobId else { return }
-        Task { await DownloadManager.shared.clearDownloadedBook(jobId: jobId) }
+        Task { await AudiobookDownloads.shared.clearDownloadedBook(jobId: jobId) }
     }
 }

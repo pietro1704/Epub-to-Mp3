@@ -1,74 +1,77 @@
 import XCTest
+import UniformTypeIdentifiers
 @testable import EpubToMp3
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
-/// Source-contract + unit tests for the P1 CBZ slice: comic pages render as
-/// images (not text) in both reader controllers, the Listen action is
-/// disabled for comics, and the shared import-type list replaced the 4
-/// duplicated UTType lists. See `docs/reader-spec-comparison.md` P1 format
-/// expansion.
+@MainActor
 final class ComicPageReadingWiringTests: XCTestCase {
-    private func source(_ relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try readSourceFileIfAvailable(
-            at: root.appendingPathComponent("EpubToMp3/\(relativePath)")
-        )
+    func testNativeChapterSurfaceMountsComicImageAndReturnsToReadableText() throws {
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBqkAAAAASUVORK5CYII="
+        let comic = EbookFulltext.Chapter(index: 1, name: "Page", text: "", html: nil, css: nil,
+            charCount: 0, segments: nil, resources: [.init(href: "page.png", mediaType: "image/png", dataBase64: png)], contentKind: "images")
+        let harness = try NativeReaderTestHarness(chapters: [comic, NativeReaderTestHarness.chapter("Readable text", index: 2)])
+        harness.installTeardown(in: self)
+        harness.showChapter(0)
+        XCTAssertNotNil(harness.composition.comicPageImageView.image)
+#if os(macOS)
+        XCTAssertTrue(harness.composition.contentScrollView.documentView === harness.composition.comicPageImageView)
+#else
+        XCTAssertFalse(harness.composition.comicPageImageView.isHidden)
+        XCTAssertTrue(harness.composition.textView.isHidden)
+#endif
+        harness.showChapter(1)
+#if os(macOS)
+        XCTAssertTrue(harness.composition.contentScrollView.documentView === harness.composition.textView)
+#else
+        XCTAssertTrue(harness.composition.comicPageImageView.isHidden)
+        XCTAssertFalse(harness.composition.textView.isHidden)
+#endif
+        XCTAssertEqual(harness.displayed.string, "Readable text")
     }
 
-    func testBookOpenScreenControllerRendersImagePagesForComics() throws {
-        let source = try source("Features/Reader/Views/BookOpenScreenController.swift")
-
-        XCTAssertTrue(source.contains("comicPageImageView"))
-        XCTAssertTrue(source.contains("chapter.isImageOnly"))
+#if os(macOS)
+    func testUnavailableComicImageClearsPriorPageInsteadOfReusingIt() throws {
+        let chapter = EbookFulltext.Chapter(index: 1, name: "Unavailable page", text: "", html: nil, css: nil,
+            charCount: 0, segments: nil, resources: nil, contentKind: "images")
+        let harness = try NativeReaderTestHarness(chapters: [chapter])
+        harness.installTeardown(in: self)
+        harness.composition.comicPageImageView.image = NSImage(size: NSSize(width: 1, height: 1))
+        harness.showChapter(0)
+        XCTAssertNil(harness.composition.comicPageImageView.image)
+        XCTAssertTrue(harness.composition.contentScrollView.documentView === harness.composition.comicPageImageView)
     }
 
-    func testMacReaderViewControllerRendersImagePagesForComics() throws {
-        let source = try source("Features/Reader/Views/MacReaderViewController.swift")
-
-        XCTAssertTrue(source.contains("comicPageImageView"))
-        XCTAssertTrue(source.contains("chapter.isImageOnly"))
+    func testBookDetailDisablesComicListeningAndReenablesTextListening() {
+        let content = MacBookDetailContent()
+        let comic = BookEntity(id: "comic-capability", title: "Comic", bookmark: Data(), displayFilename: "comic.cbz", addedAt: .distantPast, fileType: .cbz)
+        content.render(book: comic, localConversionProgress: nil)
+        XCTAssertFalse(content.listenButton.isEnabled)
+        XCTAssertEqual(content.listenButton.title, L10n.string("bookDetail.listenUnavailableComic"))
+        let text = BookEntity(id: "text-capability", title: "Text", bookmark: Data(), displayFilename: "book.epub", addedAt: .distantPast, fileType: .epub)
+        content.render(book: text, localConversionProgress: nil)
+        XCTAssertTrue(content.listenButton.isEnabled)
+        XCTAssertEqual(content.listenButton.title, L10n.string("bookDetail.listenStart"))
     }
+#endif
 
-    func testBookDetailScreensDisableListenForComics() throws {
-        let ios = try source("Features/Library/Views/BookDetailScreenController.swift")
-        let mac = try source("Features/Library/Views/MacBookDetailViewController.swift")
-
-        XCTAssertTrue(ios.contains("book.fileType.supportsAudioConversion"))
-        XCTAssertTrue(mac.contains("book.fileType.supportsAudioConversion"))
-    }
-
-    func testPickersUseSharedSupportedImportTypes() throws {
-        for path in [
-            "Features/Conversion/Views/ConvertScreenController.swift",
-            "Features/Library/Views/LibraryScreenController.swift",
-            "Features/Library/Views/MacLibraryViewController.swift",
-            "Features/Reader/Views/BookOpenScreenController.swift",
-        ] {
-            let source = try source(path)
-            XCTAssertTrue(
-                source.contains("SupportedImportTypes.all"),
-                "\(path) should use the shared SupportedImportTypes.all instead of a duplicated list"
-            )
+    func testSharedImportTypeListAcceptsSupportedDocumentsAndExpandedEpubFolders() {
+        for ext in ["epub", "pdf", "fb2", "docx", "cbz", "cbr", "mobi", "azw", "azw3", "prc"] {
+            if let type = UTType(filenameExtension: ext) {
+                XCTAssertTrue(SupportedImportTypes.all.contains(type), "Missing picker type: \(ext)")
+            }
         }
+        XCTAssertTrue(SupportedImportTypes.all.contains(.folder))
     }
 
-    func testEbookFulltextChapterExposesIsImageOnly() {
-        let chapter = EbookFulltext.Chapter(
-            index: 1, name: "Página 1", text: "", html: nil, css: nil, charCount: 0,
-            segments: nil, contentKind: "images"
-        )
-        XCTAssertTrue(chapter.isImageOnly)
-
-        let textChapter = EbookFulltext.Chapter(
-            index: 1, name: "Ch", text: "hello", html: nil, css: nil, charCount: 5,
-            segments: nil, contentKind: "text"
-        )
-        XCTAssertFalse(textChapter.isImageOnly)
-
-        let legacyChapter = EbookFulltext.Chapter(
-            index: 1, name: "Ch", text: "hello", html: nil, css: nil, charCount: 5, segments: nil
-        )
-        XCTAssertFalse(legacyChapter.isImageOnly, "Older cached payloads without contentKind must not be treated as image-only")
+    func testLegacyAndTextPayloadsAreNotMistakenForComicPages() {
+        for kind in [nil, "text"] as [String?] {
+            let chapter = EbookFulltext.Chapter(index: 1, name: "Text", text: "hello", html: nil,
+                css: nil, charCount: 5, segments: nil, contentKind: kind)
+            XCTAssertFalse(chapter.isImageOnly)
+        }
     }
 }

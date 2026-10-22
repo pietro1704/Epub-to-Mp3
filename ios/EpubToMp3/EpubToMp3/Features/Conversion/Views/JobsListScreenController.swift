@@ -3,6 +3,8 @@ import UIKit
 
 @MainActor
 final class JobsListScreenController: UIViewController {
+    typealias HistoryLoader = @MainActor () async throws -> [SessionRecord]
+    private let historyLoader: HistoryLoader
     private let settings: AppSettings
     private let library: LibraryStore
     private let player: AudioPlayer
@@ -14,7 +16,12 @@ final class JobsListScreenController: UIViewController {
     private var sessions: [SessionRecord] = []
     private var fetchTask: Task<Void, Never>?
 
-    init(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock) {
+    init(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock,
+         historyLoader: HistoryLoader? = nil) {
+        self.historyLoader = historyLoader ?? {
+            let root = try JobsListScreenController.localSessionsRoot()
+            return try await ConversionHistoryReader.loadEmbeddedManifests(from: root).sessions
+        }
         self.settings = settings
         self.library = library
         self.player = player
@@ -122,9 +129,7 @@ final class JobsListScreenController: UIViewController {
         fetchTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let root = try Self.localSessionsRoot()
-                let history = try await ConversionHistoryReader.loadEmbeddedManifests(from: root)
-                let localSessions = history.sessions
+                let localSessions = try await historyLoader()
                 guard !Task.isCancelled else { return }
                 self.sessions = localSessions
                 if localSessions.isEmpty {

@@ -9,7 +9,7 @@ import XCTest
 final class ReaderModesUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    private func launch(
+    func launch(
         layout: String,
         smallFont: Bool = false,
         showsPageTurnOverlay: Bool = false,
@@ -27,7 +27,7 @@ final class ReaderModesUITests: XCTestCase {
         ))
     }
 
-    private func launchForLiveSettings() -> XCUIApplication {
+    func launchForLiveSettings() -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments += [
@@ -40,15 +40,15 @@ final class ReaderModesUITests: XCTestCase {
         return app
     }
 
-    private func launchNativeLOTR() -> XCUIApplication {
+    func launchNativeLOTR() -> XCUIApplication {
         ReaderModesHarness().launch(.paginatedNativeLOTR)
     }
 
-    private func openBook(_ app: XCUIApplication, titleContaining title: String? = nil) throws {
+    func openBook(_ app: XCUIApplication, titleContaining title: String? = nil) throws {
         try ReaderModesHarness(app: app).openBook(titleContaining: title)
     }
 
-    private func indicator(_ app: XCUIApplication) -> (page: Int, total: Int)? {
+    func indicator(_ app: XCUIApplication) -> (page: Int, total: Int)? {
         let element = app.staticTexts["reader.pageIndicator"].firstMatch
         guard element.waitForExistence(timeout: 2) else { return nil }
         let text = (element.value as? String) ?? element.label
@@ -59,15 +59,15 @@ final class ReaderModesUITests: XCTestCase {
         return (page, total)
     }
 
-    private func chromeVisible(_ app: XCUIApplication) -> Bool {
+    func chromeVisible(_ app: XCUIApplication) -> Bool {
         ReaderModesHarness(app: app).chromeIsVisible
     }
 
-    private func toggleReaderChrome(in app: XCUIApplication) {
+    func toggleReaderChrome(in app: XCUIApplication) {
         ReaderModesHarness(app: app).toggleChrome()
     }
 
-    private func chapter(_ app: XCUIApplication) -> (index: Int, total: Int)? {
+    func chapter(_ app: XCUIApplication) -> (index: Int, total: Int)? {
         let element = app.staticTexts["flicker.probe.chapter"].firstMatch
         guard element.waitForExistence(timeout: 2) else { return nil }
         let label = element.label
@@ -76,11 +76,11 @@ final class ReaderModesUITests: XCTestCase {
         return (index, total)
     }
 
-    private func paginationMetrics(_ app: XCUIApplication) -> [String: Int] {
+    func paginationMetrics(_ app: XCUIApplication) -> [String: Int] {
         ReaderModesHarness(app: app).paginationMetrics?.values ?? [:]
     }
 
-    private func assertNoClippedPageLines(
+    func assertNoClippedPageLines(
         _ app: XCUIApplication,
         scenario: String,
         file: StaticString = #filePath,
@@ -89,7 +89,7 @@ final class ReaderModesUITests: XCTestCase {
         ReaderModesHarness(app: app).assertNoClippedLines(scenario: scenario, file: file, line: line)
     }
 
-    private func openReaderSettings(_ app: XCUIApplication) throws {
+    func openReaderSettings(_ app: XCUIApplication) throws {
         let settings = app.buttons["reader.settings.toggle"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 10), "Reader settings button must be available.")
         settings.tap()
@@ -99,7 +99,7 @@ final class ReaderModesUITests: XCTestCase {
         )
     }
 
-    private func chooseLayout(_ name: String, in app: XCUIApplication) throws {
+    func chooseLayout(_ name: String, in app: XCUIApplication) throws {
         let mode = app.cells["reader.settings.mode"].firstMatch
         XCTAssertTrue(mode.exists, "Reader mode control must remain visible while the sheet is open.")
         if (mode.value as? String) == name { return }
@@ -110,7 +110,7 @@ final class ReaderModesUITests: XCTestCase {
         XCTAssertTrue(mode.waitForExistence(timeout: 5), "The settings sheet must remain open after changing the reader mode.")
     }
 
-    private func waitForExistence(
+    func waitForExistence(
         _ element: XCUIElement,
         equals expected: Bool,
         timeout: TimeInterval = 3
@@ -123,94 +123,9 @@ final class ReaderModesUITests: XCTestCase {
         return element.exists == expected
     }
 
-    func testChangingLayoutReconfiguresTheOpenReaderImmediately() throws {
-        let app = launchForLiveSettings()
-        try openBook(app)
-        try openReaderSettings(app)
 
-        try chooseLayout("Paginated", in: app)
-        let pageIndicator = app.staticTexts["reader.pageIndicator"].firstMatch
-        XCTAssertTrue(pageIndicator.waitForExistence(timeout: 3), "Paginated mode must show the page indicator.")
 
-        try chooseLayout("Scrolling", in: app)
-        XCTAssertTrue(
-            waitForExistence(pageIndicator, equals: false),
-            "Switching to scrolling must hide pagination chrome before the settings sheet is dismissed."
-        )
-
-        try chooseLayout("Paginated", in: app)
-        XCTAssertTrue(
-            pageIndicator.waitForExistence(timeout: 3),
-            "Switching back to paginated must restore pagination chrome without reopening the book."
-        )
-    }
-
-    func testMarginSliderChangesTheOpenTextViewportDuringEditing() throws {
-        let app = launchForLiveSettings()
-        try openBook(app)
-        try openReaderSettings(app)
-        try chooseLayout("Paginated", in: app)
-
-        let marginRow = app.cells["reader.settings.margin.row"].firstMatch
-        let slider = app.descendants(matching: .any)["reader.settings.margin"].firstMatch
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
-        let content = app.textViews["reader.content"].firstMatch
-        XCTAssertTrue(marginRow.waitForExistence(timeout: 3), "Margin must remain a visible setting row.")
-        XCTAssertTrue(slider.waitForExistence(timeout: 3), "Margin must use the native continuous slider.")
-        for _ in 0..<8 where !slider.isHittable { app.tables.firstMatch.swipeUp() }
-        XCTAssertTrue(slider.isHittable, "The margin slider must remain reachable in the compact settings sheet.")
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = "Reader settings slider layout"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        XCTAssertTrue(viewport.exists && content.exists, "The open reader must remain mounted behind its settings sheet.")
-        XCTAssertGreaterThanOrEqual(
-            slider.frame.width,
-            marginRow.frame.width - 40,
-            "The slider must use the row's available width rather than sit in a narrow middle column."
-        )
-
-        dragReaderSlider(slider, to: 0)
-        sleep(1)
-        let minimum = content.frame
-        XCTAssertEqual(
-            minimum.minX - viewport.frame.minX,
-            8,
-            accuracy: 1,
-            "The minimum slider position must put the text viewport 8 pt from the reader viewport."
-        )
-        XCTAssertEqual(
-            viewport.frame.maxX - minimum.maxX,
-            8,
-            accuracy: 1,
-            "The minimum reader margin must be symmetric."
-        )
-
-        dragReaderSlider(slider, to: 0.5)
-        sleep(1)
-        let expanded = content.frame
-        XCTAssertGreaterThan(
-            expanded.minX,
-            minimum.minX + 20,
-            "Changing the slider must move the text viewport while the sheet remains open."
-        )
-        XCTAssertLessThan(
-            expanded.width,
-            minimum.width - 40,
-            "A larger margin must immediately narrow the visible text viewport."
-        )
-
-        dragReaderSlider(slider, to: 0)
-        sleep(1)
-        XCTAssertEqual(
-            content.frame.minX,
-            minimum.minX,
-            accuracy: 1,
-            "Returning the slider to its minimum must restore the 8 pt viewport immediately."
-        )
-    }
-
-    private func dragReaderSlider(_ slider: XCUIElement, to fraction: CGFloat) {
+    func dragReaderSlider(_ slider: XCUIElement, to fraction: CGFloat) {
         let inset = 9 / slider.frame.width
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: slider.coordinate(
@@ -220,462 +135,23 @@ final class ReaderModesUITests: XCTestCase {
 
     // MARK: - 1) Paginated, chrome hidden
 
-    func testPaginatedPageTurnWorksWithChromeHidden() throws {
-        let app = launch(layout: "paginated")
-        try openBook(app)
-        guard indicator(app)?.total ?? 0 >= 2 else {
-            throw XCTSkip("Need a multi-page chapter.")
-        }
-
-        // Hide chrome (center tap).
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertFalse(chromeVisible(app), "center tap must hide chrome")
-
-        // With chrome hidden, an edge tap on the RIGHT third must still turn
-        // the page. (Apple Books restores chrome on the first hidden-edge tap
-        // for some designs, but here the reader turns the page directly.)
-        let before = indicator(app)?.page ?? 1
-        let rightTurn = app.buttons["reader.pageTurn.right"].firstMatch
-        XCTAssertTrue(rightTurn.waitForExistence(timeout: 5))
-        rightTurn.tap()
-        sleep(1)
-        // Reveal the indicator before reading it; hidden UIKit labels may
-        // retain their last accessibility snapshot while chrome is hidden.
-        toggleReaderChrome(in: app)
-        sleep(1)
-        let after = indicator(app)?.page ?? before
-        XCTAssertGreaterThan(after, before,
-            "right-edge tap with chrome hidden must still advance the page (before=\(before) after=\(after))")
-    }
 
     // MARK: - 1b) Paginated chrome toggle (single-page safe)
 
-    func testPaginatedCenterTapTogglesChrome() throws {
-        let app = launch(layout: "paginated")
-        try openBook(app)
-        XCTAssertTrue(chromeVisible(app), "reader should open with chrome visible")
 
-        // Use the actual center hit target instead of a test-only button.
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertFalse(chromeVisible(app), "center tap must hide paginated chrome")
 
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertTrue(chromeVisible(app), "second center tap must restore paginated chrome")
-    }
 
-    func testPaginatedChromeToggleExpandsTheViewportWithoutChangingThePage() throws {
-        let app = launch(layout: "paginated")
-        try openBook(app)
 
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
-        let content = app.textViews["reader.content"].firstMatch
-        XCTAssertTrue(viewport.waitForExistence(timeout: 5), "The reader viewport must be available.")
-        XCTAssertTrue(content.exists, "The paginated text surface must remain mounted.")
 
-        let pageBeforeToggle = indicator(app)
-        let viewportBeforeToggle = viewport.frame
 
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertFalse(chromeVisible(app), "The first center tap must hide reader chrome.")
-        XCTAssertLessThan(viewport.frame.minY, viewportBeforeToggle.minY,
-                          "Immersive reading must reclaim the navigation-bar height.")
-        XCTAssertGreaterThan(viewport.frame.height, viewportBeforeToggle.height,
-                             "Immersive reading must reclaim the bottom chrome height.")
-        XCTAssertTrue(content.exists, "The paginated text surface must remain mounted.")
-        XCTAssertGreaterThan(content.frame.height, 0)
 
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertTrue(chromeVisible(app), "The second center tap must restore reader chrome.")
-        XCTAssertEqual(viewport.frame, viewportBeforeToggle,
-                       "Restoring chrome must restore the original viewport.")
-        XCTAssertEqual(
-            indicator(app)?.page,
-            pageBeforeToggle?.page,
-            "A chrome toggle must not change the current paginated page."
-        )
-    }
 
-    func testPaginatedChromeTogglePreservesAnAdvancedPage() throws {
-        let app = launch(layout: "paginated")
-        try openBook(app)
 
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
-        XCTAssertTrue(viewport.waitForExistence(timeout: 5))
-        var previousPage = indicator(app)?.page ?? 0
-        for _ in 0..<2 {
-            viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.50)).tap()
-            sleep(1)
-            let currentPage = indicator(app)?.page ?? 0
-            XCTAssertGreaterThan(currentPage, previousPage, "Reader must advance before toggling chrome.")
-            previousPage = currentPage
-        }
-        let advancedPage = indicator(app)
-        XCTAssertGreaterThan(advancedPage?.page ?? 0, 1, "Fixture must advance before toggling chrome.")
-        let firstCharacterBefore = paginationMetrics(app)["first"]
-        XCTAssertNotNil(firstCharacterBefore, "The viewport probe must expose the first visible character.")
 
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertFalse(chromeVisible(app))
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertTrue(chromeVisible(app))
-        XCTAssertEqual(
-            indicator(app)?.page,
-            advancedPage?.page,
-            "Showing and hiding reader chrome must preserve the advanced reading page."
-        )
-        let firstCharacterAfter = paginationMetrics(app)["first"]
-        XCTAssertNotNil(firstCharacterAfter)
-        XCTAssertLessThanOrEqual(
-            abs((firstCharacterAfter ?? 0) - (firstCharacterBefore ?? 0)),
-            100,
-            "Showing and hiding reader chrome must not return to an earlier passage."
-        )
-        assertNoClippedPageLines(app, scenario: "restoring an advanced page after chrome reflow")
-    }
 
-    func testRepeatedChromeTogglesKeepTheExactAdvancedPassage() throws {
-        let app = launch(layout: "paginated", smallFont: true)
-        try openBook(app)
-
-        let right = app.buttons["reader.pageTurn.right"].firstMatch
-        XCTAssertTrue(right.waitForExistence(timeout: 5))
-        for _ in 0..<4 {
-            right.tap()
-            usleep(450_000)
-        }
-
-        let anchorBefore = paginationMetrics(app)["first"]
-        XCTAssertNotNil(anchorBefore, "The probe must expose the first visible character before toggling chrome.")
-
-        // Each pair returns to the identical viewport geometry. Keeping only
-        // an approximate character range accepts the historic regression in
-        // which every pair gradually moved the reader back through the book.
-        for iteration in 0..<6 {
-            toggleReaderChrome(in: app)
-            // Interrupt the running chrome transition. This is the actual
-            // user gesture that previously captured an intermediate offset.
-            usleep(40_000)
-            toggleReaderChrome(in: app)
-            usleep(700_000)
-            XCTAssertEqual(
-                paginationMetrics(app)["first"],
-                anchorBefore,
-                "chrome round trip \(iteration) must return to the exact passage instead of drifting backward"
-            )
-            assertNoClippedPageLines(app, scenario: "exact-anchor chrome round trip \(iteration)")
-        }
-    }
-
-    func testNativeLOTRDoesNotMoveBackwardAfterInterruptedChromeToggles() throws {
-        let app = launchNativeLOTR()
-        let nativeBook = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile."))
-            .matching(NSPredicate(format: "label CONTAINS[c] %@", "lord"))
-            .firstMatch
-        XCTAssertTrue(nativeBook.waitForExistence(timeout: 20))
-        XCTAssertTrue(nativeBook.label.localizedCaseInsensitiveContains("lord"),
-                      "The regression must exercise the imported LOTR, not a fixture book.")
-        try openBook(app, titleContaining: "lord")
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
-        XCTAssertTrue(viewport.waitForExistence(timeout: 30), "The native LOTR reader must open.")
-        XCTAssertTrue(
-            waitUntil(timeout: 60) {
-                let metrics = self.paginationMetrics(app)
-                return (metrics["first"] ?? -1) >= 0
-                    && (metrics["total"] ?? 0) > 1
-                    && (metrics["viewportHeight"] ?? 0) > 0
-                    && self.chromeVisible(app)
-            },
-            "The native LOTR content must finish its real TextKit layout before reader gestures begin."
-        )
-        usleep(250_000)
-
-        // The first substantive chapter can already begin past page four.
-        // Test its real visible page rather than looping forever against an
-        // accessibility snapshot that may lag the native page indicator.
-        assertNoClippedPageLines(app, scenario: "native LOTR initial page before chrome toggling")
-        let anchorBefore = paginationMetrics(app)["first"]
-        let offsetBefore = paginationMetrics(app)["offset"]
-        XCTAssertNotNil(anchorBefore, "The native reader must expose its visible character anchor.")
-        XCTAssertNotNil(offsetBefore, "The native reader must expose its visual offset.")
-
-        for iteration in 0..<8 {
-            // These are the same center touches used by the user. Let each
-            // state settle: the reported drift also happens with ordinary,
-            // non-interrupted repeated toggles.
-            toggleReaderChrome(in: app)
-            usleep(700_000)
-            XCTAssertFalse(chromeVisible(app), "native LOTR first center touch must hide chrome")
-            toggleReaderChrome(in: app)
-            usleep(700_000)
-            XCTAssertTrue(
-                chromeVisible(app),
-                "native LOTR second center touch must restore chrome (metrics=\(paginationMetrics(app)))"
-            )
-            XCTAssertEqual(
-                paginationMetrics(app)["first"], anchorBefore,
-                "native LOTR round trip \(iteration) moved backward"
-            )
-            XCTAssertEqual(
-                paginationMetrics(app)["offset"], offsetBefore,
-                "native LOTR round trip \(iteration) changed the returned viewport offset (metrics=\(paginationMetrics(app)))"
-            )
-            assertNoClippedPageLines(app, scenario: "native LOTR round trip \(iteration)")
-        }
-    }
-
-    func testNativeLOTRLandscapePaginationKeepsEveryGlyphVisible() throws {
-        defer { XCUIDevice.shared.orientation = .portrait }
-        let app = launchNativeLOTR()
-        try openBook(app, titleContaining: "lord")
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
-        XCTAssertTrue(viewport.waitForExistence(timeout: 30), "The native LOTR reader must open.")
-
-        XCUIDevice.shared.orientation = .landscapeLeft
-        XCTAssertTrue(viewport.waitForExistence(timeout: 10), "The reader viewport must survive rotation.")
-        XCTAssertTrue(
-            waitUntil(timeout: 15) {
-                let metrics = self.paginationMetrics(app)
-                return (metrics["total"] ?? 0) > 0
-                    && (metrics["viewportHeight"] ?? 0) > 0
-                    && metrics["paginatedHeightActive"] == 1
-            },
-            "The native LOTR reader must finish landscape pagination before glyph validation."
-        )
-        assertNoClippedPageLines(app, scenario: "native LOTR landscape initial page")
-
-        viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.50)).tap()
-        usleep(700_000)
-        assertNoClippedPageLines(app, scenario: "native LOTR landscape advanced page")
-    }
-
-    func testRapidChromeTogglesAndPageTurnsNeverClipLines() throws {
-        let app = launch(layout: "paginated")
-        try openBook(app)
-
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
-        XCTAssertTrue(viewport.waitForExistence(timeout: 5))
-        let right = app.buttons["reader.pageTurn.right"].firstMatch
-        XCTAssertTrue(right.waitForExistence(timeout: 5))
-
-        for iteration in 0..<4 {
-            right.tap()
-            usleep(650_000)
-            toggleReaderChrome(in: app)
-            // This intentionally lands while the chrome animation is in
-            // flight. A second tap and an edge turn used to apply stale page
-            // offsets and leave a clipped line at a viewport edge.
-            usleep(40_000)
-            toggleReaderChrome(in: app)
-            right.tap()
-            usleep(700_000)
-            assertNoClippedPageLines(app, scenario: "rapid chrome/page cycle \(iteration)")
-        }
-    }
-
-    func testChromeTransitionCommitsOneCompletePaginationLayout() throws {
-        let app = launch(layout: "paginated", smallFont: true)
-        try openBook(app)
-        toggleReaderChrome(in: app)
-        usleep(100_000)
-        assertNoClippedPageLines(app, scenario: "atomic chrome hide")
-        // Reverse the state immediately. The text viewport must never show
-        // a snapshot compressed into its smaller geometry.
-        usleep(40_000)
-        toggleReaderChrome(in: app)
-        usleep(100_000)
-        assertNoClippedPageLines(app, scenario: "frozen rapid chrome round trip")
-    }
-
-    func testSmallNativeSerifFontSurvivesRapidChromeTogglesWithoutClippingOrLargeGap() throws {
-        let app = launch(layout: "paginated", smallFont: true)
-        try openBook(app)
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
-        let right = app.buttons["reader.pageTurn.right"].firstMatch
-        XCTAssertTrue(viewport.waitForExistence(timeout: 5))
-        XCTAssertTrue(right.waitForExistence(timeout: 5))
-
-        for iteration in 0..<6 {
-            right.tap()
-            usleep(400_000)
-            toggleReaderChrome(in: app)
-            usleep(35_000)
-            toggleReaderChrome(in: app)
-            usleep(550_000)
-            assertNoClippedPageLines(app, scenario: "small native-serif rapid chrome cycle \(iteration)")
-            let metrics = paginationMetrics(app)
-            let lastY = metrics["lastCompleteY"] ?? 0
-            let viewportBottom = metrics["viewportBottom"] ?? 0
-            XCTAssertLessThanOrEqual(
-                viewportBottom - lastY,
-                60,
-                "small native-serif page must not acquire a large blank footer after chrome toggling (\(metrics))"
-            )
-        }
-    }
-
-    func testPaginatedPageTurnAppliesTheMeasuredTextHeight() throws {
-        let app = launch(layout: "paginated")
-        try openBook(app)
-
-        let nextPage = app.buttons["reader.pageTurn.right"].firstMatch
-        XCTAssertTrue(nextPage.waitForExistence(timeout: 5), "The next-page target must be available.")
-        nextPage.tap()
-        sleep(1)
-
-        let metrics = paginationMetrics(app)
-        let measured = metrics["measuredTextHeight"] ?? 0
-        let frame = metrics["textFrameHeight"] ?? 0
-        let viewport = metrics["viewportHeight"] ?? 0
-        let paginatedHeightActive = metrics["paginatedHeightActive"] ?? 0
-        let scrollingHeightActive = metrics["scrollingHeightActive"] ?? 0
-        XCTAssertGreaterThan(measured, viewport * 2, "The fixture must span multiple paginated viewports.")
-        XCTAssertEqual(
-            frame,
-            measured,
-            accuracy: 1,
-            "A paginated page turn must lay out the text to its measured height instead of clipping it to one viewport (paginated active: \(paginatedHeightActive), scrolling active: \(scrollingHeightActive))."
-        )
-    }
-
-    func testAnimatedForwardAndBackwardTurnsRestoreThePage() throws {
-        let app = launch(
-            layout: "paginated",
-            showsPageTurnOverlay: true,
-            additionalArguments: ["-uiTestPageTurnStyle", "flip"]
-        )
-        try openBook(app)
-        let right = app.buttons["reader.pageTurn.right"].firstMatch
-        let left = app.buttons["reader.pageTurn.left"].firstMatch
-        XCTAssertTrue(right.waitForExistence(timeout: 5))
-        XCTAssertTrue(left.waitForExistence(timeout: 5))
-
-        let before = try XCTUnwrap(indicator(app)?.page)
-        // XCTest waits for animation idleness after tap. The direct native
-        // animation test inspects the transient fold while it is still active.
-        right.tap()
-        let advanced = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            self.indicator(app)?.page == before + 1
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 5), .completed)
-        XCTAssertEqual(paginationMetrics(app)["clippedLineCount"], 0)
-        left.tap()
-        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            self.indicator(app)?.page == before
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
-        XCTAssertEqual(paginationMetrics(app)["clippedLineCount"], 0)
-        XCTAssertFalse(app.otherElements["reader.pageCurl"].firstMatch.exists)
-    }
-
-    func testReduceMotionSkipsThePageCurl() throws {
-        let app = XCUIApplication()
-        app.launchArguments += [
-            "-uiTestFixture", "-uiTestResetReaderPosition",
-            "-uiTestReaderLayout", "paginated",
-            "-uiTestPageTurnStyle", "flip",
-            "-uiTestReduceMotion",
-        ]
-        app.launch()
-        try openBook(app)
-        let right = app.buttons["reader.pageTurn.right"].firstMatch
-        XCTAssertTrue(right.waitForExistence(timeout: 5))
-        right.tap()
-        XCTAssertFalse(
-            app.otherElements["reader.pageCurl"].firstMatch.waitForExistence(timeout: 0.5),
-            "Reduce Motion must change the page without a curl overlay."
-        )
-    }
 
     // MARK: - 2) Continuous scroll mode
 
-    func testScrollModeTapTogglesChromeAndScrollWorks() throws {
-        let app = launch(layout: "scrolling")
-        try openBook(app)
-        XCTAssertTrue(chromeVisible(app), "reader should open with chrome visible")
 
-        // There is no page indicator in scroll mode.
-        XCTAssertFalse(app.staticTexts["reader.pageIndicator"].firstMatch.exists,
-                       "scroll mode must NOT show a page indicator")
 
-        // A single tap toggles chrome off…
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertFalse(chromeVisible(app), "single tap in scroll mode must hide chrome")
-
-        // …and back on.
-        toggleReaderChrome(in: app)
-        sleep(1)
-        XCTAssertTrue(chromeVisible(app), "single tap in scroll mode must restore chrome")
-
-        // A drag must scroll the content without toggling chrome.
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
-        start.press(forDuration: 0.05, thenDragTo: end)
-        sleep(1)
-        // The native UITextView remains present after the drag and chrome
-        // state is unchanged. Pixel-byte equality is not a reliable scroll
-        // oracle because the same rendered page can be cached by XCTest.
-        XCTAssertTrue(app.textViews.firstMatch.exists,
-                      "scroll reader text surface must remain mounted after drag")
-        XCTAssertTrue(chromeVisible(app), "a scroll drag must NOT toggle chrome")
-    }
-
-    func testScrollModeHorizontalSwipeChangesChapter() throws {
-        let app = launch(layout: "scrolling")
-        try openBook(app)
-        guard let before = chapter(app), before.index + 1 < before.total else {
-            throw XCTSkip("Need a following chapter.")
-        }
-
-        app.buttons["reader.scrollChapter.next"].tap()
-        sleep(2)
-
-        XCTAssertEqual(chapter(app)?.index, before.index + 1,
-                       "left swipe in scroll mode must advance one chapter")
-
-        app.buttons["reader.scrollChapter.previous"].tap()
-        sleep(2)
-
-        XCTAssertEqual(chapter(app)?.index, before.index,
-                       "right swipe in scroll mode must return to the previous chapter")
-    }
-
-    func testNativeLOTRScrollChapterControlsAdvanceAndRetreat() throws {
-        let app = ReaderModesHarness().launch(.init(
-            source: .seededLOTR,
-            layout: "scrolling",
-            smallFont: false,
-            chromeToggleEnabled: true,
-            paginationProbeEnabled: true,
-            flickerProbeEnabled: true
-        ))
-        try openBook(app, titleContaining: "lord")
-        guard let before = chapter(app), before.index + 1 < before.total else {
-            throw XCTSkip("Native LOTR needs a following chapter.")
-        }
-
-        let next = app.buttons["reader.scrollChapter.next"].firstMatch
-        XCTAssertTrue(next.waitForExistence(timeout: 5), "Native LOTR must expose the next-chapter control.")
-        next.tap()
-        XCTAssertTrue(
-            waitUntil(timeout: 5) { chapter(app)?.index == before.index + 1 },
-            "Next chapter must advance native LOTR exactly one chapter."
-        )
-
-        let previous = app.buttons["reader.scrollChapter.previous"].firstMatch
-        XCTAssertTrue(previous.waitForExistence(timeout: 5), "Native LOTR must expose the previous-chapter control.")
-        previous.tap()
-        XCTAssertTrue(
-            waitUntil(timeout: 5) { chapter(app)?.index == before.index },
-            "Previous chapter must return native LOTR to the original chapter."
-        )
-    }
 }

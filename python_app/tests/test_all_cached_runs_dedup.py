@@ -23,26 +23,34 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 class TestAllCachedRunsDedup(unittest.TestCase):
     def test_converter_inserts_dedup_before_id3_in_fast_path(self):
-        """Pin the source location of the new dedup call.
+        """The active cache-hit owner must deduplicate before final ID3 tagging."""
+        import ast
 
-        The fix is structural: there's a `if pending_total == 0:`
-        branch that returns early on cache hit, and we now run dedup
-        before the ID3 tagging inside that branch. A future refactor
-        that drops the call would silently regress the Carl bug — this
-        guard fails fast in CI before the regression hits production.
-        """
-        source = (Path(__file__).resolve().parents[1] / "src" / "converter.py").read_text(
-            encoding="utf-8"
+        root = Path(__file__).resolve().parents[1] / "src"
+        owner = ast.parse((root / "book_engine_preparation.py").read_text(encoding="utf-8"))
+        function = next(node for node in owner.body if isinstance(node, ast.AsyncFunctionDef))
+        cached = next(
+            node for node in function.body
+            if isinstance(node, ast.If) and ast.unparse(node.test) == "_state.pending_total == 0"
         )
-        # The block we're protecting is unique because it sits inside
-        # the `if pending_total == 0:` branch followed shortly after
-        # by `_apply_final_id3_tags` — so we look for the marker comment
-        # we left when we added the dedup call.
-        assert "Auto-dedup (cache-hit path)" in source, (
-            "all-cached fast path lost the auto-dedup call (regression of "
-            "the v0.3.20 fix; would let duplicate MP3s pile up across runs)"
-        )
-        assert "self._dedup_chapter_outputs(output_dir)" in source
+        calls = [
+            node for node in ast.walk(cached)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        ]
+        dedup = next(node for node in calls if node.func.attr == "_dedup_chapter_outputs")
+        tags = next(node for node in calls if node.func.attr == "_apply_final_id3_tags")
+        self.assertEqual(ast.unparse(dedup.args[0]), "_state.output_dir")
+        self.assertLess(dedup.lineno, tags.lineno, "Dedup must precede ID3 tagging")
+        returns = [node for node in ast.walk(cached) if isinstance(node, ast.Return)]
+        self.assertTrue(returns, "The cache-hit branch must return its completed result")
+        self.assertLess(tags.lineno, min(node.lineno for node in returns))
+        orchestration = ast.parse((root / "book_conversion_run.py").read_text(encoding="utf-8"))
+        self.assertTrue(any(
+            isinstance(node, ast.Await) and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id == "_book_engine_preparation"
+            for node in ast.walk(orchestration)
+        ), "The actual book orchestration must still execute the cache-hit owner")
 
 
 if __name__ == "__main__":
