@@ -346,6 +346,35 @@ def test_shared_foundation_run_requires_executed_history_cases
   refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
 end
 
+  def test_faber_intel_ruby_cache_is_toolchain_scoped_and_does_not_affect_arm
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    steps = faber.fetch('jobs').fetch('macos-preferences').fetch('steps')
+    identity = steps.find { |step| step['id'] == 'ruby-cache-identity' }
+    restore = steps.find { |step| step['id'] == 'ruby-cache' }
+    save = steps.find { |step| step['name'] == 'Save Intel Ruby 4.0.7' }
+    [identity, restore, save].each { |step| refute_nil step }
+    [identity, restore].each { |step| assert_equal "matrix.arch == 'x86_64'", step.fetch('if') }
+    assert_equal 'actions/cache/restore@v6', restore.fetch('uses')
+    assert_equal 'actions/cache/save@v6', save.fetch('uses')
+    path = '~/.local/share/mise/installs/ruby/4.0.7'
+    assert_equal path, restore.fetch('with').fetch('path')
+    assert_equal path, save.fetch('with').fetch('path')
+    key = restore.fetch('with').fetch('key')
+    %w[runner.arch steps.ruby-cache-identity.outputs.xcode steps.ruby-cache-identity.outputs.sdk
+       steps.ruby-cache-identity.outputs.clang steps.ruby-cache-identity.outputs.openssl
+       steps.ruby-cache-identity.outputs.mise].each { |identity_key| assert_includes key, "${{ #{identity_key} }}" }
+    assert_includes key, "hashFiles('mise.toml', 'mise.lock')"
+    refute_match(/xcode-[^ $]+ Build version/, key)
+    assert_includes identity.fetch('run'), 'xcodebuild -version | shasum -a 256'
+    assert_includes identity.fetch('run'), 'mise --version | awk \'{print $NF}\''
+    refute restore.fetch('with').key?('restore-keys')
+    assert_equal "matrix.arch == 'x86_64' && steps.ruby-cache.outputs.cache-hit != 'true'", save.fetch('if')
+    install = steps.find { |step| step['run'] == 'mise install' }
+    assert_operator steps.index(identity), :<, steps.index(restore)
+    assert_operator steps.index(restore), :<, steps.index(install)
+    assert_operator steps.index(install), :<, steps.index(save)
+  end
+
   def test_physical_android_fixture_requires_explicit_input_instead_of_inherited_dispatch
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     steps = faber.fetch('jobs').fetch('android-package').fetch('steps')
