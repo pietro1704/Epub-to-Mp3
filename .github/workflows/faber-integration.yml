@@ -6,6 +6,18 @@ on:
       physical_fixture_apk:
         type: boolean
         default: false
+      intel_prebuilt:
+        description: Use the verified Intel macOS FFI artifact instead of compiling converter-ffi
+        type: boolean
+        default: false
+      intel_prebuilt_run_id:
+        description: Successful trusted producer workflow run ID
+        type: string
+        default: ''
+      intel_prebuilt_run_attempt:
+        description: Successful trusted producer workflow run attempt
+        type: string
+        default: ''
   workflow_dispatch:
     inputs:
       physical_fixture_apk:
@@ -16,9 +28,22 @@ on:
         description: Run only the Intel macOS preferences and installation job
         type: boolean
         default: false
+      intel_prebuilt:
+        description: Use the verified Intel macOS FFI artifact instead of compiling converter-ffi
+        type: boolean
+        default: false
+      intel_prebuilt_run_id:
+        description: Successful trusted producer workflow run ID
+        type: string
+        default: ''
+      intel_prebuilt_run_attempt:
+        description: Successful trusted producer workflow run attempt
+        type: string
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: faber-integration-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.intel_only == true && 'intel-only' || 'full' }}
@@ -251,7 +276,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
-      MISE_ENABLE_TOOLS: ${{ matrix.arch == 'x86_64' && 'python,rust' || 'python,rust,ruby' }}
+      MISE_ENABLE_TOOLS: ${{ matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'python' || matrix.arch == 'x86_64' && 'python,rust' || 'python,rust,ruby' }}
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
       EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
@@ -296,10 +321,26 @@ jobs:
           ' > "$RUNNER_TEMP/faber-ruby-mise.txt"
           cmp "$RUNNER_TEMP/faber-ruby-direct.txt" "$RUNNER_TEMP/faber-ruby-mise.txt"
           cat "$RUNNER_TEMP/faber-ruby-direct.txt"
+      - name: Download and verify the pinned Intel converter-ffi artifact
+        if: matrix.arch == 'x86_64' && inputs.intel_prebuilt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FFI_RUN_ID: ${{ inputs.intel_prebuilt_run_id }}
+          FFI_RUN_ATTEMPT: ${{ inputs.intel_prebuilt_run_attempt }}
+        run: |
+          set -euo pipefail
+          test -n "$FFI_RUN_ID"
+          test -n "$FFI_RUN_ATTEMPT"
+          mise run onnxruntime:host
+          mise exec -- ruby scripts/download_converter_ffi_macos.rb \
+            --run-id "$FFI_RUN_ID" --run-attempt "$FFI_RUN_ATTEMPT"
+      - name: Test Intel FFI artifact downloader fixtures
+        if: matrix.arch == 'x86_64'
+        run: mise exec -- ruby scripts/test_download_converter_ffi_macos.rb
       - name: Install Xcode project generator
         run: brew install xcodegen
       - name: Identify Intel Rust cache inputs
-        if: matrix.arch == 'x86_64'
+        if: matrix.arch == 'x86_64' && !inputs.intel_prebuilt
         id: rust-cache-identity
         shell: bash
         run: |
@@ -320,7 +361,7 @@ jobs:
           } | shasum -a 256 | awk '{print $1}')
           echo "identity=$identity" >> "$GITHUB_OUTPUT"
       - name: Restore Intel Rust build cache
-        if: matrix.arch == 'x86_64'
+        if: matrix.arch == 'x86_64' && !inputs.intel_prebuilt
         id: rust-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -333,6 +374,7 @@ jobs:
             faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-
       - name: Build embedded host runtime without Simulator
         id: ffi-build
+        if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt
         run: mise run converter-ffi:build
       - name: Verify actual FFI and pinned ORT architectures
         id: ffi-architecture
@@ -353,7 +395,7 @@ jobs:
           printf 'Host: %s\nFFI: %s\nORT: %s\n' "$(uname -m)" "$ffi_arch" "$ort_arch" > .reports/tts-preferences/native-architectures.log
           cat .reports/tts-preferences/native-architectures.log
       - name: Save Intel Rust build cache
-        if: success() && matrix.arch == 'x86_64' && steps.rust-cache.outputs.cache-hit != 'true' && steps.ffi-build.outcome == 'success' && steps.ffi-architecture.outcome == 'success'
+        if: success() && matrix.arch == 'x86_64' && !inputs.intel_prebuilt && steps.rust-cache.outputs.cache-hit != 'true' && steps.ffi-build.outcome == 'success' && steps.ffi-architecture.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
