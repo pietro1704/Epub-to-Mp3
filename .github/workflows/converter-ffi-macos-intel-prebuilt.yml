@@ -1,0 +1,86 @@
+name: Produce Intel macOS converter FFI artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: converter-ffi-macos-intel-prebuilt
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      CARGO_BUILD_TARGET: x86_64-apple-darwin
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      ORT_PREFER_DYNAMIC_LINK: '1'
+      ONNXRUNTIME_MACOS_ARCH: x86_64
+      CARGO_BUILD_JOBS: '1'
+    steps:
+      - name: Reject non-master dispatch before checkout or build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/master || { echo '::error::This producer only runs from master.'; exit 1; }
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Select official Ruby 4.0.7
+        uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
+        with:
+          ruby-version: '4.0.7'
+
+      - name: Verify fixed Intel build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$RUNNER_ARCH" = X64
+          test "$(xcodebuild -version | head -n 1)" = 'Xcode 16.4'
+          test "$(xcrun --sdk macosx --show-sdk-version)" = '15.5'
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-apple-darwin
+          rustc -Vv
+          ruby --version
+
+      - name: Install checksum-pinned ONNX Runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(ruby scripts/fetch_onnxruntime_macos.rb)"
+          test -f "$runtime/libonnxruntime.dylib"
+          echo "ORT_LIB_LOCATION=$runtime" >> "$GITHUB_ENV"
+
+      - name: Build eSpeak NG runtime data
+        run: ruby scripts/native_job.rb build -- cargo build --locked -p espeak-rs-sys --features compile-espeak-intonations --target-dir target/espeak-data --jobs 1
+
+      - name: Build Intel converter FFI with Piper
+        run: ruby scripts/native_job.rb build -- cargo build --locked -p converter-ffi --release --features piper-runtime --target x86_64-apple-darwin --jobs 1
+
+      - name: Package and verify artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby scripts/package_converter_ffi_macos.rb identity --root "$GITHUB_WORKSPACE"
+          ruby scripts/package_converter_ffi_macos.rb package \
+            --root "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/converter-ffi-macos-intel-x86_64" \
+            --source-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+
+      - name: Upload verified Intel macOS package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: converter-ffi-macos-intel-x86_64-v1
+          path: ${{ runner.temp }}/converter-ffi-macos-intel-x86_64/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
