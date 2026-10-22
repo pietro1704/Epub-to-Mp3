@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import zipfile
-
 from typing import Any, Dict, Iterable, List, Optional
 
 from .ebook_models import Chapter, TocItem

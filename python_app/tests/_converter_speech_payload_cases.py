@@ -1,10 +1,9 @@
 """Speech payload scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    Chapter as Chapter,
-    ConversionConfig as ConversionConfig,
-    Path as Path,
-)
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import Path as Path
+
 
 class SpeechPayloadCases:
     async def test_prepare_payload_preserves_structural_heading_pauses(self):

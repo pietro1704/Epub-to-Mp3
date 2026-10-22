@@ -1,19 +1,21 @@
 """Language detection approach strategy for the opt-in manual benchmark."""
 
-from python_app.tests._language_detection_benchmark_support import (
-    BenchmarkResult as BenchmarkResult,
-    Dict as Dict,
-    List as List,
-    Path as Path,
-    Tuple as Tuple,
-    tempfile as tempfile,
-    time as time,
-)
-
 from python_app.tests._language_detection_benchmark_selection import (
     detect_language as detect_language,
+)
+from python_app.tests._language_detection_benchmark_selection import (
     select_best_engine_for_language as select_best_engine_for_language,
 )
+from python_app.tests._language_detection_benchmark_support import (
+    BenchmarkResult as BenchmarkResult,
+)
+from python_app.tests._language_detection_benchmark_support import Dict as Dict
+from python_app.tests._language_detection_benchmark_support import List as List
+from python_app.tests._language_detection_benchmark_support import Path as Path
+from python_app.tests._language_detection_benchmark_support import Tuple as Tuple
+from python_app.tests._language_detection_benchmark_support import tempfile as tempfile
+from python_app.tests._language_detection_benchmark_support import time as time
+
 
 async def benchmark_language_detection_approach(
     sentences: Dict[str, List[str]],

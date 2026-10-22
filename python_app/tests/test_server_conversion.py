@@ -1,83 +1,172 @@
 from __future__ import annotations
 
-from python_app.tests._server_conversion_test_support import (
-    DummyFactory as DummyFactory,
-    DummyTTSEngine as DummyTTSEngine,
-    FIXTURE_BOOK as FIXTURE_BOOK,
-    MINIMAL_MP3 as MINIMAL_MP3,
-    MINIMAL_WAV as MINIMAL_WAV,
-    Path as Path,
-    TelemetryRecorder as TelemetryRecorder,
-    TestClient as TestClient,
-    _configure_server_paths as _configure_server_paths,
-    _fake_convert_to_mp3 as _fake_convert_to_mp3,
-    _make_job_with_chapters as _make_job_with_chapters,
-    _make_telemetry as _make_telemetry,
-    requires_ffmpeg as requires_ffmpeg,
-    server as server,
+import python_app.tests._server_conversion_test_support as _shared_test_exports
+from python_app.tests._server_conversion_confinement_cases import (
+    test_cleanup_does_not_expose_filesystem_exceptions as test_cleanup_does_not_expose_filesystem_exceptions,
 )
-
-from python_app.tests._server_conversion_execution_cases import (
-    test_process_conversion_generates_chapters as test_process_conversion_generates_chapters,
-    test_process_conversion_recovers_malformed_previous_stream as test_process_conversion_recovers_malformed_previous_stream,
-    test_process_conversion_prioritizes_requested_chapter_first as test_process_conversion_prioritizes_requested_chapter_first,
-    test_edge_fallbacks_to_piper as test_edge_fallbacks_to_piper,
+from python_app.tests._server_conversion_confinement_cases import (
+    test_direct_convert_rejects_oversize_stream_without_partial_input as test_direct_convert_rejects_oversize_stream_without_partial_input,
+)
+from python_app.tests._server_conversion_confinement_cases import (
+    test_download_output_rejects_symlink_to_foreign_file as test_download_output_rejects_symlink_to_foreign_file,
+)
+from python_app.tests._server_conversion_confinement_cases import (
+    test_download_output_serves_confined_nested_member as test_download_output_serves_confined_nested_member,
+)
+from python_app.tests._server_conversion_confinement_cases import (
+    test_download_output_serves_named_file_from_job_directory as test_download_output_serves_named_file_from_job_directory,
+)
+from python_app.tests._server_conversion_confinement_cases import (
+    test_download_output_skips_foreign_member_before_valid_match as test_download_output_skips_foreign_member_before_valid_match,
+)
+from python_app.tests._server_conversion_confinement_cases import (
+    test_get_job_fulltext_rejects_source_path_outside_allowed_roots as test_get_job_fulltext_rejects_source_path_outside_allowed_roots,
 )
 from python_app.tests._server_conversion_confinement_cases import (
     test_job_output_dir_rejects_stored_path_outside_output_root as test_job_output_dir_rejects_stored_path_outside_output_root,
-    test_resolve_relative_path_within_root_rejects_absolute_candidate as test_resolve_relative_path_within_root_rejects_absolute_candidate,
+)
+from python_app.tests._server_conversion_confinement_cases import (
     test_job_stream_dir_rejects_non_component_job_ids as test_job_stream_dir_rejects_non_component_job_ids,
-    test_cleanup_does_not_expose_filesystem_exceptions as test_cleanup_does_not_expose_filesystem_exceptions,
-    test_get_job_fulltext_rejects_source_path_outside_allowed_roots as test_get_job_fulltext_rejects_source_path_outside_allowed_roots,
-    test_download_output_rejects_symlink_to_foreign_file as test_download_output_rejects_symlink_to_foreign_file,
-    test_download_output_serves_confined_nested_member as test_download_output_serves_confined_nested_member,
-    test_download_output_skips_foreign_member_before_valid_match as test_download_output_skips_foreign_member_before_valid_match,
-    test_download_output_serves_named_file_from_job_directory as test_download_output_serves_named_file_from_job_directory,
+)
+from python_app.tests._server_conversion_confinement_cases import (
+    test_resolve_relative_path_within_root_rejects_absolute_candidate as test_resolve_relative_path_within_root_rejects_absolute_candidate,
+)
+from python_app.tests._server_conversion_confinement_cases import (
     test_stream_chunk_rejects_path_traversal_in_manifest_file_field as test_stream_chunk_rejects_path_traversal_in_manifest_file_field,
-    test_direct_convert_rejects_oversize_stream_without_partial_input as test_direct_convert_rejects_oversize_stream_without_partial_input,
 )
-from python_app.tests._server_conversion_fulltext_cases import (
-    test_preserves_reused_upload_inside_job_dir as test_preserves_reused_upload_inside_job_dir,
-    test_job_fulltext_uses_file_path_when_input_file_is_missing as test_job_fulltext_uses_file_path_when_input_file_is_missing,
-    test_job_fulltext_prefers_cached_chapters as test_job_fulltext_prefers_cached_chapters,
-    test_job_fulltext_returns_503_when_source_missing_and_job_running as test_job_fulltext_returns_503_when_source_missing_and_job_running,
-    test_job_fulltext_returns_404_when_source_missing_and_job_failed as test_job_fulltext_returns_404_when_source_missing_and_job_failed,
-    test_job_fulltext_uses_cache_even_when_source_file_is_gone as test_job_fulltext_uses_cache_even_when_source_file_is_gone,
-    test_job_fulltext_returns_422_when_parsing_yields_no_chapters_on_failed_job as test_job_fulltext_returns_422_when_parsing_yields_no_chapters_on_failed_job,
+from python_app.tests._server_conversion_endpoints_cases import (
+    test_convert_endpoint_failure_flow as test_convert_endpoint_failure_flow,
 )
-from python_app.tests._server_conversion_engine_policy_cases import (
-    test_build_engine_chain_respects_guards as test_build_engine_chain_respects_guards,
-    test_build_engine_chain_includes_edge_monolingual_fallback as test_build_engine_chain_includes_edge_monolingual_fallback,
-    test_build_engine_chain_includes_supported_fallbacks as test_build_engine_chain_includes_supported_fallbacks,
-    test_should_retry_edge_before_fallback_prefers_one_local_retry as test_should_retry_edge_before_fallback_prefers_one_local_retry,
-    test_rank_fallbacks_includes_piper as test_rank_fallbacks_includes_piper,
-    test_engine_is_disabled_respects_unavailable_set as test_engine_is_disabled_respects_unavailable_set,
-    test_pick_auto_engine_prefers_fastest_telemetry as test_pick_auto_engine_prefers_fastest_telemetry,
-    test_server_short_audio_detection_uses_cli_completeness_threshold as test_server_short_audio_detection_uses_cli_completeness_threshold,
-    test_server_max_chapter_chars_skip_predicate as test_server_max_chapter_chars_skip_predicate,
-    test_server_max_chapter_chars_default_is_zero as test_server_max_chapter_chars_default_is_zero,
+from python_app.tests._server_conversion_endpoints_cases import (
+    test_convert_endpoint_ignores_invalid_priority_chapter_index as test_convert_endpoint_ignores_invalid_priority_chapter_index,
+)
+from python_app.tests._server_conversion_endpoints_cases import (
+    test_convert_endpoint_persists_priority_chapter_index as test_convert_endpoint_persists_priority_chapter_index,
 )
 from python_app.tests._server_conversion_endpoints_cases import (
     test_convert_endpoint_rejects_large_files as test_convert_endpoint_rejects_large_files,
+)
+from python_app.tests._server_conversion_endpoints_cases import (
     test_convert_endpoint_success_flow as test_convert_endpoint_success_flow,
-    test_convert_endpoint_persists_priority_chapter_index as test_convert_endpoint_persists_priority_chapter_index,
-    test_convert_endpoint_ignores_invalid_priority_chapter_index as test_convert_endpoint_ignores_invalid_priority_chapter_index,
-    test_convert_endpoint_failure_flow as test_convert_endpoint_failure_flow,
-    test_job_status_rehydrates_outputs as test_job_status_rehydrates_outputs,
+)
+from python_app.tests._server_conversion_endpoints_cases import (
     test_feature_history_endpoint_missing_file as test_feature_history_endpoint_missing_file,
+)
+from python_app.tests._server_conversion_endpoints_cases import (
     test_feature_history_endpoint_returns_limited_entries as test_feature_history_endpoint_returns_limited_entries,
 )
-from python_app.tests._server_conversion_stream_publication_cases import (
-    test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir as test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir,
-    test_stream_chunk_optional_journey_header_correlates_actual_publication as test_stream_chunk_optional_journey_header_correlates_actual_publication,
-    test_streams_are_isolated_for_jobs_sharing_one_book_output_dir as test_streams_are_isolated_for_jobs_sharing_one_book_output_dir,
-    test_legacy_shared_stream_manifest_never_leaks_to_another_job as test_legacy_shared_stream_manifest_never_leaks_to_another_job,
+from python_app.tests._server_conversion_endpoints_cases import (
+    test_job_status_rehydrates_outputs as test_job_status_rehydrates_outputs,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_build_engine_chain_includes_edge_monolingual_fallback as test_build_engine_chain_includes_edge_monolingual_fallback,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_build_engine_chain_includes_supported_fallbacks as test_build_engine_chain_includes_supported_fallbacks,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_build_engine_chain_respects_guards as test_build_engine_chain_respects_guards,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_engine_is_disabled_respects_unavailable_set as test_engine_is_disabled_respects_unavailable_set,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_pick_auto_engine_prefers_fastest_telemetry as test_pick_auto_engine_prefers_fastest_telemetry,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_rank_fallbacks_includes_piper as test_rank_fallbacks_includes_piper,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_server_max_chapter_chars_default_is_zero as test_server_max_chapter_chars_default_is_zero,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_server_max_chapter_chars_skip_predicate as test_server_max_chapter_chars_skip_predicate,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_server_short_audio_detection_uses_cli_completeness_threshold as test_server_short_audio_detection_uses_cli_completeness_threshold,
+)
+from python_app.tests._server_conversion_engine_policy_cases import (
+    test_should_retry_edge_before_fallback_prefers_one_local_retry as test_should_retry_edge_before_fallback_prefers_one_local_retry,
+)
+from python_app.tests._server_conversion_estimate_cases import (
+    TestEstimateEndpoint as TestEstimateEndpoint,
+)
+from python_app.tests._server_conversion_execution_cases import (
+    test_edge_fallbacks_to_piper as test_edge_fallbacks_to_piper,
+)
+from python_app.tests._server_conversion_execution_cases import (
+    test_process_conversion_generates_chapters as test_process_conversion_generates_chapters,
+)
+from python_app.tests._server_conversion_execution_cases import (
+    test_process_conversion_prioritizes_requested_chapter_first as test_process_conversion_prioritizes_requested_chapter_first,
+)
+from python_app.tests._server_conversion_execution_cases import (
+    test_process_conversion_recovers_malformed_previous_stream as test_process_conversion_recovers_malformed_previous_stream,
+)
+from python_app.tests._server_conversion_fulltext_cases import (
+    test_job_fulltext_prefers_cached_chapters as test_job_fulltext_prefers_cached_chapters,
+)
+from python_app.tests._server_conversion_fulltext_cases import (
+    test_job_fulltext_returns_404_when_source_missing_and_job_failed as test_job_fulltext_returns_404_when_source_missing_and_job_failed,
+)
+from python_app.tests._server_conversion_fulltext_cases import (
+    test_job_fulltext_returns_422_when_parsing_yields_no_chapters_on_failed_job as test_job_fulltext_returns_422_when_parsing_yields_no_chapters_on_failed_job,
+)
+from python_app.tests._server_conversion_fulltext_cases import (
+    test_job_fulltext_returns_503_when_source_missing_and_job_running as test_job_fulltext_returns_503_when_source_missing_and_job_running,
+)
+from python_app.tests._server_conversion_fulltext_cases import (
+    test_job_fulltext_uses_cache_even_when_source_file_is_gone as test_job_fulltext_uses_cache_even_when_source_file_is_gone,
+)
+from python_app.tests._server_conversion_fulltext_cases import (
+    test_job_fulltext_uses_file_path_when_input_file_is_missing as test_job_fulltext_uses_file_path_when_input_file_is_missing,
+)
+from python_app.tests._server_conversion_fulltext_cases import (
+    test_preserves_reused_upload_inside_job_dir as test_preserves_reused_upload_inside_job_dir,
+)
+from python_app.tests._server_conversion_latency_observations_cases import (
+    test_journey_observations_correlate_playback_delay_and_cancelled_seek as test_journey_observations_correlate_playback_delay_and_cancelled_seek,
 )
 from python_app.tests._server_conversion_latency_observations_cases import (
     test_journey_observations_keep_only_redacted_timing_boundaries as test_journey_observations_keep_only_redacted_timing_boundaries,
-    test_journey_observations_correlate_playback_delay_and_cancelled_seek as test_journey_observations_correlate_playback_delay_and_cancelled_seek,
+)
+from python_app.tests._server_conversion_latency_observations_cases import (
     test_journey_observations_reject_untrusted_metadata as test_journey_observations_reject_untrusted_metadata,
 )
+from python_app.tests._server_conversion_stream_publication_cases import (
+    test_legacy_shared_stream_manifest_never_leaks_to_another_job as test_legacy_shared_stream_manifest_never_leaks_to_another_job,
+)
+from python_app.tests._server_conversion_stream_publication_cases import (
+    test_stream_chunk_optional_journey_header_correlates_actual_publication as test_stream_chunk_optional_journey_header_correlates_actual_publication,
+)
+from python_app.tests._server_conversion_stream_publication_cases import (
+    test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir as test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir,
+)
+from python_app.tests._server_conversion_stream_publication_cases import (
+    test_streams_are_isolated_for_jobs_sharing_one_book_output_dir as test_streams_are_isolated_for_jobs_sharing_one_book_output_dir,
+)
+from python_app.tests._server_conversion_test_support import FIXTURE_BOOK as FIXTURE_BOOK
+from python_app.tests._server_conversion_test_support import MINIMAL_MP3 as MINIMAL_MP3
+from python_app.tests._server_conversion_test_support import MINIMAL_WAV as MINIMAL_WAV
+from python_app.tests._server_conversion_test_support import DummyFactory as DummyFactory
+from python_app.tests._server_conversion_test_support import DummyTTSEngine as DummyTTSEngine
+from python_app.tests._server_conversion_test_support import Path as Path
+from python_app.tests._server_conversion_test_support import TestClient as TestClient
+from python_app.tests._server_conversion_test_support import (
+    _configure_server_paths as _configure_server_paths,
+)
+from python_app.tests._server_conversion_test_support import (
+    _fake_convert_to_mp3 as _fake_convert_to_mp3,
+)
+from python_app.tests._server_conversion_test_support import (
+    _make_job_with_chapters as _make_job_with_chapters,
+)
+from python_app.tests._server_conversion_test_support import _make_telemetry as _make_telemetry
+from python_app.tests._server_conversion_test_support import requires_ffmpeg as requires_ffmpeg
+from python_app.tests._server_conversion_test_support import server as server
+
+TelemetryRecorder = _shared_test_exports.TelemetryRecorder
+
 
 def test_chapter_display_name_recovers_real_heading_from_generic_name():
     assert (
@@ -256,136 +345,6 @@ class TestExtractChapterDetails:
         job = {"chapterProgress": [None, "bad", {"index": 1, "status": "completed"}]}
         details = server._extract_chapter_details(job)
         assert len(details) == 1
-
-
-# ---------------------------------------------------------------------------
-# GET /api/estimate
-# ---------------------------------------------------------------------------
-
-
-class TestEstimateEndpoint:
-    def _make_client(self) -> "TestClient":
-        from fastapi.testclient import TestClient
-
-        return TestClient(server.app)
-
-    def _register_upload(self, monkeypatch, tmp_path, chapters: list[dict]) -> tuple[str, Path]:
-        """Register a fake upload and return (upload_id, epub_path)."""
-        import uuid as _uuid
-
-        upload_id = str(_uuid.uuid4())
-        upload_dir = tmp_path / upload_id
-        upload_dir.mkdir()
-        # Create a dummy epub file (content doesn't matter; we bypass EbookReader)
-        epub_path = upload_dir / "book.epub"
-        epub_path.write_bytes(b"fake")
-
-        # Patch _pending_uploads so the endpoint finds the file
-        monkeypatch.setitem(
-            server._pending_uploads,
-            upload_id,
-            {
-                "file_path": str(epub_path),
-                "file_name": "book.epub",
-                "book_title": "Test Book",
-            },
-        )
-
-        # Patch get_cache_manager to return cached chapter data
-        cached_data = {
-            "title": "Test Book",
-            "author": "Test Author",
-            "chapters": chapters,
-            "size": 4,
-            "mtime": epub_path.stat().st_mtime,
-        }
-
-        class _FakeCache:
-            def get_cached_chapters(self, path):
-                return cached_data
-
-        monkeypatch.setattr(server, "get_cache_manager", lambda: _FakeCache())
-
-        return upload_id, epub_path
-
-    def test_returns_estimate_with_cache_hit(self, monkeypatch, tmp_path):
-        chapters = [
-            {"title": "Chapter 1", "text": "a" * 5000},
-            {"title": "Chapter 2", "text": "b" * 7000},
-        ]
-        upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
-
-        monkeypatch.setattr(server, "uploads_dir", tmp_path)
-        client = self._make_client()
-        resp = client.get(f"/api/estimate?upload_id={upload_id}")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["chapters"] == 2
-        assert data["total_chars"] == 12000
-        assert "estimated_duration_seconds" in data
-        assert data["estimated_duration_seconds"] > 0
-        assert "estimated_output_mb" in data
-        assert "engine_estimates" in data
-        assert "edge" in data["engine_estimates"]
-        assert "piper" in data["engine_estimates"]
-        assert "chapter_breakdown" in data
-        assert len(data["chapter_breakdown"]) == 2
-
-    def test_returns_404_for_unknown_upload_id(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(server, "uploads_dir", tmp_path)
-        client = self._make_client()
-        resp = client.get("/api/estimate?upload_id=nonexistent-id")
-        assert resp.status_code == 404
-
-    def test_engine_param_selects_engine(self, monkeypatch, tmp_path):
-        chapters = [{"title": "Ch", "text": "x" * 10000}]
-        upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
-        monkeypatch.setattr(server, "uploads_dir", tmp_path)
-        _make_telemetry(tmp_path, monkeypatch)  # isolate from real telemetry on disk
-        client = self._make_client()
-
-        resp_edge = client.get(f"/api/estimate?upload_id={upload_id}&engine=edge")
-        resp_piper = client.get(f"/api/estimate?upload_id={upload_id}&engine=piper")
-        assert resp_edge.status_code == 200
-        assert resp_piper.status_code == 200
-        # Piper is slower → longer estimate
-        assert (
-            resp_piper.json()["estimated_duration_seconds"]
-            > resp_edge.json()["estimated_duration_seconds"]
-        )
-
-    def test_telemetry_based_flag_false_with_no_samples(self, monkeypatch, tmp_path):
-        chapters = [{"title": "Ch", "text": "x" * 5000}]
-        upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
-        monkeypatch.setattr(server, "uploads_dir", tmp_path)
-
-        # Empty telemetry
-        from src.telemetry import TelemetryRecorder
-
-        empty_telemetry = TelemetryRecorder(telemetry_file=tmp_path / "empty.json")
-        monkeypatch.setattr(server, "telemetry", empty_telemetry)
-
-        client = self._make_client()
-        resp = client.get(f"/api/estimate?upload_id={upload_id}&engine=edge")
-        data = resp.json()
-        assert data["telemetry_based"] is False
-        assert data["chars_per_second"] == 110.0  # default fallback
-
-    def test_duration_formatted_contains_minutes(self, monkeypatch, tmp_path):
-        # 12 000 chars at 110 chars/s ≈ 109s ≈ 1m 49s
-        chapters = [{"title": "Ch", "text": "x" * 12000}]
-        upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
-        monkeypatch.setattr(server, "uploads_dir", tmp_path)
-
-        from src.telemetry import TelemetryRecorder
-
-        empty_telemetry = TelemetryRecorder(telemetry_file=tmp_path / "empty2.json")
-        monkeypatch.setattr(server, "telemetry", empty_telemetry)
-
-        client = self._make_client()
-        resp = client.get(f"/api/estimate?upload_id={upload_id}&engine=edge")
-        formatted = resp.json()["estimated_duration_formatted"]
-        assert "m" in formatted
 
 
 # ---------------------------------------------------------------------------

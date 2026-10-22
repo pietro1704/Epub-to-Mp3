@@ -1,12 +1,11 @@
 """Validation lifecycle scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    AsyncMock as AsyncMock,
-    Chapter as Chapter,
-    ConversionConfig as ConversionConfig,
-    ConversionResult as ConversionResult,
-    Path as Path,
-)
+from python_app.tests._converter_test_support import AsyncMock as AsyncMock
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import ConversionResult as ConversionResult
+from python_app.tests._converter_test_support import Path as Path
+
 
 class ValidationLifecycleCases:
     def test_initial_validation_is_deferred_when_output_audio_exists(self):

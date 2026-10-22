@@ -3,14 +3,12 @@
 
 from __future__ import annotations
 
-
 from .conversion_control import ConversionControl as _ConversionControl
-from .ebook_reader import Chapter
-
-
-from .parallel_chapter_synthesis import _parallel_chapter_synthesis
+from .ebook_reader import Chapter as Chapter
 from .parallel_chapter_audio_validation import _parallel_chapter_audio_validation
 from .parallel_chapter_completion import _parallel_chapter_completion
+from .parallel_chapter_synthesis import _parallel_chapter_synthesis
+
 
 async def _chapter_conversion_run(self, _state):
     from . import converter as _runtime

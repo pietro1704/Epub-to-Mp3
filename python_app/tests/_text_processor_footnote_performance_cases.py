@@ -1,9 +1,8 @@
 """Footnote Performance regression scenarios, collected by test_text_processor."""
 
-from python_app.tests._text_processor_test_support import (
-    TextProcessor as TextProcessor,
-    unittest as unittest,
-)
+from python_app.tests._text_processor_test_support import TextProcessor as TextProcessor
+from python_app.tests._text_processor_test_support import unittest as unittest
+
 
 class TestCollectFootnotesPerformance(unittest.TestCase):
     """Regression tests for O(n²) hang in _collect_footnotes_bs4 (LOTR bug).

@@ -1,11 +1,10 @@
 """Css subchapter scenarios sharing the original unittest fixture."""
 
-from python_app.tests._ebook_reader_test_support import (
-    EbookReader as EbookReader,
-    EpubParser as EpubParser,
-    os as os,
-    tempfile as tempfile,
-)
+from python_app.tests._ebook_reader_test_support import EbookReader as EbookReader
+from python_app.tests._ebook_reader_test_support import EpubParser as EpubParser
+from python_app.tests._ebook_reader_test_support import os as os
+from python_app.tests._ebook_reader_test_support import tempfile as tempfile
+
 
 class CssSubchapterCases:
     # ------------------------------------------------------------------ unit tests for static methods

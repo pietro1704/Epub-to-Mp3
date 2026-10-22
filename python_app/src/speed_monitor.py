@@ -7,23 +7,20 @@ from typing import Callable, Optional
 
 from .adaptive_edge_tuner import AdaptiveEdgeTuner as AdaptiveEdgeTuner
 from .speed_sample_monitor import SpeedMonitor as SpeedMonitor
-from .speed_tuning_contracts import (
-    CHUNK_SIZE_OPTIONS as CHUNK_SIZE_OPTIONS,
-    CONCURRENCY_OPTIONS as CONCURRENCY_OPTIONS,
-    EXCELLENT_SPEED as EXCELLENT_SPEED,
-    MIN_ACCEPTABLE_SPEED as MIN_ACCEPTABLE_SPEED,
-    MIN_SAMPLES_FOR_DETECTION as MIN_SAMPLES_FOR_DETECTION,
-    SEGMENT_SECONDS_OPTIONS as SEGMENT_SECONDS_OPTIONS,
-    SPEED_DROP_THRESHOLD as SPEED_DROP_THRESHOLD,
-    SPEED_RECOVERY_THRESHOLD as SPEED_RECOVERY_THRESHOLD,
-    STALL_DURATION_SECONDS as STALL_DURATION_SECONDS,
-    SpeedSample as SpeedSample,
-    TARGET_CHARS_PER_SECOND as TARGET_CHARS_PER_SECOND,
-    TuningConfig as TuningConfig,
-    TuningResult as TuningResult,
-    WARMUP_SAMPLES as WARMUP_SAMPLES,
-)
-
+from .speed_tuning_contracts import CHUNK_SIZE_OPTIONS as CHUNK_SIZE_OPTIONS
+from .speed_tuning_contracts import CONCURRENCY_OPTIONS as CONCURRENCY_OPTIONS
+from .speed_tuning_contracts import EXCELLENT_SPEED as EXCELLENT_SPEED
+from .speed_tuning_contracts import MIN_ACCEPTABLE_SPEED as MIN_ACCEPTABLE_SPEED
+from .speed_tuning_contracts import MIN_SAMPLES_FOR_DETECTION as MIN_SAMPLES_FOR_DETECTION
+from .speed_tuning_contracts import SEGMENT_SECONDS_OPTIONS as SEGMENT_SECONDS_OPTIONS
+from .speed_tuning_contracts import SPEED_DROP_THRESHOLD as SPEED_DROP_THRESHOLD
+from .speed_tuning_contracts import SPEED_RECOVERY_THRESHOLD as SPEED_RECOVERY_THRESHOLD
+from .speed_tuning_contracts import STALL_DURATION_SECONDS as STALL_DURATION_SECONDS
+from .speed_tuning_contracts import TARGET_CHARS_PER_SECOND as TARGET_CHARS_PER_SECOND
+from .speed_tuning_contracts import WARMUP_SAMPLES as WARMUP_SAMPLES
+from .speed_tuning_contracts import SpeedSample as SpeedSample
+from .speed_tuning_contracts import TuningConfig as TuningConfig
+from .speed_tuning_contracts import TuningResult as TuningResult
 
 # Global tuner instance for Edge-TTS
 _global_edge_tuner: Optional[AdaptiveEdgeTuner] = None

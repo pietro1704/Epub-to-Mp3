@@ -1,17 +1,16 @@
 """Runtime tuning scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    AudioConverter as AudioConverter,
-    ConversionConfig as ConversionConfig,
-    Mock as Mock,
-    Path as Path,
-    SimpleNamespace as SimpleNamespace,
-    asyncio as asyncio,
-    json as json,
-    os as os,
-    patch as patch,
-    time as time,
-)
+from python_app.tests._converter_test_support import AudioConverter as AudioConverter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import Mock as Mock
+from python_app.tests._converter_test_support import Path as Path
+from python_app.tests._converter_test_support import SimpleNamespace as SimpleNamespace
+from python_app.tests._converter_test_support import asyncio as asyncio
+from python_app.tests._converter_test_support import json as json
+from python_app.tests._converter_test_support import os as os
+from python_app.tests._converter_test_support import patch as patch
+from python_app.tests._converter_test_support import time as time
+
 
 class RuntimeTuningCases:
     def test_eta_baseline_persistence_roundtrip(self):

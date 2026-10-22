@@ -1,8 +1,7 @@
 """Paragraph fallback scenarios sharing the original unittest fixture."""
 
-from python_app.tests._ebook_reader_test_support import (
-    EpubParser as EpubParser,
-)
+from python_app.tests._ebook_reader_test_support import EpubParser as EpubParser
+
 
 class ParagraphFallbackCases:
     def test_paragraph_split_oversized_chapter(self):

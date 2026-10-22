@@ -6,7 +6,6 @@ import os
 import re
 from typing import Any, Dict, Iterable, List
 
-
 # Match ``EdgeTTS._DEFAULT_CHUNK_SIZE`` (12_000). The paragraph-boundary
 # chunker backs up to whitespace so mid-word splits are already avoided.
 # Configurable via env for parity with the rest of the Edge tuning surface.

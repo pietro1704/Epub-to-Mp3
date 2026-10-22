@@ -12,54 +12,70 @@ from src.server_bootstrap_environment import _initialize_server_environment
 
 _initialize_server_environment(sys.modules[__name__])
 
-import asyncio
-from src.server_runtime_binding import bind_server_function as _bind_server_function
-import contextlib
-import json as json
-import logging
-import random as random
-import re as re
-import shutil as shutil
-import sys
-import threading as threading
-import time as time
-import uuid as uuid
-import zipfile as zipfile
-from datetime import datetime as datetime, timezone as timezone
-from pathlib import Path as Path
-from typing import Dict as Dict, List as List, Optional as Optional
+# Bootstrap imports intentionally interleave initializer/binding phases.
+# Preserve this order: rebound functions share this facade namespace.
+# isort: off
+import asyncio  # noqa: E402
+from src.server_runtime_binding import bind_server_function as _bind_server_function  # noqa: E402
+import contextlib  # noqa: E402
+import json as json  # noqa: E402
+import logging  # noqa: E402
+import random as random  # noqa: E402
+import re as re  # noqa: E402
+import shutil as shutil  # noqa: E402
+import threading as threading  # noqa: E402
+import time as time  # noqa: E402
+import uuid as uuid  # noqa: E402
+import zipfile as zipfile  # noqa: E402
+from datetime import datetime as datetime, timezone as timezone  # noqa: E402
+from pathlib import Path as Path  # noqa: E402
+from typing import Awaitable, Callable, Dict as Dict, List as List, Optional as Optional  # noqa: E402
 
-from fastapi import BackgroundTasks as BackgroundTasks, FastAPI, File as File, Form as Form, HTTPException as HTTPException, Request as Request, UploadFile as UploadFile
-from fastapi.middleware.cors import CORSMiddleware as CORSMiddleware
-from fastapi.responses import FileResponse as FileResponse, PlainTextResponse as PlainTextResponse, StreamingResponse as StreamingResponse
-from main import ConverterApplication as ConverterApplication
-from pydantic import BaseModel as BaseModel
-from src._health_watchdog_mixin import _await_task_with_deadline as _await_task_with_deadline, _safe_cancel_task as _safe_cancel_task
-from src.audio_postprocess import add_silence_padding as add_silence_padding
-from src.auto_tuner import AutoTuner
-from src.benchmark_profile import recommend_parallel_slots as recommend_parallel_slots
-from src.cache_manager import CacheManager as CacheManager
-from src.chapter_utils import deduplicate_chapters_by_content as deduplicate_chapters_by_content
-from src.config import CACHE_DIR as CACHE_DIR, ConversionConfig as ConversionConfig
-from src.ebook_reader import EbookReader as EbookReader, TextProcessor as TextProcessor
-from src.engine_pool import JobEnginePool as JobEnginePool, ResourceSnapshot as ResourceSnapshot
-from src.error_classifier import classify_error as classify_error
-from src.hardware_detector import HardwareDetector as HardwareDetector
-from src.job_manager import JobManager as JobManager
-from src.language import LanguageProfile as LanguageProfile
-from src.paths import JOB_INPUTS_DIR as JOB_INPUTS_DIR, JOBS_DIR as JOBS_DIR, OUTPUT_DIR as OUTPUT_DIR, PERSISTENT_ROOT as PERSISTENT_ROOT, SOURCE_BACKUPS_DIR as SOURCE_BACKUPS_DIR, UPLOADS_DIR as UPLOADS_DIR
-from src.reader_sanitizer import chapter_html_fallback as chapter_html_fallback, sanitize_reader_css as sanitize_reader_css, sanitize_reader_html as sanitize_reader_html
-from src.stream_attempt_observation import observe_synthesis as observe_synthesis
-from src.stream_http_observation import ObservedFileResponse as ObservedFileResponse, stream_http_observations as stream_http_observations, validate_journey_id as validate_journey_id
-from src.telemetry import TelemetryRecorder as TelemetryRecorder
-from src.text_formatting import TextFormattingProcessor as TextFormattingProcessor
-from src.tts.edge_engine import reset_adaptive_settings as reset_adaptive_settings
-from src.tts.factory import TTSFactory as TTSFactory
-from src.tts.piper_guard import is_piper_supported_environment as is_piper_supported_environment
-from src.utils import AudioProcessor as AudioProcessor, FileManager as FileManager, TextValidator as TextValidator, TimeFormatter as TimeFormatter
+from fastapi import BackgroundTasks as BackgroundTasks, FastAPI, File as File, Form as Form, HTTPException as HTTPException, Request as Request, UploadFile as UploadFile  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware as CORSMiddleware  # noqa: E402
+from fastapi.responses import FileResponse as FileResponse, PlainTextResponse as PlainTextResponse, StreamingResponse as StreamingResponse  # noqa: E402
+from main import ConverterApplication as ConverterApplication  # noqa: E402
+from pydantic import BaseModel as BaseModel  # noqa: E402
+from src._health_watchdog_mixin import _await_task_with_deadline as _await_task_with_deadline, _safe_cancel_task as _safe_cancel_task  # noqa: E402
+from src.audio_postprocess import add_silence_padding as add_silence_padding  # noqa: E402
+from src.auto_tuner import AutoTuner  # noqa: E402
+from src.benchmark_profile import recommend_parallel_slots as recommend_parallel_slots  # noqa: E402
+from src.cache_manager import CacheManager as CacheManager  # noqa: E402
+from src.chapter_utils import deduplicate_chapters_by_content as deduplicate_chapters_by_content  # noqa: E402
+from src.config import CACHE_DIR as CACHE_DIR, ConversionConfig as ConversionConfig  # noqa: E402
+from src.ebook_reader import EbookReader as EbookReader, TextProcessor as TextProcessor  # noqa: E402
+from src.engine_pool import JobEnginePool as JobEnginePool, ResourceSnapshot as ResourceSnapshot  # noqa: E402
+from src.error_classifier import classify_error as classify_error  # noqa: E402
+from src.hardware_detector import HardwareDetector as HardwareDetector  # noqa: E402
+from src.job_manager import JobManager as JobManager  # noqa: E402
+from src.language import LanguageProfile as LanguageProfile  # noqa: E402
+from src.paths import JOB_INPUTS_DIR as JOB_INPUTS_DIR, JOBS_DIR as JOBS_DIR, OUTPUT_DIR as OUTPUT_DIR, PERSISTENT_ROOT as PERSISTENT_ROOT, SOURCE_BACKUPS_DIR as SOURCE_BACKUPS_DIR, UPLOADS_DIR as UPLOADS_DIR  # noqa: E402
+from src.reader_sanitizer import chapter_html_fallback as chapter_html_fallback, sanitize_reader_css as sanitize_reader_css, sanitize_reader_html as sanitize_reader_html  # noqa: E402
+from src.stream_attempt_observation import observe_synthesis as observe_synthesis  # noqa: E402
+from src.stream_http_observation import ObservedFileResponse as ObservedFileResponse, stream_http_observations as stream_http_observations, validate_journey_id as validate_journey_id  # noqa: E402
+from src.telemetry import TelemetryRecorder as TelemetryRecorder  # noqa: E402
+from src.text_formatting import TextFormattingProcessor as TextFormattingProcessor  # noqa: E402
+from src.tts.edge_engine import reset_adaptive_settings as reset_adaptive_settings  # noqa: E402
+from src.tts.factory import TTSFactory as TTSFactory  # noqa: E402
+from src.tts.piper_guard import is_piper_supported_environment as is_piper_supported_environment  # noqa: E402
+from src.utils import AudioProcessor as AudioProcessor, FileManager as FileManager, TextValidator as TextValidator, TimeFormatter as TimeFormatter  # noqa: E402
 
 
-from src import server_output_policy as _server_server_output_policy
+# Initializers below own these bindings; annotations do not replace their values.
+app: FastAPI
+output_dir: Path
+_JOB_WORKERS: int
+_job_worker: Callable[..., Awaitable[None]]
+_periodic_job_cleanup: Callable[..., Awaitable[None]]
+_load_restart_marker: Callable[..., Optional[Dict]]
+_clear_restart_marker: Callable[..., None]
+_resume_pending_jobs: Callable[..., Awaitable[None]]
+_job_watchdog: Callable[..., Awaitable[None]]
+_hf_keepalive: Callable[..., Awaitable[None]]
+_has_active_jobs: Callable[..., bool]
+
+
+from src import server_output_policy as _server_server_output_policy  # noqa: E402
 
 _chapter_display_name = _bind_server_function(_server_server_output_policy._chapter_display_name, sys.modules[__name__])
 
@@ -192,18 +208,19 @@ async def _lifespan(app: FastAPI):
         system_monitor.stop()
 
 
-from src import server_form_values as _server_server_form_values
-from src.server_bootstrap_http_application import _initialize_server_http_application
+from src import server_form_values  # noqa: E402
+_server_server_form_values = server_form_values
+from src.server_bootstrap_http_application import _initialize_server_http_application  # noqa: E402
 
 _initialize_server_http_application(sys.modules[__name__])
 
 
-from src.server_bootstrap_form_queue_policy import _initialize_server_form_queue_policy
+from src.server_bootstrap_form_queue_policy import _initialize_server_form_queue_policy  # noqa: E402
 
 _initialize_server_form_queue_policy(sys.modules[__name__])
 
 
-from src import server_cache_markers as _server_server_cache_markers
+from src import server_cache_markers as _server_server_cache_markers  # noqa: E402
 
 get_cache_manager = _bind_server_function(_server_server_cache_markers.get_cache_manager, sys.modules[__name__])
 
@@ -214,59 +231,66 @@ cover_index_path = cover_cache_dir / "index.json"
 
 
 # Helpers to resolve per-book/per-engine paths (supports legacy job-id layout)
-from src import server_job_paths as _server_server_job_paths
+from src import server_job_paths  # noqa: E402
+_server_server_job_paths = server_job_paths
 
-from src.server_bootstrap_job_paths import _initialize_server_job_paths
+from src.server_bootstrap_job_paths import _initialize_server_job_paths  # noqa: E402
 
 _initialize_server_job_paths(sys.modules[__name__])
 
 
-from src import server_stream_index as _server_server_stream_index
+from src import server_stream_index  # noqa: E402
+_server_server_stream_index = server_stream_index
 
-from src.server_bootstrap_stream_cache_policy import _initialize_server_stream_cache_policy
+from src.server_bootstrap_stream_cache_policy import _initialize_server_stream_cache_policy  # noqa: E402
 
 _initialize_server_stream_cache_policy(sys.modules[__name__])
 
 
-from src import server_pending_uploads as _server_server_pending_uploads
+from src import server_pending_uploads  # noqa: E402
+_server_server_pending_uploads = server_pending_uploads
 
-from src.server_bootstrap_upload_policy import _initialize_server_upload_policy
+from src.server_bootstrap_upload_policy import _initialize_server_upload_policy  # noqa: E402
 
 _initialize_server_upload_policy(sys.modules[__name__])
 
 
-from src import server_resume_summary as _server_server_resume_summary
+from src import server_resume_summary  # noqa: E402
+_server_server_resume_summary = server_resume_summary
 
-from src.server_bootstrap_resume_policy import _initialize_server_resume_policy
+from src.server_bootstrap_resume_policy import _initialize_server_resume_policy  # noqa: E402
 
 _initialize_server_resume_policy(sys.modules[__name__])
 
 
-from src import server_job_events as _server_server_job_events
+from src import server_job_events  # noqa: E402
+_server_server_job_events = server_job_events
 
-from src.server_bootstrap_event_policy import _initialize_server_event_policy
+from src.server_bootstrap_event_policy import _initialize_server_event_policy  # noqa: E402
 
 _initialize_server_event_policy(sys.modules[__name__])
 
 
-from src import server_job_recovery as _server_server_job_recovery
+from src import server_job_recovery  # noqa: E402
+_server_server_job_recovery = server_job_recovery
 
-from src.server_bootstrap_recovery import _initialize_server_recovery
+from src.server_bootstrap_recovery import _initialize_server_recovery  # noqa: E402
 
 _initialize_server_recovery(sys.modules[__name__])
 
 
-from src import server_job_queue as _server_server_job_queue
+from src import server_job_queue  # noqa: E402
+_server_server_job_queue = server_job_queue
 
-from src.server_bootstrap_job_index import _initialize_server_job_index
+from src.server_bootstrap_job_index import _initialize_server_job_index  # noqa: E402
 
 _initialize_server_job_index(sys.modules[__name__])
 
 
-from src._server_engine_helpers import _apply_perf_defaults as _apply_perf_defaults, _auto_tune_engine_pool as _auto_tune_engine_pool, _build_engine_chain as _build_engine_chain, _build_multi_engine_slot_map as _build_multi_engine_slot_map, _infer_perf_profile as _infer_perf_profile, _next_auto_engine as _next_auto_engine, _pick_auto_engine as _pick_auto_engine, _prepare_auto_engine_pool as _prepare_auto_engine_pool, _resolve_auto_preferred_engine as _resolve_auto_preferred_engine, degrade_edge_chunk_chars as degrade_edge_chunk_chars
+from src._server_engine_helpers import _apply_perf_defaults as _apply_perf_defaults, _auto_tune_engine_pool as _auto_tune_engine_pool, _build_engine_chain as _build_engine_chain, _build_multi_engine_slot_map as _build_multi_engine_slot_map, _infer_perf_profile as _infer_perf_profile, _next_auto_engine as _next_auto_engine, _pick_auto_engine as _pick_auto_engine, _prepare_auto_engine_pool as _prepare_auto_engine_pool, _resolve_auto_preferred_engine as _resolve_auto_preferred_engine, degrade_edge_chunk_chars as degrade_edge_chunk_chars  # noqa: E402
 
 # Performance profile (auto = HF-safe on Spaces, local otherwise)
-from src.server_bootstrap_hardware_policy import _initialize_server_hardware_policy
+from src.server_bootstrap_hardware_policy import _initialize_server_hardware_policy  # noqa: E402
 
 _initialize_server_hardware_policy(sys.modules[__name__])
 
@@ -288,21 +312,23 @@ class _FallbackSystemMonitor:
         pass
 
 
-from src.server_bootstrap_monitor_state import _initialize_server_monitor_state
+from src.server_bootstrap_monitor_state import _initialize_server_monitor_state  # noqa: E402
 
 _initialize_server_monitor_state(sys.modules[__name__])
 
 
-from src import server_retention as _server_server_retention
+from src import server_retention  # noqa: E402
+_server_server_retention = server_retention
 
-from src.server_bootstrap_retention import _initialize_server_retention
+from src.server_bootstrap_retention import _initialize_server_retention  # noqa: E402
 
 _initialize_server_retention(sys.modules[__name__])
 
 
-from src import server_runtime_health as _server_server_runtime_health
+from src import server_runtime_health  # noqa: E402
+_server_server_runtime_health = server_runtime_health
 
-from src.server_bootstrap_runtime_health import _initialize_server_runtime_health
+from src.server_bootstrap_runtime_health import _initialize_server_runtime_health  # noqa: E402
 
 _initialize_server_runtime_health(sys.modules[__name__])
 
@@ -310,28 +336,29 @@ _initialize_server_runtime_health(sys.modules[__name__])
 # Engine helpers imported from src/_server_engine_helpers.py (at top of file)
 
 
-from src.server_models import JobStatus as JobStatus
+from src.server_models import JobStatus as JobStatus  # noqa: E402
 
 
-from src.server_models import JourneyObservationInput as JourneyObservationInput
+from src.server_models import JourneyObservationInput as JourneyObservationInput  # noqa: E402
 
 
-from src.server_bootstrap_journey_policy import _initialize_server_journey_policy
+from src.server_bootstrap_journey_policy import _initialize_server_journey_policy  # noqa: E402
 
 _initialize_server_journey_policy(sys.modules[__name__])
 
 
-from src.server_models import RestartOptions as RestartOptions
+from src.server_models import RestartOptions as RestartOptions  # noqa: E402
 
 
-from src import server_convert_route as _server_server_convert_route
+from src import server_convert_route as _server_server_convert_route  # noqa: E402
 
 convert_ebook = app.post("/api/convert")(_bind_server_function(_server_server_convert_route.convert_ebook, sys.modules[__name__]))
 
 
-from src import server_job_routes as _server_server_job_routes
+from src import server_job_routes  # noqa: E402
+_server_server_job_routes = server_job_routes
 
-from src.server_bootstrap_job_routes import _initialize_server_job_routes
+from src.server_bootstrap_job_routes import _initialize_server_job_routes  # noqa: E402
 
 _initialize_server_job_routes(sys.modules[__name__])
 
@@ -341,14 +368,14 @@ _initialize_server_job_routes(sys.modules[__name__])
 # before scheduling a resumable, ranged background download. Starlette's
 # FileResponse already short-circuits the body on HEAD — we only need
 # the route to accept the verb.
-from src import server_download_routes as _server_server_download_routes
+from src import server_download_routes as _server_server_download_routes  # noqa: E402
 
-from src.server_bootstrap_download_routes import _initialize_server_download_routes
+from src.server_bootstrap_download_routes import _initialize_server_download_routes  # noqa: E402
 
 _initialize_server_download_routes(sys.modules[__name__])
 
 
-from src import server_fulltext_route as _server_server_fulltext_route
+from src import server_fulltext_route as _server_server_fulltext_route  # noqa: E402
 
 _build_fulltext_chapters_from_cache = _bind_server_function(_server_server_fulltext_route._build_fulltext_chapters_from_cache, sys.modules[__name__])
 
@@ -356,32 +383,35 @@ _build_fulltext_chapters_from_cache = _bind_server_function(_server_server_fullt
 get_job_fulltext = app.get("/api/jobs/{job_id}/fulltext")(_bind_server_function(_server_server_fulltext_route.get_job_fulltext, sys.modules[__name__]))
 
 
-from src import server_history_routes as _server_server_history_routes
+from src import server_history_routes  # noqa: E402
+_server_server_history_routes = server_history_routes
 
-from src.server_bootstrap_history_routes import _initialize_server_history_routes
+from src.server_bootstrap_history_routes import _initialize_server_history_routes  # noqa: E402
 
 _initialize_server_history_routes(sys.modules[__name__])
 
 
-from src import server_voice_routes as _server_server_voice_routes
+from src import server_voice_routes  # noqa: E402
+_server_server_voice_routes = server_voice_routes
 
-from src.server_bootstrap_voice_policy import _initialize_server_voice_policy
+from src.server_bootstrap_voice_policy import _initialize_server_voice_policy  # noqa: E402
 
 _initialize_server_voice_policy(sys.modules[__name__])
 
 
-from src import server_telemetry_routes as _server_server_telemetry_routes
+from src import server_telemetry_routes  # noqa: E402
+_server_server_telemetry_routes = server_telemetry_routes
 
-from src.server_bootstrap_telemetry_routes import _initialize_server_telemetry_routes
+from src.server_bootstrap_telemetry_routes import _initialize_server_telemetry_routes  # noqa: E402
 
 _initialize_server_telemetry_routes(sys.modules[__name__])
 
 
-from src._server_conversion_helpers import advance_chapter_progress as advance_chapter_progress, broadcast_progress as broadcast_progress, chapter_can_retry as chapter_can_retry, chapter_requires_audio as chapter_requires_audio, collect_failed_chapters as collect_failed_chapters, collect_missing_chapters as collect_missing_chapters, complete_chapter_progress as complete_chapter_progress, compute_parallel_slots as compute_parallel_slots, count_completed_chapters as count_completed_chapters, count_words as count_words, detect_reusable_existing_output as detect_reusable_existing_output, edge_retry_adjustments as edge_retry_adjustments, expected_output_path as expected_output_path, mark_retry_round as mark_retry_round, note_chapter_attempt as note_chapter_attempt, preflight_language_check as preflight_language_check, recalculate_progress as recalculate_progress, refresh_chapter_completion as refresh_chapter_completion, reset_chapter_progress_tracking as reset_chapter_progress_tracking, resolve_recent_speed as resolve_recent_speed, resolve_tts_output as resolve_tts_output, sync_soft_failures as sync_soft_failures, update_estimated_chapter_progress as update_estimated_chapter_progress, update_job_progress as update_job_progress
-from src._server_job_helpers import _cleanup_job_output as _cleanup_job_output, _cleanup_output_directory as _cleanup_output_directory, _clear_all_caches, _clear_all_outputs, _clear_job_cache as _clear_job_cache, _clear_restart_staging_dirs, _extract_chapter_details as _extract_chapter_details, _finalize_cancel as _finalize_cancel, _persist_job as _persist_job, _purge_all_jobs, _purge_job_data as _purge_job_data, _record_chapter_failure as _record_chapter_failure, _write_progress_checkpoint as _write_progress_checkpoint
+from src._server_conversion_helpers import advance_chapter_progress as advance_chapter_progress, broadcast_progress as broadcast_progress, chapter_can_retry as chapter_can_retry, chapter_requires_audio as chapter_requires_audio, collect_failed_chapters as collect_failed_chapters, collect_missing_chapters as collect_missing_chapters, complete_chapter_progress as complete_chapter_progress, compute_parallel_slots as compute_parallel_slots, count_completed_chapters as count_completed_chapters, count_words as count_words, detect_reusable_existing_output as detect_reusable_existing_output, edge_retry_adjustments as edge_retry_adjustments, expected_output_path as expected_output_path, mark_retry_round as mark_retry_round, note_chapter_attempt as note_chapter_attempt, preflight_language_check as preflight_language_check, recalculate_progress as recalculate_progress, refresh_chapter_completion as refresh_chapter_completion, reset_chapter_progress_tracking as reset_chapter_progress_tracking, resolve_recent_speed as resolve_recent_speed, resolve_tts_output as resolve_tts_output, sync_soft_failures as sync_soft_failures, update_estimated_chapter_progress as update_estimated_chapter_progress, update_job_progress as update_job_progress  # noqa: E402
+from src._server_job_helpers import _cleanup_job_output as _cleanup_job_output, _cleanup_output_directory as _cleanup_output_directory, _clear_all_caches, _clear_all_outputs, _clear_job_cache as _clear_job_cache, _clear_restart_staging_dirs, _extract_chapter_details as _extract_chapter_details, _finalize_cancel as _finalize_cancel, _persist_job as _persist_job, _purge_all_jobs, _purge_job_data as _purge_job_data, _record_chapter_failure as _record_chapter_failure, _write_progress_checkpoint as _write_progress_checkpoint  # noqa: E402
 
 
-from src.server_bootstrap_output_policy import _initialize_server_output_policy
+from src.server_bootstrap_output_policy import _initialize_server_output_policy  # noqa: E402
 
 _initialize_server_output_policy(sys.modules[__name__])
 
@@ -398,7 +428,7 @@ async def process_conversion(job_id: str) -> None:
     return flow.value if flow is not None else None
 
 
-from src._server_audio_helpers import AudioDuplicateTracker as AudioDuplicateTracker, _apply_priority_order as _apply_priority_order, _build_text_preview as _build_text_preview, _detect_short_audio_output as _detect_short_audio_output, _get_audio_duration as _get_audio_duration, _guess_media_type as _guess_media_type, _preload_existing_outputs as _preload_existing_outputs, _set_chapter_status as _set_chapter_status, _set_engine_status as _set_engine_status, _set_job_error as _set_job_error, _sort_output_entries as _sort_output_entries
+from src._server_audio_helpers import AudioDuplicateTracker as AudioDuplicateTracker, _apply_priority_order as _apply_priority_order, _build_text_preview as _build_text_preview, _detect_short_audio_output as _detect_short_audio_output, _get_audio_duration as _get_audio_duration, _guess_media_type as _guess_media_type, _preload_existing_outputs as _preload_existing_outputs, _set_chapter_status as _set_chapter_status, _set_engine_status as _set_engine_status, _set_job_error as _set_job_error, _sort_output_entries as _sort_output_entries  # noqa: E402
 
 _PROGRESS_CHECKPOINT_NAME = "_progress_checkpoint.json"
 
@@ -406,10 +436,11 @@ _PROGRESS_CHECKPOINT_NAME = "_progress_checkpoint.json"
 download_sample_epub = app.get("/sample.epub")(_bind_server_function(_server_server_download_routes.download_sample_epub, sys.modules[__name__]))
 
 
-from src.routes_health import router as _health_router
-from src.routes_sessions import router as _sessions_router
-from src.routes_telemetry import router as _telemetry_router
-from src.routes_uploads import router as _uploads_router
+from src.routes_health import router as _health_router  # noqa: E402
+from src.routes_sessions import router as _sessions_router  # noqa: E402
+from src.routes_telemetry import router as _telemetry_router  # noqa: E402
+from src.routes_uploads import router as _uploads_router  # noqa: E402
+# isort: on
 
 app.include_router(_health_router)
 app.include_router(_sessions_router)

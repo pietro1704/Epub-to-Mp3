@@ -16,13 +16,11 @@ from typing import Dict, List, Optional, Tuple
 
 from .piper_chunk_synthesis import PiperChunkSynthesis
 from .piper_process_synthesis import PiperProcessSynthesis
-from .piper_text_policy import (
-    _is_reference_heavy_text as _is_reference_heavy_text,
-    _merge_small_chunks as _merge_small_chunks,
-    _planned_piper_chunk_chars as _planned_piper_chunk_chars,
-    _sanitize_text_for_piper as _sanitize_text_for_piper,
-    _split_text_into_chunks as _split_text_into_chunks,
-)
+from .piper_text_policy import _is_reference_heavy_text as _is_reference_heavy_text
+from .piper_text_policy import _merge_small_chunks as _merge_small_chunks
+from .piper_text_policy import _planned_piper_chunk_chars as _planned_piper_chunk_chars
+from .piper_text_policy import _sanitize_text_for_piper as _sanitize_text_for_piper
+from .piper_text_policy import _split_text_into_chunks as _split_text_into_chunks
 
 _IS_MACOS = platform.system().lower() == "darwin"
 

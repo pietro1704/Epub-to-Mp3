@@ -1,15 +1,14 @@
 """Resource budget scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    ConversionConfig as ConversionConfig,
-    Mock as Mock,
-    Path as Path,
-    ResourceSnapshot as ResourceSnapshot,
-    SimpleNamespace as SimpleNamespace,
-    json as json,
-    os as os,
-    patch as patch,
-)
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import Mock as Mock
+from python_app.tests._converter_test_support import Path as Path
+from python_app.tests._converter_test_support import ResourceSnapshot as ResourceSnapshot
+from python_app.tests._converter_test_support import SimpleNamespace as SimpleNamespace
+from python_app.tests._converter_test_support import json as json
+from python_app.tests._converter_test_support import os as os
+from python_app.tests._converter_test_support import patch as patch
+
 
 class ResourceBudgetCases:
     def test_engine_resource_budget_reduces_parallel_on_pressure(self):

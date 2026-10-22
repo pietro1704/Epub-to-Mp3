@@ -1,9 +1,8 @@
 """Application structure scenarios sharing the original unittest fixture."""
 
-from python_app.tests._main_test_support import (
-    Chapter as Chapter,
-    SimpleNamespace as SimpleNamespace,
-)
+from python_app.tests._main_test_support import Chapter as Chapter
+from python_app.tests._main_test_support import SimpleNamespace as SimpleNamespace
+
 
 class ApplicationStructureCases:
     def test_apply_text_transforms_inline_retains_emphasis(self):

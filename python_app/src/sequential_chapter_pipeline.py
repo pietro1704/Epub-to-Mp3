@@ -6,9 +6,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Optional
 
-
-from .chapter_iteration_preparation import _chapter_iteration_preparation
 from .chapter_attempt_coordinator import _chapter_attempt_coordinator
+from .chapter_iteration_preparation import _chapter_iteration_preparation
+
 
 async def _sequential_chapter_pipeline(self, _state):
     from . import converter as _runtime

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import ConversionConfig
-from .ebook_reader import Chapter
+from .ebook_reader import Chapter as Chapter
 
 
 async def _server_metadata_preparation(_runtime, _state):

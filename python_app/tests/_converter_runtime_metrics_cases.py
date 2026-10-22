@@ -1,9 +1,8 @@
 """Runtime metrics scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    Path as Path,
-    json as json,
-)
+from python_app.tests._converter_test_support import Path as Path
+from python_app.tests._converter_test_support import json as json
+
 
 class RuntimeMetricsCases:
     def test_write_segment_metrics_outputs_summary_and_csv(self):

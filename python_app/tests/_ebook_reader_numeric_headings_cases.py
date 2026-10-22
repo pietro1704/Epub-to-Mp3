@@ -1,9 +1,8 @@
 """Numeric Headings regression scenarios, collected by test_ebook_reader."""
 
-from python_app.tests._ebook_reader_test_support import (
-    EpubParser as EpubParser,
-    unittest as unittest,
-)
+from python_app.tests._ebook_reader_test_support import EpubParser as EpubParser
+from python_app.tests._ebook_reader_test_support import unittest as unittest
+
 
 class TestNumericHeadingSplitter(unittest.TestCase):
     """Tests for EpubParser._split_html_on_numeric_headings."""

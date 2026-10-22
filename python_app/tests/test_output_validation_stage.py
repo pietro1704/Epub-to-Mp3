@@ -6,8 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-import validate_conversion
 from src import _validation_mixin as validation
+
+import validate_conversion
 
 
 class _Host(validation._ValidationMixin):

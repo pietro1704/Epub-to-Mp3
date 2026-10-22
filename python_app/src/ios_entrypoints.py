@@ -47,26 +47,22 @@ from typing import Any, Callable, List, Optional
 # every iOS chapter synthesis will crash here with
 # ``No module named '_struct'``.
 from .ios_book_conversion import convert_epub as convert_epub
-from .ios_conversion_options import (
-    _OPTION_KEYS as _OPTION_KEYS,
-    _collected_options as _collected_options,
-)
-from .ios_speech_preparation import (
-    _DEFAULT_EXPECTED_WPM as _DEFAULT_EXPECTED_WPM,
-    _DEFAULT_FIRST_CHUNK_CHARS as _DEFAULT_FIRST_CHUNK_CHARS,
-    _DEFAULT_IOS_CHUNK_CHARS as _DEFAULT_IOS_CHUNK_CHARS,
-    _DEFAULT_MAX_SEGMENT_SECONDS as _DEFAULT_MAX_SEGMENT_SECONDS,
-    _chunk_chars as _chunk_chars,
-    _estimated_seconds as _estimated_seconds,
-    _expected_wpm as _expected_wpm,
-    _first_chunk_chars as _first_chunk_chars,
-    _max_segment_seconds as _max_segment_seconds,
-    _resolve_auto_voice as _resolve_auto_voice,
-    _split_duration_bound as _split_duration_bound,
-    _split_into_chunks as _split_into_chunks,
-    prepare_audible_speech_text as prepare_audible_speech_text,
-    prepare_chunks as prepare_chunks,
-)
+from .ios_conversion_options import _OPTION_KEYS as _OPTION_KEYS
+from .ios_conversion_options import _collected_options as _collected_options
+from .ios_speech_preparation import _DEFAULT_EXPECTED_WPM as _DEFAULT_EXPECTED_WPM
+from .ios_speech_preparation import _DEFAULT_FIRST_CHUNK_CHARS as _DEFAULT_FIRST_CHUNK_CHARS
+from .ios_speech_preparation import _DEFAULT_IOS_CHUNK_CHARS as _DEFAULT_IOS_CHUNK_CHARS
+from .ios_speech_preparation import _DEFAULT_MAX_SEGMENT_SECONDS as _DEFAULT_MAX_SEGMENT_SECONDS
+from .ios_speech_preparation import _chunk_chars as _chunk_chars
+from .ios_speech_preparation import _estimated_seconds as _estimated_seconds
+from .ios_speech_preparation import _expected_wpm as _expected_wpm
+from .ios_speech_preparation import _first_chunk_chars as _first_chunk_chars
+from .ios_speech_preparation import _max_segment_seconds as _max_segment_seconds
+from .ios_speech_preparation import _resolve_auto_voice as _resolve_auto_voice
+from .ios_speech_preparation import _split_duration_bound as _split_duration_bound
+from .ios_speech_preparation import _split_into_chunks as _split_into_chunks
+from .ios_speech_preparation import prepare_audible_speech_text as prepare_audible_speech_text
+from .ios_speech_preparation import prepare_chunks as prepare_chunks
 from .tts import _edge_transport, _piper_transport
 
 

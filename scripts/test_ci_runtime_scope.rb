@@ -240,6 +240,27 @@ class CiRuntimeScopeTest < Minitest::Test
     refute_includes @workflow.fetch('jobs').fetch('flutter').fetch('steps').filter_map { |step| step['run'] }.join("\n"), 'cargo build'
   end
 
+  def test_flutter_sdk_is_saved_before_dependency_or_test_failures
+    steps = @workflow.fetch('jobs').fetch('flutter').fetch('steps')
+    restore = steps.find { |step| step['name'] == 'Cache Flutter SDK' }
+    save = steps.find { |step| step['name'] == 'Retain installed Flutter SDK' }
+    install = steps.find { |step| step['name'] == 'Install toolchain' }
+    refute_nil save, 'A later test failure must not discard an installed SDK cache'
+    assert_pinned_action 'actions/cache/restore', restore.fetch('uses')
+    assert_pinned_action 'actions/cache/save', save.fetch('uses')
+    assert_equal 'flutter-sdk-cache', restore.fetch('id')
+    assert_equal "steps.flutter-sdk-cache.outputs.cache-hit != 'true'", save.fetch('if')
+    assert_equal restore.fetch('with'), save.fetch('with')
+    assert_equal '~/.local/share/mise/installs/flutter', save.fetch('with').fetch('path')
+    assert_includes save.fetch('with').fetch('key'), "hashFiles('mise.toml', 'mise.lock')"
+    refute install.key?('continue-on-error')
+    assert_operator steps.index(restore), :<, steps.index(install)
+    assert_operator steps.index(install), :<, steps.index(save)
+    ['Install Flutter dependencies', 'Run Flutter tests', 'Run Flutter analyzer'].each do |name|
+      assert_operator steps.index(save), :<, steps.index(steps.find { |step| step['name'] == name })
+    end
+  end
+
 def test_reusable_jobs_cannot_share_the_callers_concurrency_group
   groups = %w[converter-ffi flutter-rust-faber].map do |name|
     workflow = YAML.load_file(File.expand_path("../.github/workflows/#{name}.yml", __dir__))

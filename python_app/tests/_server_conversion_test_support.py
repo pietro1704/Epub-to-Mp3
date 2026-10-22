@@ -25,7 +25,6 @@ from src.telemetry import TelemetryRecorder
 from python_app import server
 from python_app.src import _server_audio_helpers as server_audio_helpers
 
-
 FIXTURE_BOOK = Path(__file__).resolve().parents[2] / "web" / "public" / "sample.epub"
 MINIMAL_MP3 = (
     bytes(

@@ -1,15 +1,14 @@
 """Toc projection for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    Any as Any,
-    Chapter as Chapter,
-    ChapterStructureItem as ChapterStructureItem,
-    Dict as Dict,
-    EbookReader as EbookReader,
-    List as List,
-    Optional as Optional,
-    Tuple as Tuple,
-)
+from .cli_runtime_dependencies import Any as Any
+from .cli_runtime_dependencies import Chapter as Chapter
+from .cli_runtime_dependencies import ChapterStructureItem as ChapterStructureItem
+from .cli_runtime_dependencies import Dict as Dict
+from .cli_runtime_dependencies import EbookReader as EbookReader
+from .cli_runtime_dependencies import List as List
+from .cli_runtime_dependencies import Optional as Optional
+from .cli_runtime_dependencies import Tuple as Tuple
+
 
 class CLITocProjection:
     def _create_items_from_toc_outline_entries(

@@ -2,12 +2,17 @@
 
 from python_app.tests._language_detection_benchmark_support import (
     ENGINE_LANGUAGE_SUPPORT as ENGINE_LANGUAGE_SUPPORT,
-    LANGUAGE_VOICES as LANGUAGE_VOICES,
-    LangDetectException as LangDetectException,
-    List as List,
-    Tuple as Tuple,
-    detect as detect,
 )
+from python_app.tests._language_detection_benchmark_support import (
+    LANGUAGE_VOICES as LANGUAGE_VOICES,
+)
+from python_app.tests._language_detection_benchmark_support import (
+    LangDetectException as LangDetectException,
+)
+from python_app.tests._language_detection_benchmark_support import List as List
+from python_app.tests._language_detection_benchmark_support import Tuple as Tuple
+from python_app.tests._language_detection_benchmark_support import detect as detect
+
 
 def detect_language(text: str) -> str:
     """Detect language of text using langdetect."""

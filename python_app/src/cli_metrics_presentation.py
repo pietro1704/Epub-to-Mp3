@@ -1,9 +1,8 @@
 """Metrics presentation for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    Optional as Optional,
-    Path as Path,
-)
+from .cli_runtime_dependencies import Optional as Optional
+from .cli_runtime_dependencies import Path as Path
+
 
 class CLIMetricsPresentation:
     @staticmethod

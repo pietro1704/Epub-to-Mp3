@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .conversion_control import ConversionControl as _ConversionControl
-from .ebook_reader import Chapter
+from .ebook_reader import Chapter as Chapter
 
 
 async def _server_retry_scheduler(_runtime, _state):

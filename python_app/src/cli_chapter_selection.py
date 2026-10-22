@@ -1,11 +1,10 @@
 """Chapter selection for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    ChapterStructureItem as ChapterStructureItem,
-    List as List,
-    Optional as Optional,
-    Tuple as Tuple,
-)
+from .cli_runtime_dependencies import ChapterStructureItem as ChapterStructureItem
+from .cli_runtime_dependencies import List as List
+from .cli_runtime_dependencies import Optional as Optional
+from .cli_runtime_dependencies import Tuple as Tuple
+
 
 class CLIChapterSelection:
     @staticmethod

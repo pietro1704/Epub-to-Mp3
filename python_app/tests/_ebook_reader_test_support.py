@@ -15,7 +15,6 @@ from src.ebook_reader import (
     parse_epub_to_dict,
 )
 
-
 __all__ = [
     "Book",
     "Chapter",

@@ -1,12 +1,11 @@
 """Application run scenarios sharing the original unittest fixture."""
 
-from python_app.tests._main_test_support import (
-    Mock as Mock,
-    Namespace as Namespace,
-    Path as Path,
-    _asyncio_run_stub as _asyncio_run_stub,
-    patch as patch,
-)
+from python_app.tests._main_test_support import Mock as Mock
+from python_app.tests._main_test_support import Namespace as Namespace
+from python_app.tests._main_test_support import Path as Path
+from python_app.tests._main_test_support import _asyncio_run_stub as _asyncio_run_stub
+from python_app.tests._main_test_support import patch as patch
+
 
 class ApplicationRunCases:
     @patch("main.EbookReader")

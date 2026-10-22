@@ -1,18 +1,17 @@
 """Projection regression scenarios, collected by test_ebook_reader."""
 
-from python_app.tests._ebook_reader_test_support import (
-    Book as Book,
-    Chapter as Chapter,
-    EbookReader as EbookReader,
-    EpubParser as EpubParser,
-    Path as Path,
-    TocItem as TocItem,
-    parse_epub_to_dict as parse_epub_to_dict,
-    patch as patch,
-    tempfile as tempfile,
-    unittest as unittest,
-    zipfile as zipfile,
-)
+from python_app.tests._ebook_reader_test_support import Book as Book
+from python_app.tests._ebook_reader_test_support import Chapter as Chapter
+from python_app.tests._ebook_reader_test_support import EbookReader as EbookReader
+from python_app.tests._ebook_reader_test_support import EpubParser as EpubParser
+from python_app.tests._ebook_reader_test_support import Path as Path
+from python_app.tests._ebook_reader_test_support import TocItem as TocItem
+from python_app.tests._ebook_reader_test_support import parse_epub_to_dict as parse_epub_to_dict
+from python_app.tests._ebook_reader_test_support import patch as patch
+from python_app.tests._ebook_reader_test_support import tempfile as tempfile
+from python_app.tests._ebook_reader_test_support import unittest as unittest
+from python_app.tests._ebook_reader_test_support import zipfile as zipfile
+
 
 class TestParseEpubToDict(unittest.TestCase):
     """parse_epub_to_dict — iOS-friendly JSON shape used by PythonBridge."""

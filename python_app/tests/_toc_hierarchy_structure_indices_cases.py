@@ -1,13 +1,12 @@
 """Structure Indices regression scenarios, collected by test_toc_hierarchy."""
 
-from python_app.tests._toc_hierarchy_test_support import (
-    EpubBuilder as EpubBuilder,
-    _nav_point as _nav_point,
-    _ncx as _ncx,
-    os as os,
-    tempfile as tempfile,
-    unittest as unittest,
-)
+from python_app.tests._toc_hierarchy_test_support import EpubBuilder as EpubBuilder
+from python_app.tests._toc_hierarchy_test_support import _nav_point as _nav_point
+from python_app.tests._toc_hierarchy_test_support import _ncx as _ncx
+from python_app.tests._toc_hierarchy_test_support import os as os
+from python_app.tests._toc_hierarchy_test_support import tempfile as tempfile
+from python_app.tests._toc_hierarchy_test_support import unittest as unittest
+
 
 class TestGenerateStructureItemsIndices(unittest.TestCase):
     """Tests for _generate_structure_items index assignment.

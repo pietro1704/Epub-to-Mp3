@@ -1,14 +1,15 @@
 """Empty Segment regression scenarios, collected by test_edge_engine."""
 
-from python_app.tests._edge_engine_test_support import (
-    EdgeTTSEngine as EdgeTTSEngine,
-    Mock as Mock,
-    Path as Path,
-    asyncio as asyncio,
-    edge_engine as edge_engine,
-    tempfile as tempfile,
-    unittest as unittest,
-)
+import python_app.tests._edge_engine_test_support as _shared_test_exports
+from python_app.tests._edge_engine_test_support import EdgeTTSEngine as EdgeTTSEngine
+from python_app.tests._edge_engine_test_support import Mock as Mock
+from python_app.tests._edge_engine_test_support import Path as Path
+from python_app.tests._edge_engine_test_support import edge_engine as edge_engine
+from python_app.tests._edge_engine_test_support import tempfile as tempfile
+from python_app.tests._edge_engine_test_support import unittest as unittest
+
+asyncio = _shared_test_exports.asyncio
+
 
 class TestEdgeEmptySegmentGuard(unittest.TestCase):
     """Regression: an empty (0-byte) Edge segment must never corrupt output.

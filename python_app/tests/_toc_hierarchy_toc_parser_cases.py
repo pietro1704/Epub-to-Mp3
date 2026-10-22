@@ -1,11 +1,10 @@
 """Toc Parser regression scenarios, collected by test_toc_hierarchy."""
 
-from python_app.tests._toc_hierarchy_test_support import (
-    EpubParser as EpubParser,
-    TocItem as TocItem,
-    _nav_xhtml as _nav_xhtml,
-    unittest as unittest,
-)
+from python_app.tests._toc_hierarchy_test_support import EpubParser as EpubParser
+from python_app.tests._toc_hierarchy_test_support import TocItem as TocItem
+from python_app.tests._toc_hierarchy_test_support import _nav_xhtml as _nav_xhtml
+from python_app.tests._toc_hierarchy_test_support import unittest as unittest
+
 
 # ---------------------------------------------------------------------------
 # Tests

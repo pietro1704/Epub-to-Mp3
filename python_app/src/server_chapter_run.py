@@ -6,11 +6,10 @@ from __future__ import annotations
 from typing import Optional
 
 from .conversion_control import ConversionControl as _ConversionControl
-from .ebook_reader import Chapter
-
-
-from .server_chapter_preparation import _server_chapter_preparation
+from .ebook_reader import Chapter as Chapter
 from .server_chapter_execution import _server_chapter_execution
+from .server_chapter_preparation import _server_chapter_preparation
+
 
 async def _server_chapter_run(_runtime, _state, _chapter):
     if _state.job_failed["value"] or _state._should_abort_current_run():

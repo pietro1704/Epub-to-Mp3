@@ -4,10 +4,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-import python_app
 from src import _server_audio_helpers as audio
 from src import _server_conversion_helpers as facade
 from src import server_job_progress as progress
+
+import python_app
 
 
 def _job():

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from python_app.tests._epub_multifeature_test_support import SAMPLE_MULTILANG as SAMPLE_MULTILANG
+from python_app.tests._epub_multifeature_test_support import EbookReader as EbookReader
 from python_app.tests._epub_multifeature_test_support import (
-    EbookReader as EbookReader,
-    SAMPLE_MULTILANG as SAMPLE_MULTILANG,
     TextFormattingProcessor as TextFormattingProcessor,
-    unittest as unittest,
 )
+from python_app.tests._epub_multifeature_test_support import unittest as unittest
+
 
 class TestLanguageAttributeExtraction(unittest.TestCase):
     """Test lang attribute extraction from HTML"""

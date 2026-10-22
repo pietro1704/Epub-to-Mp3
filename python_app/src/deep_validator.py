@@ -13,10 +13,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .deep_validation_report import (
-    ChapterComparison as ChapterComparison,
-    ValidationReport as ValidationReport,
-)
+from .deep_validation_report import ChapterComparison as ChapterComparison
+from .deep_validation_report import ValidationReport as ValidationReport
 from .epub_validation_index import EpubValidationIndex
 
 

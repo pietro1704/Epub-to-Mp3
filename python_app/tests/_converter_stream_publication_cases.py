@@ -1,13 +1,12 @@
 """Stream publication scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    Chapter as Chapter,
-    MockTTSEngine as MockTTSEngine,
-    Path as Path,
-    json as json,
-    patch as patch,
-    re as re,
-)
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import MockTTSEngine as MockTTSEngine
+from python_app.tests._converter_test_support import Path as Path
+from python_app.tests._converter_test_support import json as json
+from python_app.tests._converter_test_support import patch as patch
+from python_app.tests._converter_test_support import re as re
+
 
 class StreamPublicationCases:
     async def test_stream_attempt_observations_preserve_cli_chunks_and_reject_late_callbacks(self):

@@ -467,7 +467,8 @@ jobs:
           '
 
       - name: Cache Flutter SDK
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: flutter-sdk-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.local/share/mise/installs/flutter
           key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
@@ -476,6 +477,13 @@ jobs:
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
+
+      - name: Retain installed Flutter SDK
+        if: steps.flutter-sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.local/share/mise/installs/flutter
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
 
       - name: Install Flutter dependencies
         working-directory: flutter_app

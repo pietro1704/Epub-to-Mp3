@@ -7,8 +7,8 @@ from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, Mock, patch
 
-from python_app.src import converter as runtime
 from python_app.src import chapter_conversion_run as coordinator
+from python_app.src import converter as runtime
 from python_app.src.chapter_conversion_state import ChapterConversionState
 from python_app.src.config import ConversionConfig
 from python_app.src.conversion_control import ConversionControl

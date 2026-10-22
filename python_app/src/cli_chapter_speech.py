@@ -1,15 +1,15 @@
 """Chapter speech for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    Chapter as Chapter,
-    ChapterStructureItem as ChapterStructureItem,
-    Dict as Dict,
-    EbookReader as EbookReader,
-    List as List,
-    Optional as Optional,
-    argparse as argparse,
-    re as re,
-)
+from . import cli_runtime_dependencies as _shared_cli_runtime_dependencies
+from .cli_runtime_dependencies import Chapter as Chapter
+from .cli_runtime_dependencies import ChapterStructureItem as ChapterStructureItem
+from .cli_runtime_dependencies import Dict as Dict
+from .cli_runtime_dependencies import EbookReader as EbookReader
+from .cli_runtime_dependencies import List as List
+from .cli_runtime_dependencies import Optional as Optional
+from .cli_runtime_dependencies import argparse as argparse
+
+re = _shared_cli_runtime_dependencies.re
 
 class CLIChapterSpeech:
     def _apply_structure_to_reader(

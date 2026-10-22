@@ -1,12 +1,11 @@
 """Configuration for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    Any as Any,
-    ConversionConfig as ConversionConfig,
-    Dict as Dict,
-    EbookReader as EbookReader,
-    argparse as argparse,
-)
+from .cli_runtime_dependencies import Any as Any
+from .cli_runtime_dependencies import ConversionConfig as ConversionConfig
+from .cli_runtime_dependencies import Dict as Dict
+from .cli_runtime_dependencies import EbookReader as EbookReader
+from .cli_runtime_dependencies import argparse as argparse
+
 
 class CLIConfiguration:
     def _get_conversion_config(self, args: argparse.Namespace, reader: EbookReader):

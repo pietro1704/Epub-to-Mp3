@@ -1,14 +1,14 @@
 """Structure presentation for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    Chapter as Chapter,
-    Dict as Dict,
-    EbookReader as EbookReader,
-    List as List,
-    Optional as Optional,
-    Tuple as Tuple,
-    re as re,
-)
+from . import cli_runtime_dependencies as _shared_cli_runtime_dependencies
+from .cli_runtime_dependencies import Chapter as Chapter
+from .cli_runtime_dependencies import Dict as Dict
+from .cli_runtime_dependencies import EbookReader as EbookReader
+from .cli_runtime_dependencies import List as List
+from .cli_runtime_dependencies import Optional as Optional
+from .cli_runtime_dependencies import Tuple as Tuple
+
+re = _shared_cli_runtime_dependencies.re
 
 class CLIStructurePresentation:
     def _show_structure(self, reader: EbookReader, *, filter_chapters: bool = True):

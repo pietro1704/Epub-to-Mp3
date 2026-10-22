@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import python_app.tests._server_conversion_test_support as _shared_test_exports
+from python_app.tests._server_conversion_test_support import MINIMAL_MP3 as MINIMAL_MP3
+from python_app.tests._server_conversion_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._server_conversion_test_support import SimpleNamespace as SimpleNamespace
+from python_app.tests._server_conversion_test_support import server as server
 from python_app.tests._server_conversion_test_support import (
-    ConversionConfig as ConversionConfig,
-    MINIMAL_MP3 as MINIMAL_MP3,
-    SimpleNamespace as SimpleNamespace,
-    os as os,
-    replace as replace,
-    server as server,
     server_audio_helpers as server_audio_helpers,
 )
+
+os = _shared_test_exports.os
+replace = _shared_test_exports.replace
+
 
 def test_build_engine_chain_respects_guards(monkeypatch):
     """When all non-Edge engines are unavailable and no monolingual voice exists, chain = [edge]."""

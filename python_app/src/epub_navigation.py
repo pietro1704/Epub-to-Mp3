@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import zipfile
-from xml.etree import ElementTree as ET
-
 from typing import Dict, List, Optional
+from xml.etree import ElementTree as ET
 
 from .ebook_models import Chapter, TocItem
 

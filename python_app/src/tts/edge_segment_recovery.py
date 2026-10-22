@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
+from typing import Optional as Optional
 
 
 class EdgeSegmentRecovery:

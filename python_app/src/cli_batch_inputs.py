@@ -1,13 +1,12 @@
 """Batch inputs for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    List as List,
-    Optional as Optional,
-    Path as Path,
-    Set as Set,
-    Tuple as Tuple,
-    argparse as argparse,
-)
+from .cli_runtime_dependencies import List as List
+from .cli_runtime_dependencies import Optional as Optional
+from .cli_runtime_dependencies import Path as Path
+from .cli_runtime_dependencies import Set as Set
+from .cli_runtime_dependencies import Tuple as Tuple
+from .cli_runtime_dependencies import argparse as argparse
+
 
 class CLIBatchInputs:
     def _resolve_batch_targets(self, args: argparse.Namespace) -> Tuple[List[Path], bool]:

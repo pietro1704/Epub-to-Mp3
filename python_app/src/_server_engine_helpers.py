@@ -14,11 +14,9 @@ from typing import Dict, Optional
 from src.config import ConversionConfig
 from src.hardware_detector import HardwareProfile
 
-from .server_performance_profiles import (
-    _apply_perf_defaults as _apply_perf_defaults,
-    _infer_perf_profile as _infer_perf_profile,
-    _set_default as _set_default,
-)
+from .server_performance_profiles import _apply_perf_defaults as _apply_perf_defaults
+from .server_performance_profiles import _infer_perf_profile as _infer_perf_profile
+from .server_performance_profiles import _set_default as _set_default
 
 
 def _piper_fallback_disabled() -> bool:

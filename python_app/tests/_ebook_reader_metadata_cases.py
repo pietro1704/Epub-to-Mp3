@@ -1,17 +1,16 @@
 """Metadata regression scenarios, collected by test_ebook_reader."""
 
-from python_app.tests._ebook_reader_test_support import (
-    Book as Book,
-    Chapter as Chapter,
-    EbookReader as EbookReader,
-    EpubParser as EpubParser,
-    Path as Path,
-    PdfParser as PdfParser,
-    os as os,
-    patch as patch,
-    tempfile as tempfile,
-    unittest as unittest,
-)
+from python_app.tests._ebook_reader_test_support import Book as Book
+from python_app.tests._ebook_reader_test_support import Chapter as Chapter
+from python_app.tests._ebook_reader_test_support import EbookReader as EbookReader
+from python_app.tests._ebook_reader_test_support import EpubParser as EpubParser
+from python_app.tests._ebook_reader_test_support import Path as Path
+from python_app.tests._ebook_reader_test_support import PdfParser as PdfParser
+from python_app.tests._ebook_reader_test_support import os as os
+from python_app.tests._ebook_reader_test_support import patch as patch
+from python_app.tests._ebook_reader_test_support import tempfile as tempfile
+from python_app.tests._ebook_reader_test_support import unittest as unittest
+
 
 class TestEbookReader(unittest.TestCase):
     """Test cases for EbookReader class"""

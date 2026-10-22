@@ -1,11 +1,10 @@
 """Cache lifecycle scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    Chapter as Chapter,
-    ConversionConfig as ConversionConfig,
-    MockTTSEngine as MockTTSEngine,
-    Path as Path,
-)
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import MockTTSEngine as MockTTSEngine
+from python_app.tests._converter_test_support import Path as Path
+
 
 class CacheLifecycleCases:
     async def test_integration_cache_matches_tts_during_conversion(self):

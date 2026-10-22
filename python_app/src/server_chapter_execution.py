@@ -3,13 +3,11 @@
 
 from __future__ import annotations
 
-
-from .ebook_reader import Chapter
-
-
+from .ebook_reader import Chapter as Chapter
+from .server_chapter_audio_acceptance import _server_chapter_audio_acceptance
 from .server_chapter_preflight import _server_chapter_preflight
 from .server_chapter_synthesis import _server_chapter_synthesis
-from .server_chapter_audio_acceptance import _server_chapter_audio_acceptance
+
 
 async def _server_chapter_execution(_runtime, _state, _chapter):
     async def _chapter_heartbeat_loop() -> None:

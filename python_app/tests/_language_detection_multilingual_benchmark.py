@@ -1,15 +1,20 @@
 """Multilingual strategy for the opt-in manual benchmark."""
 
 from python_app.tests._language_detection_benchmark_support import (
-    BenchmarkResult as BenchmarkResult,
-    Dict as Dict,
     ENGINE_LANGUAGE_SUPPORT as ENGINE_LANGUAGE_SUPPORT,
-    LANGUAGE_VOICES as LANGUAGE_VOICES,
-    List as List,
-    Path as Path,
-    tempfile as tempfile,
-    time as time,
 )
+from python_app.tests._language_detection_benchmark_support import (
+    LANGUAGE_VOICES as LANGUAGE_VOICES,
+)
+from python_app.tests._language_detection_benchmark_support import (
+    BenchmarkResult as BenchmarkResult,
+)
+from python_app.tests._language_detection_benchmark_support import Dict as Dict
+from python_app.tests._language_detection_benchmark_support import List as List
+from python_app.tests._language_detection_benchmark_support import Path as Path
+from python_app.tests._language_detection_benchmark_support import tempfile as tempfile
+from python_app.tests._language_detection_benchmark_support import time as time
+
 
 async def benchmark_multilingual_engine(
     engine_name: str,

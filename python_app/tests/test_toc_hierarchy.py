@@ -19,36 +19,46 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from python_app.tests._toc_hierarchy_test_support import (
-    EpubBuilder as EpubBuilder,
-    EpubParser as EpubParser,
-    _container_xml as _container_xml,
-    _nav_point as _nav_point,
-    _nav_xhtml as _nav_xhtml,
-    _ncx as _ncx,
-    _opf as _opf,
-    _xhtml as _xhtml,
-    os as os,
-    tempfile as tempfile,
-    unittest as unittest,
-)
-
-from python_app.tests._toc_hierarchy_toc_parser_cases import (
-    TestBuildTocLevelMap as TestBuildTocLevelMap,
-    TestParseNavHtml as TestParseNavHtml,
-    TestParseNavHtmlEdgeCases as TestParseNavHtmlEdgeCases,
-    TestBuildTocLevelMapEdgeCases as TestBuildTocLevelMapEdgeCases,
-)
 from python_app.tests._toc_hierarchy_navigation_fallback_cases import (
     TestEpub3NavFallback as TestEpub3NavFallback,
+)
+from python_app.tests._toc_hierarchy_navigation_fallback_cases import (
     TestFilesNotInToc as TestFilesNotInToc,
+)
+from python_app.tests._toc_hierarchy_navigation_fallback_cases import (
     TestItAcoisaSimulation as TestItAcoisaSimulation,
+)
+from python_app.tests._toc_hierarchy_navigation_fallback_cases import (
     TestNcxFallbackToNav as TestNcxFallbackToNav,
+)
+from python_app.tests._toc_hierarchy_navigation_fallback_cases import (
     TestParseNavTocFromOpf as TestParseNavTocFromOpf,
 )
 from python_app.tests._toc_hierarchy_structure_indices_cases import (
     TestGenerateStructureItemsIndices as TestGenerateStructureItemsIndices,
 )
+from python_app.tests._toc_hierarchy_test_support import EpubBuilder as EpubBuilder
+from python_app.tests._toc_hierarchy_test_support import EpubParser as EpubParser
+from python_app.tests._toc_hierarchy_test_support import _container_xml as _container_xml
+from python_app.tests._toc_hierarchy_test_support import _nav_point as _nav_point
+from python_app.tests._toc_hierarchy_test_support import _nav_xhtml as _nav_xhtml
+from python_app.tests._toc_hierarchy_test_support import _ncx as _ncx
+from python_app.tests._toc_hierarchy_test_support import _opf as _opf
+from python_app.tests._toc_hierarchy_test_support import _xhtml as _xhtml
+from python_app.tests._toc_hierarchy_test_support import os as os
+from python_app.tests._toc_hierarchy_test_support import tempfile as tempfile
+from python_app.tests._toc_hierarchy_test_support import unittest as unittest
+from python_app.tests._toc_hierarchy_toc_parser_cases import (
+    TestBuildTocLevelMap as TestBuildTocLevelMap,
+)
+from python_app.tests._toc_hierarchy_toc_parser_cases import (
+    TestBuildTocLevelMapEdgeCases as TestBuildTocLevelMapEdgeCases,
+)
+from python_app.tests._toc_hierarchy_toc_parser_cases import TestParseNavHtml as TestParseNavHtml
+from python_app.tests._toc_hierarchy_toc_parser_cases import (
+    TestParseNavHtmlEdgeCases as TestParseNavHtmlEdgeCases,
+)
+
 
 class TestFlatEpub(unittest.TestCase):
     """A book with no TOC hierarchy: all chapters should have level=1."""

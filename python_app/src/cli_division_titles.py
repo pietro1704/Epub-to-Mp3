@@ -1,8 +1,8 @@
 """Division titles for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    re as re,
-)
+from . import cli_runtime_dependencies as _shared_cli_runtime_dependencies
+
+re = _shared_cli_runtime_dependencies.re
 
 class CLIDivisionTitles:
     PREVIEW_WORD_LIMIT = 30

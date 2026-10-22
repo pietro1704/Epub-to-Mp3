@@ -1,17 +1,18 @@
 """Single chapter scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    AsyncMock as AsyncMock,
-    Chapter as Chapter,
-    ConversionConfig as ConversionConfig,
-    Mock as Mock,
-    MockTTSEngine as MockTTSEngine,
-    Path as Path,
-    SimpleNamespace as SimpleNamespace,
-    asyncio as asyncio,
-    patch as patch,
-    re as re,
-)
+import python_app.tests._converter_test_support as _shared_test_exports
+from python_app.tests._converter_test_support import AsyncMock as AsyncMock
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import Mock as Mock
+from python_app.tests._converter_test_support import MockTTSEngine as MockTTSEngine
+from python_app.tests._converter_test_support import Path as Path
+from python_app.tests._converter_test_support import SimpleNamespace as SimpleNamespace
+from python_app.tests._converter_test_support import asyncio as asyncio
+from python_app.tests._converter_test_support import patch as patch
+
+re = _shared_test_exports.re
+
 
 class SingleChapterCases:
     async def test_edge_retries_after_truncated_audio_and_succeeds(self):

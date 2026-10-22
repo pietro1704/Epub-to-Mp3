@@ -3,9 +3,8 @@
 
 from __future__ import annotations
 
-
 from .conversion_control import ConversionControl as _ConversionControl
-from .ebook_reader import Chapter
+from .ebook_reader import Chapter as Chapter
 
 
 async def _parallel_chapter_synthesis(self, _state):

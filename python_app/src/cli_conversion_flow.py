@@ -1,9 +1,8 @@
 """Conversion flow for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    List as List,
-    argparse as argparse,
-)
+from .cli_runtime_dependencies import List as List
+from .cli_runtime_dependencies import argparse as argparse
+
 
 class CLIConversionFlow:
     def _run_single_conversion(

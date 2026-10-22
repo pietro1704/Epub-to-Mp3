@@ -1,9 +1,8 @@
 """Cache text projection scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    Chapter as Chapter,
-    Path as Path,
-)
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import Path as Path
+
 
 class CacheTextProjectionCases:
     def test_cache_text_creation(self):

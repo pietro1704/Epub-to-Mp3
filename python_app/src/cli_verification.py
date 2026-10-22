@@ -1,12 +1,12 @@
 """Verification for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    ConversionConfig as ConversionConfig,
-    Path as Path,
-    asyncio as asyncio,
-    os as os,
-    traceback as traceback,
-)
+from . import cli_runtime_dependencies as _shared_cli_runtime_dependencies
+from .cli_runtime_dependencies import ConversionConfig as ConversionConfig
+from .cli_runtime_dependencies import Path as Path
+from .cli_runtime_dependencies import traceback as traceback
+
+asyncio = _shared_cli_runtime_dependencies.asyncio
+os = _shared_cli_runtime_dependencies.os
 
 class CLIVerification:
     def _run_verify_only(

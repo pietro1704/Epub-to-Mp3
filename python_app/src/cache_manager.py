@@ -12,10 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .conversion_checkpoint_store import (
-    ConversionCheckpoint as ConversionCheckpoint,
-    ConversionCheckpointStore,
-)
+from .conversion_checkpoint_store import ConversionCheckpointStore
+from .conversion_checkpoint_store import ConversionCheckpoint as ConversionCheckpoint
 from .paths import CACHE_DIR
 
 # Bound the in-memory cache so batch conversions of many large books do not

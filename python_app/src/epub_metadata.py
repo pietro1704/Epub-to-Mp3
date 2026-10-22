@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import zipfile
-
 from typing import Dict, List, Optional, Tuple
 
 from .text_formatting import FormattingSegment

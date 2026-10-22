@@ -1,10 +1,9 @@
 """Cache Bypass regression scenarios, collected by test_main."""
 
-from python_app.tests._main_test_support import (
-    Path as Path,
-    tempfile as tempfile,
-    unittest as unittest,
-)
+from python_app.tests._main_test_support import Path as Path
+from python_app.tests._main_test_support import tempfile as tempfile
+from python_app.tests._main_test_support import unittest as unittest
+
 
 class TestCacheBypassFlag(unittest.TestCase):
     """Unit tests for cache-bypass behaviour of --clear-cache, --no-cache, --force-reprocess."""

@@ -16,11 +16,11 @@ from .speed_tuning_contracts import (
     SPEED_DROP_THRESHOLD,
     SPEED_RECOVERY_THRESHOLD,
     STALL_DURATION_SECONDS,
-    SpeedSample,
     TARGET_CHARS_PER_SECOND,
+    WARMUP_SAMPLES,
+    SpeedSample,
     TuningConfig,
     TuningResult,
-    WARMUP_SAMPLES,
 )
 
 

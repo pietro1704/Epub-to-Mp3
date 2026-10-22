@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from python_app.tests._server_conversion_test_support import TestClient as TestClient
 from python_app.tests._server_conversion_test_support import (
-    TestClient as TestClient,
     _configure_server_paths as _configure_server_paths,
-    _make_telemetry as _make_telemetry,
-    server as server,
 )
+from python_app.tests._server_conversion_test_support import _make_telemetry as _make_telemetry
+from python_app.tests._server_conversion_test_support import server as server
+
 
 def test_journey_observations_keep_only_redacted_timing_boundaries(tmp_path, monkeypatch):
     _configure_server_paths(tmp_path, monkeypatch)

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from python_app.tests._ios_entrypoints_test_support import (
-    FIXTURE_EPUB as FIXTURE_EPUB,
-    Path as Path,
-    _fake_transport as _fake_transport,
-    ios_entrypoints as ios_entrypoints,
-    pytest as pytest,
-)
+import python_app.tests._ios_entrypoints_test_support as _shared_test_exports
+from python_app.tests._ios_entrypoints_test_support import FIXTURE_EPUB as FIXTURE_EPUB
+from python_app.tests._ios_entrypoints_test_support import Path as Path
+from python_app.tests._ios_entrypoints_test_support import ios_entrypoints as ios_entrypoints
+from python_app.tests._ios_entrypoints_test_support import pytest as pytest
+
+_fake_transport = _shared_test_exports._fake_transport
+
 
 def test_convert_epub_clear_cache_resynthesises(tmp_path: Path, _fake_transport):
     """``clear_cache=True`` must force re-synthesis: even though the

@@ -1,12 +1,13 @@
 """Speech input scenarios sharing the original unittest fixture."""
 
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import Path as Path
 from python_app.tests._converter_test_support import (
-    Chapter as Chapter,
-    ConversionConfig as ConversionConfig,
-    Path as Path,
     TextFormattingProcessor as TextFormattingProcessor,
-    re as re,
 )
+from python_app.tests._converter_test_support import re as re
+
 
 class SpeechInputCases:
     async def test_long_chapter_tts_receives_full_text(self):

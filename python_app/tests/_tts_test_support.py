@@ -11,7 +11,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.config import ConversionConfig
 from src.text_formatting import FormattingSegment, TextFormattingProcessor
 
-
 __all__ = [
     "AsyncMock",
     "ConversionConfig",

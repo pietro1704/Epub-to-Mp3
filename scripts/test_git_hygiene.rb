@@ -60,10 +60,15 @@ class GitHygieneTest < Minitest::Test
     ].each { |path| assert ignored?(path), "local artifact is visible: #{path}" }
   end
 
-  def test_session_ledgers_are_local_and_untracking_preserves_their_bytes
-    %w[TODO_APP.md handoff.md].each do |path|
-      assert ignored?(path), "private session ledger is visible: #{path}"
+  def test_private_session_artifacts_are_local_and_untracking_preserves_their_bytes
+    %w[
+      TODO_APP.md handoff.md
+      .hermes/plans/2026-10-15-git-hygiene.md
+      .scratch/session/plan.md
+    ].each do |path|
+      assert ignored?(path), "private session artifact is visible: #{path}"
       absolute = File.join(@root, path)
+      FileUtils.mkdir_p(File.dirname(absolute))
       File.binwrite(absolute, "private fixture\x00#{path}\n")
       before = File.binread(absolute)
       _, err, status = git("add", "--force", "--", path)
@@ -86,7 +91,7 @@ class GitHygieneTest < Minitest::Test
       .codex/skills/goal-plan-execute/SKILL.md
       .claude/skills/example/SKILL.md .claude/hooks/session_start.sh
       .claude/settings.json .hermes/skills/handoff
-      .hermes/plans/2026-10-15-git-hygiene.md
+      docs/plans/shared-engineering-plan.md
       .vscode/extensions.json .vscode/settings.json .vscode/tasks.json
     ].each { |path| refute ignored?(path), "shared asset is hidden: #{path}" }
     assert ignored?(".vscode/local-machine.json")

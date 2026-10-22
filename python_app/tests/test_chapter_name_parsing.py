@@ -13,25 +13,37 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from python_app.tests._chapter_name_parsing_test_support import (
-    EpubParser as EpubParser,
-    TextProcessor as TextProcessor,
-    unittest as unittest,
+from python_app.tests._chapter_name_parsing_literary_heading_cases import (
+    TestEpigraphOpeningQuoteStyleParsing as TestEpigraphOpeningQuoteStyleParsing,
 )
-
 from python_app.tests._chapter_name_parsing_literary_heading_cases import (
     TestHarryPotterStyleParsing as TestHarryPotterStyleParsing,
+)
+from python_app.tests._chapter_name_parsing_literary_heading_cases import (
     TestITEnglishStyleParsing as TestITEnglishStyleParsing,
+)
+from python_app.tests._chapter_name_parsing_literary_heading_cases import (
     TestMobyDickStyleParsing as TestMobyDickStyleParsing,
+)
+from python_app.tests._chapter_name_parsing_literary_heading_cases import (
     TestMythicalManMonthStyleParsing as TestMythicalManMonthStyleParsing,
-    TestEpigraphOpeningQuoteStyleParsing as TestEpigraphOpeningQuoteStyleParsing,
 )
 from python_app.tests._chapter_name_parsing_localized_heading_cases import (
     TestDivinaComediaStyleParsing as TestDivinaComediaStyleParsing,
-    TestMontanhaMagicaStyleParsing as TestMontanhaMagicaStyleParsing,
+)
+from python_app.tests._chapter_name_parsing_localized_heading_cases import (
     TestDomQuixoteStyleParsing as TestDomQuixoteStyleParsing,
+)
+from python_app.tests._chapter_name_parsing_localized_heading_cases import (
+    TestMontanhaMagicaStyleParsing as TestMontanhaMagicaStyleParsing,
+)
+from python_app.tests._chapter_name_parsing_localized_heading_cases import (
     TestSilmarillionStyleParsing as TestSilmarillionStyleParsing,
 )
+from python_app.tests._chapter_name_parsing_test_support import EpubParser as EpubParser
+from python_app.tests._chapter_name_parsing_test_support import TextProcessor as TextProcessor
+from python_app.tests._chapter_name_parsing_test_support import unittest as unittest
+
 
 # ---------------------------------------------------------------------------
 # 10. O Corpo Não Esquece style (Kobo spans, two-line title, no h tags)

@@ -290,7 +290,7 @@ class SegmentMetricsReports:
                             "</tr>"
                         )
             chart_html = "<p>No segment cps timeline available.</p>"
-            timeline_points: Dict[str, List[tuple[float, float]]] = {}
+            timeline_points: Dict[str, list[tuple[float, float]]] = {}
             if metrics_path.exists():
                 with contextlib.suppress(Exception):
                     with metrics_path.open("r", encoding="utf-8") as handle:
@@ -327,7 +327,7 @@ class SegmentMetricsReports:
                     "#ff7f0e",
                     "#17becf",
                 ]
-                lines: List[str] = [
+                lines: list[str] = [
                     f"<svg viewBox='0 0 {int(width)} {int(height)}' role='img' aria-label='chars per second over time'>",
                     f"<rect x='0' y='0' width='{int(width)}' height='{int(height)}' fill='#ffffff' stroke='#d0d7de' />",
                     f"<line x1='{pad_x}' y1='{height - pad_y}' x2='{width - pad_x}' y2='{height - pad_y}' stroke='#9aa4b2'/>",

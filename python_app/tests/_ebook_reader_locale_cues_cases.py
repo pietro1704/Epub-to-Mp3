@@ -1,12 +1,13 @@
 """Locale Cues regression scenarios, collected by test_ebook_reader."""
 
-from python_app.tests._ebook_reader_test_support import (
-    EpubParser as EpubParser,
-    os as os,
-    tempfile as tempfile,
-    unittest as unittest,
-    zipfile as zipfile,
-)
+import python_app.tests._ebook_reader_test_support as _shared_test_exports
+from python_app.tests._ebook_reader_test_support import unittest as unittest
+
+EpubParser = _shared_test_exports.EpubParser
+os = _shared_test_exports.os
+tempfile = _shared_test_exports.tempfile
+zipfile = _shared_test_exports.zipfile
+
 
 class TestCueLocaleFollowsBookLanguage(unittest.TestCase):
     """Regression: English books must get English verbal cues, not pt-BR ones.

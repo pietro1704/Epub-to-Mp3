@@ -9,26 +9,30 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from python_app.tests._epub_multifeature_test_support import (
-    ConverterApplication as ConverterApplication,
-    EbookReader as EbookReader,
-    EpubParser as EpubParser,
-    FIXTURE_ROOT as FIXTURE_ROOT,
-    SAMPLE_EPUB as SAMPLE_EPUB,
-    SAMPLE_MULTILANG as SAMPLE_MULTILANG,
-    TextFormattingProcessor as TextFormattingProcessor,
-    TextProcessor as TextProcessor,
-    io as io,
-    os as os,
-    shutil as shutil,
-    tempfile as tempfile,
-    unittest as unittest,
-)
-
 from python_app.tests._epub_multifeature_language_metadata_cases import (
     TestLanguageAttributeExtraction as TestLanguageAttributeExtraction,
+)
+from python_app.tests._epub_multifeature_language_metadata_cases import (
     TestMultilangEpubParsing as TestMultilangEpubParsing,
 )
+from python_app.tests._epub_multifeature_test_support import FIXTURE_ROOT as FIXTURE_ROOT
+from python_app.tests._epub_multifeature_test_support import SAMPLE_EPUB as SAMPLE_EPUB
+from python_app.tests._epub_multifeature_test_support import SAMPLE_MULTILANG as SAMPLE_MULTILANG
+from python_app.tests._epub_multifeature_test_support import (
+    ConverterApplication as ConverterApplication,
+)
+from python_app.tests._epub_multifeature_test_support import EbookReader as EbookReader
+from python_app.tests._epub_multifeature_test_support import EpubParser as EpubParser
+from python_app.tests._epub_multifeature_test_support import (
+    TextFormattingProcessor as TextFormattingProcessor,
+)
+from python_app.tests._epub_multifeature_test_support import TextProcessor as TextProcessor
+from python_app.tests._epub_multifeature_test_support import io as io
+from python_app.tests._epub_multifeature_test_support import os as os
+from python_app.tests._epub_multifeature_test_support import shutil as shutil
+from python_app.tests._epub_multifeature_test_support import tempfile as tempfile
+from python_app.tests._epub_multifeature_test_support import unittest as unittest
+
 
 class TestSampleEpubFeatures(unittest.TestCase):
     """Validate parsing features present in the bundled sample EPUB."""

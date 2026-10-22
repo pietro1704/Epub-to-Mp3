@@ -36,7 +36,7 @@ class CiRuntimeScopeTest
     steps = @workflow.fetch('jobs').fetch('flutter').fetch('steps')
     cache = steps.find { |step| step['name'] == 'Cache Flutter SDK' }
     refute_nil cache
-    assert_pinned_action('actions/cache', cache.fetch('uses'))
+    assert_pinned_action('actions/cache/restore', cache.fetch('uses'))
     assert_equal '~/.local/share/mise/installs/flutter', cache.fetch('with').fetch('path')
     key = cache.fetch('with').fetch('key')
     %w[runner.os runner.arch].each { |identity| assert_includes key, "${{ #{identity} }}" }

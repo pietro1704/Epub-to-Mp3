@@ -1,10 +1,9 @@
 """Language presentation for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    ConversionConfig as ConversionConfig,
-    EbookReader as EbookReader,
-    Optional as Optional,
-)
+from .cli_runtime_dependencies import ConversionConfig as ConversionConfig
+from .cli_runtime_dependencies import EbookReader as EbookReader
+from .cli_runtime_dependencies import Optional as Optional
+
 
 class CLILanguagePresentation:
     def _apply_language_preferences(self, config: ConversionConfig) -> None:

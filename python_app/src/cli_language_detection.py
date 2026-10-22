@@ -1,13 +1,12 @@
 """Language detection for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    ChapterStructureItem as ChapterStructureItem,
-    ConversionConfig as ConversionConfig,
-    EbookReader as EbookReader,
-    LanguageProfile as LanguageProfile,
-    List as List,
-    Optional as Optional,
-)
+from .cli_runtime_dependencies import ChapterStructureItem as ChapterStructureItem
+from .cli_runtime_dependencies import ConversionConfig as ConversionConfig
+from .cli_runtime_dependencies import EbookReader as EbookReader
+from .cli_runtime_dependencies import LanguageProfile as LanguageProfile
+from .cli_runtime_dependencies import List as List
+from .cli_runtime_dependencies import Optional as Optional
+
 
 class CLILanguageDetection:
     def _preflight_language_and_config_check(

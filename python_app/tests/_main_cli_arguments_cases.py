@@ -1,14 +1,13 @@
 """Cli Arguments regression scenarios, collected by test_main."""
 
-from python_app.tests._main_test_support import (
-    ConverterApplication as ConverterApplication,
-    Namespace as Namespace,
-    _apply_overnight_preset as _apply_overnight_preset,
-    create_argument_parser as create_argument_parser,
-    os as os,
-    tempfile as tempfile,
-    unittest as unittest,
-)
+from python_app.tests._main_test_support import ConverterApplication as ConverterApplication
+from python_app.tests._main_test_support import Namespace as Namespace
+from python_app.tests._main_test_support import _apply_overnight_preset as _apply_overnight_preset
+from python_app.tests._main_test_support import create_argument_parser as create_argument_parser
+from python_app.tests._main_test_support import os as os
+from python_app.tests._main_test_support import tempfile as tempfile
+from python_app.tests._main_test_support import unittest as unittest
+
 
 class TestArgumentParser(unittest.TestCase):
     """Test cases for argument parser"""

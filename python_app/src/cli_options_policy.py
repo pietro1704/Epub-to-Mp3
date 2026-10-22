@@ -1,9 +1,8 @@
 """Options policy for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    Optional as Optional,
-    argparse as argparse,
-)
+from .cli_runtime_dependencies import Optional as Optional
+from .cli_runtime_dependencies import argparse as argparse
+
 
 class CLIOptionsPolicy:
     @staticmethod

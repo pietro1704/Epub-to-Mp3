@@ -9,40 +9,40 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from python_app.tests._ebook_reader_test_support import (
-    Book as Book,
-    EbookReader as EbookReader,
-    EpubParser as EpubParser,
-    Mock as Mock,
-    os as os,
-    patch as patch,
-    tempfile as tempfile,
-    unittest as unittest,
-    zipfile as zipfile,
-)
-from python_app.tests._ebook_reader_css_subchapter_cases import CssSubchapterCases
-from python_app.tests._ebook_reader_paragraph_fallback_cases import ParagraphFallbackCases
-
-from python_app.tests._ebook_reader_metadata_cases import (
-    TestEbookReader as TestEbookReader,
-)
-from python_app.tests._ebook_reader_projection_cases import (
-    TestParseEpubToDict as TestParseEpubToDict,
-    TestHtmlFragmentToChaptersReusableAsStaticmethod as TestHtmlFragmentToChaptersReusableAsStaticmethod,
-)
 from python_app.tests._ebook_reader_chapter_titles_cases import (
     TestChapterNameFromToc as TestChapterNameFromToc,
+)
+from python_app.tests._ebook_reader_chapter_titles_cases import (
     TestRestoreChapterNameStripping as TestRestoreChapterNameStripping,
 )
+from python_app.tests._ebook_reader_css_subchapter_cases import CssSubchapterCases
 from python_app.tests._ebook_reader_footnote_placement_cases import (
     TestFootnoteNotInTocRegression as TestFootnoteNotInTocRegression,
 )
 from python_app.tests._ebook_reader_locale_cues_cases import (
     TestCueLocaleFollowsBookLanguage as TestCueLocaleFollowsBookLanguage,
 )
+from python_app.tests._ebook_reader_metadata_cases import TestEbookReader as TestEbookReader
 from python_app.tests._ebook_reader_numeric_headings_cases import (
     TestNumericHeadingSplitter as TestNumericHeadingSplitter,
 )
+from python_app.tests._ebook_reader_paragraph_fallback_cases import ParagraphFallbackCases
+from python_app.tests._ebook_reader_projection_cases import (
+    TestHtmlFragmentToChaptersReusableAsStaticmethod as TestHtmlFragmentToChaptersReusableAsStaticmethod,
+)
+from python_app.tests._ebook_reader_projection_cases import (
+    TestParseEpubToDict as TestParseEpubToDict,
+)
+from python_app.tests._ebook_reader_test_support import Book as Book
+from python_app.tests._ebook_reader_test_support import EbookReader as EbookReader
+from python_app.tests._ebook_reader_test_support import EpubParser as EpubParser
+from python_app.tests._ebook_reader_test_support import Mock as Mock
+from python_app.tests._ebook_reader_test_support import os as os
+from python_app.tests._ebook_reader_test_support import patch as patch
+from python_app.tests._ebook_reader_test_support import tempfile as tempfile
+from python_app.tests._ebook_reader_test_support import unittest as unittest
+from python_app.tests._ebook_reader_test_support import zipfile as zipfile
+
 
 class TestReadBookFunction(unittest.TestCase):
     """Test cases for read_book factory function"""

@@ -6,9 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import pytest
-
 import main as cli
+import pytest
 
 
 def application_without_runtime_resources():

@@ -1,18 +1,19 @@
 """Conversion end to end scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    AsyncMock as AsyncMock,
-    AudioConverter as AudioConverter,
-    Chapter as Chapter,
-    ConversionConfig as ConversionConfig,
-    ConversionResult as ConversionResult,
-    Mock as Mock,
-    MockTTSEngine as MockTTSEngine,
-    Path as Path,
-    SimpleNamespace as SimpleNamespace,
-    patch as patch,
-    re as re,
-)
+import python_app.tests._converter_test_support as _shared_test_exports
+from python_app.tests._converter_test_support import AsyncMock as AsyncMock
+from python_app.tests._converter_test_support import AudioConverter as AudioConverter
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import ConversionResult as ConversionResult
+from python_app.tests._converter_test_support import Mock as Mock
+from python_app.tests._converter_test_support import MockTTSEngine as MockTTSEngine
+from python_app.tests._converter_test_support import Path as Path
+from python_app.tests._converter_test_support import SimpleNamespace as SimpleNamespace
+from python_app.tests._converter_test_support import patch as patch
+
+re = _shared_test_exports.re
+
 
 class ConversionEndToEndCases:
     async def test_convert_integration(self):

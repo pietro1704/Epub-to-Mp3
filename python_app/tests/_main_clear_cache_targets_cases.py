@@ -1,13 +1,14 @@
 """Clear Cache Targets regression scenarios, collected by test_main."""
 
-from python_app.tests._main_test_support import (
-    ConverterApplication as ConverterApplication,
-    Path as Path,
-    create_argument_parser as create_argument_parser,
-    patch as patch,
-    tempfile as tempfile,
-    unittest as unittest,
-)
+import python_app.tests._main_test_support as _shared_test_exports
+from python_app.tests._main_test_support import Path as Path
+from python_app.tests._main_test_support import patch as patch
+from python_app.tests._main_test_support import tempfile as tempfile
+from python_app.tests._main_test_support import unittest as unittest
+
+ConverterApplication = _shared_test_exports.ConverterApplication
+create_argument_parser = _shared_test_exports.create_argument_parser
+
 
 class TestClearCacheSubcommandWithBook(unittest.TestCase):
     """Test 'clear-cache <book>' subcommand removes only that book's cache and output."""

@@ -1,19 +1,18 @@
 """Navigation Fallback regression scenarios, collected by test_toc_hierarchy."""
 
-from python_app.tests._toc_hierarchy_test_support import (
-    EpubBuilder as EpubBuilder,
-    EpubParser as EpubParser,
-    _container_xml as _container_xml,
-    _nav_point as _nav_point,
-    _nav_xhtml as _nav_xhtml,
-    _ncx as _ncx,
-    _opf as _opf,
-    _xhtml as _xhtml,
-    os as os,
-    tempfile as tempfile,
-    unittest as unittest,
-    zipfile as zipfile,
-)
+from python_app.tests._toc_hierarchy_test_support import EpubBuilder as EpubBuilder
+from python_app.tests._toc_hierarchy_test_support import EpubParser as EpubParser
+from python_app.tests._toc_hierarchy_test_support import _container_xml as _container_xml
+from python_app.tests._toc_hierarchy_test_support import _nav_point as _nav_point
+from python_app.tests._toc_hierarchy_test_support import _nav_xhtml as _nav_xhtml
+from python_app.tests._toc_hierarchy_test_support import _ncx as _ncx
+from python_app.tests._toc_hierarchy_test_support import _opf as _opf
+from python_app.tests._toc_hierarchy_test_support import _xhtml as _xhtml
+from python_app.tests._toc_hierarchy_test_support import os as os
+from python_app.tests._toc_hierarchy_test_support import tempfile as tempfile
+from python_app.tests._toc_hierarchy_test_support import unittest as unittest
+from python_app.tests._toc_hierarchy_test_support import zipfile as zipfile
+
 
 class TestEpub3NavFallback(unittest.TestCase):
     """EPUB3 books with nav.xhtml and no NCX file."""

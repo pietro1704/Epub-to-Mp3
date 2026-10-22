@@ -1,10 +1,9 @@
 """Footnote Placement regression scenarios, collected by test_ebook_reader."""
 
-from python_app.tests._ebook_reader_test_support import (
-    EbookReader as EbookReader,
-    Path as Path,
-    unittest as unittest,
-)
+from python_app.tests._ebook_reader_test_support import EbookReader as EbookReader
+from python_app.tests._ebook_reader_test_support import Path as Path
+from python_app.tests._ebook_reader_test_support import unittest as unittest
+
 
 class TestFootnoteNotInTocRegression(unittest.TestCase):
     """Regression tests for parser bugs fixed in ebook_reader.py.

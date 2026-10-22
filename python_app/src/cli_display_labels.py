@@ -1,9 +1,9 @@
 """Display labels for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    Optional as Optional,
-    re as re,
-)
+from . import cli_runtime_dependencies as _shared_cli_runtime_dependencies
+from .cli_runtime_dependencies import Optional as Optional
+
+re = _shared_cli_runtime_dependencies.re
 
 class CLIDisplayLabels:
     def _sanitize_first_words(self, first_words: str, *phrases: str) -> str:

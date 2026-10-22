@@ -5,8 +5,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from python_app.src import ebook_reader
-from python_app.src import ios_book_conversion, ios_entrypoints
+
+from python_app.src import ebook_reader, ios_book_conversion, ios_entrypoints
 
 
 @pytest.fixture

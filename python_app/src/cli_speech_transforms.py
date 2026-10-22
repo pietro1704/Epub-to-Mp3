@@ -1,14 +1,13 @@
 """Speech transforms for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    ChapterStructureItem as ChapterStructureItem,
-    ConversionConfig as ConversionConfig,
-    Dict as Dict,
-    EbookReader as EbookReader,
-    FormattingSegment as FormattingSegment,
-    LanguageMarkup as LanguageMarkup,
-    List as List,
-)
+from .cli_runtime_dependencies import ChapterStructureItem as ChapterStructureItem
+from .cli_runtime_dependencies import ConversionConfig as ConversionConfig
+from .cli_runtime_dependencies import Dict as Dict
+from .cli_runtime_dependencies import EbookReader as EbookReader
+from .cli_runtime_dependencies import FormattingSegment as FormattingSegment
+from .cli_runtime_dependencies import LanguageMarkup as LanguageMarkup
+from .cli_runtime_dependencies import List as List
+
 
 class CLISpeechTransforms:
     def _apply_text_transforms(

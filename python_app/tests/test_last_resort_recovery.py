@@ -6,9 +6,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-import validate_conversion
 from src import last_resort_recovery as recovery
 from src._retry_mixin import _RetryMixin
+
+import validate_conversion
 
 
 @pytest.fixture

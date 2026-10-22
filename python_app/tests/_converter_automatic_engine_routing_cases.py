@@ -1,13 +1,12 @@
 """Automatic engine routing scenarios sharing the original unittest fixture."""
 
-from python_app.tests._converter_test_support import (
-    Chapter as Chapter,
-    ConversionConfig as ConversionConfig,
-    ConversionResult as ConversionResult,
-    MockTTSEngine as MockTTSEngine,
-    Path as Path,
-    patch as patch,
-)
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import ConversionResult as ConversionResult
+from python_app.tests._converter_test_support import MockTTSEngine as MockTTSEngine
+from python_app.tests._converter_test_support import Path as Path
+from python_app.tests._converter_test_support import patch as patch
+
 
 class AutomaticEngineRoutingCases:
     async def test_auto_mode_selects_engine_per_chapter_during_conversion(self):

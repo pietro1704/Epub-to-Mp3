@@ -15,44 +15,72 @@ for Edge calls.
 
 from __future__ import annotations
 
-from python_app.tests._ios_entrypoints_test_support import (
-    Book as Book,
-    Chapter as Chapter,
-    EpubParser as EpubParser,
-    FIXTURE_EPUB as FIXTURE_EPUB,
-    Path as Path,
-    SimpleNamespace as SimpleNamespace,
-    _ENV_SNAPSHOT_KEYS as _ENV_SNAPSHOT_KEYS,
-    _PATHS_SNAPSHOT_ATTRS as _PATHS_SNAPSHOT_ATTRS,
-    _edge_transport as _edge_transport,
-    _fake_transport as _fake_transport,
-    _isolate_ios_entrypoints_state as _isolate_ios_entrypoints_state,
-    _piper_transport as _piper_transport,
-    ios_entrypoints as ios_entrypoints,
-    pytest as pytest,
-)
-
-from python_app.tests._ios_entrypoints_selection_projection_cases import (
-    test_convert_epub_with_fixture as test_convert_epub_with_fixture,
-    test_convert_epub_respects_cache_dir as test_convert_epub_respects_cache_dir,
-    test_convert_epub_override_max_chapter_chars as test_convert_epub_override_max_chapter_chars,
-    test_convert_epub_chapter_filter as test_convert_epub_chapter_filter,
-    test_convert_epub_chapter_filter_accepts_list as test_convert_epub_chapter_filter_accepts_list,
-    test_convert_epub_show_structure_returns_book_layout as test_convert_epub_show_structure_returns_book_layout,
-)
+import python_app.tests._ios_entrypoints_test_support as _shared_test_exports
 from python_app.tests._ios_entrypoints_cache_policy_cases import (
     test_convert_epub_clear_cache_resynthesises as test_convert_epub_clear_cache_resynthesises,
-    test_convert_epub_without_force_reuses_outputs as test_convert_epub_without_force_reuses_outputs,
-    test_convert_epub_no_validate_disables_helper_validation as test_convert_epub_no_validate_disables_helper_validation,
+)
+from python_app.tests._ios_entrypoints_cache_policy_cases import (
     test_convert_epub_missing_file_raises as test_convert_epub_missing_file_raises,
+)
+from python_app.tests._ios_entrypoints_cache_policy_cases import (
+    test_convert_epub_no_validate_disables_helper_validation as test_convert_epub_no_validate_disables_helper_validation,
+)
+from python_app.tests._ios_entrypoints_cache_policy_cases import (
+    test_convert_epub_without_force_reuses_outputs as test_convert_epub_without_force_reuses_outputs,
 )
 from python_app.tests._ios_entrypoints_piper_fallback_cases import (
     test_convert_epub_accepts_piper_when_installed as test_convert_epub_accepts_piper_when_installed,
+)
+from python_app.tests._ios_entrypoints_piper_fallback_cases import (
     test_synthesize_chapter_falls_back_to_piper_when_edge_raises as test_synthesize_chapter_falls_back_to_piper_when_edge_raises,
-    test_synthesize_chapter_without_piper_fallback_propagates_edge_error as test_synthesize_chapter_without_piper_fallback_propagates_edge_error,
-    test_synthesize_chapter_piper_fallback_with_no_transport_propagates_edge_error as test_synthesize_chapter_piper_fallback_with_no_transport_propagates_edge_error,
+)
+from python_app.tests._ios_entrypoints_piper_fallback_cases import (
     test_synthesize_chapter_piper_fallback_failure_combines_errors as test_synthesize_chapter_piper_fallback_failure_combines_errors,
 )
+from python_app.tests._ios_entrypoints_piper_fallback_cases import (
+    test_synthesize_chapter_piper_fallback_with_no_transport_propagates_edge_error as test_synthesize_chapter_piper_fallback_with_no_transport_propagates_edge_error,
+)
+from python_app.tests._ios_entrypoints_piper_fallback_cases import (
+    test_synthesize_chapter_without_piper_fallback_propagates_edge_error as test_synthesize_chapter_without_piper_fallback_propagates_edge_error,
+)
+from python_app.tests._ios_entrypoints_selection_projection_cases import (
+    test_convert_epub_chapter_filter as test_convert_epub_chapter_filter,
+)
+from python_app.tests._ios_entrypoints_selection_projection_cases import (
+    test_convert_epub_chapter_filter_accepts_list as test_convert_epub_chapter_filter_accepts_list,
+)
+from python_app.tests._ios_entrypoints_selection_projection_cases import (
+    test_convert_epub_override_max_chapter_chars as test_convert_epub_override_max_chapter_chars,
+)
+from python_app.tests._ios_entrypoints_selection_projection_cases import (
+    test_convert_epub_respects_cache_dir as test_convert_epub_respects_cache_dir,
+)
+from python_app.tests._ios_entrypoints_selection_projection_cases import (
+    test_convert_epub_show_structure_returns_book_layout as test_convert_epub_show_structure_returns_book_layout,
+)
+from python_app.tests._ios_entrypoints_selection_projection_cases import (
+    test_convert_epub_with_fixture as test_convert_epub_with_fixture,
+)
+from python_app.tests._ios_entrypoints_test_support import _ENV_SNAPSHOT_KEYS as _ENV_SNAPSHOT_KEYS
+from python_app.tests._ios_entrypoints_test_support import (
+    _PATHS_SNAPSHOT_ATTRS as _PATHS_SNAPSHOT_ATTRS,
+)
+from python_app.tests._ios_entrypoints_test_support import FIXTURE_EPUB as FIXTURE_EPUB
+from python_app.tests._ios_entrypoints_test_support import Book as Book
+from python_app.tests._ios_entrypoints_test_support import Chapter as Chapter
+from python_app.tests._ios_entrypoints_test_support import EpubParser as EpubParser
+from python_app.tests._ios_entrypoints_test_support import Path as Path
+from python_app.tests._ios_entrypoints_test_support import SimpleNamespace as SimpleNamespace
+from python_app.tests._ios_entrypoints_test_support import _edge_transport as _edge_transport
+from python_app.tests._ios_entrypoints_test_support import (
+    _isolate_ios_entrypoints_state as _isolate_ios_entrypoints_state,
+)
+from python_app.tests._ios_entrypoints_test_support import _piper_transport as _piper_transport
+from python_app.tests._ios_entrypoints_test_support import ios_entrypoints as ios_entrypoints
+from python_app.tests._ios_entrypoints_test_support import pytest as pytest
+
+_fake_transport = _shared_test_exports._fake_transport
+
 
 # ---------------------------------------------------------------------------
 # Engine gate

@@ -17,7 +17,7 @@ class ReaderHtmlChapterContent extends StatelessWidget {
   });
 
   final String html;
-  final AppSettings settings;
+  final MirrorAppSettings settings;
   final Color bg, fg;
   final TextStyle bodyStyle, headingStyle;
 
@@ -86,7 +86,7 @@ class ReaderSpanChapterContent extends StatelessWidget {
   });
 
   final List<SentenceSpan> spans;
-  final AppSettings settings;
+  final MirrorAppSettings settings;
   final Color fg;
   final TextStyle bodyStyle;
   final Widget header;

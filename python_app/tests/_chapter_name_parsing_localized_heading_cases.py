@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from python_app.tests._chapter_name_parsing_test_support import (
-    EpubParser as EpubParser,
-    TextProcessor as TextProcessor,
-    unittest as unittest,
-)
+from python_app.tests._chapter_name_parsing_test_support import EpubParser as EpubParser
+from python_app.tests._chapter_name_parsing_test_support import TextProcessor as TextProcessor
+from python_app.tests._chapter_name_parsing_test_support import unittest as unittest
+
 
 # ---------------------------------------------------------------------------
 # 6. Divina Comédia style (p-only, anchor id inside p, no h tags)

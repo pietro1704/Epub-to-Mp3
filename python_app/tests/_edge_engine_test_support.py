@@ -11,7 +11,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.tts import edge_engine
 from src.tts.edge_engine import SIMPLIFIED_SEGMENT_MAX_CHARS, EdgeTTSEngine
 
-
 __all__ = [
     "EdgeTTSEngine",
     "Mock",

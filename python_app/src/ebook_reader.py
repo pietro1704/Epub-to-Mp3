@@ -6,7 +6,7 @@ from __future__ import annotations
 import base64 as base64
 import html as html
 import json as json
-import os
+import os as _shared_os
 import posixpath as posixpath
 import re
 import threading
@@ -17,10 +17,13 @@ try:
     import zipfile
 except ImportError:
     zipfile = None  # type: ignore[assignment]
-from dataclasses import dataclass as dataclass, field as field
+from dataclasses import dataclass as dataclass
+from dataclasses import field as field
 from html.parser import HTMLParser as HTMLParser
 from pathlib import Path
-from typing import Any as Any, Dict, Iterable as Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+from typing import Any as Any
+from typing import Iterable as Iterable
 
 try:
     import hashlib
@@ -49,27 +52,41 @@ except ImportError:
         return "".join(result)
 
 
-from xml.etree import ElementTree as ET
+from xml.etree import ElementTree as ET  # noqa: F401 - extracted methods use the facade namespace
 
 from .cache_manager import CacheManager as CacheManager
-from .epub_metadata import EpubMetadata
-from .ebook_models import Book as Book, Chapter as Chapter, CoverImage as CoverImage, TocItem as TocItem
-from .ebook_html_text import HtmlTextExtraction
+from .ebook_dictionary_export import parse_epub_to_dict as parse_epub_to_dict
 from .ebook_footnote_markup import FootnoteMarkupCollection
 from .ebook_footnote_rendering import FootnoteRendering
+from .ebook_html_text import HtmlTextExtraction
+from .ebook_models import Book as Book
+from .ebook_models import Chapter as Chapter
+from .ebook_models import CoverImage as CoverImage
+from .ebook_models import TocItem as TocItem
+from .ebook_pdf_parser import PdfParser as PdfParser
+from .ebook_resources import EbookResources
 from .ebook_structural_speech import StructuralSpeechPreparation
-from .epub_toc_chapters import EpubTocChapters
-from .epub_subchapter_splitting import EpubSubchapterSplitting
+from .ebook_toc_cache import _toc_cache_get as _toc_cache_get
+from .ebook_toc_cache import _toc_cache_put as _toc_cache_put
+from .ebook_toc_cache import _toc_disk_cache_cleanup as _toc_disk_cache_cleanup
+from .ebook_toc_cache import _toc_disk_cache_path as _toc_disk_cache_path
+from .ebook_toc_cache import _toc_from_jsonable as _toc_from_jsonable
+from .ebook_toc_cache import _toc_to_jsonable as _toc_to_jsonable
 from .epub_chapter_assembly import EpubChapterAssembly
 from .epub_content_integrity import EpubContentIntegrity
+from .epub_metadata import EpubMetadata
 from .epub_navigation import EpubNavigation
-from .ebook_resources import EbookResources
-from .ebook_pdf_parser import PdfParser as PdfParser
-from .ebook_toc_cache import _toc_disk_cache_path as _toc_disk_cache_path, _toc_disk_cache_cleanup as _toc_disk_cache_cleanup, _toc_to_jsonable as _toc_to_jsonable, _toc_from_jsonable as _toc_from_jsonable, _toc_cache_get as _toc_cache_get, _toc_cache_put as _toc_cache_put
-from .ebook_dictionary_export import parse_epub_to_dict as parse_epub_to_dict
-from .pdf_scan_ocr import PdfOcrPage as PdfOcrPage, PdfScanOcr as PdfScanOcr
-from .reader_sanitizer import chapter_html_fallback as chapter_html_fallback, sanitize_reader_css as sanitize_reader_css, sanitize_reader_html as sanitize_reader_html
-from .text_formatting import FormattingSegment as FormattingSegment, TextFormattingProcessor as TextFormattingProcessor
+from .epub_subchapter_splitting import EpubSubchapterSplitting
+from .epub_toc_chapters import EpubTocChapters
+from .pdf_scan_ocr import PdfOcrPage as PdfOcrPage
+from .pdf_scan_ocr import PdfScanOcr as PdfScanOcr
+from .reader_sanitizer import chapter_html_fallback as chapter_html_fallback
+from .reader_sanitizer import sanitize_reader_css as sanitize_reader_css
+from .reader_sanitizer import sanitize_reader_html as sanitize_reader_html
+from .text_formatting import FormattingSegment as FormattingSegment
+from .text_formatting import TextFormattingProcessor as TextFormattingProcessor
+
+os = _shared_os
 
 try:  # pragma: no cover - exercised indirectly in tests
     import pypdf  # type: ignore

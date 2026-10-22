@@ -9,20 +9,16 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from python_app.tests._tts_test_support import (
-    ConversionConfig as ConversionConfig,
-    FormattingSegment as FormattingSegment,
-    TextFormattingProcessor as TextFormattingProcessor,
-    asyncio as asyncio,
-    os as os,
-    patch as patch,
-    tempfile as tempfile,
-    unittest as unittest,
-)
+from python_app.tests._tts_piper_cases import TestPiperTTSEngine as TestPiperTTSEngine
+from python_app.tests._tts_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._tts_test_support import FormattingSegment as FormattingSegment
+from python_app.tests._tts_test_support import TextFormattingProcessor as TextFormattingProcessor
+from python_app.tests._tts_test_support import asyncio as asyncio
+from python_app.tests._tts_test_support import os as os
+from python_app.tests._tts_test_support import patch as patch
+from python_app.tests._tts_test_support import tempfile as tempfile
+from python_app.tests._tts_test_support import unittest as unittest
 
-from python_app.tests._tts_piper_cases import (
-    TestPiperTTSEngine as TestPiperTTSEngine,
-)
 
 class TestTTSFactory(unittest.TestCase):
     """Test cases for TTSFactory"""

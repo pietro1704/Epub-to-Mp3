@@ -4,17 +4,28 @@
 from __future__ import annotations
 
 import asyncio
+import weakref
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+from .adaptive_performance import AdaptivePerformanceController
+from .auto_tuner import AutoTuner
 from .config import ConversionConfig
 from .converter_models import ConversionResult
 from .ebook_reader import Chapter
+from .hardware_detector import HardwareProfile
 from .i18n import Localization
 
 
 class ConverterLifecycle:
     """Converter resources, initialization and result reporting."""
+
+    # Resource annotations belong to this owner, even when construction is
+    # routed through the converter facade to preserve runtime monkeypatching.
+    hardware_profile: Optional[HardwareProfile]
+    _auto_tuner: Optional[AutoTuner]
+    _adaptive_controller: Optional[AdaptivePerformanceController]
+    _thread_pools: List[weakref.ref]
 
     def __init__(self, localization: Optional[Localization] = None) -> None:
         from . import converter as _runtime

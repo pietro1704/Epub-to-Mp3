@@ -16,22 +16,32 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from python_app.tests._language_detection_benchmark_support import (
-    asyncio as asyncio,
-    BenchmarkResult as BenchmarkResult,
-    ENGINE_LANGUAGE_SUPPORT as ENGINE_LANGUAGE_SUPPORT,
-    LANGUAGE_VOICES as LANGUAGE_VOICES,
-    List as List,
-    TEST_SENTENCES as TEST_SENTENCES,
-    importlib as importlib,
-)
-
 from python_app.tests._language_detection_benchmark_selection import (
     detect_language as detect_language,
+)
+from python_app.tests._language_detection_benchmark_selection import (
     select_best_engine_for_language as select_best_engine_for_language,
 )
-from python_app.tests._language_detection_multilingual_benchmark import benchmark_multilingual_engine as benchmark_multilingual_engine
-from python_app.tests._language_detection_language_detection_approach_benchmark import benchmark_language_detection_approach as benchmark_language_detection_approach
+from python_app.tests._language_detection_benchmark_support import (
+    ENGINE_LANGUAGE_SUPPORT as ENGINE_LANGUAGE_SUPPORT,
+)
+from python_app.tests._language_detection_benchmark_support import (
+    LANGUAGE_VOICES as LANGUAGE_VOICES,
+)
+from python_app.tests._language_detection_benchmark_support import TEST_SENTENCES as TEST_SENTENCES
+from python_app.tests._language_detection_benchmark_support import (
+    BenchmarkResult as BenchmarkResult,
+)
+from python_app.tests._language_detection_benchmark_support import List as List
+from python_app.tests._language_detection_benchmark_support import asyncio as asyncio
+from python_app.tests._language_detection_benchmark_support import importlib as importlib
+from python_app.tests._language_detection_language_detection_approach_benchmark import (
+    benchmark_language_detection_approach as benchmark_language_detection_approach,
+)
+from python_app.tests._language_detection_multilingual_benchmark import (
+    benchmark_multilingual_engine as benchmark_multilingual_engine,
+)
+
 
 def print_results(results: List[BenchmarkResult]):
     """Print benchmark results in a formatted table."""

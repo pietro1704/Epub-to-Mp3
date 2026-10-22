@@ -1,25 +1,24 @@
 """Validation Contract regression scenarios, collected by test_converter."""
 
-from python_app.tests._converter_test_support import (
-    AsyncMock as AsyncMock,
-    AudioConverter as AudioConverter,
-    AudioValidator as AudioValidator,
-    CacheManager as CacheManager,
-    Chapter as Chapter,
-    ConversionConfig as ConversionConfig,
-    MockTTSEngine as MockTTSEngine,
-    Path as Path,
-    TextValidator as TextValidator,
-    asyncio as asyncio,
-    datetime as datetime,
-    json as json,
-    patch as patch,
-    re as re,
-    tempfile as tempfile,
-    timezone as timezone,
-    unittest as unittest,
-    warnings as warnings,
-)
+from python_app.tests._converter_test_support import AsyncMock as AsyncMock
+from python_app.tests._converter_test_support import AudioConverter as AudioConverter
+from python_app.tests._converter_test_support import AudioValidator as AudioValidator
+from python_app.tests._converter_test_support import CacheManager as CacheManager
+from python_app.tests._converter_test_support import Chapter as Chapter
+from python_app.tests._converter_test_support import ConversionConfig as ConversionConfig
+from python_app.tests._converter_test_support import MockTTSEngine as MockTTSEngine
+from python_app.tests._converter_test_support import Path as Path
+from python_app.tests._converter_test_support import TextValidator as TextValidator
+from python_app.tests._converter_test_support import asyncio as asyncio
+from python_app.tests._converter_test_support import datetime as datetime
+from python_app.tests._converter_test_support import json as json
+from python_app.tests._converter_test_support import patch as patch
+from python_app.tests._converter_test_support import re as re
+from python_app.tests._converter_test_support import tempfile as tempfile
+from python_app.tests._converter_test_support import timezone as timezone
+from python_app.tests._converter_test_support import unittest as unittest
+from python_app.tests._converter_test_support import warnings as warnings
+
 
 class TestConverterValidationContract(unittest.IsolatedAsyncioTestCase):
     """Exercise optional validation through the actual chapter conversion method."""

@@ -1,11 +1,10 @@
 """Clear Cache Storage regression scenarios, collected by test_main."""
 
-from python_app.tests._main_test_support import (
-    Path as Path,
-    os as os,
-    tempfile as tempfile,
-    unittest as unittest,
-)
+from python_app.tests._main_test_support import Path as Path
+from python_app.tests._main_test_support import os as os
+from python_app.tests._main_test_support import tempfile as tempfile
+from python_app.tests._main_test_support import unittest as unittest
+
 
 class TestClearCacheRemovesBookData(unittest.TestCase):
     """Test that --clear-cache actually removes cache and output before conversion"""

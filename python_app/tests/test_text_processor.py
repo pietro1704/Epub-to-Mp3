@@ -9,14 +9,12 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from python_app.tests._text_processor_test_support import (
-    TextProcessor as TextProcessor,
-    unittest as unittest,
-)
-
 from python_app.tests._text_processor_footnote_performance_cases import (
     TestCollectFootnotesPerformance as TestCollectFootnotesPerformance,
 )
+from python_app.tests._text_processor_test_support import TextProcessor as TextProcessor
+from python_app.tests._text_processor_test_support import unittest as unittest
+
 
 class TestTextProcessor(unittest.TestCase):
     """Test cases for TextProcessor class"""

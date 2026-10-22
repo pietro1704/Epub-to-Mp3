@@ -9,19 +9,19 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from python_app.tests._edge_engine_test_support import (
-    EdgeTTSEngine as EdgeTTSEngine,
-    Mock as Mock,
-    SIMPLIFIED_SEGMENT_MAX_CHARS as SIMPLIFIED_SEGMENT_MAX_CHARS,
-    asyncio as asyncio,
-    edge_engine as edge_engine,
-    tempfile as tempfile,
-    unittest as unittest,
-)
-
 from python_app.tests._edge_engine_empty_segment_cases import (
     TestEdgeEmptySegmentGuard as TestEdgeEmptySegmentGuard,
 )
+from python_app.tests._edge_engine_test_support import (
+    SIMPLIFIED_SEGMENT_MAX_CHARS as SIMPLIFIED_SEGMENT_MAX_CHARS,
+)
+from python_app.tests._edge_engine_test_support import EdgeTTSEngine as EdgeTTSEngine
+from python_app.tests._edge_engine_test_support import Mock as Mock
+from python_app.tests._edge_engine_test_support import asyncio as asyncio
+from python_app.tests._edge_engine_test_support import edge_engine as edge_engine
+from python_app.tests._edge_engine_test_support import tempfile as tempfile
+from python_app.tests._edge_engine_test_support import unittest as unittest
+
 
 class TestEdgeTTSSegmentation(unittest.TestCase):
     """Validate that Edge segmentation preserves full chapter content."""

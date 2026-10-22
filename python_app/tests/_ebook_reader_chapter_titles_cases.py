@@ -1,11 +1,10 @@
 """Chapter Titles regression scenarios, collected by test_ebook_reader."""
 
-from python_app.tests._ebook_reader_test_support import (
-    EbookReader as EbookReader,
-    Path as Path,
-    parse_epub_to_dict as parse_epub_to_dict,
-    unittest as unittest,
-)
+from python_app.tests._ebook_reader_test_support import EbookReader as EbookReader
+from python_app.tests._ebook_reader_test_support import Path as Path
+from python_app.tests._ebook_reader_test_support import parse_epub_to_dict as parse_epub_to_dict
+from python_app.tests._ebook_reader_test_support import unittest as unittest
+
 
 class TestChapterNameFromToc(unittest.TestCase):
     """Regression: chapter.name must come from TOC navLabel text, NOT the file ID or href.

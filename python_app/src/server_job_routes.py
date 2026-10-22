@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-
 from .server_models import JourneyObservationInput
 
 

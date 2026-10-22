@@ -6,10 +6,13 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..speed_monitor import AdaptiveEdgeTuner
+from ..synthesis_tracker import SynthesisTracker
 
 
 class EdgeEngineInitialization:
     """Own the engine construction and retry identity setup."""
+
+    _synthesis_tracker: Optional[SynthesisTracker]
 
     def __init__(
         self,

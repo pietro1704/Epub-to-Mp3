@@ -1,12 +1,11 @@
 """Structure Text regression scenarios, collected by test_main."""
 
-from python_app.tests._main_test_support import (
-    Chapter as Chapter,
-    ConverterApplication as ConverterApplication,
-    Mock as Mock,
-    patch as patch,
-    unittest as unittest,
-)
+from python_app.tests._main_test_support import Chapter as Chapter
+from python_app.tests._main_test_support import ConverterApplication as ConverterApplication
+from python_app.tests._main_test_support import Mock as Mock
+from python_app.tests._main_test_support import patch as patch
+from python_app.tests._main_test_support import unittest as unittest
+
 
 class TestSectionNumberDisplay(unittest.TestCase):
     """Tests for section-number post-processing in _generate_structure_items.

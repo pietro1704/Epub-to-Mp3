@@ -1,18 +1,18 @@
 """Cache policy for the retained legacy CLI."""
 
-from .cli_runtime_dependencies import (
-    ChapterStructureItem as ChapterStructureItem,
-    ConversionConfig as ConversionConfig,
-    EbookReader as EbookReader,
-    FileManager as FileManager,
-    List as List,
-    Optional as Optional,
-    Path as Path,
-    Set as Set,
-    Tuple as Tuple,
-    argparse as argparse,
-    shutil as shutil,
-)
+from . import cli_runtime_dependencies as _shared_cli_runtime_dependencies
+from .cli_runtime_dependencies import ChapterStructureItem as ChapterStructureItem
+from .cli_runtime_dependencies import ConversionConfig as ConversionConfig
+from .cli_runtime_dependencies import EbookReader as EbookReader
+from .cli_runtime_dependencies import List as List
+from .cli_runtime_dependencies import Optional as Optional
+from .cli_runtime_dependencies import Path as Path
+from .cli_runtime_dependencies import Set as Set
+from .cli_runtime_dependencies import Tuple as Tuple
+from .cli_runtime_dependencies import argparse as argparse
+
+FileManager = _shared_cli_runtime_dependencies.FileManager
+shutil = _shared_cli_runtime_dependencies.shutil
 
 class CLICachePolicy:
     def _resolve_book_output_dir(self, reader: EbookReader, config: ConversionConfig) -> Path:

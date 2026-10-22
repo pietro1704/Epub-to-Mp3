@@ -3,12 +3,10 @@
 
 from __future__ import annotations
 
-
-from .conversion_control import ConversionControl as _ConversionControl
-
-
 from .chapter_engine_acquisition import _chapter_engine_acquisition
 from .chapter_synthesis_fallback import _chapter_synthesis_fallback
+from .conversion_control import ConversionControl as _ConversionControl
+
 
 async def _chapter_synthesis_attempts(self, _state):
     from . import converter as _runtime

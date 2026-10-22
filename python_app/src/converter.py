@@ -22,9 +22,12 @@ import unicodedata as unicodedata
 import uuid as uuid
 import weakref as weakref
 from concurrent.futures import ThreadPoolExecutor as ThreadPoolExecutor
-from dataclasses import dataclass as dataclass, replace as replace
+from dataclasses import dataclass as dataclass
+from dataclasses import replace as replace
 from pathlib import Path
-from typing import Any as Any, Callable, Dict, Iterable, List, Optional, Set as Set
+from typing import Callable, Dict, Iterable, List, Optional
+from typing import Any as Any
+from typing import Set as Set
 
 import psutil as psutil
 from mutagen.mp3 import MP3
@@ -35,7 +38,9 @@ from ._engine_selection_mixin import _EngineSelectionMixin
 from ._env_utils import env_bool as _env_bool
 from ._env_utils import env_float as _env_float
 from ._env_utils import env_int as _env_int
-from ._health_watchdog_mixin import _await_task_with_deadline as _await_task_with_deadline, _HealthWatchdogMixin, _safe_cancel_task as _safe_cancel_task
+from ._health_watchdog_mixin import _HealthWatchdogMixin
+from ._health_watchdog_mixin import _await_task_with_deadline as _await_task_with_deadline
+from ._health_watchdog_mixin import _safe_cancel_task as _safe_cancel_task
 from ._metrics_report_mixin import _MetricsReportMixin
 from ._output_file_mixin import _OutputFileMixin
 from ._retry_mixin import _RetryMixin
@@ -45,30 +50,38 @@ from .adaptive_performance import AdaptivePerformanceController as AdaptivePerfo
 from .audio_postprocess import add_silence_padding
 from .auto_tuner import AutoTuner as AutoTuner
 from .cache_manager import CacheManager as CacheManager
-from .converter_lifecycle import ConverterLifecycle
-from .converter_telemetry import ConverterTelemetry
-from .converter_startup_policy import ConverterStartupPolicy
-from .converter_chapter_identity import ConverterChapterIdentity
-from .converter_text_preparation import ConverterTextPreparation
-from .converter_chapter_selection import ConverterChapterSelection
-from .converter_parallel_scheduler import ConverterParallelScheduler
-from .converter_models import ChapterConversionOutcome as ChapterConversionOutcome, ConversionResult as ConversionResult
-from .chapter_identity import assign_chapter_identities as assign_chapter_identities, chapter_identity_fields as chapter_identity_fields
+from .chapter_identity import assign_chapter_identities as assign_chapter_identities
+from .chapter_identity import chapter_identity_fields as chapter_identity_fields
 from .chapter_utils import deduplicate_chapters_by_content as deduplicate_chapters_by_content
 from .config import ConversionConfig
+from .converter_chapter_identity import ConverterChapterIdentity
+from .converter_chapter_selection import ConverterChapterSelection
+from .converter_lifecycle import ConverterLifecycle
+from .converter_models import ChapterConversionOutcome as ChapterConversionOutcome
+from .converter_models import ConversionResult as ConversionResult
+from .converter_parallel_scheduler import ConverterParallelScheduler
+from .converter_startup_policy import ConverterStartupPolicy
+from .converter_telemetry import ConverterTelemetry
+from .converter_text_preparation import ConverterTextPreparation
 from .ebook_reader import Chapter, EbookReader
 from .engine_pool import JobEnginePool
 from .error_classifier import classify_error as classify_error
 from .hardware_detector import HardwareProfile as HardwareProfile
-from .i18n import Localization as Localization, get_localization as get_localization
+from .i18n import Localization as Localization
+from .i18n import get_localization as get_localization
 from .performance_profile_store import PerformanceProfileStore as PerformanceProfileStore
 from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController as AdaptiveSpeedController
-from .stream_attempt_observation import atomic_copy_audio as atomic_copy_audio, atomic_write_manifest as atomic_write_manifest, observe_synthesis as observe_synthesis
+from .stream_attempt_observation import atomic_copy_audio as atomic_copy_audio
+from .stream_attempt_observation import atomic_write_manifest as atomic_write_manifest
+from .stream_attempt_observation import observe_synthesis as observe_synthesis
 from .text_integrity_validator import TextIntegrityValidator as TextIntegrityValidator
 from .tts.factory import TTSFactory as TTSFactory
 from .tts.piper_guard import is_piper_supported_environment
-from .utils import AudioProcessor as AudioProcessor, FileManager as FileManager, TextValidator as TextValidator, resolve_cache_root as resolve_cache_root
+from .utils import AudioProcessor as AudioProcessor
+from .utils import FileManager as FileManager
+from .utils import TextValidator as TextValidator
+from .utils import resolve_cache_root as resolve_cache_root
 
 _piper_supported = is_piper_supported_environment()
 

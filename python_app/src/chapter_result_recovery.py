@@ -3,12 +3,10 @@
 
 from __future__ import annotations
 
-
+from .chapter_audio_acceptance import _chapter_audio_acceptance
+from .chapter_synthesis_telemetry import _chapter_synthesis_telemetry
 from .conversion_control import ConversionControl as _ConversionControl
 
-
-from .chapter_synthesis_telemetry import _chapter_synthesis_telemetry
-from .chapter_audio_acceptance import _chapter_audio_acceptance
 
 async def _chapter_result_recovery(self, _state):
     from . import converter as _runtime
