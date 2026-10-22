@@ -264,7 +264,31 @@ jobs:
         with:
           version: 2026.9.14
           install: false
+      - name: Identify Intel Ruby cache inputs
+        if: matrix.arch == 'x86_64'
+        id: ruby-cache-identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'xcode=%s\n' "$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          printf 'sdk=%s\n' "$(xcrun --sdk macosx --show-sdk-version)" >> "$GITHUB_OUTPUT"
+          printf 'clang=%s\n' "$(xcrun --find clang | xargs shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          printf 'openssl=%s\n' "$(brew info --json=v2 openssl@3 | ruby -rjson -e 'puts JSON.parse(STDIN.read).fetch("formulae").first.fetch("versions").fetch("stable")')" >> "$GITHUB_OUTPUT"
+          printf 'mise=%s\n' "$(mise --version | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+      - name: Restore Intel Ruby 4.0.7
+        if: matrix.arch == 'x86_64'
+        id: ruby-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.local/share/mise/installs/ruby/4.0.7
+          key: faber-ruby-macos-15-intel-${{ runner.arch }}-xcode-${{ steps.ruby-cache-identity.outputs.xcode }}-sdk-${{ steps.ruby-cache-identity.outputs.sdk }}-clang-${{ steps.ruby-cache-identity.outputs.clang }}-openssl-${{ steps.ruby-cache-identity.outputs.openssl }}-mise-${{ steps.ruby-cache-identity.outputs.mise }}-${{ hashFiles('mise.toml', 'mise.lock') }}
       - run: mise install
+      - name: Save Intel Ruby 4.0.7
+        if: matrix.arch == 'x86_64' && steps.ruby-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.local/share/mise/installs/ruby/4.0.7
+          key: ${{ steps.ruby-cache.outputs.cache-primary-key }}
       - name: Install Xcode project generator
         run: brew install xcodegen
       - name: Build embedded host runtime without Simulator
