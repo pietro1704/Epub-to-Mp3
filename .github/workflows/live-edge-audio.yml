@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - name: Install explicit test dependencies
@@ -31,7 +31,7 @@ jobs:
           python -m pytest python_app/tests/test_audio_pause_integration.py::TestEdgeOutputAudioProperties python_app/tests/test_audio_pause_integration.py::TestEdgeFingerprintIsConsistent --junitxml=live-edge-audio.xml
       - name: Retain actual live-provider result
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: live-edge-audio-result
           path: live-edge-audio.xml
@@ -48,10 +48,10 @@ jobs:
       EDGE_AUTO_TUNE: 'false'
       CHAPTER_PARALLEL_COUNT: '1'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
         with:
           version: 2026.9.14
           install: false

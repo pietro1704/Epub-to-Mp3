@@ -44,7 +44,7 @@ jobs:
           ' issue.json >/dev/null
           echo "number=$(jq -r .number issue.json)" >> "$GITHUB_OUTPUT"
           echo "title=$(jq -r .title issue.json)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: master
           fetch-depth: 0

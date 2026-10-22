@@ -32,7 +32,7 @@ jobs:
     outputs:
       sha: ${{ steps.validated.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: master
           persist-credentials: false
@@ -90,7 +90,7 @@ jobs:
 
     steps:
       - name: Checkout trusted publication policy
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: master
           path: publication-policy
@@ -98,7 +98,7 @@ jobs:
       - name: Snapshot trusted publication helper
         run: cp publication-policy/scripts/validated_merge.mjs "$RUNNER_TEMP/validated_merge.mjs"
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
         with:
           ref: ${{ needs.gate.outputs.sha }}
@@ -107,7 +107,7 @@ jobs:
       # iOS 27 devices require a current Xcode toolchain. The app is built on
       # GitHub's macOS runner, so developers do not need Xcode locally.
       - name: Select current stable Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: latest-stable
 
@@ -134,7 +134,7 @@ jobs:
       # Identifiers & Profiles. Each target needs a profile for its own explicit
       # App ID and App Group entitlement.
       - name: Download host-app provisioning profile
-        uses: apple-actions/download-provisioning-profiles@v7
+        uses: apple-actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
         with:
           bundle-id: com.pietrocode.epubtomp3
           profile-type: IOS_APP_STORE
@@ -143,7 +143,7 @@ jobs:
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
 
       - name: Download share-extension provisioning profile
-        uses: apple-actions/download-provisioning-profiles@v7
+        uses: apple-actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
         with:
           bundle-id: com.pietrocode.epubtomp3.share
           profile-type: IOS_APP_STORE
@@ -152,7 +152,7 @@ jobs:
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
 
       - name: Download widget provisioning profile
-        uses: apple-actions/download-provisioning-profiles@v7
+        uses: apple-actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
         with:
           bundle-id: com.pietrocode.epubtomp3.widget
           profile-type: IOS_APP_STORE
@@ -161,7 +161,7 @@ jobs:
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
 
       - name: Import distribution certificate
-        uses: apple-actions/import-codesign-certs@v7
+        uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7
         with:
           p12-file-base64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
           p12-password: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
@@ -206,7 +206,7 @@ jobs:
             -allowProvisioningUpdates
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: EpubToMp3-iOS-IPA
           path: ${{ env.EXPORT_PATH }}/*.ipa
@@ -221,7 +221,7 @@ jobs:
 
       - name: Upload to TestFlight
         if: inputs.upload_to_testflight
-        uses: apple-actions/upload-testflight-build@v5
+        uses: apple-actions/upload-testflight-build@155ea93be9ee6d5186c71f660a612f5eddb14510 # v5
         with:
           app-path: ${{ env.EXPORT_PATH }}/EpubToMp3.ipa
           issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}

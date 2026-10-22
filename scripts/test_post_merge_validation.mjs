@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { verifyMergeIdentity, assertValidationResults, inspectMergedSource, REQUIRED_VALIDATIONS } from './post_merge_validation.mjs';
 
@@ -59,12 +59,53 @@ test('read-only inspection rejects incomplete pages and propagates unavailable m
   assert.throws(() => inspectMergedSource({ ...f, invoke: () => { throw new Error('Unavailable'); } }), /Unavailable/);
 });
 
-function workflow(file) {
-  const source = readFileSync(new URL(`../.github/workflows/${file}`, import.meta.url), 'utf8');
-  const result = spawnSync('ruby', ['-ryaml', '-rjson', '-e', 'puts JSON.generate(YAML.safe_load(STDIN.read, aliases: false))'], { input: source, encoding: 'utf8' });
+let workflowCache;
+function workflows() {
+  if (workflowCache) return workflowCache;
+  const result = spawnSync('ruby', ['-ryaml', '-rjson', '-e',
+    'puts JSON.generate(Dir.glob("*.yml").to_h { |file| [file, YAML.safe_load(File.read(file), aliases: false)] })'],
+  { cwd: new URL('../.github/workflows/', import.meta.url), encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout);
+  workflowCache = JSON.parse(result.stdout);
+  return workflowCache;
 }
+
+function workflow(file) {
+  const parsed = workflows()[file];
+  assert.ok(parsed, `Missing workflow: ${file}`);
+  return parsed;
+}
+
+function isPinnedWorkflowReference(reference) {
+  return typeof reference === 'string' && (reference.startsWith('./') || /^[\w.-]+(?:\/[\w.-]+)+@[0-9a-f]{40}$/.test(reference));
+}
+
+test('every workflow action reference is local or pinned to a full SHA', () => {
+  assert.equal(isPinnedWorkflowReference('./.github/workflows/reusable.yml'), true);
+  assert.equal(isPinnedWorkflowReference('actions/checkout@' + 'a'.repeat(40)), true);
+  for (const reference of ['actions/checkout@v4', 'actions/checkout@' + 'a'.repeat(39),
+    'actions/checkout@' + 'a'.repeat(40) + 'g', 'actions@checkout@' + 'a'.repeat(40),
+    'actions/checkout@' + 'A'.repeat(40), 'actions/checkout@' + 'a'.repeat(40) + ' # v4']) {
+    assert.equal(isPinnedWorkflowReference(reference), false, reference);
+  }
+
+  const files = readdirSync(new URL('../.github/workflows/', import.meta.url)).filter(file => file.endsWith('.yml'));
+  assert.ok(files.length > 0, 'workflow inventory must not be empty');
+  const references = [];
+  for (const file of files) {
+    const jobs = workflow(file).jobs ?? {};
+    for (const [jobName, job] of Object.entries(jobs)) {
+      if (job.uses) references.push({ file, location: `jobs.${jobName}.uses`, value: job.uses });
+      for (const [index, step] of (job.steps ?? []).entries()) {
+        if (step.uses) references.push({ file, location: `jobs.${jobName}.steps[${index}].uses`, value: step.uses });
+      }
+    }
+  }
+  assert.ok(references.length > 0, 'workflow reference inventory must not be empty');
+  for (const reference of references) {
+    assert.ok(isPinnedWorkflowReference(reference.value), `${reference.file}:${reference.location}: ${reference.value}`);
+  }
+});
 
 test('postmerge finishes active CodeQL validation while keeping a single pending source', () => {
   const post = workflow('post-merge-validation.yml');
@@ -79,7 +120,9 @@ test('postmerge finishes active CodeQL validation while keeping a single pending
     assert.equal(post.jobs[name].steps[0].with.ref, '${{ github.sha }}');
   }
   for (const job of Object.values(codeql.jobs)) {
-    if (!job.steps?.some(step => step.uses === 'github/codeql-action/analyze@v4')) continue;
+    const analyze = job.steps?.find(step => (step.uses ?? '').startsWith('github/codeql-action/analyze@'));
+    if (!analyze) continue;
+    assert.match(analyze.uses, /^github\/codeql-action\/analyze@[0-9a-f]{40}(?:\s+#.*)?$/);
     assert.ok(job['timeout-minutes'] > 0 && job['timeout-minutes'] <= 90);
   }
 });
