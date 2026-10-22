@@ -39,9 +39,13 @@ jobs:
           mkdir -p .reports/cli-faber
           mise exec -- ruby scripts/test_verify_cli_faber.rb 2>&1 | tee .reports/cli-faber/harness-tests.log
       - name: Install native build and full audio decoding prerequisites
+        timeout-minutes: 7
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg unzip binutils
+          set -euo pipefail
+          sudo "$(mise which ruby)" scripts/normalize_ubuntu_package_mirror.rb
+          apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+          sudo apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg unzip binutils
       - name: Test real ELF dependency relocation and rejection boundaries
         run: |
           set -o pipefail
