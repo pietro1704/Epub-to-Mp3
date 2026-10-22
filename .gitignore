@@ -171,7 +171,8 @@ pretrained_models/
 
 # Frontend build artifacts
 web/node_modules/
-node_modules/
+# Match directories and local dependency symlinks at every depth.
+node_modules
 web/dist/
 
 # Conversion logs (runtime data)

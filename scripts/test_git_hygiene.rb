@@ -116,6 +116,35 @@ class GitHygieneTest < Minitest::Test
     assert_empty git("ls-files", "--others", "--exclude-standard", "--", path).first
   end
 
+  def test_dependency_directory_symlinks_stay_local_and_untracking_preserves_the_target
+    target = File.join(@root, "installed-dependencies")
+    FileUtils.mkdir_p(target)
+    sentinel = File.join(target, "owned-package.json")
+    File.binwrite(sentinel, "private dependency fixture\x00bytes\n")
+    bytes = File.binread(sentinel)
+
+    %w[web/node_modules nested/client/node_modules].each do |path|
+      absolute = File.join(@root, path)
+      FileUtils.mkdir_p(File.dirname(absolute))
+      File.symlink(target, absolute)
+      assert ignored?(path), "dependency symlink is visible: #{path}"
+      _, _, status = git("add", "--", path)
+      refute status.success?, "ordinary staging must reject an ignored dependency symlink"
+      assert_empty git("ls-files", "--", path).first
+
+      _, err, status = git("add", "--force", "--", path)
+      assert status.success?, err
+      tracked = git("ls-files", "-ci", "--exclude-standard", "-z").first.split("\0")
+      assert_includes tracked, path, "the repository hygiene guard must catch forced dependency symlinks"
+      _, err, status = git("rm", "--cached", "--quiet", "--", path)
+      assert status.success?, err
+      assert File.symlink?(absolute), "untracking must preserve the local dependency link"
+      assert_equal target, File.readlink(absolute)
+      assert_equal bytes, File.binread(sentinel)
+      assert_empty git("ls-files", "--others", "--exclude-standard", "--", path).first
+    end
+  end
+
   def test_shared_skill_alias_is_tracked_as_a_relative_symlink
     skill = ".agents/skills/handoff/SKILL.md"
     FileUtils.mkdir_p(File.join(@root, File.dirname(skill)))

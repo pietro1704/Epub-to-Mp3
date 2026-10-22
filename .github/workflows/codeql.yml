@@ -64,13 +64,6 @@ jobs:
           languages: java-kotlin
           build-mode: manual
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
-        with:
-          channel: stable
-          flutter-version: 3.41.9
-          cache: true
-
       - name: Report Kotlin coverage scope
         run: |
           printf 'Kotlin source files compiled by the Android app target: '
@@ -84,7 +77,7 @@ jobs:
       - name: Set up native build tools
         uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
         env:
-          MISE_ENABLE_TOOLS: ruby,ninja
+          MISE_ENABLE_TOOLS: ruby,ninja,flutter
         with:
           experimental: true
 
@@ -99,7 +92,7 @@ jobs:
 
       - name: Build Android app
         env:
-          MISE_ENABLE_TOOLS: ruby,ninja
+          MISE_ENABLE_TOOLS: ruby,ninja,flutter
           MISE_EXPERIMENTAL: "1"
         run: mise run flutter:build-apk-debug
 

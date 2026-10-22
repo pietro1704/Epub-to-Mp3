@@ -393,6 +393,29 @@ end
     assert_includes full.fetch('run'), 'faulthandler_timeout=60'
   end
 
+  def test_android_and_desktop_setup_use_project_flutter_without_unpinned_composite_actions
+    root = File.expand_path('..', __dir__)
+    codeql = YAML.load_file(File.join(root, '.github/workflows/codeql.yml'))
+    release = YAML.load_file(File.join(root, '.github/workflows/release-desktop.yml'))
+    jobs = [codeql.fetch('jobs').fetch('java-kotlin'), release.fetch('jobs').fetch('android'),
+            release.fetch('jobs').fetch('flutter-desktop')]
+    assert_match(/^flutter = "3\.41\.9"$/, File.read(File.join(root, 'mise.toml')))
+    jobs.each do |job|
+      steps = job.fetch('steps')
+      # The old pinned Flutter composite still expanded actions/cache@v5 before
+      # any step ran, which violates the repository's full-SHA action policy.
+      refute steps.any? { |step| step.fetch('uses', '').start_with?('subosito/flutter-action@') }
+      setup = steps.find { |step| step['name'] == 'Set up native build tools' || step['name'] == 'Setup Flutter' }
+      assert_pinned_action 'jdx/mise-action', setup.fetch('uses')
+      assert_includes setup.fetch('env').fetch('MISE_ENABLE_TOOLS').split(','), 'flutter'
+      refute_equal false, setup.fetch('with').fetch('install', true)
+      build = steps.find { |step| %w[Build\ Android\ app Build\ APK\ (release) Build].include?(step['name']) }
+      scope = build.fetch('env', {}).fetch('MISE_ENABLE_TOOLS', job.fetch('env', {}).fetch('MISE_ENABLE_TOOLS', ''))
+      assert_includes scope.split(','), 'flutter'
+      assert_operator steps.index(setup), :<, steps.index(build)
+    end
+  end
+
   def test_scoped_pr_execution_budget_is_ten_minutes_with_parallel_runtime_jobs
     jobs = @workflow.fetch('jobs')
     assert_equal 2, jobs.fetch('changes').fetch('timeout-minutes')
