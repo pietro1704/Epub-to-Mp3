@@ -375,6 +375,60 @@ end
     assert_operator steps.index(install), :<, steps.index(save)
   end
 
+  def test_faber_intel_rust_cache_is_toolchain_scoped_and_saved_only_after_architecture_validation
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    steps = faber.fetch('jobs').fetch('macos-preferences').fetch('steps')
+    identity = steps.find { |step| step['id'] == 'rust-cache-identity' }
+    restore = steps.find { |step| step['id'] == 'rust-cache' }
+    build = steps.find { |step| step['id'] == 'ffi-build' }
+    verify = steps.find { |step| step['id'] == 'ffi-architecture' }
+    save = steps.find { |step| step['name'] == 'Save Intel Rust build cache' }
+    [identity, restore, build, verify, save].each { |step| refute_nil step }
+    [identity, restore].each { |step| assert_equal "matrix.arch == 'x86_64'", step.fetch('if') }
+    assert_equal 'actions/cache/restore@v6', restore.fetch('uses')
+    assert_equal 'actions/cache/save@v6', save.fetch('uses')
+    paths = ["~/.cargo/registry", 'target/release', 'target/espeak-data']
+    [restore, save].each { |step| assert_equal paths, step.fetch('with').fetch('path').lines.map(&:strip) }
+    refute_includes paths, 'target'
+    refute paths.any? { |path| path.include?('onnxruntime') }
+    key = restore.fetch('with').fetch('key')
+    %w[runner.arch steps.rust-cache-identity.outputs.identity].each do |identity_key|
+      assert_includes key, "${{ #{identity_key} }}"
+    end
+    ["hashFiles('Cargo.lock'", "'**/Cargo.toml'", "'.cargo/config.toml'", "'mise.toml'",
+      "'scripts/native_job.rb'", "'scripts/native_build_command.rb'", "'crates/**/*.rs'",
+      "'native/**/*.rs'", "'native/**/*.cpp'", "'native/vendor/espeak-rs-sys/espeak-ng/**'"]
+      .each { |input| assert_includes key, input }
+    restore_prefix = restore.fetch('with').fetch('restore-keys')
+    assert_includes restore_prefix, '${{ runner.arch }}'
+    assert_includes restore_prefix, "'Cargo.lock'"
+    refute_includes restore_prefix, "'crates/**/*.rs'"
+    assert_equal "${{ steps.rust-cache.outputs.cache-primary-key }}", save.fetch('with').fetch('key')
+    assert_match(/matrix\.arch == 'x86_64'/, save.fetch('if'))
+    assert_includes save.fetch('if'), 'success()'
+    assert_includes save.fetch('if'), "steps.rust-cache.outputs.cache-hit != 'true'"
+    assert_includes save.fetch('if'), "steps.ffi-build.outcome == 'success'"
+    assert_includes save.fetch('if'), "steps.ffi-architecture.outcome == 'success'"
+    [build, verify].each { |step| refute step.key?('if'), step.fetch('name') }
+    assert_equal 'mise run converter-ffi:build', build.fetch('run')
+    assert_includes verify.fetch('run'), 'xcrun lipo -archs target/release/libconverter_ffi.dylib'
+    assert_includes identity.fetch('run'), 'rustc -vV'
+    assert_includes identity.fetch('run'), 'cargo --version'
+    assert_includes identity.fetch('run'), 'xcodebuild -version'
+    assert_includes identity.fetch('run'), 'ImageOS'
+    assert_includes identity.fetch('run'), 'ImageVersion'
+    assert_includes identity.fetch('run'), '--show-sdk-path'
+    assert_includes identity.fetch('run'), '--show-sdk-version'
+    assert_includes identity.fetch('run'), 'clang_sha256'
+    %w[MACOSX_DEPLOYMENT_TARGET=12.0 ORT_PREFER_DYNAMIC_LINK=1 CARGO_BUILD_JOBS=1].each do |flag|
+      assert_includes identity.fetch('run'), flag
+    end
+    assert_operator steps.index(identity), :<, steps.index(restore)
+    assert_operator steps.index(restore), :<, steps.index(build)
+    assert_operator steps.index(build), :<, steps.index(verify)
+    assert_operator steps.index(verify), :<, steps.index(save)
+  end
+
   def test_physical_android_fixture_requires_explicit_input_instead_of_inherited_dispatch
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     steps = faber.fetch('jobs').fetch('android-package').fetch('steps')
