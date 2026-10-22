@@ -6,6 +6,7 @@ import json
 import weakref
 from types import SimpleNamespace
 from typing import List, Optional, get_type_hints
+from unittest.mock import Mock
 
 import pytest
 from src.adaptive_performance import AdaptivePerformanceController
@@ -161,3 +162,22 @@ async def test_server_async_binding_propagates_cancellation_and_runs_cleanup():
         with pytest.raises(asyncio.CancelledError):
             await task
     assert runtime.cleaned is True
+
+
+def test_voices_endpoint_delegates_to_the_curated_provider_catalog(monkeypatch) -> None:
+    monkeypatch.setenv("EDGE_NETWORK_PROBE", "0")
+    import server
+
+    catalog = {"edge": [], "piper": [], "auto": []}
+    provider = Mock()
+    provider.get_voice_suggestions.return_value = catalog
+    monkeypatch.setattr(server.tts_factory, "voice_provider", provider)
+    route = next(route for route in server.app.routes if route.path == "/api/voices")
+    assert route.endpoint is server.list_available_voices
+    assert asyncio.run(route.endpoint())["voices"] is catalog
+    provider.get_voice_suggestions.assert_called_once_with()
+    failure = RuntimeError("catalog unavailable")
+    provider.get_voice_suggestions.side_effect = failure
+    with pytest.raises(RuntimeError) as captured:
+        asyncio.run(route.endpoint())
+    assert captured.value is failure

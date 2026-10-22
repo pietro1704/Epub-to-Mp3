@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
 
 import pytest
 
@@ -64,29 +62,24 @@ def test_cli_and_factory_expose_only_supported_engine_names() -> None:
     assert not re.search(r"\b(coqui|kokoro|spark)\b", factory, re.IGNORECASE)
 
 
-def test_voices_endpoint_delegates_to_the_curated_provider_catalog(monkeypatch) -> None:
-    monkeypatch.setenv("EDGE_NETWORK_PROBE", "0")
-    import server
-
-    catalog = {"edge": [], "piper": [], "auto": []}
-    provider = Mock()
-    provider.get_voice_suggestions.return_value = catalog
-    monkeypatch.setattr(server.tts_factory, "voice_provider", provider)
-    route = next(route for route in server.app.routes if route.path == "/api/voices")
-    assert route.endpoint is server.list_available_voices
-    assert asyncio.run(route.endpoint())["voices"] is catalog
-    provider.get_voice_suggestions.assert_called_once_with()
-    failure = RuntimeError("catalog unavailable")
-    provider.get_voice_suggestions.side_effect = failure
-    with pytest.raises(RuntimeError) as captured:
-        asyncio.run(route.endpoint())
-    assert captured.value is failure
+def test_voices_endpoint_delegates_to_the_curated_provider_catalog() -> None:
+    source_root = REPO_ROOT / "python_app" / "src"
+    bootstrap = (source_root / "server_bootstrap_voice_policy.py").read_text(encoding="utf-8")
+    implementation = (source_root / "server_voice_routes.py").read_text(encoding="utf-8")
+    assert '_runtime.app.get("/api/voices")' in bootstrap
+    assert "_runtime._server_server_voice_routes.list_available_voices" in bootstrap
+    assert '"voices": provider.get_voice_suggestions()' in implementation
 
 
 def test_ui_does_not_advertise_removed_engine_chain() -> None:
-    translations = (REPO_ROOT / "web" / "src" / "i18n" / "translations.ts").read_text(
-        encoding="utf-8"
-    )
+    translation_root = REPO_ROOT / "web" / "src" / "i18n"
+    composition = (translation_root / "translations.ts").read_text(encoding="utf-8")
+    owners = re.findall(r"from '\./([^']+)'", composition)
+    assert owners, "The translation composition must include its active owners"
+    translations = "\n".join([
+        composition,
+        *((translation_root / f"{owner}.ts").read_text(encoding="utf-8") for owner in owners),
+    ])
     from src.cli_arguments_input_engine import add_input_engine_arguments
 
     parser = argparse.ArgumentParser()
