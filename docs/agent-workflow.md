@@ -36,6 +36,24 @@ needs the matching skill, not every available role. For external-project
 research, retain sources, revisions, license boundaries and adoption evidence
 under an indexed `docs/research/<date>-<topic>/` reference.
 
+## Acceptance oracle
+
+Before implementation, name the observable outcome, affected runtime and an
+independent reference for the expected result: a fixture with known output,
+a specification, a working implementation or a measurable app invariant.
+Select the existing focused task or real-app journey that can detect a wrong
+result. For regressions, demonstrate failure before the fix when feasible.
+
+Verify success and the relevant failure, cancellation and identity cases at
+the owning runtime. Record source/build identity, actual results and evidence
+locations in the task's local working notes. Report unavailable runtime checks
+as pending. A green build, mock or agent report cannot replace the affected
+runtime's acceptance evidence. When delegating authorized work, provide bounded
+context and disjoint editing ownership; keep dependent work sequential.
+Use the platform ownership and safety limits in
+[execution policy](agents/execution-policy.md); select only the relevant branch
+of [runtime navigation](agents/runtime-navigation.md).
+
 ## Operational guardrails
 
 Use the repository-owned host tools below for command sequences, scoped index
