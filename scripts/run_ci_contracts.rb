@@ -7,6 +7,7 @@ module CiContracts
   RUBY_SUITES = (HostChecks::SUITES + %w[
     test_minitest_bootstrap.rb test_run_ci_contracts.rb test_ci_runtime_scope.rb test_codeql_swift_build.rb test_direct_runtime_boundary.rb
     test_bundle_onnxruntime_apple.rb
+    test_package_converter_ffi_macos.rb
     test_mac_validate.rb
     test_android_jni_exports.rb
     test_device_workflow_entrypoint.rb test_native_faber_entrypoints.rb
