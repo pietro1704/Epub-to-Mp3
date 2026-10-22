@@ -13,6 +13,16 @@ class CiRuntimeScopeTest < Minitest::Test
   def assert_pinned_action(action, value)
     assert_match(/\A#{Regexp.escape(action)}@[0-9a-f]{40}(?:\s+#.*)?\z/, value)
   end
+
+  def selected_faber_matrix(faber, event_name:, workflow_inputs:)
+    expression = faber.fetch('jobs').fetch('macos-preferences').fetch('strategy').fetch('matrix').fetch('include')
+    structure = /\A\$\{\{\s*fromJSON\(\s*github\.event_name\s*==\s*'workflow_dispatch'\s*&&\s*inputs\.intel_only\s*==\s*true\s*&&\s*'(?<intel>\[[^']+\])'\s*\|\|\s*'(?<full>\[[^']+\])'\s*\)\s*\}\}\z/
+    match = structure.match(expression)
+    assert match, 'Matrix expression must guard the Intel-only choice with the dispatch event and input before falling back to the full matrix'
+    focused = event_name == 'workflow_dispatch' && workflow_inputs.fetch('intel_only', false) == true
+    JSON.parse(match[focused ? 'intel' : 'full'])
+  end
+
   def setup
     @workflow = YAML.load_file(File.expand_path('../.github/workflows/ci.yml', __dir__))
     @root = Dir.mktmpdir('ci-scope-contract-')
@@ -314,7 +324,42 @@ def test_reusable_jobs_cannot_share_the_callers_concurrency_group
   end
   assert_equal groups.size, groups.uniq.size
   faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
-  %w[ffi-jni android-package macos-preferences browser-runtime].each { |job| refute faber.fetch('jobs').fetch(job).key?('if') }
+  jobs = faber.fetch('jobs')
+  %w[ffi-jni android-package browser-runtime].each do |job|
+    assert_equal "${{ !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}", jobs.fetch(job).fetch('if')
+  end
+  refute jobs.fetch('macos-preferences').key?('if')
+  group = faber.fetch('concurrency').fetch('group')
+  assert_includes group, "github.event_name == 'workflow_dispatch'"
+  assert_includes group, 'inputs.intel_only == true'
+  assert_includes group, 'intel-only'
+  assert_includes group, 'full'
+end
+
+def test_faber_intel_only_is_dispatch_only_and_leaves_reusable_calls_full
+  faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+  events = faber.fetch('on', faber[true])
+  dispatch_inputs = events.fetch('workflow_dispatch').fetch('inputs')
+  assert_equal({ 'type' => 'boolean', 'default' => false }, dispatch_inputs.fetch('intel_only').slice('type', 'default'))
+  refute events.fetch('workflow_call').fetch('inputs').key?('intel_only')
+
+  expected_full = [
+    { 'os' => 'macos-15', 'arch' => 'arm64' },
+    { 'os' => 'macos-15-intel', 'arch' => 'x86_64' }
+  ]
+  expected_intel = [{ 'os' => 'macos-15-intel', 'arch' => 'x86_64' }]
+  defaults = dispatch_inputs.to_h { |name, config| [name, config.fetch('default', false)] }
+  assert_equal expected_full, selected_faber_matrix(faber, event_name: 'workflow_dispatch', workflow_inputs: defaults)
+  assert_equal expected_intel, selected_faber_matrix(faber, event_name: 'workflow_dispatch', workflow_inputs: defaults.merge('intel_only' => true))
+
+  call_inputs = events.fetch('workflow_call').fetch('inputs').to_h { |name, config| [name, config.fetch('default', false)] }
+  assert_equal expected_full, selected_faber_matrix(faber, event_name: 'workflow_dispatch', workflow_inputs: call_inputs),
+    'A reusable caller event may be workflow_dispatch, but undeclared workflow_call inputs keep the full matrix'
+  assert_equal expected_full, selected_faber_matrix(faber, event_name: 'pull_request', workflow_inputs: defaults.merge('intel_only' => true))
+
+  post_merge = YAML.load_file(File.expand_path('../.github/workflows/post-merge-validation.yml', __dir__))
+  assert_equal true, post_merge.fetch('jobs').fetch('ci').fetch('with').fetch('full_validation')
+  refute post_merge.fetch('jobs').fetch('faber').fetch('with', {}).key?('intel_only')
 end
 
 def test_full_client_suites_replace_duplicate_subset_runs
@@ -330,7 +375,7 @@ end
 def test_shared_foundation_run_requires_executed_history_cases
   faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
   mac = faber.fetch('jobs').fetch('macos-preferences')
-  assert_includes mac.fetch('strategy').fetch('matrix').fetch('include').map { |entry| entry.fetch('os') }, 'macos-15-intel'
+  assert_includes selected_faber_matrix(faber, event_name: 'workflow_call', workflow_inputs: {}).map { |entry| entry.fetch('os') }, 'macos-15-intel'
   steps = mac.fetch('steps')
   original = steps.find { |step| step['name'] == 'Test the real Foundation package without native FFI opt-in' }.fetch('run')
   assert_includes original, 'mise run apple:foundation:test'

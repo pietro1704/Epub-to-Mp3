@@ -12,12 +12,16 @@ on:
         description: Build the optional APK for manual physical-device verification
         type: boolean
         default: false
+      intel_only:
+        description: Run only the Intel macOS preferences and installation job
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: faber-integration-${{ github.ref }}
+  group: faber-integration-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.intel_only == true && 'intel-only' || 'full' }}
   cancel-in-progress: true
 
 env:
@@ -25,6 +29,7 @@ env:
 
 jobs:
   ffi-jni:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
     name: Faber FFI JNI contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -58,6 +63,7 @@ jobs:
           if-no-files-found: ignore
 
   android-package:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
     name: Faber Android APK and ARM64 ABI-translation inference
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -241,11 +247,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-15
-            arch: arm64
-          - os: macos-15-intel
-            arch: x86_64
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.intel_only == true && '[{"os":"macos-15-intel","arch":"x86_64"}]' || '[{"os":"macos-15","arch":"arm64"},{"os":"macos-15-intel","arch":"x86_64"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -472,4 +474,5 @@ jobs:
           if-no-files-found: warn
 
   browser-runtime:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
     uses: ./.github/workflows/browser-runtime.yml
