@@ -25,8 +25,8 @@ from concurrent.futures import ThreadPoolExecutor as ThreadPoolExecutor
 from dataclasses import dataclass as dataclass
 from dataclasses import replace as replace
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional
 from typing import Any as Any
+from typing import Callable, Dict, Iterable, List, Optional
 from typing import Set as Set
 
 import psutil as psutil
@@ -292,8 +292,8 @@ class AudioConverter(
 
     async def convert(self, reader: EbookReader, config: ConversionConfig) -> ConversionResult:
         'Convert all chapters in ``reader`` according to ``config``.'
-        from .book_conversion_state import BookConversionState
         from .book_conversion_run import _book_conversion_run
+        from .book_conversion_state import BookConversionState
 
         state = BookConversionState(
             reader=reader,
@@ -318,8 +318,8 @@ class AudioConverter(
         cover_art: Optional[dict] = None,
     ) -> ConversionResult:
         'Convert chapters sequentially, without parallelism.'
-        from .sequential_conversion_state import SequentialConversionState
         from .sequential_conversion_run import _sequential_conversion_run
+        from .sequential_conversion_state import SequentialConversionState
 
         state = SequentialConversionState(
             chapters=chapters,
@@ -346,8 +346,8 @@ class AudioConverter(
         config: Optional[ConversionConfig] = None,
         progress: Optional[ProgressTracker] = None,
     ) -> ChapterConversionOutcome | Optional[Path]:
-        from .chapter_conversion_state import ChapterConversionState
         from .chapter_conversion_run import _chapter_conversion_run
+        from .chapter_conversion_state import ChapterConversionState
 
         state = ChapterConversionState(
             semaphore=semaphore,

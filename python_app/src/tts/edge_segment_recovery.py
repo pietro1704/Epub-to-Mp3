@@ -232,11 +232,8 @@ class EdgeSegmentRecovery:
         non-Edge engine — listener feedback prefers a missing sentence
         over a different-quality voice in the middle of the audio.
         """
+        from ..text_sanitizer import sanitize_for_edge_recovery, split_into_sentences
         from . import edge_engine as _runtime
-        from ..text_sanitizer import (
-            sanitize_for_edge_recovery,
-            split_into_sentences,
-        )
 
         cleaned = sanitize_for_edge_recovery(original_text or "")
         if not cleaned:

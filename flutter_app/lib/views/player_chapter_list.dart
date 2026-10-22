@@ -3,7 +3,7 @@ part of 'full_player_sheet.dart';
 /// Sheet presenting chapters from the player queue for in-player navigation.
 /// Mirrors iOS ChapterListSheet.
 class PlayerChapterList extends StatelessWidget {
-  const PlayerChapterList({required this.chapters, required this.player});
+  const PlayerChapterList({super.key, required this.chapters, required this.player});
 
   final List<ChapterProgress> chapters;
   final AudioPlayerInterface player;

@@ -175,9 +175,11 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         )
 
     def test_estimate_scan_includes_server_only_book_formats(self):
-        import python_app.server as server
+        import inspect
 
-        source = Path(server.__file__).read_text(encoding="utf-8")
+        from src.server_telemetry_routes import estimate_conversion
+
+        source = inspect.getsource(estimate_conversion)
         for suffix in (".fb2", ".docx", ".cbz", ".cbr", ".mobi", ".azw3"):
             assert suffix in source
 

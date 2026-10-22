@@ -213,11 +213,13 @@ _server_server_form_values = server_form_values
 from src.server_bootstrap_http_application import _initialize_server_http_application  # noqa: E402
 
 _initialize_server_http_application(sys.modules[__name__])
+app = globals()["app"]
 
 
 from src.server_bootstrap_form_queue_policy import _initialize_server_form_queue_policy  # noqa: E402
 
 _initialize_server_form_queue_policy(sys.modules[__name__])
+output_dir = globals()["output_dir"]
 
 
 from src import server_cache_markers as _server_server_cache_markers  # noqa: E402
@@ -245,6 +247,9 @@ _server_server_stream_index = server_stream_index
 from src.server_bootstrap_stream_cache_policy import _initialize_server_stream_cache_policy  # noqa: E402
 
 _initialize_server_stream_cache_policy(sys.modules[__name__])
+_load_restart_marker = globals()["_load_restart_marker"]
+_clear_restart_marker = globals()["_clear_restart_marker"]
+_JOB_WORKERS = globals()["_JOB_WORKERS"]
 
 
 from src import server_pending_uploads  # noqa: E402
@@ -285,6 +290,8 @@ _server_server_job_queue = server_job_queue
 from src.server_bootstrap_job_index import _initialize_server_job_index  # noqa: E402
 
 _initialize_server_job_index(sys.modules[__name__])
+_job_worker = globals()["_job_worker"]
+_resume_pending_jobs = globals()["_resume_pending_jobs"]
 
 
 from src._server_engine_helpers import _apply_perf_defaults as _apply_perf_defaults, _auto_tune_engine_pool as _auto_tune_engine_pool, _build_engine_chain as _build_engine_chain, _build_multi_engine_slot_map as _build_multi_engine_slot_map, _infer_perf_profile as _infer_perf_profile, _next_auto_engine as _next_auto_engine, _pick_auto_engine as _pick_auto_engine, _prepare_auto_engine_pool as _prepare_auto_engine_pool, _resolve_auto_preferred_engine as _resolve_auto_preferred_engine, degrade_edge_chunk_chars as degrade_edge_chunk_chars  # noqa: E402
@@ -323,6 +330,9 @@ _server_server_retention = server_retention
 from src.server_bootstrap_retention import _initialize_server_retention  # noqa: E402
 
 _initialize_server_retention(sys.modules[__name__])
+_periodic_job_cleanup = globals()["_periodic_job_cleanup"]
+_hf_keepalive = globals()["_hf_keepalive"]
+_has_active_jobs = globals()["_has_active_jobs"]
 
 
 from src import server_runtime_health  # noqa: E402
@@ -331,6 +341,7 @@ _server_server_runtime_health = server_runtime_health
 from src.server_bootstrap_runtime_health import _initialize_server_runtime_health  # noqa: E402
 
 _initialize_server_runtime_health(sys.modules[__name__])
+_job_watchdog = globals()["_job_watchdog"]
 
 
 # Engine helpers imported from src/_server_engine_helpers.py (at top of file)

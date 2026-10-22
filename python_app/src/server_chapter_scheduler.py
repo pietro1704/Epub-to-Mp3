@@ -70,8 +70,8 @@ async def _server_chapter_scheduler(_runtime, _state):
     async def convert_chapter(
         idx: int, chapter_obj, *, preferred_engine: Optional[str] = None
     ) -> None:
-        from src.server_chapter_state import ServerChapterState
         from src.server_chapter_run import _server_chapter_run
+        from src.server_chapter_state import ServerChapterState
 
         chapter_state = ServerChapterState(
             idx=idx,

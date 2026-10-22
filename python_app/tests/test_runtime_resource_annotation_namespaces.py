@@ -1,14 +1,20 @@
 """Exercise real resource annotations and metrics after owner extraction."""
 
+import asyncio
+import inspect
 import json
 import weakref
+from types import SimpleNamespace
 from typing import List, Optional, get_type_hints
+
+import pytest
 
 from src.adaptive_performance import AdaptivePerformanceController
 from src.auto_tuner import AutoTuner
 from src.converter_lifecycle import ConverterLifecycle
 from src.hardware_detector import HardwareProfile
 from src.segment_metrics_reports import SegmentMetricsReports
+from src.server_runtime_binding import bind_server_function
 from src.synthesis_tracker import SynthesisTracker
 from src.tts.edge_engine_initialization import EdgeEngineInitialization
 
@@ -66,5 +72,93 @@ def test_server_bootstrap_contract_binds_real_facade_objects(monkeypatch):
                  "_hf_keepalive", "_has_active_jobs"):
         function = getattr(server, name)
         assert callable(function), name
-        assert function.__globals__ is server.__dict__, name
+        captured = inspect.getclosurevars(function).nonlocals
+        assert captured["runtime"] is server, name
+        assert captured["implementation"] is function.__wrapped__, name
+        assert function.__module__ == server.__name__, name
+        assert "_runtime" not in inspect.signature(function).parameters, name
     assert server._JOB_WORKERS >= 1
+
+    monkeypatch.setattr(server, "jobs", {})
+    monkeypatch.setattr(server, "_job_queue", None)
+    assert server._has_active_jobs() is False
+    monkeypatch.setattr(server, "jobs", {"active": {"state": "running"}})
+    assert server._has_active_jobs() is True
+    monkeypatch.setattr(server, "jobs", {"done": {"state": "finished"}})
+    assert server._has_active_jobs() is False
+
+
+def test_server_binding_preserves_runtime_identity_dynamic_patches_and_errors():
+    def implementation(_runtime, value: int, *, offset: int = 1) -> tuple:
+        return _runtime, _runtime.callback(value + offset)
+
+    first = SimpleNamespace(__name__="first", callback=lambda value: value * 2)
+    second = SimpleNamespace(__name__="second", callback=lambda value: value * 3)
+    first_bound = bind_server_function(implementation, first)
+    second_bound = bind_server_function(implementation, second)
+    assert first_bound(4, offset=2) == (first, 12)
+    assert second_bound(4, offset=2) == (second, 18)
+    assert list(inspect.signature(first_bound).parameters) == ["value", "offset"]
+    assert get_type_hints(first_bound) == {"value": int, "offset": int, "return": tuple}
+
+    failure = RuntimeError("patched runtime callback failed")
+
+    def fail(value):
+        raise failure
+
+    first.callback = fail
+    with pytest.raises(RuntimeError) as captured:
+        first_bound(4)
+    assert captured.value is failure
+    assert second_bound(4) == (second, 15)
+
+
+@pytest.mark.asyncio
+async def test_server_async_binding_keeps_runtime_identity_and_awaits_result():
+    async def implementation(_runtime, value: int) -> tuple:
+        await asyncio.sleep(0)
+        return _runtime, _runtime.transform(value)
+
+    first = SimpleNamespace(__name__="first", transform=lambda value: value + 1)
+    second = SimpleNamespace(__name__="second", transform=lambda value: value + 2)
+    first_bound = bind_server_function(implementation, first)
+    second_bound = bind_server_function(implementation, second)
+    assert inspect.iscoroutinefunction(first_bound)
+    assert await first_bound(4) == (first, 5)
+    assert await second_bound(4) == (second, 6)
+    first.transform = lambda value: value * 3
+    assert await first_bound(4) == (first, 12)
+    assert await second_bound(4) == (second, 6)
+
+    failure = RuntimeError("async runtime callback failed")
+
+    def fail(value):
+        raise failure
+
+    first.transform = fail
+    with pytest.raises(RuntimeError) as captured:
+        await first_bound(4)
+    assert captured.value is failure
+    assert await second_bound(4) == (second, 6)
+
+
+@pytest.mark.asyncio
+async def test_server_async_binding_propagates_cancellation_and_runs_cleanup():
+    runtime = SimpleNamespace(__name__="cancellation", entered=asyncio.Event(), cleaned=False)
+
+    async def implementation(_runtime):
+        _runtime.entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            _runtime.cleaned = True
+
+    bound = bind_server_function(implementation, runtime)
+    task = asyncio.create_task(bound())
+    try:
+        await asyncio.wait_for(runtime.entered.wait(), timeout=1)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert runtime.cleaned is True

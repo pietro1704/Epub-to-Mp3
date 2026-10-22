@@ -241,9 +241,10 @@ class EpubChapterAssembly:
         toc: Optional[List[TocItem]] = None,
         book_language: Optional[str] = None,
     ) -> List[Chapter]:
-        from . import ebook_reader as _runtime
         import os as _os
         from concurrent.futures import ThreadPoolExecutor
+
+        from . import ebook_reader as _runtime
 
         chapters: List[Chapter] = []
         index_counter = 1

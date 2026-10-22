@@ -1,7 +1,7 @@
 part of 'settings_screen.dart';
 
 class InstalledNarrationModelsCard extends ConsumerStatefulWidget {
-  const InstalledNarrationModelsCard();
+  const InstalledNarrationModelsCard({super.key});
 
   @override
   ConsumerState<InstalledNarrationModelsCard> createState() =>

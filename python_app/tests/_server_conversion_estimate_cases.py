@@ -7,7 +7,6 @@ from python_app.tests._server_conversion_test_support import TestClient as TestC
 from python_app.tests._server_conversion_test_support import _make_telemetry as _make_telemetry
 from python_app.tests._server_conversion_test_support import server as server
 
-
 # ---------------------------------------------------------------------------
 # GET /api/estimate
 # ---------------------------------------------------------------------------

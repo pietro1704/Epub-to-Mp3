@@ -108,6 +108,7 @@ class _BookGrid extends StatelessWidget {
 
 class LibraryBookTile extends StatelessWidget {
   const LibraryBookTile({
+    super.key,
     required this.book,
     required this.onTap,
     required this.onLongPress,

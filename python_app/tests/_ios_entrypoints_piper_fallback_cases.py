@@ -9,7 +9,6 @@ from python_app.tests._ios_entrypoints_test_support import _piper_transport as _
 from python_app.tests._ios_entrypoints_test_support import ios_entrypoints as ios_entrypoints
 from python_app.tests._ios_entrypoints_test_support import pytest as pytest
 
-
 # ---------------------------------------------------------------------------
 # Piper fallback seam (slice 1b stub)
 # ---------------------------------------------------------------------------

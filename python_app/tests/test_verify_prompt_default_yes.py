@@ -1,62 +1,75 @@
-"""Verify prompt now defaults to YES and tolerates CR-only line endings.
-
-The user reported that pressing 'y' on the legacy `[y/N]` prompt didn't
-register — the trailing `^M` (Carriage Return) on their terminal turned
-the input into `y\r` which `.strip().lower()` did not normalise. Pinning
-the new behaviour: empty / `y` / `\\r` / `sim` all confirm; only `n` /
-`no` cancel.
-
-Test approach: read the source, not run main() — the verify entrypoint
-needs an EPUB + output dir + interactive TTY which is impractical to
-fake here. The string assertions catch any regression that drops the
-new defaults.
-"""
+"""Verification confirms by default and normalizes CR through the real CLI seam."""
 
 from __future__ import annotations
 
-from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
-MAIN_PY = Path(__file__).resolve().parents[1] / "main.py"
+import pytest
+from main import ConverterApplication
+from src.ui.prompt import PromptResult, TerminalPrompt
 
-
-def test_prompt_label_changed_to_default_yes():
-    src = MAIN_PY.read_text(encoding="utf-8")
-    assert "[Y/n]" in src
-    # Legacy [y/N] must not survive in the verify-mode prompt.
-    assert "Do you want to fix the issues now? [y/N]" not in src
+import validate_conversion
 
 
-def test_empty_input_confirms():
-    src = MAIN_PY.read_text(encoding="utf-8")
-    # The new branch accepts empty string AND the common variants.
-    assert 'answer in ("", "y", "yes", "s", "sim")' in src
-
-
-def test_carriage_return_stripped_before_compare():
-    src = MAIN_PY.read_text(encoding="utf-8")
-    # `\\r` from Windows/SSH terminals must not tip the comparison.
-    assert '.rstrip("\\r")' in src
-
-
-def test_verify_prompt_uses_terminal_prompt_not_bare_input():
-    """Fix for ^M appearing after the prompt when called from ./convert.
-
-    ./convert uses tty.setcbreak() for the menu which leaves the terminal in
-    cbreak mode.  Plain ``input()`` then sees CR (^M) as the line terminator
-    and echoes it visibly instead of advancing the line.  The verify-mode
-    prompt must use TerminalPrompt._read() which restores canonical mode
-    before reading so that Enter always produces a clean newline.
-    """
-    src = MAIN_PY.read_text(encoding="utf-8")
-    # The verify-mode prompt block must import and use TerminalPrompt._read.
-    assert "TerminalPrompt" in src or "from src.ui.prompt import" in src
-    # The TerminalPrompt import must appear inside the verify confirm block
-    # (i.e. near the Do you want to fix string), not just at module level.
-    fix_block_start = src.find("Do you want to fix the issues now?")
-    assert fix_block_start != -1, "Verify prompt string not found in main.py"
-    # Look back up to 600 chars before the prompt string for TerminalPrompt usage
-    context = src[max(0, fix_block_start - 600) : fix_block_start + 200]
-    assert "TerminalPrompt" in context or "_TP" in context, (
-        "The verify confirm prompt must use TerminalPrompt, not bare input(), "
-        "so that ^M from tty.setcbreak() is handled correctly."
+@pytest.fixture
+def verify_journey(tmp_path, monkeypatch):
+    """Run only validation/prompt routing; no book parsing, synthesis or real terminal IO."""
+    output = tmp_path / "Fixture"
+    output.mkdir()
+    input_path = tmp_path / "fixture.epub"
+    input_path.write_bytes(b"source remains private and unchanged")
+    config = SimpleNamespace(book_title="Fixture", output_dir=tmp_path, cache_dir=None)
+    application = ConverterApplication.__new__(ConverterApplication)
+    application.converter = SimpleNamespace(
+        file_manager=SimpleNamespace(sanitize_filename=lambda title: title)
     )
+    application._run_fix_mode = Mock(return_value=37)
+    validate = Mock(return_value=({}, ["Chapter one needs repair"]))
+    monkeypatch.setattr(validate_conversion, "validate_book", validate)
+    read = Mock(return_value=PromptResult(""))
+    monkeypatch.setattr(TerminalPrompt, "_read", read)
+    bare_input = Mock(side_effect=AssertionError("The normal prompt must use TerminalPrompt"))
+    monkeypatch.setattr("builtins.input", bare_input)
+    return SimpleNamespace(
+        application=application, path=input_path, config=config,
+        validate=validate, read=read, bare_input=bare_input,
+        run=lambda: application._run_verify_only(input_path, config, interactive=True),
+    )
+
+
+def test_prompt_label_changed_to_default_yes(verify_journey):
+    verify_journey.read.return_value = PromptResult("n")
+    assert verify_journey.run() == 1
+    prompt = verify_journey.read.call_args.args[0]
+    assert "Do you want to fix the issues now? [Y/n]" in prompt
+    assert "[y/N]" not in prompt
+    verify_journey.application._run_fix_mode.assert_not_called()
+
+
+def test_empty_input_confirms(verify_journey):
+    assert verify_journey.run() == 37
+    verify_journey.application._run_fix_mode.assert_called_once_with(
+        verify_journey.path, verify_journey.config
+    )
+    verify_journey.validate.assert_called_once_with(
+        verify_journey.path, output_dir=verify_journey.config.output_dir / "Fixture", cache_dir=None
+    )
+    assert verify_journey.path.read_bytes() == b"source remains private and unchanged"
+
+
+@pytest.mark.parametrize("answer", ["y\r", "YES\r", "\r", "s\r", "sim\r"])
+def test_carriage_return_stripped_before_compare(verify_journey, answer):
+    verify_journey.read.return_value = PromptResult(answer)
+    assert verify_journey.run() == 37
+    verify_journey.application._run_fix_mode.assert_called_once_with(
+        verify_journey.path, verify_journey.config
+    )
+
+
+def test_verify_prompt_uses_terminal_prompt_not_bare_input(verify_journey):
+    verify_journey.read.return_value = PromptResult("no\r")
+    assert verify_journey.run() == 1
+    verify_journey.read.assert_called_once()
+    verify_journey.bare_input.assert_not_called()
+    verify_journey.application._run_fix_mode.assert_not_called()

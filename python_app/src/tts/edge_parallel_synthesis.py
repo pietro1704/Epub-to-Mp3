@@ -21,9 +21,10 @@ class EdgeParallelSynthesis:
         pre_existing_chunks: Optional[Dict[int, Path]] = None,
     ) -> Optional[Path]:
         """Process segments in parallel batches for faster synthesis."""
-        from . import edge_engine as _runtime
         import tempfile
         from pathlib import Path
+
+        from . import edge_engine as _runtime
 
         total_segments = len(segments_to_process)
         batch_size = self._determine_parallel_batch_size(total_segments)

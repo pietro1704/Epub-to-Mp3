@@ -21,8 +21,8 @@ from dataclasses import dataclass as dataclass
 from dataclasses import field as field
 from html.parser import HTMLParser as HTMLParser
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 from typing import Any as Any
+from typing import Dict, List, Optional, Tuple
 from typing import Iterable as Iterable
 
 try:

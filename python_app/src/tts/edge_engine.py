@@ -9,13 +9,10 @@ import inspect
 import os
 import re
 
-# **SSL BYPASS**: Monkeypatch SSL BEFORE importing edge_tts
-# IMPORTANT: Required because Microsoft certificate (api.msedgeservices.com) is expired
-# Edge-TTS uses ssl.create_default_context(cafile=certifi.where())
 import ssl as _ssl_module
 import threading
-from contextlib import suppress
 from contextlib import AsyncExitStack as AsyncExitStack
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from typing import Callable as Callable
@@ -48,6 +45,9 @@ from .edge_segment_transport import EdgeSegmentTransport
 from .edge_text_segmentation import EdgeTextSegmentation
 from .network_tuner import NetworkTuner as NetworkTuner
 
+# **SSL BYPASS**: Monkeypatch SSL BEFORE importing edge_tts
+# IMPORTANT: Required because Microsoft certificate (api.msedgeservices.com) is expired
+# Edge-TTS uses ssl.create_default_context(cafile=certifi.where())
 # Save original function
 _original_create_default_context = _ssl_module.create_default_context
 

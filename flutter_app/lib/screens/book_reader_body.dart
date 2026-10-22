@@ -2,7 +2,6 @@ part of 'book_open_screen.dart';
 
 class _BookReaderBody extends ConsumerWidget {
   const _BookReaderBody({
-    super.key,
     required this.bookId,
     required this.phase,
     required this.errorMessage,

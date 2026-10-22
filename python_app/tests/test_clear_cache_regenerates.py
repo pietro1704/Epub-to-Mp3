@@ -13,7 +13,11 @@ from __future__ import annotations
 import inspect
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -21,13 +25,10 @@ from main import ConverterApplication
 
 
 class TestClearCacheBehaviour(unittest.TestCase):
-    """Source-level guards on the CLI clear-cache wiring.
+    """Guard the CLI clear-cache wiring and its real cleanup seam.
 
-    A real end-to-end behavioural test would have to spin up Edge
-    (network) and burn ~30 s. That's covered by manual verification
-    on every release. These tests pin the structural pieces that the
-    behavioural test depends on so a refactor cannot silently bypass
-    them.
+    Exercise cleanup without synthesis, and retain the ordering guards
+    connecting cache bypass to the conversion coordinator.
     """
 
     def test_reuse_short_circuit_is_disabled_by_clear_cache(self):
@@ -54,12 +55,39 @@ class TestClearCacheBehaviour(unittest.TestCase):
         )
 
     def test_clear_cache_path_invokes_cache_manager_clear(self):
-        """The `--clear-cache` arg must trigger `cache_manager.clear_cache`
-        for the book; without that call the per-chapter cache files
-        stick around and the next run hits a stale-cache hit."""
-        src = inspect.getsource(ConverterApplication._run_single_conversion)
-        self.assertIn("clear_cache", src)
-        self.assertIn("cache_manager.clear_cache", src)
+        """The installed cleanup seam clears only the requested book and preserves its source."""
+        with tempfile.TemporaryDirectory(prefix="clear-book-contract-") as directory:
+            root = Path(directory)
+            source = root / "book.epub"
+            source.write_bytes(b"owned source fixture")
+            output = root / "output"
+            selected = output / "Fixture_edge"
+            selected.mkdir(parents=True)
+            (selected / "chapter.mp3").write_bytes(b"stale audio")
+            foreign = output / "Another_book"
+            foreign.mkdir()
+            sentinel = foreign / "chapter.mp3"
+            sentinel.write_bytes(b"preserved audio")
+            application = ConverterApplication.__new__(ConverterApplication)
+            application.cache_root = root / "cache"
+            manager = Mock()
+            reader = SimpleNamespace(title="Fixture")
+            args = SimpleNamespace(clear_cache=False, input_file=str(source), output_dir=output)
+
+            result = application._clear_requested_book_outputs(args, reader, [], [], manager, source)
+            self.assertEqual(result, (source, None))
+            manager.clear_cache.assert_not_called()
+            manager.clear_checkpoint.assert_not_called()
+            self.assertTrue(selected.exists())
+
+            args.clear_cache = True
+            result = application._clear_requested_book_outputs(args, reader, [], [], manager, source)
+            self.assertEqual(result, (source, None))
+            manager.clear_cache.assert_called_once_with(source, title="Fixture")
+            manager.clear_checkpoint.assert_called_once_with(source)
+            self.assertFalse(selected.exists())
+            self.assertEqual(sentinel.read_bytes(), b"preserved audio")
+            self.assertEqual(source.read_bytes(), b"owned source fixture")
 
 
 if __name__ == "__main__":

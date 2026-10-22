@@ -44,15 +44,16 @@ class TestInjectSilenceHelpers(unittest.TestCase):
         user explicitly opted in via `--inject-title-pause MS`. The
         previous always-on behaviour produced fixed-length pauses that
         sounded uniform across chapters of varying length."""
-        from src import converter
+        from src.chapter_audio_acceptance import _chapter_audio_acceptance
 
-        src = inspect.getsource(converter)
+        src = inspect.getsource(_chapter_audio_acceptance)
         self.assertIn("find_silence_for_title", src)
         self.assertIn("inject_silence_at_offset", src)
         # Opt-in gate present.
         self.assertIn("inject_title_pause_ms", src)
+        self.assertIn("if _state.inject_pause_ms > 0:", src)
         # The silence duration is taken from the config, not hard-coded.
-        self.assertIn("silence_ms=inject_pause_ms", src)
+        self.assertIn("silence_ms=_state.inject_pause_ms", src)
 
 
 class TestSilenceInjectionPreservesCoverArt(unittest.TestCase):
@@ -67,11 +68,11 @@ class TestSilenceInjectionPreservesCoverArt(unittest.TestCase):
     """
 
     def test_embed_id3_metadata_runs_after_inject_in_converter_loop(self):
-        from src import converter
+        from src.chapter_audio_acceptance import _chapter_audio_acceptance
 
-        src = inspect.getsource(converter)
+        src = inspect.getsource(_chapter_audio_acceptance)
         # Find positions of both call sites in the source.
-        inject_pos = src.find("inject_silence_at_offset(")
+        inject_pos = src.find("await _state.inject_silence_at_offset(")
         # The post-loop _embed_id3_metadata call (the one inside the
         # chapter loop, not the helper definition).
         embed_pos = src.find("self._embed_id3_metadata(", inject_pos)
@@ -82,16 +83,9 @@ class TestSilenceInjectionPreservesCoverArt(unittest.TestCase):
         """The CLI reuse short-circuit in main.py must also re-stamp
         ID3 + cover art on the existing MP3s — it skips converter.py
         entirely so the converter's final ID3 pass does not run."""
-        import importlib
+        from main import ConverterApplication
 
-        spec = importlib.util.spec_from_file_location(
-            "main",
-            os.path.join(os.path.dirname(__file__), "..", "main.py"),
-        )
-        self.assertIsNotNone(spec)
-        # Read the source directly to avoid heavy import side effects.
-        with open(spec.origin, encoding="utf-8") as f:
-            src = f.read()
+        src = inspect.getsource(ConverterApplication._run_single_conversion)
         # The reuse branch (`Reusing existing output`) must apply tags.
         reuse_pos = src.find("Reusing existing output")
         self.assertGreater(reuse_pos, 0)

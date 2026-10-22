@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -40,26 +46,52 @@ def test_cli_completion_lists_only_supported_engine_values() -> None:
 
 
 def test_cli_and_factory_expose_only_supported_engine_names() -> None:
-    cli = (REPO_ROOT / "python_app" / "main.py").read_text(encoding="utf-8")
+    from src.cli_arguments import add_conversion_arguments
+
+    parser = argparse.ArgumentParser()
+    add_conversion_arguments(
+        parser, include_menu_flag=True, input_required=True,
+        namespace=SimpleNamespace(FilesCompleter=None, ChoicesCompleter=None),
+    )
+    for engine in ("auto", "edge", "piper"):
+        assert parser.parse_args(["book.epub", "--engine", engine]).engine == engine
+    for engine in ("coqui", "kokoro", "spark"):
+        with pytest.raises(SystemExit):
+            parser.parse_args(["book.epub", "--engine", engine])
     factory = (REPO_ROOT / "python_app" / "src" / "tts" / "factory.py").read_text(encoding="utf-8")
-    assert 'choices=["auto", "edge", "piper"]' in cli
     assert 'engines = ["edge"]' in factory
     assert 'engines.append("piper")' in factory
-    assert not re.search(r"\b(coqui|kokoro|spark)\b", cli, re.IGNORECASE)
     assert not re.search(r"\b(coqui|kokoro|spark)\b", factory, re.IGNORECASE)
 
 
-def test_voices_endpoint_delegates_to_the_curated_provider_catalog() -> None:
-    server = (REPO_ROOT / "python_app" / "server.py").read_text(encoding="utf-8")
-    assert '@app.get("/api/voices")' in server
-    assert '"voices": provider.get_voice_suggestions()' in server
+def test_voices_endpoint_delegates_to_the_curated_provider_catalog(monkeypatch) -> None:
+    monkeypatch.setenv("EDGE_NETWORK_PROBE", "0")
+    import server
+
+    catalog = {"edge": [], "piper": [], "auto": []}
+    provider = Mock()
+    provider.get_voice_suggestions.return_value = catalog
+    monkeypatch.setattr(server.tts_factory, "voice_provider", provider)
+    route = next(route for route in server.app.routes if route.path == "/api/voices")
+    assert route.endpoint is server.list_available_voices
+    assert asyncio.run(route.endpoint())["voices"] is catalog
+    provider.get_voice_suggestions.assert_called_once_with()
+    failure = RuntimeError("catalog unavailable")
+    provider.get_voice_suggestions.side_effect = failure
+    with pytest.raises(RuntimeError) as captured:
+        asyncio.run(route.endpoint())
+    assert captured.value is failure
 
 
 def test_ui_does_not_advertise_removed_engine_chain() -> None:
     translations = (REPO_ROOT / "web" / "src" / "i18n" / "translations.ts").read_text(
         encoding="utf-8"
     )
-    cli_help = (REPO_ROOT / "python_app" / "main.py").read_text(encoding="utf-8")
+    from src.cli_arguments_input_engine import add_input_engine_arguments
+
+    parser = argparse.ArgumentParser()
+    add_input_engine_arguments(parser, True)
+    cli_help = " ".join(parser.format_help().split())
     assert "Edge -> Piper" in cli_help
     assert "Edge-only" not in cli_help
     assert "Edge → Piper" in translations

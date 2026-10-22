@@ -17,11 +17,10 @@ from typing import Optional
 
 from src.utils import FileManager
 
-from .audio_identity import Mp3DigestCache
 from .audio_identity import AudioDuplicateTracker as AudioDuplicateTracker
+from .audio_identity import Mp3DigestCache
 from .audio_identity import _hash_audio_file as _hash_audio_file
 from .audio_identity import _hash_text_payload as _hash_text_payload
-
 
 # ---------------------------------------------------------------------------
 # Media type / hashing
