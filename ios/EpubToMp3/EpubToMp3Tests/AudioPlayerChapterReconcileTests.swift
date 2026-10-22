@@ -19,7 +19,7 @@ final class AudioPlayerChapterReconcileTests: XCTestCase {
         // Queue starts on chapter 0 (cover). Current item is the shared URL —
         // must resolve to index 0 (itself), not jump anywhere.
         XCTAssertEqual(
-            AudioPlayer.resolveChapterIndex(currentIndex: 0, chapterURLs: chapterURLs, currentItemURL: coverURL),
+            PlaybackChapterQueue.resolveChapterIndex(currentIndex: 0, chapterURLs: chapterURLs, currentItemURL: coverURL),
             0
         )
 
@@ -28,7 +28,7 @@ final class AudioPlayerChapterReconcileTests: XCTestCase {
         // 0 (the cover) forever. Searching forward from the current index
         // must keep us at (or move us to) index 1, never snap back to 0.
         XCTAssertEqual(
-            AudioPlayer.resolveChapterIndex(currentIndex: 1, chapterURLs: chapterURLs, currentItemURL: titlePageURL),
+            PlaybackChapterQueue.resolveChapterIndex(currentIndex: 1, chapterURLs: chapterURLs, currentItemURL: titlePageURL),
             1,
             "Resolving the shared URL while already on the later chapter must not snap back to the earlier duplicate."
         )
@@ -40,7 +40,7 @@ final class AudioPlayerChapterReconcileTests: XCTestCase {
         // nearest (index 0) — which is correct behavior (index unchanged,
         // no bogus jump forward past unrelated chapters).
         XCTAssertEqual(
-            AudioPlayer.resolveChapterIndex(currentIndex: 0, chapterURLs: chapterURLs, currentItemURL: titlePageURL),
+            PlaybackChapterQueue.resolveChapterIndex(currentIndex: 0, chapterURLs: chapterURLs, currentItemURL: titlePageURL),
             0
         )
     }
@@ -49,11 +49,11 @@ final class AudioPlayerChapterReconcileTests: XCTestCase {
         let chapterURLs: [URL?] = [coverURL, titlePageURL, chapter2URL, chapter3URL]
 
         XCTAssertEqual(
-            AudioPlayer.resolveChapterIndex(currentIndex: 1, chapterURLs: chapterURLs, currentItemURL: chapter2URL),
+            PlaybackChapterQueue.resolveChapterIndex(currentIndex: 1, chapterURLs: chapterURLs, currentItemURL: chapter2URL),
             2
         )
         XCTAssertEqual(
-            AudioPlayer.resolveChapterIndex(currentIndex: 2, chapterURLs: chapterURLs, currentItemURL: chapter3URL),
+            PlaybackChapterQueue.resolveChapterIndex(currentIndex: 2, chapterURLs: chapterURLs, currentItemURL: chapter3URL),
             3
         )
     }
@@ -62,13 +62,13 @@ final class AudioPlayerChapterReconcileTests: XCTestCase {
         let chapterURLs: [URL?] = [coverURL, chapter2URL]
         let unrelated = URL(fileURLWithPath: "/tmp/book/unknown.mp3")
 
-        XCTAssertNil(AudioPlayer.resolveChapterIndex(currentIndex: 0, chapterURLs: chapterURLs, currentItemURL: unrelated))
+        XCTAssertNil(PlaybackChapterQueue.resolveChapterIndex(currentIndex: 0, chapterURLs: chapterURLs, currentItemURL: unrelated))
     }
 
     func testReturnsNilWhenCurrentIndexOutOfBounds() {
         let chapterURLs: [URL?] = [coverURL]
 
-        XCTAssertNil(AudioPlayer.resolveChapterIndex(currentIndex: 5, chapterURLs: chapterURLs, currentItemURL: coverURL))
+        XCTAssertNil(PlaybackChapterQueue.resolveChapterIndex(currentIndex: 5, chapterURLs: chapterURLs, currentItemURL: coverURL))
     }
 
     func testNilChapterURLsAreSkippedWithoutCrashing() {
@@ -77,7 +77,7 @@ final class AudioPlayerChapterReconcileTests: XCTestCase {
         let chapterURLs: [URL?] = [nil, chapter2URL]
 
         XCTAssertEqual(
-            AudioPlayer.resolveChapterIndex(currentIndex: 0, chapterURLs: chapterURLs, currentItemURL: chapter2URL),
+            PlaybackChapterQueue.resolveChapterIndex(currentIndex: 0, chapterURLs: chapterURLs, currentItemURL: chapter2URL),
             1
         )
     }

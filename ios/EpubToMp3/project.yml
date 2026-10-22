@@ -210,10 +210,6 @@ targets:
           # causing duplicate-output errors on common names (helpers.py,
           # exceptions.py, etc.).
           - "Vendor"
-          # Legacy Python oracle sources stay excluded from production.
-          - "Features/Conversion/Services/PythonBridge.swift"
-          - "Features/Conversion/Services/PythonEmbed.swift"
-          - "Features/Conversion/Services/PythonRunner.swift"
           - "Assets.xcassets"
           - "Assets.xcassets/**"
           - "Resources/**/*.lproj"
@@ -222,6 +218,8 @@ targets:
       # Rust dylibs are generated artifacts, embedded and verified per SDK below.
       - path: EpubToMp3/Features/Conversion/Services/ConverterFFIAdapter.swift
       - path: EpubToMp3/Resources/LaunchScreen.storyboard
+        buildPhase: resources
+      - path: EpubToMp3/Resources/PrivacyInfo.xcprivacy
         buildPhase: resources
       # Localization files are excluded from the recursive source group so
       # XcodeGen must add them explicitly to the application resource phase.
@@ -240,6 +238,10 @@ targets:
           copyFiles:
             destination: frameworks
         attributes: [CodeSignOnCopy]
+
+      - path: EpubToMp3Widget/WidgetNowPlayingTimeline.swift
+      - path: EpubToMp3Widget/WidgetContinueReadingTimeline.swift
+      - path: EpubToMp3Widget/WidgetLibraryTimeline.swift
 
     postBuildScripts:
       - name: Bundle platform-correct iOS Rust library
@@ -352,6 +354,11 @@ targets:
       macOS: "14.0"
     sources:
       - path: EpubToMp3Tests
+        excludes:
+          - Resources
+      - path: EpubToMp3Tests/Resources/Pinocchio
+        type: folder
+        buildPhase: resources
       - path: EpubToMp3Tests/ConverterFFIAdapterTests.swift
     dependencies:
       - target: EpubToMp3
@@ -471,6 +478,9 @@ targets:
       # Shared with the main app target. Same Codable shape on both ends —
       # ActivityKit serialises by name + Codable, not nominal cross-module.
       - path: EpubToMp3/Shared/Integrations/ConversionActivityAttributes.swift
+      - path: EpubToMp3/Shared/Integrations/WidgetSharedLibrary.swift
+      - path: EpubToMp3/Shared/Integrations/WidgetCoverThumbnail.swift
+      - path: EpubToMp3/Shared/Integrations/WidgetPlaybackCommand.swift
     dependencies: []
     settings:
       base:

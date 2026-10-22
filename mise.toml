@@ -3,7 +3,7 @@ python = "3.12.10"
 # Node LTS for frontend (Vite 8.x requires >=20.19.0)
 node = "lts"
 npm = "latest"
-# Project-managed Codex CLI; keep aligned with the global standalone install.
+# Project-managed Codex CLI; invoke through mise independently of app installs.
 # Update from the repository root with: mise use --pin npm:@openai/codex@latest
 # Do not use Codex's global npm/pnpm updater for this mise-owned installation.
 "npm:@openai/codex" = "0.163.0"

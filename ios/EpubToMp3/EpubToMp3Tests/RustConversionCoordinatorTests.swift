@@ -71,20 +71,27 @@ final class RustConversionCoordinatorTests: XCTestCase {
 
     @MainActor
     func testOptInImportedLordOfTheRingsConvertsAndPublishesPlayableAudio() async throws {
-        let bookPath = ProcessInfo.processInfo.environment["EPUB2MP3_LOTR_IMPORTED_EPUB"]
-        let resolvedBookPath = bookPath.flatMap { $0.contains("${") ? nil : $0 }
-            ?? NSHomeDirectory() + "/Library/Application Support/EpubToMp3/ImportedBooks/3e1c676b270dfa3fe555eba4d0cb9934/The Lord of the Rings - en - J.R.R. Tolkien.epub"
+        guard ProcessInfo.processInfo.environment["EPUB2MP3_ALLOW_WHOLE_BOOK"] == "1" else {
+            throw XCTSkip("Whole-book conversion requires explicit EPUB2MP3_ALLOW_WHOLE_BOOK=1.")
+        }
+        let resolvedBookPath = try explicitlySelectedBookPath("EPUB2MP3_LOTR_IMPORTED_EPUB")
         let bookURL = URL(fileURLWithPath: resolvedBookPath)
         XCTAssertTrue(FileManager.default.isReadableFile(atPath: bookURL.path), "Imported EPUB is not readable: \(bookURL.path)")
+
+        let outputRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RustConversionFixture-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: outputRoot) }
+        let outputStore = RustConversionOutputStore(root: outputRoot, notificationCenter: NotificationCenter())
 
         let jobID = UUID().uuidString
         var publishedChapters: [JobSnapshot.Chapter] = []
         let adapter = ConverterFFIAdapter()
-        let result = try await RustConversionCoordinator(adapter: adapter).convert(
+        let result = try await RustConversionCoordinator(adapter: adapter, outputStore: outputStore).convert(
             bookURL: bookURL,
             jobID: jobID,
             chapterStart: -1,
             chapterEnd: -1,
+            options: ConversionOptions(engine: "system"),
             onProgress: { event in
                 _ = event
             },
@@ -109,20 +116,24 @@ final class RustConversionCoordinatorTests: XCTestCase {
 
     @MainActor
     func testOptInImportedLordOfTheRingsChapterNineConvertsAndPublishesPlayableAudio() async throws {
-        let bookPath = ProcessInfo.processInfo.environment["EPUB2MP3_LOTR_IMPORTED_EPUB"]
-        let resolvedBookPath = bookPath.flatMap { $0.contains("${") ? nil : $0 }
-            ?? NSHomeDirectory() + "/Library/Application Support/EpubToMp3/ImportedBooks/3e1c676b270dfa3fe555eba4d0cb9934/The Lord of the Rings - en - J.R.R. Tolkien.epub"
+        let resolvedBookPath = try explicitlySelectedBookPath("EPUB2MP3_LOTR_IMPORTED_EPUB")
         let bookURL = URL(fileURLWithPath: resolvedBookPath)
         XCTAssertTrue(FileManager.default.isReadableFile(atPath: bookURL.path))
+
+        let outputRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RustConversionFixture-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: outputRoot) }
+        let outputStore = RustConversionOutputStore(root: outputRoot, notificationCenter: NotificationCenter())
 
         let jobID = UUID().uuidString
         var published: [JobSnapshot.Chapter] = []
         let adapter = ConverterFFIAdapter()
-        let result = try await RustConversionCoordinator(adapter: adapter).convert(
+        let result = try await RustConversionCoordinator(adapter: adapter, outputStore: outputStore).convert(
             bookURL: bookURL,
             jobID: jobID,
             chapterStart: 8,
             chapterEnd: 8,
+            options: ConversionOptions(engine: "system"),
             onChapterCompleted: { event in published.append(event.playableChapter) }
         )
 
@@ -140,19 +151,23 @@ final class RustConversionCoordinatorTests: XCTestCase {
 
     @MainActor
     func testOptInTwoChaptersFromBothImportedBooksArePlayable() async throws {
-        let applicationSupport = NSHomeDirectory() + "/Library/Application Support/EpubToMp3/ImportedBooks/"
         let cases: [(title: String, path: String, positions: ClosedRange<Int>)] = [
             (
-                "The Lord of the Rings",
-                applicationSupport + "3e1c676b270dfa3fe555eba4d0cb9934/The Lord of the Rings - en - J.R.R. Tolkien.epub",
+                "First explicitly selected fixture",
+                try explicitlySelectedBookPath("EPUB2MP3_LOTR_IMPORTED_EPUB"),
                 8...9
             ),
             (
-                "E não sobrou nenhum",
-                applicationSupport + "55417053355de78768a0823d3cd203fd/E não sobrou nenhum (Agatha Christie [Christie, Agatha]) (z-library.sk, 1lib.sk, z-lib.sk).epub",
+                "Second explicitly selected fixture",
+                try explicitlySelectedBookPath("EPUB2MP3_SECOND_IMPORTED_EPUB"),
                 6...7
             ),
         ]
+
+        let outputRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RustConversionFixture-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: outputRoot) }
+        let outputStore = RustConversionOutputStore(root: outputRoot, notificationCenter: NotificationCenter())
 
         for testCase in cases {
             let bookURL = URL(fileURLWithPath: testCase.path)
@@ -162,11 +177,12 @@ final class RustConversionCoordinatorTests: XCTestCase {
             )
             var published: [JobSnapshot.Chapter] = []
             let started = Date.timeIntervalSinceReferenceDate
-            let result = try await RustConversionCoordinator().convert(
+            let result = try await RustConversionCoordinator(outputStore: outputStore).convert(
                 bookURL: bookURL,
                 jobID: UUID().uuidString,
                 chapterStart: Int32(testCase.positions.lowerBound),
                 chapterEnd: Int32(testCase.positions.upperBound),
+                options: ConversionOptions(engine: "system"),
                 onChapterCompleted: { event in published.append(event.playableChapter) }
             )
             let elapsed = Date.timeIntervalSinceReferenceDate - started
@@ -181,8 +197,18 @@ final class RustConversionCoordinatorTests: XCTestCase {
                 let isPlayable = try await asset.load(.isPlayable)
                 XCTAssertTrue(isPlayable, "Invalid audio for \(testCase.title)")
             }
-            print("[Rust Edge smoke] book=\(testCase.title) chapters=2 elapsed=\(elapsed)s")
+            print("[Rust native smoke] book=\(testCase.title) chapters=2 elapsed=\(elapsed)s")
         }
+    }
+
+    private func explicitlySelectedBookPath(_ key: String) throws -> String {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["EPUB2MP3_IMPORTED_CONVERSION_TEST"] == "1",
+              let path = environment[key], !path.isEmpty,
+              !path.contains("${"), !path.contains("$(") else {
+            throw XCTSkip("Enable EPUB2MP3_IMPORTED_CONVERSION_TEST=1 and explicitly supply \(key). No library discovery or model download is performed.")
+        }
+        return path
     }
 
     @MainActor
@@ -303,10 +329,14 @@ final class RustConversionCoordinatorTests: XCTestCase {
         guard ProcessInfo.processInfo.environment["EPUB2MP3_RUN_REAL_EDGE_BENCHMARK"] == "1" else {
             throw XCTSkip("Set EPUB2MP3_RUN_REAL_EDGE_BENCHMARK=1 to run the network benchmark.")
         }
-        let bookPath = NSHomeDirectory()
-            + "/Library/Application Support/EpubToMp3/ImportedBooks/3e1c676b270dfa3fe555eba4d0cb9934/The Lord of the Rings - en - J.R.R. Tolkien.epub"
+        let bookPath = try explicitlySelectedBookPath("EPUB2MP3_LOTR_IMPORTED_EPUB")
         let bookURL = URL(fileURLWithPath: bookPath)
         XCTAssertTrue(FileManager.default.isReadableFile(atPath: bookURL.path))
+
+        let outputRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RustConversionFixture-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: outputRoot) }
+        let outputStore = RustConversionOutputStore(root: outputRoot, notificationCenter: NotificationCenter())
 
         let previousParallelism = getenv("RUST_CHAPTER_PARALLELISM").map { String(cString: $0) }
         defer {
@@ -320,11 +350,12 @@ final class RustConversionCoordinatorTests: XCTestCase {
         func convert(parallelism: String) async throws -> (TimeInterval, RustConversionCoordinator.Result) {
             XCTAssertEqual(setenv("RUST_CHAPTER_PARALLELISM", parallelism, 1), 0)
             let started = Date.timeIntervalSinceReferenceDate
-            let result = try await RustConversionCoordinator().convert(
+            let result = try await RustConversionCoordinator(outputStore: outputStore).convert(
                 bookURL: bookURL,
                 jobID: UUID().uuidString,
                 chapterStart: 8,
-                chapterEnd: 9
+                chapterEnd: 9,
+                options: ConversionOptions(engine: "edge")
             )
             return (Date.timeIntervalSinceReferenceDate - started, result)
         }

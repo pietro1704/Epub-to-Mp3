@@ -14,18 +14,6 @@
       "problemMatcher": []
     },
     {
-      "label": "iOS: Run Debug on Simulator",
-      "type": "shell",
-      "command": "IOS_TARGET=simulator mise run ios:run",
-      "problemMatcher": []
-    },
-    {
-      "label": "Android: Run Flutter Debug",
-      "type": "shell",
-      "command": "mise run flutter:run",
-      "problemMatcher": []
-    },
-    {
       "label": "iOS: Build physical device",
       "type": "shell",
       "command": "mise run ios:device:build",
@@ -41,12 +29,6 @@
       "label": "iOS: Build simulator",
       "type": "shell",
       "command": "mise run ios:build",
-      "problemMatcher": []
-    },
-    {
-      "label": "iOS: Install and launch simulator",
-      "type": "shell",
-      "command": "mise run ios:simulator:run",
       "problemMatcher": []
     }
   ]

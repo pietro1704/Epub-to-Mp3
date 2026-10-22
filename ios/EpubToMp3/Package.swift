@@ -13,12 +13,41 @@ func excludedFiles(_ directory: String, keeping sources: [String]) -> [String] {
     }
 }
 
-let production = ["Features/Library/Services/BookContentIdentity.swift", "Features/Offline/Services/RustConversionOutputStore.swift", "Features/Conversion/Models/SessionRecord.swift", "Features/Conversion/Services/ConversionHistoryReader.swift",
-                  "Features/Conversion/Services/AudioEnginePreference.swift", "Features/Conversion/Services/ConversionChapterSelection.swift", "Features/Conversion/Services/ConversionOptions.swift",
-                  "Features/Conversion/Services/PlatformSpeechSynthesizer.swift", "Features/Conversion/Services/PlatformFallbackNotice.swift",
-                  "Features/Conversion/Services/ConverterFFIAdapter.swift", "Features/Conversion/Services/RustConversionCoordinator.swift",
-                  "Features/Conversion/Models/JobSnapshot.swift", "Shared/Localization/L10n.swift"]
-let tests = ["BookContentIdentityTests.swift", "PlatformSpeechSynthesizerTests.swift", "ConversionHistoryReaderTests.swift", "ConversionChapterSelectionTests.swift", "ConversionOptionsInteropTests.swift", "EpubFixture.swift"]
+let production = [
+    "Features/Library/Services/BookContentIdentity.swift",
+    "Features/Offline/Services/RustConversionOutputStore.swift",
+    "Features/Conversion/Models/SessionRecord.swift",
+    "Features/Conversion/Services/ConversionHistoryReader.swift",
+    "Features/Conversion/Services/AudioEnginePreference.swift",
+    "Features/Conversion/Services/ConversionChapterSelection.swift",
+    "Features/Conversion/Services/ConversionOptions.swift",
+    "Features/Conversion/Services/PlatformSpeechSynthesizer.swift",
+    "Features/Conversion/Services/PlatformFallbackNotice.swift",
+    "Features/Conversion/Services/ConverterFFIAdapter.swift",
+    "Features/Conversion/Services/ConverterABISignatures.swift",
+    "Features/Conversion/Services/EmbeddedConverterError.swift",
+    "Features/Conversion/Services/ConverterModelCatalog.swift",
+    "Features/Conversion/Services/ConverterCallbackBridge.swift",
+    "Features/Conversion/Services/ConverterPlaybackControl.swift",
+    "Features/Conversion/Services/ConversionCallbackReceipt.swift",
+    "Features/Conversion/Services/RustConversionCoordinator.swift",
+    "Features/Conversion/Services/RustConversionEvents.swift",
+    "Features/Conversion/Services/RustConversionResult.swift",
+    "Features/Conversion/Models/JobSnapshot.swift",
+    "Shared/Localization/L10n.swift",
+]
+let tests = [
+    "BookContentIdentityTests.swift",
+    "PlatformSpeechSynthesizerTests.swift",
+    "ConversionHistoryReaderTests.swift",
+    "ConversionChapterSelectionTests.swift",
+    "ConversionOptionsInteropTests.swift",
+    "ConversionOptionsInteropReadinessAdmissionTests.swift",
+    "ConversionOptionsInteropWireIdentityTests.swift",
+    "ConversionOptionsInteropOptInProviderJourneyTests.swift",
+    "ConverterModelCatalogOwnershipTests.swift",
+    "EpubFixture.swift",
+]
 let package = Package(
     name: "AppFoundation",
     platforms: [.macOS(.v12)],

@@ -95,15 +95,13 @@ final class StreamingPlaybackChunkDeliveryTests: XCTestCase {
         XCTAssertTrue(player.firstSegmentReady)
         if engine == "edge" { XCTAssertFalse(usedSystemVoice.get()); XCTAssertFalse(player.isUsingSpeechFallback) }
         XCTAssertTrue(player.isPlaying)
-        let queue = Mirror(reflecting: player).children
-            .first { $0.label == "player" }?.value as? AVQueuePlayer
-        for _ in 0..<30 where queue?.currentItem?.status == .unknown {
+        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        for _ in 0..<30 where item.status == .unknown {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        let item = queue?.currentItem
-        XCTAssertEqual(item?.status, .readyToPlay, "status=\(item?.status.rawValue ?? -1), error=\(String(describing: item?.error)), rate=\(queue?.rate ?? -1)")
+        XCTAssertEqual(item.status, .readyToPlay, "status=\(item.status.rawValue), error=\(String(describing: item.error))")
         try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertGreaterThan(queue?.currentTime().seconds ?? 0, 0.02, "status=\(item?.status.rawValue ?? -1), error=\(String(describing: item?.error)), rate=\(queue?.rate ?? -1)")
+        XCTAssertGreaterThan(item.currentTime().seconds, 0.02, "status=\(item.status.rawValue), error=\(String(describing: item.error))")
         XCTAssertFalse(conversionReturned.get(), "Playback must begin while Rust conversion is still held at the accepted first chunk.")
         XCTAssertEqual(chunks.get(), 1, "The chapter must still await its later audio chunks when playback starts.")
 
@@ -180,14 +178,14 @@ final class StreamingPlaybackChunkDeliveryTests: XCTestCase {
         XCTAssertTrue(accepted, "A current Rust worker chunk must be accepted by the player bridge.")
         XCTAssertTrue(player.firstSegmentReady)
         XCTAssertTrue(player.isPlaying, "Listen intent must start audio when the first chunk arrives.")
-        let queue = Mirror(reflecting: player).children
-            .first { $0.label == "player" }?.value as? AVQueuePlayer
-        XCTAssertNotNil(queue)
-        XCTAssertEqual(queue?.rate, 1)
+        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        for _ in 0..<30 where item.status == .unknown {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
         try await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(queue?.currentItem?.status, .readyToPlay)
+        XCTAssertEqual(item.status, .readyToPlay)
         XCTAssertGreaterThan(
-            queue?.currentTime().seconds ?? 0,
+            item.currentTime().seconds,
             0.02,
             "A valid encoded audio segment must advance playback."
         )

@@ -303,7 +303,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
                 try await RustConversionOutputStore.shared.removeAudio(bookID: book.id, legacyJobID: book.lastJobId) {
                     try await LocalAudioArtifactStore.shared.removeAllAudio(bookID: book.id)
                     if let jobID = book.lastJobId {
-                        await DownloadManager.shared.clearDownloadedBook(jobId: jobID)
+                        await AudiobookDownloads.shared.clearDownloadedBook(jobId: jobID)
                     }
                 }
                 bookmarkStore.removeAll(for: book.id)

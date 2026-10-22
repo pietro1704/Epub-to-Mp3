@@ -6,6 +6,13 @@ in [the collaboration contract](mac-arch-collaboration.md).
 
 ## Routine checks
 
+Node LTS and the project Codex CLI use the root `mise.toml` definitions, including
+inside the Apple project. Its nested configuration adds XcodeGen only. Use
+`mise exec` for those project tools; a standalone Codex app or another tool's
+Node on the ambient `PATH` has separate provenance. Inspect `mise ls --current`
+and `mise which` before diagnosing a version mismatch; do not update a global
+installation to make its version match the project.
+
 ```sh
 mise run agents:collaboration:doctor -- --role mac
 mise run agents:collaboration:test

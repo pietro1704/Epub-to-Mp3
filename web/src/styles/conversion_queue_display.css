@@ -1,0 +1,194 @@
+/* Queue Display */
+.queue-display {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.queue-display__current {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.queue-display__label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.queue-display__value {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.queue-display__pending {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.queue-display__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.queue-display__paused-badge {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fcd34d;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.queue-display__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.queue-display__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.queue-display__position {
+  color: var(--text-muted);
+  font-weight: 600;
+  min-width: 1.5rem;
+}
+
+.queue-display__name {
+  color: var(--text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-display__engine {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 4px;
+}
+
+.queue-display__more {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+  padding: 0.375rem;
+}
+
+.queue-display__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.queue-display__action-button {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.queue-display__action-button--primary {
+  background: linear-gradient(135deg, var(--button-gradient-start), var(--button-gradient-end));
+  color: white;
+}
+
+.queue-display__action-button--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--button-shadow);
+}
+
+.queue-display__action-button--secondary {
+  background: transparent;
+  border-color: var(--panel-border);
+  color: var(--text-secondary);
+}
+
+.queue-display__action-button--secondary:hover {
+  border-color: var(--input-focus-border);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.queue-display__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.queue-display__progress-bar {
+  width: 100%;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+}
+
+.queue-display__progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+}
+
+.queue-display__progress-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.queue-display__item-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.queue-display__move-button {
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.queue-display__move-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.queue-display__more button {
+  border: none;
+  background: none;
+  color: var(--downloads-link);
+  font-weight: 600;
+  cursor: pointer;
+}

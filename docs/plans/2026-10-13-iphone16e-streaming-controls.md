@@ -33,8 +33,8 @@ Physical readiness and signing may block execution; verify these before builds.
 Physical-device execution is pending. No app error established yet.
 
 - Initial readiness passed on the actual iPhone 16e, CoreDevice ID
-  `44B2CFBD-2193-5086-8E8D-BF7A2876C321`, hardware UDID
-  `00008140-001128A022BA801C`, Developer Mode enabled.
+  `<COREDEVICE_ID>`, hardware UDID
+  `<DEVICE_UDID>`, Developer Mode enabled.
 - First execution was rejected before device preparation by the host load guard.
   The SE Simulator was terminated and shut down; host load subsequently dropped.
 - Second execution found the phone automatically locked (`passcodeRequired=true`)

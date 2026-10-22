@@ -1,53 +1,40 @@
 # Delivery and migration guardrails
 
-Objective
+Rust migration checks establish packaging and client wiring at their affected
+runtime. Select the relevant checks under [execution policy](agents/execution-policy.md):
+Apple builds run on Mac, Flutter/Android builds belong on Arch, and Python/Ruff
+execute in CI. Use guarded compiler tasks and preserve compatible caches.
 
-Keep Rust migration checks reproducible and make destructive branch cleanup
-reviewable before it changes the remote repository.
+## Migration verification
 
-Scope
+Run the commands relevant to the changed surface from the repository root with
+`mise` installed and configured:
 
-- Browser Rust/WASM generation and artifact checks.
-- Rust production packaging checks.
-- Remote branch cleanup preview and explicit deletion.
+- `mise run web:wasm-build` generates browser Rust/WASM artifacts.
+- `mise run migration:build-and-gate` builds CLI/server release artifacts and
+  checks migration boundaries. `migration:gate` alone requires existing artifacts.
+- `mise run test:web` exercises the Web client.
 
-Prerequisites
+Inspect the selected task before execution. A focused change does not require
+all three commands. Confirm generated artifacts are non-empty, the embedded
+browser client references its Rust/WASM adapter, and the relevant gate reports
+`RESULT PASS`. These checks establish packaging and boundary wiring; actual
+conversion and playback require evidence at the affected product surface.
 
-- Run commands from the repository root.
-- `mise` must be installed and configured.
-- SSH or another authenticated Git remote is required only for `--apply` cleanup.
+## Separately scoped branch maintenance
 
-Procedure
+Branch cleanup requires its own authorization and reviewed deletion set. An
+SSH or other authenticated remote is needed only for applying remote changes.
 
-1. Run `mise run web:wasm-build`.
-2. Run `mise run migration:build-and-gate`.
-3. Run `mise run test:web`.
-4. Preview branch cleanup:
-   `bash scripts/cleanup_remote_branches.sh --remote origin`.
-5. Review every `DELETE` line.
-6. Apply only the reviewed set:
+1. Preview with `bash scripts/cleanup_remote_branches.sh --remote origin`.
+2. Inspect every `DELETE` line and preserve unique work and evidence.
+3. After authorization for that exact set, apply with
    `bash scripts/cleanup_remote_branches.sh --remote origin --apply`.
-7. Keep Dependabot branches unless their deletion is separately authorized:
-   `--delete-dependabot` is required.
+4. Preserve Dependabot branches unless deletion is separately authorized;
+   `--delete-dependabot` is required to include them.
+5. Verify `git ls-remote --heads origin` against the reviewed final set.
 
-Verification
-
-- WASM artifacts exist and are non-empty.
-- The embedded web converter references the generated Rust/WASM adapter.
-- CLI and server release artifacts exist.
-- `migration:gate` returns `RESULT PASS`.
-- `git ls-remote --heads origin` matches the reviewed branch set.
-
-Rollback
-
-Remote branch deletion is not reversible by this script. Recover a deleted
-branch from a local ref, an archive tag, or a known commit and push it again.
-Create an archive tag before cleanup when branch history may still matter.
-
-Known failures
-
-- `migration:gate` requires release artifacts; use `migration:build-and-gate`
-  in a clean checkout.
-- The gate proves packaging and boundary wiring, not complete audio conversion
-  on every product surface. Surface-level runtime smoke tests remain required
-  until the Rust migration is functionally complete.
+Remote deletion is not reversible by this script. Retain a local ref, an archive
+tag or the exact commit before removing history that may still matter. Recover
+by pushing the preserved ref or commit. Keep this maintenance separate from
+migration acceptance.

@@ -1,9 +1,5 @@
 import Foundation
 
-#if os(iOS)
-import UIKit
-#endif
-
 #if canImport(Network)
 import Network
 #endif
@@ -14,50 +10,6 @@ import Network
 @MainActor
 final class LocalAudioConversionScheduler {
     nonisolated static let didChangeNotification = Notification.Name("LocalAudioConversionScheduler.didChange")
-
-    /// A codable description of work that may be resumed after iOS ends the
-    /// process. The actual conversion closure is deliberately not persisted.
-    struct ResumeRequest: Codable, Equatable, Sendable {
-        var bookID: String
-        var coalescingKey: String
-        var requiresWiFi: Bool
-        var priorityChapterIndices: [Int]
-        var requestedChapterIndices: [Int]?
-        var engine: String
-        var voice: String
-        var language: String?
-        var clearCache: Bool
-        var forceReprocess: Bool
-        var maxPerformance: Bool
-    }
-
-    enum Connectivity: Equatable {
-        case unavailable
-        case wifi
-        case cellular
-
-        var isAllowedForWiFiOnlyWork: Bool {
-            self == .wifi
-        }
-    }
-
-    enum WorkState: Equatable {
-        case queued
-        case waitingForWiFi
-        case waitingForResources
-        case generating
-        case finished
-        case failed(String)
-    }
-
-    /// Conversion yields only at a chapter boundary. Playback and reader work
-    /// are never cancelled, and the persisted request retains its priority.
-    enum ResourceConstraint: Equatable {
-        case stable
-        case lowPower
-        case memoryPressure
-        case thermalPressure
-    }
 
     typealias Operation = @MainActor () async throws -> JobSnapshot
     private typealias Continuation = CheckedContinuation<JobSnapshot, Error>
@@ -72,43 +24,19 @@ final class LocalAudioConversionScheduler {
         var continuations: [Continuation]
     }
 
-    private struct PersistedQueue: Codable {
-        let schemaVersion: Int
-        let requests: [ResumeRequest]
-    }
-
     static let shared = LocalAudioConversionScheduler(persistence: .standard)
-
-    private static let persistenceKey = "localAudioConversionScheduler.queue.v1"
-    private static let persistenceSchemaVersion = 1
 
     private var connectivity: Connectivity
     private var queued: [Work] = []
     private var active: Work?
     private var states: [String: WorkState] = [:]
     private var chapterPriorities: [String: [Int]] = [:]
-    private struct PendingNavigation {
-        let requestID: UUID
-        let chapterIndex: Int
-    }
     // Navigation belongs to the current playback session, not the durable
     // conversion queue. Keep it separate from persisted download priorities.
     private var pendingNavigations: [String: PendingNavigation] = [:]
-    private var resourceConstraint: ResourceConstraint = .stable
-    /// Deterministic injection for tests and support diagnostics. Device
-    /// notifications must not race this explicit boundary state back to
-    /// nominal before the conversion loop has observed the yield.
-    private var injectedResourceConstraint: ResourceConstraint?
-    private var resourceContinuations: [CheckedContinuation<Void, Never>] = []
-    private var resourceObservers: [NSObjectProtocol] = []
-    private var memoryPressureRecoveryTask: Task<Void, Never>?
-    private var memoryPressureActive = false
+    private let resources = ConversionResourcePolicy()
     private var pendingResumption: [ResumeRequest]
-    private let persistence: UserDefaults?
-
-    #if os(macOS)
-    private var memoryPressureSource: DispatchSourceMemoryPressure?
-    #endif
+    private let queueStore: LocalConversionQueueStore
 
     #if canImport(Network)
     private var pathMonitor: NWPathMonitor? = nil
@@ -120,8 +48,9 @@ final class LocalAudioConversionScheduler {
         persistence: UserDefaults? = nil
     ) {
         connectivity = initialConnectivity
-        self.persistence = persistence
-        pendingResumption = Self.loadPersistedRequests(from: persistence)
+        let queueStore = LocalConversionQueueStore(persistence: persistence)
+        self.queueStore = queueStore
+        pendingResumption = queueStore.load()
         for request in pendingResumption {
             chapterPriorities[request.bookID] = request.priorityChapterIndices
             let isAllowed = request.requiresWiFi
@@ -131,49 +60,12 @@ final class LocalAudioConversionScheduler {
                 ? .queued
                 : .waitingForWiFi
         }
-        resourceObservers = [
-            NotificationCenter.default.addObserver(
-                forName: .NSProcessInfoPowerStateDidChange,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.refreshDeviceResourceConstraint() }
-            },
-            NotificationCenter.default.addObserver(
-                forName: ProcessInfo.thermalStateDidChangeNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.refreshDeviceResourceConstraint() }
-            }
-        ]
-        #if os(iOS)
-        resourceObservers.append(
-            NotificationCenter.default.addObserver(
-                forName: UIApplication.didReceiveMemoryWarningNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.reportMemoryPressure() }
-            }
-        )
-        #elseif os(macOS)
-        let source = DispatchSource.makeMemoryPressureSource(
-            eventMask: [.warning, .critical],
-            queue: .main
-        )
-        source.setEventHandler { [weak self] in
-            Task { @MainActor in self?.reportMemoryPressure() }
-        }
-        source.resume()
-        memoryPressureSource = source
-        #endif
         #if canImport(Network)
         if observesNetwork {
             let monitor = NWPathMonitor()
             pathMonitor = monitor
             monitor.pathUpdateHandler = { [weak self] path in
-                let connectivity = Self.connectivity(for: path)
+                let connectivity = Connectivity.from(path: path)
                 Task { @MainActor [weak self] in
                     self?.setConnectivity(connectivity)
                 }
@@ -185,11 +77,6 @@ final class LocalAudioConversionScheduler {
     }
 
     deinit {
-        resourceObservers.forEach(NotificationCenter.default.removeObserver)
-        memoryPressureRecoveryTask?.cancel()
-        #if os(macOS)
-        memoryPressureSource?.cancel()
-        #endif
         #if canImport(Network)
         pathMonitor?.cancel()
         #endif
@@ -347,67 +234,24 @@ final class LocalAudioConversionScheduler {
     }
 
     func setResourceConstraint(_ constraint: ResourceConstraint) {
-        injectedResourceConstraint = constraint == .stable ? nil : constraint
-        applyResourceConstraint(constraint)
+        resources.setResourceConstraint(constraint)
     }
 
-    private func applyResourceConstraint(_ constraint: ResourceConstraint) {
-        if constraint != .memoryPressure {
-            memoryPressureActive = false
-        }
-        resourceConstraint = constraint
-        guard constraint == .stable else { return }
-        let continuations = resourceContinuations
-        resourceContinuations.removeAll()
-        continuations.forEach { $0.resume() }
-    }
-
-    /// Memory warnings are transient. Yield at the next chapter boundary, then
-    /// resume after a short quiet window unless low-power or thermal pressure
-    /// still applies. No audio write or pending navigation is cancelled.
     func reportMemoryPressure(recoveryDelay: TimeInterval = 5) {
-        memoryPressureActive = true
-        applyResourceConstraint(.memoryPressure)
-        memoryPressureRecoveryTask?.cancel()
-        memoryPressureRecoveryTask = Task { @MainActor [weak self] in
-            let nanoseconds = UInt64(max(0, recoveryDelay) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanoseconds)
-            guard !Task.isCancelled else { return }
-            self?.memoryPressureActive = false
-            self?.refreshDeviceResourceConstraint()
-        }
+        resources.reportMemoryPressure(recoveryDelay: recoveryDelay)
     }
 
-    /// Samples resource state immediately before a new chapter starts. Memory
-    /// pressure is reported separately through `setResourceConstraint`, while
-    /// low-power and thermal state are available directly from Foundation.
     func refreshDeviceResourceConstraint() {
-        guard injectedResourceConstraint == nil else { return }
-        if memoryPressureActive { return }
-        let process = ProcessInfo.processInfo
-        if process.isLowPowerModeEnabled {
-            applyResourceConstraint(.lowPower)
-            return
-        }
-        switch process.thermalState {
-        case .serious, .critical:
-            applyResourceConstraint(.thermalPressure)
-        case .nominal, .fair:
-            applyResourceConstraint(.stable)
-        @unknown default:
-            applyResourceConstraint(.stable)
-        }
+        resources.refreshDeviceResourceConstraint()
     }
 
     /// Called between chapters so resource pressure cannot interrupt an audio
     /// write or discard the listener's requested navigation target.
     func waitForResourceStability(bookID: String) async {
-        while resourceConstraint != .stable {
+        while resources.constraint != .stable {
             guard let active, active.bookID == bookID else { return }
             updateState(.waitingForResources, for: bookID)
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                resourceContinuations.append(continuation)
-            }
+            await resources.waitForChange()
         }
         guard let active, active.bookID == bookID else { return }
         updateState(.generating, for: bookID)
@@ -533,30 +377,10 @@ final class LocalAudioConversionScheduler {
     }
 
     private func persistQueue() {
-        guard let persistence else { return }
         let requests = [active?.resumeRequest].compactMap { $0 }
             + queued.compactMap(\.resumeRequest)
             + pendingResumption
-        guard requests.isEmpty == false else {
-            persistence.removeObject(forKey: Self.persistenceKey)
-            return
-        }
-        let payload = PersistedQueue(
-            schemaVersion: Self.persistenceSchemaVersion,
-            requests: requests
-        )
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        persistence.set(data, forKey: Self.persistenceKey)
-    }
-
-    private static func loadPersistedRequests(from persistence: UserDefaults?) -> [ResumeRequest] {
-        guard let persistence,
-              let data = persistence.data(forKey: persistenceKey),
-              let payload = try? JSONDecoder().decode(PersistedQueue.self, from: data),
-              payload.schemaVersion == persistenceSchemaVersion else {
-            return []
-        }
-        return payload.requests
+        queueStore.save(requests)
     }
 
     private func updateState(_ state: WorkState, for bookID: String) {
@@ -568,14 +392,5 @@ final class LocalAudioConversionScheduler {
         )
     }
 
-    #if canImport(Network)
-    nonisolated private static func connectivity(for path: NWPath) -> Connectivity {
-        guard path.status == .satisfied else { return .unavailable }
-        #if targetEnvironment(simulator)
-        return .wifi
-        #else
-        return path.usesInterfaceType(.cellular) ? .cellular : .wifi
-        #endif
-    }
-    #endif
+
 }

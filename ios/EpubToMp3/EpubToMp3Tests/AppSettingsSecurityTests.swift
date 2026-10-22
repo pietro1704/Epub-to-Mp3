@@ -1,17 +1,20 @@
 import XCTest
 @testable import EpubToMp3
 
-/// Security regression tests for `AppSettings.resolvedBaseURL`.
-/// Verifies that the scheme allowlist rejects any non-http/https URL
-/// so a malicious deep-link or QR code cannot redirect the backend
-/// client to a `javascript:`, `file:`, or custom-scheme endpoint.
+/// Legacy endpoint values remain migration data. Native Apple runtime routing
+/// always uses the embedded converter, including for valid HTTP endpoints.
 final class AppSettingsSecurityTests: XCTestCase {
 
     // MARK: - Helpers
 
     private func makeSettings(url: String) -> AppSettings {
-        let s = AppSettings(defaults: UserDefaults(suiteName: "test-\(UUID().uuidString)")!)
+        let suite = "test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let s = AppSettings(defaults: defaults)
         s.backendURL = url
+        XCTAssertEqual(s.backendURL, url)
+        XCTAssertEqual(defaults.string(forKey: "backendURL"), url)
         return s
     }
 
@@ -58,32 +61,45 @@ final class AppSettingsSecurityTests: XCTestCase {
         XCTAssertNil(s.resolvedBaseURL)
     }
 
-    // MARK: - Valid HTTP/HTTPS URLs must pass through
+    // MARK: - Valid HTTP/HTTPS migration values remain inert
 
-    func test_httpLocalhost_isAccepted() {
+    func test_httpLocalhost_doesNotEnableRemoteRouting() {
         let s = makeSettings(url: "http://localhost:8000")
         let url = s.resolvedBaseURL
-        XCTAssertNotNil(url)
-        XCTAssertEqual(url?.scheme, "http")
-        XCTAssertEqual(url?.host, "localhost")
+        XCTAssertNil(url)
     }
 
-    func test_httpsRemote_isAccepted() {
+    func test_httpsRemote_doesNotEnableRemoteRouting() {
         let s = makeSettings(url: "https://api.example.com")
         let url = s.resolvedBaseURL
-        XCTAssertNotNil(url)
-        XCTAssertEqual(url?.scheme, "https")
+        XCTAssertNil(url)
     }
 
-    func test_trailingSlash_isStripped() {
+    func test_trailingSlash_doesNotEnableRemoteRouting() {
         let s = makeSettings(url: "http://localhost:8000/")
         let url = s.resolvedBaseURL
-        XCTAssertNotNil(url)
-        XCTAssertFalse(url!.absoluteString.hasSuffix("/"))
+        XCTAssertNil(url)
+        XCTAssertEqual(s.backendURL, "http://localhost:8000/")
     }
 
-    func test_httpWithPath_isAccepted() {
+    func test_httpWithPath_doesNotEnableRemoteRouting() {
         let s = makeSettings(url: "http://192.168.1.10:8000/api")
-        XCTAssertNotNil(s.resolvedBaseURL)
+        XCTAssertNil(s.resolvedBaseURL)
+    }
+
+    func testPersistedRemotePreferencesCannotRestoreRemoteRouting() throws {
+        let suite = "test-migration-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("https://legacy.example.com/api", forKey: "backendURL")
+        defaults.set(false, forKey: "useEmbeddedRuntime")
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertTrue(settings.useEmbeddedRuntime)
+        XCTAssertEqual(settings.backendURL, "")
+        XCTAssertNil(settings.resolvedBaseURL)
+        XCTAssertFalse(settings.remoteBackendControlsEnabled)
+        XCTAssertTrue(settings.canReadOffline)
+        XCTAssertEqual(defaults.string(forKey: "backendURL"), "",
+                       "The initializer clears the retired endpoint instead of restoring a transport.")
     }
 }

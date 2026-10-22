@@ -4,11 +4,11 @@ import XCTest
 
 final class DownloadManagerBackgroundTests: XCTestCase {
     func testBackgroundConfigurationUsesStableIdentifierAndDiscretionaryOff() {
-        let configuration = DownloadManager.backgroundSessionConfiguration()
+        let configuration = AudiobookDownloads.backgroundSessionConfiguration()
 
         XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
 #if os(iOS)
-        XCTAssertEqual(configuration.identifier, DownloadManager.backgroundSessionIdentifier)
+        XCTAssertEqual(configuration.identifier, AudiobookDownloads.backgroundSessionIdentifier)
         XCTAssertFalse(configuration.isDiscretionary)
         XCTAssertTrue(configuration.sessionSendsLaunchEvents)
 #else
@@ -28,7 +28,7 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         let partial = root.appendingPathComponent("chapter.mp3.partial")
         try Data("partial".utf8).write(to: partial)
 
-        XCTAssertThrowsError(try DownloadManager.commitDownloadedFile(
+        XCTAssertThrowsError(try AudiobookChapterTransfer.commitDownloadedFile(
             from: partial,
             to: destination,
             expectedBytes: 100
@@ -47,7 +47,7 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         let staged = root.appendingPathComponent("chapter.mp3.partial")
         try Data(repeating: 0x01, count: 8).write(to: staged)
 
-        let bytes = try DownloadManager.commitDownloadedFile(
+        let bytes = try AudiobookChapterTransfer.commitDownloadedFile(
             from: staged,
             to: destination,
             expectedBytes: 8
@@ -60,7 +60,7 @@ final class DownloadManagerBackgroundTests: XCTestCase {
 
     func testLocalFileURLsAreValidDownloadSources() {
         let source = URL(fileURLWithPath: "/tmp/chapter.mp3")
-        XCTAssertEqual(DownloadManager.resolve(path: source.absoluteString, base: nil), source)
+        XCTAssertEqual(AudiobookChapterTransfer.resolve(path: source.absoluteString, base: nil), source)
     }
 
     func testNativeAbsolutePathsPreserveLiteralFilenameCharacters() throws {
@@ -72,38 +72,38 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         let bytes = Data([0xFF, 0xFB, 0x90, 0x00])
         try bytes.write(to: source)
 
-        let resolved = try XCTUnwrap(DownloadManager.resolve(path: source.path, base: nil))
+        let resolved = try XCTUnwrap(AudiobookChapterTransfer.resolve(path: source.path, base: nil))
 
         XCTAssertTrue(resolved.isFileURL)
         XCTAssertEqual(resolved.path, source.path)
         XCTAssertEqual(try Data(contentsOf: resolved), bytes)
         let fileBase = root.appendingPathComponent("outputs", isDirectory: true)
-        let resolvedAgainstLocalBase = try XCTUnwrap(DownloadManager.resolve(path: source.path, base: fileBase))
+        let resolvedAgainstLocalBase = try XCTUnwrap(AudiobookChapterTransfer.resolve(path: source.path, base: fileBase))
         XCTAssertEqual(resolvedAgainstLocalBase, source)
         XCTAssertEqual(try Data(contentsOf: resolvedAgainstLocalBase), bytes)
     }
 
     func testRemotePathsContinueToResolveAgainstTheirServerBase() throws {
         let base = try XCTUnwrap(URL(string: "https://example.com/jobs/"))
-        XCTAssertEqual(DownloadManager.resolve(path: "chapter.mp3", base: base)?.absoluteString,
+        XCTAssertEqual(AudiobookChapterTransfer.resolve(path: "chapter.mp3", base: base)?.absoluteString,
                        "https://example.com/jobs/chapter.mp3")
-        XCTAssertEqual(DownloadManager.resolve(path: "/audio/chapter.mp3", base: base)?.absoluteString,
+        XCTAssertEqual(AudiobookChapterTransfer.resolve(path: "/audio/chapter.mp3", base: base)?.absoluteString,
                        "https://example.com/audio/chapter.mp3")
-        XCTAssertEqual(DownloadManager.resolve(path: "https://other.example/chapter.mp3", base: nil)?.absoluteString,
+        XCTAssertEqual(AudiobookChapterTransfer.resolve(path: "https://other.example/chapter.mp3", base: nil)?.absoluteString,
                        "https://other.example/chapter.mp3")
-        XCTAssertNil(DownloadManager.resolve(path: "chapter.mp3", base: nil))
+        XCTAssertNil(AudiobookChapterTransfer.resolve(path: "chapter.mp3", base: nil))
     }
 
     func testResumeRequestUsesInclusiveByteRange() {
         let url = URL(string: "https://example.com/chapter.mp3")!
-        let request = DownloadManager.request(url: url, resumingAt: 128)
+        let request = AudiobookChapterTransfer.request(url: url, resumingAt: 128)
 
         XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=128-")
     }
 
     func testResumeRequestOmitsRangeForFreshDownload() {
         let url = URL(string: "https://example.com/chapter.mp3")!
-        let request = DownloadManager.request(url: url, resumingAt: 0)
+        let request = AudiobookChapterTransfer.request(url: url, resumingAt: 0)
 
         XCTAssertNil(request.value(forHTTPHeaderField: "Range"))
     }
@@ -116,7 +116,7 @@ final class DownloadManagerBackgroundTests: XCTestCase {
             headerFields: ["Content-Range": "bytes 128-255/256"]
         )!
 
-        XCTAssertEqual(DownloadManager.contentRangeTotal(from: response), 256)
+        XCTAssertEqual(AudiobookChapterTransfer.contentRangeTotal(from: response), 256)
     }
 
     func testWildcardContentRangeDoesNotValidateAResumedObject() {
@@ -127,7 +127,7 @@ final class DownloadManagerBackgroundTests: XCTestCase {
             headerFields: ["Content-Range": "bytes 128-255/*"]
         )!
 
-        XCTAssertNil(DownloadManager.contentRangeTotal(from: response))
+        XCTAssertNil(AudiobookChapterTransfer.contentRangeTotal(from: response))
     }
 
     func testLocalFixtureDownloadsAllChaptersAndRoutesPlaybackOffline() async throws {
@@ -136,7 +136,7 @@ final class DownloadManagerBackgroundTests: XCTestCase {
             .appendingPathComponent("download-source-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
         defer {
-            DownloadManager.deleteAudiobook(jobId: jobId)
+            AudiobookDownloadStorage.deleteAudiobook(jobId: jobId)
             try? FileManager.default.removeItem(at: sourceRoot)
         }
 
@@ -157,7 +157,7 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         }
         """
         let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data(snapshotJSON.utf8))
-        let manager = DownloadManager()
+        let manager = AudiobookDownloads()
         let progress = await manager.watchProgress(jobId: jobId)
 
         await manager.enqueueAll(snapshot: snapshot, baseURL: nil)
@@ -172,18 +172,18 @@ final class DownloadManagerBackgroundTests: XCTestCase {
 
         XCTAssertEqual(terminalProgress?.state, .completed)
         XCTAssertEqual(terminalProgress?.completedChapters, 2)
-        XCTAssertEqual(DownloadManager.locallyDownloadedIndices(for: jobId), [0, 4])
-        XCTAssertTrue(DownloadManager.isManifestComplete(
-            DownloadManager.loadManifest(for: jobId)!,
+        XCTAssertEqual(AudiobookDownloadStorage.locallyDownloadedIndices(for: jobId), [0, 4])
+        XCTAssertTrue(AudiobookDownloadStorage.isManifestComplete(
+            AudiobookDownloadStorage.loadManifest(for: jobId)!,
             expectedChapterIndices: [0, 4]
         ))
 
-        let restored = try XCTUnwrap(DownloadManager.localPlaybackSnapshot(jobId: jobId))
+        let restored = try XCTUnwrap(AudiobookDownloadStorage.localPlaybackSnapshot(jobId: jobId))
         XCTAssertEqual(restored.state, "finished")
         XCTAssertEqual(restored.playableChapters.map(\.index), [0, 4])
         XCTAssertTrue(restored.playableChapters.allSatisfy { $0.downloadUrl?.hasPrefix("file:") == true })
 
-        let localURL = try XCTUnwrap(DownloadManager.localAudioURL(jobId: jobId, chapterIndex: 4))
+        let localURL = try XCTUnwrap(AudiobookDownloadStorage.localAudioURL(jobId: jobId, chapterIndex: 4))
         let route = PlaybackRouter.route(
             chapter: snapshot.playableChapters[1],
             baseURL: nil,

@@ -76,24 +76,24 @@ final class ResumeStoreTests: XCTestCase {
 
 final class DownloadManagerHelperTests: XCTestCase {
     func testSanitizedFileNameStripsInvalidChars() {
-        let cleaned = DownloadManager.sanitizedFileName("Chapter 1: Hello/World?")
+        let cleaned = AudiobookChapterTransfer.sanitizedFileName("Chapter 1: Hello/World?")
         XCTAssertFalse(cleaned.contains("/"))
         XCTAssertFalse(cleaned.contains("?"))
         XCTAssertFalse(cleaned.contains(":"))
     }
 
     func testSanitizedFileNameFallsBackToChapterOnEmpty() {
-        XCTAssertEqual(DownloadManager.sanitizedFileName("   "), "chapter")
+        XCTAssertEqual(AudiobookChapterTransfer.sanitizedFileName("   "), "chapter")
     }
 
     func testResolveAbsoluteURL() {
-        let url = DownloadManager.resolve(path: "https://x.example/a.mp3", base: nil)
+        let url = AudiobookChapterTransfer.resolve(path: "https://x.example/a.mp3", base: nil)
         XCTAssertEqual(url?.absoluteString, "https://x.example/a.mp3")
     }
 
     func testResolveRelativeAgainstBase() {
         let base = URL(string: "http://localhost:8000")!
-        let url = DownloadManager.resolve(path: "/api/outputs/j/x.mp3", base: base)
+        let url = AudiobookChapterTransfer.resolve(path: "/api/outputs/j/x.mp3", base: base)
         XCTAssertEqual(url?.absoluteString, "http://localhost:8000/api/outputs/j/x.mp3")
     }
 
@@ -121,19 +121,19 @@ final class DownloadManagerHelperTests: XCTestCase {
             lastActivityAt: nil
         )
 
-        let selected = DownloadManager.selectedChapters(snapshot: snapshot, epubZeroBasedIndices: [2])
+        let selected = AudiobookDownloads.selectedChapters(snapshot: snapshot, epubZeroBasedIndices: [2])
         XCTAssertEqual(selected.map(\.index), [2],
                        "Single-chapter download selection must key off EPUB zero-based indices, not playable-list positions.")
     }
 
     func testDeleteAudiobookRemovesBookFolder() throws {
         let jobId = "delete-test-\(UUID().uuidString)"
-        let folder = DownloadManager.audiobookFolder(for: jobId)
+        let folder = AudiobookDownloadStorage.audiobookFolder(for: jobId)
         let file = folder.appendingPathComponent("chapter_1.mp3")
         try Data([0x01]).write(to: file)
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
 
-        DownloadManager.deleteAudiobook(jobId: jobId)
+        AudiobookDownloadStorage.deleteAudiobook(jobId: jobId)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.deletingLastPathComponent().path))
     }
@@ -153,8 +153,8 @@ final class DownloadManagerHelperTests: XCTestCase {
             ], totalBytes: 32, completedAt: nil
         )
 
-        let merged = DownloadManager.mergeManifests(old, incoming)
-        let repeated = DownloadManager.mergeManifests(merged, incoming)
+        let merged = AudiobookDownloadStorage.mergeManifests(old, incoming)
+        let repeated = AudiobookDownloadStorage.mergeManifests(merged, incoming)
         XCTAssertEqual(merged.chapters.map(\.index), [0, 1, 2])
         XCTAssertEqual(merged.chapters.first(where: { $0.index == 2 })?.mp3FileName, "new.mp3")
         XCTAssertEqual(merged.totalBytes, 42)
@@ -163,14 +163,14 @@ final class DownloadManagerHelperTests: XCTestCase {
 
     func testManifestIsCompleteRequiresEveryExpectedChapterAndExistingFiles() throws {
         let jobId = "complete-\(UUID().uuidString)"
-        defer { DownloadManager.deleteAudiobook(jobId: jobId) }
-        let folder = DownloadManager.audiobookFolder(for: jobId)
+        defer { AudiobookDownloadStorage.deleteAudiobook(jobId: jobId) }
+        let folder = AudiobookDownloadStorage.audiobookFolder(for: jobId)
         let entries = [0, 1].map {
             AudiobookManifest.ChapterEntry(index: $0, title: "ch\($0)", mp3FileName: "ch\($0).mp3", mp3Bytes: 128, downloadedAt: Date())
         }
         for entry in entries { try Data(repeating: 0xFF, count: 128).write(to: folder.appendingPathComponent(entry.mp3FileName)) }
         let manifest = AudiobookManifest(jobId: jobId, bookTitle: "Book", chapters: entries, totalBytes: 256, completedAt: Date())
-        XCTAssertTrue(DownloadManager.isManifestComplete(manifest, expectedChapterIndices: [0, 1]))
-        XCTAssertFalse(DownloadManager.isManifestComplete(manifest, expectedChapterIndices: [0, 1, 2]))
+        XCTAssertTrue(AudiobookDownloadStorage.isManifestComplete(manifest, expectedChapterIndices: [0, 1]))
+        XCTAssertFalse(AudiobookDownloadStorage.isManifestComplete(manifest, expectedChapterIndices: [0, 1, 2]))
     }
 }

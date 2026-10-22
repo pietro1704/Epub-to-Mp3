@@ -319,7 +319,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
             do {
                 try await RustConversionOutputStore.shared.removeAudio(bookID: id, legacyJobID: jobID) {
                     try await LocalAudioArtifactStore.shared.removeAllAudio(bookID: id)
-                    if let jobID { await DownloadManager.shared.clearDownloadedBook(jobId: jobID) }
+                    if let jobID { await AudiobookDownloads.shared.clearDownloadedBook(jobId: jobID) }
                 }
                 bookmarkStore.removeAll(for: id)
                 LocalFulltextCache.evict(bookId: id)

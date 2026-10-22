@@ -231,3 +231,9 @@ target/
 /flutter_app/android/app/src/main/assets/espeak-ng-data/
 /flutter_app/android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so
 /flutter_app/android/app/src/main/jniLibs/arm64-v8a/libc++_shared.so
+
+# Private session continuity; prior published records remain in Git history.
+/.scratch/
+/.hermes/plans/
+/TODO_APP.md
+/handoff.md

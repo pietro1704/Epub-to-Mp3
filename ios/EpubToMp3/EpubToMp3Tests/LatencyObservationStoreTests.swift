@@ -289,8 +289,8 @@ final class LatencyObservationStoreTests: XCTestCase {
     }
 
     func testAudiblePlaybackRequiresRenderingRatherThanQueueReadiness() {
-        XCTAssertFalse(AudioPlayer.hasAudibleOutput(timeControlStatus: .paused, renderedSeconds: 3))
-        XCTAssertFalse(AudioPlayer.hasAudibleOutput(timeControlStatus: .playing, renderedSeconds: 0))
-        XCTAssertTrue(AudioPlayer.hasAudibleOutput(timeControlStatus: .playing, renderedSeconds: 0.01))
+        XCTAssertFalse(PlaybackJourneyRecorder.hasAudibleOutput(timeControlStatus: .paused, renderedSeconds: 3))
+        XCTAssertFalse(PlaybackJourneyRecorder.hasAudibleOutput(timeControlStatus: .playing, renderedSeconds: 0))
+        XCTAssertTrue(PlaybackJourneyRecorder.hasAudibleOutput(timeControlStatus: .playing, renderedSeconds: 0.01))
     }
 }

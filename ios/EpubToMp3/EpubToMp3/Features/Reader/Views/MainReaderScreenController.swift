@@ -14,36 +14,38 @@ final class MainReaderScreenController: UIViewController {
     private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
     private let readerControllerFactory: (@MainActor (BookEntity, Bool) -> BookOpenScreenController)?
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
-    private var listeningJobID: String?
-    private var listeningBookID: String?
-    private var listeningPlaybackControl: ConverterPlaybackControl?
-    private var listeningChapters: [JobSnapshot.Chapter] = []
-    private var hasDeliveredListeningChapter = false
+    private lazy var listeningSession: ReaderListeningSession = ReaderListeningSession(
+        player: player, playerPresentation: playerPresentation,
+        conversionExecutor: conversionExecutor,
+        currentBookID: { [weak self] in self?.currentBook?.id },
+        openBook: { [weak self] id in
+            guard let self else { throw CancellationError() }
+            return try await self.library.openBookFileAsync(id: id)
+        },
+        recordConversion: { [weak self] jobID, bookID in
+            self?.library.recordConversion(jobId: jobID, for: bookID)
+        },
+        reportFailure: { [weak self] error in
+            guard let self else { return }
+            ReaderListeningAlerts.present(error, from: self, library: { [weak self] in self?.library })
+        }
+    )
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
     var onReaderLoadingChanged: ((Bool) -> Void)?
 
+    private let emptyPresentation = ReaderEmptyPresentation()
+    private let readerNavigation = ReaderNavigationPresentation()
     private var cancellables: Set<AnyCancellable> = []
     private var appearanceCancellable: AnyCancellable?
     private var readerController: BookOpenScreenController?
     private var readerBookID: String?
     private var openingReaderBookID: String?
     private var needsRenderAfterReaderOpen = false
-    private var readerNavigationHeight: NSLayoutConstraint!
     private var readerTopToNavigation: NSLayoutConstraint!
     private var readerTopToRoot: NSLayoutConstraint!
     /// Loading is a reader-content fact, not duplicated presentation state.
     var isLoadingBookContent: Bool { readerController?.isLoadingBookContent ?? false }
-
-    private var emptyStateScrollView: UIScrollView?
-    private let emptyStateStack = UIStackView()
-    private let emptyTitleLabel = UILabel()
-    private let emptyDescriptionLabel = UILabel()
-    private let browseButton = UIButton(type: .system)
-    private let listenButton = UIButton(type: .system)
-    private let readerNavigationBackground = AdaptiveMaterialView()
-    private let readerNavigationBar = UINavigationBar()
-    private let readerNavigationItem = UINavigationItem()
 
     private var currentBook: BookEntity? {
         guard let id = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
@@ -87,9 +89,9 @@ final class MainReaderScreenController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        configureReaderNavigationBar()
-        configureEmptyState()
-        configureListenButton()
+        readerNavigation.install(in: view, target: self, closeAction: #selector(closeReaderTapped))
+        emptyPresentation.install(in: view, target: self,
+                                  browseAction: #selector(browseLibraryTapped), listenAction: #selector(listenTapped))
         applyReaderColors()
         bindAppearance()
         bind()
@@ -98,15 +100,7 @@ final class MainReaderScreenController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        updateReaderNavigationHeightIfNeeded()
-    }
-
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
+        readerNavigation.updateHeight(in: view)
     }
 
     func update(
@@ -142,56 +136,13 @@ final class MainReaderScreenController: UIViewController {
         let colors = settings.readerColors
         view.backgroundColor = colors.background
         view.tintColor = colors.link
-        readerNavigationBar.tintColor = colors.link
-        emptyTitleLabel.textColor = colors.foreground
-        emptyDescriptionLabel.textColor = colors.foreground.withAlphaComponent(0.75)
+        readerNavigation.readerNavigationBar.tintColor = colors.link
+        emptyPresentation.applyColors(foreground: colors.foreground)
         // Keep the native transparent navigation appearance and system material.
     }
 
     private func bind() {
-        player.$snapshot
-            .sink { [weak self] snapshot in
-                guard let self, let snapshot, let jobID = self.listeningJobID,
-                      snapshot.jobId != jobID else { return }
-                self.cancelListeningSession()
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: RustConversionOutputStore.willRemoveAudio)
-            .sink { [weak self] notification in
-                let bookID = notification.userInfo?["bookID"] as? String
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    let playingBook = self.listeningBookID
-                        ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-                    guard bookID == nil || playingBook == bookID else { return }
-                    self.cancelListeningSession()
-                    self.player.stop()
-                    self.player.clearConversionState()
-                }
-            }
-            .store(in: &cancellables)
-        player.$pendingNavigation
-            .compactMap { $0 }
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] navigation in
-                guard let self, navigation.jobID == self.listeningJobID,
-                      let control = self.listeningPlaybackControl else { return }
-                control.updatePlaybackWindow(currentChapter: navigation.chapterIndex, chaptersAhead: 1)
-                _ = control.prioritize(chapterIndex: navigation.chapterIndex)
-            }
-            .store(in: &cancellables)
-        player.$activeStreamingChapterIndex
-            .compactMap { $0 }
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] chapterIndex in
-                guard let self, self.listeningJobID != nil,
-                      let control = self.listeningPlaybackControl else { return }
-                control.updatePlaybackWindow(currentChapter: chapterIndex, chaptersAhead: 1)
-                _ = control.prioritize(chapterIndex: chapterIndex)
-            }
-            .store(in: &cancellables)
+        listeningSession.observePlayback()
 
         library.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -207,99 +158,6 @@ final class MainReaderScreenController: UIViewController {
             .store(in: &cancellables)
     }
 
-    private func configureEmptyState() {
-        emptyStateStack.axis = .vertical
-        emptyStateStack.spacing = 20
-        emptyStateStack.alignment = .center
-        emptyStateStack.translatesAutoresizingMaskIntoConstraints = false
-
-        emptyTitleLabel.font = .preferredFont(forTextStyle: .title2)
-        emptyTitleLabel.adjustsFontForContentSizeCategory = true
-        emptyTitleLabel.numberOfLines = 0
-        emptyTitleLabel.textAlignment = .center
-        emptyTitleLabel.text = L10n.string("mainReader.pickBook")
-
-        emptyDescriptionLabel.font = .preferredFont(forTextStyle: .body)
-        emptyDescriptionLabel.adjustsFontForContentSizeCategory = true
-        emptyDescriptionLabel.textColor = .secondaryLabel
-        emptyDescriptionLabel.numberOfLines = 0
-        emptyDescriptionLabel.textAlignment = .center
-        emptyDescriptionLabel.text = L10n.string("mainReader.pickBookDescription")
-
-        var browseConfig = UIButton.Configuration.filled()
-        browseConfig.image = UIImage(systemName: "books.vertical")
-        browseConfig.imagePadding = 8
-        browseConfig.title = L10n.string("mainReader.browseLibrary")
-        browseButton.configuration = browseConfig
-        browseButton.addTarget(self, action: #selector(browseLibraryTapped), for: .touchUpInside)
-        browseButton.accessibilityIdentifier = "mainReader.browseLibrary"
-
-        [emptyTitleLabel, emptyDescriptionLabel, browseButton].forEach { emptyStateStack.addArrangedSubview($0) }
-        emptyStateStack.alignment = .fill
-        browseButton.titleLabel?.numberOfLines = 0
-        browseButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
-        emptyStateScrollView = IOSScrollableStack.install(emptyStateStack, in: view)
-
-    }
-
-    private func configureListenButton() {
-        // Playback is controlled exclusively from the persistent mini-player.
-        // A second "Listen" button here duplicated the control and pushed the
-        // reader content into an inconsistent layout while a book was loading.
-        listenButton.isHidden = true
-        listenButton.translatesAutoresizingMaskIntoConstraints = false
-        listenButton.accessibilityIdentifier = "mainReader.listen"
-        listenButton.addTarget(self, action: #selector(listenTapped), for: .touchUpInside)
-    }
-
-    private func configureReaderNavigationBar() {
-        readerNavigationBar.translatesAutoresizingMaskIntoConstraints = false
-        readerNavigationBackground.translatesAutoresizingMaskIntoConstraints = false
-        readerNavigationBar.accessibilityIdentifier = "reader.navigationBar"
-        readerNavigationBar.setContentHuggingPriority(.required, for: .vertical)
-        readerNavigationBar.setContentCompressionResistancePriority(.required, for: .vertical)
-        readerNavigationBar.isTranslucent = true
-        readerNavigationBar.prefersLargeTitles = false
-        readerNavigationBar.items = [readerNavigationItem]
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithTransparentBackground()
-        appearance.shadowColor = .clear
-        readerNavigationBar.standardAppearance = appearance
-        readerNavigationBar.scrollEdgeAppearance = appearance
-        readerNavigationBar.compactAppearance = appearance
-
-        let closeItem = UIBarButtonItem(
-            image: UIImage(systemName: "chevron.left"),
-            style: .plain,
-            target: self,
-            action: #selector(closeReaderTapped)
-        )
-        closeItem.accessibilityLabel = L10n.string("common.back")
-        closeItem.accessibilityIdentifier = "reader.close"
-        readerNavigationItem.leftBarButtonItem = closeItem
-
-        readerNavigationItem.rightBarButtonItem = nil
-
-        // A standalone UINavigationBar starts below the sensor area. Its
-        // material continues to the screen edge so the bar remains attached
-        // to the top while its controls still respect the safe area.
-        view.addSubview(readerNavigationBackground)
-        view.addSubview(readerNavigationBar)
-        NSLayoutConstraint.activate([
-            readerNavigationBackground.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            readerNavigationBackground.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            readerNavigationBackground.topAnchor.constraint(equalTo: view.topAnchor),
-            readerNavigationBackground.bottomAnchor.constraint(equalTo: readerNavigationBar.bottomAnchor),
-            readerNavigationBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            readerNavigationBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            readerNavigationBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-        ])
-        readerNavigationHeight = readerNavigationBar.heightAnchor.constraint(
-            equalToConstant: ReaderNavigationLayoutMetrics.initialBarHeight
-        )
-        readerNavigationHeight.isActive = true
-    }
-
     private func render() {
         if let book = currentBook {
             showBook(book)
@@ -312,34 +170,20 @@ final class MainReaderScreenController: UIViewController {
         // Hidden while `BookOpenScreenController` is still parsing so the
         // open screen only ever shows cover+spinner, never chrome layered
         // on top of a blank/loading book.
-        listenButton.isHidden = currentBook == nil || isLoadingBookContent
-    }
-
-    private func updateReaderNavigationHeightIfNeeded() {
-        guard view.bounds.width > 0 else { return }
-        let fittedHeight = readerNavigationBar.sizeThatFits(
-            CGSize(width: view.bounds.width, height: .greatestFiniteMagnitude)
-        ).height
-        guard fittedHeight > 0,
-              abs(readerNavigationHeight.constant - fittedHeight) > .ulpOfOne else {
-            return
-        }
-        readerNavigationHeight.constant = fittedHeight
+        emptyPresentation.listenButton.isHidden = currentBook == nil || isLoadingBookContent
     }
 
     private func showEmptyState() {
         removeReaderControllerIfNeeded()
-        emptyStateScrollView?.isHidden = false
-        emptyStateStack.isHidden = false
-        listenButton.isHidden = true
-        readerNavigationBar.isHidden = true
-        readerNavigationBackground.isHidden = true
+        emptyPresentation.isHidden = false
+        emptyPresentation.listenButton.isHidden = true
+        readerNavigation.readerNavigationBar.isHidden = true
+        readerNavigation.readerNavigationBackground.isHidden = true
     }
 
     private func showBook(_ book: BookEntity) {
-        emptyStateScrollView?.isHidden = true
-        emptyStateStack.isHidden = true
-        readerNavigationItem.title = book.resolvedTitle
+        emptyPresentation.isHidden = true
+        readerNavigation.readerNavigationItem.title = book.resolvedTitle
         if readerController != nil, readerBookID == book.id {
             // The existing reader already owns this book. Re-loading it on
             // every library notification causes `loadBook()` to publish a
@@ -366,10 +210,10 @@ final class MainReaderScreenController: UIViewController {
         // reader. Playback/title updates during pagination re-enter render()
         // but must not make the hidden mini player visible again.
         onReaderChromeVisibilityChanged?(false)
-        readerNavigationBar.isHidden = false
-        readerNavigationBar.alpha = 1
-        readerNavigationBackground.isHidden = false
-        readerNavigationBackground.alpha = 1
+        readerNavigation.readerNavigationBar.isHidden = false
+        readerNavigation.readerNavigationBar.alpha = 1
+        readerNavigation.readerNavigationBackground.isHidden = false
+        readerNavigation.readerNavigationBackground.alpha = 1
 
         removeReaderControllerIfNeeded()
 
@@ -385,7 +229,7 @@ final class MainReaderScreenController: UIViewController {
         )
         reader.onLoadStateChanged = { [weak self] isLoading in
             guard let self else { return }
-            self.listenButton.isHidden = self.currentBook == nil || isLoading
+            self.emptyPresentation.listenButton.isHidden = self.currentBook == nil || isLoading
             self.onReaderLoadingChanged?(isLoading)
         }
         reader.onChromeVisibilityRequested = { [weak self] isHidden in
@@ -396,8 +240,8 @@ final class MainReaderScreenController: UIViewController {
         reader.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(reader.view)
         readerTopToNavigation = reader.view.topAnchor.constraint(
-            equalTo: readerNavigationBar.bottomAnchor,
-            constant: ReaderNavigationLayoutMetrics.readerContentTopSpacing
+            equalTo: readerNavigation.readerNavigationBar.bottomAnchor,
+            constant: ReaderNavigationPresentation.readerContentTopSpacing
         )
         readerTopToRoot = reader.view.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([
@@ -407,11 +251,11 @@ final class MainReaderScreenController: UIViewController {
             reader.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         reader.didMove(toParent: self)
-        view.bringSubviewToFront(readerNavigationBackground)
-        view.bringSubviewToFront(readerNavigationBar)
+        view.bringSubviewToFront(readerNavigation.readerNavigationBackground)
+        view.bringSubviewToFront(readerNavigation.readerNavigationBar)
         readerController = reader
         readerBookID = book.id
-        readerNavigationItem.rightBarButtonItems = reader.navigationBarButtonItems
+        readerNavigation.readerNavigationItem.rightBarButtonItems = reader.navigationBarButtonItems
         PlaybackBindingStore.setCurrentlyPlaying(
             bookID: book.id,
             chapterIndex: ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
@@ -428,7 +272,7 @@ final class MainReaderScreenController: UIViewController {
     /// of leaving an old AVQueuePlayer behind while the new reader updates
     /// the persisted book pointer.
     private func replaceActivePlaybackIfNeeded(for book: BookEntity) {
-        if let listeningBookID, listeningBookID != book.id { cancelListeningSession() }
+        if let listeningBookID = listeningSession.listeningBookID, listeningBookID != book.id { listeningSession.cancel() }
         let activeBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
         let hasActivePlayback = player.snapshot != nil || player.hasLoadedAudioQueue || player.isConverting
         guard Self.shouldReplaceActivePlayback(
@@ -439,19 +283,9 @@ final class MainReaderScreenController: UIViewController {
             return
         }
 
-        cancelListeningSession()
+        listeningSession.cancel()
         player.stop()
         player.clearConversionState()
-    }
-
-    private func cancelListeningSession() {
-        listeningJobID = nil
-        listeningBookID = nil
-        let retiring = listeningPlaybackControl
-        listeningPlaybackControl = nil
-        listeningChapters.removeAll()
-        hasDeliveredListeningChapter = false
-        retiring?.cancel()
     }
 
     static func shouldReplaceActivePlayback(
@@ -472,63 +306,15 @@ final class MainReaderScreenController: UIViewController {
     func applyReaderPresentation(_ state: ReaderPresentationState) -> Bool {
         let chromeChanged = readerController?.applyChromeVisibility(state.isChromeHidden) ?? false
         let navigationChanged = (readerTopToNavigation?.isActive ?? false) != state.showsReaderNavigation
-        applyReaderNavigationLayout(
+        readerNavigation.applyLayout(
             shouldShow: state.showsReaderNavigation,
             animated: false,
-            commitsLayout: false
+            commitsLayout: false,
+            readerTopToNavigation: readerTopToNavigation,
+            readerTopToRoot: readerTopToRoot,
+            in: view
         )
         return chromeChanged || navigationChanged
-    }
-
-    private func applyReaderNavigationLayout(
-        shouldShow: Bool,
-        animated: Bool,
-        commitsLayout: Bool = true
-    ) {
-        if let readerTopToNavigation,
-           let readerTopToRoot {
-            NSLayoutConstraint.deactivate([readerTopToNavigation, readerTopToRoot])
-            (shouldShow ? readerTopToNavigation : readerTopToRoot).isActive = true
-        }
-
-        if shouldShow {
-            readerNavigationBar.isHidden = false
-            readerNavigationBackground.isHidden = false
-            if animated { readerNavigationBar.alpha = 0 }
-            if animated { readerNavigationBackground.alpha = 0 }
-        } else if !animated {
-            readerNavigationBar.alpha = 0
-            readerNavigationBar.isHidden = true
-            readerNavigationBackground.alpha = 0
-            readerNavigationBackground.isHidden = true
-        }
-
-        let changes = {
-            self.readerNavigationBar.alpha = shouldShow ? 1 : 0
-            self.readerNavigationBackground.alpha = shouldShow ? 1 : 0
-            self.view.layoutIfNeeded()
-        }
-        guard animated else {
-            // Visibility is presentation state, not committed reader geometry.
-            // Restore alpha even when the root defers layout until its viewport
-            // transaction finishes; otherwise a previously hidden toolbar stays
-            // transparent after a centre tap restores reader chrome.
-            readerNavigationBar.alpha = shouldShow ? 1 : 0
-            readerNavigationBackground.alpha = shouldShow ? 1 : 0
-            if commitsLayout { view.layoutIfNeeded() }
-            return
-        }
-        UIView.animate(
-            withDuration: ReaderChromeTransitionMetrics.duration,
-            delay: 0,
-            options: ReaderChromeTransitionMetrics.animationOptions,
-            animations: changes
-        ) { [weak self] _ in
-            guard let self else { return }
-            guard !shouldShow else { return }
-            self.readerNavigationBar.isHidden = true
-            self.readerNavigationBackground.isHidden = true
-        }
     }
 
     /// Called by the root constraint coordinator after its single animation
@@ -552,7 +338,7 @@ final class MainReaderScreenController: UIViewController {
         self.readerBookID = nil
         readerTopToNavigation = nil
         readerTopToRoot = nil
-        readerNavigationItem.rightBarButtonItems = nil
+        readerNavigation.readerNavigationItem.rightBarButtonItems = nil
     }
 
     private func autoClearMissingBookIfNeeded() {
@@ -565,11 +351,6 @@ final class MainReaderScreenController: UIViewController {
     private func closeReaderTapped() {
         ReaderSessionState.setCurrentlyReading(bookID: nil, defaults: sessionDefaults)
         onBrowseLibrary?()
-    }
-
-    @objc
-    private func repickBookTapped() {
-        readerController?.presentDocumentPicker()
     }
 
     @objc
@@ -596,11 +377,9 @@ final class MainReaderScreenController: UIViewController {
         guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
-        guard listeningJobID == nil || listeningBookID != book.id else { return }
-        cancelListeningSession()
+        guard !listeningSession.isListening(to: book.id) else { return }
         let priority = readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
-        guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
         // Capture the page before asynchronous file access or player teardown
         // can publish another chapter. Never borrow another book's anchor.
         let pageRatio: Double? = {
@@ -610,185 +389,13 @@ final class MainReaderScreenController: UIViewController {
                   ratio.isFinite, ratio > 0, ratio <= 1 else { return nil }
             return ratio
         }()
-        // The playback control schedules only the active chapter and one ahead.
-        let chapterEnd: Int32 = -1
-        let jobID = UUID().uuidString
-        let previousPlayerJob = player.snapshot?.jobId
-        listeningJobID = jobID
-        listeningBookID = book.id
         let catalog = readerController?.playbackChapterCatalog
             ?? LocalFulltextCache.inMemoryPayload(bookId: book.id)?.chapters.map {
                 (index: $0.zeroBasedEpubIndex, title: $0.displayTitle)
             } ?? []
-        listeningChapters = catalog.map {
-            JobSnapshot.Chapter(index: $0.index, name: $0.title, status: "pending",
-                downloadUrl: nil, chars: nil, charsProcessed: nil, progressRatio: nil,
-                durationSeconds: nil, startedAt: nil, completedAt: nil)
-        }
-        hasDeliveredListeningChapter = false
-        let conversionOptions = settings.conversionOptions
-        Task { [weak self] in
-            guard let self else { return }
-            var installedPending = false
-            defer {
-                if self.listeningJobID == jobID {
-                    self.listeningJobID = nil
-                    self.listeningBookID = nil
-                    self.listeningPlaybackControl = nil
-                }
-            }
-            do {
-                let url = try await library.openBookFileAsync(id: book.id)
-                guard listeningJobID == jobID, currentBook?.id == book.id,
-                      player.snapshot?.jobId == previousPlayerJob else { return }
-                let playbackControl = try RustConversionCoordinator.makePlaybackControl()
-                playbackControl.updatePlaybackWindow(currentChapter: priority, chaptersAhead: 1)
-                listeningPlaybackControl = playbackControl
-                let pending = JobSnapshot(jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
-                    bookAuthor: book.author, coverUrl: nil, coverMimeType: nil, engine: nil,
-                    voice: nil, language: nil, progressPercent: 0, chaptersTotal: nil,
-                    chaptersCompleted: 0, chapterProgress: self.listeningChapters, outputs: nil, logUrl: nil,
-                    error: nil, lastActivityAt: Date().timeIntervalSince1970)
-                if player.positionSeconds > 1 {
-                    player.pause()
-                    player.persistResumePoint(force: true)
-                }
-                player.stop()
-                player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
-                installedPending = true
-                player.isConverting = true
-                if let pageRatio {
-                    player.startFromReaderPage(priority, sentenceOffsetRatio: pageRatio)
-                } else {
-                    player.resume()
-                }
-                let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
-                let result = try await conversionExecutor(
-                    url, jobID, chapterStart, chapterEnd, playbackControl,
-                    conversionOptions,
-                    { [weak self] event in
-                        guard let self, self.listeningJobID == jobID, event.jobId == jobID,
-                              let current = self.player.snapshot, current.jobId == jobID else { return }
-                        self.player.updateSnapshot(event.updating(current))
-                    },
-                    { [weak self] event in
-                        guard let self, self.listeningJobID == jobID,
-                              self.player.snapshot?.jobId == jobID, event.jobId == jobID,
-                              event.chapterIndex >= priority, event.audioPath.isFileURL,
-                              FileManager.default.isReadableFile(atPath: event.audioPath.path) else { return }
-                        guard self.hasDeliveredListeningChapter || self.currentBook?.id == book.id else {
-                            self.player.pause()
-                            return
-                        }
-                        let chapter = event.playableChapter
-                        if let index = self.listeningChapters.firstIndex(where: { $0.index == chapter.index }) {
-                            self.listeningChapters[index] = chapter
-                        } else { self.listeningChapters.append(chapter) }
-                        self.listeningChapters.sort { $0.index < $1.index }
-                        guard self.listeningChapters.contains(where: { $0.index == priority && $0.downloadUrl != nil }) else { return }
-                        self.player.updateSnapshot(event.snapshot(chapters: self.listeningChapters, preserving: self.player.snapshot))
-                        if !self.hasDeliveredListeningChapter {
-                            self.hasDeliveredListeningChapter = true
-                            if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
-                        }
-                    },
-                    { [weak self] chapterIndex, chunkIndex, data in
-                        guard let self else { return false }
-                        return chunkDelivery.enqueue(
-                            data,
-                            chapterIndex: chapterIndex,
-                            chunkIndex: chunkIndex,
-                            // A page ratio needs the complete chapter duration.
-                            // Rust still writes the complete canonical artifact;
-                            // chapter callbacks queue it without replaying a prefix
-                            // or blocking conversion on the segment backlog.
-                            buffersAudio: pageRatio == nil,
-                            isCurrent: { [weak self] in
-                                guard let self else { return false }
-                                return self.listeningJobID == jobID
-                                    && self.player.snapshot?.jobId == jobID
-                                    && self.listeningPlaybackControl?.contains(chapterIndex: chapterIndex) == true
-                            },
-                            onAccepted: { [weak self] in
-                                guard let self, self.listeningJobID == jobID else { return }
-                                self.hasDeliveredListeningChapter = true
-                            }
-                        )
-                    }
-                )
-                guard listeningJobID == jobID else { return }
-                let snapshot = try result.snapshot()
-                guard result.jobID == jobID, snapshot.jobId == jobID else {
-                    throw EmbeddedConverterError.conversionFailed("Conversion returned a different listening job.")
-                }
-                let indices = snapshot.playableChapters.map(\.index)
-                guard indices.first == priority, indices == indices.sorted(), Set(indices).count == indices.count else {
-                    throw EmbeddedConverterError.conversionFailed("Conversion did not preserve the requested chapter order.")
-                }
-                self.library.recordConversion(jobId: result.jobID, for: book.id)
-                guard listeningJobID == jobID, player.snapshot?.jobId == jobID else { return }
-                if !hasDeliveredListeningChapter, currentBook?.id != book.id {
-                    player.pause()
-                }
-                player.finishStreaming(snapshot: snapshot)
-            } catch let error as StoragePressureError {
-                guard listeningJobID == jobID else { return }
-                guard player.snapshot?.jobId == (installedPending ? jobID : previousPlayerJob) else { return }
-                concludeFailedListening(error, jobID: jobID)
-                guard currentBook?.id == book.id else { return }
-                self.presentStorageManagementAlert(error)
-            } catch {
-                guard listeningJobID == jobID else { return }
-                guard player.snapshot?.jobId == (installedPending ? jobID : previousPlayerJob) else { return }
-                concludeFailedListening(error, jobID: jobID)
-                guard currentBook?.id == book.id else { return }
-                let alert = UIAlertController(
-                    title: L10n.string("bookDetail.listenStart"),
-                    message: AppErrorReporter.message(error, context: "Reader listening"),
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-                self.present(alert, animated: true)
-            }
-        }
+        listeningSession.start(book: book, priority: priority, pageRatio: pageRatio,
+                               catalog: catalog, conversionOptions: settings.conversionOptions,
+                               presentsFullPlayer: presentsFullPlayer)
     }
-
-    private func concludeFailedListening(_ error: Error, jobID: String) {
-        guard let current = player.snapshot, current.jobId == jobID else { return }
-        if !hasDeliveredListeningChapter { player.pause() }
-        let failed = JobSnapshot(jobId: current.jobId, state: "failed", bookTitle: current.bookTitle,
-            bookAuthor: current.bookAuthor, coverUrl: current.coverUrl, coverMimeType: current.coverMimeType,
-            engine: current.engine, voice: current.voice, language: current.language,
-            progressPercent: current.progressPercent, chaptersTotal: current.chaptersTotal,
-            chaptersCompleted: current.chaptersCompleted, chapterProgress: current.chapterProgress,
-            outputs: current.outputs, logUrl: current.logUrl, error: error.localizedDescription,
-            lastActivityAt: Date().timeIntervalSince1970)
-        player.finishStreaming(snapshot: failed)
-    }
-
-    private func presentStorageManagementAlert(_ error: StoragePressureError) {
-        let alert = UIAlertController(
-            title: L10n.string("settings.insufficientStorageTitle"),
-            message: AppErrorReporter.message(error, context: #function),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(
-            title: L10n.string("settings.manageDownloads"),
-            style: .default
-        ) { [weak self] _ in
-            guard let self else { return }
-            let controller = LocalAudioDownloadsScreenController(library: self.library)
-            self.present(UINavigationController(rootViewController: controller), animated: true)
-        })
-        alert.addAction(UIAlertAction(title: L10n.string("library.cancel"), style: .cancel))
-        present(alert, animated: true)
-    }
-}
-
-private enum ReaderNavigationLayoutMetrics {
-    /// Keeps glyphs and selection handles clear of iOS's floating navigation
-    /// controls while preserving the bar's intrinsic platform height.
-    static let initialBarHeight: CGFloat = 44
-    static let readerContentTopSpacing: CGFloat = 12
 }
 #endif

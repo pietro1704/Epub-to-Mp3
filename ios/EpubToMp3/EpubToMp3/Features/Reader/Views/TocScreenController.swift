@@ -1,35 +1,9 @@
 #if os(iOS)
 import UIKit
 
-/// Keeps NotificationCenter tokens outside the view controller's MainActor
-/// isolation so cleanup remains valid even when ARC releases the controller
-/// from a nonisolated context.
-private final class TocNotificationObserverBag {
-    private var observers: [NSObjectProtocol] = []
-
-    func append(_ observer: NSObjectProtocol) {
-        observers.append(observer)
-    }
-
-    deinit {
-        observers.forEach { observer in
-            NotificationCenter.default.removeObserver(observer)
-        }
-    }
-}
-
 @MainActor
 final class TocScreenController: UITableViewController {
-    private struct Row {
-        let title: String
-        let zeroBasedIndex: Int
-        let charCount: Int?
-        let isCurrent: Bool
-        let audioReady: Bool
-        let downloaded: Bool
-        let artifactState: LocalAudioArtifactStore.ArtifactState?
-        let schedulerState: LocalAudioConversionScheduler.WorkState?
-    }
+    private typealias Row = TocAudioAvailabilityPresentation.Row
 
     private var fulltext: EbookFulltext?
     private var snapshot: JobSnapshot
@@ -160,52 +134,22 @@ final class TocScreenController: UITableViewController {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         let row = rows[indexPath.row]
-        let isFocused = Self.initialFocusChapterIndex(
+        let isFocused = TocChapterPresentation.initialFocusChapterIndex(
             currentChapterIndex: currentChapterIndex,
             readingChapterIndex: readingChapterIndex
         ) == row.zeroBasedIndex
-        var content = cell.defaultContentConfiguration()
-        content.text = row.title
-        var secondary: [String] = []
-        if let charCount = row.charCount {
-            secondary.append(L10n.string("toc.charsCount", charCount))
+        let removeAction: ((Int, String) -> Void)?
+        if let action = onRemoveDownload {
+            removeAction = { [weak self] index, title in
+                self?.confirmRemovingDownload(chapterIndex: index, title: title, action: action)
+            }
+        } else {
+            removeAction = nil
         }
-        if row.downloaded {
-            secondary.append(L10n.string("toc.downloaded"))
-        } else if let status = artifactStatusText(for: row.artifactState) {
-            secondary.append(status)
-        } else if Self.usesSchedulerStatus(
-            artifactState: row.artifactState,
-            schedulerState: row.schedulerState
-        ),
-                  let status = schedulerStatusText(for: row.schedulerState) {
-            secondary.append(status)
-        } else if !row.audioReady {
-            secondary.append(L10n.string("toc.textOnly"))
-        }
-        content.secondaryText = secondary.joined(separator: " · ")
-        content.secondaryTextProperties.numberOfLines = 2
-        content.textProperties.font = .preferredFont(forTextStyle: isFocused ? .headline : .body)
-        content.textProperties.color = isFocused ? view.tintColor : .label
-        content.secondaryTextProperties.color = isFocused ? view.tintColor : .secondaryLabel
-        cell.contentConfiguration = content
-        var background = UIBackgroundConfiguration.listPlainCell()
-        background.backgroundColor = isFocused ? view.tintColor.withAlphaComponent(0.12) : .clear
-        cell.backgroundConfiguration = background
-        cell.accessoryType = row.isCurrent ? .checkmark : .none
-        cell.accessoryView = makeAccessoryView(for: row)
-        cell.accessibilityLabel = row.title
-        cell.accessibilityValue = row.downloaded
-            ? L10n.string("toc.downloaded")
-            : (artifactStatusText(for: row.artifactState)
-                ?? (Self.usesSchedulerStatus(
-                    artifactState: row.artifactState,
-                    schedulerState: row.schedulerState
-                ) ? schedulerStatusText(for: row.schedulerState) : nil)
-                ?? (row.audioReady ? L10n.string("player.downloadChapter") : L10n.string("toc.textOnly")))
-        cell.selectionStyle = .default
-        cell.isUserInteractionEnabled = true
-        cell.accessibilityTraits = row.isCurrent ? [.button, .selected] : .button
+        TocAudioAvailabilityPresentation.configure(
+            cell, row: row, isFocused: isFocused, tintColor: view.tintColor,
+            onDownload: onDownload, onRemoveDownload: removeAction
+        )
         return cell
     }
 
@@ -260,18 +204,9 @@ final class TocScreenController: UITableViewController {
         return readingMatch
     }
 
-    /// The active audio chapter is the listener's immediate context. When
-    /// audio has not selected a chapter yet, preserve the reader's location.
-    static func initialFocusChapterIndex(
-        currentChapterIndex: Int,
-        readingChapterIndex: Int?
-    ) -> Int? {
-        currentChapterIndex >= 0 ? currentChapterIndex : readingChapterIndex
-    }
-
     private func scrollToInitialFocusIfNeeded() {
         guard !hasScrolledToInitialFocus,
-              let chapterIndex = Self.initialFocusChapterIndex(
+              let chapterIndex = TocChapterPresentation.initialFocusChapterIndex(
                   currentChapterIndex: currentChapterIndex,
                   readingChapterIndex: readingChapterIndex
               ),
@@ -287,24 +222,6 @@ final class TocScreenController: UITableViewController {
         )
     }
 
-    /// A chapter-specific state always wins. A pending manifest entry has no
-    /// active conversion of its own, so it may surface the book's FIFO or
-    /// Wi-Fi wait state without falsely presenting every pending row as the
-    /// chapter currently being generated.
-    static func usesSchedulerStatus(
-        artifactState: LocalAudioArtifactStore.ArtifactState?,
-        schedulerState: LocalAudioConversionScheduler.WorkState?
-    ) -> Bool {
-        switch artifactState {
-        case .none:
-            return schedulerState != nil
-        case .pending:
-            return schedulerState == .queued || schedulerState == .waitingForWiFi || schedulerState == .waitingForResources
-        case .generating, .waitingForWiFi, .available, .failed:
-            return false
-        }
-    }
-
     private func refreshDownloaded() {
         // `Task.detached` does not inherit the enclosing `@MainActor`
         // isolation, so `snapshot` (a MainActor-isolated property) must be
@@ -316,7 +233,7 @@ final class TocScreenController: UITableViewController {
             let downloaded: Set<Int>
             let states: [Int: LocalAudioArtifactStore.ArtifactState]
             downloaded = await Task.detached(priority: .utility) {
-                DownloadManager.locallyDownloadedIndices(for: jobID)
+                AudiobookDownloadStorage.locallyDownloadedIndices(for: jobID)
             }.value
             states = [:]
             guard let self, self.snapshot.jobId == jobID else { return }
@@ -335,7 +252,7 @@ final class TocScreenController: UITableViewController {
         downloadProgressTask?.cancel()
         let jobID = snapshot.jobId
         downloadProgressTask = Task { [weak self] in
-            let stream = await DownloadManager.shared.watchProgress(jobId: jobID)
+            let stream = await AudiobookDownloads.shared.watchProgress(jobId: jobID)
             for await progress in stream {
                 guard !Task.isCancelled, let self, self.snapshot.jobId == jobID else { return }
                 switch progress.state {
@@ -386,73 +303,6 @@ final class TocScreenController: UITableViewController {
         )
     }
 
-    private func makeAccessoryView(for row: Row) -> UIView? {
-        guard let onDownload else { return nil }
-        let button = UIButton(type: .system)
-        let usesSchedulerStatus = Self.usesSchedulerStatus(
-            artifactState: row.artifactState,
-            schedulerState: row.schedulerState
-        )
-        let isWorking = row.artifactState == .generating
-            || row.artifactState == .waitingForWiFi
-            || (usesSchedulerStatus && (row.schedulerState == .waitingForWiFi || row.schedulerState == .waitingForResources))
-        let imageName: String
-        if row.downloaded {
-            imageName = "checkmark.circle.fill"
-        } else if row.artifactState == .generating {
-            imageName = "arrow.triangle.2.circlepath.circle"
-        } else if row.artifactState == .waitingForWiFi {
-            imageName = "wifi"
-        } else if usesSchedulerStatus, row.schedulerState == .waitingForWiFi {
-            imageName = "wifi"
-        } else if usesSchedulerStatus, row.schedulerState == .waitingForResources {
-            imageName = "pause.circle"
-        } else if usesSchedulerStatus, row.schedulerState == .queued {
-            imageName = "clock"
-        } else if usesSchedulerStatus, row.schedulerState == .generating {
-            imageName = "arrow.triangle.2.circlepath.circle"
-        } else if row.artifactState == .failed {
-            imageName = "arrow.clockwise.circle"
-        } else {
-            imageName = "arrow.down.circle"
-        }
-        button.setImage(UIImage(systemName: imageName), for: .normal)
-        button.tintColor = .secondaryLabel
-        button.isEnabled = !isWorking && (row.downloaded ? onRemoveDownload != nil : row.audioReady)
-        button.accessibilityLabel = row.downloaded
-            ? L10n.string("toc.removeDownload")
-            : L10n.string("player.downloadChapter")
-        button.accessibilityIdentifier = "reader.toc.download.\(row.zeroBasedIndex)"
-        button.accessibilityValue = row.downloaded ? L10n.string("toc.downloaded") : nil
-        // UITableViewCell owns the frame of its accessoryView. Constraints on
-        // the button make it escape the trailing accessory slot on iOS 18.
-        button.frame.size = CGSize(width: 44, height: 44)
-        if isWorking {
-            button.accessibilityValue = artifactStatusText(for: row.artifactState)
-                ?? (usesSchedulerStatus ? schedulerStatusText(for: row.schedulerState) : nil)
-        } else if row.downloaded, let onRemoveDownload {
-            button.showsMenuAsPrimaryAction = true
-            button.menu = UIMenu(children: [
-                UIAction(
-                    title: L10n.string("toc.removeDownload"),
-                    image: UIImage(systemName: "trash"),
-                    attributes: .destructive
-                ) { [weak self] _ in
-                    self?.confirmRemovingDownload(
-                        chapterIndex: row.zeroBasedIndex,
-                        title: row.title,
-                        action: onRemoveDownload
-                    )
-                }
-            ])
-        } else {
-            button.addAction(UIAction { _ in
-                onDownload(row.zeroBasedIndex)
-            }, for: .touchUpInside)
-        }
-        return button
-    }
-
     private func confirmRemovingDownload(
         chapterIndex: Int,
         title: String,
@@ -481,36 +331,6 @@ final class TocScreenController: UITableViewController {
             action()
         })
         present(alert, animated: true)
-    }
-
-    private func artifactStatusText(for state: LocalAudioArtifactStore.ArtifactState?) -> String? {
-        switch state {
-        case .generating:
-            return L10n.string("toc.audioPreparing")
-        case .waitingForWiFi:
-            return L10n.string("toc.waitingForWiFi")
-        case .failed:
-            return L10n.string("player.downloadFailed")
-        case .pending, .available, .none:
-            return nil
-        }
-    }
-
-    private func schedulerStatusText(for state: LocalAudioConversionScheduler.WorkState?) -> String? {
-        switch state {
-        case .generating:
-            return L10n.string("toc.audioPreparing")
-        case .waitingForWiFi:
-            return L10n.string("toc.waitingForWiFi")
-        case .waitingForResources:
-            return L10n.string("toc.audioPreparing")
-        case .failed:
-            return L10n.string("player.downloadFailed")
-        case .queued:
-            return L10n.string("toc.audioQueued")
-        case .finished, .none:
-            return nil
-        }
     }
 
     @objc

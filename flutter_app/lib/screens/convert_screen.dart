@@ -17,6 +17,9 @@ import '../state/providers.dart';
 import '../l10n/app_localizations.dart';
 import '../models/tts_preferences.dart';
 
+part 'conversion_options_section.dart';
+part 'manual_conversion_progress.dart';
+
 class ConversionRequest {
   const ConversionRequest({
     required this.filePath,
@@ -379,114 +382,30 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
               ),
             ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: _engine,
-            decoration: const InputDecoration(labelText: 'Engine'),
-            items: [
-              DropdownMenuItem(
-                value: 'preferences',
-                child: Text(t.ttsUsePreferences),
-              ),
-              DropdownMenuItem(value: 'piper', child: Text(t.ttsFaberOffline)),
-              DropdownMenuItem(value: 'edge', child: Text(t.ttsEdgeOnline)),
-            ],
-            onChanged: (v) => setState(() => _engine = v ?? _engine),
+          ConversionOptionsSection(
+            engine: _engine,
+            allowSecondary: _allowSecondary,
+            voice: _voice,
+            language: _language,
+            startController: _startController,
+            endController: _endController,
+            includeCover: _includeCover,
+            normalizeAudio: _normalizeAudio,
+            usesEmbeddedConversion: _usesEmbeddedConversion,
+            onEngineChanged: (value) => setState(() => _engine = value),
+            onAllowSecondaryChanged: (value) => setState(() => _allowSecondary = value),
+            onVoiceChanged: (value) => setState(() => _voice = value),
+            onLanguageChanged: (value) => setState(() => _language = value),
+            onIncludeCoverChanged: (value) => setState(() => _includeCover = value),
+            onNormalizeAudioChanged: (value) => setState(() => _normalizeAudio = value),
           ),
-          if (_engine != 'preferences')
-            SwitchListTile(
-              title: Text(t.ttsAllowJobSecondary),
-              value: _allowSecondary,
-              onChanged: (v) => setState(() => _allowSecondary = v),
-            ),
-          if (_engine == 'edge')
-            DropdownButtonFormField<String>(
-              initialValue: _voice,
-              decoration: const InputDecoration(labelText: 'Voice'),
-              items: const [
-                DropdownMenuItem(
-                  value: 'pt-BR-AntonioNeural',
-                  child: Text('Antonio (pt-BR)'),
-                ),
-                DropdownMenuItem(
-                  value: 'en-US-GuyNeural',
-                  child: Text('Guy (en-US)'),
-                ),
-                DropdownMenuItem(
-                  value: 'es-MX-JorgeNeural',
-                  child: Text('Jorge (es-MX)'),
-                ),
-              ],
-              onChanged: (v) => setState(() => _voice = v ?? _voice),
-            ),
-          DropdownButtonFormField<String>(
-            initialValue: _language,
-            decoration: const InputDecoration(labelText: 'Language'),
-            items: const [
-              DropdownMenuItem(value: 'pt', child: Text('Portuguese')),
-              DropdownMenuItem(value: 'en', child: Text('English')),
-              DropdownMenuItem(value: 'es', child: Text('Spanish')),
-            ],
-            onChanged: (v) => setState(() => _language = v ?? _language),
+          ManualConversionProgress(
+            submitting: _submitting,
+            jobId: jobId,
+            historyError: _historyError,
+            error: _error,
+            onRetry: _submit,
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Chapter range',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _startController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'From'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _endController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'To'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Text('Options', style: TextStyle(fontWeight: FontWeight.bold)),
-          if (_usesEmbeddedConversion)
-            const Text(
-              'Cover and audio processing options are managed by the local converter.',
-            )
-          else ...[
-            SwitchListTile(
-              title: const Text('Include cover'),
-              value: _includeCover,
-              onChanged: (v) => setState(() => _includeCover = v),
-            ),
-            SwitchListTile(
-              title: const Text('Normalize audio'),
-              value: _normalizeAudio,
-              onChanged: (v) => setState(() => _normalizeAudio = v),
-            ),
-          ],
-          if (_submitting) const LinearProgressIndicator(),
-          if (jobId != null) ...[
-            const SizedBox(height: 12),
-            Text(jobId, key: const Key('conversion-job-id')),
-          ],
-          if (_historyError != null)
-            ListTile(
-              leading: const Icon(Icons.warning_amber_outlined),
-              title: Text(t.conversionHistorySaveWarning(_historyError!)),
-            ),
-          if (_error != null) ...[
-            Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-            TextButton(onPressed: _submit, child: const Text('Retry')),
-          ],
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _filePath == null || _submitting ? null : _submit,

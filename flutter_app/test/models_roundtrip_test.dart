@@ -105,10 +105,10 @@ void main() {
   test('SSE data frames decode as snapshots and ignore event labels', () {
     final payload = jsonEncode({'jobId': 'sse', 'state': 'finished'});
     const event = 'event: chapter_update';
-    final data = 'data: $payload';
+    final snapshotFrame = 'data: $payload';
     expect(event.startsWith('data:'), false);
     final decoded = JobSnapshot.fromJson(
-      jsonDecode(data.substring(5).trim()) as Map<String, dynamic>,
+      jsonDecode(snapshotFrame.substring(5).trim()) as Map<String, dynamic>,
     );
     expect(decoded.jobId, 'sse');
     expect(decoded.isTerminal, true);

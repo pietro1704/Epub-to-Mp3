@@ -1,5 +1,7 @@
 # Build/cache cleanup and monitoring — 2026-07-26
 
+> **Historical record.** The cleanup measurements and monitoring rules below are historical. Automatic Simulator fallback and blanket automatic resume are retired; resource checks do not release the current Simulator quarantine, and a new kernel panic requires stopping host work. See [execution policy](agents/execution-policy.md) and [runtime navigation](agents/runtime-navigation.md) for current operation and ownership.
+
 ## Scope
 
 This session concerned development artifacts around the repository, not the

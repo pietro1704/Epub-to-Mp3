@@ -86,19 +86,19 @@ final class TocScreenControllerTests: XCTestCase {
     @MainActor
     func testPendingArtifactUsesTheBookLevelQueueStatus() {
         XCTAssertTrue(
-            TocScreenController.usesSchedulerStatus(
+            TocChapterPresentation.usesSchedulerStatus(
                 artifactState: .pending,
                 schedulerState: .waitingForWiFi
             )
         )
         XCTAssertTrue(
-            TocScreenController.usesSchedulerStatus(
+            TocChapterPresentation.usesSchedulerStatus(
                 artifactState: nil,
                 schedulerState: .queued
             )
         )
         XCTAssertFalse(
-            TocScreenController.usesSchedulerStatus(
+            TocChapterPresentation.usesSchedulerStatus(
                 artifactState: .generating,
                 schedulerState: .waitingForWiFi
             )

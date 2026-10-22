@@ -6,7 +6,10 @@ import XCTest
 @MainActor
 final class MacReaderChapterNavigationTests: XCTestCase {
     func testActualLOTRBackwardChapterBoundaryKeepsLastGlyphVisible() async throws {
-        let bookID = "3e1c676b270dfa3fe555eba4d0cb9934"
+        guard ProcessInfo.processInfo.environment["EPUBTOMP3_RUN_SEEDED_LOTR_JOURNEY"] == "1" else {
+            throw XCTSkip("Seeded LOTR journey requires explicit opt-in; deterministic boundary tests run separately.")
+        }
+        let bookID = try XCTUnwrap(ProcessInfo.processInfo.environment["EPUBTOMP3_SEEDED_LOTR_BOOK_ID"], "Provide the explicitly seeded LOTR book identity.")
         let standard = UserDefaults.standard
         let group = try XCTUnwrap(UserDefaults(suiteName: LibraryStore.appGroupID))
         let library = LibraryStore(defaults: group)
@@ -150,12 +153,10 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         let keys = [ReaderSessionState.currentlyReadingBookIDKey,
                     AudioPlayer.readerCurrentChapterIndexDefaultsKey,
                     AudioPlayer.readerCurrentPageRatioDefaultsKey,
-                    AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey, "readerProgress.v1", "readerWarmBookIDs.v1"]
         let saved = keys.map { standard.object(forKey: $0) }
         defer {
             for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
-            ReaderProgressStore.evict(bookId: identifier)
-            LocalFulltextCache.evict(bookId: identifier)
             defaults.removePersistentDomain(forName: identifier)
         }
         let book = BookEntity(id: identifier, title: "Chapter crossing", bookmark: Data([1]),
@@ -169,7 +170,10 @@ final class MacReaderChapterNavigationTests: XCTestCase {
             .init(index: 2, name: "Current", text: currentText, html: nil, css: nil,
                   charCount: currentText.count, segments: nil),
         ])
-        LocalFulltextCache.save(payload, bookId: identifier)
+        let preparedDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(identifier)
+        let renderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(directory: preparedDirectory))
+        let chapterStore = PreparedReaderChapterStore(directory: preparedDirectory.appendingPathComponent("chapters"))
+        defer { try? FileManager.default.removeItem(at: preparedDirectory) }
         ReaderProgressStore.save(bookId: identifier, chapterIndex: 1, offsetFraction: 0)
         standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let settings = AppSettings(defaults: defaults)
@@ -179,15 +183,18 @@ final class MacReaderChapterNavigationTests: XCTestCase {
             library: LibraryStore(defaults: defaults, defaultsKey: "library"), settings: settings,
             player: AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults))),
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
+            preparedRenderer: renderer, preparedChapterStore: chapterStore,
+            preparedFulltextReader: { _ in payload }, preparedFulltextWriter: { _, _ in },
             openStageObserver: { name, _ in
                 if name == "controls_usable" { controlsReady.fulfill() }
             })
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.contentViewController = controller
         window.setContentSize(NSSize(width: 700, height: 600))
         window.makeKeyAndOrderFront(nil)
-        defer { window.orderOut(nil); window.contentViewController = nil }
+        defer { window.orderOut(nil); window.contentViewController = nil; window.close() }
         window.layoutIfNeeded()
         await fulfillment(of: [controlsReady], timeout: 5)
         func findText(in view: NSView) -> MacReaderTextView? {
@@ -231,7 +238,14 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         XCTAssertEqual(backwardProgress.chapterIndex, 0)
         XCTAssertEqual(backwardProgress.offsetFraction, 1, accuracy: 0.001)
         XCTAssertEqual(standard.integer(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey), 0)
-        XCTAssertEqual(standard.double(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey), 1, accuracy: 0.001)
+        // Playback starts at the first visible glyph; reading progress is the scroll extent.
+        var glyphViewport = scroll.contentView.documentVisibleRect
+        glyphViewport.origin.y -= text.textContainerInset.height
+        let manager = try XCTUnwrap(text.layoutManager)
+        let visibleGlyphs = manager.glyphRange(forBoundingRect: glyphViewport, in: container)
+        XCTAssertGreaterThan(visibleGlyphs.length, 0)
+        let visibleAnchor = Double(manager.characterIndexForGlyph(at: visibleGlyphs.location)) / Double(text.string.utf16.count)
+        XCTAssertEqual(standard.double(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey), visibleAnchor, accuracy: 0.001)
         XCTAssertEqual(text.onPageTap?(true), true)
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertEqual(text.string, currentText)
@@ -247,7 +261,7 @@ final class MacReaderChapterNavigationTests: XCTestCase {
             // A subsequent selection must still navigate after highlight synchronization.
             try XCTUnwrap(findTOCButton(in: controller.view)).performClick(nil)
             func findChapterTable(in view: NSView) -> NSTableView? {
-                if let table = view as? NSTableView, table.delegate === controller { return table }
+                if let table = view as? NSTableView, table.delegate is MacReaderContentsPresentation { return table }
                 return view.subviews.lazy.compactMap { findChapterTable(in: $0) }.first
             }
             let table = try XCTUnwrap(NSApp.windows.compactMap { candidate in

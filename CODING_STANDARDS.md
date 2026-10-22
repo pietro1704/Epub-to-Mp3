@@ -3,6 +3,20 @@
 Apply these standards to the requested scope. Explicit current user instructions
 take precedence over older delivery documents, including their CI/PR gates.
 
+## Agent-readable source
+
+Keep project-owned source and test files below 500 physical lines. Split by
+responsibility behind the existing module interface. Keep explanatory comments
+with the code they explain; do not delete them or compress statements to meet the
+limit. Inventory existing oversized files and bring each refactored responsibility
+below the limit before closing that refactor. Record generated and unmodified
+third-party sources as exclusions with their ownership.
+
+Use specific, searchable domain names for owned declarations. Replace generic
+names such as `data`, `handler` and `Manager` with the role they represent.
+Preserve external API requirements, FFI symbols, serialized keys and localized
+strings; migrate owned names together with callers and runtime tests.
+
 ## Implementation and tests
 
 Keep conversion behavior in the shared Rust core and expose it through the
@@ -32,10 +46,14 @@ Tests belong to the runtime they exercise:
 A host test may validate tooling around a native run; parsing Swift source cannot
 prove native behavior. Use XCTest for native UI automation, never osascript or
 ad hoc accessibility scripting. Select focused checks from actual mise task
-definitions. Cover each changed behavior at its failing seam, including success and relevant
+definitions and expose the relevant suite through one command per runtime. Add a
+focused task only when an existing command cannot exercise the requested seam.
+Every bug fix adds a regression that reproduces the observed failure. Demonstrate
+failure before the fix when feasible; record why it was not possible otherwise.
+Cover each changed behavior at its failing seam, including success and relevant
 failure, cancellation or identity cases. Coverage percentages alone do not prove
-acceptance; documentation-only
-changes need link/content and diff checks, not a runtime build.
+acceptance. Documentation-only changes need link/content and diff checks, not a
+runtime build.
 
 ## Benchmark review
 
@@ -78,6 +96,11 @@ Preserve inputs, models, .cache/, and output/ unless cleanup is authorized.
 Report retained/removed temporary artifacts after a build/test cycle.
 
 ## Review and handoff
+
+After each change, record expected outcome, command/source identity, observed
+result and PASS/FAIL/BLOCKED evidence. Continue dependent work only after that
+change's required acceptance passes. Report policy-blocked checks explicitly;
+another runtime cannot stand in for the required target.
 
 Review the complete owned diff against the goal and matching plan, including
 scope, runtime boundaries, evidence, and resource cost. The reviewer owns this

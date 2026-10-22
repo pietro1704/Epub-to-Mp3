@@ -22,7 +22,28 @@ class NativeJobIntegrationTest < Minitest::Test
       printf '{"devices":{"test":[{"state":"%s"}]}}\n' "$(cat "$FAKE_STATE")"
     SH
     write_command("pgrep", "#!/bin/bash\nexit \"${FAKE_METAL_STATUS:-1}\"\n")
+    # Supervisor tests own a synthetic host, including storage. Scanning real
+    # worktree caches can consume the readiness deadline before cancellation
+    # is exercised. Keep the real budget calculation and refusal path active.
+    FileUtils.mkdir_p(File.join(@dir, "target"))
+    write_command("git", <<~'SH')
+      #!/bin/bash
+      printf 'worktree %s\n' "$FAKE_ROOT"
+    SH
+    write_command("df", <<~'SH')
+      #!/bin/bash
+      printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+      printf 'fixture 41943040 0 %s 0%% /\n' "${FAKE_FREE_KIB:-31457280}"
+    SH
+    write_command("du", <<~'SH')
+      #!/bin/bash
+      shift # The production measurement passes -sk before literal cache paths.
+      for cache_path in "$@"; do
+        printf '%s\t%s\n' "${FAKE_CACHE_KIB:-0}" "$cache_path"
+      done
+    SH
     @env = { "PATH" => "#{@dir}:#{ENV.fetch('PATH')}", "FAKE_STATE" => @state,
+             "FAKE_ROOT" => @dir, "FAKE_FREE_KIB" => nil, "FAKE_CACHE_KIB" => nil,
              NativeJob::FD_ENV => nil, NativeJob::PATH_ENV => nil }
   end
 
@@ -125,6 +146,20 @@ class NativeJobIntegrationTest < Minitest::Test
       refute File.exist?(@marker)
     end
     assert_unlocked
+  end
+
+  def test_storage_refusal_never_starts_child_and_releases_lease
+    skip "Mac storage policy only" unless RUBY_PLATFORM.include?("darwin")
+    [
+      [{ "FAKE_FREE_KIB" => "1" }, /Free disk below/],
+      [{ "FAKE_CACHE_KIB" => (13 * 1024 * 1024).to_s }, /caches exceed/]
+    ].each do |environment, message|
+      _, error, status = run_job("build", env: environment)
+      assert_equal 75, status.exitstatus, error
+      assert_match message, error
+      refute File.exist?(@marker)
+      assert_unlocked
+    end
   end
 
   def test_nested_ruby_shell_ruby_inherits_real_lease_without_deadlock

@@ -220,7 +220,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
 
     func testChapterNavigationIndexMovesWithinPlayableChapterBounds() {
         XCTAssertEqual(
-            AudioPlayer.chapterNavigationIndex(
+            PlaybackChapterQueue.chapterNavigationIndex(
                 currentIndex: 0,
                 direction: .forward,
                 chapterCount: 3
@@ -228,7 +228,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
             1
         )
         XCTAssertEqual(
-            AudioPlayer.chapterNavigationIndex(
+            PlaybackChapterQueue.chapterNavigationIndex(
                 currentIndex: 2,
                 direction: .backward,
                 chapterCount: 3
@@ -236,14 +236,14 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
             1
         )
         XCTAssertNil(
-            AudioPlayer.chapterNavigationIndex(
+            PlaybackChapterQueue.chapterNavigationIndex(
                 currentIndex: 0,
                 direction: .backward,
                 chapterCount: 3
             )
         )
         XCTAssertNil(
-            AudioPlayer.chapterNavigationIndex(
+            PlaybackChapterQueue.chapterNavigationIndex(
                 currentIndex: 2,
                 direction: .forward,
                 chapterCount: 3

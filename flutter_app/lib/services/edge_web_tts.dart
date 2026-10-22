@@ -51,10 +51,10 @@ class EdgeWebTts {
     late final StreamSubscription<Object?> subscription;
     subscription = socket.stream.listen((event) {
       if (event is List<int>) {
-        final data = Uint8List.fromList(event);
-        if (data.length >= 2) {
-          final header = (data[0] << 8) | data[1];
-          if (header <= data.length - 2) bytes.add(data.sublist(2 + header));
+        final audioFrame = Uint8List.fromList(event);
+        if (audioFrame.length >= 2) {
+          final header = (audioFrame[0] << 8) | audioFrame[1];
+          if (header <= audioFrame.length - 2) bytes.add(audioFrame.sublist(2 + header));
         }
       } else if (event is String && event.contains('Path:turn.end')) {
         if (!done.isCompleted) done.complete();

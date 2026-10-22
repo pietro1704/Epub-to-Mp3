@@ -121,13 +121,13 @@ cd ios/EpubToMp3
 xcodegen generate
 xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \
   -configuration Debug \
-  -destination 'id=00008140-001128A022BA801C' \
+  -destination 'id=<DEVICE_UDID>' \
   -derivedDataPath ./.build-device build
 xcrun devicectl device install app \
-  --device 44B2CFBD-2193-5086-8E8D-BF7A2876C321 \
+  --device <COREDEVICE_ID> \
   ./.build-device/Build/Products/Debug-iphoneos/EpubToMp3.app
 xcrun devicectl device process launch \
-  --device 44B2CFBD-2193-5086-8E8D-BF7A2876C321 \
+  --device <COREDEVICE_ID> \
   com.pietrocode.epubtomp3
 ```
 

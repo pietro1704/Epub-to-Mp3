@@ -1,93 +1,48 @@
 import XCTest
+@testable import EpubToMp3
+#if os(macOS)
+import AppKit
 
+@MainActor
 final class AppKitMigrationTests: XCTestCase {
-    func testMacLibraryControllerIsNativeAppKitAndDoesNotHostSwiftUI() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Library/Views/MacLibraryViewController.swift"
-            )
-        )
-
-        XCTAssertTrue(source.contains("final class MacLibraryViewController: NSViewController"))
-        XCTAssertTrue(source.contains("NSCollectionViewDataSource"))
-        XCTAssertTrue(source.contains("NSOpenPanel()"))
-        XCTAssertFalse(source.contains("import SwiftUI"))
-        XCTAssertFalse(source.contains("NSHostingController"))
+    func testMacLibraryInstallsNativeCollectionAndAccessibleImportControl() throws {
+        let suite = "native-library-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = MacLibraryViewController(library: LibraryStore(defaults: defaults),
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+            onOpenBook: { _ in }, onDownloadBook: { _ in }, onConvertBook: { _ in })
+        controller.loadViewIfNeeded()
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let views = descendants(controller.view)
+        XCTAssertNotNil(views.compactMap { $0 as? NSCollectionView }.first)
+        let add = try XCTUnwrap(views.compactMap { $0 as? NSButton }.first {
+            $0.accessibilityIdentifier() == "library.add"
+        })
+        XCTAssertNotNil(add.target)
+        XCTAssertNotNil(add.action)
     }
 
-    func testLibraryGridModelDoesNotDependOnLibraryView() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Library/Models/LibraryGridModel.swift"
-            )
-        )
-
-        XCTAssertFalse(source.contains("LibraryView"))
-        XCTAssertTrue(source.contains("enum SortMode"))
+    func testReaderInstallsNativeTextSurfaceAndToolbar() throws {
+        let harness = try NativeReaderTestHarness(chapters: [NativeReaderTestHarness.chapter("Native text")])
+        harness.installTeardown(in: self)
+        harness.showChapter(0)
+        XCTAssertTrue(harness.composition.contentScrollView.documentView === harness.composition.textView)
+        XCTAssertEqual(harness.composition.textView.string, "Native text")
+        XCTAssertFalse(harness.composition.textView.isEditable)
+        XCTAssertTrue(harness.composition.textView.isSelectable)
+        XCTAssertTrue(harness.composition.toolbar.isDescendant(of: harness.controller.view))
     }
 
-    func testMacShellAndReaderUseNativeControllers() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let shell = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/App/MacAppKitRootController.swift"
-            )
-        )
-        let reader = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Reader/Views/MacReaderViewController.swift"
-            )
-        )
-        let app = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift")
-        )
-
-        XCTAssertTrue(shell.contains("NSSplitViewController"))
-        XCTAssertTrue(shell.contains("MacLibraryViewController"))
-        XCTAssertTrue(reader.contains("NSTextView"))
-        XCTAssertTrue(reader.contains("PDFView"))
-        XCTAssertFalse(shell.contains("NSHostingController"))
-        XCTAssertFalse(reader.contains("NSHostingController"))
-        XCTAssertTrue(app.contains("NSApplicationDelegate"))
-        XCTAssertTrue(app.contains("MacAppKitRootController"))
-        XCTAssertFalse(app.contains("WindowGroup"))
-    }
-
-    func testNativeEntryDoesNotDependOnLegacySwiftUIRoots() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let app = try readSourceFileIfAvailable(at: root.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"))
-        let bookOpen = try readSourceFileIfAvailable(at: root.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift"))
-
-        XCTAssertTrue(app.contains("MacAppKitRootController"))
-        XCTAssertFalse(bookOpen.contains("UIHostingController"))
-        XCTAssertFalse(bookOpen.contains("UIViewControllerRepresentable"))
-    }
-
-    func testLegacySwiftUIScreensAreRemovedFromTheAppleAppSourceTree() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        for path in [
-            "EpubToMp3/Features/Library/Views/LibraryView.swift",
-            "EpubToMp3/Features/Conversion/Views/JobsListView.swift",
-            "EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift",
-            "EpubToMp3/Features/Reader/Views/InstantReaderView.swift",
-            "EpubToMp3/Features/Reader/Views/ReaderView.swift",
-            "EpubToMp3/Features/Settings/Views/SettingsView.swift",
-            "EpubToMp3/Features/Reader/Views/InstantReaderScreenController.swift"
-        ] {
-            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path),
-                           "Legacy SwiftUI source must be removed: \(path)")
-        }
+    func testLibraryGridPreservesStableIdentityWhileSortingAndFiltering() {
+        let books = [BookEntity(id: "z", title: "Zebra", bookmark: Data(), displayFilename: "z.epub", addedAt: .distantPast),
+                     BookEntity(id: "a", title: "Alpha", bookmark: Data(), displayFilename: "a.epub", addedAt: .distantPast)]
+        var model = LibraryGridModel(books: books, sortMode: .title)
+        XCTAssertEqual(model.arrangedIdentifiers(), ["a", "z"])
+        model.searchQuery = "ZEBRA"
+        XCTAssertEqual(model.arrangedIdentifiers(), ["z"])
+        model.searchQuery = "missing"
+        XCTAssertTrue(model.arrangedBooks().isEmpty)
     }
 }
+#endif

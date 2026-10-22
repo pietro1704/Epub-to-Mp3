@@ -233,17 +233,20 @@ final class AppSettingsObservationTests: XCTestCase {
                        "Fresh installs must default to paginated mode, not scrolling.")
     }
 
-    func testEmbeddedRuntimePersistsAcrossInstances() {
+    func testLegacyEmbeddedOffValueCannotDisableRuntimeAfterRelaunch() {
         let suite = UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         do {
             let s = AppSettings(defaults: defaults)
             s.useEmbeddedRuntime = false
         }
         let reloaded = AppSettings(defaults: defaults)
-        XCTAssertFalse(reloaded.useEmbeddedRuntime,
-                       "useEmbeddedRuntime must round-trip through UserDefaults — power users need their off-state to survive relaunch.")
-        XCTAssertFalse(reloaded.canReadOffline)
+        XCTAssertTrue(reloaded.useEmbeddedRuntime,
+                      "A legacy off-value cannot restore the retired remote production runtime.")
+        XCTAssertTrue(reloaded.canReadOffline)
+        XCTAssertEqual(defaults.object(forKey: "useEmbeddedRuntime") as? Bool, true,
+                       "The initializer canonicalizes the retired runtime preference to embedded.")
     }
 
     func testEmbeddedRuntimeChangeFiresObservation() {
@@ -269,24 +272,26 @@ final class AppSettingsObservationTests: XCTestCase {
     }
 
     /// The embedded runtime remains authoritative while a remote URL is
-    /// retained only for explicit remote-backend screens.
+    /// retained only as inert migration data.
     func testEmbeddedRuntimeRemainsAuthoritativeWithRemoteURL() {
         let s = makeSettings()
         s.useEmbeddedRuntime = true
         s.backendURL = "http://localhost:8000"
-        XCTAssertNotNil(s.resolvedBaseURL,
-                        "Remote URL remains available to explicit remote-backend screens.")
+        XCTAssertNil(s.resolvedBaseURL,
+                     "A legacy endpoint never restores remote production routing.")
+        XCTAssertEqual(s.backendURL, "http://localhost:8000")
         XCTAssertTrue(s.useEmbeddedRuntime,
                       "Embedded runtime must remain authoritative even when a remote URL is present.")
     }
 
-    func testRemoteBackendControlsDimWhenEmbeddedRuntimeIsEnabled() {
+    func testLegacyRuntimeFlagCannotEnableRetiredRemoteControls() {
         let s = makeSettings()
 
         s.useEmbeddedRuntime = true
         XCTAssertFalse(s.remoteBackendControlsEnabled)
 
         s.useEmbeddedRuntime = false
-        XCTAssertTrue(s.remoteBackendControlsEnabled)
+        XCTAssertFalse(s.remoteBackendControlsEnabled)
+        XCTAssertTrue(s.canReadOffline)
     }
 }

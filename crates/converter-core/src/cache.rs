@@ -1,82 +1,27 @@
 //! Cache keys, integrity checks, atomic persistence, and duplicate tracking.
+mod cache_integrity;
+mod cache_persistence;
+
+pub use cache_integrity::{
+    hash_text, legacy_cache_identity, normalized_text_hash, sha1_file, sha256_bytes, sha256_file,
+};
+pub(crate) use cache_persistence::refresh_chapter_text;
+pub use cache_persistence::{atomic_write_json, read_json, safe_cache_path};
+
 use serde::{Deserialize, Serialize};
-use sha1::{Digest as Sha1Digest, Sha1};
-use sha2::Sha256;
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::Path;
 use thiserror::Error;
 
-/// Exclusively owned, same-volume staging. Cleanup never targets an existing directory.
-pub(crate) struct OwnedStagingDirectory(pub(crate) PathBuf);
-
-impl OwnedStagingDirectory {
-    pub(crate) fn create(parent: &Path) -> io::Result<Self> {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        loop {
-            let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let path = parent.join(format!(
-                ".conversion-stage-{}-{sequence}",
-                std::process::id()
-            ));
-            match fs::create_dir(&path) {
-                Ok(()) => return Ok(Self(path)),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error),
-            }
-        }
-    }
-}
-
-impl Drop for OwnedStagingDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-/// Rebuild one derived chapter payload; never recursively clear a cache or touch audio/models.
-pub(crate) fn refresh_chapter_text(
-    cache_root: &Path,
-    book_key: &str,
-    chapter_file: &str,
-    text: &str,
-) -> Result<String, CacheError> {
-    if book_key.len() != 64
-        || !book_key.bytes().all(|byte| byte.is_ascii_hexdigit())
-        || Path::new(chapter_file).components().count() != 1
-        || !chapter_file.ends_with(".json")
-    {
-        return Err(CacheError::Traversal);
-    }
-    fs::create_dir_all(cache_root)?;
-    let book = cache_root.join(book_key);
-    match fs::symlink_metadata(&book) {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
-            return Err(CacheError::Traversal)
-        }
-        Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::create_dir(&book)?,
-        Err(error) => return Err(error.into()),
-    }
-    if book.canonicalize()?.parent() != Some(cache_root.canonicalize()?.as_path()) {
-        return Err(CacheError::Traversal);
-    }
-    let destination = safe_cache_path(&book, chapter_file)?;
-    match fs::symlink_metadata(&destination) {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
-            return Err(CacheError::Traversal)
-        }
-        Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
-    let staging = OwnedStagingDirectory::create(&book)?;
-    let payload = staging.0.join("text.json");
-    fs::write(&payload, serde_json::to_vec(text)?)?;
-    fs::rename(payload, destination)?;
-    Ok(text.to_owned())
-}
+#[cfg(test)]
+use cache_persistence::{cache_write_tempfile, read_json_from};
+#[cfg(test)]
+use std::fs::{self, File};
+#[cfg(test)]
+use std::io::Read;
+#[cfg(test)]
+use std::path::PathBuf;
 
 const MIN_DUPLICATE_CHARS: usize = 100;
 
@@ -95,119 +40,6 @@ pub struct CacheMetadata<T> {
     pub value: T,
     pub size: u64,
     pub mtime_ns: u128,
-}
-
-/// Stable SHA-1 text key, matching Python's UTF-8/ignore behavior.
-pub fn hash_text(value: &str) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(value.as_bytes());
-    hex::encode(hasher.finalize())
-}
-
-/// Stable MD5-compatible cache identity from filename, size, and mtime text.
-/// This preserves the legacy algorithm without requiring a new MD5 dependency.
-pub fn legacy_cache_identity(filename: &str, size: u64, mtime: f64) -> String {
-    // The Rust core uses a deterministic SHA-256 namespace for new callers;
-    // legacy readers should use the metadata path and validity check below.
-    let mut hasher = Sha256::new();
-    hasher.update(format!("{filename}_{size}_{mtime}").as_bytes());
-    hex::encode(hasher.finalize())[..12].to_owned()
-}
-
-pub fn sha256_file(path: impl AsRef<Path>) -> io::Result<String> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 1024 * 1024];
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        hasher.update(&buffer[..count]);
-    }
-    Ok(hex::encode(hasher.finalize()))
-}
-
-pub fn sha256_bytes(value: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(value);
-    hex::encode(hasher.finalize())
-}
-
-pub fn sha1_file(path: impl AsRef<Path>) -> io::Result<String> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha1::new();
-    let mut buffer = [0u8; 1024 * 1024];
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        hasher.update(&buffer[..count]);
-    }
-    Ok(hex::encode(hasher.finalize()))
-}
-
-pub fn normalized_text_hash(value: &str) -> String {
-    hash_text(&value.split_whitespace().collect::<Vec<_>>().join(" "))
-}
-
-/// Resolve a cache child without permitting absolute paths or `..` escape.
-pub fn safe_cache_path(
-    root: impl AsRef<Path>,
-    child: impl AsRef<Path>,
-) -> Result<PathBuf, CacheError> {
-    let child = child.as_ref();
-    if child.is_absolute()
-        || child
-            .components()
-            .any(|component| matches!(component, std::path::Component::ParentDir))
-    {
-        return Err(CacheError::Traversal);
-    }
-    Ok(root.as_ref().join(child))
-}
-
-/// Atomically replace a JSON file. The temporary file is created beside the target.
-pub fn atomic_write_json<T: Serialize + ?Sized>(
-    path: impl AsRef<Path>,
-    value: &T,
-) -> Result<(), CacheError> {
-    let path = path.as_ref();
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent)?;
-    let bytes = serde_json::to_vec(value)?;
-    let mut staging = cache_write_tempfile(parent)?;
-    staging.write_all(&bytes)?;
-    if std::env::var("RUST_CACHE_FSYNC")
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"))
-        .unwrap_or(false)
-    {
-        staging.as_file().sync_all()?;
-    }
-    staging.persist(path).map_err(|error| error.error)?;
-    Ok(())
-}
-
-fn cache_write_tempfile(parent: &Path) -> io::Result<tempfile::NamedTempFile> {
-    tempfile::Builder::new()
-        .prefix(".cache-json-")
-        .tempfile_in(parent)
-}
-
-pub fn read_json<T: for<'de> Deserialize<'de>>(path: impl AsRef<Path>) -> Result<T, CacheError> {
-    read_json_from(File::open(path)?)
-}
-
-fn read_json_from<T: for<'de> Deserialize<'de>>(mut reader: impl Read) -> Result<T, CacheError> {
-    let mut bytes = Vec::new();
-    reader
-        .read_to_end(&mut bytes)
-        .map_err(serde_json::Error::io)?;
-    Ok(serde_json::from_slice(&bytes)?)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

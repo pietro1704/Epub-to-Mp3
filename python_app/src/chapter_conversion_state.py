@@ -1,0 +1,105 @@
+# -*- coding: utf-8 -*-
+"""Explicit shared lexical state for the chapter conversion phases."""
+
+from __future__ import annotations
+
+
+class ChapterConversionState:
+    """Own one invocation; callbacks observe the same live values across phases."""
+
+    __slots__ = (
+        "AudioValidator",
+        "CacheManager",
+        "LanguageMarkup",
+        "RetryManager",
+        "TranscriptionVerifier",
+        "_pre_segment_monitor",
+        "_pre_tts_path",
+        "_synthesize_safe",
+        "_whisper_available",
+        "attempt",
+        "base_timeout",
+        "cache_dir",
+        "cache_valid",
+        "cached_chunks",
+        "cached_payload",
+        "chapter",
+        "chapter_formatting",
+        "chapter_label",
+        "chapter_payload",
+        "chapter_text",
+        "chapter_timeout",
+        "char_count",
+        "char_diff",
+        "char_diff_percent",
+        "chunks",
+        "cm",
+        "config",
+        "converted",
+        "datetime",
+        "detail",
+        "diff_symbol",
+        "e",
+        "epub_char_count",
+        "epub_text",
+        "estimated_seconds",
+        "exc",
+        "f",
+        "file_valid",
+        "heartbeat",
+        "heartbeat_stop",
+        "heartbeat_task",
+        "index",
+        "inner_exc",
+        "json",
+        "lang_tag_count",
+        "last_error",
+        "legacy_mode",
+        "max_attempts",
+        "minimum_timeout",
+        "missing_segments",
+        "normalized_len",
+        "original_count",
+        "outcome",
+        "output_dir",
+        "output_path",
+        "payload_char_count",
+        "payload_locked",
+        "played",
+        "progress",
+        "recovered",
+        "retry_manager",
+        "retry_report",
+        "semaphore",
+        "shutil",
+        "simplified",
+        "simplified_payload",
+        "speech_text",
+        "status",
+        "status_holder",
+        "synthesis_task",
+        "temp_retry_dir",
+        "temp_wav",
+        "text_info",
+        "timezone",
+        "tolerance",
+        "traceback",
+        "tracker",
+        "truncation_warning",
+        "tts_engine",
+        "use_immediate_fallback",
+        "validation_data",
+        "validation_log_path",
+        "validation_result",
+        "validator",
+        "vr",
+    )
+
+    def __init__(self, *, semaphore, chapter, tts_engine, output_dir, index, config, progress):
+        self.semaphore = semaphore
+        self.chapter = chapter
+        self.tts_engine = tts_engine
+        self.output_dir = output_dir
+        self.index = index
+        self.config = config
+        self.progress = progress

@@ -9,90 +9,13 @@ actor LocalAudioArtifactStore {
     static let shared = LocalAudioArtifactStore()
     nonisolated static let didChangeNotification = Notification.Name("LocalAudioArtifactStore.didChange")
 
-    enum ArtifactState: String, Codable, Equatable, Sendable {
-        case pending
-        case generating
-        case waitingForWiFi
-        case available
-        case failed
-    }
-
-    enum Retention: String, Codable, Equatable, Sendable {
-        case temporary
-        case downloaded
-    }
-
-    struct ChapterSeed: Codable, Equatable, Sendable {
-        let index: Int
-        let title: String
-    }
-
-    struct ChapterArtifact: Codable, Equatable, Sendable {
-        let index: Int
-        var title: String
-        var state: ArtifactState
-        var retention: Retention
-        var playbackRetentionRequested: Bool? = nil
-        let relativePath: String
-        var byteCount: Int64
-        var retryCount: Int
-        var lastError: String?
-        var updatedAt: Date
-    }
-
-    struct Manifest: Codable, Equatable, Sendable {
-        let schemaVersion: Int
-        let bookID: String
-        var bookTitle: String
-        var author: String?
-        var chapters: [ChapterArtifact]
-        var updatedAt: Date
-    }
-
-    struct StorageUsage: Equatable, Sendable {
-        let temporaryBytes: Int64
-        let downloadedBytes: Int64
-
-        var totalBytes: Int64 { temporaryBytes + downloadedBytes }
-    }
-
-    /// A compact projection for Settings. The manifest remains the durable
-    /// source of truth; this only exposes books that contain protected audio.
-    struct DownloadedBook: Equatable, Sendable {
-        let bookID: String
-        let title: String
-        let author: String?
-        let chapterCount: Int
-        let byteCount: Int64
-    }
-
-    enum StoreError: LocalizedError, Equatable {
-        case unknownBook(String)
-        case unknownChapter(bookID: String, chapterIndex: Int)
-        case missingAudioFile(URL)
-        case invalidAudioFile(URL)
-
-        var errorDescription: String? {
-            switch self {
-            case .unknownBook(let bookID):
-                return "No local audio manifest exists for \(bookID)."
-            case .unknownChapter(let bookID, let chapterIndex):
-                return "No local audio chapter \(chapterIndex) exists for \(bookID)."
-            case .missingAudioFile(let url):
-                return "The local audio file is missing at \(url.path)."
-            case .invalidAudioFile(let url):
-                return "The local audio file is empty at \(url.path)."
-            }
-        }
-    }
-
     private static let schemaVersion = 1
-    private let root: URL
-    private let fileManager: FileManager
+    private let files: LocalAudioArtifactFiles
+    private var root: URL { files.root }
+    private var fileManager: FileManager { files.fileManager }
 
     init(root: URL = LocalAudioArtifactStore.defaultRoot()) {
-        self.root = root.standardizedFileURL
-        self.fileManager = .default
+        files = LocalAudioArtifactFiles(root: root.standardizedFileURL, fileManager: .default)
     }
 
     nonisolated static func defaultRoot() -> URL {
@@ -112,10 +35,10 @@ actor LocalAudioArtifactStore {
         author: String?,
         chapters: [ChapterSeed]
     ) throws -> Manifest {
-        try createDirectoryIfNeeded(root)
-        try createDirectoryIfNeeded(chaptersDirectory(bookID: bookID))
+        try files.createDirectoryIfNeeded(root)
+        try files.createDirectoryIfNeeded(files.chaptersDirectory(bookID: bookID))
 
-        let existing = try loadManifest(bookID: bookID)
+        let existing = try files.loadManifest(bookID: bookID)
         let existingByIndex = Dictionary(
             uniqueKeysWithValues: (existing?.chapters ?? []).map { ($0.index, $0) }
         )
@@ -127,7 +50,7 @@ actor LocalAudioArtifactStore {
                     title: seed.title,
                     state: .pending,
                     retention: .temporary,
-                    relativePath: relativePath(for: seed.index),
+                    relativePath: files.relativePath(for: seed.index),
                     byteCount: 0,
                     retryCount: 0,
                     lastError: nil,
@@ -135,7 +58,7 @@ actor LocalAudioArtifactStore {
                 )
             }
             existing.title = seed.title
-            if existing.state == .available, !hasAudioFile(bookID: bookID, artifact: existing) {
+            if existing.state == .available, !files.hasAudioFile(bookID: bookID, artifact: existing) {
                 existing.state = .pending
                 existing.byteCount = 0
                 existing.updatedAt = now
@@ -150,16 +73,16 @@ actor LocalAudioArtifactStore {
             chapters: artifacts,
             updatedAt: now
         )
-        try repairFilePolicies(for: manifest)
-        try save(manifest)
+        try files.repairFilePolicies(for: manifest)
+        try files.save(manifest)
         return manifest
     }
 
     func canonicalURL(bookID: String, chapterIndex: Int) throws -> URL {
         let artifact = try requiredArtifact(bookID: bookID, chapterIndex: chapterIndex)
-        let directory = chaptersDirectory(bookID: bookID)
-        try createDirectoryIfNeeded(directory)
-        return bookDirectory(bookID: bookID)
+        let directory = files.chaptersDirectory(bookID: bookID)
+        try files.createDirectoryIfNeeded(directory)
+        return files.bookDirectory(bookID: bookID)
             .appendingPathComponent(artifact.relativePath)
             .standardizedFileURL
     }
@@ -183,16 +106,16 @@ actor LocalAudioArtifactStore {
         guard fileManager.fileExists(atPath: url.path) else {
             throw StoreError.missingAudioFile(url)
         }
-        let size = try fileSize(at: url)
+        let size = try files.fileSize(at: url)
         guard size > 0 else {
             throw StoreError.invalidAudioFile(url)
         }
         let shouldRetain = artifact.retention == .downloaded || artifact.playbackRetentionRequested == true
         switch shouldRetain {
         case true:
-            try applyDownloadedFilePolicy(to: url)
+            try files.applyDownloadedFilePolicy(to: url)
         case false:
-            try applyTemporaryFilePolicy(to: url)
+            try files.applyTemporaryFilePolicy(to: url)
         }
         try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
             artifact.state = .available
@@ -231,11 +154,11 @@ actor LocalAudioArtifactStore {
         guard fileManager.fileExists(atPath: url.path) else {
             throw StoreError.missingAudioFile(url)
         }
-        let size = try fileSize(at: url)
+        let size = try files.fileSize(at: url)
         guard size > 0 else {
             throw StoreError.invalidAudioFile(url)
         }
-        try applyDownloadedFilePolicy(to: url)
+        try files.applyDownloadedFilePolicy(to: url)
         try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
             artifact.state = .available
             artifact.retention = .downloaded
@@ -248,11 +171,11 @@ actor LocalAudioArtifactStore {
     /// is enqueued. This keeps a user-selected chapter from waiting behind an
     /// active streaming conversion just to become a durable download.
     func promoteAvailable(bookID: String, chapterIndices: Set<Int>? = nil) throws -> Set<Int> {
-        guard let manifest = try loadManifest(bookID: bookID) else { return [] }
+        guard let manifest = try files.loadManifest(bookID: bookID) else { return [] }
         let available = manifest.chapters.filter { artifact in
             artifact.state == .available
                 && (chapterIndices == nil || chapterIndices?.contains(artifact.index) == true)
-                && hasAudioFile(bookID: bookID, artifact: artifact)
+                && files.hasAudioFile(bookID: bookID, artifact: artifact)
         }
         for artifact in available where artifact.retention != .downloaded {
             try promote(bookID: bookID, chapterIndex: artifact.index)
@@ -261,13 +184,13 @@ actor LocalAudioArtifactStore {
     }
 
     func artifact(bookID: String, chapterIndex: Int) throws -> ChapterArtifact? {
-        guard let manifest = try loadManifest(bookID: bookID) else { return nil }
+        guard let manifest = try files.loadManifest(bookID: bookID) else { return nil }
         return manifest.chapters.first { $0.index == chapterIndex }
     }
 
     func manifest(bookID: String) throws -> Manifest? {
-        guard let manifest = try loadManifest(bookID: bookID) else { return nil }
-        try repairFilePolicies(for: manifest)
+        guard let manifest = try files.loadManifest(bookID: bookID) else { return nil }
+        try files.repairFilePolicies(for: manifest)
         return manifest
     }
 
@@ -282,13 +205,13 @@ actor LocalAudioArtifactStore {
         voice: String,
         language: String?
     ) throws -> JobSnapshot? {
-        guard let manifest = try loadManifest(bookID: bookID), !manifest.chapters.isEmpty else {
+        guard let manifest = try files.loadManifest(bookID: bookID), !manifest.chapters.isEmpty else {
             return nil
         }
-        try repairFilePolicies(for: manifest)
+        try files.repairFilePolicies(for: manifest)
         let chapters = manifest.chapters.sorted { $0.index < $1.index }
         let available = chapters.filter {
-            $0.state == .available && hasAudioFile(bookID: bookID, artifact: $0)
+            $0.state == .available && files.hasAudioFile(bookID: bookID, artifact: $0)
         }
         guard !available.isEmpty else {
             return nil
@@ -298,7 +221,7 @@ actor LocalAudioArtifactStore {
                 index: artifact.index,
                 name: artifact.title,
                 status: "completed",
-                downloadUrl: bookDirectory(bookID: bookID)
+                downloadUrl: files.bookDirectory(bookID: bookID)
                     .appendingPathComponent(artifact.relativePath)
                     .absoluteString,
                 chars: nil,
@@ -350,91 +273,51 @@ actor LocalAudioArtifactStore {
     }
 
     func temporaryBookIDsEligibleForEviction() throws -> [String] {
-        guard fileManager.fileExists(atPath: root.path) else { return [] }
-        let bookDirectories = try fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-        return try bookDirectories.compactMap { directory in
-            guard let values = try? directory.resourceValues(forKeys: [.isDirectoryKey]),
-                  values.isDirectory == true,
-                  let manifest = try loadManifest(at: directory) else {
-                return nil
-            }
-            let hasTemporaryAudio = manifest.chapters.contains {
-                $0.state == .available && $0.retention == .temporary
-            }
-            return hasTemporaryAudio ? manifest.bookID : nil
-        }.sorted()
+        try LocalAudioStorageSummary(files: files).temporaryBookIDsEligibleForEviction()
     }
 
     func downloadedIndices(bookID: String) throws -> Set<Int> {
-        guard let manifest = try loadManifest(bookID: bookID) else { return [] }
+        guard let manifest = try files.loadManifest(bookID: bookID) else { return [] }
         return Set(manifest.chapters.compactMap { artifact in
             guard artifact.retention == .downloaded,
                   artifact.state == .available,
-                  hasAudioFile(bookID: bookID, artifact: artifact) else {
+                  files.hasAudioFile(bookID: bookID, artifact: artifact) else {
                 return nil
             }
             return artifact.index
         })
     }
 
-    /// Lists books with audio explicitly kept by the user. Missing files are
-    /// excluded so Settings never offers a destructive action for stale state.
     func downloadedBooks() throws -> [DownloadedBook] {
-        guard fileManager.fileExists(atPath: root.path) else { return [] }
-        let directories = try fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-        return directories.compactMap { directory in
-            guard let manifest = try? loadManifest(at: directory) else { return nil }
-            let downloaded = manifest.chapters.filter {
-                $0.retention == .downloaded
-                    && $0.state == .available
-                    && hasAudioFile(bookID: manifest.bookID, artifact: $0)
-            }
-            guard !downloaded.isEmpty else { return nil }
-            return DownloadedBook(
-                bookID: manifest.bookID,
-                title: manifest.bookTitle,
-                author: manifest.author,
-                chapterCount: downloaded.count,
-                byteCount: downloaded.reduce(Int64(0)) { $0 + $1.byteCount }
-            )
-        }
-        .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        try LocalAudioStorageSummary(files: files).downloadedBooks()
     }
 
     func failedIndices(bookID: String) throws -> [Int] {
-        guard let manifest = try loadManifest(bookID: bookID) else { return [] }
+        guard let manifest = try files.loadManifest(bookID: bookID) else { return [] }
         return manifest.chapters.compactMap { artifact in
             artifact.state == .failed ? artifact.index : nil
         }.sorted()
     }
 
     func hasCompleteDownloadedAudio(bookID: String) throws -> Bool {
-        guard let manifest = try loadManifest(bookID: bookID), !manifest.chapters.isEmpty else {
+        guard let manifest = try files.loadManifest(bookID: bookID), !manifest.chapters.isEmpty else {
             return false
         }
         return manifest.chapters.allSatisfy {
             $0.retention == .downloaded
                 && $0.state == .available
-                && hasAudioFile(bookID: bookID, artifact: $0)
+                && files.hasAudioFile(bookID: bookID, artifact: $0)
         }
     }
 
     /// Drops only recreatable audio. Explicitly downloaded chapters are never
     /// selected here and therefore remain available after cache maintenance.
     func clearTemporaryAudio(bookID: String) throws {
-        guard var manifest = try loadManifest(bookID: bookID) else { return }
+        guard var manifest = try files.loadManifest(bookID: bookID) else { return }
         var changed = false
         for index in manifest.chapters.indices where manifest.chapters[index].retention == .temporary {
             let artifact = manifest.chapters[index]
-            let url = bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath)
+            let url = files.bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath)
             do {
                 try fileManager.removeItem(at: url)
             } catch let error as NSError where error.domain == NSCocoaErrorDomain
@@ -449,7 +332,7 @@ actor LocalAudioArtifactStore {
         }
         guard changed else { return }
         manifest.updatedAt = Date()
-        try save(manifest)
+        try files.save(manifest)
     }
 
     /// Clears only recreatable generated audio. User-promoted downloads keep
@@ -467,7 +350,7 @@ actor LocalAudioArtifactStore {
     func removeDownloadedAudio(bookID: String, chapterIndex: Int) throws {
         let artifact = try requiredArtifact(bookID: bookID, chapterIndex: chapterIndex)
         guard artifact.retention == .downloaded else { return }
-        let url = bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath)
+        let url = files.bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath)
         do {
             try fileManager.removeItem(at: url)
         } catch let error as NSError where error.domain == NSCocoaErrorDomain
@@ -484,7 +367,7 @@ actor LocalAudioArtifactStore {
     }
 
     func clearDownloadedAudio(bookID: String) throws {
-        guard let manifest = try loadManifest(bookID: bookID) else { return }
+        guard let manifest = try files.loadManifest(bookID: bookID) else { return }
         for artifact in manifest.chapters where artifact.retention == .downloaded {
             try removeDownloadedAudio(bookID: bookID, chapterIndex: artifact.index)
         }
@@ -494,7 +377,7 @@ actor LocalAudioArtifactStore {
     /// library. This is intentionally broader than cache eviction: the user
     /// chose to remove the source itself, so no generated audio may survive.
     func removeAllAudio(bookID: String) throws {
-        let directory = bookDirectory(bookID: bookID)
+        let directory = files.bookDirectory(bookID: bookID)
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
@@ -519,46 +402,8 @@ actor LocalAudioArtifactStore {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    nonisolated static func temporaryCacheBudgetBytes(root: URL = LocalAudioArtifactStore.defaultRoot()) -> Int64 {
-        let hardLimit: Int64 = 2 * 1_024 * 1_024 * 1_024
-        let freeBytes = (try? root.resourceValues(
-            forKeys: [.volumeAvailableCapacityForImportantUsageKey]
-        ).volumeAvailableCapacityForImportantUsage).map { Int64($0) } ?? hardLimit
-        return max(0, min(hardLimit, freeBytes / 10))
-    }
-
-    nonisolated static func storageUsage(root: URL = LocalAudioArtifactStore.defaultRoot()) -> StorageUsage {
-        guard let directories = try? FileManager.default.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return StorageUsage(temporaryBytes: 0, downloadedBytes: 0)
-        }
-        var temporaryBytes: Int64 = 0
-        var downloadedBytes: Int64 = 0
-        for directory in directories {
-            let manifestURL = directory.appendingPathComponent("manifest.json")
-            guard let data = try? Data(contentsOf: manifestURL),
-                  let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else {
-                continue
-            }
-            for artifact in manifest.chapters where artifact.state == .available {
-                let url = directory.appendingPathComponent(artifact.relativePath)
-                let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?
-                    .int64Value ?? 0
-                if artifact.retention == .downloaded {
-                    downloadedBytes += bytes
-                } else {
-                    temporaryBytes += bytes
-                }
-            }
-        }
-        return StorageUsage(temporaryBytes: temporaryBytes, downloadedBytes: downloadedBytes)
-    }
-
     private func requiredArtifact(bookID: String, chapterIndex: Int) throws -> ChapterArtifact {
-        guard let manifest = try loadManifest(bookID: bookID) else {
+        guard let manifest = try files.loadManifest(bookID: bookID) else {
             throw StoreError.unknownBook(bookID)
         }
         guard let artifact = manifest.chapters.first(where: { $0.index == chapterIndex }) else {
@@ -572,7 +417,7 @@ actor LocalAudioArtifactStore {
         chapterIndex: Int,
         update: (inout ChapterArtifact) -> Void
     ) throws {
-        guard var manifest = try loadManifest(bookID: bookID) else {
+        guard var manifest = try files.loadManifest(bookID: bookID) else {
             throw StoreError.unknownBook(bookID)
         }
         guard let index = manifest.chapters.firstIndex(where: { $0.index == chapterIndex }) else {
@@ -581,115 +426,8 @@ actor LocalAudioArtifactStore {
         update(&manifest.chapters[index])
         manifest.chapters[index].updatedAt = Date()
         manifest.updatedAt = Date()
-        try save(manifest)
+        try files.save(manifest)
     }
 
-    private func loadManifest(bookID: String) throws -> Manifest? {
-        try loadManifest(at: bookDirectory(bookID: bookID))
-    }
 
-    private func loadManifest(at directory: URL) throws -> Manifest? {
-        let url = directory.appendingPathComponent("manifest.json")
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(Manifest.self, from: data)
-    }
-
-    private func save(_ manifest: Manifest) throws {
-        let directory = bookDirectory(bookID: manifest.bookID)
-        try createDirectoryIfNeeded(directory)
-        let url = directory.appendingPathComponent("manifest.json")
-        let data = try JSONEncoder().encode(manifest)
-        try data.write(to: url, options: .atomic)
-        try applyManifestFilePolicy(to: url)
-        NotificationCenter.default.post(
-            name: Self.didChangeNotification,
-            object: nil,
-            userInfo: ["bookID": manifest.bookID]
-        )
-    }
-
-    private func bookDirectory(bookID: String) -> URL {
-        root.appendingPathComponent(safePathComponent(bookID), isDirectory: true)
-    }
-
-    private func chaptersDirectory(bookID: String) -> URL {
-        bookDirectory(bookID: bookID).appendingPathComponent("chapters", isDirectory: true)
-    }
-
-    private func relativePath(for chapterIndex: Int) -> String {
-        "chapters/chapter-\(chapterIndex).mp3"
-    }
-
-    private func hasAudioFile(bookID: String, artifact: ChapterArtifact) -> Bool {
-        let url = bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath)
-        return ((try? fileSize(at: url)) ?? 0) > 0
-    }
-
-    private func fileSize(at url: URL) throws -> Int64 {
-        let attributes = try fileManager.attributesOfItem(atPath: url.path)
-        return (attributes[.size] as? NSNumber)?.int64Value ?? 0
-    }
-
-    private func createDirectoryIfNeeded(_ directory: URL) throws {
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try applyPersistentFilePolicy(to: directory)
-    }
-
-    private func safePathComponent(_ raw: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
-        let normalized = raw.unicodeScalars.map { allowed.contains($0) ? String($0) : "-" }.joined()
-        let collapsed = normalized.replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
-        let safe = collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return safe.isEmpty ? "book" : safe
-    }
-
-    private func applyPersistentFilePolicy(to url: URL) throws {
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = false
-        var mutableURL = url
-        try mutableURL.setResourceValues(values)
-        try applyFileProtection(to: url)
-    }
-
-    private func applyFileProtection(to url: URL) throws {
-        #if os(iOS)
-        try fileManager.setAttributes(
-            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-            ofItemAtPath: url.path
-        )
-        #endif
-    }
-
-    private func applyManifestFilePolicy(to url: URL) throws {
-        try applyPersistentFilePolicy(to: url)
-    }
-
-    private func applyTemporaryFilePolicy(to url: URL) throws {
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        var mutableURL = url
-        try mutableURL.setResourceValues(values)
-        try applyFileProtection(to: url)
-    }
-
-    private func applyDownloadedFilePolicy(to url: URL) throws {
-        try applyPersistentFilePolicy(to: url)
-    }
-
-    private func repairFilePolicies(for manifest: Manifest) throws {
-        try createDirectoryIfNeeded(root)
-        try createDirectoryIfNeeded(bookDirectory(bookID: manifest.bookID))
-        try createDirectoryIfNeeded(chaptersDirectory(bookID: manifest.bookID))
-        for artifact in manifest.chapters {
-            let url = bookDirectory(bookID: manifest.bookID).appendingPathComponent(artifact.relativePath)
-            guard fileManager.fileExists(atPath: url.path) else { continue }
-            switch artifact.retention {
-            case .temporary:
-                try applyTemporaryFilePolicy(to: url)
-            case .downloaded:
-                try applyDownloadedFilePolicy(to: url)
-            }
-        }
-    }
 }

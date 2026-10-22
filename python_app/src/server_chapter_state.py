@@ -1,0 +1,87 @@
+# -*- coding: utf-8 -*-
+"""Explicit shared lexical state for the server chapter phases."""
+
+from __future__ import annotations
+
+
+class ServerChapterState:
+    """Own one invocation; callbacks observe the same live values across phases."""
+
+    __slots__ = (
+        "_candidate",
+        "_chapter_heartbeat_loop",
+        "_chunk_callback",
+        "_edge_retry_adjustments",
+        "_manifest_chunks",
+        "_maybe_retry",
+        "_progress_callback",
+        "_seg_idle_seconds",
+        "_segment_progress_state",
+        "attempt",
+        "attempted_auto",
+        "auto_order",
+        "available_auto",
+        "chapter_elapsed",
+        "chapter_key",
+        "chapter_name",
+        "chapter_obj",
+        "chapter_output",
+        "chapter_text",
+        "chapter_timeout",
+        "chapters_completed",
+        "chars_per_second",
+        "clean_text",
+        "compute_mp3_sha256",
+        "converted",
+        "duplicate_entry",
+        "duplicate_msg",
+        "duration_seconds",
+        "engine_config",
+        "engine_label",
+        "engine_name",
+        "engine_obj",
+        "engine_runtime",
+        "entry",
+        "est",
+        "estimated_seconds",
+        "exc",
+        "fallback_cfg",
+        "heartbeat_stop",
+        "heartbeat_task",
+        "idle_task",
+        "idx",
+        "invoke",
+        "last_stage_timestamp",
+        "local_active_config",
+        "local_engine_name",
+        "needs_transcode",
+        "next_engine",
+        "output_file",
+        "pref_lower",
+        "preferred_engine",
+        "preview",
+        "previous_chapter",
+        "retired",
+        "retry_count",
+        "safe_max",
+        "safe_name",
+        "selected_engine",
+        "should_persist",
+        "start_time",
+        "stream_dir",
+        "stream_index",
+        "summary",
+        "synth_coro",
+        "synth_result",
+        "synth_started",
+        "synth_task",
+        "target_file",
+        "truncation_warning",
+        "tts_path",
+        "use_engine",
+    )
+
+    def __init__(self, *, idx, chapter_obj, preferred_engine):
+        self.idx = idx
+        self.chapter_obj = chapter_obj
+        self.preferred_engine = preferred_engine

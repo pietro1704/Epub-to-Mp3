@@ -431,7 +431,7 @@ final class BookDetailScreenController: UIViewController {
         }
         if let snapshot = player.snapshot, snapshot.jobId == jobId {
             Task {
-                await DownloadManager.shared.enqueueAll(
+                await AudiobookDownloads.shared.enqueueAll(
                     snapshot: snapshot,
                     baseURL: settings.resolvedBaseURL
                 )

@@ -93,7 +93,7 @@ enum EpubFixture {
     }
 
     /// Build an EPUB that includes one short chapter HTML in the spine
-    /// so end-to-end conversion tests (`PythonBridge.convertEpub`) have
+    /// so native reader and embedded-conversion tests have
     /// real text to synthesise. The plain `create()` path keeps the
     /// metadata-only fixture other tests rely on.
     static func createWithChapter(

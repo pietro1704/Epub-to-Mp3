@@ -13,6 +13,13 @@ private typealias TestPlatformImage = NSImage
 
 final class PdfTextExtractorTests: XCTestCase {
 
+    func testEmptyPDFHasNoNormalizedReplacementOrLogicalPages() {
+        let document = PDFDocument()
+        XCTAssertNil(PdfReadingPageNormalizer.normalizedDocument(from: document))
+        XCTAssertNil(PdfReadingPageNormalizer.separatedDocument(from: document, orientation: .right))
+        XCTAssertEqual(document.pageCount, 0)
+    }
+
     func testTwoUpScanDetectorRequiresTextOnBothLogicalPages() {
         let left = (0..<6).map { row in
             PdfReadingPageNormalizer.RecognizedLine(

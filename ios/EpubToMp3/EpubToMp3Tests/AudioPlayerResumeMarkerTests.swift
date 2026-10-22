@@ -3,7 +3,7 @@ import XCTest
 
 final class AudioPlayerResumeMarkerTests: XCTestCase {
     func testResumeMarkerToPersistBeforeTeardownUsesCurrentSnapshotAndPosition() {
-        let marker = AudioPlayer.resumeMarkerToPersistBeforeTeardown(
+        let marker = PlaybackResumeStore.markerBeforeTeardown(
             jobId: "job-123",
             chapterIndex: 4,
             positionSeconds: 45
@@ -16,21 +16,21 @@ final class AudioPlayerResumeMarkerTests: XCTestCase {
 
     func testResumeMarkerToPersistBeforeTeardownSkipsMissingOrTooShortPositions() {
         XCTAssertNil(
-            AudioPlayer.resumeMarkerToPersistBeforeTeardown(
+            PlaybackResumeStore.markerBeforeTeardown(
                 jobId: nil,
                 chapterIndex: 4,
                 positionSeconds: 45
             )
         )
         XCTAssertNil(
-            AudioPlayer.resumeMarkerToPersistBeforeTeardown(
+            PlaybackResumeStore.markerBeforeTeardown(
                 jobId: "job-123",
                 chapterIndex: 4,
                 positionSeconds: 1
             )
         )
         XCTAssertNil(
-            AudioPlayer.resumeMarkerToPersistBeforeTeardown(
+            PlaybackResumeStore.markerBeforeTeardown(
                 jobId: "job-123",
                 chapterIndex: 4,
                 positionSeconds: .nan

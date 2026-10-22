@@ -114,10 +114,10 @@ final class EpubMetadataReaderTests: XCTestCase {
 
         // Sanity check: verify signature before patching.
         let sig: UInt32 = archiveData.withUnsafeBytes {
-            $0.load(fromByteOffset: eocdOffset, as: UInt32.self)
+            $0.loadUnaligned(fromByteOffset: eocdOffset, as: UInt32.self)
         }
         // The EOCD signature is stored little-endian on disk
-        // (50 4B 05 06 → UInt32 0x06054b50). `load(fromByteOffset:as:)`
+        // (50 4B 05 06 → UInt32 0x06054b50). `loadUnaligned(fromByteOffset:as:)`
         // reads in host byte order; on a little-endian host (every
         // Apple platform) the four bytes interpret directly as
         // 0x06054b50. On a (hypothetical) big-endian host they would

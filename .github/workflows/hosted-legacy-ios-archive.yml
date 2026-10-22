@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/scripts/hosted-legacy-ios-archive.py'
       - '.github/scripts/test_hosted_legacy_ios_archive.py'
+      - '.github/scripts/hosted_archive_*.py'
       - '.github/workflows/hosted-legacy-ios-archive.yml'
   workflow_dispatch:
 

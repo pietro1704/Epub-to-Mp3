@@ -20,7 +20,7 @@ final class AudioPlayerUXTests: XCTestCase {
     @MainActor
     func testPlayingResumeRewindsFifteenSeconds() {
         XCTAssertEqual(
-            AudioPlayer.resumePositionForPersistedState(positionSeconds: 120, wasPlaying: true),
+            PlaybackResumeStore.positionForPersistedState(positionSeconds: 120, wasPlaying: true),
             105
         )
     }
@@ -28,7 +28,7 @@ final class AudioPlayerUXTests: XCTestCase {
     @MainActor
     func testPausedResumeKeepsExactPosition() {
         XCTAssertEqual(
-            AudioPlayer.resumePositionForPersistedState(positionSeconds: 120, wasPlaying: false),
+            PlaybackResumeStore.positionForPersistedState(positionSeconds: 120, wasPlaying: false),
             120
         )
     }
@@ -36,7 +36,7 @@ final class AudioPlayerUXTests: XCTestCase {
     @MainActor
     func testEmbeddedChapterDurationUsesChapterEstimateNotOneSegment() {
         XCTAssertEqual(
-            AudioPlayer.estimatedChapterDurationSeconds(wordCount: 400, wordsPerMinute: 200),
+            PlaybackSegmentSession.estimatedChapterDurationSeconds(wordCount: 400, wordsPerMinute: 200),
             120,
             accuracy: 0.001
         )
@@ -44,7 +44,7 @@ final class AudioPlayerUXTests: XCTestCase {
 
     @MainActor
     func testEmbeddedChapterTitleUsesEpubChapterIndex() {
-        let title = AudioPlayer.segmentChapterTitle(
+        let title = PlaybackSegmentSession.segmentChapterTitle(
             chapterIndex: 1,
             chapterProgress: [
                 JobSnapshot.Chapter(
@@ -66,8 +66,8 @@ final class AudioPlayerUXTests: XCTestCase {
 
     @MainActor
     func testSeekAtChapterEndIsRecognizedWithSmallTolerance() {
-        XCTAssertTrue(AudioPlayer.shouldAdvanceAtSeekEnd(position: 599.5, duration: 600))
-        XCTAssertFalse(AudioPlayer.shouldAdvanceAtSeekEnd(position: 590, duration: 600))
+        XCTAssertTrue(PlaybackChapterQueue.shouldAdvanceAtSeekEnd(position: 599.5, duration: 600))
+        XCTAssertFalse(PlaybackChapterQueue.shouldAdvanceAtSeekEnd(position: 590, duration: 600))
     }
 
     @MainActor

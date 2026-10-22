@@ -1,5 +1,7 @@
 # Epub-to-MP3 Reader — Textual Wireframes
 
+> **Design target.** These wireframes describe proposed product behavior, including format and conversion choices that may not be implemented. They are not current runtime acceptance evidence. See [product specification](reader-product-spec.md), [runtime navigation](agents/runtime-navigation.md) and [execution policy](agents/execution-policy.md).
+
 ## Navigation map
 
 ```text

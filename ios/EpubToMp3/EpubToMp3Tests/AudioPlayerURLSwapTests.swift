@@ -22,7 +22,7 @@ final class AudioPlayerURLSwapTests: XCTestCase {
     func testSwapsFutureChapterWhoseURLChanged() {
         let old = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3"), chapter(2, url: "/2.mp3")]
         let new = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3"), chapter(2, url: "/2-v2.mp3")]
-        let result = AudioPlayer.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 0)
+        let result = PlaybackChapterQueue.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 0)
         XCTAssertEqual(result, [2])
     }
 
@@ -31,7 +31,7 @@ final class AudioPlayerURLSwapTests: XCTestCase {
         // swapped (that would yank the live item and break the playhead).
         let old = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3"), chapter(2, url: "/2.mp3")]
         let new = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1-v2.mp3"), chapter(2, url: "/2.mp3")]
-        let result = AudioPlayer.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 1)
+        let result = PlaybackChapterQueue.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 1)
         XCTAssertEqual(result, [], "The chapter currently playing must never be swapped.")
     }
 
@@ -39,13 +39,13 @@ final class AudioPlayerURLSwapTests: XCTestCase {
         // Chapter 0 already played; its URL changing is irrelevant to the queue.
         let old = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3")]
         let new = [chapter(0, url: "/0-v2.mp3"), chapter(1, url: "/1.mp3")]
-        let result = AudioPlayer.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 1)
+        let result = PlaybackChapterQueue.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 1)
         XCTAssertEqual(result, [])
     }
 
     func testNoSwapWhenURLsUnchanged() {
         let old = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3"), chapter(2, url: "/2.mp3")]
-        let result = AudioPlayer.chapterIndicesNeedingURLSwap(old: old, new: old, currentlyPlayingIndex: 0)
+        let result = PlaybackChapterQueue.chapterIndicesNeedingURLSwap(old: old, new: old, currentlyPlayingIndex: 0)
         XCTAssertEqual(result, [])
     }
 
@@ -55,8 +55,8 @@ final class AudioPlayerURLSwapTests: XCTestCase {
         let old = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3"), chapter(2, url: "/2.mp3")]
         let newNil = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3"), chapter(2, url: nil)]
         let newEmpty = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3"), chapter(2, url: "")]
-        XCTAssertEqual(AudioPlayer.chapterIndicesNeedingURLSwap(old: old, new: newNil, currentlyPlayingIndex: 0), [])
-        XCTAssertEqual(AudioPlayer.chapterIndicesNeedingURLSwap(old: old, new: newEmpty, currentlyPlayingIndex: 0), [])
+        XCTAssertEqual(PlaybackChapterQueue.chapterIndicesNeedingURLSwap(old: old, new: newNil, currentlyPlayingIndex: 0), [])
+        XCTAssertEqual(PlaybackChapterQueue.chapterIndicesNeedingURLSwap(old: old, new: newEmpty, currentlyPlayingIndex: 0), [])
     }
 
     func testOnlyComparesSharedPrefixNotAppendedChapters() {
@@ -64,14 +64,14 @@ final class AudioPlayerURLSwapTests: XCTestCase {
         // path, not the swap path — the swap decision only spans shared indices.
         let old = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3")]
         let new = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1-v2.mp3"), chapter(2, url: "/2.mp3")]
-        let result = AudioPlayer.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 0)
+        let result = PlaybackChapterQueue.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 0)
         XCTAssertEqual(result, [1], "Only the changed shared-prefix chapter is a swap; index 2 is an append.")
     }
 
     func testMultipleFutureSwaps() {
         let old = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1.mp3"), chapter(2, url: "/2.mp3"), chapter(3, url: "/3.mp3")]
         let new = [chapter(0, url: "/0.mp3"), chapter(1, url: "/1-v2.mp3"), chapter(2, url: "/2.mp3"), chapter(3, url: "/3-v2.mp3")]
-        let result = AudioPlayer.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 0)
+        let result = PlaybackChapterQueue.chapterIndicesNeedingURLSwap(old: old, new: new, currentlyPlayingIndex: 0)
         XCTAssertEqual(result, [1, 3])
     }
 }

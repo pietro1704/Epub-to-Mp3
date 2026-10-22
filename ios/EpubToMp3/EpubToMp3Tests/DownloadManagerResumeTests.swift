@@ -11,13 +11,13 @@ final class DownloadManagerResumeTests: XCTestCase {
             downloadedAt: Date()
         )
 
-        XCTAssertNotNil(DownloadManager.reusableDownloadedEntry(
+        XCTAssertNotNil(AudiobookDownloadStorage.reusableDownloadedEntry(
             chapterIndex: 3, manifestEntry: entry, fileExists: true
         ))
-        XCTAssertNil(DownloadManager.reusableDownloadedEntry(
+        XCTAssertNil(AudiobookDownloadStorage.reusableDownloadedEntry(
             chapterIndex: 3, manifestEntry: entry, fileExists: false
         ))
-        XCTAssertNil(DownloadManager.reusableDownloadedEntry(
+        XCTAssertNil(AudiobookDownloadStorage.reusableDownloadedEntry(
             chapterIndex: 2, manifestEntry: entry, fileExists: true
         ))
     }

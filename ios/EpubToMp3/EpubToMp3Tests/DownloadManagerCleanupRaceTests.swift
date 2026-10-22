@@ -153,9 +153,9 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
         let jobID = UUID().uuidString
         let chapterURL = downloads.appendingPathComponent("\(jobID)/chapters/Fixture.mp3")
         let manifestURL = downloads.appendingPathComponent("\(jobID)/manifest.json")
-        let previousRoot = DownloadManager.rootOverrideForTesting
-        DownloadManager.rootOverrideForTesting = downloads
-        let manager = DownloadManager()
+        let previousRoot = AudiobookDownloadStorage.rootOverrideForTesting
+        AudiobookDownloadStorage.rootOverrideForTesting = downloads
+        let manager = AudiobookDownloads()
         let gate = DownloadMaintenanceGate()
         let bytes = Data(repeating: 0x4D, count: 4096)
         let server = try DelayedDownloadHTTPServer(bytes: bytes)
@@ -182,7 +182,8 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             artifactStore: LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts")),
             legacyAudiobooksRoot: downloads, legacyTTSRoot: ttsRoot,
             downloadManager: manager, cancelDownloads: { await gate.wait() },
-            notificationCenter: NotificationCenter())
+            notificationCenter: NotificationCenter(),
+            rustOutputs: RustConversionOutputStore(root: root.appendingPathComponent("rust-outputs")))
         let cleanup = Task {
             do {
                 try await service.clearAllDownloads()
@@ -212,7 +213,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
                 XCTFail("Keep the isolated root until cleanup and writers quiesce")
                 return
             }
-            DownloadManager.rootOverrideForTesting = previousRoot
+            AudiobookDownloadStorage.rootOverrideForTesting = previousRoot
             try? FileManager.default.removeItem(at: root)
         }
         if scenario != .overlap { await secondCompletion.finish() }
@@ -354,9 +355,9 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
         let bookRoot = downloads.appendingPathComponent(jobID, isDirectory: true)
         let manifestURL = bookRoot.appendingPathComponent("manifest.json")
         let chapterURL = bookRoot.appendingPathComponent("chapters/Fixture.mp3")
-        let previousRoot = DownloadManager.rootOverrideForTesting
-        DownloadManager.rootOverrideForTesting = downloads
-        let manager = DownloadManager()
+        let previousRoot = AudiobookDownloadStorage.rootOverrideForTesting
+        AudiobookDownloadStorage.rootOverrideForTesting = downloads
+        let manager = AudiobookDownloads()
         let bytes = Data(repeating: 0x5A, count: 8192)
         let server = try DelayedDownloadHTTPServer(bytes: bytes)
         let progress = CleanupDownloadProgress()
@@ -384,7 +385,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
                 XCTFail("Writer did not quiesce; keep its isolated root override instead of redirecting late writes")
                 return
             }
-            DownloadManager.rootOverrideForTesting = previousRoot
+            AudiobookDownloadStorage.rootOverrideForTesting = previousRoot
             try? FileManager.default.removeItem(at: root)
         }
         await fulfillment(of: [server.ready], timeout: 5)
@@ -403,7 +404,8 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             let service = AudioStorageMaintenance(
                 artifactStore: LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts")),
                 legacyAudiobooksRoot: downloads, legacyTTSRoot: root.appendingPathComponent("tts"),
-                downloadManager: manager, notificationCenter: NotificationCenter())
+                downloadManager: manager, notificationCenter: NotificationCenter(),
+                rustOutputs: RustConversionOutputStore(root: root.appendingPathComponent("rust-outputs")))
             let completion = CleanupOperationCompletion()
             let cleanup = Task {
                 do {

@@ -60,7 +60,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         super.viewDidLoad()
         viewModel.inheritedPreferences = settings.ttsPreferences
         if viewModel.usesPreferences { viewModel.engine = settings.audioEngine.rawValue }
-        viewModel.modelsRoot = AppSettings.ttsModelsRoot()?.path
+        viewModel.modelsRoot = LocalSpeechModelReadiness.ttsModelsRoot()?.path
         tableView.cellLayoutMarginsFollowReadableWidth = true
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 64
@@ -77,7 +77,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         super.viewWillAppear(animated)
         viewModel.inheritedPreferences = settings.ttsPreferences
         if viewModel.usesPreferences { viewModel.engine = settings.audioEngine.rawValue }
-        viewModel.modelsRoot = AppSettings.ttsModelsRoot()?.path
+        viewModel.modelsRoot = LocalSpeechModelReadiness.ttsModelsRoot()?.path
         tableView.reloadSections(IndexSet(integer: Section.engine.rawValue), with: .none)
     }
 

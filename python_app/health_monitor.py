@@ -17,6 +17,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+if __package__:
+    from .health_monitor_adapter import SystemMonitorAdapter as SystemMonitorAdapter
+else:
+    from health_monitor_adapter import SystemMonitorAdapter as SystemMonitorAdapter
+
 
 @dataclass
 class HealthAlert:
@@ -362,44 +367,48 @@ class HealthMonitor:
     def get_stats_summary(self) -> Dict[str, Any]:
         """Return statistics summary."""
         with self._lock:
-            if not self._snapshots:
-                return {}
+            return self._stats_summary_locked()
 
-            latest = self._snapshots[-1]
+    def _stats_summary_locked(self) -> Dict[str, Any]:
+        """Read summary state while the caller holds the monitor lock."""
+        if not self._snapshots:
+            return {}
 
-            # Averages over the last 30 snapshots
-            recent = self._snapshots[-30:]
-            avg_cpu = sum(s.cpu_percent for s in recent) / len(recent)
-            avg_memory = sum(s.memory_mb for s in recent) / len(recent)
+        latest = self._snapshots[-1]
 
-            return {
-                "timestamp": latest.timestamp,
-                "uptime_seconds": time.time() - self._snapshots[0].timestamp
-                if self._snapshots
-                else 0,
-                "current": {
-                    "cpu_percent": latest.cpu_percent,
-                    "memory_mb": latest.memory_mb,
-                    "memory_percent": latest.memory_percent,
-                    "gpu_utilization": latest.gpu_utilization if latest.gpu_available else None,
-                    "heap_status": latest.heap_status,
-                    "thread_count": latest.thread_count,
-                },
-                "averages_last_60s": {
-                    "cpu_percent": avg_cpu,
-                    "memory_mb": avg_memory,
-                },
-                "total_alerts": len(self._alerts),
-                "critical_alerts": sum(1 for a in self._alerts if a.severity == "critical"),
-                "warning_alerts": sum(1 for a in self._alerts if a.severity == "warning"),
-            }
+        # Averages over the last 30 snapshots
+        recent = self._snapshots[-30:]
+        avg_cpu = sum(s.cpu_percent for s in recent) / len(recent)
+        avg_memory = sum(s.memory_mb for s in recent) / len(recent)
+
+        return {
+            "timestamp": latest.timestamp,
+            "uptime_seconds": time.time() - self._snapshots[0].timestamp
+            if self._snapshots
+            else 0,
+            "current": {
+                "cpu_percent": latest.cpu_percent,
+                "memory_mb": latest.memory_mb,
+                "memory_percent": latest.memory_percent,
+                "gpu_utilization": latest.gpu_utilization if latest.gpu_available else None,
+                "heap_status": latest.heap_status,
+                "thread_count": latest.thread_count,
+            },
+            "averages_last_60s": {
+                "cpu_percent": avg_cpu,
+                "memory_mb": avg_memory,
+            },
+            "total_alerts": len(self._alerts),
+            "critical_alerts": sum(1 for a in self._alerts if a.severity == "critical"),
+            "warning_alerts": sum(1 for a in self._alerts if a.severity == "warning"),
+        }
 
     def export_report(self, output_path: Path) -> None:
         """Export full report to file."""
         with self._lock:
             report = {
                 "generated_at": datetime.now().isoformat(),
-                "summary": self.get_stats_summary(),
+                "summary": self._stats_summary_locked(),
                 "recent_alerts": [
                     {
                         "timestamp": datetime.fromtimestamp(a.timestamp).isoformat(),
@@ -464,53 +473,6 @@ if __name__ == "__main__":
 
 
 # Compatibility adapter for server.py
-class SystemMonitorAdapter:
-    """Adapter to make HealthMonitor compatible with old system_monitor API."""
-
-    def __init__(self, health_monitor):
-        self._health_monitor = health_monitor
-
-    def latest(self):
-        """Compatibility method that returns snapshot in old format."""
-        snapshot = self._health_monitor.get_latest_snapshot()
-        if not snapshot:
-            return {}
-
-        import os
-
-        # Calculate memory values from snapshot
-        # memory_mb is used memory, memory_percent is percentage used
-        # So: memory_total = memory_mb / (memory_percent / 100)
-        if snapshot.memory_percent > 0:
-            memory_total_mb = snapshot.memory_mb / (snapshot.memory_percent / 100)
-            memory_available_mb = memory_total_mb - snapshot.memory_mb
-        else:
-            memory_total_mb = 0
-            memory_available_mb = 0
-
-        # Convert to old format
-        return {
-            "cpu": {
-                "percent": snapshot.cpu_percent,
-                "count": os.cpu_count() or 4,
-            },
-            "memory": {
-                "percent": snapshot.memory_percent,
-                "available": memory_available_mb * 1024 * 1024,  # MB to bytes
-                "total": memory_total_mb * 1024 * 1024,  # MB to bytes
-            },
-            "disk": {
-                "percent": 0,  # Not available in HealthSnapshot
-            },
-        }
-
-    def start(self):
-        """Start monitoring."""
-        self._health_monitor.start()
-
-    def stop(self):
-        """Stop monitoring."""
-        self._health_monitor.stop()
 
 
 def get_system_monitor_adapter():

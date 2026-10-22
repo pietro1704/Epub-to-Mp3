@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -10,7 +9,6 @@ import time
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from ._env_utils import env_bool as _env_bool
@@ -18,6 +16,15 @@ from ._env_utils import env_float as _env_float
 from ._env_utils import env_int as _env_int
 from .config import ConversionConfig
 from .ebook_reader import Chapter
+from .legacy_dependency_bootstrap import install_requirements
+from .runtime_statistics import percentile
+from .warm_start_state import (
+    load_warm_start_state,
+    mark_warm_start_ready,
+    save_warm_start_state,
+    warm_start_is_fresh,
+    warmup_output_path,
+)
 
 
 def _has_piper_support() -> bool:
@@ -72,99 +79,45 @@ EDGE_PREDICTIVE_MIN_EDGE_CPS = _env_float("EDGE_PREDICTIVE_MIN_EDGE_CPS", 85.0)
 
 
 class _EngineSelectionMixin:
-    @staticmethod
-    def _warmup_output_path(base_dir: Path, engine: str) -> Path:
-        ext = ".mp3" if (engine or "").lower() == "edge" else ".wav"
-        return base_dir / f"{(engine or 'engine').lower()}-warmup{ext}"
+    _warmup_output_path = staticmethod(warmup_output_path)
 
     def _warm_start_key(self, cfg: Optional[ConversionConfig], engine_label: str) -> str:
         key = self._runtime_tuning_key(cfg, engine_label)
         return f"{key['engine']}|{key['voice']}|{key['language']}|{key.get('machine_signature', 'generic')}"
 
     def _load_warm_start_state(self) -> Dict[str, Any]:
-        if not self._warm_start_enabled or not self._warm_start_path.exists():
+        if not self._warm_start_enabled:
             return {}
-        try:
-            payload = json.loads(self._warm_start_path.read_text(encoding="utf-8"))
-            entries = payload.get("entries", {}) if isinstance(payload, dict) else {}
-            if not isinstance(entries, dict):
-                return {}
-            now = time.time()
-            ttl = max(60.0, float(payload.get("ttl_seconds", self._warm_start_ttl_seconds) or 0.0))
-            cleaned: Dict[str, Any] = {}
-            changed = False
-            for key, raw in entries.items():
-                if not isinstance(raw, dict):
-                    changed = True
-                    continue
-                ts = float(raw.get("ts", 0.0) or 0.0)
-                if ts <= 0 or (now - ts) > ttl:
-                    changed = True
-                    continue
-                cleaned[str(key)] = {"ts": ts}
-            if changed:
-                self._save_warm_start_state(cleaned)
-            return cleaned
-        except Exception:
-            return {}
+        return load_warm_start_state(
+            self._warm_start_path, self._warm_start_ttl_seconds,
+            enabled=self._warm_start_enabled, clock=time.time,
+            save_entries=self._save_warm_start_state,
+        )
 
     def _save_warm_start_state(self, entries: Dict[str, Any]) -> None:
         if not self._warm_start_enabled:
             return
-        try:
-            self._warm_start_path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "updated_at": time.time(),
-                "ttl_seconds": self._warm_start_ttl_seconds,
-                "entries": entries,
-            }
-            self._warm_start_path.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception:
-            return
+        save_warm_start_state(
+            self._warm_start_path, self._warm_start_ttl_seconds, entries,
+            enabled=self._warm_start_enabled, clock=time.time,
+        )
 
     def _is_warm_start_fresh(self, cfg: Optional[ConversionConfig], engine_label: str) -> bool:
         entries = self._load_warm_start_state()
         if not entries:
             return False
-        key = self._warm_start_key(cfg, engine_label)
-        raw = entries.get(key)
-        if not isinstance(raw, dict):
-            return False
-        ts = float(raw.get("ts", 0.0) or 0.0)
-        if ts <= 0:
-            return False
-        return (time.time() - ts) <= self._warm_start_ttl_seconds
+        return warm_start_is_fresh(
+            entries, self._warm_start_key(cfg, engine_label), self._warm_start_ttl_seconds,
+            clock=time.time,
+        )
 
-    @staticmethod
-    def _percentile(values: List[float], q: float) -> float:
-        seq = sorted(float(v) for v in (values or []) if float(v) >= 0.0)
-        if not seq:
-            return 0.0
-        if q <= 0:
-            return float(seq[0])
-        if q >= 1:
-            return float(seq[-1])
-        idx = (len(seq) - 1) * q
-        lo = int(idx)
-        hi = min(len(seq) - 1, lo + 1)
-        frac = idx - lo
-        return float(seq[lo] * (1.0 - frac) + seq[hi] * frac)
+    _percentile = staticmethod(percentile)
 
     def _mark_warm_start_ready(self, cfg: Optional[ConversionConfig], engine_label: str) -> None:
-        entries = self._load_warm_start_state()
-        key = self._warm_start_key(cfg, engine_label)
-        entries[key] = {"ts": time.time()}
-        if len(entries) > 300:
-            sorted_keys = sorted(
-                entries.keys(),
-                key=lambda item: float((entries.get(item) or {}).get("ts", 0.0) or 0.0),
-                reverse=True,
-            )
-            entries = {name: entries[name] for name in sorted_keys[:200]}
-        self._save_warm_start_state(entries)
+        mark_warm_start_ready(
+            self._load_warm_start_state(), self._warm_start_key(cfg, engine_label),
+            clock=time.time, save_entries=self._save_warm_start_state,
+        )
 
     def _create_optimized_thread_pool(self, max_workers: int) -> ThreadPoolExecutor:
         """
@@ -539,62 +492,7 @@ class _EngineSelectionMixin:
         if self._requirements_attempted:
             return False
         self._requirements_attempted = True
-
-        python_root = Path(__file__).resolve().parents[1]
-        project_root = python_root.parent
-        candidate_paths = [
-            Path("requirements.txt"),
-            Path.cwd() / "requirements.txt",
-            python_root / "requirements.txt",
-        ]
-        requirements_path = next((path for path in candidate_paths if path.exists()), None)
-
-        if requirements_path is None:
-            print(self.loc.t("requirements_not_found"))
-            return False
-
-        print(self.loc.t("installing_requirements"))
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-r", str(requirements_path)],
-            check=False,
-            capture_output=True,
-            text=True,
+        return install_requirements(
+            self.loc, __file__, process_runner=subprocess.run, exec_process=os.execv,
+            python_executable=sys.executable, argv=sys.argv,
         )
-
-        if result.returncode == 0:
-            print(self.loc.t("requirements_success"))
-            return True
-
-        stderr = (result.stderr or "").lower()
-        stdout = (result.stdout or "").lower()
-        if "externally-managed-environment" in stderr or "externally-managed-environment" in stdout:
-            if not os.getenv("EPUB2MP3_VENV_BOOTSTRAPPED"):
-                venv_path = project_root / ".venv"
-                venv_python = venv_path / "bin" / "python"
-                try:
-                    if not venv_python.exists():
-                        print("🔧 Criando ambiente virtual local (.venv)...")
-                        subprocess.run(
-                            [sys.executable, "-m", "venv", str(venv_path)],
-                            check=False,
-                        )
-                    if venv_python.exists():
-                        print("📦 Installing dependencies in .venv...")
-                        subprocess.run(
-                            [
-                                str(venv_python),
-                                "-m",
-                                "pip",
-                                "install",
-                                "-r",
-                                str(requirements_path),
-                            ],
-                            check=False,
-                        )
-                        os.environ["EPUB2MP3_VENV_BOOTSTRAPPED"] = "1"
-                        os.execv(str(venv_python), [str(venv_python)] + sys.argv)
-                except Exception:
-                    pass
-
-        print(self.loc.t("requirements_failure"))
-        return False

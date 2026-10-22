@@ -4,13 +4,13 @@ import XCTest
 final class RustPlaybackRestorationTests: XCTestCase {
     func testPartialDownloadKeepsOtherConvertedChaptersAndPrefersRetainedFile() throws {
         try withFixture { job, manager, directory in
-            let retained = DownloadManager.audiobookFolder(for: job).appendingPathComponent("retained.mp3")
+            let retained = AudiobookDownloadStorage.audiobookFolder(for: job).appendingPathComponent("retained.mp3")
             try Data([1, 2, 3]).write(to: retained)
-            try DownloadManager.saveManifest(.init(jobId: job, bookTitle: "Retained",
+            try AudiobookDownloadStorage.saveManifest(.init(jobId: job, bookTitle: "Retained",
                 chapters: [.init(index: 0, title: "Retained title", mp3FileName: "retained.mp3",
                                  mp3Bytes: 3, downloadedAt: Date())], totalBytes: 3, completedAt: nil))
             let source = try XCTUnwrap(RustConversionCoordinator.persistedSnapshot(jobID: job, fileManager: manager))
-            let merged = try XCTUnwrap(DownloadManager.restoredPlaybackSnapshot(jobId: job, conversionSnapshot: source))
+            let merged = try XCTUnwrap(AudiobookDownloadStorage.restoredPlaybackSnapshot(jobId: job, conversionSnapshot: source))
             XCTAssertEqual(merged.playableChapters.map(\.index), [0, 1])
             XCTAssertEqual(merged.playableChapters[0].downloadUrl, retained.absoluteString)
             XCTAssertEqual(merged.playableChapters[0].name, "Chapter zero")
@@ -20,7 +20,7 @@ final class RustPlaybackRestorationTests: XCTestCase {
             try FileManager.default.removeItem(at: directory.appendingPathComponent("one.mp3"))
             let missing = RustConversionCoordinator.persistedSnapshot(jobID: job, fileManager: manager)
             XCTAssertNil(missing)
-            XCTAssertEqual(DownloadManager.restoredPlaybackSnapshot(jobId: job, conversionSnapshot: missing)?.playableChapters.map(\.index), [0])
+            XCTAssertEqual(AudiobookDownloadStorage.restoredPlaybackSnapshot(jobId: job, conversionSnapshot: missing)?.playableChapters.map(\.index), [0])
         }
     }
 
@@ -53,7 +53,7 @@ final class RustPlaybackRestorationTests: XCTestCase {
         let directory = root.appendingPathComponent("EpubToMp3/RustConversions/\(job)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
-            DownloadManager.deleteAudiobook(jobId: job)
+            AudiobookDownloadStorage.deleteAudiobook(jobId: job)
             try? FileManager.default.removeItem(at: root)
         }
         try Data([1, 2, 3]).write(to: directory.appendingPathComponent("zero.mp3"))

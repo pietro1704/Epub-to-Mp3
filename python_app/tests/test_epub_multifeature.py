@@ -3,22 +3,32 @@
 
 from __future__ import annotations
 
-import io
-import os
-import shutil
-import tempfile
-import unittest
-import unittest.mock
+import sys
 from pathlib import Path
 
-from main import ConverterApplication
-from src.ebook_reader import EbookReader, EpubParser, TextProcessor
-from src.text_formatting import TextFormattingProcessor
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures" / "epubs"
-SAMPLE_EPUB = FIXTURE_ROOT / "test_multifeature.epub"
-SAMPLE_MULTILANG = FIXTURE_ROOT / "sample_multilang.epub"
+from python_app.tests._epub_multifeature_test_support import (
+    ConverterApplication as ConverterApplication,
+    EbookReader as EbookReader,
+    EpubParser as EpubParser,
+    FIXTURE_ROOT as FIXTURE_ROOT,
+    SAMPLE_EPUB as SAMPLE_EPUB,
+    SAMPLE_MULTILANG as SAMPLE_MULTILANG,
+    TextFormattingProcessor as TextFormattingProcessor,
+    TextProcessor as TextProcessor,
+    io as io,
+    os as os,
+    shutil as shutil,
+    tempfile as tempfile,
+    unittest as unittest,
+)
 
+from python_app.tests._epub_multifeature_language_metadata_cases import (
+    TestLanguageAttributeExtraction as TestLanguageAttributeExtraction,
+    TestMultilangEpubParsing as TestMultilangEpubParsing,
+)
 
 class TestSampleEpubFeatures(unittest.TestCase):
     """Validate parsing features present in the bundled sample EPUB."""
@@ -341,115 +351,6 @@ perfectly normal, thank you very much. They were the last people</p>
                 os.chdir(cwd)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-class TestLanguageAttributeExtraction(unittest.TestCase):
-    """Test lang attribute extraction from HTML"""
-
-    def test_extract_single_lang_attribute(self) -> None:
-        """Test extracting lang from a single tag"""
-        formatter = TextFormattingProcessor()
-        html = '<p lang="en">Hello world</p>'
-        result = formatter._extract_language_attributes(html)
-
-        self.assertIn("[[lang:en]]", result)
-        self.assertIn("[[/lang]]", result)
-        self.assertIn("Hello world", result)
-
-    def test_extract_multiple_lang_attributes(self) -> None:
-        """Test extracting lang from multiple tags"""
-        formatter = TextFormattingProcessor()
-        html = '<p lang="en">Hello</p><p lang="es">Hola</p><p lang="pt-BR">Olá</p>'
-        result = formatter._extract_language_attributes(html)
-
-        self.assertIn("[[lang:en]]", result)
-        self.assertIn("[[lang:es]]", result)
-        self.assertIn("[[lang:pt-BR]]", result)
-        self.assertEqual(result.count("[[lang:"), 3)
-        self.assertEqual(result.count("[[/lang]]"), 3)
-
-    def test_extract_nested_lang_attributes(self) -> None:
-        """Test that nested lang tags are handled correctly (inner takes precedence)"""
-        formatter = TextFormattingProcessor()
-        html = '<html lang="pt"><body><p lang="en">Hello</p><p lang="es">Hola</p></body></html>'
-        result = formatter._extract_language_attributes(html)
-
-        # Should have lang:en and lang:es for paragraphs
-        self.assertIn("[[lang:en]]", result)
-        self.assertIn("[[lang:es]]", result)
-        # May also have outer pt tag
-        self.assertIn("Hello", result)
-        self.assertIn("Hola", result)
-
-    def test_extract_xml_lang_attribute(self) -> None:
-        """Test extracting xml:lang attribute"""
-        formatter = TextFormattingProcessor()
-        html = '<p xml:lang="fr">Bonjour</p>'
-        result = formatter._extract_language_attributes(html)
-
-        self.assertIn("[[lang:fr]]", result)
-        self.assertIn("Bonjour", result)
-
-    def test_no_lang_attribute(self) -> None:
-        """Test that text without lang attribute is unchanged"""
-        formatter = TextFormattingProcessor()
-        html = "<p>Plain text</p>"
-        result = formatter._extract_language_attributes(html)
-
-        self.assertNotIn("[[lang:", result)
-        self.assertEqual(html, result)
-
-
-class TestMultilangEpubParsing(unittest.TestCase):
-    """Test EPUB parsing with multiple language attributes"""
-
-    def setUp(self) -> None:
-        self.assertTrue(SAMPLE_MULTILANG.exists())
-
-    def test_multilang_epub_extracts_language_tags(self) -> None:
-        """Test that language tags are extracted from multilang EPUB"""
-        reader = EbookReader(SAMPLE_MULTILANG)
-
-        chapters = reader.get_chapters()
-        self.assertGreaterEqual(len(chapters), 2)
-
-        # Find chapter 2 "Correspondências" which has multilang content
-        multilang_chapter = None
-        for ch in chapters:
-            if "Correspondências" in ch.name:
-                multilang_chapter = ch
-                break
-
-        self.assertIsNotNone(multilang_chapter, "Chapter 2 'Correspondências' not found")
-
-        # Check that language tags were extracted
-        text = multilang_chapter.text
-        self.assertIn("[[lang:", text, "No language tags found in text")
-
-        # Check for specific language tags (en, es should be present)
-        has_en = "[[lang:en]]" in text
-        has_es = "[[lang:es]]" in text
-
-        self.assertTrue(has_en and has_es, f"Expected EN and ES language tags. Text: {text[:200]}")
-
-    def test_multilang_chapter_content_preserved(self) -> None:
-        """Test that multilang content is preserved with correct language tags"""
-        reader = EbookReader(SAMPLE_MULTILANG)
-        chapters = reader.get_chapters()
-
-        # Find chapter 2
-        ch2 = None
-        for ch in chapters:
-            if "Correspondências" in ch.name:
-                ch2 = ch
-                break
-
-        self.assertIsNotNone(ch2)
-
-        # Check that all three language segments are present
-        self.assertIn("The letter begins", ch2.text)  # English
-        self.assertIn("Más adelante", ch2.text)  # Spanish
-        self.assertIn("O destinatário", ch2.text)  # Portuguese
 
 
 class TestJardimDasAflicoesPrefacioParsing(unittest.TestCase):

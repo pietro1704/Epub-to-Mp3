@@ -34,7 +34,7 @@ final class AudioStorageMaintenanceTests: XCTestCase {
         let notifications: MaintenanceNotifications
         func service(cancel: @escaping @Sendable () async -> Void = {}) -> AudioStorageMaintenance {
             .init(artifactStore: store, legacyAudiobooksRoot: downloads, legacyTTSRoot: tts,
-                  downloadManager: DownloadManager(), cancelDownloads: cancel, notificationCenter: center,
+                  downloadManager: AudiobookDownloads(), cancelDownloads: cancel, notificationCenter: center,
                   rustOutputs: RustConversionOutputStore(root: root.appendingPathComponent("rust"), notificationCenter: center))
         }
     }

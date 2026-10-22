@@ -31,12 +31,12 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 - Branch `master` está com alterações locais desta etapa; ainda não foi commitada.
 - Destino físico preferencial: iPhone conectado por USB.
 - Bloqueio operacional encontrado em 2026-07-22: o iPhone foi detectado e desbloqueado, mas o artefato mais recente (`ios/EpubToMp3/.build-nosim-noassets/Build/Products/Debug-iphoneos/EpubToMp3.app`) não possui assinatura (`No code signature found`).
-- A assinatura local também não está alinhada ao projeto: `project.yml` declara o Team ID `HHRZ35A37Y`, enquanto o Mac só possui o certificado `Apple Development: Pietro Pugliesi` do Team ID `RHXBMZN968`; não há provisioning profiles locais.
+- A assinatura local também não está alinhada ao projeto: `project.yml` declara o Team ID `<PROJECT_TEAM>`, enquanto o Mac só possui o certificado `Apple Development: <CERTIFICATE_OWNER>` do Team ID `<LOCAL_CERTIFICATE_TEAM>`; não há provisioning profiles locais.
 - Um build físico normal ainda aparece inelegível porque o Xcode local não tem a plataforma/destino iOS 26.2 instalado. Não baixar runtime nem usar Simulator neste Mac sem autorização explícita.
-- Próximo passo bloqueado: confirmar se é autorizado usar o Team ID do certificado local (`RHXBMZN968`) e `-allowProvisioningUpdates` para o Xcode tentar criar/baixar os perfis de desenvolvimento do bundle `com.pietrocode.epubtomp3` e do widget, ou fornecer um artefato já assinado/perfis compatíveis.
-- Após a autorização, o build direto para `iphoneos` confirmou que a chave privada do certificado existe, mas o Xcode retorna `No Account for Team "RHXBMZN968"` e não consegue gerar profiles. O artefato não foi criado; o projeto temporariamente alterado para contornar o asset catalog foi restaurado.
-- Ação necessária do operador: adicionar no Xcode uma conta Apple que pertença ao Team ID `RHXBMZN968` (ou fornecer profiles de desenvolvimento válidos para `com.pietrocode.epubtomp3` e `com.pietrocode.epubtomp3.widget`), depois repetir o build físico.
-- Execução física concluída em 2026-07-22 após a conta ser adicionada: build `iphoneos` assinado com Team ID real `HHRZ35A37Y`, provisioning automático para app/widget, assinatura verificada com `codesign`, instalação confirmada pelo `devicectl` e lançamento confirmado para `com.pietrocode.epubtomp3`. O app foi deixado aberto no iPhone para validação manual.
+- Próximo passo bloqueado: confirmar se é autorizado usar o Team ID do certificado local (`<LOCAL_CERTIFICATE_TEAM>`) e `-allowProvisioningUpdates` para o Xcode tentar criar/baixar os perfis de desenvolvimento do bundle `com.pietrocode.epubtomp3` e do widget, ou fornecer um artefato já assinado/perfis compatíveis.
+- Após a autorização, o build direto para `iphoneos` confirmou que a chave privada do certificado existe, mas o Xcode retorna `No Account for Team "<LOCAL_CERTIFICATE_TEAM>"` e não consegue gerar profiles. O artefato não foi criado; o projeto temporariamente alterado para contornar o asset catalog foi restaurado.
+- Ação necessária do operador: adicionar no Xcode uma conta Apple que pertença ao Team ID `<LOCAL_CERTIFICATE_TEAM>` (ou fornecer profiles de desenvolvimento válidos para `com.pietrocode.epubtomp3` e `com.pietrocode.epubtomp3.widget`), depois repetir o build físico.
+- Execução física concluída em 2026-07-22 após a conta ser adicionada: build `iphoneos` assinado com Team ID real `<PROJECT_TEAM>`, provisioning automático para app/widget, assinatura verificada com `codesign`, instalação confirmada pelo `devicectl` e lançamento confirmado para `com.pietrocode.epubtomp3`. O app foi deixado aberto no iPhone para validação manual.
 
 ## Plano 0 — Higienizar o estado local
 
@@ -139,7 +139,7 @@ imediatamente após a execução. A instalação física do novo artefato ainda 
 necessária para confirmar o capítulo 2 no iPhone. A tentativa de build físico
 posterior também foi bloqueada porque o Xcode marca o iPhone como inelegível
 sem a plataforma iOS 26.2 e o build genérico retorna `No Account for Team
-HHRZ35A37`/profiles ausentes. Nenhuma plataforma foi baixada e nenhuma conta,
+<LOCAL_CERTIFICATE_TEAM>`/profiles ausentes. Nenhuma plataforma foi baixada e nenhuma conta,
 perfil ou configuração de assinatura foi alterada.
 
 **Critério de saída:** cursor, áudio audível, página e ações da UI permanecem coerentes em cold start e durante streaming.

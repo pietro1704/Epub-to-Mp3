@@ -1,158 +1,6 @@
 import Foundation
 import Darwin
 
-private typealias PlatformTtsCancelled = @convention(c) (UnsafeRawPointer?) -> Bool
-private typealias PlatformTtsCallback = @convention(c) (
-    UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
-    PlatformTtsCancelled?, UnsafeRawPointer?, UnsafeMutablePointer<CChar>?, UInt32,
-    UnsafeMutableRawPointer?
-) -> Bool
-private typealias ConverterSetPlatformTts = @convention(c) (
-    UnsafeMutableRawPointer?, PlatformTtsCallback?, UnsafeMutableRawPointer?
-) -> Bool
-
-private typealias ConverterSessionOpen = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutableRawPointer?
-private typealias ConverterSessionMetadata = @convention(c) (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterSessionFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
-private typealias ConverterChapterCallback = @convention(c) (UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void
-private typealias ConverterAudioChunkCallback = @convention(c) (
-    Int, Int, UnsafePointer<UInt8>?, Int, UnsafeMutableRawPointer?
-) -> Bool
-private typealias ConverterJobControlCreate = @convention(c) () -> UnsafeMutableRawPointer?
-private typealias ConverterJobControlFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
-private typealias ConverterJobControlCancel = @convention(c) (UnsafeRawPointer?) -> Void
-private typealias ConverterJobControlPrioritize = @convention(c) (UnsafeRawPointer?, Int) -> Bool
-private typealias ConverterJobControlWindow = @convention(c) (UnsafeRawPointer?, Int, Int) -> Void
-private typealias ConverterJobControlWindowContains = @convention(c) (UnsafeRawPointer?, Int) -> Bool
-private typealias ConverterSessionConvertJob = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
-    ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
-) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterSessionConvertJobOptionsV1 = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
-    ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
-) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterSessionConvertStreamingJob = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
-    ConverterChapterCallback?, ConverterChapterCallback?, ConverterAudioChunkCallback?,
-    UnsafeMutableRawPointer?, UnsafeRawPointer?
-) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterSessionConvertStreamingJobOptionsV1 = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
-    ConverterChapterCallback?, ConverterChapterCallback?, ConverterAudioChunkCallback?,
-    UnsafeMutableRawPointer?, UnsafeRawPointer?
-) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterSessionConvert = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, Int32, Int32
-) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterStringFree = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
-private typealias ConverterLastError = @convention(c) () -> UnsafeMutablePointer<CChar>?
-private typealias ConverterOptionsValidateV1 = @convention(c) (UnsafePointer<CChar>?) -> Bool
-private typealias ConverterTtsModels = @convention(c) () -> UnsafeMutablePointer<CChar>?
-private typealias ConverterTtsDefaultEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterTtsInstalledReadyEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterTtsModelInstall = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterTtsModelRemove = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Bool
-private typealias ConverterTtsModelMetadata = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterTtsModelInstallManifest = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
-private typealias ConverterTtsModelInstallCatalogManifest = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
-
-/// Errors exposed by the optional embedded converter seam.
-enum EmbeddedConverterError: Error, LocalizedError, Equatable {
-    case artifactUnavailable
-    case artifactInvalid(String)
-    case conversionFailed(String)
-    case optionsABIUnavailable
-
-    var errorDescription: String? {
-        switch self {
-        case .artifactUnavailable: return "Embedded converter artifact is unavailable"
-        case .artifactInvalid(let reason): return "Embedded converter artifact is invalid: \(reason)"
-        case .conversionFailed(let reason): return "Embedded conversion failed: \(reason)"
-        case .optionsABIUnavailable:
-            return "Explicit conversion options require converter_session_convert_job_options_json_v1; rebuild and embed a compatible Rust converter."
-        }
-    }
-}
-
-private final class ChapterCallbackBox: @unchecked Sendable {
-    private let fallbackNotice = PlatformFallbackNoticeTracker()
-    let voiceReceipt: PlatformSpeechVoiceReceipt
-    let progressHandler: (@Sendable (Data) -> Void)?
-    let chapterHandler: (@Sendable (Data) -> Void)?
-    let audioChunkHandler: (@Sendable (Int, Int, Data) -> Bool)?
-
-    func progress(_ raw: Data) {
-        let data = voiceReceipt.progress(raw)
-        if fallbackNotice.shouldNotify(progress: data) {
-            let fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let engine = fields?["fallbackUsed"] as? Bool == true ? fields?["engine"] as? String : nil
-            Task { @MainActor in PlatformFallbackNotice.show(engine: engine) }
-        }
-        progressHandler?(data)
-    }
-
-    init(
-        voiceReceipt: PlatformSpeechVoiceReceipt,
-        progressHandler: (@Sendable (Data) -> Void)?,
-        chapterHandler: (@Sendable (Data) -> Void)?,
-        audioChunkHandler: (@Sendable (Int, Int, Data) -> Bool)? = nil
-    ) {
-        self.voiceReceipt = voiceReceipt
-        self.progressHandler = progressHandler
-        self.chapterHandler = chapterHandler
-        self.audioChunkHandler = audioChunkHandler
-    }
-}
-
-final class ConverterPlaybackControl: @unchecked Sendable {
-    fileprivate let rawHandle: UnsafeMutableRawPointer
-    private let cancellationLock = NSLock()
-    private var cancellationRequested = false
-    var isCancellationRequested: Bool {
-        cancellationLock.lock(); defer { cancellationLock.unlock() }
-        return cancellationRequested
-    }
-    private let free: ConverterJobControlFree
-    private let cancelJob: ConverterJobControlCancel
-    private let prioritizeChapter: ConverterJobControlPrioritize
-    private let setPlaybackWindow: ConverterJobControlWindow
-    private let chapterIsInPlaybackWindow: ConverterJobControlWindowContains
-
-    fileprivate init(
-        rawHandle: UnsafeMutableRawPointer,
-        free: @escaping ConverterJobControlFree,
-        cancel: @escaping ConverterJobControlCancel,
-        prioritize: @escaping ConverterJobControlPrioritize,
-        setWindow: @escaping ConverterJobControlWindow,
-        windowContains: @escaping ConverterJobControlWindowContains
-    ) {
-        self.rawHandle = rawHandle
-        self.free = free
-        cancelJob = cancel
-        prioritizeChapter = prioritize
-        setPlaybackWindow = setWindow
-        chapterIsInPlaybackWindow = windowContains
-    }
-
-    deinit { free(rawHandle) }
-    func cancel() {
-        cancellationLock.lock()
-        cancellationRequested = true
-        cancellationLock.unlock()
-        cancelJob(rawHandle)
-    }
-    @discardableResult func prioritize(chapterIndex: Int) -> Bool {
-        prioritizeChapter(rawHandle, chapterIndex)
-    }
-    func updatePlaybackWindow(currentChapter: Int, chaptersAhead: Int = 1) {
-        setPlaybackWindow(rawHandle, currentChapter, chaptersAhead)
-    }
-    func contains(chapterIndex: Int) -> Bool {
-        chapterIsInPlaybackWindow(rawHandle, chapterIndex)
-    }
-}
-
 protocol EmbeddedConverter { func openBook(at url: URL) throws -> EmbeddedBook }
 struct EmbeddedBook { let metadataJSON: Data }
 
@@ -164,14 +12,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private let metadata: (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
     private let freeString: (UnsafeMutablePointer<CChar>?) -> Void
     private let lastError: () -> UnsafeMutablePointer<CChar>?
-    private let ttsModelsJSON: () -> UnsafeMutablePointer<CChar>?
-    private let ttsDefaultEngine: (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
-    private let ttsInstalledReadyEngine: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
-    private let ttsModelInstall: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
-    private let ttsModelRemove: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Bool)?
-    private let ttsModelMetadata: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
-    private let ttsModelInstallManifest: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
-    private let ttsModelInstallCatalogManifest: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
+    private var modelCatalog = ConverterModelCatalog()
     private var _open: ConverterSessionOpen = { _ in nil }
     private var convertJobJSON: ConverterSessionConvertJob?
     private var convertJSON: ConverterSessionConvert?
@@ -186,48 +27,6 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var jobControlWindowContains: ConverterJobControlWindowContains?
     private var validateOptionsJSON: ConverterOptionsValidateV1? = nil
     private var loadError: String?
-
-    private static let platformTtsCallback: PlatformTtsCallback = {
-        text, language, output, cancelled, cancelContext, errorBuffer, errorLength, context in
-        guard let text, let language, let output, let context else { return false }
-        let provider = Unmanaged<PlatformSpeechSynthesizer>.fromOpaque(context).takeUnretainedValue()
-        do {
-            try provider.synthesizeWAV(text: String(cString: text), language: String(cString: language),
-                                      output: URL(fileURLWithPath: String(cString: output)),
-                                      cancelled: { cancelled?(cancelContext) ?? false })
-            return true
-        } catch {
-            if let errorBuffer, errorLength > 0 {
-                let bytes = Array(error.localizedDescription.utf8.prefix(Int(errorLength) - 1))
-                for (index, byte) in bytes.enumerated() { errorBuffer[index] = CChar(bitPattern: byte) }
-                errorBuffer[bytes.count] = 0
-            }
-            return false
-        }
-    }
-
-    private static let progressCallback: ConverterChapterCallback = { eventJSON, context in
-        guard let eventJSON, let context else { return }
-        let box = Unmanaged<ChapterCallbackBox>
-            .fromOpaque(context)
-            .takeUnretainedValue()
-        box.progress(Data(String(cString: eventJSON).utf8))
-    }
-
-    private static let chapterCallback: ConverterChapterCallback = { eventJSON, context in
-        guard let eventJSON, let context else { return }
-        let box = Unmanaged<ChapterCallbackBox>
-            .fromOpaque(context)
-            .takeUnretainedValue()
-        box.chapterHandler?(box.voiceReceipt.chapter(Data(String(cString: eventJSON).utf8)))
-    }
-
-    private static let audioChunkCallback: ConverterAudioChunkCallback = {
-        chapterIndex, chunkIndex, bytes, byteCount, context in
-        guard let bytes, byteCount > 0, let context else { return false }
-        let box = Unmanaged<ChapterCallbackBox>.fromOpaque(context).takeUnretainedValue()
-        return box.audioChunkHandler?(chapterIndex, chunkIndex, Data(bytes: bytes, count: byteCount)) ?? false
-    }
 
     init(bundle: Bundle = .main, libraryURL overrideURL: URL? = nil) {
         let productsAppFramework = URL(fileURLWithPath: CommandLine.arguments[0])
@@ -258,7 +57,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
               let library = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else {
             let error = dlerror()
             loadError = error.map { String(cString: $0) } ?? "dylib path not found"
-            handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsInstalledReadyEngine = nil; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
+            handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; return
         }
         func symbol<T>(_ name: String, as: T.Type) -> T? { dlsym(library, name).map { unsafeBitCast($0, to: T.self) } }
         guard let open: ConverterSessionOpen = symbol("converter_session_open", as: ConverterSessionOpen.self),
@@ -269,21 +68,23 @@ final class ConverterFFIAdapter: EmbeddedConverter {
               let models: ConverterTtsModels = symbol("converter_tts_models_json", as: ConverterTtsModels.self),
               let defaultEngine: ConverterTtsDefaultEngine = symbol("converter_tts_default_engine", as: ConverterTtsDefaultEngine.self) else {
             loadError = "dylib missing one or more required ABI symbols"
-            dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsInstalledReadyEngine = nil; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
+            dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; return
         }
         handle = library
         close = { value in dispose(value) }
         metadata = { value in meta(value) }
         freeString = free
         lastError = error
-        ttsModelsJSON = { models() }
-        ttsDefaultEngine = { language, platform, api in defaultEngine(language, platform, api) }
-        ttsInstalledReadyEngine = symbol("converter_tts_installed_ready_engine", as: ConverterTtsInstalledReadyEngine.self)
-        ttsModelInstall = symbol("converter_tts_model_install", as: ConverterTtsModelInstall.self)
-        ttsModelRemove = symbol("converter_tts_model_remove", as: ConverterTtsModelRemove.self)
-        ttsModelMetadata = symbol("converter_tts_model_metadata", as: ConverterTtsModelMetadata.self)
-        ttsModelInstallManifest = symbol("converter_tts_model_install_manifest", as: ConverterTtsModelInstallManifest.self)
-        ttsModelInstallCatalogManifest = symbol("converter_tts_model_install_catalog_manifest", as: ConverterTtsModelInstallCatalogManifest.self)
+        modelCatalog = ConverterModelCatalog(
+            available: true, freeString: free, lastError: error, modelsJSON: models,
+            defaultEngine: defaultEngine,
+            selectInstalledReady: symbol("converter_tts_installed_ready_engine", as: ConverterTtsInstalledReadyEngine.self),
+            installArtifact: symbol("converter_tts_model_install", as: ConverterTtsModelInstall.self),
+            removeModel: symbol("converter_tts_model_remove", as: ConverterTtsModelRemove.self),
+            modelMetadata: symbol("converter_tts_model_metadata", as: ConverterTtsModelMetadata.self),
+            installManifest: symbol("converter_tts_model_install_manifest", as: ConverterTtsModelInstallManifest.self),
+            installCatalogManifest: symbol("converter_tts_model_install_catalog_manifest", as: ConverterTtsModelInstallCatalogManifest.self)
+        )
         setPlatformTts = symbol("converter_session_set_platform_tts_v1", as: ConverterSetPlatformTts.self)
         _open = open
         convertJobJSON = symbol("converter_session_convert_job_json", as: ConverterSessionConvertJob.self)
@@ -324,8 +125,9 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         }
         guard let session = _open(url.path) else { throw EmbeddedConverterError.conversionFailed(readError()) }
         defer { close(session) }
-        guard let value = metadata(session), let json = String(validatingUTF8: value) else { throw EmbeddedConverterError.conversionFailed(readError()) }
-        freeString(value)
+        guard let value = metadata(session) else { throw EmbeddedConverterError.conversionFailed(readError()) }
+        defer { freeString(value) }
+        guard let json = String(validatingCString: value) else { throw EmbeddedConverterError.conversionFailed(readError()) }
         return EmbeddedBook(metadataJSON: Data(json.utf8))
     }
 
@@ -353,7 +155,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         let platformSpeech = PlatformSpeechSynthesizer(onVoiceUsed: { voiceReceipt.record($0) })
         defer { withExtendedLifetime(platformSpeech) {} }
         guard let setPlatformTts,
-              setPlatformTts(session, Self.platformTtsCallback,
+              setPlatformTts(session, ConverterCallbackBridge.platformTtsCallback,
                              Unmanaged.passUnretained(platformSpeech).toOpaque()) else {
             throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks platform speech ABI.")
         }
@@ -364,37 +166,37 @@ final class ConverterFFIAdapter: EmbeddedConverter {
                   let convertStreamingJobJSON else {
                 throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks playback streaming ABI.")
             }
-            let callbackBox = ChapterCallbackBox(
+            let callbackBox = ConversionCallbackReceipt(
                 voiceReceipt: voiceReceipt, progressHandler: onProgress, chapterHandler: onChapterCompleted,
                 audioChunkHandler: onAudioChunk
             )
             let context = Unmanaged.passRetained(callbackBox).toOpaque()
-            defer { Unmanaged<ChapterCallbackBox>.fromOpaque(context).release() }
+            defer { Unmanaged<ConversionCallbackReceipt>.fromOpaque(context).release() }
             result = outputDirectory.path.withCString { outputPointer in
                 jobID.withCString { jobPointer in
-                    let progress = Self.progressCallback
-                    let chapter = onChapterCompleted == nil ? nil : Self.chapterCallback
+                    let progress = ConverterCallbackBridge.progressCallback
+                    let chapter = onChapterCompleted == nil ? nil : ConverterCallbackBridge.chapterCallback
                     if let optionsJSON, let convertStreamingJobOptionsJSON {
                         return optionsJSON.withCString { optionsPointer in
                             convertStreamingJobOptionsJSON(
                                 session, outputPointer, jobPointer, optionsPointer,
                                 chapterStart, chapterEnd, progress, chapter,
-                                onAudioChunk == nil ? nil : Self.audioChunkCallback,
+                                onAudioChunk == nil ? nil : ConverterCallbackBridge.audioChunkCallback,
                                 context, playbackControl.rawHandle
                             )
                         }
                     }
                     return convertStreamingJobJSON(
                         session, outputPointer, jobPointer, chapterStart, chapterEnd,
-                        progress, chapter, onAudioChunk == nil ? nil : Self.audioChunkCallback,
+                        progress, chapter, onAudioChunk == nil ? nil : ConverterCallbackBridge.audioChunkCallback,
                         context, playbackControl.rawHandle
                     )
                 }
             }
         } else if optionsJSON != nil || convertJobOptionsJSON != nil || convertJobJSON != nil {
-            let callbackBox = ChapterCallbackBox(voiceReceipt: voiceReceipt, progressHandler: onProgress, chapterHandler: onChapterCompleted)
+            let callbackBox = ConversionCallbackReceipt(voiceReceipt: voiceReceipt, progressHandler: onProgress, chapterHandler: onChapterCompleted)
             let context = Unmanaged.passRetained(callbackBox).toOpaque()
-            defer { Unmanaged<ChapterCallbackBox>.fromOpaque(context).release() }
+            defer { Unmanaged<ConversionCallbackReceipt>.fromOpaque(context).release() }
             result = try outputDirectory.path.withCString { outputPointer in
                 try jobID.withCString { jobPointer in
                     if let optionsJSON, let convertJobOptionsJSON {
@@ -402,8 +204,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
                             convertJobOptionsJSON(
                                 session, outputPointer, jobPointer, optionsPointer,
                                 chapterStart, chapterEnd,
-                                Self.progressCallback,
-                                onChapterCompleted == nil ? nil : Self.chapterCallback,
+                                ConverterCallbackBridge.progressCallback,
+                                onChapterCompleted == nil ? nil : ConverterCallbackBridge.chapterCallback,
                                 context
                             )
                         }
@@ -414,8 +216,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
                     }
                     return convertJobJSON(
                         session, outputPointer, jobPointer, chapterStart, chapterEnd,
-                        Self.progressCallback,
-                        onChapterCompleted == nil ? nil : Self.chapterCallback,
+                        ConverterCallbackBridge.progressCallback,
+                        onChapterCompleted == nil ? nil : ConverterCallbackBridge.chapterCallback,
                         context
                     )
                 }
@@ -434,7 +236,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             throw EmbeddedConverterError.conversionFailed(readError())
         }
         defer { freeString(value) }
-        guard let json = String(validatingUTF8: value) else {
+        guard let json = String(validatingCString: value) else {
             throw EmbeddedConverterError.conversionFailed("Rust returned invalid UTF-8 manifest JSON.")
         }
         return voiceReceipt.manifest(Data(json.utf8))
@@ -467,118 +269,41 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         }
     }
 
-    func ttsModels() throws -> Data {
-        guard handle != nil, let value = ttsModelsJSON(), let json = String(validatingUTF8: value) else {
-            throw EmbeddedConverterError.artifactUnavailable
-        }
-        defer { freeString(value) }
-        return Data(json.utf8)
-    }
+    func ttsModels() throws -> Data { try modelCatalog.ttsModels() }
 
     func ttsDefaultEngine(language: String, platform: String, androidAPI: UInt32 = 0) throws -> String {
-        guard handle != nil else { throw EmbeddedConverterError.artifactUnavailable }
-        let result = language.withCString { languagePointer in
-            platform.withCString { platformPointer in
-                ttsDefaultEngine(languagePointer, platformPointer, androidAPI)
-            }
-        }
-        guard let value = result, let engine = String(validatingUTF8: value) else {
-            throw EmbeddedConverterError.conversionFailed(readError())
-        }
-        defer { freeString(value) }
-        return engine
+        try modelCatalog.ttsDefaultEngine(language: language, platform: platform, androidAPI: androidAPI)
     }
 
     func ttsInstalledReadyEngine(language: String, platform: String, installedModelIDsJSON: String, readyModelIDsJSON: String, androidAPI: UInt32 = 0) throws -> String {
-        guard handle != nil, let select = ttsInstalledReadyEngine else { throw EmbeddedConverterError.artifactUnavailable }
-        let result = language.withCString { languagePointer in
-            platform.withCString { platformPointer in
-                installedModelIDsJSON.withCString { installedPointer in
-                    readyModelIDsJSON.withCString { readyPointer in
-                        select(languagePointer, platformPointer, androidAPI, installedPointer, readyPointer)
-                    }
-                }
-            }
-        }
-        guard let value = result, let engine = String(validatingUTF8: value) else {
-            throw EmbeddedConverterError.conversionFailed(readError())
-        }
-        defer { freeString(value) }
-        return engine
+        try modelCatalog.ttsInstalledReadyEngine(language: language, platform: platform,
+            installedModelIDsJSON: installedModelIDsJSON, readyModelIDsJSON: readyModelIDsJSON, androidAPI: androidAPI)
     }
 
     func installTtsModel(modelID: String, url: String, sha256: String, root: String) throws -> URL {
-        guard handle != nil, let install = ttsModelInstall else { throw EmbeddedConverterError.artifactUnavailable }
-        let result = modelID.withCString { modelPointer in
-            url.withCString { urlPointer in
-                sha256.withCString { hashPointer in
-                    root.withCString { rootPointer in
-                        install(modelPointer, urlPointer, hashPointer, rootPointer)
-                    }
-                }
-            }
-        }
-        guard let value = result, let path = String(validatingUTF8: value) else {
-            throw EmbeddedConverterError.conversionFailed(readError())
-        }
-        defer { freeString(value) }
-        return URL(fileURLWithPath: path)
+        try modelCatalog.installTtsModel(modelID: modelID, url: url, sha256: sha256, root: root)
     }
 
     func installTtsModelManifest(modelID: String, artifactsJSON: String, root: String) throws -> URL {
-        guard handle != nil, let install = ttsModelInstallManifest else { throw EmbeddedConverterError.artifactUnavailable }
-        let result = modelID.withCString { modelPointer in
-            artifactsJSON.withCString { artifactsPointer in
-                root.withCString { rootPointer in
-                    install(modelPointer, artifactsPointer, rootPointer)
-                }
-            }
-        }
-        guard let value = result, let path = String(validatingUTF8: value) else {
-            throw EmbeddedConverterError.conversionFailed(readError())
-        }
-        defer { freeString(value) }
-        return URL(fileURLWithPath: path)
+        try modelCatalog.installTtsModelManifest(modelID: modelID, artifactsJSON: artifactsJSON, root: root)
     }
 
     func installTtsModelFromCatalog(modelID: String, root: String) throws -> URL {
-        guard handle != nil, let install = ttsModelInstallCatalogManifest else { throw EmbeddedConverterError.artifactUnavailable }
-        let result = modelID.withCString { modelPointer in
-            root.withCString { rootPointer in
-                install(modelPointer, rootPointer)
-            }
-        }
-        guard let value = result, let path = String(validatingUTF8: value) else {
-            throw EmbeddedConverterError.conversionFailed(readError())
-        }
-        defer { freeString(value) }
-        return URL(fileURLWithPath: path)
+        try modelCatalog.installTtsModelFromCatalog(modelID: modelID, root: root)
     }
 
     func removeTtsModel(modelID: String, root: String) throws {
-        guard handle != nil, let remove = ttsModelRemove else { throw EmbeddedConverterError.artifactUnavailable }
-        let removed = modelID.withCString { modelPointer in
-            root.withCString { rootPointer in
-                remove(modelPointer, rootPointer)
-            }
-        }
-        guard removed else { throw EmbeddedConverterError.conversionFailed(readError()) }
+        try modelCatalog.removeTtsModel(modelID: modelID, root: root)
     }
 
     func ttsModelMetadata(modelID: String, root: String) throws -> Data? {
-        guard handle != nil, let metadata = ttsModelMetadata else { throw EmbeddedConverterError.artifactUnavailable }
-        let result = modelID.withCString { modelPointer in
-            root.withCString { rootPointer in metadata(modelPointer, rootPointer) }
-        }
-        guard let value = result else { return nil }
-        guard let json = String(validatingUTF8: value) else { throw EmbeddedConverterError.conversionFailed(readError()) }
-        defer { freeString(value) }
-        return Data(json.utf8)
+        try modelCatalog.ttsModelMetadata(modelID: modelID, root: root)
     }
 
     private func readError() -> String {
-        guard let value = lastError(), let text = String(validatingUTF8: value) else { return "unknown converter-ffi error" }
-        freeString(value)
+        guard let value = lastError() else { return "unknown converter-ffi error" }
+        defer { freeString(value) }
+        guard let text = String(validatingCString: value) else { return "unknown converter-ffi error" }
         return text
     }
 }

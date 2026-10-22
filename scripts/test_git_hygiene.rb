@@ -60,6 +60,22 @@ class GitHygieneTest < Minitest::Test
     ].each { |path| assert ignored?(path), "local artifact is visible: #{path}" }
   end
 
+  def test_session_ledgers_are_local_and_untracking_preserves_their_bytes
+    %w[TODO_APP.md handoff.md].each do |path|
+      assert ignored?(path), "private session ledger is visible: #{path}"
+      absolute = File.join(@root, path)
+      File.binwrite(absolute, "private fixture\x00#{path}\n")
+      before = File.binread(absolute)
+      _, err, status = git("add", "--force", "--", path)
+      assert status.success?, err
+      _, err, status = git("rm", "--cached", "--quiet", "--", path)
+      assert status.success?, err
+      assert_equal before, File.binread(absolute)
+      assert_empty git("ls-files", "--", path).first
+      assert_empty git("ls-files", "--others", "--exclude-standard", "--", path).first
+    end
+  end
+
   def test_shared_agent_assets_and_portable_editor_configuration_stay_visible
     %w[
       AGENTS.md CLAUDE.md .ai-memory.toml .ai-jail

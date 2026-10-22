@@ -1,65 +1,48 @@
 import XCTest
+@testable import EpubToMp3
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
-/// Source-contract tests for the native Book Detail implementation retained
-/// for iOS and legacy macOS documents. The macOS library now opens the reader
-/// directly, matching the iOS reading flow.
+@MainActor
 final class BookDetailWiringTests: XCTestCase {
-    private func source(_ relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try readSourceFileIfAvailable(
-            at: root.appendingPathComponent("EpubToMp3/\(relativePath)")
-        )
+    func testBookDetailReadActionForwardsExactBookIdentityWithoutStartingConversion() throws {
+        let suite = "book-detail-actions-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let book = BookEntity(id: suite, title: "Action fixture", bookmark: Data(), displayFilename: "fixture.epub", addedAt: .distantPast)
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defer { player.stop() }
+#if os(macOS)
+        var opened: [String] = []
+        let controller = MacBookDetailViewController(book: book, library: LibraryStore(defaults: defaults),
+            settings: AppSettings(defaults: defaults), player: player, playerPresentation: PlayerPresentation(defaults: defaults),
+            onRead: { opened.append($0) }, onShowJobs: {}, conversionExecutor: { _, _, _, _, _, _, _ in
+                XCTFail("Read must not synthesize audio")
+                throw CancellationError()
+            })
+        let content = try XCTUnwrap(controller.view as? MacBookDetailContent)
+        XCTAssertNotNil(content.listenButton.action)
+        XCTAssertNotNil(content.downloadButton.action)
+        content.readButton.performClick(nil)
+        XCTAssertEqual(opened, [book.id])
+        XCTAssertNil(player.snapshot)
+#else
+        throw XCTSkip("AppKit action adapter; UIKit book actions run in NativeResponsiveScreenTests.")
+#endif
     }
 
-    func testBookDetailScreenControllerIsNativeUIKitWithThreeActions() throws {
-        let source = try source("Features/Library/Views/BookDetailScreenController.swift")
-
-        XCTAssertTrue(source.contains("final class BookDetailScreenController: UIViewController"))
-        XCTAssertFalse(source.contains("import SwiftUI"))
-        XCTAssertFalse(source.contains("UIHostingController"))
-        XCTAssertTrue(source.contains("tapRead"))
-        XCTAssertTrue(source.contains("tapListen"))
-        XCTAssertTrue(source.contains("tapDownload"))
-    }
-
-    func testBookDetailListenUsesCanonicalReaderPlaybackPriority() throws {
-        let source = try source("Features/Library/Views/BookDetailScreenController.swift")
-
-        XCTAssertTrue(source.contains("let priorityChapterIndex = ReaderPlaybackPriorityChapter.index(bookID: book.id)"))
-        XCTAssertTrue(source.contains("priorityChapterIndices: [priorityChapterIndex]"))
-    }
-
-    func testMacBookDetailViewControllerIsNativeAppKitWithThreeActions() throws {
-        let source = try source("Features/Library/Views/MacBookDetailViewController.swift")
-
-        XCTAssertTrue(source.contains("final class MacBookDetailViewController: NSViewController"))
-        XCTAssertFalse(source.contains("import SwiftUI"))
-        XCTAssertFalse(source.contains("NSHostingController"))
-        XCTAssertTrue(source.contains("tapRead"))
-        XCTAssertTrue(source.contains("tapListen"))
-        XCTAssertTrue(source.contains("tapDownload"))
-    }
-
-    func testLibraryScreenControllerOpensBookDetailNotReaderDirectly() throws {
-        let source = try source("Features/Library/Views/LibraryScreenController.swift")
-
-        XCTAssertTrue(source.contains("gridController.onOpen"))
-        XCTAssertTrue(source.contains("ReaderSessionState.setCurrentlyReading(bookID: book.id)"))
-    }
-
-    func testMacRootRoutesLibraryOpenDirectlyToReader() throws {
-        let source = try source("App/MacAppKitRootController.swift")
-
-        XCTAssertTrue(source.contains("showReader(bookID: bookID)"))
-        XCTAssertFalse(source.contains("onOpenBook: { [weak self] bookID in self?.showBookDetail(bookID: bookID) }"))
-    }
-
-    func testConvertScreenControllerAcceptsPreselectedFileURL() throws {
-        let source = try source("Features/Conversion/Views/ConvertScreenController.swift")
-
-        XCTAssertTrue(source.contains("preselectedFileURL: URL? = nil"))
-        XCTAssertTrue(source.contains("viewModel.selectedFile = preselectedFileURL"))
+    func testCanonicalListeningPriorityUsesOnlyTheActiveBookLiveAnchor() throws {
+        let suite = "listening-priority-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("active-book", forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(8, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "active-book", defaults: defaults), 8)
+        XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "different-book", defaults: defaults), 0)
+        defaults.set(-1, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "active-book", defaults: defaults), 0)
     }
 }

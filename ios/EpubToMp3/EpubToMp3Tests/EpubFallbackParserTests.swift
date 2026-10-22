@@ -20,6 +20,35 @@ import XCTest
 @testable import EpubToMp3
 
 final class EpubFallbackParserTests: XCTestCase {
+    func testPackageSpinePreservesDeclaredOrderAndDecodedResourceIdentity() {
+        let xml = """
+        <package xmlns:dc="urn:fixture"><metadata><dc:title>Fixture &amp; title</dc:title>
+        <dc:creator>Fixture author</dc:creator></metadata>
+        <manifest><item id="last" href="Text/last.xhtml" media-type="application/xhtml+xml"/>
+        <item id="first" href="Text/chapter%20one.xhtml" media-type="application/xhtml+xml"/>
+        <item id="nav" href="Navigation/toc.xhtml" properties="cover-image nav"/>
+        <item id="ncx" href="Navigation/toc.ncx" media-type="application/x-dtbncx+xml"/>
+        </manifest><spine toc="ncx"><itemref idref="first"/><itemref idref="last"/></spine></package>
+        """
+        let package = EpubPackageSpine.parse(data: Data(xml.utf8))
+        XCTAssertEqual(package.title, "Fixture & title")
+        XCTAssertEqual(package.author, "Fixture author")
+        XCTAssertEqual(package.spineOrder, ["first", "last"])
+        XCTAssertEqual(package.manifest["first"], "Text/chapter one.xhtml")
+        XCTAssertEqual(package.navigationHref, "Navigation/toc.xhtml")
+        XCTAssertEqual(package.ncxID, "ncx")
+        XCTAssertEqual(package.spineTocID, "ncx")
+    }
+
+    func testPackageSpineWithoutDeclarationsKeepsAnEmptyBestEffortProjection() {
+        let package = EpubPackageSpine.parse(data: Data("<package/>".utf8))
+        XCTAssertTrue(package.manifest.isEmpty)
+        XCTAssertTrue(package.spineOrder.isEmpty)
+        XCTAssertNil(package.title)
+        XCTAssertNil(package.author)
+        XCTAssertNil(package.navigationHref)
+    }
+
     func testNCXLabelsAndHierarchyReplaceRepeatedDocumentTitlesWithoutChangingSpineIdentity() throws {
         let document = "<html><head><title>repeated_export_name</title></head><body><p id='start'>Fixture text.</p><p id='next'>Another section.</p></body></html>"
         let ncx = """
