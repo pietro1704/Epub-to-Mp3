@@ -110,7 +110,7 @@ jobs:
           curl --fail-with-body --retry 3 --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
             --data-urlencode "text=$TEXT" "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: steps.remediation.outputs.skip != 'true'
         with:
           ref: master

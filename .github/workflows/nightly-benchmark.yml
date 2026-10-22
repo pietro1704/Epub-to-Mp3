@@ -18,10 +18,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install mise
-        uses: jdx/mise-action@v5
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
         with:
           version: 2026.9.14
           install: false
@@ -37,7 +37,7 @@ jobs:
         run: mise run install
 
       - name: Restore nightly baseline cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .cache/telemetry/ci-speed-baseline-nightly.json
           key: nightly-benchmark-baseline-${{ github.ref_name }}-${{ github.run_id }}
@@ -85,14 +85,14 @@ jobs:
 
       - name: Save nightly baseline cache
         if: always()
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .cache/telemetry/ci-speed-baseline-nightly.json
           key: nightly-benchmark-baseline-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Upload benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: nightly-benchmark-${{ github.run_id }}
           path: |
@@ -101,7 +101,7 @@ jobs:
 
       - name: Create regression issue on real regression
         if: steps.nightly_benchmark.outcome == 'failure' && hashFiles('.cache/telemetry/regression-detected') != ''
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const title = `Nightly benchmark regression (${new Date().toISOString().slice(0, 10)})`;

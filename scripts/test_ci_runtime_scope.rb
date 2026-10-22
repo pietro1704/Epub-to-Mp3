@@ -10,6 +10,9 @@ require 'shellwords'
 require_relative 'run_ci_contracts'
 
 class CiRuntimeScopeTest < Minitest::Test
+  def assert_pinned_action(action, value)
+    assert_match(/\A#{Regexp.escape(action)}@[0-9a-f]{40}(?:\s+#.*)?\z/, value)
+  end
   def setup
     @workflow = YAML.load_file(File.expand_path('../.github/workflows/ci.yml', __dir__))
     @root = Dir.mktmpdir('ci-scope-contract-')
@@ -188,7 +191,9 @@ class CiRuntimeScopeTest < Minitest::Test
     refute events.fetch('workflow_dispatch', {}).to_h.key?('inputs')
     steps = swift.fetch('steps')
     refute steps.any? { |step| step['uses'].to_s.include?('upload-sarif') }
-    analyze = steps.find { |step| step['uses'] == 'github/codeql-action/analyze@v4' }
+    analyze = steps.find { |step| step['uses'].to_s.start_with?('github/codeql-action/analyze@') }
+    refute_nil analyze
+    assert_pinned_action('github/codeql-action/analyze', analyze.fetch('uses'))
     assert_equal "${{ format('/language:swift/coverage:{0}/platform:{1}', matrix.coverage, matrix.platform) }}", analyze.fetch('with').fetch('category')
     refute analyze.fetch('with').key?('upload')
     embedded = steps.find { |step| step['name'] == 'Build actual embedded Rust library' }.fetch('run')
@@ -222,7 +227,7 @@ class CiRuntimeScopeTest < Minitest::Test
     steps = @workflow.fetch('jobs').fetch('flutter').fetch('steps')
     cache = steps.find { |step| step['name'] == 'Cache Flutter SDK' }
     refute_nil cache
-    assert_equal 'actions/cache@v6', cache.fetch('uses')
+    assert_pinned_action('actions/cache', cache.fetch('uses'))
     assert_equal '~/.local/share/mise/installs/flutter', cache.fetch('with').fetch('path')
     key = cache.fetch('with').fetch('key')
     %w[runner.os runner.arch].each { |identity| assert_includes key, "${{ #{identity} }}" }
@@ -354,8 +359,8 @@ end
     save = steps.find { |step| step['name'] == 'Save Intel Ruby 4.0.7' }
     [identity, restore, save].each { |step| refute_nil step }
     [identity, restore].each { |step| assert_equal "matrix.arch == 'x86_64'", step.fetch('if') }
-    assert_equal 'actions/cache/restore@v6', restore.fetch('uses')
-    assert_equal 'actions/cache/save@v6', save.fetch('uses')
+    assert_pinned_action('actions/cache/restore', restore.fetch('uses'))
+    assert_pinned_action('actions/cache/save', save.fetch('uses'))
     path = '~/.local/share/mise/installs/ruby/4.0.7'
     assert_equal path, restore.fetch('with').fetch('path')
     assert_equal path, save.fetch('with').fetch('path')
@@ -385,8 +390,8 @@ end
     save = steps.find { |step| step['name'] == 'Save Intel Rust build cache' }
     [identity, restore, build, verify, save].each { |step| refute_nil step }
     [identity, restore].each { |step| assert_equal "matrix.arch == 'x86_64'", step.fetch('if') }
-    assert_equal 'actions/cache/restore@v6', restore.fetch('uses')
-    assert_equal 'actions/cache/save@v6', save.fetch('uses')
+    assert_pinned_action('actions/cache/restore', restore.fetch('uses'))
+    assert_pinned_action('actions/cache/save', save.fetch('uses'))
     paths = ["~/.cargo/registry", 'target/release', 'target/espeak-data']
     [restore, save].each { |step| assert_equal paths, step.fetch('with').fetch('path').lines.map(&:strip) }
     refute_includes paths, 'target'

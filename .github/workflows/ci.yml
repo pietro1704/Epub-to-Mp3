@@ -41,7 +41,7 @@ jobs:
       wasm: ${{ steps.scope.outputs.wasm }}
       contracts: ${{ steps.scope.outputs.contracts }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -88,7 +88,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
@@ -106,7 +106,7 @@ jobs:
 
       - name: Set up Ruby for host workflow checks
         if: needs.changes.outputs.contracts == 'true'
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
         with:
           ruby-version: "4.0"
           bundler-cache: false
@@ -117,7 +117,7 @@ jobs:
 
       - name: Set up mise for task metadata checks
         if: needs.changes.outputs.contracts == 'true'
-        uses: jdx/mise-action@v5
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
         with:
           version: 2026.9.14
           install: false
@@ -135,7 +135,7 @@ jobs:
         run: mise exec -- ruby scripts/run_ci_contracts.rb --output .reports/ci-contracts/production-guard
       - name: Retain fixture contract diagnostics
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pr-contract-diagnostics-${{ github.sha }}
           path: .reports/ci-contracts/
@@ -155,12 +155,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Install mise
-        uses: jdx/mise-action@v5
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
         with:
           version: 2026.9.14
           install: false
@@ -198,7 +198,7 @@ jobs:
 
       - name: Cache pip
         if: inputs.full_validation == true
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cache/pip
           key: pip-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
@@ -206,7 +206,7 @@ jobs:
 
       - name: Cache Python virtualenv
         if: inputs.full_validation == true
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .venv
           key: python-venv-${{ runner.os }}-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
@@ -288,12 +288,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Verify vendored phoneme source assets
         working-directory: native/vendor/espeak-rs-sys
         run: sha256sum --check phsource-wav.sha256
       - name: Install mise
-        uses: jdx/mise-action@v5
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
         with:
           version: 2026.9.14
           install: false
@@ -329,7 +329,7 @@ jobs:
         id: rust-toolchain
         run: echo "identity=$(mise exec -- rustc -vV | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Cache Rust build artifacts
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -382,9 +382,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install mise
-        uses: jdx/mise-action@v5
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
         with:
           version: 2026.9.14
           install: false
@@ -414,7 +414,7 @@ jobs:
         if: needs.changes.outputs.wasm == 'true'
         run: mise run web:wasm-build
       - name: Cache npm downloads
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
@@ -446,12 +446,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Install mise
-        uses: jdx/mise-action@v5
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
         with:
           version: 2026.9.14
           install: false
@@ -467,7 +467,7 @@ jobs:
           '
 
       - name: Cache Flutter SDK
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.local/share/mise/installs/flutter
           key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}

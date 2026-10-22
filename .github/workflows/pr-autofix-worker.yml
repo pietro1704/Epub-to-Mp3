@@ -25,7 +25,7 @@ jobs:
     outputs:
       readiness: ${{ steps.ready.outputs.state }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: master
           persist-credentials: false
@@ -59,7 +59,7 @@ jobs:
     outputs:
       claimed: ${{ steps.claim.outputs.state }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: master
           path: trusted
@@ -84,7 +84,7 @@ jobs:
           REPAIR_WRITERS_ENABLED: ${{ vars.PR_REPAIR_WRITERS_ENABLED }}
           REPAIR_CREDENTIALS_AVAILABLE: ${{ needs.validate.outputs.readiness == 'prepared' }}
         run: node "$RUNNER_TEMP/pr-repair-guard.cjs" claim "$PR_NUMBER" "$EXPECTED_SHA"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: steps.claim.outputs.state == 'claimed'
         with:
           ref: ${{ inputs.head_sha }}
@@ -144,7 +144,7 @@ jobs:
           node "$RUNNER_TEMP/pr-repair-guard.cjs" validate-changes "$PR_NUMBER" "$EXPECTED_SHA" "$GITHUB_WORKSPACE/repair"
           node "$RUNNER_TEMP/pr-repair-guard.cjs" stage-changes "$PR_NUMBER" "$EXPECTED_SHA" "$GITHUB_WORKSPACE/repair"
           git -C repair diff --no-ext-diff --no-textconv --cached --binary > "$RUNNER_TEMP/repair.patch"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: steps.claim.outputs.state == 'claimed'
         with:
           name: pr-repair-${{ github.run_id }}
@@ -169,7 +169,7 @@ jobs:
       pull-requests: read
       actions: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: master
           path: trusted
@@ -185,13 +185,13 @@ jobs:
           chmod 400 "$RUNNER_TEMP/pr-repair-guard.cjs"
           printf 'head=%s\n' "$trusted_head" >> "$GITHUB_OUTPUT"
           printf 'sha=%s\n' "$(sha256sum "$RUNNER_TEMP/pr-repair-guard.cjs" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.head_sha }}
           path: repair
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: pr-repair-${{ github.run_id }}
           path: ${{ runner.temp }}/repair-patch
