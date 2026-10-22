@@ -42,8 +42,8 @@ from ._engine_selection_mixin import _EngineSelectionMixin
 from ._env_utils import env_bool as _env_bool
 from ._env_utils import env_float as _env_float
 from ._env_utils import env_int as _env_int
-from ._health_watchdog_mixin import _HealthWatchdogMixin
 from ._health_watchdog_mixin import _await_task_with_deadline as _await_task_with_deadline
+from ._health_watchdog_mixin import _HealthWatchdogMixin
 from ._health_watchdog_mixin import _safe_cancel_task as _safe_cancel_task
 from ._metrics_report_mixin import _MetricsReportMixin
 from ._output_file_mixin import _OutputFileMixin
