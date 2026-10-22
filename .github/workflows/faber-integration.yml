@@ -291,9 +291,44 @@ jobs:
           key: ${{ steps.ruby-cache.outputs.cache-primary-key }}
       - name: Install Xcode project generator
         run: brew install xcodegen
+      - name: Identify Intel Rust cache inputs
+        if: matrix.arch == 'x86_64'
+        id: rust-cache-identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity=$({
+            printf 'image=%s/%s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+            mise exec -- rustc -vV
+            mise exec -- cargo --version
+            xcodebuild -version
+            printf 'sdk_path=%s\n' "$(xcrun --sdk macosx --show-sdk-path)"
+            printf 'sdk_version=%s\n' "$(xcrun --sdk macosx --show-sdk-version)"
+            clang="$(xcrun --find clang)"
+            printf 'clang_sha256=%s\n' "$(shasum -a 256 "$clang" | awk '{print $1}')"
+            printf '%s\n' MACOSX_DEPLOYMENT_TARGET=12.0 ORT_PREFER_DYNAMIC_LINK=1 CARGO_BUILD_JOBS=1 CMAKE_BUILD_PARALLEL_LEVEL=1
+            printf 'RUSTFLAGS=%s\n' "${RUSTFLAGS:-}"
+            printf 'CARGO_ENCODED_RUSTFLAGS=%s\n' "${CARGO_ENCODED_RUSTFLAGS:-}"
+            printf 'RUSTC_WRAPPER=%s\n' "${RUSTC_WRAPPER:-}"
+          } | shasum -a 256 | awk '{print $1}')
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+      - name: Restore Intel Rust build cache
+        if: matrix.arch == 'x86_64'
+        id: rust-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            target/release
+            target/espeak-data
+          key: faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs', 'native/**/*.c', 'native/**/*.cc', 'native/**/*.cpp', 'native/**/*.h', 'native/vendor/espeak-rs-sys/espeak-ng/**') }}
+          restore-keys: |
+            faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-
       - name: Build embedded host runtime without Simulator
+        id: ffi-build
         run: mise run converter-ffi:build
       - name: Verify actual FFI and pinned ORT architectures
+        id: ffi-architecture
         run: |
           set -o pipefail
           mkdir -p .reports/tts-preferences
@@ -310,6 +345,15 @@ jobs:
           ' "$runtime_root/runtime.json" "$EXPECTED_ARCH"
           printf 'Host: %s\nFFI: %s\nORT: %s\n' "$(uname -m)" "$ffi_arch" "$ort_arch" > .reports/tts-preferences/native-architectures.log
           cat .reports/tts-preferences/native-architectures.log
+      - name: Save Intel Rust build cache
+        if: success() && matrix.arch == 'x86_64' && steps.rust-cache.outputs.cache-hit != 'true' && steps.ffi-build.outcome == 'success' && steps.ffi-architecture.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            target/release
+            target/espeak-data
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - name: Generate native project with actual FFI artifact
         working-directory: ios/EpubToMp3
         run: xcodegen generate
