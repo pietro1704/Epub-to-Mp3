@@ -26,8 +26,8 @@ class ChannelRepliesTest {
         firstRequest.error("LATE_ERROR", "late callback", null)
         secondRequest.error("NATIVE_FAILED", "failure", "request-b")
         replies.close()
-        assertEquals(listOf("success" to "manifest-a"), first.deliveries)
-        assertEquals(listOf("NATIVE_FAILED" to "request-b"), second.deliveries)
+        assertEquals(listOf<Pair<String, Any?>>("success" to "manifest-a"), first.deliveries)
+        assertEquals(listOf<Pair<String, Any?>>("NATIVE_FAILED" to "request-b"), second.deliveries)
     }
 
     @Test fun destructionCancelsPendingAndRejectsNewRequestsWithoutDuplicates() {
@@ -39,8 +39,8 @@ class ChannelRepliesTest {
         request.success("stale manifest")
         val late = RecordedReply()
         replies.track(late).notImplemented()
-        assertEquals(listOf("ACTIVITY_DESTROYED" to null), pending.deliveries)
-        assertEquals(listOf("ACTIVITY_DESTROYED" to null), late.deliveries)
+        assertEquals(listOf<Pair<String, Any?>>("ACTIVITY_DESTROYED" to null), pending.deliveries)
+        assertEquals(listOf<Pair<String, Any?>>("ACTIVITY_DESTROYED" to null), late.deliveries)
     }
 
     @Test fun competingTerminalCallbacksDeliverOnlyOneResult() {
