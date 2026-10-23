@@ -28,6 +28,10 @@ jobs:
           install: false
       - name: Install Rust toolchain
         run: mise install
+      - name: Reuse dependency audit compilation
+        uses: ./.github/actions/rust-build-cache
+        with:
+          namespace: dependency-audit
       - name: Verify ZIP compatibility in the shared runtime
         run: mise exec -- cargo test --locked -p converter-core --lib epub::tests
       - name: Check optional Sherpa bindings without native downloads
