@@ -117,6 +117,10 @@ run = "ruby scripts/native_job.rb build -- mise exec -- cargo test -p converter-
 description = "Run fail-fast host workflow regressions with exact logs; no native build or Simulator"
 run = "ruby scripts/run_host_checks.rb"
 
+[tasks."tts:benchmark:test"]
+description = "Verify isolated terminal TTS measurement, cancellation, export and report tooling"
+run = "ruby scripts/run_host_checks.rb --suite scripts/test_tts_book_benchmark.rb --suite scripts/test_tts_parallel_benchmark.rb --suite scripts/test_tts_mp3_export_probe.rb --suite scripts/test_tts_pocket_http_probe.rb --suite scripts/test_tts_gradio_probe.rb --suite scripts/test_tts_chapter_benchmark.rb --suite scripts/test_tts_seek_benchmark.rb --suite scripts/test_tts_chapter_finalize.rb --suite scripts/test_tts_benchmark_consolidate.rb"
+
 [tasks."git:hygiene:test"]
 description = "Verify ignore rules and index-only cleanup through real Git in temporary repositories"
 run = "ruby scripts/test_git_hygiene.rb"
