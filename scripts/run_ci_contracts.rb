@@ -14,9 +14,10 @@ module CiContracts
     test_native_codex_tool_guard.rb test_native_simulator_session.rb
     test_hf_snapshot_workflow.rb test_hf_snapshot.rb
     test_download_converter_ffi_macos.rb
-    test_ubuntu_package_mirror.rb
+    test_ubuntu_package_mirror.rb test_rust_build_cache.rb
   ]).uniq.freeze
   NODE_SUITES = %w[
+    .github/scripts/rust-cache-identity.test.cjs
     .github/scripts/changelog-drift.test.cjs
     .github/scripts/dependency-audit-results.test.cjs
     .github/scripts/pr-repair-safety.test.cjs

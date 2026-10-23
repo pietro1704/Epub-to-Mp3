@@ -35,6 +35,11 @@ jobs:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
 
+      - name: Reuse host FFI compilation
+        uses: ./.github/actions/rust-build-cache
+        with:
+          namespace: ffi-host
+
       - name: Validate target mappings
         run: mise run converter-ffi:validate
 
@@ -89,6 +94,11 @@ jobs:
 
       - name: Install Rust target
         run: rustup target add "${{ matrix.rust_target }}"
+
+      - name: Reuse target FFI compilation
+        uses: ./.github/actions/rust-build-cache
+        with:
+          namespace: ffi-${{ matrix.rust_target }}
 
       - name: Build converter-ffi artifact (verification only)
         run: |

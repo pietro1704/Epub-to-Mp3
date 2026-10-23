@@ -26,12 +26,10 @@ jobs:
       - run: mise install
       - name: Install explicit native speech and decoder fixtures
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends espeak-ng ffmpeg
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Reuse native fallback compilation
+        uses: ./.github/actions/rust-build-cache
         with:
-          path: |
-            ~/.cargo/registry
-            target
-          key: native-fallback-linux-${{ hashFiles('Cargo.lock') }}
+          namespace: native-fallback
       - name: Verify shared policy and real FFI callbacks
         run: mise exec -- cargo test --locked -p converter-core -p converter-ffi --features converter-ffi/android-jni
       - name: Verify installed pt-BR eSpeak output
@@ -54,12 +52,10 @@ jobs:
           version: 2026.9.14
           install: false
       - run: mise install
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Reuse native fallback compilation
+        uses: ./.github/actions/rust-build-cache
         with:
-          path: |
-            ~/.cargo/registry
-            target
-          key: native-fallback-windows-${{ hashFiles('Cargo.lock') }}
+          namespace: native-fallback
       - name: Verify policy and subprocess supervision
         shell: pwsh
         run: |

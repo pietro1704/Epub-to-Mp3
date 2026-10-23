@@ -1,0 +1,26 @@
+name: Rust build cache
+description: Reuse Cargo artifacts with compiler, configuration and job isolation
+inputs:
+  namespace:
+    description: Build contract and target; never share with instrumented builds
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Identify the effective Rust and Apple toolchains
+      id: toolchain
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/../../scripts/rust-cache-identity.cjs"
+    # GitHub scopes PR-written caches to the PR ref. Cargo still validates
+    # fingerprints, recompiles changed inputs and executes tests on every run.
+    - name: Restore and refresh Cargo artifacts
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', 'native/piper-runtime/Cargo.lock', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}-${{ hashFiles('crates/**/*.rs', 'native/piper-runtime/**/*.rs') }}
+        restore-keys: |
+          rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', 'native/piper-runtime/Cargo.lock', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}-
+          rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-
