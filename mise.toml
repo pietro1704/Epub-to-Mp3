@@ -73,6 +73,10 @@ run = "mise exec -- ruby scripts/native_build_command.rb -- bash scripts/build_w
 description = "Test the current generated WASM export voice and locale contracts without synthesis"
 run = "mise exec -- node --test web/scripts/wasm-locale.node-tests.mjs"
 
+[tasks."tts:session:web:test"]
+description = "Verify real Piper/ONNX adapters, versioned WASM receipts and resumable session policy without model downloads"
+run = "mise exec -- node --experimental-transform-types --test web/scripts/piper-runtime.node-tests.mjs web/scripts/tts-session.node-tests.mjs web/scripts/wasm-locale.node-tests.mjs"
+
 [tasks."migration:product-boundary-audit"]
 description = "Exercise embedded Web and Flutter runtime contracts"
 run = "bash scripts/check_direct_runtime_boundary.sh"

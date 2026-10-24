@@ -21,41 +21,17 @@ pub(crate) fn segments(text: &str) -> Vec<String> {
     split_segments(text, 180, 800)
 }
 
+pub(crate) fn segments_with_limit(text: &str, limit: usize) -> Vec<String> {
+    split_segments(text, 180.min(limit), limit)
+}
+
 /// Compact utterances keep legacy system voices below their per-call deadline.
 pub(crate) fn native_segments(text: &str, first: bool) -> Vec<String> {
     split_segments(text, if first { 60 } else { 240 }, 240)
 }
 
 fn split_segments(text: &str, initial: usize, subsequent: usize) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut pending = text.trim();
-    while !pending.is_empty() {
-        let limit = if result.is_empty() {
-            initial
-        } else {
-            subsequent
-        };
-        let end = pending
-            .char_indices()
-            .nth(limit)
-            .map(|(offset, _)| offset)
-            .unwrap_or(pending.len());
-        let prefix = &pending[..end];
-        let boundary = if end == pending.len() {
-            end
-        } else {
-            prefix
-                .char_indices()
-                .rev()
-                .find(|(_, c)| c.is_whitespace() || matches!(c, '.' | '?' | '!'))
-                .map(|(offset, c)| offset + c.len_utf8())
-                .filter(|offset| *offset > end / 2)
-                .unwrap_or(end)
-        };
-        result.push(pending[..boundary].trim().to_owned());
-        pending = pending[boundary..].trim_start();
-    }
-    result
+    crate::tts_session::segment_text(text, initial, subsequent).expect("validated text capacities")
 }
 
 /// Shared codec retains native RIFF validation and normalized 24 kHz MP3 output.

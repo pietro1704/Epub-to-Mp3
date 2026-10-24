@@ -36,7 +36,8 @@ extension RustConversionCoordinator {
                 outputs: snapshot.outputs,
                 logUrl: snapshot.logUrl,
                 error: nil,
-                lastActivityAt: Date().timeIntervalSince1970
+                lastActivityAt: Date().timeIntervalSince1970,
+                chapterIndexBase: snapshot.chapterIndexBase
             )
         }
     }
@@ -97,7 +98,8 @@ extension RustConversionCoordinator {
                 outputs: current?.outputs,
                 logUrl: current?.logUrl,
                 error: nil,
-                lastActivityAt: Date().timeIntervalSince1970
+                lastActivityAt: Date().timeIntervalSince1970,
+                chapterIndexBase: 0
             )
         }
     }

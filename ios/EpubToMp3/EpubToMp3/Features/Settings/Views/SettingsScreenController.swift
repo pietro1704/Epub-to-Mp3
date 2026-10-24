@@ -134,6 +134,12 @@ final class SettingsScreenController: UITableViewController {
                     tableView.reloadData()
                 })
             }
+            for selection in (try? ConverterFFIAdapter().ttsCatalog().selections(platform: "Ios")) ?? [] {
+                alert.addAction(UIAlertAction(title: selection.modelID, style: .default) { [weak self] _ in
+                    self?.settings.selectPrimaryNarration(selection)
+                    tableView.reloadData()
+                })
+            }
             alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
             alert.popoverPresentationController?.sourceView = tableView
             alert.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
@@ -150,6 +156,12 @@ final class SettingsScreenController: UITableViewController {
                 alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
                     guard let self, self.settings.selectableSecondaryAudioEngines.contains(engine) else { return }
                     self.settings.secondaryAudioEngine = engine
+                    tableView.reloadData()
+                })
+            }
+            for selection in ((try? ConverterFFIAdapter().ttsCatalog().selections(platform: "Ios")) ?? []).filter({ !$0.representsSameRequest(as: settings.ttsPreferences.primary) }) {
+                alert.addAction(UIAlertAction(title: selection.modelID, style: .default) { [weak self] _ in
+                    self?.settings.selectSecondaryNarration(selection)
                     tableView.reloadData()
                 })
             }
@@ -173,12 +185,12 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func installPiperModel() {
-        guard let root = LocalSpeechModelReadiness.ttsModelsRoot() else { return }
+        guard let root = LocalSpeechModelReadiness.ttsModelsRoot(), let modelID = settings.ttsPreferences.primary.modelID else { return }
         let alert = UIAlertController(title: L10n.string("settings.piperInstall"), message: nil, preferredStyle: .alert)
         present(alert, animated: true)
         Task.detached {
             let result = Result { try ConverterFFIAdapter().installTtsModelFromCatalog(
-                modelID: "pt_BR-faber-medium", root: root.path
+                modelID: modelID, root: root.path
             ) }
             await MainActor.run {
                 alert.dismiss(animated: true)

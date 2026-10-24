@@ -3,6 +3,7 @@ use super::*;
 #[derive(Deserialize, Default)]
 #[serde(default)]
 pub(super) struct EmbeddedConversionOptionsV1 {
+    pub(super) contract_version: Option<u32>,
     #[serde(skip)]
     pub(super) audio_chunks: Option<Arc<std::sync::Mutex<AudioChunkQueue>>>,
     pub(super) tts_policy_state: Option<converter_core::tts_preferences::SegmentPolicy>,
@@ -15,6 +16,68 @@ pub(super) struct EmbeddedConversionOptionsV1 {
     pub(super) model_path: Option<String>,
     pub(super) model_config_path: Option<String>,
     pub(super) espeak_data_directory: Option<String>,
+}
+
+impl EmbeddedConversionOptionsV1 {
+    pub(super) fn validate_contract(&self) -> Result<(), String> {
+        let Some(version) = self.contract_version else {
+            return Ok(());
+        };
+        if version != converter_core::tts_session::CONTRACT_VERSION {
+            return Err("Unsupported conversion contract version".into());
+        }
+        let preferences = self
+            .tts_preferences
+            .as_ref()
+            .ok_or("Version 2 requires captured TTS preferences")?;
+        preferences.validate(self.language.as_deref())?;
+        for selection in std::iter::once(&preferences.primary).chain(preferences.secondary.iter()) {
+            let session = converter_core::tts_session::SessionSelection::from_legacy(selection)
+                .map_err(|error| error.to_string())?;
+            let descriptor = converter_core::tts_session::builtin_descriptors()
+                .into_iter()
+                .find(|descriptor| {
+                    descriptor.provider == session.provider
+                        && descriptor.runtime == session.runtime
+                        && descriptor
+                            .targets
+                            .iter()
+                            .any(|target| target == std::env::consts::OS)
+                })
+                .ok_or("Requested runtime adapter is unavailable")?;
+            let language = if preferences.continues_native() {
+                ""
+            } else {
+                self.language.as_deref().unwrap_or("")
+            };
+            session
+                .validate(&descriptor, language)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn converter_conversion_options_validate_json_v2(
+    options_json: *const c_char,
+) -> bool {
+    clear_last_error();
+    let json = match c_string(options_json, "conversion options") {
+        Ok(json) => json,
+        Err(error) => return fail(error),
+    };
+    let options: EmbeddedConversionOptionsV1 = match serde_json::from_str(&json) {
+        Ok(options) => options,
+        Err(error) => return fail(error.to_string()),
+    };
+    if options.contract_version != Some(2) {
+        return fail("Version 2 contract is required".into());
+    }
+    match options.validate_contract() {
+        Ok(()) => true,
+        Err(error) => fail(error),
+    }
 }
 
 #[no_mangle]

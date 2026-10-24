@@ -188,6 +188,14 @@ export function useChapterStreamSession({
       const normalizedManifest = { ...manifest, chunks: sortedChunks };
       setManifest(normalizedManifest);
 
+      if (manifest.legacyWholeChapter && currentSegment > 0) {
+        // A legacy merged file cannot identify a saved segment. Retain progress
+        // until the listener explicitly selects a chapter to restart it.
+        setWaiting(false);
+        setError('Saved audio has no segment map. Select a chapter to restart playback.');
+        return;
+      }
+
       // Exact match only — do not skip ahead to a later segment if the current
       // one has not been generated yet.  If missing, fall through to re-poll.
       const nextChunk = sortedChunks.find((chunk) => chunk.index === currentSegment);
@@ -270,7 +278,8 @@ export function useChapterStreamSession({
           };
           if (
             typeof pos.chapterIndex === 'number' &&
-            typeof pos.segmentIndex === 'number' &&
+            Number.isSafeInteger(pos.segmentIndex) &&
+            pos.segmentIndex >= 0 &&
             sortedChapters.some((ch) => ch.index === pos.chapterIndex)
           ) {
             startChapter = pos.chapterIndex;
@@ -286,6 +295,7 @@ export function useChapterStreamSession({
   };
 
   const handleChapterJump = (chapterIndex: number) => {
+    setError(null);
     seekJourneyRef.current = latencyObservations.begin('seek', 'seek_requested');
     const audio = audioRef.current;
     if (audio) {
@@ -337,9 +347,32 @@ export function useChapterStreamSession({
     }
   };
 
+  useEffect(() => {
+    if (started && jobId)
+      void conversionClient
+        .listenFrom?.(jobId, currentChapter)
+        .catch((error: unknown) => setError(String(error)));
+  }, [started, jobId, currentChapter]);
+
   const handleTimeUpdate = () => {
     const audio = audioRef.current;
     if (!audio || audio.currentTime <= 0) return;
+    if (jobId && currentChapterEntry?.status === 'completed' && manifest?.chunks) {
+      const durations = manifest.chunks
+        .slice(currentSegment + 1)
+        .map((chunk) => chunk.durationSeconds);
+      if (
+        Number.isFinite(audio.duration) &&
+        durations.every((duration) => duration !== undefined && Number.isFinite(duration))
+      ) {
+        const remaining =
+          Math.max(0, audio.duration - audio.currentTime) +
+          durations.reduce<number>((sum, duration) => sum + (duration ?? 0), 0);
+        void conversionClient
+          .playbackFeedback?.(jobId, currentChapter, remaining, playbackRate)
+          .catch((error: unknown) => setError(String(error)));
+      }
+    }
     if (playbackJourneyRef.current) {
       latencyObservations.record(playbackJourneyRef.current, 'audio_audible');
       latencyObservations.finish(playbackJourneyRef.current);

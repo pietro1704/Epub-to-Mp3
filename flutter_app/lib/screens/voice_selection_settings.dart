@@ -9,33 +9,25 @@ class VoiceSelectionSettings extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
     final preferences = settings.ttsPreferences;
-    final primaryOptions = <String, TtsSelection>{
-      for (final selection in [
-        TtsSelection.faber,
-        TtsSelection.edge,
-        TtsSelection.system,
-        preferences.primary,
-      ])
-        jsonEncode(selection.toJson()): selection,
-    };
-    final secondaryOptions = <String, TtsSelection>{
-      for (final selection in [
-        TtsSelection.faber,
-        TtsSelection.edge,
-        TtsSelection.system,
-        ?preferences.secondary,
-      ])
-        if (jsonEncode(selection.toJson()) !=
-            jsonEncode(preferences.primary.toJson()))
-          jsonEncode(selection.toJson()): selection,
-    };
+    final catalogSelections = ref.watch(_ttsCatalogSelections).asData?.value ?? const <TtsSelection>[];
+    Map<String, TtsSelection> uniqueOptions(Iterable<TtsSelection> candidates) {
+      final result = <String, TtsSelection>{};
+      for (final selection in candidates) {
+        if (!result.values.any((existing) => existing.representsSameRequest(selection))) {
+          result[jsonEncode(selection.toJson())] = selection;
+        }
+      }
+      return result;
+    }
+    final primaryOptions = uniqueOptions([preferences.primary, ...catalogSelections,
+      TtsSelection.faber, TtsSelection.edge, TtsSelection.system]);
+    final secondaryOptions = uniqueOptions([?preferences.secondary, ...catalogSelections,
+      TtsSelection.faber, TtsSelection.edge, TtsSelection.system].where((selection) => !selection.representsSameRequest(preferences.primary)));
     String selectionLabel(TtsSelection selection) {
-      if (jsonEncode(selection.toJson()) ==
-          jsonEncode(TtsSelection.faber.toJson())) {
+      if (selection.representsSameRequest(TtsSelection.faber)) {
         return t.ttsFaberOffline;
       }
-      if (jsonEncode(selection.toJson()) ==
-          jsonEncode(TtsSelection.edge.toJson())) {
+      if (selection.representsSameRequest(TtsSelection.edge)) {
         return t.ttsEdgeOnline;
       }
       if (selection.engine == 'system') return t.ttsSystemOffline;
@@ -67,17 +59,7 @@ class VoiceSelectionSettings extends ConsumerWidget {
                 onChanged: (key) {
                   final selected = primaryOptions[key];
                   if (selected == null) return;
-                  notifier.setTtsPreferences(
-                    TtsPreferences(
-                      primary: selected,
-                      secondary:
-                          jsonEncode(preferences.secondary?.toJson()) == key
-                          ? null
-                          : preferences.secondary,
-                      allowOnlineFallback: preferences.allowOnlineFallback,
-                      policyVersion: preferences.policyVersion,
-                    ),
-                  );
+                  notifier.setTtsPreferences(preferences.withPrimary(selected));
                 },
               ),
               DropdownButtonFormField<String>(

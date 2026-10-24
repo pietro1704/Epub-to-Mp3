@@ -55,6 +55,7 @@ pub(super) fn preferences_with_legacy_engine(
             Default::default()
         } else {
             converter_core::tts_preferences::TtsSelection {
+                session: None,
                 engine,
                 model_id: None,
                 voice: None,
@@ -70,6 +71,8 @@ pub(super) fn preferences_with_legacy_engine(
 #[serde(deny_unknown_fields)]
 pub(super) struct CapturedTtsSelection {
     engine: String,
+    #[serde(default)]
+    session: Option<converter_core::tts_session::SessionSelection>,
     model_id: Option<String>,
     voice: Option<String>,
 }
@@ -77,6 +80,7 @@ pub(super) struct CapturedTtsSelection {
 impl CapturedTtsSelection {
     fn into_selection(self) -> converter_core::tts_preferences::TtsSelection {
         converter_core::tts_preferences::TtsSelection {
+            session: self.session,
             engine: self.engine,
             model_id: self.model_id,
             voice: self.voice,
@@ -133,6 +137,7 @@ pub(super) fn effective_preferences(
         && !raw.iter().any(|v| v == "--use-secondary")
     {
         preferences.secondary = None;
+        preferences.policy_version = None;
     }
     if (options.fallback_model.is_some() || options.fallback_voice.is_some())
         && !raw.iter().any(|v| v == "--fallback-engine")
@@ -140,6 +145,7 @@ pub(super) fn effective_preferences(
         return Err("--fallback-model and --fallback-voice require --fallback-engine".into());
     }
     if raw.iter().any(|v| v == "--engine") {
+        preferences.primary.session = None;
         if preferences.primary.engine != options.engine {
             preferences.primary.voice = None;
         }
@@ -155,14 +161,53 @@ pub(super) fn effective_preferences(
         };
     }
     if let Some(model) = &options.model {
+        preferences.primary.session = None;
         if preferences.primary.engine != "piper" {
             preferences.primary.voice = None;
         }
         preferences.primary.engine = "piper".into();
         preferences.primary.model_id = Some(model.clone());
+        if let Some(descriptor) = converter_core::model_catalog::MODELS
+            .iter()
+            .find(|descriptor| descriptor.id == model)
+        {
+            let runtime = converter_core::tts_session::runtime_for(descriptor.engine)
+                .ok_or("The model has no registered runtime descriptor")?;
+            preferences.primary.engine = descriptor.engine.into();
+            preferences.primary.session = Some(converter_core::tts_session::SessionSelection {
+                version: 2,
+                provider: descriptor.engine.into(),
+                runtime: runtime.into(),
+                model_id: Some(model.clone()),
+                model_revision: Some(
+                    descriptor
+                        .artifacts
+                        .iter()
+                        .map(|artifact| artifact.sha256)
+                        .collect::<Vec<_>>()
+                        .join(":"),
+                ),
+                voice: options.voice.clone(),
+                options: Default::default(),
+            });
+        }
     }
     if options.voice.is_some() {
         preferences.primary.voice = options.voice.clone();
+        if let Some(session) = &mut preferences.primary.session {
+            session.voice = options.voice.clone();
+        }
+    }
+    if let Some(id) = &options.fallback_model {
+        if options.fallback_engine == "none"
+            || options.fallback_engine == "system"
+            || options.fallback_engine == "edge"
+            || converter_core::model_catalog::MODELS
+                .iter()
+                .any(|model| model.id == id && model.engine != options.fallback_engine)
+        {
+            return Err("Fallback model does not belong to the selected fallback engine".into());
+        }
     }
     if raw
         .iter()
@@ -170,8 +215,19 @@ pub(super) fn effective_preferences(
     {
         preferences.secondary = match options.fallback_engine.as_str() {
             "none" => None,
+            provider
+                if options.fallback_model.as_ref().is_some_and(|id| {
+                    converter_core::model_catalog::MODELS
+                        .iter()
+                        .any(|model| model.id == id && model.engine == provider)
+                }) =>
+            {
+                let id = options.fallback_model.as_ref().expect("matched model");
+                Some(catalog_model_selection(id, options.fallback_voice.clone())?)
+            }
             "edge" | "system" | "piper" => {
                 Some(converter_core::tts_preferences::TtsSelection {
+                    session: None,
                     engine: options.fallback_engine.clone(),
                     model_id: if options.fallback_engine == "piper" {
                         Some(options.fallback_model.clone().unwrap_or_else(|| {
@@ -195,4 +251,37 @@ pub(super) fn effective_preferences(
     }
     preferences.validate(None)?;
     Ok(preferences)
+}
+
+fn catalog_model_selection(
+    id: &str,
+    voice: Option<String>,
+) -> Result<converter_core::tts_preferences::TtsSelection, String> {
+    let model = converter_core::model_catalog::MODELS
+        .iter()
+        .find(|model| model.id == id)
+        .ok_or("Unknown fallback model in catalog")?;
+    let runtime = converter_core::tts_session::runtime_for(model.engine)
+        .ok_or("Model runtime is not registered")?;
+    Ok(converter_core::tts_preferences::TtsSelection {
+        engine: model.engine.into(),
+        model_id: Some(id.into()),
+        voice: voice.clone(),
+        session: Some(converter_core::tts_session::SessionSelection {
+            version: 2,
+            provider: model.engine.into(),
+            runtime: runtime.into(),
+            model_id: Some(id.into()),
+            model_revision: Some(
+                model
+                    .artifacts
+                    .iter()
+                    .map(|artifact| artifact.sha256)
+                    .collect::<Vec<_>>()
+                    .join(":"),
+            ),
+            voice,
+            options: Default::default(),
+        }),
+    })
 }

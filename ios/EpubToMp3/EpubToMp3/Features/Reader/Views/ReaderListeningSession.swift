@@ -19,6 +19,8 @@ final class ReaderListeningSession {
     private var listeningPlaybackControl: ConverterPlaybackControl?
     private var listeningChapters: [JobSnapshot.Chapter] = []
     private var hasDeliveredListeningChapter = false
+    private var requestedPage: (chapter: Int, ratio: Double)?
+    private var restartAtPage: ((Int, Double) -> Void)?
 
     init(player: AudioPlayer, playerPresentation: PlayerPresentation,
          conversionExecutor: @escaping RustConversionCoordinator.StreamingExecutor,
@@ -71,6 +73,16 @@ final class ReaderListeningSession {
             .sink { [weak self] navigation in
                 guard let self, navigation.jobID == self.listeningJobID,
                       let control = self.listeningPlaybackControl else { return }
+                let defaults = UserDefaults.standard
+                if defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == self.listeningBookID,
+                   defaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int == navigation.chapterIndex,
+                   let ratio = defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double,
+                   ratio.isFinite, (0...1).contains(ratio),
+                   self.requestedPage?.chapter != navigation.chapterIndex || self.requestedPage?.ratio != ratio,
+                   let restart = self.restartAtPage {
+                    restart(navigation.chapterIndex, ratio)
+                    return
+                }
                 control.updatePlaybackWindow(currentChapter: navigation.chapterIndex, chaptersAhead: 1)
                 _ = control.prioritize(chapterIndex: navigation.chapterIndex)
             }
@@ -97,13 +109,14 @@ final class ReaderListeningSession {
         listeningPlaybackControl = nil
         listeningChapters.removeAll()
         hasDeliveredListeningChapter = false
+        requestedPage = nil
+        restartAtPage = nil
         retiring?.cancel()
     }
 
     func start(book: BookEntity, priority: Int, pageRatio: Double?,
                catalog: [(index: Int, title: String)], conversionOptions: ConversionOptions,
                presentsFullPlayer: Bool) {
-        guard !isListening(to: book.id) else { return }
         cancel()
         guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
         // The playback control schedules only the active chapter and one ahead.
@@ -112,6 +125,11 @@ final class ReaderListeningSession {
         let previousPlayerJob = player.snapshot?.jobId
         listeningJobID = jobID
         listeningBookID = book.id
+        requestedPage = (priority, pageRatio ?? 0)
+        restartAtPage = { [weak self] chapter, ratio in
+            self?.start(book: book, priority: chapter, pageRatio: ratio, catalog: catalog,
+                conversionOptions: conversionOptions, presentsFullPlayer: presentsFullPlayer)
+        }
         listeningChapters = catalog.map {
             JobSnapshot.Chapter(index: $0.index, name: $0.title, status: "pending",
                 downloadUrl: nil, chars: nil, charsProcessed: nil, progressRatio: nil,
@@ -134,12 +152,14 @@ final class ReaderListeningSession {
                       player.snapshot?.jobId == previousPlayerJob else { return }
                 let playbackControl = try RustConversionCoordinator.makePlaybackControl()
                 playbackControl.updatePlaybackWindow(currentChapter: priority, chaptersAhead: 1)
+                if let pageRatio { playbackControl.startFromPage(ratio: pageRatio) }
+                playbackControl.trackPlayback(player)
                 listeningPlaybackControl = playbackControl
                 let pending = JobSnapshot(jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
                     bookAuthor: book.author, coverUrl: nil, coverMimeType: nil, engine: nil,
                     voice: nil, language: nil, progressPercent: 0, chaptersTotal: nil,
                     chaptersCompleted: 0, chapterProgress: self.listeningChapters, outputs: nil, logUrl: nil,
-                    error: nil, lastActivityAt: Date().timeIntervalSince1970)
+                    error: nil, lastActivityAt: Date().timeIntervalSince1970, chapterIndexBase: 0)
                 if player.positionSeconds > 1 {
                     player.pause()
                     player.persistResumePoint(force: true)
@@ -148,11 +168,7 @@ final class ReaderListeningSession {
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
                 installedPending = true
                 player.isConverting = true
-                if let pageRatio {
-                    player.startFromReaderPage(priority, sentenceOffsetRatio: pageRatio)
-                } else {
-                    player.resume()
-                }
+                player.resume()
                 let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
                 let result = try await conversionExecutor(
                     url, jobID, chapterStart, chapterEnd, playbackControl,
@@ -189,11 +205,7 @@ final class ReaderListeningSession {
                             data,
                             chapterIndex: chapterIndex,
                             chunkIndex: chunkIndex,
-                            // A page ratio needs the complete chapter duration.
-                            // Rust still writes the complete canonical artifact;
-                            // chapter callbacks queue it without replaying a prefix
-                            // or blocking conversion on the segment backlog.
-                            buffersAudio: pageRatio == nil,
+                            buffersAudio: true,
                             isCurrent: { [weak self] in
                                 guard let self else { return false }
                                 return self.listeningJobID == jobID

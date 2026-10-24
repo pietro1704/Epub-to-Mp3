@@ -227,6 +227,9 @@ final class PlaybackObservation {
 
     func persistResumePoint(force: Bool) {
         resumePersistence.persist(snapshot: snapshot, chapterIndex: currentChapterIndex,
+            sourceChapterIndex: PlaybackResumeStore.sourceChapterIndex(snapshot: snapshot,
+                playbackChapters: chapterSession.chapters, queueOffset: currentChapterIndex,
+                segmentMode: isSegmentMode, segmentChapterIndex: segments.chapterIndex),
             positionSeconds: positionSeconds, isPlaying: isPlaying, force: force)
     }
 

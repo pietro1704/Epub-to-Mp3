@@ -25,7 +25,11 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var jobControlPrioritize: ConverterJobControlPrioritize?
     private var jobControlWindow: ConverterJobControlWindow?
     private var jobControlWindowContains: ConverterJobControlWindowContains?
+    private var jobControlListeningPosition: ConverterJobControlJSON?
+    private var jobControlPlaybackFeedback: ConverterJobControlJSON?
+    private var jobControlListeningGeneration: ConverterJobControlGeneration?
     private var validateOptionsJSON: ConverterOptionsValidateV1? = nil
+    private var validateSessionOptionsJSON: ConverterOptionsValidateV1? = nil
     private var loadError: String?
 
     init(bundle: Bundle = .main, libraryURL overrideURL: URL? = nil) {
@@ -77,6 +81,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         lastError = error
         modelCatalog = ConverterModelCatalog(
             available: true, freeString: free, lastError: error, modelsJSON: models,
+            catalogJSON: symbol("converter_tts_catalog_json_v2", as: ConverterTtsModels.self),
             defaultEngine: defaultEngine,
             selectInstalledReady: symbol("converter_tts_installed_ready_engine", as: ConverterTtsInstalledReadyEngine.self),
             installArtifact: symbol("converter_tts_model_install", as: ConverterTtsModelInstall.self),
@@ -98,7 +103,11 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         jobControlPrioritize = symbol("converter_job_control_prioritize", as: ConverterJobControlPrioritize.self)
         jobControlWindow = symbol("converter_job_control_set_playback_window", as: ConverterJobControlWindow.self)
         jobControlWindowContains = symbol("converter_job_control_chapter_is_in_playback_window", as: ConverterJobControlWindowContains.self)
+        jobControlListeningPosition = symbol("converter_job_control_set_listening_position_json_v2", as: ConverterJobControlJSON.self)
+        jobControlPlaybackFeedback = symbol("converter_job_control_playback_feedback_json_v2", as: ConverterJobControlJSON.self)
+        jobControlListeningGeneration = symbol("converter_job_control_listening_generation_v2", as: ConverterJobControlGeneration.self)
         validateOptionsJSON = symbol("converter_conversion_options_validate_json_v1", as: ConverterOptionsValidateV1.self)
+        validateSessionOptionsJSON = symbol("converter_conversion_options_validate_json_v2", as: ConverterOptionsValidateV1.self)
     }
 
     convenience init(libraryURL: URL) {
@@ -115,7 +124,10 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             rawHandle: rawHandle, free: jobControlFree,
             cancel: jobControlCancel, prioritize: jobControlPrioritize,
             setWindow: jobControlWindow,
-            windowContains: jobControlWindowContains
+            windowContains: jobControlWindowContains,
+            listeningPosition: jobControlListeningPosition,
+            playbackFeedback: jobControlPlaybackFeedback,
+            listeningGeneration: jobControlListeningGeneration
         )
     }
 
@@ -254,7 +266,14 @@ final class ConverterFFIAdapter: EmbeddedConverter {
                 throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks platform speech ABI.")
             }
             let json = try options.encodedJSON()
-            guard json.withCString({ validateOptionsJSON($0) }) else {
+            let validator: ConverterOptionsValidateV1
+            if options.requiresSessionABI {
+                guard let validateSessionOptionsJSON else {
+                    throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks version 2 session contracts.")
+                }
+                validator = validateSessionOptionsJSON
+            } else { validator = validateOptionsJSON }
+            guard json.withCString({ validator($0) }) else {
                 throw EmbeddedConverterError.conversionFailed(readError())
             }
             return
@@ -270,6 +289,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     }
 
     func ttsModels() throws -> Data { try modelCatalog.ttsModels() }
+    func ttsCatalog() throws -> TtsCatalog { try modelCatalog.ttsCatalog() }
 
     func ttsDefaultEngine(language: String, platform: String, androidAPI: UInt32 = 0) throws -> String {
         try modelCatalog.ttsDefaultEngine(language: language, platform: platform, androidAPI: androidAPI)

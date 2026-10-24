@@ -20,14 +20,7 @@ class _InstalledNarrationModelsCardState extends ConsumerState<InstalledNarratio
 
   Future<List<Map<String, dynamic>>> _loadCatalog() async {
     final raw = await ref.read(embeddedConverterProvider).ttsModels();
-    final decoded = jsonDecode(raw);
-    if (decoded is! List) {
-      throw const FormatException('Invalid TTS model catalog');
-    }
-    final models = decoded
-        .whereType<Map>()
-        .map(Map<String, dynamic>.from)
-        .toList();
+    final models = TtsCatalog.decode(raw).models;
     final root = await _modelRoot();
     final metadata = <String, String>{};
     for (final model in models) {

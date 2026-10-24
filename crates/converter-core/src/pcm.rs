@@ -166,17 +166,25 @@ fn encode_wav_mp3_at_rate(data: &[u8], target_rate: Option<u32>) -> Result<Vec<u
 }
 
 pub fn validate_mp3(bytes: &[u8]) -> Result<(), String> {
+    mp3_duration_seconds(bytes).map(|_| ())
+}
+
+pub fn mp3_duration_seconds(bytes: &[u8]) -> Result<f64, String> {
     let mut decoder = rusty_mp3::Mp3Decoder::new();
     decoder.push(bytes);
     decoder.flush();
-    let mut samples = 0;
+    let mut duration = 0.0;
     while let Ok(frame) = decoder.next_frame() {
-        samples += frame.samples.len();
+        if frame.channels == 0 || frame.sample_rate == 0 {
+            return Err("Invalid MP3 audio format".into());
+        }
+        duration +=
+            frame.samples.len() as f64 / f64::from(frame.channels) / frame.sample_rate as f64;
     }
-    if samples == 0 {
+    if duration <= 0.0 {
         return Err("Speech produced no playable MP3 frames".into());
     }
-    Ok(())
+    Ok(duration)
 }
 
 /// Edge appends a long silent tail to each independent response. Remove only

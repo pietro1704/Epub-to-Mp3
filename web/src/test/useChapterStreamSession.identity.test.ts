@@ -4,6 +4,7 @@ import { useChapterStreamSession } from '../components/useChapterStreamSession';
 import { conversionClient } from '../services/ConversionService';
 import { latencyObservations } from '../services/LatencyObservation';
 import type { ChapterStreamManifest } from '../types/conversion';
+import { positionKey } from '../components/playback_preferences';
 import { createProvidersWrapper } from './testUtils';
 
 function deferred<T>() {
@@ -34,6 +35,7 @@ function settle(
 }
 beforeEach(() => {
   localStorage.clear();
+  vi.spyOn(conversionClient, 'listenFrom').mockResolvedValue();
   vi.useFakeTimers();
 });
 afterEach(() => {
@@ -112,4 +114,28 @@ describe('streaming lease retirement', () => {
       expect(vi.getTimerCount()).toBe(timerCount);
     },
   );
+});
+
+describe('legacy merged audio resume', () => {
+  it('retains an unmappable saved segment until explicit chapter restart', async () => {
+    localStorage.setItem(positionKey('old'), JSON.stringify({ chapterIndex: 1, segmentIndex: 3 }));
+    const legacy = { ...manifest('old', 1, 'merged'), legacyWholeChapter: true };
+    vi.spyOn(conversionClient, 'getChapterManifest').mockResolvedValue(legacy);
+    const { result } = renderHook(() => useChapterStreamSession({ jobId: 'old', chapters }), {
+      wrapper: createProvidersWrapper('en'),
+    });
+    await act(async () => {
+      result.current.handleStart();
+    });
+    expect(result.current.currentSegment).toBe(3);
+    expect(result.current.src).toBeNull();
+    expect(result.current.waiting).toBe(false);
+    expect(result.current.error).toContain('no segment map');
+    await act(async () => {
+      result.current.handleChapterJump(1);
+    });
+    expect(result.current.currentSegment).toBe(0);
+    expect(result.current.src).toBe('/audio/merged.mp3');
+    expect(result.current.error).toBeNull();
+  });
 });

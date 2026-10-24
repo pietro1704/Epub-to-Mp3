@@ -62,6 +62,17 @@ String _convertOnWorker(DesktopConversionRequest request) {
   }
 
   return using((arena) {
+    final preferences = options['tts_preferences'];
+    final versionedSelection = preferences is Map && [preferences['primary'], preferences['secondary']]
+        .any((selection) => selection is Map && selection['session'] != null);
+    if (versionedSelection || (options['contract_version'] != null && options['contract_version'] != 1)) {
+      if (!library.providesSymbol('converter_conversion_options_validate_json_v2')) {
+        throw EmbeddedConversionFailure('ABI_UNAVAILABLE', 'The embedded converter lacks version 2 TTS session contracts');
+      }
+      options.putIfAbsent('contract_version', () => 2);
+      final validate = library.lookupFunction<_OptionsValidateNative, _OptionsValidateDart>('converter_conversion_options_validate_json_v2');
+      if (!validate(jsonEncode(options).toNativeUtf8(allocator: arena))) return readOwned(ffi.nullptr);
+    }
     final session = open(request.inputPath.toNativeUtf8(allocator: arena));
     if (session == ffi.nullptr) return readOwned(ffi.nullptr);
     try {

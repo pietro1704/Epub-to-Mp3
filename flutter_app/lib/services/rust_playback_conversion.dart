@@ -7,6 +7,7 @@ import 'embedded_converter.dart';
 import 'local_conversion_job.dart';
 import '../models/tts_preferences.dart';
 import 'playback_chapter_window.dart';
+import 'listening_schedule.dart';
 import 'growing_chapter_audio_source.dart';
 
 /// Converts only chapters in the moving Listen window through converter-ffi.
@@ -23,6 +24,17 @@ class RustPlaybackConversionService {
   final ConversionJobCoordinator coordinator;
   final PlaybackChapterWindow window;
   Future<void> Function()? _cancelCurrent;
+  ListeningSchedule? _schedule;
+  void Function()? _wakeSchedule;
+  int? _currentChapter;
+
+  void playbackFeedback({required int chapterIndex, required double remainingSeconds,
+    required double playbackRate}) {
+    if (_currentChapter != chapterIndex || _schedule == null) return;
+    _schedule!.feedback(chapterIndex: chapterIndex, remainingSeconds: remainingSeconds,
+      playbackRate: playbackRate);
+    _wakeSchedule?.call();
+  }
   Future<void> cancel() async {
     await _cancelCurrent?.call();
   }
@@ -36,6 +48,7 @@ class RustPlaybackConversionService {
     required String outputDirectory,
     required List<FulltextChapter> chapters,
     required int initialChapterIndex,
+    int initialTextOffset = 0,
     required Stream<int> playbackChapterChanges,
     required bool Function() isActive,
     Future<void> Function(LocalConversionJob job)? onUpdate,
@@ -51,6 +64,9 @@ class RustPlaybackConversionService {
     )?
     onChapterStreaming,
   }) async {
+    if (_cancelCurrent != null) {
+      throw StateError('This listening service already owns an active conversion');
+    }
     final selected = chapters
         .where((chapter) => chapter.text.trim().isNotEmpty)
         .toList();
@@ -61,8 +77,22 @@ class RustPlaybackConversionService {
       );
     }
 
+    final initialSource = selected.where((chapter) => chapter.index == initialChapterIndex).firstOrNull;
+    if (initialSource == null || initialTextOffset < 0 || initialTextOffset >= initialSource.text.runes.length) {
+      throw const FormatException('Listening position is outside the selected source text');
+    }
+    if (initialTextOffset > 0 && converter is! PositionedChapterConverter) {
+      throw EmbeddedConverterUnavailable('This runtime cannot start at a source text position');
+    }
     var currentChapter = initialChapterIndex;
+    final schedule = converter is ListeningScheduleFactory
+        ? (converter as ListeningScheduleFactory).createListeningSchedule(initialChapterIndex)
+        : null;
+    _schedule = schedule;
+    _currentChapter = currentChapter;
+    bool permits(int chapter) => schedule?.permits(chapter) ?? window.contains(currentChapter, chapter);
     var streamClosed = false;
+    var navigationEpoch = 0;
     var cancelledByOwner = false;
     String? activeNativeRequest;
     int? activeNativeChapter;
@@ -83,16 +113,24 @@ class RustPlaybackConversionService {
     }
 
     var windowChanged = Completer<void>();
+    _wakeSchedule = () {
+      if (!windowChanged.isCompleted) windowChanged.complete();
+      windowChanged = Completer<void>();
+    };
     _cancelCurrent = () async {
       cancelledByOwner = true;
+      navigationEpoch++;
       if (!windowChanged.isCompleted) windowChanged.complete();
       await cancelActiveConversion();
     };
     final subscription = playbackChapterChanges.listen(
       (index) {
         currentChapter = index;
+        _currentChapter = index;
+        schedule?.moveTo(index);
         if (activeNativeChapter != null &&
-            !window.contains(index, activeNativeChapter)) {
+            !permits(activeNativeChapter)) {
+          navigationEpoch++;
           unawaited(cancelActiveConversion());
         }
         if (!windowChanged.isCompleted) windowChanged.complete();
@@ -100,6 +138,7 @@ class RustPlaybackConversionService {
       },
       onDone: () {
         streamClosed = true;
+        navigationEpoch++;
         unawaited(cancelActiveConversion());
         if (!windowChanged.isCompleted) windowChanged.complete();
       },
@@ -167,7 +206,8 @@ class RustPlaybackConversionService {
         ...job.chapters.where((item) => item.status == 'completed'),
       ]) {
         final path = chapter.outputPath;
-        if (path == null || !await File(path).exists()) {
+        final expectedOffset = chapter.index == initialChapterIndex ? initialTextOffset : 0;
+        if (path == null || !await File(path).exists() || chapter.textOffset != expectedOffset) {
           job = await coordinator.retryChapter(job, chapter.index);
         }
       }
@@ -180,7 +220,7 @@ class RustPlaybackConversionService {
           break;
         }
         final chapterIndex = pending
-            .where((index) => window.contains(currentChapter, index))
+            .where((index) => permits(index))
             .firstOrNull;
         if (chapterIndex == null) {
           await nextWindowChange;
@@ -203,6 +243,7 @@ class RustPlaybackConversionService {
         await onUpdate?.call(job);
 
         var deliveredStreamSource = false;
+        final requestEpoch = navigationEpoch;
         try {
           final streaming =
               converter is StreamingChapterConverter &&
@@ -217,32 +258,42 @@ class RustPlaybackConversionService {
             chapterOptions['tts_policy_state'] = job.ttsPolicyState;
           }
           final chapterOptionsJson = jsonEncode(chapterOptions);
-          final result = streaming
-              ? await (converter as StreamingChapterConverter).streamChapter(
-                  inputPath: inputPath,
-                  outputPath: chapterDirectory.path,
-                  chapterIndex: chapterIndex,
-                  optionsJson: chapterOptionsJson,
-                  onFirstAudio: (source) async {
+          final synthesisClock = Stopwatch()..start();
+          Future<void> firstAudio(GrowingChapterAudioSource source) async {
                     if (!isActive() ||
+                        requestEpoch != navigationEpoch ||
                         cancelledByOwner ||
-                        !window.contains(currentChapter, chapterIndex)) {
+                        !permits(chapterIndex)) {
                       source.fail(
                         StateError('Chapter left the playback window'),
                       );
                       await cancelActiveConversion();
                       return;
                     }
-                    await onChapterStreaming(chapter, source);
+                    await onChapterStreaming?.call(chapter, source);
                     deliveredStreamSource = true;
-                  },
-                )
-              : await converter.convertChapter(
-                  inputPath: inputPath,
-                  outputPath: chapterDirectory.path,
-                  chapterIndex: chapterIndex,
-                  optionsJson: chapterOptionsJson,
-                );
+          }
+          final offset = chapterIndex == initialChapterIndex ? initialTextOffset : 0;
+          final result = converter is PositionedChapterConverter
+              ? await (converter as PositionedChapterConverter).convertPositionedChapter(
+                  inputPath: inputPath, outputPath: chapterDirectory.path,
+                  chapterIndex: chapterIndex, textOffset: offset, optionsJson: chapterOptionsJson,
+                  onFirstAudio: streaming ? firstAudio : null)
+              : streaming
+              ? await (converter as StreamingChapterConverter).streamChapter(
+                  inputPath: inputPath, outputPath: chapterDirectory.path,
+                  chapterIndex: chapterIndex, optionsJson: chapterOptionsJson, onFirstAudio: firstAudio)
+              : await converter.convertChapter(inputPath: inputPath, outputPath: chapterDirectory.path,
+                  chapterIndex: chapterIndex, optionsJson: chapterOptionsJson);
+          if (result.textOffset != offset) throw StateError('Conversion returned another source text range');
+          synthesisClock.stop();
+          if (requestEpoch != navigationEpoch) {
+            throw EmbeddedConversionFailure('REPLACED', 'Listening request was replaced');
+          }
+          if (permits(chapterIndex)) {
+            schedule?.observeGeneration(synthesisClock.elapsedMicroseconds / 1000000,
+              chapter.text.runes.length);
+          }
           activeNativeRequest = null;
           activeNativeChapter = null;
           if (result.ttsPolicyState != null) {
@@ -265,7 +316,7 @@ class RustPlaybackConversionService {
           }
           if (!isActive() ||
               cancelledByOwner ||
-              !window.contains(currentChapter, chapterIndex)) {
+              !permits(chapterIndex)) {
             if (deliveredStreamSource) {
               // A queued live source may still serve immutable files through
               // its existing HTTP request after the playback window moves.
@@ -273,7 +324,8 @@ class RustPlaybackConversionService {
                 job,
                 chapterIndex,
                 audio.path,
-                usedSelections: result.usedSelections,
+                textOffset: result.textOffset,
+            usedSelections: result.usedSelections,
                 fallbackUsed: result.fallbackUsed,
               );
             } else {
@@ -288,6 +340,7 @@ class RustPlaybackConversionService {
             job,
             chapterIndex,
             audio.path,
+            textOffset: result.textOffset,
             usedSelections: result.usedSelections,
             fallbackUsed: result.fallbackUsed,
           );
@@ -297,13 +350,13 @@ class RustPlaybackConversionService {
         } catch (error) {
           activeNativeRequest = null;
           activeNativeChapter = null;
-          if (streamingCancelledByWindow(
+          if (requestEpoch != navigationEpoch || streamingCancelledByWindow(
             streamClosed || cancelledByOwner,
             isActive(),
-            window.contains(currentChapter, chapterIndex),
+            permits(chapterIndex),
           )) {
             job = await coordinator.retryChapter(job, chapterIndex);
-            if (await chapterDirectory.exists()) {
+            if (!deliveredStreamSource && await chapterDirectory.exists()) {
               await chapterDirectory.delete(recursive: true);
             }
             await onUpdate?.call(job);
@@ -329,6 +382,10 @@ class RustPlaybackConversionService {
       await cancelActiveConversion();
       await subscription.cancel();
       _cancelCurrent = null;
+      _wakeSchedule = null;
+      _currentChapter = null;
+      _schedule = null;
+      schedule?.close();
     }
   }
 
@@ -358,6 +415,7 @@ class RustPlaybackConversionService {
           'name': chapter.displayTitle,
           'status': state?.status ?? 'pending',
           'fallbackUsed': state?.fallbackUsed ?? false,
+          'textOffset': state?.textOffset ?? 0,
           'usedSelections':
               state?.usedSelections
                   .map((selection) => selection.toJson())

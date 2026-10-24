@@ -25,7 +25,6 @@ pub mod ingestion;
 pub mod jobs;
 #[cfg(all(not(target_arch = "wasm32"), feature = "kokoro-sherpa-runtime"))]
 pub mod kokoro_sherpa;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod model_catalog;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod model_store;
@@ -44,6 +43,7 @@ pub mod tts;
 pub mod tts_preferences;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tts_runtime;
+pub mod tts_session;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod worker;
 mod zip_names;

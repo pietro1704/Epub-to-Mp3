@@ -96,6 +96,7 @@ final class MacBookListeningSession {
         let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
         do {
             let control = try RustConversionCoordinator.makePlaybackControl()
+            control.trackPlayback(player)
             control.updatePlaybackWindow(currentChapter: Int(chapterStart), chaptersAhead: 1)
             localPlaybackControl = control
             localPlaybackGeneration = jobID
@@ -120,7 +121,8 @@ final class MacBookListeningSession {
                 outputs: nil,
                 logUrl: nil,
                 error: nil,
-                lastActivityAt: Date().timeIntervalSince1970
+                lastActivityAt: Date().timeIntervalSince1970,
+                    chapterIndexBase: 0
             )
             player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
             player.isConverting = true
@@ -153,9 +155,7 @@ final class MacBookListeningSession {
                     { [weak self] event in
                         guard let self, self.localPlaybackGeneration == jobID,
                               self.player.snapshot?.jobId == jobID else { return }
-                        let activeChapter = self.player.activeStreamingChapterIndex ?? Int(chapterStart)
-                        guard event.chapterIndex >= activeChapter,
-                              event.chapterIndex <= activeChapter + 1 else { return }
+                        guard control.contains(chapterIndex: event.chapterIndex) else { return }
                         let chapter = event.playableChapter
                         if let existing = self.localPlaybackChapters.firstIndex(where: { $0.index == chapter.index }) {
                             self.localPlaybackChapters[existing] = chapter
@@ -175,12 +175,9 @@ final class MacBookListeningSession {
                             chunkIndex: chunkIndex,
                             isCurrent: { [weak self] in
                                 guard let self, let control = self.localPlaybackControl else { return false }
-                                let activeChapter = self.player.activeStreamingChapterIndex ?? Int(chapterStart)
                                 return self.localPlaybackGeneration == jobID
                                     && self.player.snapshot?.jobId == jobID
                                     && control.contains(chapterIndex: chapterIndex)
-                                    && chapterIndex >= activeChapter
-                                    && chapterIndex <= activeChapter + 1
                             },
                             onAccepted: { [weak self] in
                                 guard let self, self.localPlaybackGeneration == jobID else { return }

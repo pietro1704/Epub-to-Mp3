@@ -6,10 +6,11 @@ pub(super) fn command_models(raw: &[String]) -> Result<i32, String> {
     let config = cli_config();
     let root = config.paths.models_dir.join("tts");
     match raw.get(1).map(String::as_str).unwrap_or("list") {
+        "catalog" => println!("{}", converter_core::tts_session::catalog_json()),
         "list" => {
             for model in converter_core::model_catalog::MODELS
                 .iter()
-                .filter(|m| m.engine == "piper" && !m.artifacts.is_empty())
+                .filter(|m| !m.artifacts.is_empty())
             {
                 println!(
                     "{}\t{} bytes\t{}",

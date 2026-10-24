@@ -24,10 +24,32 @@ struct TtsSelection: Codable, Sendable, Equatable {
     var engine: String
     var modelID: String?
     var voice: String?
-    enum CodingKeys: String, CodingKey { case engine, voice; case modelID = "model_id" }
+    var session: TtsSessionSelection? = nil
+    enum CodingKeys: String, CodingKey { case engine, voice, session; case modelID = "model_id" }
     static func selected(_ engine: AudioEnginePreference) -> Self {
         Self(engine: engine.rawValue, modelID: engine == .piper ? "pt_BR-faber-medium" : nil,
              voice: nil)
+    }
+    func representsSameRequest(as other: Self) -> Bool {
+        guard engine == other.engine, modelID == other.modelID, voice == other.voice else { return false }
+        guard let session, let otherSession = other.session else {
+            return (session?.options.isEmpty ?? true) && (other.session?.options.isEmpty ?? true)
+        }
+        return session.runtime == otherSession.runtime && session.options == otherSession.options
+    }
+}
+
+struct TtsSessionSelection: Codable, Sendable, Equatable {
+    var version: UInt32 = 2
+    var provider: String
+    var runtime: String
+    var modelID: String?
+    var modelRevision: String?
+    var voice: String?
+    var options: [String: String] = [:]
+    enum CodingKeys: String, CodingKey {
+        case version, provider, runtime, voice, options
+        case modelID = "model_id", modelRevision = "model_revision"
     }
 }
 

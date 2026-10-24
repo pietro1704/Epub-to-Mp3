@@ -143,6 +143,16 @@ final class MainReaderScreenController: UIViewController {
 
     private func bind() {
         listeningSession.observePlayback()
+        player.restartReaderListening = { [weak self] chapter, ratio in
+            guard let self, let book = self.currentBook,
+                  self.sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id,
+                  self.player.isPlaybackForReaderBook(book.id)
+                    || self.player.snapshot?.jobId == book.lastJobId,
+                  self.listeningSession.isListening(to: book.id)
+                    || self.player.snapshot?.chapterProgress?.contains(where: { ($0.textOffset ?? 0) > 0 }) == true else { return false }
+            self.startListening(presentsFullPlayer: false, requestedChapter: chapter, requestedRatio: ratio)
+            return true
+        }
 
         library.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -373,16 +383,15 @@ final class MainReaderScreenController: UIViewController {
         startListening(presentsFullPlayer: false)
     }
 
-    private func startListening(presentsFullPlayer: Bool) {
+    private func startListening(presentsFullPlayer: Bool, requestedChapter: Int? = nil, requestedRatio: Double? = nil) {
         guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
-        guard !listeningSession.isListening(to: book.id) else { return }
-        let priority = readerController?.currentReaderChapterIndex
+        let priority = requestedChapter ?? readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
         // Capture the page before asynchronous file access or player teardown
         // can publish another chapter. Never borrow another book's anchor.
-        let pageRatio: Double? = {
+        let pageRatio: Double? = requestedRatio ?? {
             guard sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id,
                   sessionDefaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int == priority,
                   let ratio = sessionDefaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double,

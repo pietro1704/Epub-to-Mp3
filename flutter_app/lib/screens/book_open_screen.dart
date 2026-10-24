@@ -20,6 +20,9 @@ import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
+import '../models/tts_catalog.dart';
+import '../models/reader_listening_position.dart';
+import '../services/listening_schedule.dart';
 import '../models/book_entity.dart';
 import '../models/job_snapshot.dart';
 import '../services/async_load_guard.dart';
@@ -141,5 +144,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     isConverting: _isConverting,
     playableChapters: _playableChapters,
     onRetry: _load,
+    onListeningPosition: (position) => _readerListeningPosition = position,
   );
 }

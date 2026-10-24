@@ -30,6 +30,7 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
         let durationSeconds: Double?
         let startedAt: Double?
         let completedAt: Double?
+        var textOffset: Int? = nil
 
         var id: Int { index }
 
@@ -74,6 +75,9 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
     let logUrl: String?
     let error: String?
     let lastActivityAt: Double?
+    /// Native Rust/reader identities are zero-based even in a partial queue
+    /// without chapter zero. Nil preserves legacy remote-manifest handling.
+    var chapterIndexBase: Int? = nil
 
     var id: String { jobId }
 

@@ -44,6 +44,9 @@ pub(super) unsafe fn convert_job_json(
     ));
     config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
     let mut options = options;
+    if let Err(error) = options.validate_contract() {
+        return fail(error);
+    }
     if let Some(preferences) = &options.tts_preferences {
         if let Err(error) = preferences.validate(options.language.as_deref()) {
             return fail(error);
@@ -52,14 +55,18 @@ pub(super) unsafe fn convert_job_json(
         options.voice = preferences.primary.voice.clone();
         options.model_id = preferences.primary.model_id.clone();
     }
-    if options
-        .engine
-        .as_deref()
-        .is_some_and(|engine| !matches!(engine, "piper" | "edge" | "system"))
-    {
+    if options.engine.as_deref().is_some_and(|engine| {
+        !converter_core::tts_session::builtin_descriptors()
+            .iter()
+            .any(|descriptor| descriptor.provider == *engine)
+    }) {
         return fail("Unsupported conversion engine".to_owned());
     }
-    let engine = embedded_engine_from_value(options.engine.as_deref());
+    let engine = if options.tts_preferences.is_some() {
+        options.engine.clone().expect("typed primary provider")
+    } else {
+        embedded_engine_from_value(options.engine.as_deref())
+    };
 
     let requires_piper = engine == "piper"
         || options
@@ -180,16 +187,17 @@ pub(super) unsafe fn convert_job_json(
     let worker = if let Some(queue) =
         queued_audio.filter(|queue| queue.lock().is_ok_and(|queue| queue.enabled))
     {
-        worker.with_streaming_chunks(Arc::new(move |chapter_index, chunk_index, audio| {
+        worker.with_versioned_streaming_chunks(Arc::new(move |chapter_index, chunk_index, audio, generation| {
             if queue_control
                 .as_ref()
                 .is_some_and(|control| control.cancellation_token().is_cancelled())
             {
                 return false;
             }
-            let path = queue_root.join(format!("chapter-{chapter_index}-chunk-{chunk_index}.mp3"));
+            let generation_root = queue_root.join(format!("generation-{}", generation.unwrap_or(0)));
+            let path = generation_root.join(format!("chapter-{chapter_index}-chunk-{chunk_index}.mp3"));
             let publish = || -> Result<(), String> {
-                std::fs::create_dir_all(&queue_root).map_err(|error| error.to_string())?;
+                std::fs::create_dir_all(&generation_root).map_err(|error| error.to_string())?;
                 // Every chapter/chunk pair is immutable within this conversion.
                 use std::io::Write;
                 let mut file = std::fs::OpenOptions::new()
@@ -228,7 +236,7 @@ pub(super) unsafe fn convert_job_json(
                 return false;
             }
             queue.events.push_back(
-                json!({"chapterIndex":chapter_index,"chunkIndex":chunk_index,"path":path}),
+                json!({"version":2,"generation":generation,"format":{"encoding":"mp3"},"chapterIndex":chapter_index,"chunkIndex":chunk_index,"path":path}),
             );
             true
         }))

@@ -145,6 +145,10 @@ enum PlaybackChapterQueue {
         // index to surface any extra metadata the playable subset
         // dropped (rare; same struct today).
         if isSegmentMode {
+            if let snapshot, snapshot.chapterIndexBase != nil {
+                let offset = PlaybackSegmentSession.segmentManifestIndexOffset(snapshot)
+                return snapshot.chapterProgress?.first { $0.index == currentChapterIndex + offset }
+            }
             return snapshot?.chapterProgress?.first { $0.index == currentChapterIndex + 1 }
                 ?? snapshot?.chapterProgress?.first { $0.index == currentChapterIndex }
         }

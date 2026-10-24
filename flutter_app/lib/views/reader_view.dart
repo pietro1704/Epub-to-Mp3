@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,10 +15,13 @@ import 'reader_chapter_content.dart';
 export 'reader_typography.dart';
 export 'chapter_advance_model.dart';
 
+part 'reader_listening_anchor.dart';
+
 typedef ChapterStepCallback = bool Function();
 
 class ReaderView extends ConsumerStatefulWidget {
   final FulltextChapter chapter;
+  final ValueChanged<int?>? onVisibleTextOffset;
   final List<SentenceSpan> spans;
   final String? currentSentenceId;
   final void Function(SentenceSpan)? onJumpToSentence;
@@ -37,6 +41,7 @@ class ReaderView extends ConsumerStatefulWidget {
   const ReaderView({
     super.key,
     required this.chapter,
+    this.onVisibleTextOffset,
     required this.spans,
     this.currentSentenceId,
     this.onJumpToSentence,
@@ -61,6 +66,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_publishListeningAnchor);
     _committedChapterToken = widget.chapter.index;
     _pages = Paginator.paginate(spans: widget.spans);
   }
@@ -156,6 +162,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
   @override
   Widget build(BuildContext context) {
+    _publishListeningAnchor();
     final settings = ref.watch(settingsProvider);
     final bg = ReaderThemeColors.background(
       settings.readerTheme,
@@ -369,6 +376,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                   behavior: HitTestBehavior.opaque,
                   onTap: widget.onCenterTap,
                   child: SingleChildScrollView(
+                    controller: _scrollController,
                     padding: EdgeInsets.only(
                       left: margin,
                       right: margin,
@@ -386,6 +394,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                               onTap: () => widget.onJumpToSentence?.call(s),
                               child: Text(
                                 s.text,
+                                key: _spanKeys.putIfAbsent(s.id, () => GlobalKey()),
                                 style: bodyStyle,
                                 textAlign: flutterTextAlign(
                                   settings.readerTextAlignment,

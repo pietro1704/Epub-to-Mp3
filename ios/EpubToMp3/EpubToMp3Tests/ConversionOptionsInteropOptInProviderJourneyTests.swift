@@ -97,7 +97,7 @@ extension ConversionOptionsInteropTests {
         }
 
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        _ = try adapter.installTtsModelFromCatalog(modelID: "pt_BR-edresson-low", root: root.path)
+        _ = try adapter.installTtsModelFromCatalog(modelID: "pt_BR-faber-medium", root: root.path)
         let result = try adapter.convertBook(
             at: book,
             outputDirectory: output,
@@ -108,7 +108,7 @@ extension ConversionOptionsInteropTests {
                 engine: AudioEnginePreference.piper.rawValue,
                 language: "pt-BR",
                 modelsRoot: root.path,
-                modelID: "pt_BR-edresson-low",
+                modelID: "pt_BR-faber-medium",
                 espeakDataDirectory: Bundle.main.resourceURL?.path
             )
         )

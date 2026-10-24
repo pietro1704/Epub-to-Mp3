@@ -1,6 +1,5 @@
 import { loadTtsPreferences } from './TtsPreferences';
 import type { BrowserJobStore } from './BrowserJobStore';
-import { browserVoiceId } from './BrowserModelInstallation';
 import {
   platformRuntime,
   type BrowserRuntime,
@@ -23,6 +22,7 @@ export {
   browserWasmPaths,
   installedBrowserVoices,
   installBrowserFaber,
+  installBrowserModel,
   installFaberArtifacts,
   type FaberInstallerIO,
 } from './BrowserModelInstallation';
@@ -82,18 +82,20 @@ export class BrowserConversionClient implements ConversionClient {
     ) {
       throw new Error('This browser does not support the selected advanced conversion options.');
     }
-    const preferences: TtsPreferences = structuredClone(
+    let preferences: TtsPreferences = structuredClone(
       request.tts_preferences ?? loadTtsPreferences(),
     );
     if (
-      preferences.primary.engine !== 'piper' ||
-      preferences.primary.model_id !== browserVoiceId ||
+      preferences.primary.engine === 'system' ||
+      preferences.primary.engine === 'edge' ||
       preferences.secondary?.engine === 'edge'
     ) {
       throw new Error(
-        'Edge is unavailable in this browser. Choose Faber medium without an online secondary voice.',
+        'Edge is unavailable in this browser. Choose a compatible offline audio model without an online secondary voice.',
       );
     }
+    await this.runtime.validateSelection?.(preferences.primary);
+    preferences = (await this.runtime.capturePreferences?.(preferences)) ?? preferences;
     await this.repository.ensureRestored();
     let upload = request.uploadId ? this.uploads.get(request.uploadId) : undefined;
     if (!upload && request.file)
@@ -168,10 +170,14 @@ export class BrowserConversionClient implements ConversionClient {
     if (
       job.snapshot.state !== 'failed' ||
       job.snapshot.errorCategory !== 'tts_provider' ||
-      job.preferences.secondary?.engine !== 'system'
+      (job.preferences.policy_version !== 2 && job.preferences.secondary?.engine !== 'system')
     )
       return null;
-    return { language: job.language, voice: job.preferences.secondary.voice };
+    return {
+      language: job.language,
+      voice:
+        job.preferences.secondary?.engine === 'system' ? job.preferences.secondary.voice : null,
+    };
   }
   async getJobFullText(jobId: string): Promise<BookTextDocument> {
     await this.repository.ensureRestored();
@@ -214,6 +220,17 @@ export class BrowserConversionClient implements ConversionClient {
   }
   async cancel(jobId: string): Promise<{ status: string }> {
     return this.execution.cancel(jobId);
+  }
+  async listenFrom(jobId: string, chapter: number, textOffset = 0): Promise<void> {
+    return this.execution.listenFrom(jobId, chapter, textOffset);
+  }
+  async playbackFeedback(
+    jobId: string,
+    chapter: number,
+    remaining: number,
+    rate: number,
+  ): Promise<void> {
+    return this.execution.playbackFeedback(jobId, chapter, remaining, rate);
   }
   async resume(jobId: string): Promise<{ status: string }> {
     return this.execution.resume(jobId);

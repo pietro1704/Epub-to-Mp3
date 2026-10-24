@@ -15,7 +15,7 @@ export class ConversionSession {
         wasm.__wbg_conversionsession_free(ptr, 0);
     }
     /**
-     * Accept bounded MP3 encoded by the shared Rust codec.
+     * Legacy byte acceptance is retained for captured, unversioned jobs only.
      * @param {Uint8Array} audio
      * @returns {boolean}
      */
@@ -32,6 +32,51 @@ export class ConversionSession {
                 throw takeObject(r1);
             }
             return r0 !== 0;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @param {Uint8Array} audio
+     * @param {string} receipt_json
+     * @returns {boolean}
+     */
+    accept_audio_v2(audio, receipt_json) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passArray8ToWasm0(audio, wasm.__wbindgen_export);
+            const len0 = WASM_VECTOR_LEN;
+            const ptr1 = passStringToWasm0(receipt_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len1 = WASM_VECTOR_LEN;
+            wasm.conversionsession_accept_audio_v2(retptr, this.__wbg_ptr, ptr0, len0, ptr1, len1);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return r0 !== 0;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @param {Uint8Array} audio
+     * @returns {number}
+     */
+    audio_duration_seconds_v2(audio) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passArray8ToWasm0(audio, wasm.__wbindgen_export);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.conversionsession_audio_duration_seconds_v2(retptr, this.__wbg_ptr, ptr0, len0);
+            var r0 = getDataViewMemory0().getFloat64(retptr + 8 * 0, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+            if (r3) {
+                throw takeObject(r2);
+            }
+            return r0;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
         }
@@ -54,11 +99,18 @@ export class ConversionSession {
                 throw takeObject(r2);
             }
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
-            wasm.__wbindgen_export2(r0, r1 * 1, 1);
+            wasm.__wbindgen_export3(r0, r1 * 1, 1);
             return v1;
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
         }
+    }
+    /**
+     * @returns {bigint}
+     */
+    listening_generation_v2() {
+        const ret = wasm.conversionsession_listening_generation_v2(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
     }
     /**
      * @param {string} chapters_json
@@ -68,11 +120,11 @@ export class ConversionSession {
     constructor(chapters_json, preferences_json, language) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            const ptr0 = passStringToWasm0(chapters_json, wasm.__wbindgen_export, wasm.__wbindgen_export3);
+            const ptr0 = passStringToWasm0(chapters_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
             const len0 = WASM_VECTOR_LEN;
-            const ptr1 = passStringToWasm0(preferences_json, wasm.__wbindgen_export, wasm.__wbindgen_export3);
+            const ptr1 = passStringToWasm0(preferences_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
             const len1 = WASM_VECTOR_LEN;
-            const ptr2 = passStringToWasm0(language, wasm.__wbindgen_export, wasm.__wbindgen_export3);
+            const ptr2 = passStringToWasm0(language, wasm.__wbindgen_export, wasm.__wbindgen_export2);
             const len2 = WASM_VECTOR_LEN;
             wasm.conversionsession_new(retptr, ptr0, len0, ptr1, len1, ptr2, len2);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
@@ -112,7 +164,59 @@ export class ConversionSession {
             return getStringFromWasm0(ptr1, len1);
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
-            wasm.__wbindgen_export2(deferred2_0, deferred2_1, 1);
+            wasm.__wbindgen_export3(deferred2_0, deferred2_1, 1);
+        }
+    }
+    /**
+     * @param {number} seconds
+     * @param {number} text_chars
+     */
+    observe_generation_v2(seconds, text_chars) {
+        wasm.conversionsession_observe_generation_v2(this.__wbg_ptr, seconds, text_chars);
+    }
+    /**
+     * @param {string} feedback_json
+     */
+    playback_feedback_json_v2(feedback_json) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(feedback_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.conversionsession_playback_feedback_json_v2(retptr, this.__wbg_ptr, ptr0, len0);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            if (r1) {
+                throw takeObject(r0);
+            }
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {string}
+     */
+    policy_state_json() {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.conversionsession_policy_state_json(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+            var ptr1 = r0;
+            var len1 = r1;
+            if (r3) {
+                ptr1 = 0; len1 = 0;
+                throw takeObject(r2);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export3(deferred2_0, deferred2_1, 1);
         }
     }
     provider_failed() {
@@ -128,8 +232,86 @@ export class ConversionSession {
             wasm.__wbindgen_add_to_stack_pointer(16);
         }
     }
+    /**
+     * @param {string} state
+     */
+    restore_policy_state_json(state) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(state, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.conversionsession_restore_policy_state_json(retptr, this.__wbg_ptr, ptr0, len0);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            if (r1) {
+                throw takeObject(r0);
+            }
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @param {string} position_json
+     */
+    set_listening_position_json_v2(position_json) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(position_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.conversionsession_set_listening_position_json_v2(retptr, this.__wbg_ptr, ptr0, len0);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            if (r1) {
+                throw takeObject(r0);
+            }
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @param {number} chapter
+     */
+    skip_cached_chapter_v2(chapter) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.conversionsession_skip_cached_chapter_v2(retptr, this.__wbg_ptr, chapter);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            if (r1) {
+                throw takeObject(r0);
+            }
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
 }
 if (Symbol.dispose) ConversionSession.prototype[Symbol.dispose] = ConversionSession.prototype.free;
+
+/**
+ * @param {Float32Array} samples
+ * @param {number} sample_rate
+ * @returns {Uint8Array}
+ */
+export function encode_pcm_f32_mp3(samples, sample_rate) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_export);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.encode_pcm_f32_mp3(retptr, ptr0, len0, sample_rate);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export3(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
 
 /**
  * The browser provider supplies bounded PCM WAV; the shared Rust codec owns MP3.
@@ -150,7 +332,7 @@ export function encode_wav_mp3(bytes) {
             throw takeObject(r2);
         }
         var v2 = getArrayU8FromWasm0(r0, r1).slice();
-        wasm.__wbindgen_export2(r0, r1 * 1, 1);
+        wasm.__wbindgen_export3(r0, r1 * 1, 1);
         return v2;
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
@@ -173,7 +355,7 @@ export function health() {
         return getStringFromWasm0(r0, r1);
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
-        wasm.__wbindgen_export2(deferred1_0, deferred1_1, 1);
+        wasm.__wbindgen_export3(deferred1_0, deferred1_1, 1);
     }
 }
 
@@ -207,7 +389,67 @@ export function inspect_epub(bytes) {
         return getStringFromWasm0(ptr2, len2);
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
-        wasm.__wbindgen_export2(deferred3_0, deferred3_1, 1);
+        wasm.__wbindgen_export3(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * @returns {string}
+ */
+export function tts_catalog_json_v2() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.tts_catalog_json_v2(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred1_0 = r0;
+        deferred1_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * @param {string} source
+ * @param {string} language
+ * @param {string} preferences_json
+ * @param {string} identities_json
+ * @returns {string}
+ */
+export function tts_request_cache_material_v2(source, language, preferences_json, identities_json) {
+    let deferred6_0;
+    let deferred6_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(source, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(language, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(preferences_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(identities_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len3 = WASM_VECTOR_LEN;
+        wasm.tts_request_cache_material_v2(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr5 = r0;
+        var len5 = r1;
+        if (r3) {
+            ptr5 = 0; len5 = 0;
+            throw takeObject(r2);
+        }
+        deferred6_0 = ptr5;
+        deferred6_1 = len5;
+        return getStringFromWasm0(ptr5, len5);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred6_0, deferred6_1, 1);
     }
 }
 function __wbg_get_imports() {
@@ -215,6 +457,14 @@ function __wbg_get_imports() {
         __proto__: null,
         __wbg___wbindgen_throw_41e9ee4f547fc59a: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_now_aa4ccb83129e9e55: function() {
+            const ret = Date.now();
+            return ret;
+        },
+        __wbg_random_5a4cafd2f02395ff: function() {
+            const ret = Math.random();
+            return ret;
         },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
@@ -260,6 +510,14 @@ function getDataViewMemory0() {
     return cachedDataViewMemory0;
 }
 
+let cachedFloat32ArrayMemory0 = null;
+function getFloat32ArrayMemory0() {
+    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
+        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
+    }
+    return cachedFloat32ArrayMemory0;
+}
+
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
 }
@@ -282,6 +540,13 @@ let heap_next = heap.length;
 function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1, 1) >>> 0;
     getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArrayF32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getFloat32ArrayMemory0().set(arg, ptr / 4);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
@@ -364,6 +629,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
+    cachedFloat32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     return wasm;
 }

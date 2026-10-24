@@ -25,6 +25,7 @@ pub(super) fn recover_chapter_audio(
     )
 }
 
+#[cfg(test)]
 pub(super) fn recover_chapter_audio_with_native_policy(
     output_root: &Path,
     predecessor: &str,
@@ -32,6 +33,30 @@ pub(super) fn recover_chapter_audio_with_native_policy(
     request_key: &str,
     reject_opaque_native: bool,
     check_cancelled: &impl Fn() -> Result<(), WorkerError>,
+) -> Result<(), WorkerError> {
+    recover_chapter_audio_for_generation(
+        output_root,
+        predecessor,
+        output,
+        request_key,
+        reject_opaque_native,
+        check_cancelled,
+        None,
+        None,
+        None,
+    )
+}
+
+pub(super) fn recover_chapter_audio_for_generation(
+    output_root: &Path,
+    predecessor: &str,
+    output: &Path,
+    request_key: &str,
+    reject_opaque_native: bool,
+    check_cancelled: &impl Fn() -> Result<(), WorkerError>,
+    control: Option<&crate::conversion_control::ConversionControl>,
+    generation: Option<u64>,
+    chapter: Option<usize>,
 ) -> Result<(), WorkerError> {
     check_cancelled()?;
     if predecessor.is_empty()
@@ -105,6 +130,13 @@ pub(super) fn recover_chapter_audio_with_native_policy(
     if !chapter_audio_is_reusable(&pending, request_key, reject_opaque_native) {
         return Ok(());
     }
+    let _lease = match control
+        .map(|control| control.lease_generation(generation, chapter))
+        .transpose()
+    {
+        Ok(lease) => lease,
+        Err(_) => return Ok(()),
+    };
     check_cancelled()?;
     fs::rename(pending, output)?;
     fs::rename(pending_receipt, chapter_audio_receipt_path(output))?;

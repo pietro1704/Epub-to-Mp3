@@ -1,4 +1,8 @@
 use super::*;
+#[path = "listening_contract_tests.rs"]
+mod listening_contract_tests;
+#[path = "low_quality_cache_tests.rs"]
+mod low_quality_cache_tests;
 
 struct TestSystem {
     texts: Arc<Mutex<Vec<String>>>,
@@ -97,3 +101,4 @@ include!("typed_cancellation_tests.rs");
 include!("typed_fallback_tests.rs");
 include!("typed_persistence_tests.rs");
 include!("typed_staging_tests.rs");
+include!("session_adapter_tests.rs");

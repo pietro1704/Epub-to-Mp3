@@ -118,7 +118,11 @@ final class PlaybackTransportCommands {
         isPlaying = false
         actions.paused(player != nil)
         journeys.cancelPendingPlaybackJourney()
-        resumePersistence.persist(snapshot: snapshot, chapterIndex: currentChapterIndex, positionSeconds: positionSeconds, isPlaying: isPlaying, force: true)
+        resumePersistence.persist(snapshot: snapshot, chapterIndex: currentChapterIndex,
+            sourceChapterIndex: PlaybackResumeStore.sourceChapterIndex(snapshot: snapshot,
+                playbackChapters: chapterSession.chapters, queueOffset: currentChapterIndex,
+                segmentMode: isSegmentMode, segmentChapterIndex: segments.chapterIndex),
+            positionSeconds: positionSeconds, isPlaying: isPlaying, force: true)
         actions.publish()
     }
 

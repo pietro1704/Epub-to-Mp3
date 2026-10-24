@@ -25,6 +25,7 @@ fn only_explicit_legacy_engine_overrides_the_faber_default() {
     let saved = TtsPreferences {
         policy_version: None,
         primary: TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: Some("pt-BR-FranciscaNeural".into()),
@@ -58,6 +59,7 @@ fn manual_override_is_strict_and_model_reaches_effective_preferences() {
         policy_version: None,
         primary: TtsSelection::default(),
         secondary: Some(TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: Some("pt-BR-FranciscaNeural".into()),
@@ -153,6 +155,7 @@ fn explicit_consent_revocation_overrides_saved_consent_without_mutating_it() {
         policy_version: None,
         primary: TtsSelection::default(),
         secondary: Some(TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: Some("pt-BR-FranciscaNeural".into()),
@@ -247,6 +250,7 @@ fn captured_preferences_replace_saved_voice_and_consent_without_writing_the_prof
     let saved = TtsPreferences {
         policy_version: None,
         primary: TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: Some("pt-BR-FranciscaNeural".into()),
@@ -259,6 +263,7 @@ fn captured_preferences_replace_saved_voice_and_consent_without_writing_the_prof
     let captured = TtsPreferences {
         policy_version: None,
         primary: TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: None,
@@ -306,6 +311,7 @@ fn captured_preferences_reject_invalid_schema_policy_and_duplicate_arguments() {
         policy_version: None,
         primary: TtsSelection::default(),
         secondary: Some(TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: Some("pt-BR-FranciscaNeural".into()),
@@ -388,4 +394,77 @@ fn captured_preferences_are_exclusive_of_tts_flags_but_not_literal_flag_values()
         parse_args(&literal).unwrap().output_dir.as_deref(),
         Some("--engine")
     );
+}
+
+#[test]
+fn catalog_model_capture_keeps_manual_jobs_strict_and_carries_runtime_revision() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = converter_core::paths::resolve_paths_from(
+        [(
+            "PERSISTENT_ROOT",
+            temp.path().to_string_lossy().into_owned(),
+        )],
+        temp.path().to_path_buf(),
+    );
+    let config = converter_core::config::AppConfig::from_paths(paths);
+    converter_core::cache::atomic_write_json(
+        preference_path(&config),
+        &converter_core::tts_preferences::TtsPreferences::app_default(true),
+    )
+    .unwrap();
+    let raw = ["convert", "book.epub", "--model", "pt_BR-faber-medium"].map(str::to_owned);
+    let preferences = effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).unwrap();
+    assert!(preferences.policy_version.is_none());
+    assert!(preferences.secondary.is_none());
+    let session = preferences.primary.session.as_ref().unwrap();
+    assert_eq!(session.runtime, "piper");
+    assert!(!session.model_revision.as_ref().unwrap().is_empty());
+    let invalid = [
+        "convert",
+        "book.epub",
+        "--model",
+        "pt_BR-faber-medium",
+        "--voice",
+        "unavailable-speaker",
+    ]
+    .map(str::to_owned);
+    assert!(effective_preferences(&config, &parse_args(&invalid).unwrap(), &invalid).is_err());
+}
+
+#[test]
+fn fallback_catalog_capture_preserves_revision_and_rejects_engine_conflicts() {
+    let temp = tempfile::tempdir().unwrap();
+    let config =
+        converter_core::config::AppConfig::from_paths(converter_core::paths::resolve_paths_from(
+            Vec::<(String, String)>::new(),
+            temp.path().into(),
+        ));
+    let args = |engine: &str| {
+        [
+            "convert",
+            "book.epub",
+            "--fallback-engine",
+            engine,
+            "--fallback-model",
+            "kokoro-82m",
+        ]
+        .map(str::to_owned)
+    };
+    let raw = args("kokoro");
+    let preferences = effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).unwrap();
+    let secondary = preferences.secondary.unwrap();
+    assert_eq!(secondary.engine, "kokoro");
+    assert_eq!(secondary.model_id.as_deref(), Some("kokoro-82m"));
+    let session = secondary.session.unwrap();
+    assert_eq!(session.runtime, "kokoro");
+    assert!(session
+        .model_revision
+        .as_ref()
+        .is_some_and(|revision| !revision.is_empty()));
+    for engine in ["none", "system", "edge", "piper"] {
+        let raw = args(engine);
+        assert!(effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).is_err());
+    }
+    let raw = ["convert", "book.epub", "--fallback-model", "kokoro-82m"].map(str::to_owned);
+    assert!(effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).is_err());
 }

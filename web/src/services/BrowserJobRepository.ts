@@ -1,6 +1,7 @@
 import { IndexedDBBrowserJobStore, type BrowserJobStore } from './BrowserJobStore';
 import type { BrowserConversionJob } from './browser_conversion_job';
 import type { JobSnapshot } from '../types/conversion';
+import { browserAudioMatches } from './BrowserAudioIdentity';
 
 /** Own durable reconciliation and the live identities rebuilt from committed audio. */
 export class BrowserJobRepository {
@@ -21,11 +22,32 @@ export class BrowserJobRepository {
         document: saved.document,
         preferences: saved.preferences,
         language: saved.language,
+        policyState: saved.policyState,
+        listeningPosition: saved.listeningPosition,
         audio: new Map(),
         chunks: new Map(),
         done: Promise.resolve(),
       };
       for (const artifact of saved.audio) {
+        if (!(await browserAudioMatches(saved, artifact))) {
+          snapshot.state = 'interrupted';
+          continue;
+        }
+        const ranges = artifact.chunks;
+        if (
+          ranges?.length &&
+          (ranges.some(
+            (range, index) =>
+              range.index !== index ||
+              range.byteLength <= 0 ||
+              range.byteOffset !==
+                (index === 0 ? 0 : ranges[index - 1].byteOffset + ranges[index - 1].byteLength),
+          ) ||
+            ranges.at(-1)!.byteOffset + ranges.at(-1)!.byteLength !== artifact.blob.size)
+        ) {
+          snapshot.state = 'interrupted';
+          continue;
+        }
         job.audio.set(artifact.chapterIndex, artifact);
         const url = URL.createObjectURL(artifact.blob);
         snapshot.outputs.push({ name: artifact.name, url, sizeBytes: artifact.blob.size });
@@ -33,16 +55,35 @@ export class BrowserJobRepository {
           jobId: saved.jobId,
           chapterIndex: artifact.chapterIndex,
           baseUrl: '',
-          chunks: [
-            {
-              index: 0,
-              file: artifact.name,
-              url,
-              text:
-                saved.document.chapters.find((chapter) => chapter.index === artifact.chapterIndex)
-                  ?.text ?? '',
-            },
-          ],
+          legacyWholeChapter: !ranges?.length,
+          chunks: ranges?.length
+            ? ranges.map((range) => ({
+                index: range.index,
+                file: `${range.index}.mp3`,
+                text: range.text,
+                durationSeconds: range.durationSeconds,
+                url: URL.createObjectURL(
+                  artifact.blob.slice(
+                    range.byteOffset,
+                    range.byteOffset + range.byteLength,
+                    'audio/mpeg',
+                  ),
+                ),
+              }))
+            : [
+                {
+                  index: 0,
+                  file: artifact.name,
+                  url,
+                  text: Array.from(
+                    saved.document.chapters.find(
+                      (chapter) => chapter.index === artifact.chapterIndex,
+                    )?.text ?? '',
+                  )
+                    .slice(artifact.textOffset ?? 0)
+                    .join(''),
+                },
+              ],
         });
       }
       snapshot.chaptersCompleted = job.audio.size;
@@ -70,6 +111,10 @@ export class BrowserJobRepository {
       document: structuredClone(job.document),
       preferences: structuredClone(job.preferences),
       language: job.language,
+      ...(job.listeningPosition
+        ? { listeningPosition: structuredClone(job.listeningPosition) }
+        : {}),
+      ...(job.policyState ? { policyState: job.policyState } : {}),
       audio: [...job.audio.values()],
     });
   }

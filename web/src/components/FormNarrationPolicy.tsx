@@ -1,4 +1,7 @@
 import { faber, edge, system } from '../services/TtsPreferences';
+import { useEffect, useState } from 'react';
+import { browserSelections, loadTtsCatalog } from '../services/TtsCatalog';
+import type { TtsSelection } from '../types/conversion';
 import type { ConversionFormScope } from './useConversionFormController';
 
 type FormNarrationPolicyProps = Pick<
@@ -14,6 +17,8 @@ type FormNarrationPolicyProps = Pick<
   | 'usePreferences'
   | 'setUsePreferences'
   | 'engine'
+  | 'manualSelection'
+  | 'setCatalogSelection'
   | 'handleEngineChange'
   | 'manualSecondary'
   | 'useSecondary'
@@ -31,12 +36,37 @@ export function FormNarrationPolicy({
   modelError,
   usePreferences,
   setUsePreferences,
-  engine,
+  manualSelection,
+  setCatalogSelection,
   handleEngineChange,
   manualSecondary,
   useSecondary,
   setUseSecondary,
 }: FormNarrationPolicyProps): JSX.Element {
+  const [models, setModels] = useState<TtsSelection[]>([]);
+  useEffect(() => {
+    let active = true;
+    void loadTtsCatalog()
+      .then((catalog) => {
+        if (active) setModels(browserSelections(catalog));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const primaryChoices = [preferences.primary, ...models];
+  const primaryKey = (selection: TtsSelection) => selection.model_id ?? selection.engine;
+  const secondaryChoices = [
+    system,
+    ...(preferences.secondary ? [preferences.secondary] : []),
+    ...models,
+    edge,
+  ].filter(
+    (selection, index, choices) =>
+      primaryKey(selection) !== primaryKey(preferences.primary) &&
+      choices.findIndex((candidate) => primaryKey(candidate) === primaryKey(selection)) === index,
+  );
   return (
     <>
       <fieldset className="form-row">
@@ -46,16 +76,31 @@ export function FormNarrationPolicy({
           {labels.primary}
           <select
             aria-label={labels.primary}
-            value={preferences.primary.engine}
+            value={primaryKey(preferences.primary)}
             onChange={(e) =>
               updatePreferences({
                 ...preferences,
-                primary: e.target.value === 'piper' ? { ...faber } : { ...edge },
+                primary: primaryChoices.find(
+                  (selection) => primaryKey(selection) === e.target.value,
+                ) ?? { ...faber },
                 secondary: null,
               })
             }
           >
-            <option value="piper">Faber medium</option>
+            {primaryChoices
+              .filter(
+                (selection, index, choices) =>
+                  choices.findIndex(
+                    (candidate) => primaryKey(candidate) === primaryKey(selection),
+                  ) === index,
+              )
+              .map((selection) => (
+                <option key={primaryKey(selection)} value={primaryKey(selection)}>
+                  {selection.model_id === faber.model_id
+                    ? 'Faber medium'
+                    : (selection.model_id ?? selection.engine)}
+                </option>
+              ))}
             <option value="edge" disabled>
               Edge — {unavailableVoiceLabel}
             </option>
@@ -65,31 +110,33 @@ export function FormNarrationPolicy({
           {labels.secondary}
           <select
             aria-label={labels.secondary}
-            value={preferences.secondary?.engine ?? 'none'}
-            onChange={(e) =>
+            value={preferences.secondary ? primaryKey(preferences.secondary) : 'none'}
+            onChange={(event) =>
               updatePreferences({
                 ...preferences,
                 secondary:
-                  e.target.value === 'none'
-                    ? null
-                    : e.target.value === 'system'
-                      ? { ...system }
-                      : e.target.value === 'edge'
-                        ? { ...edge }
-                        : { ...faber },
+                  secondaryChoices.find(
+                    (selection) => primaryKey(selection) === event.target.value,
+                  ) ?? null,
               })
             }
           >
             <option value="none">{labels.none}</option>
-            <option value="system">{labels.system}</option>
-            <option
-              value={preferences.primary.engine === 'piper' ? 'edge' : 'piper'}
-              disabled={preferences.primary.engine === 'piper'}
-            >
-              {preferences.primary.engine === 'piper'
-                ? `Edge — ${unavailableVoiceLabel}`
-                : 'Faber medium'}
-            </option>
+            {secondaryChoices.map((selection) => (
+              <option
+                key={primaryKey(selection)}
+                value={primaryKey(selection)}
+                disabled={selection.engine === 'edge'}
+              >
+                {selection.engine === 'system'
+                  ? labels.system
+                  : selection.engine === 'edge'
+                    ? `Edge — ${unavailableVoiceLabel}`
+                    : selection.model_id === faber.model_id
+                      ? 'Faber medium'
+                      : selection.model_id}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -125,11 +172,30 @@ export function FormNarrationPolicy({
             {labels.manualVoice}
             <select
               aria-label={labels.manualVoice}
-              value={engine}
-              onChange={(event) => handleEngineChange(event.target.value)}
+              value={primaryKey(manualSelection)}
+              onChange={(event) => {
+                const selection = models.find(
+                  (candidate) => primaryKey(candidate) === event.target.value,
+                );
+                if (selection) {
+                  setCatalogSelection(selection);
+                  handleEngineChange(selection.engine);
+                }
+              }}
               disabled={isSubmitting}
             >
-              <option value="piper">Faber medium</option>
+              {[manualSelection, ...models]
+                .filter(
+                  (selection, index, choices) =>
+                    choices.findIndex(
+                      (candidate) => primaryKey(candidate) === primaryKey(selection),
+                    ) === index,
+                )
+                .map((selection) => (
+                  <option key={primaryKey(selection)} value={primaryKey(selection)}>
+                    {selection.model_id ?? selection.engine}
+                  </option>
+                ))}
               <option value="edge" disabled>
                 Edge — {unavailableVoiceLabel}
               </option>

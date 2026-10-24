@@ -6,6 +6,7 @@ struct ConverterModelCatalog {
     var freeString: ConverterStringFree = { _ in }
     var lastError: ConverterLastError = { nil }
     var modelsJSON: ConverterTtsModels = { nil }
+    var catalogJSON: ConverterTtsModels? = nil
     var defaultEngine: ConverterTtsDefaultEngine = { _, _, _ in nil }
     var selectInstalledReady: ConverterTtsInstalledReadyEngine?
     var installArtifact: ConverterTtsModelInstall?
@@ -13,6 +14,17 @@ struct ConverterModelCatalog {
     var modelMetadata: ConverterTtsModelMetadata?
     var installManifest: ConverterTtsModelInstallManifest?
     var installCatalogManifest: ConverterTtsModelInstallCatalogManifest?
+
+    func ttsCatalog() throws -> TtsCatalog {
+        guard available, let read = catalogJSON, let value = read() else {
+            throw EmbeddedConverterError.artifactUnavailable
+        }
+        defer { freeString(value) }
+        guard let json = String(validatingCString: value) else {
+            throw EmbeddedConverterError.artifactUnavailable
+        }
+        return try TtsCatalog.decode(Data(json.utf8))
+    }
 
     func ttsModels() throws -> Data {
         guard available, let value = modelsJSON() else {

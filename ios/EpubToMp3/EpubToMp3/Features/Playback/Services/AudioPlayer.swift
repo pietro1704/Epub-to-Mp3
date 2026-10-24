@@ -243,10 +243,16 @@ final class AudioPlayer: ObservableObject {
         services.reader.setTiming(map, forChapterIndex: chapterIndex)
     }
 
+    /// The active reader can replace partial audio using a fresh Rust text range.
+    var restartReaderListening: ((Int, Double) -> Bool)?
+
     func startFromReaderPage(
         _ readerChapterIndex: Int, sentenceId: String? = nil,
         sentenceOffsetRatio: Double? = nil, sentenceWordOffsetRatio: Double? = nil
     ) {
+        let ratio = sentenceOffsetRatio ?? 0
+        if ratio.isFinite, (0...1).contains(ratio),
+           restartReaderListening?(readerChapterIndex, ratio) == true { return }
         services.seeking.startFromReaderPage(readerChapterIndex, sentenceId: sentenceId,
             sentenceOffsetRatio: sentenceOffsetRatio, sentenceWordOffsetRatio: sentenceWordOffsetRatio)
     }

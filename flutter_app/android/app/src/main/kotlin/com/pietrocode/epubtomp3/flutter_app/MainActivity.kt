@@ -133,6 +133,7 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
     external fun nativeConvertStreaming(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
     external fun nativeTtsModels(): String?
+    external fun nativeTtsCatalogV2(): String?
     external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?
     external fun nativeTtsInstalledReadyEngine(language: String, platform: String, androidApi: Int, installedModelIdsJson: String, readyModelIdsJson: String): String?
     external fun nativeTtsModelInstall(modelId: String, url: String, sha256: String, root: String): String?

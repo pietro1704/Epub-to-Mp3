@@ -26,10 +26,12 @@ final class MacReaderPlaybackSession {
 
     func start(owner: AnyObject) {
         playerPresentation.dismissFullPlayer()
-        guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+        let defaults = UserDefaults.standard
+        guard let bookID = defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               let book = library.books.first(where: { $0.id == bookID }) else { return }
-        cancel(ifReplacingBook: bookID)
-        guard !isStartingLocalPlayback, localPlaybackGeneration == nil else { return }
+        let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
+        let pageRatio = defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double
+        cancel(stopPlayer: false)
         let jobID = UUID().uuidString
         localPlaybackGeneration = jobID
         localPlaybackBookID = bookID
@@ -50,12 +52,13 @@ final class MacReaderPlaybackSession {
                 let url = try await library.openBookFileAsync(id: book.id)
                 guard localPlaybackGeneration == jobID, localPlaybackBookID == book.id else { return }
                 localPlaybackChapters.removeAll()
-                let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
                 let playbackControl = try RustConversionCoordinator.makePlaybackControl()
+                playbackControl.trackPlayback(player)
                 playbackControl.updatePlaybackWindow(
                     currentChapter: Int(chapterStart),
                     chaptersAhead: 1
                 )
+                if let pageRatio { playbackControl.startFromPage(ratio: pageRatio) }
                 localPlaybackControl = playbackControl
                 let pending = JobSnapshot(
                     jobId: jobID,
@@ -74,7 +77,8 @@ final class MacReaderPlaybackSession {
                     outputs: nil,
                     logUrl: nil,
                     error: nil,
-                    lastActivityAt: Date().timeIntervalSince1970
+                    lastActivityAt: Date().timeIntervalSince1970,
+                    chapterIndexBase: 0
                 )
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
                 player.isConverting = true
@@ -94,10 +98,7 @@ final class MacReaderPlaybackSession {
                     { [weak self] event in
                         guard let self, self.localPlaybackGeneration == jobID, event.jobId == jobID,
                               self.player.snapshot?.jobId == jobID else { return }
-                        let activeChapter = self.player.activeStreamingChapterIndex
-                            ?? Int(chapterStart)
-                        guard event.chapterIndex >= activeChapter,
-                              event.chapterIndex <= activeChapter + 1 else { return }
+                        guard playbackControl.contains(chapterIndex: event.chapterIndex) else { return }
                         let firstPlayableChapter = self.localPlaybackChapters.isEmpty
                         let chapter = event.playableChapter
                         if let existing = self.localPlaybackChapters.firstIndex(where: { $0.index == chapter.index }) {
@@ -120,12 +121,9 @@ final class MacReaderPlaybackSession {
                             chunkIndex: chunkIndex,
                             isCurrent: { [weak self] in
                                 guard let self else { return false }
-                                let currentChapter = self.player.activeStreamingChapterIndex
-                                    ?? Int(chapterStart)
                                 return self.localPlaybackGeneration == jobID
                                     && self.player.snapshot?.jobId == jobID
-                                    && chapterIndex >= currentChapter
-                                    && chapterIndex <= currentChapter + 1
+                                    && playbackControl.contains(chapterIndex: chapterIndex)
                             },
                             onAccepted: {}
                         )
@@ -160,7 +158,8 @@ final class MacReaderPlaybackSession {
                         outputs: current.outputs,
                         logUrl: current.logUrl,
                         error: error.localizedDescription,
-                        lastActivityAt: Date().timeIntervalSince1970
+                        lastActivityAt: Date().timeIntervalSince1970,
+                    chapterIndexBase: 0
                     ))
                 }
                 let alert = NSAlert()

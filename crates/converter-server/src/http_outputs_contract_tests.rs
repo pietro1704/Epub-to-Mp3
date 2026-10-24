@@ -172,6 +172,7 @@ fn finished_snapshot_exposes_the_complete_archive() {
     std::fs::create_dir_all(&job_dir).unwrap();
     std::fs::write(job_dir.join("book.zip"), b"archive fixture").unwrap();
     let manifest = OutputManifest {
+        synthesis_sessions: Vec::new(),
         source_chapters_total: None,
         job_id: "archive-job".into(),
         title: "Book".into(),
@@ -218,6 +219,7 @@ fn manifest_archive_cannot_escape_the_job_directory() {
     )
     .unwrap();
     let manifest = OutputManifest {
+        synthesis_sessions: Vec::new(),
         source_chapters_total: None,
         job_id: "archive-job".into(),
         title: "Book".into(),
@@ -243,6 +245,7 @@ async fn advertised_archive_can_be_downloaded() {
     std::fs::create_dir_all(&job_dir).unwrap();
     std::fs::write(job_dir.join("book.zip"), b"download archive").unwrap();
     let manifest = OutputManifest {
+        synthesis_sessions: Vec::new(),
         source_chapters_total: None,
         job_id: "archive-job".into(),
         title: "Book".into(),

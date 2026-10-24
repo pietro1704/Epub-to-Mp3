@@ -6,6 +6,36 @@ use wasm_bindgen::prelude::*;
 mod session;
 pub use session::ConversionSession;
 
+#[wasm_bindgen]
+pub fn tts_catalog_json_v2() -> String {
+    converter_core::tts_session::catalog_json()
+}
+
+#[wasm_bindgen]
+pub fn tts_request_cache_material_v2(
+    source: &str,
+    language: &str,
+    preferences_json: &str,
+    identities_json: &str,
+) -> Result<String, JsValue> {
+    let error = |error: serde_json::Error| JsValue::from_str(&error.to_string());
+    let preferences = serde_json::from_str(preferences_json).map_err(error)?;
+    let identities: Vec<String> = serde_json::from_str(identities_json).map_err(error)?;
+    converter_core::tts_session::request_cache_material(
+        source,
+        Some(language),
+        &preferences,
+        &identities,
+    )
+    .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn encode_pcm_f32_mp3(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, JsValue> {
+    converter_core::tts_session::encode_pcm_f32(samples, sample_rate)
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
 /// The browser provider supplies bounded PCM WAV; the shared Rust codec owns MP3.
 #[wasm_bindgen]
 pub fn encode_wav_mp3(bytes: &[u8]) -> Result<Vec<u8>, JsValue> {

@@ -5,6 +5,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
   Future<void> _runLocalPlaybackConversion({
     required int playbackChapterIndex,
     required int generation,
+    ReaderListeningPosition? readerPosition,
   }) async {
     final ft = _fulltext!;
     final conversionChapters = <FulltextChapter>[
@@ -22,7 +23,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     final coordinator = ConversionJobCoordinator(
       LocalConversionJobStore(ref.read(sharedPrefsProvider)),
     );
-    final jobId = 'local-${widget.bookId}';
+    final jobId = readerPosition == null ? 'local-${widget.bookId}'
+        : 'listen-${widget.bookId}-$generation-${DateTime.now().microsecondsSinceEpoch}';
     try {
       final library = ref.read(libraryStoreProvider);
       final book = library.books
@@ -33,7 +35,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       final inputPath = await library.ensureSupportedBookPath(book);
       final docsDir = await getApplicationDocumentsDirectory();
       if (!_isCurrentConversion(generation)) return;
-      final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}');
+      final outputBase = '${docsDir.path}/audiobooks/${widget.bookId}';
+      final outDir = Directory(readerPosition == null ? outputBase : '$outputBase/$jobId');
       if (!await outDir.exists()) await outDir.create(recursive: true);
       if (!_isCurrentConversion(generation)) return;
       debugPrint('BookOpenScreen: local output ready path=${outDir.path}');
@@ -43,7 +46,14 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
 
       final existingJob = await coordinator.store.load(widget.bookId, jobId);
       if (!_isCurrentConversion(generation)) return;
-      final ttsSnapshot = ref.read(settingsProvider).ttsPreferences;
+      var ttsSnapshot = ref.read(settingsProvider).ttsPreferences;
+      final converter = ref.read(embeddedConverterProvider);
+      if ((existingJob == null || existingJob.status == LocalConversionJobStatus.cancelled) &&
+          converter is ListeningScheduleFactory) {
+        final catalog = TtsCatalog.decode(await converter.ttsModels());
+        if (!_isCurrentConversion(generation)) return;
+        ttsSnapshot = catalog.captureNewPreferences(ttsSnapshot);
+      }
       final ttsSupport = await getApplicationSupportDirectory();
       if (!_isCurrentConversion(generation)) return;
       final requestedOptionsJson = ttsSnapshot.optionsJson(
@@ -134,7 +144,6 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       await restoredManifestTemp.rename('${outDir.path}/manifest.json');
       if (!_isCurrentConversion(generation)) return;
 
-      final converter = ref.read(embeddedConverterProvider);
       _platformVoiceSession.begin(inputPath);
       final conversionService = RustPlaybackConversionService(
         converter: converter,
@@ -149,6 +158,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
         chapters: conversionChapters,
         outputDirectory: outDir.path,
         initialChapterIndex: playbackChapterIndex,
+        initialTextOffset: readerPosition?.textOffset ?? 0,
         playbackChapterChanges: _playbackWindowChanges.stream,
         isActive: () => mounted && generation == _localConversionGeneration,
         onSecondaryUsed: (_) async {
@@ -232,7 +242,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       );
       if (!_isCurrentConversion(generation)) return;
       _localJob = job;
-      if (job.status == LocalConversionJobStatus.completed) _markBookOffline();
+      if (job.coversFullSource(conversionChapters.map((chapter) => chapter.index))) _markBookOffline();
       setState(() => _isConverting = false);
     } catch (e) {
       if (!_isCurrentConversion(generation)) return;

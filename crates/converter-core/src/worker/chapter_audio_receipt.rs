@@ -39,6 +39,10 @@ pub(super) struct ChapterAudioReceipt {
     pub(super) provider: Option<String>,
     #[serde(default)]
     pub(super) used_selections: Vec<crate::tts_preferences::TtsSelection>,
+    #[serde(default)]
+    pub(super) synthesis_sessions: Vec<crate::tts_session::ResolvedIdentity>,
+    #[serde(default)]
+    pub(super) segment_receipts: Vec<crate::tts_session::SynthesisReceipt>,
     pub(super) request_key: String,
     pub(super) audio_sha256: String,
     pub(super) size: u64,
@@ -103,10 +107,23 @@ pub(super) fn ensure_chapter_audio(
     ensure_chapter_audio_with_options(output, request_key, false, synthesize)
 }
 
+#[cfg(test)]
 pub(super) fn ensure_chapter_audio_with_options(
     output: &Path,
     request_key: &str,
     force: bool,
+    synthesize: impl FnOnce(&Path) -> Result<(), WorkerError>,
+) -> Result<(), WorkerError> {
+    ensure_chapter_audio_with_control(output, request_key, force, None, None, None, synthesize)
+}
+
+pub(super) fn ensure_chapter_audio_with_control(
+    output: &Path,
+    request_key: &str,
+    force: bool,
+    control: Option<&crate::conversion_control::ConversionControl>,
+    generation: Option<u64>,
+    chapter: Option<usize>,
     synthesize: impl FnOnce(&Path) -> Result<(), WorkerError>,
 ) -> Result<(), WorkerError> {
     if !force && chapter_audio_is_complete(output, request_key) {
@@ -138,6 +155,16 @@ pub(super) fn ensure_chapter_audio_with_options(
         (Vec::new(), false)
     };
     let receipt = ChapterAudioReceipt {
+        segment_receipts: if pending.with_extension("tts-receipts.json").is_file() {
+            cache::read_json(pending.with_extension("tts-receipts.json"))?
+        } else {
+            Vec::new()
+        },
+        synthesis_sessions: if pending.with_extension("tts-sessions.json").is_file() {
+            cache::read_json(pending.with_extension("tts-sessions.json"))?
+        } else {
+            Vec::new()
+        },
         used_selections,
         version: 2,
         fallback_used,
@@ -150,6 +177,16 @@ pub(super) fn ensure_chapter_audio_with_options(
     // the previous artifact and its completion receipt intact.
     let pending_receipt = staging.path().join("complete.json");
     cache::atomic_write_json(&pending_receipt, &receipt)?;
+    let _lease = control
+        .map(|control| control.lease_generation(generation, chapter))
+        .transpose()
+        .map_err(|_| {
+            if control.is_some_and(|control| control.cancellation_token().is_cancelled()) {
+                WorkerError::Cancelled
+            } else {
+                WorkerError::PlaybackWindowChanged
+            }
+        })?;
     fs::rename(&pending, output)?;
     fs::rename(pending_receipt, chapter_audio_receipt_path(output))?;
     Ok(())

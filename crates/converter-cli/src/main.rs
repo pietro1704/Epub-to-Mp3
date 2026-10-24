@@ -36,6 +36,7 @@ struct CliOptions {
     no_parallel: bool,
     yes: bool,
     menu: bool,
+    help: bool,
 }
 
 impl Default for CliOptions {
@@ -62,6 +63,7 @@ impl Default for CliOptions {
             no_parallel: false,
             yes: false,
             menu: false,
+            help: false,
         }
     }
 }

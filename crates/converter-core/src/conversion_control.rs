@@ -22,9 +22,15 @@ struct QueueState {
     attached: bool,
     pending_priority: Option<usize>,
     remaining: VecDeque<usize>,
+    selected: Vec<usize>,
     paused: bool,
     recovery_job: Option<String>,
     playback_window: Option<(usize, usize)>,
+    listening: Option<crate::tts_session::ListeningPlan>,
+}
+
+pub(crate) struct GenerationLease<'a> {
+    _queue: std::sync::MutexGuard<'a, QueueState>,
 }
 
 /// Shared only by one conversion invocation and its native control handle.
@@ -36,6 +42,33 @@ pub struct ConversionControl {
 }
 
 impl ConversionControl {
+    pub(crate) fn lease_generation(
+        &self,
+        generation: Option<u64>,
+        chapter: Option<usize>,
+    ) -> Result<GenerationLease<'_>, String> {
+        let queue = self
+            .queue
+            .lock()
+            .map_err(|_| "Conversion control lock poisoned")?;
+        let permitted = chapter.is_none_or(|chapter| {
+            queue.listening.as_ref().map_or_else(
+                || {
+                    queue.playback_window.is_none_or(|(start, ahead)| {
+                        chapter >= start && chapter <= start.saturating_add(ahead)
+                    })
+                },
+                |plan| plan.permits(chapter),
+            )
+        });
+        if self.cancel.is_cancelled()
+            || !permitted
+            || queue.listening.as_ref().map(|plan| plan.generation) != generation
+        {
+            return Err("Listening generation was replaced or cancelled".into());
+        }
+        Ok(GenerationLease { _queue: queue })
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -64,12 +97,29 @@ impl ConversionControl {
     /// number of chapters ahead. Unselected work remains pending for navigation.
     pub fn set_playback_window(&self, current_chapter: usize, chapters_ahead: usize) {
         let mut queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(plan) = &mut queue.listening {
+            if plan.position.chapter_index != current_chapter {
+                let _ = plan.move_to(crate::tts_session::ListeningPosition {
+                    version: 2,
+                    chapter_index: current_chapter,
+                    text_offset: 0,
+                });
+                if queue.selected.contains(&current_chapter)
+                    && !queue.remaining.contains(&current_chapter)
+                {
+                    queue.remaining.push_front(current_chapter);
+                }
+            }
+        }
         queue.playback_window = Some((current_chapter, chapters_ahead));
         self.ready.notify_all();
     }
 
     pub fn chapter_is_in_playback_window(&self, chapter_index: usize) -> bool {
         let queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(plan) = &queue.listening {
+            return plan.permits(chapter_index);
+        }
         queue.playback_window.is_none_or(|(start, ahead)| {
             chapter_index >= start && chapter_index <= start.saturating_add(ahead)
         })
@@ -144,6 +194,14 @@ impl ConversionControl {
                 return Err(ConversionControlError::UnavailableChapter(priority));
             }
         }
+        if let Some(plan) = &queue.listening {
+            if !selected.contains(&plan.position.chapter_index) {
+                return Err(ConversionControlError::UnavailableChapter(
+                    plan.position.chapter_index,
+                ));
+            }
+        }
+        queue.selected = selected.to_vec();
         queue.remaining = selected.iter().copied().collect();
         if let Some(priority) = queue.pending_priority.take() {
             rotate_to(&mut queue.remaining, priority);
@@ -159,6 +217,9 @@ impl ConversionControl {
             .map_err(|_| ConversionControlError::LockPoisoned)?;
         loop {
             let eligible = queue.remaining.iter().position(|source_index| {
+                if let Some(plan) = &queue.listening {
+                    return plan.permits(*source_index);
+                }
                 queue.playback_window.is_none_or(|(start, ahead)| {
                     *source_index >= start && *source_index <= start.saturating_add(ahead)
                 })
@@ -174,6 +235,92 @@ impl ConversionControl {
                 .wait(queue)
                 .map_err(|_| ConversionControlError::LockPoisoned)?;
         }
+    }
+}
+
+impl ConversionControl {
+    pub fn set_listening_position(
+        &self,
+        position: crate::tts_session::ListeningPosition,
+    ) -> Result<(), String> {
+        if self.cancel.is_cancelled() {
+            return Err("Conversion cancelled".into());
+        }
+        let mut queue = self
+            .queue
+            .lock()
+            .map_err(|_| "Conversion control lock poisoned")?;
+        let chapter = position.chapter_index;
+        if queue.attached && !queue.selected.contains(&chapter) {
+            return Err("Listening chapter is outside this job selection".into());
+        }
+        let changed = if let Some(plan) = &mut queue.listening {
+            plan.move_to(position).map_err(|error| error.to_string())?
+        } else {
+            queue.listening = Some(
+                crate::tts_session::ListeningPlan::new(position)
+                    .map_err(|error| error.to_string())?,
+            );
+            true
+        };
+        if changed && queue.attached && !queue.remaining.contains(&chapter) {
+            queue.remaining.push_front(chapter);
+        }
+        self.ready.notify_all();
+        Ok(())
+    }
+
+    pub fn playback_feedback(
+        &self,
+        feedback: &crate::tts_session::PlaybackFeedback,
+    ) -> Result<(), String> {
+        if self.cancel.is_cancelled() {
+            return Err("Conversion cancelled".into());
+        }
+        let mut queue = self
+            .queue
+            .lock()
+            .map_err(|_| "Conversion control lock poisoned")?;
+        queue
+            .listening
+            .as_mut()
+            .ok_or("No listening position selected")?
+            .feedback(feedback)
+            .map_err(|error| error.to_string())?;
+        self.ready.notify_all();
+        Ok(())
+    }
+
+    pub fn listening_plan(&self) -> Option<crate::tts_session::ListeningPlan> {
+        self.queue
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .listening
+            .clone()
+    }
+
+    pub fn generation_is_current(&self, generation: Option<u64>) -> bool {
+        self.listening_plan().as_ref().map(|plan| plan.generation) == generation
+    }
+
+    pub fn observe_generation_at(
+        &self,
+        generation: Option<u64>,
+        seconds: f64,
+        chars: usize,
+    ) -> bool {
+        let mut queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        if self.cancel.is_cancelled() || !seconds.is_finite() || seconds <= 0.0 || chars == 0 {
+            return false;
+        }
+        let Some(plan) = queue.listening.as_mut() else {
+            return false;
+        };
+        if generation != Some(plan.generation) {
+            return false;
+        }
+        plan.observe_generation(seconds, chars);
+        true
     }
 }
 

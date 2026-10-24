@@ -306,6 +306,7 @@ final class PlaybackSegmentSession {
     /// Remote manifests are one-based; legacy snapshots containing chapter
     /// zero remain supported.
     nonisolated static func segmentManifestIndexOffset(_ snapshot: JobSnapshot) -> Int {
+        if let base = snapshot.chapterIndexBase, base == 0 || base == 1 { return base }
         return (snapshot.chapterProgress ?? snapshot.playableChapters).contains { $0.index == 0 } ? 0 : 1
     }
 

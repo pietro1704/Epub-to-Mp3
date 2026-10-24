@@ -7,18 +7,40 @@ extension AppSettings {
         }
     }
     var ttsPreferences: TtsPreferences {
-        let secondary = secondaryAudioEngine.flatMap { engine -> TtsSelection? in
+        let secondary = secondaryTtsSelection ?? secondaryAudioEngine.flatMap { engine -> TtsSelection? in
             guard engine != .edge || allowOnlineAudioFallback else { return nil }
             return .selected(engine)
         }
-        return TtsPreferences(primary: .selected(audioEngine),
+        return TtsPreferences(primary: primaryTtsSelection ?? .selected(audioEngine),
                               secondary: secondary,
                               allowOnlineFallback: allowOnlineAudioFallback,
                               policyVersion: 2)
     }
+    var primaryNarrationDisplayName: String {
+        primaryTtsSelection?.modelID ?? audioEngine.displayName
+    }
+    var secondaryNarrationDisplayName: String {
+        secondaryTtsSelection?.modelID ?? secondaryAudioEngine?.displayName ?? L10n.string("settings.noSecondary")
+    }
+    func selectPrimaryNarration(_ selection: TtsSelection) {
+        if let engine = AudioEnginePreference(rawValue: selection.engine) { audioEngine = engine }
+        primaryTtsSelection = selection
+        if secondaryTtsSelection?.representsSameRequest(as: selection) == true { secondaryTtsSelection = nil }
+    }
+    func selectSecondaryNarration(_ selection: TtsSelection?) {
+        secondaryAudioEngine = nil
+        secondaryTtsSelection = selection
+    }
     var conversionOptions: ConversionOptions {
         var options = ConversionOptions.selectedEngine(audioEngine, modelsRoot: LocalSpeechModelReadiness.ttsModelsRoot())
         options.ttsPreferences = ttsPreferences
+        if let catalog = try? ConverterFFIAdapter().ttsCatalog() {
+            #if os(macOS)
+            options.ttsPreferences = catalog.capture(ttsPreferences, target: "macos")
+            #else
+            options.ttsPreferences = catalog.capture(ttsPreferences, target: "ios")
+            #endif
+        }
         options.modelsRoot = LocalSpeechModelReadiness.ttsModelsRoot()?.path
         options.espeakDataDirectory = Bundle.main.resourceURL?.path
         return options

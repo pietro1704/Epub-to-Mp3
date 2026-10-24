@@ -156,6 +156,7 @@ pub fn split_text(text: &str, max_chars: usize) -> Result<Vec<String>, PiperErro
 pub fn select_model(config: &PiperConfig, language: Option<&str>) -> Result<PathBuf, PiperError> {
     let model = config.model_for_language(language).to_path_buf();
     if model.is_file() {
+        validate_model_file_quality(&model, &config.config)?;
         Ok(model)
     } else {
         Err(PiperError::MissingModel(model))
@@ -184,9 +185,12 @@ pub trait PiperRuntime: Send + Sync {
 }
 
 mod piper_model_preparation;
+mod piper_quality_policy;
+pub(crate) use crate::model_catalog::validate_piper_quality as validate_model_quality;
+pub(crate) use piper_quality_policy::validate_model_file_quality;
 mod piper_runtime_registry;
 mod piper_wav_validation;
-pub use piper_model_preparation::{synthesize, PreparedPiperModel};
+pub use piper_model_preparation::{synthesize, synthesize_with_runtime, PreparedPiperModel};
 pub use piper_runtime_registry::{
     piper_runtime_init, piper_runtime_shutdown, piper_runtime_status, piper_synthesize,
     register_runtime, registered_runtime, RegisteredPiperRuntime,
@@ -199,3 +203,7 @@ use std::fs;
 #[cfg(test)]
 #[path = "piper/piper_contract_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "piper/piper_quality_tests.rs"]
+mod quality_tests;

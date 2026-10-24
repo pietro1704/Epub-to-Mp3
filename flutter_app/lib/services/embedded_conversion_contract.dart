@@ -118,3 +118,12 @@ abstract interface class StreamingChapterConverter {
   });
   Future<void> cancelStreamingChapter(String outputPath);
 }
+
+/// Native source slicing stays in Rust; offsets count Unicode scalars.
+abstract interface class PositionedChapterConverter {
+  Future<ConvertedChapterAudio> convertPositionedChapter({
+    required String inputPath, required String outputPath, required int chapterIndex,
+    required int textOffset, String? optionsJson,
+    Future<void> Function(GrowingChapterAudioSource)? onFirstAudio,
+  });
+}

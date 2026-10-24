@@ -83,6 +83,7 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         let preferences = typed.then(|| converter_core::tts_preferences::TtsPreferences {
             policy_version: None,
             primary: converter_core::tts_preferences::TtsSelection {
+                session: None,
                 engine: "piper".into(),
                 model_id: Some("selected-B".into()),
                 voice: None,
@@ -276,6 +277,7 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
             let preferences = invalid.tts_preferences.as_mut().unwrap();
             preferences.primary.model_id = Some("missing-B".into());
             preferences.secondary = Some(converter_core::tts_preferences::TtsSelection {
+                session: None,
                 engine: "piper".into(),
                 model_id: Some("prepared-A".into()),
                 voice: None,

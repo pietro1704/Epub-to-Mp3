@@ -15,6 +15,7 @@ final class MacSettingsViewController: NSViewController {
     private let themePopup = NSPopUpButton()
     private let layoutPopup = NSPopUpButton()
     private let audioEnginePopup = NSPopUpButton()
+    private var narrationSelections: [TtsSelection] = []
     private let secondaryEnginePopup = NSPopUpButton()
     private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let piperInstallButton = NSButton()
@@ -90,10 +91,20 @@ final class MacSettingsViewController: NSViewController {
         layoutPopup.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
         layoutPopup.target = self
         layoutPopup.action = #selector(layoutChanged(_:))
-        audioEnginePopup.addItems(withTitles: AudioEnginePreference.supportedPreferences.map(\.displayName))
+        narrationSelections = AudioEnginePreference.supportedPreferences.map { .selected($0) }
+        for selection in (try? ConverterFFIAdapter().ttsCatalog().selections(platform: "Macos")) ?? [] {
+            if !narrationSelections.contains(selection) { narrationSelections.append(selection) }
+        }
+        for selection in [settings.primaryTtsSelection, settings.secondaryTtsSelection].compactMap({ $0 }) {
+            if !narrationSelections.contains(selection) { narrationSelections.append(selection) }
+        }
+        let narrationTitles = narrationSelections.map { selection in
+            selection.session == nil ? AudioEnginePreference(rawValue: selection.engine)?.displayName ?? selection.engine : selection.modelID ?? selection.engine
+        }
+        audioEnginePopup.addItems(withTitles: narrationTitles)
         audioEnginePopup.target = self
         audioEnginePopup.action = #selector(audioEngineChanged(_:))
-        secondaryEnginePopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + AudioEnginePreference.supportedPreferences.map(\.displayName))
+        secondaryEnginePopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + narrationTitles)
         secondaryEnginePopup.menu?.autoenablesItems = false
         secondaryEnginePopup.target = self
         secondaryEnginePopup.action = #selector(secondaryEngineChanged(_:))
@@ -176,13 +187,14 @@ final class MacSettingsViewController: NSViewController {
         fontPopup.selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0)
         themePopup.selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0)
         layoutPopup.selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0)
-        audioEnginePopup.selectItem(at: AudioEnginePreference.supportedPreferences.firstIndex(of: settings.audioEngine) ?? 0)
-        secondaryEnginePopup.selectItem(at: settings.secondaryAudioEngine.flatMap { AudioEnginePreference.supportedPreferences.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
-        for (index, engine) in AudioEnginePreference.supportedPreferences.enumerated() {
-            secondaryEnginePopup.item(at: index + 1)?.isEnabled = settings.selectableSecondaryAudioEngines.contains(engine)
+        audioEnginePopup.selectItem(at: narrationSelections.firstIndex(of: settings.ttsPreferences.primary) ?? 0)
+        secondaryEnginePopup.selectItem(at: settings.ttsPreferences.secondary.flatMap { narrationSelections.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+        for (index, selection) in narrationSelections.enumerated() {
+            secondaryEnginePopup.item(at: index + 1)?.isEnabled = !selection.representsSameRequest(as: settings.ttsPreferences.primary) && (selection.engine != "edge" || settings.allowOnlineAudioFallback)
         }
         onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
-        piperInstallButton.title = LocalSpeechModelReadiness.isFaberInstalled() ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
+        piperInstallButton.title = LocalSpeechModelReadiness.isSelectionInstalled(settings.ttsPreferences.primary) ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
+        piperInstallButton.isEnabled = settings.ttsPreferences.primary.modelID != nil
         statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes))
     }
@@ -214,23 +226,23 @@ final class MacSettingsViewController: NSViewController {
     }
 
     @objc private func audioEngineChanged(_ sender: NSPopUpButton) {
-        guard AudioEnginePreference.supportedPreferences.indices.contains(sender.indexOfSelectedItem) else { return }
-        settings.audioEngine = AudioEnginePreference.supportedPreferences[sender.indexOfSelectedItem]
+        guard narrationSelections.indices.contains(sender.indexOfSelectedItem) else { return }
+        settings.selectPrimaryNarration(narrationSelections[sender.indexOfSelectedItem])
         refresh()
     }
 
     @objc private func secondaryEngineChanged(_ sender: NSPopUpButton) {
         let index = sender.indexOfSelectedItem - 1
-        guard AudioEnginePreference.supportedPreferences.indices.contains(index) else {
-            settings.secondaryAudioEngine = nil
+        guard narrationSelections.indices.contains(index) else {
+            settings.selectSecondaryNarration(nil)
             return
         }
-        let engine = AudioEnginePreference.supportedPreferences[index]
-        guard settings.selectableSecondaryAudioEngines.contains(engine) else {
+        let selection = narrationSelections[index]
+        guard !selection.representsSameRequest(as: settings.ttsPreferences.primary) && (selection.engine != "edge" || settings.allowOnlineAudioFallback) else {
             refresh()
             return
         }
-        settings.secondaryAudioEngine = engine
+        settings.selectSecondaryNarration(selection)
     }
     @objc private func onlineFallbackChanged(_ sender: NSButton) {
         settings.allowOnlineAudioFallback = sender.state == .on
@@ -238,11 +250,11 @@ final class MacSettingsViewController: NSViewController {
     }
 
     @objc private func installPiperModel() {
-        guard let root = LocalSpeechModelReadiness.ttsModelsRoot() else { return }
+        guard let root = LocalSpeechModelReadiness.ttsModelsRoot(), let modelID = settings.ttsPreferences.primary.modelID else { return }
         let install = installPiperModelOperation
         Task { [weak self] in
             let result = await Task.detached {
-                Result { try install("pt_BR-faber-medium", root.path) }
+                Result { try install(modelID, root.path) }
             }.value
             guard let self else { return }
             if case .failure(let error) = result {

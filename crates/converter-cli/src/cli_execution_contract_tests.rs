@@ -7,6 +7,30 @@ use super::output_reporting::verify_output;
 use super::CliOptions;
 
 #[test]
+fn conventional_help_never_opens_inputs_or_starts_conversion() {
+    for arguments in [
+        vec!["--help"],
+        vec!["-h"],
+        vec!["convert", "--help"],
+        vec!["/missing/input.epub", "--help"],
+    ] {
+        assert_eq!(
+            super::run_cli_command(arguments.into_iter().map(str::to_owned).collect()).unwrap(),
+            0
+        );
+    }
+}
+
+#[test]
+fn help_does_not_hide_malformed_options_or_consume_literal_values() {
+    assert!(super::run_cli_command(vec!["--unknown".into(), "--help".into()]).is_err());
+    assert!(super::run_cli_command(vec!["--chapter".into()]).is_err());
+    let options = parse_args(&["--voice".into(), "--help".into()]).unwrap();
+    assert!(!options.help);
+    assert_eq!(options.voice.as_deref(), Some("--help"));
+}
+
+#[test]
 fn a_packaged_cli_uses_user_data_and_preserves_explicit_directory_overrides() {
     let package =
         std::env::temp_dir().join(format!("tts-cli-package-paths-{}", std::process::id()));
@@ -102,6 +126,7 @@ fn verification_rejects_missing_chapter_audio() {
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("temporary directory should be created");
     let manifest = converter_core::worker::OutputManifest {
+        synthesis_sessions: Vec::new(),
         source_chapters_total: None,
         tts_preferences: None,
         used_selections: Vec::new(),
@@ -111,6 +136,7 @@ fn verification_rejects_missing_chapter_audio() {
         title: "Book".into(),
         author: "Author".into(),
         chapters: vec![converter_core::audio::ChapterMetadata {
+            text_offset: 0,
             index: 1,
             source_index: 0,
             title: "Chapter 1".into(),

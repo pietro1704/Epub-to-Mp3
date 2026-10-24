@@ -32,8 +32,11 @@ final class PlaybackResumeStore {
     }
 
 
-    func persist(snapshot: JobSnapshot?, chapterIndex: Int, positionSeconds: TimeInterval, isPlaying: Bool, force: Bool) {
-        guard let snapshot else { return }
+    func persist(snapshot: JobSnapshot?, chapterIndex: Int, sourceChapterIndex: Int?,
+                 positionSeconds: TimeInterval, isPlaying: Bool, force: Bool) {
+        // Queue offsets remain internal resume-marker keys. The app shell and
+        // reader restore only source chapter identities, never an unresolved 0.
+        guard let snapshot, let sourceChapterIndex, sourceChapterIndex >= 0 else { return }
         let now = Date()
         if !force, now.timeIntervalSince(lastResumePersist) < 5 { return }
         lastResumePersist = now
@@ -49,9 +52,17 @@ final class PlaybackResumeStore {
             now: now
         )
         UserDefaults.standard.set(
-            chapterIndex,
+            sourceChapterIndex,
             forKey: Self.currentChapterIndexDefaultsKey
         )
+    }
+
+    static func sourceChapterIndex(snapshot: JobSnapshot?, playbackChapters: [JobSnapshot.Chapter],
+                                   queueOffset: Int, segmentMode: Bool, segmentChapterIndex: Int) -> Int? {
+        guard snapshot != nil else { return nil }
+        if segmentMode { return segmentChapterIndex >= 0 ? segmentChapterIndex : nil }
+        return PlaybackChapterQueue.chapterValue(snapshot: snapshot, playbackChapters: playbackChapters,
+            currentChapterIndex: queueOffset, isSegmentMode: false)?.index
     }
 
     nonisolated static func positionForPersistedState(
