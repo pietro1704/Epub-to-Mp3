@@ -1,6 +1,75 @@
 use super::*;
 
 #[no_mangle]
+pub unsafe extern "C" fn converter_job_control_listening_generation_v2(
+    control: *const ConverterJobControl,
+) -> u64 {
+    control
+        .as_ref()
+        .and_then(|control| control.control.listening_plan())
+        .map_or(u64::MAX, |plan| plan.generation)
+}
+
+/// Versioned, Unicode text-position intent. The Rust scheduler owns prefetch.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_set_listening_position_json_v2(
+    control: *const ConverterJobControl,
+    position_json: *const c_char,
+) -> bool {
+    clear_last_error();
+    let Some(control) = control.as_ref() else {
+        return fail("Invalid null job control".into());
+    };
+    let result = c_string(position_json, "listening position")
+        .and_then(|json| {
+            serde_json::from_str::<converter_core::tts_session::ListeningPosition>(&json)
+                .map_err(|error| error.to_string())
+        })
+        .and_then(|position| control.control.set_listening_position(position));
+    match result {
+        Ok(()) => true,
+        Err(error) => fail(error),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_playback_feedback_json_v2(
+    control: *const ConverterJobControl,
+    feedback_json: *const c_char,
+) -> bool {
+    clear_last_error();
+    let Some(control) = control.as_ref() else {
+        return fail("Invalid null job control".into());
+    };
+    let result = c_string(feedback_json, "playback feedback")
+        .and_then(|json| {
+            serde_json::from_str::<converter_core::tts_session::PlaybackFeedback>(&json)
+                .map_err(|error| error.to_string())
+        })
+        .and_then(|feedback| control.control.playback_feedback(&feedback));
+    match result {
+        Ok(()) => true,
+        Err(error) => fail(error),
+    }
+}
+
+/// Generation-bound timing observations update the portable prefetch estimate.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_observe_generation_v2(
+    control: *const ConverterJobControl,
+    generation: u64,
+    seconds: f64,
+    chars: usize,
+) -> bool {
+    let Some(control) = control.as_ref() else {
+        return false;
+    };
+    control
+        .control
+        .observe_generation_at(Some(generation), seconds, chars)
+}
+
+#[no_mangle]
 pub extern "C" fn converter_job_control_create() -> *mut ConverterJobControl {
     clear_last_error();
     Box::into_raw(Box::new(ConverterJobControl {
@@ -41,11 +110,26 @@ pub unsafe extern "C" fn converter_job_control_take_audio_chunk_json(
     let Ok(mut queue) = control.audio_chunks.try_lock() else {
         return ptr::null_mut();
     };
+    // Retire queued bytes on cancellation, retaining the one-shot overflow error.
+    if control.control.cancellation_token().is_cancelled() {
+        queue.events.clear();
+    }
     let event = queue
         .error
         .take()
         .map(|error| json!({"error":error}))
-        .or_else(|| queue.events.pop_front());
+        .or_else(|| {
+            while let Some(event) = queue.events.pop_front() {
+                if event["version"] == 2 {
+                    let generation = event["generation"].as_u64();
+                    if !control.control.generation_is_current(generation) {
+                        continue;
+                    }
+                }
+                return Some(event);
+            }
+            None
+        });
     event
         .and_then(|event| CString::new(event.to_string()).ok())
         .map_or(ptr::null_mut(), CString::into_raw)

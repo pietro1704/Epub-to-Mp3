@@ -29,6 +29,10 @@ let production = [
     "Features/Conversion/Services/ConverterModelCatalog.swift",
     "Features/Conversion/Services/ConverterCallbackBridge.swift",
     "Features/Conversion/Services/ConverterPlaybackControl.swift",
+    "Features/Conversion/Services/ReaderConversionChapterMap.swift",
+    "Features/Conversion/Services/TtsCatalog.swift",
+    "Features/Reader/Models/EbookFulltext.swift",
+    "Features/Documents/Services/EpubArchivePath.swift",
     "Features/Conversion/Services/ConversionCallbackReceipt.swift",
     "Features/Conversion/Services/RustConversionCoordinator.swift",
     "Features/Conversion/Services/RustConversionEvents.swift",
@@ -47,6 +51,8 @@ let tests = [
     "ConversionOptionsInteropOptInProviderJourneyTests.swift",
     "ConverterModelCatalogOwnershipTests.swift",
     "EpubFixture.swift",
+    "ReaderConversionChapterMapTests.swift",
+    "ReaderListeningControlTests.swift",
 ]
 let package = Package(
     name: "AppFoundation",

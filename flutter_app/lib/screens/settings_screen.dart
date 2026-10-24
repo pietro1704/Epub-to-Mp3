@@ -1,4 +1,5 @@
 import '../models/tts_preferences.dart';
+import '../models/tts_catalog.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,9 @@ import '../state/providers.dart';
 part 'voice_selection_settings.dart';
 part 'installed_narration_models.dart';
 part 'playback_preferences.dart';
+
+final _ttsCatalogSelections = FutureProvider<List<TtsSelection>>((ref) async =>
+  TtsCatalog.decode(await ref.read(embeddedConverterProvider).ttsModels()).selections());
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});

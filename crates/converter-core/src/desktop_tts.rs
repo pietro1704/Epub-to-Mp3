@@ -240,10 +240,17 @@ mod tests {
                 &|| false,
             )
             .unwrap();
-        assert!(
-            !crate::platform_tts::encode_wav(&std::fs::read(out).unwrap())
-                .unwrap()
-                .is_empty()
-        );
+        let mp3 = crate::platform_tts::encode_wav(&std::fs::read(&out).unwrap()).unwrap();
+        assert!(!mp3.is_empty());
+        if let Some(directory) = std::env::var_os("EPUB_TEST_NATIVE_OUTPUT_DIR") {
+            let directory = std::path::PathBuf::from(directory);
+            std::fs::create_dir_all(&directory).unwrap();
+            let stem: String = language
+                .chars()
+                .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
+                .collect();
+            std::fs::copy(&out, directory.join(format!("{stem}.wav"))).unwrap();
+            std::fs::write(directory.join(format!("{stem}.mp3")), mp3).unwrap();
+        }
     }
 }

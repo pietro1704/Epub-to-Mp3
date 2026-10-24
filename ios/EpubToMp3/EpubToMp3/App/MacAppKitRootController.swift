@@ -83,6 +83,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             .sink { [weak self] _ in self?.refreshPlayerBar() }
             .store(in: &cancellables)
         playerPresentation.objectWillChange
+            // Read the committed presentation value before opening/closing a sheet.
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
         player.$snapshot
@@ -329,7 +331,17 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         let belongsToReader = player.isPlaybackForReaderBook(bookID)
             || (player.snapshot != nil && library.books.first(where: { $0.id == bookID })?.lastJobId == player.snapshot?.jobId)
         if player.hasLoadedAudioQueue, belongsToReader {
-            switch player.playTapDecision(readerChapterIndex: chapterIndex, readerPageRatio: pageRatio) {
+            let decision = player.playTapDecision(readerChapterIndex: chapterIndex, readerPageRatio: pageRatio)
+            let playable = player.snapshot?.playableChapters ?? []
+            let audibleChapter = player.activeStreamingChapterIndex
+                ?? (playable.indices.contains(player.currentChapterIndex)
+                    ? playable[player.currentChapterIndex].index : nil)
+            if case .offerStartChoice = decision, let audibleChapter, audibleChapter != chapterIndex {
+                // A newly selected chapter requires a new source-bound Rust job.
+                playbackSession.start(owner: self)
+                return
+            }
+            switch decision {
             case .pause: player.pause()
             case .resume: player.resume()
             case .startFromReaderPage: playCurrentReaderPage()
@@ -356,7 +368,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             startPlaybackForCurrentBook()
         } else if let snapshot = player.snapshot,
            snapshot.state == "finished" || snapshot.playableChapters.contains(where: { $0.index == chapterIndex }) {
-            player.startFromReaderPage(chapterIndex, sentenceOffsetRatio: pageRatio)
+            playCurrentReaderPage()
         } else {
             startPlaybackForCurrentBook()
         }
@@ -371,9 +383,15 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else { return }
         guard player.isPlaybackForReaderBook(bookID)
             || (player.snapshot != nil && library.books.first(where: { $0.id == bookID })?.lastJobId == player.snapshot?.jobId) else { return }
-        player.startFromReaderPage(ReaderPlaybackPriorityChapter.index(bookID: bookID),
-            sentenceId: UserDefaults.standard.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey),
-            sentenceOffsetRatio: readerPageRatio(bookID: bookID))
+        if playbackSession.localPlaybackGeneration != nil
+            || player.snapshot?.chapterProgress?.contains(where: { ($0.textOffset ?? 0) > 0 }) == true {
+            // Partial audio needs a new Rust source range and job identity.
+            playbackSession.start(owner: self)
+        } else {
+            player.startFromReaderPage(ReaderPlaybackPriorityChapter.index(bookID: bookID),
+                sentenceId: UserDefaults.standard.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey),
+                sentenceOffsetRatio: readerPageRatio(bookID: bookID))
+        }
     }
 
     private func refreshFullPlayer() {

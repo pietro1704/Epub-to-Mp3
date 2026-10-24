@@ -44,31 +44,6 @@ final class RustConversionCoordinator {
         try ConverterFFIAdapter().makePlaybackControl()
     }
 
-    @MainActor
-    static func executeStreaming(
-        bookURL: URL,
-        jobID: String,
-        chapterStart: Int32,
-        chapterEnd: Int32,
-        control: ConverterPlaybackControl,
-        options: ConversionOptions? = nil,
-        onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
-        onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?,
-        onAudioChunk: (@Sendable (Int, Int, Data) -> Bool)?
-    ) async throws -> Result {
-        try await RustConversionCoordinator().convert(
-            bookURL: bookURL,
-            jobID: jobID,
-            chapterStart: chapterStart,
-            chapterEnd: chapterEnd,
-            options: options,
-            playbackControl: control,
-            onProgress: onProgress,
-            onChapterCompleted: onChapterCompleted,
-            onAudioChunk: onAudioChunk
-        )
-    }
-
     init(
         adapter: ConverterFFIAdapter = ConverterFFIAdapter(),
         fileManager: FileManager = .default,
@@ -88,7 +63,8 @@ final class RustConversionCoordinator {
         playbackControl: ConverterPlaybackControl? = nil,
         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)? = nil,
         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil,
-        onAudioChunk: (@Sendable (Int, Int, Data) -> Bool)? = nil
+        onAudioChunk: (@Sendable (Int, Int, Data) -> Bool)? = nil,
+        readerChapterMap: ReaderConversionChapterMap? = nil
     ) async throws -> Result {
         if options != nil {
             try adapter.validateConversionSupport(options: options)
@@ -111,6 +87,13 @@ final class RustConversionCoordinator {
 
         do {
             try Task.checkCancellation()
+            if let readerChapterMap {
+                // Persist before Rust can publish artifacts, while this job
+                // still owns its output lease. Interrupted jobs retain the axis.
+                try JSONEncoder().encode(readerChapterMap).write(
+                    to: outputDirectory.appendingPathComponent("reader-chapter-map.json"), options: .atomic
+                )
+            }
             try? appendLogLine("[Rust] conversion started: \(bookURL.lastPathComponent)", to: logURL)
             let manifest = try await withTaskCancellationHandler(operation: {
                 try await withCheckedThrowingContinuation { continuation in
@@ -129,7 +112,7 @@ final class RustConversionCoordinator {
                                     guard let onProgress,
                                           let event = try? JSONDecoder().decode(
                                             ConversionProgressEvent.self,
-                                            from: data
+                                            from: try readerChapterMap?.event(data) ?? data
                                           ) else {
                                         return
                                     }
@@ -139,7 +122,7 @@ final class RustConversionCoordinator {
                                     guard let onChapterCompleted,
                                           let event = try? JSONDecoder().decode(
                                             ChapterCompletionEvent.self,
-                                            from: data
+                                            from: try readerChapterMap?.event(data) ?? data
                                           ) else {
                                         return
                                     }

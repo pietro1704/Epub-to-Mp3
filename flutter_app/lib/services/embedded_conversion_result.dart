@@ -11,12 +11,14 @@ class ConvertedChapterAudio {
     this.usedSelections = const [],
     this.fallbackUsed = false,
     this.ttsPolicyState,
+    this.textOffset = 0,
   });
 
   final List<TtsSelection> usedSelections;
   final bool fallbackUsed;
   final Map<String, dynamic>? ttsPolicyState;
   final int chapterIndex;
+  final int textOffset;
   final String path;
   final String title;
 
@@ -49,6 +51,7 @@ class ConvertedChapterAudio {
     }
     return ConvertedChapterAudio(
       chapterIndex: expectedChapterIndex,
+      textOffset: (entry['textOffset'] as num?)?.toInt() ?? 0,
       path: decoded['audioPath'] as String,
       title: entry['title'] as String? ?? '',
       fallbackUsed: manifest['fallbackUsed'] == true,

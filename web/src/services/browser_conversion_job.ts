@@ -12,6 +12,9 @@ export interface BrowserConversionJob {
   document: BookTextDocument;
   preferences: TtsPreferences;
   language: string;
+  policyState?: string;
+  listeningPosition?: { version: 2; chapter_index: number; text_offset: number };
+  listeningEpoch?: number;
   audio: Map<number, StoredBrowserAudio>;
   session?: BrowserSession;
   chunks: Map<number, ChapterStreamManifest>;

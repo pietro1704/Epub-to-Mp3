@@ -1,5 +1,15 @@
 use super::*;
 
+/// Versioned descriptors; catalog presence does not assert installed/readiness state.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_catalog_json_v2() -> *mut c_char {
+    clear_last_error();
+    CString::new(converter_core::tts_session::catalog_json()).map_or_else(
+        |_| fail("TTS catalog contains an interior NUL byte".into()),
+        CString::into_raw,
+    )
+}
+
 /// Returns the shared TTS model catalog as an owned JSON string.
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_models_json() -> *mut c_char {

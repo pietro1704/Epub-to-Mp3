@@ -1,4 +1,35 @@
 #[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_NativeTtsOptions_nativeValidateSessionOptions(
+    mut env: JNIEnv<'_>,
+    _object: JObject<'_>,
+    raw: JString<'_>,
+) -> jstring {
+    let validation = read_string(&mut env, raw).and_then(|json| {
+        let options: EmbeddedConversionOptionsV1 =
+            serde_json::from_str(&json).map_err(|error| error.to_string())?;
+        if options.contract_version != Some(2) {
+            return Err("Version 2 contract is required".into());
+        }
+        options.validate_contract()
+    });
+    match validation {
+        Ok(()) => std::ptr::null_mut(),
+        Err(error) => env
+            .new_string(error)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw()),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogV2(
+    env: JNIEnv<'_>,
+    _class: JClass<'_>,
+) -> jstring {
+    env.new_string(converter_core::tts_session::catalog_json())
+        .map_or(std::ptr::null_mut(), |value| value.into_raw())
+}
+
+#[no_mangle]
 pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeJobLog(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,

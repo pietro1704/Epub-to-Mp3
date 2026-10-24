@@ -27,7 +27,14 @@ extension RustConversionCoordinator {
                   let size = attributes[.size] as? NSNumber, size.int64Value > 0 else { return nil }
         }
         guard let object = try? JSONSerialization.jsonObject(with: data),
-              let envelope = try? JSONSerialization.data(withJSONObject: ["manifest": object]) else { return nil }
+              var envelope = try? JSONSerialization.data(withJSONObject: ["manifest": object]) else { return nil }
+        let mapURL = directory.appendingPathComponent("reader-chapter-map.json")
+        if fileManager.fileExists(atPath: mapURL.path) {
+            guard let mapData = try? Data(contentsOf: mapURL),
+                  let map = try? JSONDecoder().decode(ReaderConversionChapterMap.self, from: mapData),
+                  let projected = try? map.manifest(envelope) else { return nil }
+            envelope = projected
+        }
         return try? Result(jobID: jobID, manifestJSON: envelope, outputDirectory: directory).snapshot()
     }
 
@@ -71,7 +78,8 @@ extension RustConversionCoordinator {
                     progressRatio: 1,
                     durationSeconds: nil,
                     startedAt: nil,
-                    completedAt: nil
+                    completedAt: nil,
+                    textOffset: chapter.textOffset
                 )
             }
             return JobSnapshot(
@@ -91,7 +99,8 @@ extension RustConversionCoordinator {
                 outputs: nil,
                 logUrl: nil,
                 error: nil,
-                lastActivityAt: Date().timeIntervalSince1970
+                lastActivityAt: Date().timeIntervalSince1970,
+                chapterIndexBase: 0
             )
         }
     }
@@ -112,6 +121,7 @@ extension RustConversionCoordinator {
         let title: String?
         let filename: String
         let textChars: Int
+        let textOffset: Int?
         let sourceIndex: Int?
     }
 

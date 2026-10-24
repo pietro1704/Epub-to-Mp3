@@ -6,6 +6,9 @@ pub const FABER_MODEL_ID: &str = "pt_BR-faber-medium";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TtsSelection {
     pub engine: String,
+    /// Versioned runtime/model/voice capture. Absent in legacy saved jobs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<crate::tts_session::SessionSelection>,
     #[serde(default)]
     pub model_id: Option<String>,
     #[serde(default)]
@@ -15,13 +18,80 @@ impl Default for TtsSelection {
     fn default() -> Self {
         Self {
             engine: "piper".into(),
+            session: None,
             model_id: Some(FABER_MODEL_ID.into()),
             voice: None,
         }
     }
 }
 impl TtsSelection {
+    pub fn same_request(&self, other: &Self) -> bool {
+        let runtime = |selection: &Self| {
+            selection
+                .session
+                .as_ref()
+                .map(|session| session.runtime.clone())
+                .unwrap_or_else(|| {
+                    crate::tts_session::runtime_for(&selection.engine)
+                        .unwrap_or(&selection.engine)
+                        .to_owned()
+                })
+        };
+        self.engine == other.engine
+            && self.model_id == other.model_id
+            && self.voice == other.voice
+            && runtime(self) == runtime(other)
+            && self
+                .session
+                .as_ref()
+                .map(|session| session.options.iter())
+                .into_iter()
+                .flatten()
+                .eq(other
+                    .session
+                    .as_ref()
+                    .map(|session| session.options.iter())
+                    .into_iter()
+                    .flatten())
+    }
     pub fn validate(&self, language: Option<&str>) -> Result<(), String> {
+        if self.engine == "piper" {
+            crate::model_catalog::validate_piper_quality(
+                self.model_id.as_deref().unwrap_or_default(),
+            )?;
+        }
+        if let Some(session) = &self.session {
+            if self.model_id.as_deref().is_some_and(|id| {
+                id.is_empty()
+                    || id == "."
+                    || id == ".."
+                    || id.contains(['/', '\\'])
+                    || id.chars().any(char::is_control)
+            }) {
+                return Err("Invalid scoped model ID".into());
+            }
+            if session.version != crate::tts_session::CONTRACT_VERSION
+                || session.provider != self.engine
+                || session.model_id != self.model_id
+                || session.voice != self.voice
+                || session.runtime.is_empty()
+            {
+                return Err("Conflicting or unsupported versioned TTS selection".into());
+            }
+            if let Some(descriptor) =
+                crate::tts_session::builtin_descriptors()
+                    .into_iter()
+                    .find(|descriptor| {
+                        descriptor.provider == session.provider
+                            && descriptor.runtime == session.runtime
+                    })
+            {
+                session
+                    .validate(&descriptor, language.unwrap_or(""))
+                    .map_err(|error| error.to_string())?;
+            }
+            return Ok(());
+        }
         if !matches!(self.engine.as_str(), "piper" | "edge" | "system") {
             return Err(format!("Unsupported TTS engine: {}", self.engine));
         }
@@ -71,6 +141,7 @@ impl TtsPreferences {
         Self {
             policy_version: system_audio_available.then_some(2),
             secondary: system_audio_available.then(|| TtsSelection {
+                session: None,
                 engine: "system".into(),
                 model_id: None,
                 voice: None,
@@ -97,7 +168,7 @@ impl TtsPreferences {
         self.primary.validate(primary_language)?;
         if let Some(secondary) = &self.secondary {
             secondary.validate(primary_language)?;
-            if secondary == &self.primary {
+            if secondary.same_request(&self.primary) {
                 return Err("Secondary voice must differ from primary".into());
             }
             if secondary.engine == "edge" && !self.allow_online_fallback {
@@ -146,6 +217,7 @@ pub struct SegmentPolicy {
 fn is_zero_u64(value: &u64) -> bool {
     *value == 0
 }
+#[cfg(not(target_arch = "wasm32"))]
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -155,6 +227,10 @@ fn now_ms() -> u64 {
 }
 fn is_zero(value: &usize) -> bool {
     *value == 0
+}
+#[cfg(target_arch = "wasm32")]
+fn now_ms() -> u64 {
+    js_sys::Date::now().max(0.0).min(u64::MAX as f64) as u64
 }
 
 #[derive(Deserialize)]
@@ -344,12 +420,14 @@ mod tests {
         faber.voice = Some("unimplemented-speaker".into());
         assert!(faber.validate(Some("pt-BR")).is_err());
         let system = TtsSelection {
+            session: None,
             engine: "system".into(),
             model_id: None,
             voice: Some("unimplemented-voice".into()),
         };
         assert!(system.validate(None).is_err());
         let edge = TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: Some("pt-BR-FranciscaNeural".into()),
@@ -368,6 +446,7 @@ mod tests {
     fn online_secondary_requires_consent() {
         let mut p = TtsPreferences::default();
         p.secondary = Some(TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: None,
@@ -391,6 +470,7 @@ mod tests {
     fn manual_override_is_immutable_and_cache_is_content_sensitive() {
         let p = TtsPreferences::default();
         let edge = TtsSelection {
+            session: None,
             engine: "edge".into(),
             model_id: None,
             voice: Some("pt-BR-FranciscaNeural".into()),

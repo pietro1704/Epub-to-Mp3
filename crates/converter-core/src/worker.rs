@@ -91,6 +91,8 @@ pub struct OutputManifest {
     pub tts_preferences: Option<crate::tts_preferences::TtsPreferences>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub used_selections: Vec<crate::tts_preferences::TtsSelection>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub synthesis_sessions: Vec<crate::tts_session::ResolvedIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tts_policy_state: Option<crate::tts_preferences::SegmentPolicy>,
     #[serde(default, skip_serializing_if = "no_fallback")]
@@ -129,6 +131,8 @@ pub enum WorkerError {
 pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 pub type ChapterCompletionSink = Arc<dyn Fn(ChapterCompletionEvent) + Send + Sync>;
 pub type StreamingChunkSink = Arc<dyn Fn(usize, usize, &[u8]) -> bool + Send + Sync>;
+pub type VersionedStreamingChunkSink =
+    Arc<dyn Fn(usize, usize, &[u8], Option<u64>) -> bool + Send + Sync>;
 
 /// Per-invocation controls; defaults retain cache reuse and serial selection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -162,12 +166,20 @@ pub struct ConversionWorker {
     pub chapter_completed: Option<ChapterCompletionSink>,
     pub execution_options: ExecutionOptions,
     pub piper_model: Option<Arc<piper::PreparedPiperModel>>,
-    streaming_chunk: Option<StreamingChunkSink>,
+    streaming_chunk: Option<VersionedStreamingChunkSink>,
     adaptive: Arc<AdaptiveThroughputController>,
     telemetry: Option<Telemetry>,
     control: Option<ConversionControl>,
     platform_tts: Option<Arc<dyn PlatformTts>>,
-    platform_gate: Mutex<()>,
+    platform_gate: Arc<Mutex<()>>,
+    tts_sessions: Mutex<
+        std::collections::BTreeMap<
+            (String, String, String),
+            Box<dyn crate::tts_session::TtsSession>,
+        >,
+    >,
+    tts_registry: crate::tts_session::TtsRegistry,
+    tts_session_epoch: String,
     consecutive_edge_failures: AtomicUsize,
     segment_policy: Mutex<crate::tts_preferences::SegmentPolicy>,
     initial_segment_policy: crate::tts_preferences::SegmentPolicy,
@@ -191,7 +203,10 @@ impl ConversionWorker {
             telemetry: None,
             control: None,
             platform_tts: None,
-            platform_gate: Mutex::new(()),
+            platform_gate: Arc::new(Mutex::new(())),
+            tts_sessions: Default::default(),
+            tts_registry: Default::default(),
+            tts_session_epoch: crate::tts_session::new_session_id(),
             consecutive_edge_failures: AtomicUsize::new(0),
             segment_policy: Mutex::new(crate::tts_preferences::SegmentPolicy::default()),
             initial_segment_policy: crate::tts_preferences::SegmentPolicy::default(),
@@ -202,6 +217,11 @@ impl ConversionWorker {
     }
     pub fn with_execution_options(mut self, options: ExecutionOptions) -> Self {
         self.execution_options = options;
+        self
+    }
+    /// Composition roots register runtime adapters; orchestration stays unchanged.
+    pub fn with_tts_registry(mut self, registry: crate::tts_session::TtsRegistry) -> Self {
+        self.tts_registry = registry;
         self
     }
     pub fn with_piper_model(mut self, model: Option<Arc<piper::PreparedPiperModel>>) -> Self {
@@ -227,6 +247,12 @@ impl ConversionWorker {
         self
     }
     pub fn with_streaming_chunks(mut self, sink: StreamingChunkSink) -> Self {
+        self.streaming_chunk = Some(Arc::new(move |chapter, chunk, bytes, _| {
+            sink(chapter, chunk, bytes)
+        }));
+        self
+    }
+    pub fn with_versioned_streaming_chunks(mut self, sink: VersionedStreamingChunkSink) -> Self {
         self.streaming_chunk = Some(sink);
         self
     }
@@ -289,6 +315,10 @@ impl ConversionWorker {
     fn run_prepared(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
         self.jobs.transition(&request.job_id, JobState::Running)?;
         let result = self.run_inner(&request);
+        self.tts_sessions
+            .lock()
+            .expect("TTS session lock")
+            .retain(|(job, _, _), _| job != &request.job_id);
         match &result {
             Ok(_) => {
                 self.jobs.transition(&request.job_id, JobState::Completed)?;
@@ -321,9 +351,12 @@ mod chapter_execution;
 mod conversion_input_policy;
 mod conversion_schedule;
 mod edge_synthesis_execution;
+mod kokoro_model_identity;
+mod native_tts_adapters;
 mod platform_speech_policy;
 mod playback_chunk_delivery;
 mod provider_execution;
+mod tts_cache_identity;
 mod typed_speech_policy;
 
 use chapter_audio_receipt::*;

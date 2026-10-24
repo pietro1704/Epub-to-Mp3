@@ -39,6 +39,12 @@ final class AppSettings: ObservableObject {
             defaults.object(forKey: "allowCellularAudioConversion") as? Bool ?? false
         let speech = SpeechPreferenceMigration(defaults: defaults)
         self.audioEngine = speech.primary
+        if let snapshot = defaults.data(forKey: "primaryTtsSelection") {
+            self.primaryTtsSelection = try? JSONDecoder().decode(TtsSelection.self, from: snapshot)
+        }
+        if let snapshot = defaults.data(forKey: "secondaryTtsSelection") {
+            self.secondaryTtsSelection = try? JSONDecoder().decode(TtsSelection.self, from: snapshot)
+        }
         self.secondaryAudioEngine = speech.secondary
         self.allowOnlineAudioFallback = speech.allowOnlineFallback
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
@@ -103,6 +109,7 @@ final class AppSettings: ObservableObject {
     @Published var audioEngine: AudioEnginePreference = .piper {
         didSet {
             guard !loadingPersistedValues else { return }
+            primaryTtsSelection = nil
             adoptCurrentSpeechPolicyIfEdited()
             defaults.set(audioEngine.rawValue, forKey: Self.audioEngineKey)
             if secondaryAudioEngine == audioEngine { secondaryAudioEngine = nil }
@@ -112,6 +119,7 @@ final class AppSettings: ObservableObject {
     @Published var secondaryAudioEngine: AudioEnginePreference? = nil {
         didSet {
             guard !loadingPersistedValues else { return }
+            secondaryTtsSelection = nil
             adoptCurrentSpeechPolicyIfEdited()
             if secondaryAudioEngine == audioEngine
                 || (secondaryAudioEngine == .edge && !allowOnlineAudioFallback) {
@@ -122,6 +130,18 @@ final class AppSettings: ObservableObject {
             defaults.set(secondaryAudioEngine?.rawValue, forKey: "secondaryAudioEngine")
         }
     }
+    @Published var primaryTtsSelection: TtsSelection? = nil {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            defaults.set(try? primaryTtsSelection.map { try JSONEncoder().encode($0) }, forKey: "primaryTtsSelection")
+        }
+    }
+    @Published var secondaryTtsSelection: TtsSelection? = nil {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            defaults.set(try? secondaryTtsSelection.map { try JSONEncoder().encode($0) }, forKey: "secondaryTtsSelection")
+        }
+    }
     @Published var allowOnlineAudioFallback = false {
         didSet {
             guard !loadingPersistedValues else { return }
@@ -129,6 +149,9 @@ final class AppSettings: ObservableObject {
             defaults.set(allowOnlineAudioFallback, forKey: "allowOnlineAudioFallback")
             if !allowOnlineAudioFallback && secondaryAudioEngine == .edge {
                 secondaryAudioEngine = nil
+            }
+            if !allowOnlineAudioFallback && secondaryTtsSelection?.engine == "edge" {
+                secondaryTtsSelection = nil
             }
         }
     }

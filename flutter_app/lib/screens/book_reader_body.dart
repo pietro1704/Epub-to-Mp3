@@ -11,6 +11,7 @@ class _BookReaderBody extends ConsumerWidget {
     required this.isConverting,
     required this.playableChapters,
     required this.onRetry,
+    required this.onListeningPosition,
   });
 
   final String bookId;
@@ -22,6 +23,7 @@ class _BookReaderBody extends ConsumerWidget {
   final bool isConverting;
   final List<ChapterProgress> playableChapters;
   final VoidCallback onRetry;
+  final ValueChanged<ReaderListeningPosition?> onListeningPosition;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -137,6 +139,16 @@ class _BookReaderBody extends ConsumerWidget {
               children: [
                 InstantReaderView(
                   fulltext: fulltext!,
+                  onVisibleTextOffset: (chapter, offset) {
+                    if (offset == null || chapter < 0 || chapter >= fulltext!.chapters.length) {
+                      onListeningPosition(null);
+                      return;
+                    }
+                    try {
+                      onListeningPosition(ReaderListeningPosition.fromDisplayScalar(chapter,
+                        fulltext!.chapters[chapter].text, offset));
+                    } on FormatException { onListeningPosition(null); }
+                  },
                   bookId: bookId,
                   coverArt: coverArt,
                   player: player,

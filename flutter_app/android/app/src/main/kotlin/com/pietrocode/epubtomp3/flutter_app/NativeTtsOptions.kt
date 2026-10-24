@@ -7,6 +7,7 @@ import org.json.JSONObject
 
 /** Asset delivery is explicit packaging; it never downloads a model. */
 object NativeTtsOptions {
+    private external fun nativeValidateSessionOptions(raw: String): String?
     @Synchronized fun prepare(context: Context, raw: String?): String {
         // Rust's Android default (/data/local/tmp) is not writable by app UIDs.
         // Foreground and WorkManager conversions must share the app cache path.
@@ -15,6 +16,14 @@ object NativeTtsOptions {
         Os.setenv("TMPDIR", temporaryDirectory.absolutePath, true)
         val options = JSONObject(raw ?: "{\"tts_preferences\":{\"primary\":{\"engine\":\"piper\",\"model_id\":\"pt_BR-faber-medium\"},\"secondary\":{\"engine\":\"system\"},\"allow_online_fallback\":false,\"policy_version\":2}}")
         val preferences = options.optJSONObject("tts_preferences")
+        val versionedSelection = preferences?.optJSONObject("primary")?.optJSONObject("session") != null ||
+            preferences?.optJSONObject("secondary")?.optJSONObject("session") != null
+        if (versionedSelection || (options.has("contract_version") && options.optInt("contract_version") != 1)) {
+            if (!options.has("contract_version")) options.put("contract_version", 2)
+            val failure = try { nativeValidateSessionOptions(options.toString()) }
+            catch (missing: UnsatisfiedLinkError) { throw IllegalStateException("The embedded converter lacks version 2 TTS session contracts", missing) }
+            require(failure == null) { failure ?: "Invalid TTS session contract" }
+        }
         val needsPiper = preferences?.optJSONObject("primary")?.optString("engine") == "piper" || preferences?.optJSONObject("secondary")?.optString("engine") == "piper"
         if (needsPiper) {
             preparePiperAssets(options) {

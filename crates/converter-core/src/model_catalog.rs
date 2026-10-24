@@ -2,6 +2,16 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Product policy shared by native runtimes and browser/WASM selection.
+pub(crate) fn validate_piper_quality(identifier: &str) -> Result<(), String> {
+    let identifier = identifier.trim().to_ascii_lowercase();
+    let stem = identifier.split('.').next().unwrap_or(&identifier);
+    if stem == "low" || stem.ends_with("-low") || stem.ends_with("_low") {
+        return Err("Piper low quality models are disabled; choose medium or high".into());
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModelPlatform {
     Android,
@@ -146,7 +156,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         default_rank: 1,
         download_bytes: 63_108_694,
         artifacts: PIPER_PT_BR_EDRESSON_LOW_ARTIFACTS,
-        runtime_available: true,
+        runtime_available: false,
     },
     TtsModelDescriptor {
         id: "en_US-lessac-low",
@@ -163,7 +173,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         default_rank: 1,
         download_bytes: 63_206_176,
         artifacts: PIPER_EN_US_LESSAC_LOW_ARTIFACTS,
-        runtime_available: true,
+        runtime_available: false,
     },
     TtsModelDescriptor {
         id: "piper-default",
@@ -221,7 +231,10 @@ pub fn candidates(
 ) -> Vec<&'static TtsModelDescriptor> {
     let mut result: Vec<_> = MODELS
         .iter()
-        .filter(|model| model.runtime_available)
+        .filter(|model| {
+            model.runtime_available
+                && (model.engine != "piper" || validate_piper_quality(model.id).is_ok())
+        })
         .filter(|model| model.supports(language, platform, android_api))
         .collect();
     result.sort_by_key(|model| model.default_rank);
@@ -263,6 +276,7 @@ pub fn installed_ready_engine(
         .iter()
         .filter(|model| model.supports(language, platform, android_api))
         .filter(|model| installed_model_ids.contains(&model.id))
+        .filter(|model| model.engine != "piper" || validate_piper_quality(model.id).is_ok())
         .filter(|model| ready_model_ids.contains(&model.id))
         .min_by_key(|model| model.default_rank)
         .map(|model| model.engine)

@@ -19,6 +19,7 @@ typedef Chapter = FulltextChapter;
 
 class InstantReaderView extends ConsumerStatefulWidget {
   final EbookFulltext fulltext;
+  final void Function(int chapter, int? offset)? onVisibleTextOffset;
   final int initialChapterIndex;
   final AudioPlayerInterface? player;
   final String? activeSentenceId;
@@ -28,6 +29,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
   const InstantReaderView({
     super.key,
     required this.fulltext,
+    this.onVisibleTextOffset,
     this.initialChapterIndex = 0,
     this.player,
     this.activeSentenceId,
@@ -290,6 +292,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
         Expanded(
           child: ReaderView(
+            onVisibleTextOffset: (offset) => widget.onVisibleTextOffset?.call(widget.fulltext.chapters.indexOf(chapter), offset),
             chapter: chapter,
             spans: spans,
             // Live sentence id (driven by SyncEngine + position stream

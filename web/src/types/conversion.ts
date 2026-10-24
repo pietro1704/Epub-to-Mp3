@@ -1,8 +1,27 @@
-export type CliShell = "Bash/Zsh" | "PowerShell";
-export type EngineOption = "edge" | "piper" | string;
-export type FootnoteMode = "inline" | "chapter_end" | "skip";
-export interface TtsSelection { engine: "piper" | "edge" | "system"; model_id: string | null; voice: string | null; }
-export interface TtsPreferences { policy_version?: number; primary: TtsSelection; secondary: TtsSelection | null; allow_online_fallback: boolean; }
+export type CliShell = 'Bash/Zsh' | 'PowerShell';
+export type EngineOption = 'edge' | 'piper' | string;
+export type FootnoteMode = 'inline' | 'chapter_end' | 'skip';
+export interface TtsSessionSelection {
+  version: 2;
+  provider: string;
+  runtime: string;
+  model_id: string | null;
+  model_revision: string | null;
+  voice: string | null;
+  options: Record<string, string>;
+}
+export interface TtsSelection {
+  engine: string;
+  model_id: string | null;
+  voice: string | null;
+  session?: TtsSessionSelection;
+}
+export interface TtsPreferences {
+  policy_version?: number;
+  primary: TtsSelection;
+  secondary: TtsSelection | null;
+  allow_online_fallback: boolean;
+}
 
 export interface ConversionFormValues {
   file: File | null;
@@ -32,7 +51,7 @@ export interface ConversionFormValues {
   maxPerformance?: boolean;
   parallelSlots?: number;
   chapterStallSeconds?: number;
-  edgeNetworkTier?: "slow" | "medium" | "fast" | "ultra";
+  edgeNetworkTier?: 'slow' | 'medium' | 'fast' | 'ultra';
   edgeChunkChars?: number;
   edgeMaxSegmentSeconds?: number;
   edgeEnableParallel?: boolean;
@@ -66,7 +85,7 @@ export interface ConversionFormValues {
 
 export type ConversionTemplate = Omit<
   ConversionFormValues,
-  "file" | "fileName" | "uploadId" | "localPath"
+  'file' | 'fileName' | 'uploadId' | 'localPath'
 >;
 
 export interface SubmitBatchOptions {
@@ -74,13 +93,7 @@ export interface SubmitBatchOptions {
 }
 
 export type JobState =
-  | "queued"
-  | "running"
-  | "finished"
-  | "failed"
-  | "interrupted"
-  | "cancelling"
-  | "cancelled";
+  'queued' | 'running' | 'finished' | 'failed' | 'interrupted' | 'cancelling' | 'cancelled';
 
 export interface DownloadAsset {
   name: string;
@@ -98,6 +111,7 @@ export interface AudioChunkEntry {
 }
 
 export interface ChapterStreamManifest {
+  legacyWholeChapter?: boolean;
   jobId: string;
   chapterIndex: number;
   baseUrl: string;
@@ -122,13 +136,7 @@ export interface BookTextDocument {
 }
 
 export type ChapterProgressStatus =
-  | "pending"
-  | "processing"
-  | "completed"
-  | "skipped"
-  | "failed"
-  | "cancelled"
-  | "retrying";
+  'pending' | 'processing' | 'completed' | 'skipped' | 'failed' | 'cancelled' | 'retrying';
 
 export interface ChapterProgressEntry {
   index: number;
@@ -163,12 +171,7 @@ export interface PlaybackIndicator {
 }
 
 // Engine status for model loading/initialization
-export type EngineLoadingStatus =
-  | "idle"
-  | "downloading"
-  | "loading"
-  | "ready"
-  | "error";
+export type EngineLoadingStatus = 'idle' | 'downloading' | 'loading' | 'ready' | 'error';
 
 export interface EngineStatus {
   engine: string;
@@ -238,14 +241,7 @@ export interface ConversionSummary {
 
 export interface ConversionState {
   jobId?: string;
-  phase:
-    | "idle"
-    | "submitting"
-    | "polling"
-    | "success"
-    | "error"
-    | "cancelling"
-    | "cancelled";
+  phase: 'idle' | 'submitting' | 'polling' | 'success' | 'error' | 'cancelling' | 'cancelled';
   log: StatusEntry[];
   downloads: DownloadAsset[];
   error?: string;

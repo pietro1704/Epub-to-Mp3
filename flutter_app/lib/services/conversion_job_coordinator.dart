@@ -101,6 +101,7 @@ class ConversionJobCoordinator {
     String outputPath, {
     List<TtsSelection> usedSelections = const [],
     bool fallbackUsed = false,
+    int textOffset = 0,
   }) => _updateChapter(
     job,
     index,
@@ -108,6 +109,7 @@ class ConversionJobCoordinator {
       status: 'completed',
       usedSelections: usedSelections,
       fallbackUsed: fallbackUsed,
+      textOffset: textOffset,
       outputPath: outputPath,
       updatedAt: now,
       clearError: true,

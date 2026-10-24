@@ -55,6 +55,9 @@ final class DesktopTtsModelAdapter {
     _models = _library.lookupFunction<_ModelsNative, _ModelsDart>(
       'converter_tts_models_json',
     );
+    if (_library.providesSymbol('converter_tts_catalog_json_v2')) {
+      _catalog = _library.lookupFunction<_ModelsNative, _ModelsDart>('converter_tts_catalog_json_v2');
+    }
     _install = _library.lookupFunction<_InstallNative, _InstallDart>(
       'converter_tts_model_install_catalog_manifest',
     );
@@ -81,6 +84,7 @@ final class DesktopTtsModelAdapter {
 
   final ffi.DynamicLibrary _library;
   late final _ModelsDart _models;
+  _ModelsDart? _catalog;
   late final _InstallDart _install;
   late final _RemoveDart _remove;
   late final _MetadataDart _metadata;
@@ -94,7 +98,7 @@ final class DesktopTtsModelAdapter {
         return _readOwned(result);
       });
 
-  String modelsJson() => _readOwned(_models());
+  String modelsJson() => _readOwned((_catalog ?? _models)());
 
   String installedReadyEngine({
     required String language,

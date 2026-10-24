@@ -18,6 +18,8 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   Future<void>? _localPlaybackConversion;
   int _localConversionGeneration = 0;
   int? _requestedPlaybackChapterIndex;
+  ReaderListeningPosition? _readerListeningPosition;
+  int? _readerStartGeneration;
   final PlaybackFirstResourcePolicy _resourcePolicy =
       PlaybackFirstResourcePolicy();
   StreamSubscription<dynamic>? _platformVoiceSubscription;
@@ -59,14 +61,17 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
           .read(resumeStoreProvider)
           .loadBookPosition(widget.bookId)
           ?.chapter;
+      final readerPosition = ref.read(embeddedConverterProvider) is PositionedChapterConverter
+          ? _readerListeningPosition : null;
       await _startLocalConversion(
-        playbackChapterIndex:
+        readerPosition: readerPosition,
+        playbackChapterIndex: readerPosition?.chapterIndex ?? (
             _playableChapters.isEmpty || player.currentIndexValue == null
             ? savedChapter ?? 0
             : _sourceChapterIndexForPlayerIndex(
                 player,
                 player.currentIndexValue!,
-              ),
+              )),
       );
       return;
     }
@@ -205,16 +210,30 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     } catch (_) {}
   }
 
-  Future<void> _startLocalConversion({required int playbackChapterIndex}) {
-    _publishPlaybackWindow(playbackChapterIndex);
+  Future<void> _startLocalConversion({required int playbackChapterIndex,
+    ReaderListeningPosition? readerPosition}) async {
     final existing = _localPlaybackConversion;
-    if (existing != null) return existing;
+    if (existing != null && readerPosition == null) return existing;
+    if (existing != null) {
+      ++_localConversionGeneration;
+      await _activeConversionService?.cancel();
+      await existing;
+      if (!mounted) return;
+      _localPlaybackConversion = null;
+    }
+    _publishPlaybackWindow(playbackChapterIndex);
     final generation = ++_localConversionGeneration;
+    _readerStartGeneration = readerPosition == null ? null : generation;
+    if (readerPosition != null) {
+      _playableChapters.clear();
+      _resumeGuard = ResumeRestorationGuard();
+    }
     _playbackStartup.request(generation, playbackChapterIndex);
     final future =
         _runLocalPlaybackConversion(
           playbackChapterIndex: playbackChapterIndex,
           generation: generation,
+          readerPosition: readerPosition,
         ).whenComplete(() {
           if (generation == _localConversionGeneration) {
             _localPlaybackConversion = null;
@@ -235,7 +254,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
             generation,
             _playableChapters.map((chapter) => chapter.index).toList(),
             (queueIndex) async {
-              await _restoreResumePosition(player);
+              if (_readerStartGeneration != generation) await _restoreResumePosition(player);
               if (!_isCurrentConversion(generation) ||
                   !_playbackStartup.accepts(generation)) {
                 return;
@@ -286,6 +305,15 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       _publishPlaybackWindow(
         _sourceChapterIndexForPlayerIndex(player, playerIndex),
       );
+    });
+    _positionSub = player.position.listen((_) {
+      final index = player.currentIndexValue;
+      if (index == null || player.durationSeconds <= 0) return;
+      final chapter = _sourceChapterIndexForPlayerIndex(player, index);
+      if (!_playableChapters.any((entry) => entry.index == chapter && entry.status == 'completed')) return;
+      _activeConversionService?.playbackFeedback(chapterIndex: chapter,
+        remainingSeconds: (player.durationSeconds - player.positionSeconds).clamp(0, double.infinity),
+        playbackRate: player.speed);
     });
     _resumeSaveTimer?.cancel();
     _resumeSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -366,6 +394,8 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     _localConversionGeneration++;
     _localPlaybackConversion = null;
     _requestedPlaybackChapterIndex = null;
+    _readerListeningPosition = null;
+    _readerStartGeneration = null;
     _closePlaybackWindowChanges(recreate: true);
 
     _playableChapters.clear();
@@ -395,5 +425,6 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   }
 
 
-  Future<void> _runLocalPlaybackConversion({required int playbackChapterIndex, required int generation});
+  Future<void> _runLocalPlaybackConversion({required int playbackChapterIndex, required int generation,
+    ReaderListeningPosition? readerPosition});
 }

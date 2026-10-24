@@ -39,6 +39,8 @@ typedef _StringNative = ffi.Void Function(ffi.Pointer<Utf8>);
 typedef _StringDart = void Function(ffi.Pointer<Utf8>);
 typedef _LastErrorNative = ffi.Pointer<Utf8> Function();
 typedef _LastErrorDart = ffi.Pointer<Utf8> Function();
+typedef _OptionsValidateNative = ffi.Bool Function(ffi.Pointer<Utf8>);
+typedef _OptionsValidateDart = bool Function(ffi.Pointer<Utf8>);
 
 typedef _ControlCreateNative = ffi.Pointer<ffi.Void> Function();
 typedef _ControlCreateDart = ffi.Pointer<ffi.Void> Function();

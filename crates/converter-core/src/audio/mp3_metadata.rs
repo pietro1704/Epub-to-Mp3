@@ -17,6 +17,12 @@ pub struct ChapterMetadata {
     pub title: String,
     pub filename: String,
     pub text_chars: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub text_offset: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 pub fn write_metadata(

@@ -70,7 +70,17 @@ struct ConversionOptions: Codable, Sendable, Equatable {
     }
 
     /// Foundation-only encoding for both the adapter and native contract tests.
+    var requiresSessionABI: Bool {
+        ttsPreferences?.primary.session != nil || ttsPreferences?.secondary?.session != nil
+    }
+
     func encodedJSON() throws -> String {
-        String(decoding: try JSONEncoder().encode(self), as: UTF8.self)
+        let json = try JSONEncoder().encode(self)
+        guard requiresSessionABI else {
+            return String(decoding: json, as: UTF8.self)
+        }
+        var fields = try JSONSerialization.jsonObject(with: json) as? [String: Any] ?? [:]
+        fields["contract_version"] = 2
+        return String(decoding: try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]), as: UTF8.self)
     }
 }

@@ -1,6 +1,22 @@
 import Foundation
 
 enum LocalSpeechModelReadiness {
+    /// UI installation metadata is separate from Rust's inference/readiness checks.
+    static func isSelectionInstalled(_ selection: TtsSelection, modelsRoot: URL? = ttsModelsRoot(), fileManager: FileManager = .default) -> Bool {
+        guard let id = selection.modelID, let modelsRoot,
+              let catalog = try? ConverterFFIAdapter().ttsCatalog(),
+              let model = catalog.models.first(where: { $0.id == id }),
+              let expected = model.artifacts, !expected.isEmpty else { return false }
+        let directory = modelsRoot.appendingPathComponent(id, isDirectory: true)
+        guard let metadata = try? Data(contentsOf: directory.appendingPathComponent("metadata.json")),
+              let fields = try? JSONSerialization.jsonObject(with: metadata) as? [String: Any],
+              fields["id"] as? String == id,
+              let artifacts = fields["artifacts"] as? [[String: String]] else { return false }
+        return expected.allSatisfy { artifact in
+            artifacts.contains { $0["path"] == artifact.name && $0["sha256"] == artifact.sha256 }
+                && fileManager.fileExists(atPath: directory.appendingPathComponent(artifact.name).path)
+        }
+    }
     static func ttsModelsRoot(fileManager: FileManager = .default) -> URL? {
         try? fileManager.url(
             for: .applicationSupportDirectory,

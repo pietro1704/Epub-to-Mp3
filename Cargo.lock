@@ -681,6 +681,7 @@ dependencies = [
  "http",
  "id3",
  "image",
+ "js-sys",
  "misaki-rs",
  "percent-encoding",
  "quick-xml",

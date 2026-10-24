@@ -245,6 +245,7 @@ final class BookDetailScreenController: UIViewController {
                                 conversionOptions: ConversionOptions) async throws {
         playbackControl?.cancel()
         let control = try RustConversionCoordinator.makePlaybackControl()
+        control.trackPlayback(player)
         control.updatePlaybackWindow(currentChapter: chapterStart, chaptersAhead: 1)
         playbackControl = control
         playbackGeneration = jobID
@@ -257,7 +258,8 @@ final class BookDetailScreenController: UIViewController {
             engine: conversionOptions.engine, voice: conversionOptions.voice, language: conversionOptions.language,
             progressPercent: 0, chaptersTotal: nil, chaptersCompleted: 0,
             chapterProgress: [], outputs: nil, logUrl: nil, error: nil,
-            lastActivityAt: Date().timeIntervalSince1970
+            lastActivityAt: Date().timeIntervalSince1970,
+                    chapterIndexBase: 0
         )
         if player.positionSeconds > 1 {
             player.pause()
@@ -284,8 +286,7 @@ final class BookDetailScreenController: UIViewController {
                 { [weak self] event in
                     guard let self, self.playbackGeneration == jobID,
                           self.player.snapshot?.jobId == jobID else { return }
-                    let activeChapter = self.player.activeStreamingChapterIndex ?? chapterStart
-                    guard event.chapterIndex >= activeChapter, event.chapterIndex <= activeChapter + 1 else { return }
+                    guard control.contains(chapterIndex: event.chapterIndex) else { return }
                     let chapter = event.playableChapter
                     if let index = self.playbackChapters.firstIndex(where: { $0.index == chapter.index }) {
                         self.playbackChapters[index] = chapter
@@ -302,11 +303,9 @@ final class BookDetailScreenController: UIViewController {
                         data, chapterIndex: chapterIndex, chunkIndex: chunkIndex,
                         isCurrent: { [weak self] in
                             guard let self, let control = self.playbackControl else { return false }
-                            let activeChapter = self.player.activeStreamingChapterIndex ?? chapterStart
                             return self.playbackGeneration == jobID
                                 && self.player.snapshot?.jobId == jobID
                                 && control.contains(chapterIndex: chapterIndex)
-                                && chapterIndex >= activeChapter && chapterIndex <= activeChapter + 1
                         },
                         onAccepted: { [weak self] in
                             guard let self, self.playbackGeneration == jobID,
@@ -362,7 +361,8 @@ final class BookDetailScreenController: UIViewController {
             progressPercent: snapshot.progressPercent, chaptersTotal: snapshot.chaptersTotal,
             chaptersCompleted: snapshot.chaptersCompleted, chapterProgress: snapshot.chapterProgress,
             outputs: snapshot.outputs, logUrl: snapshot.logUrl, error: error,
-            lastActivityAt: Date().timeIntervalSince1970
+            lastActivityAt: Date().timeIntervalSince1970,
+                    chapterIndexBase: 0
         )
     }
 

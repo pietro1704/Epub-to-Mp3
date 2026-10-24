@@ -9,16 +9,19 @@ import 'package:ffi/ffi.dart';
 import '../models/ebook_fulltext.dart';
 import 'embedded_converter.dart';
 import 'growing_chapter_audio_source.dart';
+import 'listening_schedule.dart';
 import 'desktop_tts_model_adapter.dart';
 import '../models/tts_preferences.dart';
 
 part 'desktop_ffi_bindings.dart';
+part 'desktop_listening_schedule.dart';
+part 'desktop_positioned_chapter.dart';
 part 'desktop_conversion_worker.dart';
 part 'desktop_platform_speech.dart';
 
 /// Direct Linux/Windows adapter over converter-ffi; no HTTP or Python runtime.
 final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
-    implements CancellableEmbeddedConverter, StreamingChapterConverter {
+    implements CancellableEmbeddedConverter, StreamingChapterConverter, ListeningScheduleFactory, PositionedChapterConverter {
   DesktopEmbeddedConverter({ffi.DynamicLibrary? library, String? libraryPath})
     : _libraryPath = libraryPath ?? _resolveLibraryPath(),
       _workerLibraryAvailable = library == null || libraryPath != null,
@@ -66,6 +69,10 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
     if (Platform.isMacOS) return 'libconverter_ffi.dylib';
     return '$executableDirectory/lib/libconverter_ffi.so';
   }
+
+  @override
+  ListeningSchedule createListeningSchedule(int initialChapterIndex) =>
+      DesktopListeningSchedule(_library, initialChapterIndex);
 
   @override
   Future<String> ttsModels() async => _models.modelsJson();
@@ -124,6 +131,7 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
     int end,
     String? options, {
     Future<void> Function(Map<String, dynamic>)? onChunk,
+    int? textOffset,
   }) async {
     _requireWorkerLibrary();
     if (_controls.containsKey(output)) {
@@ -142,6 +150,18 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
         )();
     if (control == ffi.nullptr) {
       throw EmbeddedConversionFailure('CONTROL_UNAVAILABLE', _error());
+    }
+    if (textOffset != null) {
+      try {
+        using((arena) {
+          final setPosition = _library.lookupFunction<_ControlJsonNative, _ControlJsonDart>(
+            'converter_job_control_set_listening_position_json_v2');
+          if (!setPosition(control, jsonEncode({'version':2, 'chapter_index':start,
+            'text_offset':textOffset}).toNativeUtf8(allocator:arena))) {
+            throw StateError('Rust rejected the requested source text range');
+          }
+        });
+      } catch (_) { freeControl(control); rethrow; }
     }
     _controls[output] = control.address;
     final request = DesktopConversionRequest(
@@ -276,7 +296,7 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
     return _withSession(inputPath, (session) {
       final raw = _readString(_metadata(session));
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      if (jobId.isNotEmpty) decoded['jobId'] = jobId;
+      decoded['jobId'] = jobId;
       return EbookFulltext.fromJson(decoded);
     });
   }
@@ -302,6 +322,13 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
     }
     return raw;
   }
+
+  @override
+  Future<ConvertedChapterAudio> convertPositionedChapter({required String inputPath,
+    required String outputPath, required int chapterIndex, required int textOffset,
+    String? optionsJson, Future<void> Function(GrowingChapterAudioSource)? onFirstAudio}) =>
+      _positionedChapter(inputPath: inputPath, outputPath: outputPath, chapterIndex: chapterIndex,
+        textOffset: textOffset, optionsJson: optionsJson, onFirstAudio: onFirstAudio);
 
   @override
   Future<ConvertedChapterAudio> streamChapter({

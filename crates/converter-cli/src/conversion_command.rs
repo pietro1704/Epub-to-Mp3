@@ -23,6 +23,10 @@ pub(super) fn run_cli_command(raw: Vec<String>) -> Result<i32, String> {
     }
     let normalized = normalize_cli_args(&raw);
     let mut options = parse_args(&normalized)?;
+    if options.help {
+        print_help();
+        return Ok(0);
+    }
     let resolved = resolve_inputs(&options.inputs)?;
     options.inputs = resolved;
 

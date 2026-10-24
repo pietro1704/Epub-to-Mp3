@@ -1,5 +1,5 @@
 //! Request-scoped model identity, readiness and atomic synthesis preparation.
-use super::piper_runtime_registry::{registered_runtime, runtime_slot, MODEL_TRANSACTION};
+use super::piper_runtime_registry::{registered_runtime, MODEL_TRANSACTION};
 use super::piper_wav_validation::{publish_piper_audio, validate_wav};
 use super::{select_model, CancellationToken, PiperConfig, PiperError, PiperRuntime};
 use std::fs;
@@ -26,6 +26,7 @@ impl PreparedPiperModel {
         config_path: &Path,
         runtime: Arc<dyn PiperRuntime>,
     ) -> Result<Self, PiperError> {
+        super::validate_model_quality(model_id).map_err(PiperError::Synthesis)?;
         use std::path::Component;
         let relative = |path: &Path| {
             !path.as_os_str().is_empty()
@@ -155,7 +156,7 @@ fn validate_model_files(model: &Path, config: &Path) -> Result<(), PiperError> {
         .map_err(|error| PiperError::Io(format!("model is unreadable: {error}")))?;
     fs::File::open(config)
         .map_err(|error| PiperError::Io(format!("model config is unreadable: {error}")))?;
-    Ok(())
+    super::validate_model_file_quality(model, config)
 }
 
 /// Synthesize WAV audio, encoding MP3 when the destination has an MP3 extension.
@@ -168,28 +169,37 @@ pub fn synthesize(
     if cancel.is_cancelled() {
         return Err(PiperError::Cancelled);
     }
-    let model = select_model(config, None)?;
+    select_model(config, None)?;
     if text.trim().is_empty() {
         return Err(PiperError::EmptyOutput);
     }
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|e| PiperError::Io(e.to_string()))?;
     }
-    if runtime_slot()
-        .read()
-        .expect("Piper runtime lock poisoned")
-        .is_none()
-    {
-        return Err(PiperError::RuntimeUnavailable(
-            "embedded Piper runtime is not registered".into(),
-        ));
+    let runtime = registered_runtime()
+        .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
+    synthesize_with_runtime(config, text, output, cancel, runtime)
+}
+
+/// A prepared session pins the adapter rather than consulting mutable registration.
+pub fn synthesize_with_runtime(
+    config: &PiperConfig,
+    text: &str,
+    output: &Path,
+    cancel: &CancellationToken,
+    runtime: Arc<dyn PiperRuntime>,
+) -> Result<PathBuf, PiperError> {
+    if cancel.is_cancelled() {
+        return Err(PiperError::Cancelled);
+    }
+    let model = select_model(config, None)?;
+    if text.trim().is_empty() {
+        return Err(PiperError::EmptyOutput);
     }
     let _transaction = MODEL_TRANSACTION
         .lock()
         .map_err(|_| PiperError::Synthesis("Piper runtime lock poisoned".into()))?;
     validate_model_files(&model, &config.config)?;
-    let runtime = registered_runtime()
-        .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
     runtime.init(&model, &config.config)?;
     let parent = output
         .parent()

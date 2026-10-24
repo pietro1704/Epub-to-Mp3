@@ -106,8 +106,18 @@ pub fn configure_piper_data_directory(path: &Path) -> Result<(), String> {
 #[cfg(feature = "piper-runtime")]
 struct EmbeddedPiperRuntime;
 
+#[cfg(all(test, feature = "piper-runtime"))]
+#[test]
+fn embedded_piper_honors_catalog_model_path_contract() {
+    use converter_core::piper::PiperRuntime;
+    assert!(EmbeddedPiperRuntime.supports_explicit_model_paths());
+}
+
 #[cfg(feature = "piper-runtime")]
 impl converter_core::piper::PiperRuntime for EmbeddedPiperRuntime {
+    fn supports_explicit_model_paths(&self) -> bool {
+        true
+    }
     fn status(&self) -> converter_core::piper::PiperRuntimeStatus {
         let native = piper_runtime::piper_runtime_status();
         converter_core::piper::PiperRuntimeStatus {

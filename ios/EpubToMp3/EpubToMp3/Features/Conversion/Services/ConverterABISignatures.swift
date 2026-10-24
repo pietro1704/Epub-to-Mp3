@@ -23,6 +23,8 @@ typealias ConverterJobControlCancel = @convention(c) (UnsafeRawPointer?) -> Void
 typealias ConverterJobControlPrioritize = @convention(c) (UnsafeRawPointer?, Int) -> Bool
 typealias ConverterJobControlWindow = @convention(c) (UnsafeRawPointer?, Int, Int) -> Void
 typealias ConverterJobControlWindowContains = @convention(c) (UnsafeRawPointer?, Int) -> Bool
+typealias ConverterJobControlJSON = @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>?) -> Bool
+typealias ConverterJobControlGeneration = @convention(c) (UnsafeRawPointer?) -> UInt64
 typealias ConverterSessionConvertJob = @convention(c) (
     UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
     ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?

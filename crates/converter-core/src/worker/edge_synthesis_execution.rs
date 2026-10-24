@@ -23,6 +23,7 @@ where
     result
 }
 
+#[cfg(test)]
 pub(super) fn run_preference_edge_synthesis<T, F>(
     synthesis: F,
     cancel: &CancellationToken,

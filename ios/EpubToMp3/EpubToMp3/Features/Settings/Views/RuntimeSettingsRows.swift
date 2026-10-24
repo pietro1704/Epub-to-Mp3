@@ -8,9 +8,9 @@ enum RuntimeSettingsRows {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.audioEngineChoice")
-                content.secondaryText = settings.audioEngine.displayName
+                content.secondaryText = settings.primaryNarrationDisplayName
                 cell.accessibilityIdentifier = "settings.tts.primary"
-                cell.accessibilityValue = settings.audioEngine.displayName
+                cell.accessibilityValue = settings.primaryNarrationDisplayName
                 content.image = UIImage(systemName: "waveform")
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
@@ -35,7 +35,7 @@ enum RuntimeSettingsRows {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.secondaryVoice")
-                content.secondaryText = settings.secondaryAudioEngine?.displayName ?? L10n.string("settings.noSecondary")
+                content.secondaryText = settings.secondaryNarrationDisplayName
                 cell.accessibilityIdentifier = "settings.tts.secondary"
                 cell.accessibilityValue = content.secondaryText
                 cell.contentConfiguration = content
@@ -57,7 +57,7 @@ enum RuntimeSettingsRows {
             let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
             var content = cell.defaultContentConfiguration()
             content.text = L10n.string("settings.piperInstall")
-            content.secondaryText = LocalSpeechModelReadiness.isFaberInstalled() ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperNotInstalled")
+            content.secondaryText = LocalSpeechModelReadiness.isSelectionInstalled(settings.ttsPreferences.primary) ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperNotInstalled")
             content.image = UIImage(systemName: "arrow.down.circle")
             cell.contentConfiguration = content
             cell.accessoryType = .disclosureIndicator

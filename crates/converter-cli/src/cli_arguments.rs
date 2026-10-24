@@ -81,6 +81,7 @@ pub(super) fn parse_args(args: &[String]) -> Result<CliOptions, String> {
             "--no-parallel" => options.no_parallel = true,
             "--yes" | "-y" => options.yes = true,
             "--menu" => options.menu = true,
+            "--help" | "-h" => options.help = true,
             option if option.starts_with('-') => {
                 return Err(format!("unknown option '{option}'"));
             }
@@ -92,10 +93,11 @@ pub(super) fn parse_args(args: &[String]) -> Result<CliOptions, String> {
         return Err("--tts-preferences-json cannot be mixed with other TTS options".into());
     }
     options.inputs = positional;
-    if !matches!(
-        options.engine.as_str(),
-        "auto" | "edge" | "piper" | "system"
-    ) {
+    if options.engine != "auto"
+        && !converter_core::tts_session::builtin_descriptors()
+            .iter()
+            .any(|descriptor| descriptor.provider == options.engine)
+    {
         return Err(format!(
             "invalid engine '{}'; expected auto, edge, piper, or system",
             options.engine

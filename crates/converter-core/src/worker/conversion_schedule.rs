@@ -19,10 +19,21 @@ impl ConversionWorker {
         &self,
         request: &ConversionRequest,
     ) -> Result<OutputManifest, WorkerError> {
-        if request
-            .engine
-            .as_deref()
-            .is_some_and(|e| !matches!(e, "auto" | "piper" | "edge" | "system"))
+        if self
+            .control
+            .as_ref()
+            .is_some_and(|control| control.listening_plan().is_some())
+            && request.tts_preferences.is_none()
+        {
+            return Err(WorkerError::Unsupported(
+                "Versioned listening requires captured TTS preferences".into(),
+            ));
+        }
+        if request.tts_preferences.is_none()
+            && request
+                .engine
+                .as_deref()
+                .is_some_and(|e| !matches!(e, "auto" | "piper" | "edge" | "system"))
         {
             return Err(WorkerError::Piper("Unsupported conversion engine".into()));
         }
@@ -191,7 +202,10 @@ impl ConversionWorker {
             .iter()
             .map(|(_, _, _, metadata)| metadata.clone())
             .collect();
-        let output_text_chars: usize = manifest.iter().map(|chapter| chapter.text_chars).sum();
+        let output_text_chars: usize = manifest
+            .iter()
+            .map(|chapter| chapter.text_chars + chapter.text_offset)
+            .sum();
         if output_text_chars != source_text_chars {
             return Err(WorkerError::Piper(format!(
                 "text coverage mismatch: source={source_text_chars}, output={output_text_chars}"
@@ -235,12 +249,18 @@ impl ConversionWorker {
         audio::create_archive(&archive, &archive_files)?;
         let output_name = archive.file_name().unwrap().to_string_lossy().to_string();
         let mut used_selections = Vec::new();
+        let mut synthesis_sessions = Vec::new();
         let mut fallback_used = false;
         for (path, _) in &files {
             if let Ok(receipt) =
                 cache::read_json::<ChapterAudioReceipt>(chapter_audio_receipt_path(path))
             {
                 fallback_used |= receipt.fallback_used;
+                for identity in receipt.synthesis_sessions {
+                    if !synthesis_sessions.contains(&identity) {
+                        synthesis_sessions.push(identity);
+                    }
+                }
                 for selection in receipt.used_selections {
                     if !used_selections.contains(&selection) {
                         used_selections.push(selection);
@@ -257,6 +277,7 @@ impl ConversionWorker {
             source_chapters_total: Some(source_chapters_total),
             tts_preferences: request.tts_preferences.clone(),
             used_selections,
+            synthesis_sessions,
             fallback_used,
             // Typed jobs must publish zero explicitly so persisted clients clear
             // an earlier failure counter. Only historical metadata is absent.

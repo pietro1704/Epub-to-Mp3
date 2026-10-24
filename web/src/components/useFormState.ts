@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n, useTranslations } from '../i18n/I18nProvider';
-import { EngineOption, FootnoteMode } from '../types/conversion';
+import { EngineOption, FootnoteMode, type TtsSelection } from '../types/conversion';
 import {
   loadTtsPreferences,
   saveTtsPreferences,
@@ -9,7 +9,7 @@ import {
   edge,
 } from '../services/TtsPreferences';
 import {
-  installBrowserFaber,
+  installBrowserModel,
   installedBrowserVoices,
   browserVoiceId,
 } from '../services/BrowserConversionClient';
@@ -21,6 +21,7 @@ export function useFormState() {
   const { locale } = useI18n();
 
   const [preferences, setPreferences] = useState(loadTtsPreferences);
+  const selectedModel = useRef(preferences.primary.model_id ?? browserVoiceId);
 
   const [usePreferences, setUsePreferences] = useState(true);
 
@@ -38,25 +39,6 @@ export function useFormState() {
     saveTtsPreferences({ ...next, policy_version: 2 });
     setPreferences({ ...next, policy_version: 2 });
   };
-
-  const installModel = async () => {
-    setModelStatus('installing');
-    try {
-      await installBrowserFaber();
-      setModelStatus('installed');
-    } catch (error) {
-      setModelError(String(error));
-      setModelStatus('error');
-    }
-  };
-
-  useEffect(() => {
-    void installedBrowserVoices()
-      .then((voices) => {
-        if (voices.includes(browserVoiceId)) setModelStatus('installed');
-      })
-      .catch(() => undefined);
-  }, []);
 
   const unavailableVoiceLabel = labels.unavailable;
 
@@ -76,10 +58,42 @@ export function useFormState() {
 
   const [voice, setVoice] = useState(initialMeta.defaultVoice);
 
+  const [catalogSelection, setCatalogSelection] = useState<TtsSelection | null>(null);
   const manualSelection =
-    engine === 'piper' ? { ...faber } : { ...edge, voice: voice || edge.voice };
+    catalogSelection ??
+    (engine === 'piper' ? { ...faber } : { ...edge, voice: voice || edge.voice });
 
   const manualSecondary = effectiveTtsPreferences(preferences, manualSelection, true).secondary;
+
+  const effectiveModelId =
+    (usePreferences ? preferences.primary : manualSelection).model_id ?? browserVoiceId;
+  const installModel = async () => {
+    const modelId = selectedModel.current;
+    setModelStatus('installing');
+    try {
+      await installBrowserModel(modelId);
+      if (selectedModel.current === modelId) setModelStatus('installed');
+    } catch (error) {
+      if (selectedModel.current === modelId) {
+        setModelError(String(error));
+        setModelStatus('error');
+      }
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    const modelId = effectiveModelId;
+    selectedModel.current = modelId;
+    void installedBrowserVoices()
+      .then((voices) => {
+        if (active) setModelStatus(voices.includes(modelId) ? 'installed' : 'idle');
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [effectiveModelId]);
 
   const [model, setModel] = useState('');
 
@@ -254,6 +268,7 @@ export function useFormState() {
     preferences,
     usePreferences,
     manualSelection,
+    setCatalogSelection,
     useSecondary,
     model,
     chapters,

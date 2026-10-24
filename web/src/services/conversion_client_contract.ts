@@ -42,6 +42,13 @@ export type FullTextResult =
   | { kind: 'network-error' };
 
 export interface ConversionClient {
+  listenFrom?(jobId: string, chapterIndex: number, textOffset?: number): Promise<void>;
+  playbackFeedback?(
+    jobId: string,
+    chapterIndex: number,
+    remainingAudioSeconds: number,
+    playbackRate: number,
+  ): Promise<void>;
   readonly mode?: 'embedded' | 'http';
   submit(request: ConversionFormValues): Promise<{ jobId: string }>;
   fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot>;

@@ -20,11 +20,13 @@ class LocalConversionChapter {
     this.updatedAt,
     this.usedSelections = const [],
     this.fallbackUsed = false,
+    this.textOffset = 0,
   });
 
   final List<TtsSelection> usedSelections;
   final bool fallbackUsed;
   final int index;
+  final int textOffset;
   final String name;
   final String status;
   final String? outputPath;
@@ -34,6 +36,7 @@ class LocalConversionChapter {
   LocalConversionChapter copyWith({
     List<TtsSelection>? usedSelections,
     bool? fallbackUsed,
+    int? textOffset,
     String? status,
     String? outputPath,
     String? error,
@@ -42,6 +45,7 @@ class LocalConversionChapter {
   }) => LocalConversionChapter(
     usedSelections: usedSelections ?? this.usedSelections,
     fallbackUsed: fallbackUsed ?? this.fallbackUsed,
+    textOffset: textOffset ?? this.textOffset,
     index: index,
     name: name,
     status: status ?? this.status,
@@ -52,6 +56,7 @@ class LocalConversionChapter {
 
   Map<String, dynamic> toJson() => {
     'index': index,
+    'textOffset': textOffset,
     'name': name,
     'usedSelections': usedSelections
         .map((selection) => selection.toJson())
@@ -74,6 +79,7 @@ class LocalConversionChapter {
             .toList(),
         fallbackUsed: json['fallbackUsed'] == true,
         index: json['index'] as int,
+        textOffset: json['textOffset'] as int? ?? 0,
         name: json['name'] as String? ?? '',
         status: json['status'] as String? ?? 'pending',
         outputPath: json['outputPath'] as String?,
@@ -135,6 +141,12 @@ class LocalConversionJob {
   final List<String> completedOutputs;
   final String? error;
   final DateTime? lastActivityAt;
+
+  bool coversFullSource(Iterable<int> sourceIndices) {
+    final expected = sourceIndices.toSet();
+    return status == LocalConversionJobStatus.completed && chapters.length == expected.length &&
+      chapters.every((chapter) => expected.remove(chapter.index) && chapter.status == 'completed' && chapter.textOffset == 0) && expected.isEmpty;
+  }
 
   LocalConversionJob copyWith({
     String? conversionOptionsJson,

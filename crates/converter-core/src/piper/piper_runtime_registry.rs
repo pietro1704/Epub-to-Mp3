@@ -72,6 +72,7 @@ pub fn piper_runtime_status() -> PiperRuntimeStatus {
 }
 
 pub fn piper_runtime_init(model: &Path, config: &Path) -> Result<(), PiperError> {
+    super::validate_model_file_quality(model, config)?;
     let _transaction = MODEL_TRANSACTION
         .lock()
         .map_err(|_| PiperError::Synthesis("Piper runtime lock poisoned".into()))?;
