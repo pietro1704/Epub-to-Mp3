@@ -16,5 +16,33 @@ final class BundledConverterFFISmokeTests: XCTestCase {
         let catalog = try adapter.ttsModels()
         XCTAssertFalse(catalog.isEmpty)
         _ = try JSONSerialization.jsonObject(with: catalog)
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("speech-model-catalog-v3-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = SpeechModelLibraryTarget(
+            language: "pt-BR",
+            platform: {
+                #if os(iOS)
+                "ios"
+                #else
+                "macos"
+                #endif
+            }(),
+            androidAPI: 0,
+            architecture: "test",
+            osVersion: "test",
+            modelsRoot: root
+        )
+        let snapshot = try adapter.speechModelSnapshot(target: target)
+        XCTAssertEqual(snapshot.schemaVersion, 3)
+        let faber = try XCTUnwrap(snapshot.entries.first {
+            $0.identity.modelID == "pt_BR-faber-medium"
+        })
+        XCTAssertEqual(faber.presentation.modelName, "Faber")
+        XCTAssertEqual(faber.installation.state, .missing)
+        XCTAssertFalse(snapshot.entries.contains {
+            $0.identity.modelID == "piper-default" && $0.distribution.installable
+        })
     }
 }

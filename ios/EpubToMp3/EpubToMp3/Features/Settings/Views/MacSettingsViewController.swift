@@ -7,7 +7,9 @@ final class MacSettingsViewController: NSViewController {
     private let settings: AppSettings
     private let library: LibraryStore
     private let clearDownloadsOperation: () async throws -> Void
-    private let installPiperModelOperation: @Sendable (String, String) throws -> URL
+    private let speechModels: SpeechModelLibraryClient
+    private var speechModelState: SpeechModelLibraryViewState
+    private var speechModelsTask: Task<Void, Never>?
     private var isClearingDownloads = false
     private let fontSizeStepper = NSStepper()
     private let fontSizeLabel = NSTextField(labelWithString: "")
@@ -19,6 +21,7 @@ final class MacSettingsViewController: NSViewController {
     private let secondaryEnginePopup = NSPopUpButton()
     private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let piperInstallButton = NSButton()
+    private let piperModelLabel = NSTextField(wrappingLabelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
     private let storageLabel = NSTextField(labelWithString: "")
     private let diagnosticsButton = NSButton()
@@ -31,12 +34,11 @@ final class MacSettingsViewController: NSViewController {
          diagnosticsSession: StreamingDiagnosticsSession? = nil,
          confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
          clearDownloadsOperation: (() async throws -> Void)? = nil,
-         installPiperModelOperation: @escaping @Sendable (String, String) throws -> URL = { modelID, root in
-             try ConverterFFIAdapter().installTtsModelFromCatalog(modelID: modelID, root: root)
-         }) {
+         speechModels: SpeechModelLibraryClient = SpeechModelLibraryClient()) {
         self.settings = settings
         self.library = library
-        self.installPiperModelOperation = installPiperModelOperation
+        self.speechModels = speechModels
+        self.speechModelState = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
         self.clearDownloadsOperation = clearDownloadsOperation ?? {
             try await AudioStorageMaintenance().clearAllDownloads()
         }
@@ -61,6 +63,7 @@ final class MacSettingsViewController: NSViewController {
         configureControls()
         refresh()
         refreshStreamingDiagnostics()
+        reloadSpeechModels()
     }
 
     override func viewWillAppear() {
@@ -74,7 +77,10 @@ final class MacSettingsViewController: NSViewController {
         diagnosticsExpiryTask = nil
     }
 
-    deinit { diagnosticsExpiryTask?.cancel() }
+    deinit {
+        diagnosticsExpiryTask?.cancel()
+        speechModelsTask?.cancel()
+    }
 
     private func configureControls() {
         fontSizeStepper.minValue = 0
@@ -91,20 +97,8 @@ final class MacSettingsViewController: NSViewController {
         layoutPopup.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
         layoutPopup.target = self
         layoutPopup.action = #selector(layoutChanged(_:))
-        narrationSelections = AudioEnginePreference.supportedPreferences.map { .selected($0) }
-        for selection in (try? ConverterFFIAdapter().ttsCatalog().selections(platform: "Macos")) ?? [] {
-            if !narrationSelections.contains(selection) { narrationSelections.append(selection) }
-        }
-        for selection in [settings.primaryTtsSelection, settings.secondaryTtsSelection].compactMap({ $0 }) {
-            if !narrationSelections.contains(selection) { narrationSelections.append(selection) }
-        }
-        let narrationTitles = narrationSelections.map { selection in
-            selection.session == nil ? AudioEnginePreference(rawValue: selection.engine)?.displayName ?? selection.engine : selection.modelID ?? selection.engine
-        }
-        audioEnginePopup.addItems(withTitles: narrationTitles)
         audioEnginePopup.target = self
         audioEnginePopup.action = #selector(audioEngineChanged(_:))
-        secondaryEnginePopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + narrationTitles)
         secondaryEnginePopup.menu?.autoenablesItems = false
         secondaryEnginePopup.target = self
         secondaryEnginePopup.action = #selector(secondaryEngineChanged(_:))
@@ -140,7 +134,6 @@ final class MacSettingsViewController: NSViewController {
         themePopup.setAccessibilityLabel(L10n.string("settings.theme"))
         layoutPopup.setAccessibilityLabel(L10n.string("settings.layout"))
         audioEnginePopup.setAccessibilityLabel(L10n.string("settings.audioEngineChoice"))
-        piperInstallButton.setAccessibilityLabel(L10n.string("settings.piperInstall"))
         clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
         refreshButton.setAccessibilityLabel(L10n.string("settings.refreshStorage"))
         exportDiagnosticsButton.setAccessibilityLabel(L10n.string("settings.exportPerformanceDiagnostics"))
@@ -150,7 +143,7 @@ final class MacSettingsViewController: NSViewController {
             return [title, control]
         }
         let audioEngineRows: [[NSView]] = AudioEnginePreference.supportedPreferences.contains(.piper)
-            ? [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup), row("Faber medium", piperInstallButton), row(L10n.string("settings.secondaryVoice"), secondaryEnginePopup), row(L10n.string("settings.onlineFallbackDescription"), onlineFallbackButton)]
+            ? [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup), [piperModelLabel, piperInstallButton], row(L10n.string("settings.secondaryVoice"), secondaryEnginePopup), row(L10n.string("settings.onlineFallbackDescription"), onlineFallbackButton)]
             : [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup)]
         let sizeControl = NSStackView(views: [fontSizeStepper, fontSizeLabel])
         sizeControl.spacing = 8
@@ -178,23 +171,41 @@ final class MacSettingsViewController: NSViewController {
         grid.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
         diagnosticsLabel.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
         MacScrollableStack.install(form, in: view)
-
+        rebuildNarrationChoices()
     }
 
     private func refresh() {
         fontSizeStepper.integerValue = settings.readerFontSize
         fontSizeLabel.stringValue = L10n.string("settings.fontStep", settings.readerFontSize + 1, 5)
-        fontPopup.selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0)
-        themePopup.selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0)
-        layoutPopup.selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0)
-        audioEnginePopup.selectItem(at: narrationSelections.firstIndex(of: settings.ttsPreferences.primary) ?? 0)
-        secondaryEnginePopup.selectItem(at: settings.ttsPreferences.secondary.flatMap { narrationSelections.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+        selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0,
+                   in: fontPopup)
+        selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0,
+                   in: themePopup)
+        selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0,
+                   in: layoutPopup)
+        selectItem(at: narrationSelections.firstIndex(of: settings.ttsPreferences.primary) ?? 0,
+                   in: audioEnginePopup)
+        selectItem(at: settings.ttsPreferences.secondary
+            .flatMap { narrationSelections.firstIndex(of: $0) }.map { $0 + 1 } ?? 0,
+            in: secondaryEnginePopup)
         for (index, selection) in narrationSelections.enumerated() {
             secondaryEnginePopup.item(at: index + 1)?.isEnabled = !selection.representsSameRequest(as: settings.ttsPreferences.primary) && (selection.engine != "edge" || settings.allowOnlineAudioFallback)
         }
         onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
-        piperInstallButton.title = LocalSpeechModelReadiness.isSelectionInstalled(settings.ttsPreferences.primary) ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
-        piperInstallButton.isEnabled = settings.ttsPreferences.primary.modelID != nil
+        if let entry = speechModelState.defaultEntry {
+            piperModelLabel.stringValue = speechModelState.displayName(for: entry)
+            piperInstallButton.title = speechModelState.installTitle(for: entry)
+            piperInstallButton.toolTip = speechModelState.status(for: entry)
+            piperInstallButton.isEnabled = entry.distribution.installable
+                && entry.installation.state != .installed
+        } else {
+            piperModelLabel.stringValue = AudioEnginePreference.piper.displayName
+            piperInstallButton.title = L10n.string("settings.modelInstall", AudioEnginePreference.piper.displayName)
+            piperInstallButton.toolTip = L10n.string("settings.modelState.notInspected")
+            piperInstallButton.isEnabled = false
+        }
+        piperInstallButton.setAccessibilityLabel(piperInstallButton.title)
+        piperInstallButton.setAccessibilityValue(piperInstallButton.toolTip)
         statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes))
     }
@@ -250,21 +261,63 @@ final class MacSettingsViewController: NSViewController {
     }
 
     @objc private func installPiperModel() {
-        guard let root = LocalSpeechModelReadiness.ttsModelsRoot(), let modelID = settings.ttsPreferences.primary.modelID else { return }
-        let install = installPiperModelOperation
+        guard let entry = speechModelState.defaultEntry,
+              entry.distribution.installable,
+              entry.installation.state != .installed else { return }
+        let title = speechModelState.installTitle(for: entry)
         Task { [weak self] in
-            let result = await Task.detached {
-                Result { try install(modelID, root.path) }
-            }.value
             guard let self else { return }
-            if case .failure(let error) = result {
+            do {
+                _ = try await speechModels.install(modelID: entry.identity.modelID)
+                let snapshot = try await speechModels.snapshot()
+                speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                rebuildNarrationChoices()
+            } catch {
                 let alert = NSAlert()
-                alert.messageText = L10n.string("settings.piperInstall")
+                alert.messageText = title
                 alert.informativeText = AppErrorReporter.message(error, context: #function)
                 alert.addButton(withTitle: L10n.string("common.ok"))
                 alert.runModal()
             }
             self.refresh()
+        }
+    }
+
+    private func rebuildNarrationChoices() {
+        let catalogChoices = speechModelState.selectableChoices.map(\.selection)
+        narrationSelections = AudioEnginePreference.supportedPreferences.flatMap { engine -> [TtsSelection] in
+            let matching = catalogChoices.filter { $0.engine == engine.rawValue }
+            return matching.isEmpty ? [.selected(engine)] : matching
+        }
+        for selection in [settings.primaryTtsSelection, settings.secondaryTtsSelection].compactMap({ $0 })
+            where !narrationSelections.contains(selection) {
+            narrationSelections.append(selection)
+        }
+        let titles = narrationSelections.map(speechModelState.displayName(for:))
+        audioEnginePopup.removeAllItems()
+        audioEnginePopup.addItems(withTitles: titles)
+        secondaryEnginePopup.removeAllItems()
+        secondaryEnginePopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + titles)
+    }
+
+    private func selectItem(at index: Int, in popup: NSPopUpButton) {
+        guard index >= 0, index < popup.numberOfItems else { return }
+        popup.selectItem(at: index)
+    }
+
+    private func reloadSpeechModels() {
+        speechModelsTask?.cancel()
+        speechModelsTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let snapshot = try await speechModels.snapshot()
+                guard !Task.isCancelled else { return }
+                speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                rebuildNarrationChoices()
+                refresh()
+            } catch {
+                // Fail closed: keep existing selections and the last valid presentation.
+            }
         }
     }
 

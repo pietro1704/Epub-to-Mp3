@@ -7,6 +7,7 @@ struct ConverterModelCatalog {
     var lastError: ConverterLastError = { nil }
     var modelsJSON: ConverterTtsModels = { nil }
     var catalogJSON: ConverterTtsModels? = nil
+    var catalogJSONV3: ConverterTtsCatalogV3? = nil
     var defaultEngine: ConverterTtsDefaultEngine = { _, _, _ in nil }
     var selectInstalledReady: ConverterTtsInstalledReadyEngine?
     var installArtifact: ConverterTtsModelInstall?
@@ -24,6 +25,32 @@ struct ConverterModelCatalog {
             throw EmbeddedConverterError.artifactUnavailable
         }
         return try TtsCatalog.decode(Data(json.utf8))
+    }
+
+    func speechModelSnapshot(target: SpeechModelLibraryTarget) throws -> SpeechModelSnapshot {
+        guard available, let read = catalogJSONV3 else {
+            throw EmbeddedConverterError.artifactUnavailable
+        }
+        let result = target.language.withCString { languagePointer in
+            target.platform.withCString { platformPointer in
+                target.architecture.withCString { architecturePointer in
+                    target.osVersion.withCString { osVersionPointer in
+                        target.modelsRoot.path.withCString { rootPointer in
+                            read(languagePointer, platformPointer, target.androidAPI,
+                                 architecturePointer, osVersionPointer, rootPointer)
+                        }
+                    }
+                }
+            }
+        }
+        guard let value = result else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        defer { freeString(value) }
+        guard let json = String(validatingCString: value) else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        return try SpeechModelSnapshot.decode(Data(json.utf8))
     }
 
     func ttsModels() throws -> Data {

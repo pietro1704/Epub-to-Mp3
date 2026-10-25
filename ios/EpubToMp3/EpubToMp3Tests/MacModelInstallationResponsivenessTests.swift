@@ -62,9 +62,12 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         let original = settings.conversionOptions
         let installer = BlockingModelInstaller()
         defer { installer.release() }
+        let speechModels = try makeSpeechModels {
+            installer.install(modelID: $0, root: $1)
+        }
         let controller = MacSettingsViewController(
             settings: settings, library: LibraryStore(defaults: defaults),
-            installPiperModelOperation: { installer.install(modelID: $0, root: $1) }
+            speechModels: speechModels
         )
         _ = controller.view
         let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
@@ -91,13 +94,14 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         let installer = BlockingModelInstaller()
         defer { installer.release() }
         let message = "Owned fixture installation failed"
+        let speechModels = try makeSpeechModels { modelID, root in
+            _ = installer.install(modelID: modelID, root: root)
+            throw NSError(domain: "MacModelInstallationFixture", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: message])
+        }
         let controller = MacSettingsViewController(
             settings: settings, library: LibraryStore(defaults: defaults),
-            installPiperModelOperation: { modelID, root in
-                _ = installer.install(modelID: modelID, root: root)
-                throw NSError(domain: "MacModelInstallationFixture", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: message])
-            }
+            speechModels: speechModels
         )
         _ = controller.view
         let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
@@ -110,7 +114,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
                 let labels = modal.contentView.map { self.descendants($0) } ?? []
                 let text = labels.compactMap { $0 as? NSTextField }.map(\.stringValue)
                 XCTAssertTrue(text.contains(message), "The actual alert must retain the installer error")
-                XCTAssertTrue(text.contains(L10n.string("settings.piperInstall")))
+                XCTAssertTrue(text.contains { $0.contains("Faber") })
                 XCTAssertTrue(Thread.isMainThread)
                 presented.fulfill()
             }
@@ -130,6 +134,23 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
 
     private func descendants(_ view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap(descendants)
+    }
+
+    private func makeSpeechModels(
+        install: @escaping (String, String) throws -> URL
+    ) throws -> SpeechModelLibraryClient {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-model-install-\(UUID().uuidString)", isDirectory: true)
+        let target = SpeechModelLibraryTarget(
+            language: "pt-BR", platform: "macos", androidAPI: 0,
+            architecture: "x86_64", osVersion: "test", modelsRoot: root
+        )
+        let snapshot = try ConverterFFIAdapter().speechModelSnapshot(target: target)
+        return SpeechModelLibraryClient(
+            initialSnapshot: snapshot,
+            install: install,
+            target: target
+        )
     }
 }
 #endif

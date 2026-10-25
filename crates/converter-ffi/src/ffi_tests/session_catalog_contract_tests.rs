@@ -116,6 +116,80 @@ fn versioned_session_catalog_and_selection_reject_unknown_runtime_without_online
 }
 
 #[test]
+fn versioned_model_catalog_v3_projects_offline_state_and_preserves_v2() {
+    let root = tempfile::tempdir().unwrap();
+    let marker = root.path().join("preserved.txt");
+    std::fs::write(&marker, b"preserve").unwrap();
+    let language = CString::new("pt-BR").unwrap();
+    let platform = CString::new("macos").unwrap();
+    let architecture = CString::new("x86_64").unwrap();
+    let os_version = CString::new("15.5").unwrap();
+    let model_root = CString::new(root.path().to_str().unwrap()).unwrap();
+
+    unsafe {
+        let catalog = converter_tts_catalog_json_v3(
+            language.as_ptr(),
+            platform.as_ptr(),
+            0,
+            architecture.as_ptr(),
+            os_version.as_ptr(),
+            model_root.as_ptr(),
+        );
+        assert!(!catalog.is_null());
+        let value: serde_json::Value =
+            serde_json::from_str(CStr::from_ptr(catalog).to_str().unwrap()).unwrap();
+        converter_string_free(catalog);
+        assert_eq!(value["schema_version"], 3);
+        let entries = value["entries"].as_array().unwrap();
+        let faber = entries
+            .iter()
+            .find(|entry| entry["identity"]["model_id"] == "pt_BR-faber-medium")
+            .unwrap();
+        assert_eq!(faber["presentation"]["model_name"], "Faber");
+        assert_eq!(faber["installation"]["state"], "missing");
+        assert_eq!(faber["readiness"]["state"], "not_inspected");
+        let placeholder = entries
+            .iter()
+            .find(|entry| entry["identity"]["model_id"] == "piper-default")
+            .unwrap();
+        assert_eq!(placeholder["distribution"]["installable"], false);
+        assert_eq!(placeholder["selection"]["selectable"], false);
+
+        let legacy = converter_tts_catalog_json_v2();
+        let legacy_value: serde_json::Value =
+            serde_json::from_str(CStr::from_ptr(legacy).to_str().unwrap()).unwrap();
+        converter_string_free(legacy);
+        assert_eq!(legacy_value["version"], 2);
+    }
+    assert_eq!(std::fs::read(marker).unwrap(), b"preserve");
+}
+
+#[test]
+fn versioned_model_catalog_v3_rejects_invalid_target_before_inspection() {
+    let value = |text: &str| CString::new(text).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let model_root = CString::new(root.path().to_str().unwrap()).unwrap();
+
+    unsafe {
+        let catalog = converter_tts_catalog_json_v3(
+            value("pt-BR").as_ptr(),
+            value("unsupported").as_ptr(),
+            0,
+            value("x86_64").as_ptr(),
+            value("15.5").as_ptr(),
+            model_root.as_ptr(),
+        );
+        assert!(catalog.is_null());
+        let error = converter_last_error();
+        assert!(CStr::from_ptr(error)
+            .to_str()
+            .unwrap()
+            .contains("unsupported platform"));
+        converter_string_free(error);
+    }
+}
+
+#[test]
 fn ready_model_selection_requires_runtime_verified_ids() {
     let language = CString::new("en-US").unwrap();
     let platform = CString::new("macos").unwrap();
