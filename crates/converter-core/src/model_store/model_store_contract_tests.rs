@@ -228,3 +228,135 @@ fn rejects_unknown_catalog_model() {
         Err(ModelStoreError::UnknownModel(_))
     ));
 }
+
+fn inspection_manifest() -> (ModelManifest, Vec<(&'static str, &'static [u8])>) {
+    let artifacts = vec![
+        ("model.onnx", b"verified model bytes".as_slice()),
+        (
+            "model.onnx.json",
+            b"{\"audio\":{\"sample_rate\":22050}}".as_slice(),
+        ),
+    ];
+    let manifest = ModelManifest {
+        model_id: "inspection-fixture".into(),
+        revision: Some("current-revision".into()),
+        artifacts: artifacts
+            .iter()
+            .map(|(name, bytes)| ModelArtifact {
+                name: (*name).into(),
+                // Inspection is deliberately offline and must never use this URL.
+                url: format!("https://127.0.0.1:1/{name}"),
+                sha256: hex::encode(Sha256::digest(bytes)),
+            })
+            .collect(),
+    };
+    (manifest, artifacts)
+}
+
+fn write_inspection_metadata(
+    directory: &std::path::Path,
+    manifest: &ModelManifest,
+    revision: &str,
+) {
+    let metadata = serde_json::json!({
+        "id": manifest.model_id,
+        "revision": revision,
+        "artifacts": manifest.artifacts.iter().map(|artifact| serde_json::json!({
+            "path": artifact.name,
+            "sha256": artifact.sha256,
+        })).collect::<Vec<_>>(),
+    });
+    std::fs::write(directory.join("metadata.json"), metadata.to_string()).unwrap();
+}
+
+#[test]
+fn inspection_distinguishes_missing_corrupted_stale_and_verified_without_network() {
+    let root = tempfile::tempdir().unwrap();
+    let store = ModelStore::new(root.path());
+    let (manifest, artifacts) = inspection_manifest();
+
+    assert_eq!(
+        store.inspect_manifest(&manifest).unwrap().state,
+        InstalledModelState::Missing
+    );
+    assert!(!store.is_manifest_installed(&manifest).unwrap());
+
+    let directory = root.path().join(&manifest.model_id);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join(artifacts[0].0), artifacts[0].1).unwrap();
+    assert_eq!(
+        store.inspect_manifest(&manifest).unwrap().state,
+        InstalledModelState::Missing
+    );
+    assert!(!store.is_manifest_installed(&manifest).unwrap());
+
+    std::fs::write(directory.join(artifacts[1].0), b"corrupted config").unwrap();
+    write_inspection_metadata(&directory, &manifest, "current-revision");
+    assert_eq!(
+        store.inspect_manifest(&manifest).unwrap().state,
+        InstalledModelState::Corrupted
+    );
+    assert!(!store.is_manifest_installed(&manifest).unwrap());
+
+    let previous_config = b"{\"audio\":{\"sample_rate\":16000}}";
+    std::fs::write(directory.join(artifacts[1].0), previous_config).unwrap();
+    let stale_metadata = serde_json::json!({
+        "id": manifest.model_id,
+        "revision": "previous-revision",
+        "artifacts": [
+            {
+                "path": manifest.artifacts[0].name,
+                "sha256": manifest.artifacts[0].sha256,
+            },
+            {
+                "path": manifest.artifacts[1].name,
+                "sha256": hex::encode(Sha256::digest(previous_config)),
+            },
+        ],
+    });
+    std::fs::write(directory.join("metadata.json"), stale_metadata.to_string()).unwrap();
+    let stale = store.inspect_manifest(&manifest).unwrap();
+    assert_eq!(stale.state, InstalledModelState::StaleRevision);
+    assert_eq!(
+        stale.verified_revision.as_deref(),
+        Some("previous-revision")
+    );
+    assert_eq!(
+        stale.installed_bytes,
+        Some(artifacts[0].1.len() as u64 + previous_config.len() as u64)
+    );
+    assert!(!store.is_manifest_installed(&manifest).unwrap());
+
+    std::fs::write(directory.join(artifacts[1].0), artifacts[1].1).unwrap();
+    write_inspection_metadata(&directory, &manifest, "current-revision");
+    let verified = store.inspect_manifest(&manifest).unwrap();
+    assert_eq!(verified.state, InstalledModelState::Verified);
+    assert_eq!(
+        verified.verified_revision.as_deref(),
+        manifest.revision.as_deref()
+    );
+    assert_eq!(
+        verified.installed_bytes,
+        Some(artifacts.iter().map(|(_, bytes)| bytes.len() as u64).sum())
+    );
+    assert!(store.is_manifest_installed(&manifest).unwrap());
+}
+
+#[test]
+fn inspection_treats_an_invalid_receipt_as_corrupted_without_exposing_paths() {
+    let root = tempfile::tempdir().unwrap();
+    let store = ModelStore::new(root.path());
+    let (manifest, artifacts) = inspection_manifest();
+    let directory = root.path().join(&manifest.model_id);
+    std::fs::create_dir_all(&directory).unwrap();
+    for (name, bytes) in artifacts {
+        std::fs::write(directory.join(name), bytes).unwrap();
+    }
+    std::fs::write(directory.join("metadata.json"), "not-json").unwrap();
+
+    let inspection = store.inspect_manifest(&manifest).unwrap();
+    assert_eq!(inspection.state, InstalledModelState::Corrupted);
+    assert_eq!(inspection.verified_revision, None);
+    assert_eq!(inspection.installed_bytes, None);
+    assert!(store.is_manifest_installed(&manifest).unwrap());
+}

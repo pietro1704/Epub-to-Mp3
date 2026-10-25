@@ -1,7 +1,9 @@
 //! Verified, atomic storage for downloadable TTS models.
 #[cfg(feature = "kokoro-sherpa-runtime")]
 mod model_archive_installation;
+mod model_inspection;
 mod model_installation;
+pub use model_inspection::{InstalledModelInspection, InstalledModelState};
 pub use model_installation::ModelStore;
 
 #[cfg(test)]
@@ -39,6 +41,8 @@ pub enum ModelStoreError {
     ChecksumMismatch { expected: String, actual: String },
     #[error("invalid model artifact name: {0}")]
     InvalidArtifactName(String),
+    #[error("invalid model id: {0}")]
+    InvalidModelId(String),
     #[error("model manifest is empty")]
     EmptyManifest,
     #[error("unknown TTS model: {0}")]

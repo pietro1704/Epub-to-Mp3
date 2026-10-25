@@ -1,6 +1,10 @@
 use converter_core::{
     model_catalog::ModelPlatform,
-    speech_model_library::{CatalogQuery, SpeechModelLibrary},
+    model_store::ModelStore,
+    speech_model_library::{
+        CatalogQuery, InstallationState, ReadinessFailure, ReadinessState,
+        RuntimeReadinessObservation, RuntimeReadinessOutcome, SelectionReason, SpeechModelLibrary,
+    },
 };
 
 fn portuguese_macos_query() -> CatalogQuery {
@@ -216,4 +220,51 @@ fn model_catalog_v3_reports_target_compatibility_reasons() {
         .as_array()
         .unwrap()
         .contains(&serde_json::json!("android_api_too_low")));
+}
+
+#[test]
+fn model_catalog_v3_projects_offline_installation_and_runtime_states_without_private_paths() {
+    let root = tempfile::tempdir().unwrap();
+    let library = SpeechModelLibrary;
+    let catalog_only = library.snapshot(portuguese_macos_query()).unwrap();
+    let faber_identity = catalog_only
+        .entries
+        .iter()
+        .find(|entry| entry.identity.model_id == "pt_BR-faber-medium")
+        .unwrap()
+        .identity
+        .clone();
+    let snapshot = library
+        .snapshot_with_inspection(
+            portuguese_macos_query(),
+            &ModelStore::new(root.path()),
+            &[RuntimeReadinessObservation {
+                model_id: faber_identity.model_id,
+                model_revision: faber_identity.model_revision,
+                outcome: RuntimeReadinessOutcome::Unavailable {
+                    failure: ReadinessFailure::RuntimeUnavailable,
+                },
+            }],
+        )
+        .unwrap();
+    let faber = snapshot
+        .entries
+        .iter()
+        .find(|entry| entry.identity.model_id == "pt_BR-faber-medium")
+        .unwrap();
+
+    assert_eq!(faber.installation.state, InstallationState::Missing);
+    assert_eq!(faber.readiness.state, ReadinessState::Unavailable);
+    assert!(faber
+        .selection
+        .reasons
+        .contains(&SelectionReason::InstallationMissing));
+    assert!(faber
+        .selection
+        .reasons
+        .contains(&SelectionReason::RuntimeUnavailable));
+    assert_eq!(snapshot.default_selection, catalog_only.default_selection);
+    assert!(!serde_json::to_string(&snapshot)
+        .unwrap()
+        .contains(root.path().to_string_lossy().as_ref()));
 }

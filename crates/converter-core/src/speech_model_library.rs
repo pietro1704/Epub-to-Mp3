@@ -2,6 +2,8 @@
 
 mod contract;
 pub use contract::*;
+#[cfg(not(target_arch = "wasm32"))]
+mod inspection;
 
 use crate::model_catalog::{model_revision, MODELS};
 use crate::tts_preferences::TtsSelection;
@@ -96,12 +98,12 @@ impl SpeechModelLibrary {
                         reasons: compatibility_reasons,
                     },
                     installation: InstallationStatus {
-                        state: InspectionState::NotInspected,
+                        state: InstallationState::NotInspected,
                         verified_revision: None,
                         installed_bytes: None,
                     },
                     readiness: ReadinessStatus {
-                        state: InspectionState::NotInspected,
+                        state: ReadinessState::NotInspected,
                         active_runtime_revision: None,
                         failure: None,
                     },
@@ -291,3 +293,14 @@ fn catalog_revision_for(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+fn tests_query() -> CatalogQuery {
+    CatalogQuery {
+        language: "pt-BR".into(),
+        platform: crate::model_catalog::ModelPlatform::Macos,
+        android_api: None,
+        architecture: "arm64".into(),
+        os_version: Some("15.5".into()),
+    }
+}
