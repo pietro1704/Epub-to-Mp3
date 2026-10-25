@@ -178,3 +178,132 @@ fn model_catalog_v3_labels_do_not_change_model_identity() {
         catalog_revision_for(&[renamed]).unwrap()
     );
 }
+
+#[test]
+fn inspected_snapshot_keeps_installation_and_runtime_readiness_separate() {
+    let root = tempfile::tempdir().unwrap();
+    let store = crate::model_store::ModelStore::new(root.path());
+    let library = SpeechModelLibrary;
+    let catalog_only = library
+        .snapshot(crate::speech_model_library::tests_query())
+        .unwrap();
+    let faber_identity = catalog_only
+        .entries
+        .iter()
+        .find(|entry| entry.identity.model_id == "pt_BR-faber-medium")
+        .unwrap()
+        .identity
+        .clone();
+    let readiness = RuntimeReadinessObservation {
+        model_id: faber_identity.model_id.clone(),
+        model_revision: faber_identity.model_revision.clone(),
+        outcome: RuntimeReadinessOutcome::Unavailable {
+            failure: ReadinessFailure::RuntimeUnavailable,
+        },
+    };
+
+    let inspected = library
+        .snapshot_with_inspection(
+            crate::speech_model_library::tests_query(),
+            &store,
+            &[readiness],
+        )
+        .unwrap();
+    let faber = inspected
+        .entries
+        .iter()
+        .find(|entry| entry.identity.model_id == "pt_BR-faber-medium")
+        .unwrap();
+
+    assert_eq!(faber.installation.state, InstallationState::Missing);
+    assert_eq!(faber.readiness.state, ReadinessState::Unavailable);
+    assert_eq!(
+        faber.readiness.failure,
+        Some(ReadinessFailure::RuntimeUnavailable)
+    );
+    assert!(!faber.selection.selectable);
+    assert!(faber
+        .selection
+        .reasons
+        .contains(&SelectionReason::InstallationMissing));
+    assert!(faber
+        .selection
+        .reasons
+        .contains(&SelectionReason::RuntimeUnavailable));
+    assert_eq!(inspected.default_selection, catalog_only.default_selection);
+    assert!(!serde_json::to_string(&inspected)
+        .unwrap()
+        .contains(root.path().to_string_lossy().as_ref()));
+}
+
+#[test]
+fn readiness_observation_requires_the_exact_model_revision() {
+    let root = tempfile::tempdir().unwrap();
+    let store = crate::model_store::ModelStore::new(root.path());
+    let readiness = RuntimeReadinessObservation {
+        model_id: "pt_BR-faber-medium".into(),
+        model_revision: Some("wrong-revision".into()),
+        outcome: RuntimeReadinessOutcome::Ready {
+            active_runtime_revision: "runtime-v1".into(),
+        },
+    };
+
+    let snapshot = SpeechModelLibrary
+        .snapshot_with_inspection(
+            crate::speech_model_library::tests_query(),
+            &store,
+            &[readiness],
+        )
+        .unwrap();
+    let faber = snapshot
+        .entries
+        .iter()
+        .find(|entry| entry.identity.model_id == "pt_BR-faber-medium")
+        .unwrap();
+
+    assert_eq!(faber.readiness.state, ReadinessState::NotInspected);
+    assert_eq!(faber.readiness.active_runtime_revision, None);
+    assert!(faber
+        .selection
+        .reasons
+        .contains(&SelectionReason::ReadinessNotInspected));
+}
+
+#[test]
+fn selection_requires_both_verified_installation_and_ready_runtime() {
+    let mut snapshot = SpeechModelLibrary
+        .snapshot(crate::speech_model_library::tests_query())
+        .unwrap();
+    let faber = snapshot
+        .entries
+        .iter_mut()
+        .find(|entry| entry.identity.model_id == "pt_BR-faber-medium")
+        .unwrap();
+
+    faber.installation = InstallationStatus {
+        state: InstallationState::Installed,
+        verified_revision: faber.identity.model_revision.clone(),
+        installed_bytes: Some(63_206_149),
+    };
+    faber.readiness = ReadinessStatus {
+        state: ReadinessState::Ready,
+        active_runtime_revision: Some("embedded-piper-v1".into()),
+        failure: None,
+    };
+    faber.selection = super::inspection::selection_for(faber);
+
+    assert!(faber.selection.selectable);
+    assert!(faber.selection.reasons.is_empty());
+
+    faber.readiness = ReadinessStatus {
+        state: ReadinessState::Unavailable,
+        active_runtime_revision: None,
+        failure: Some(ReadinessFailure::RuntimeUnavailable),
+    };
+    faber.selection = super::inspection::selection_for(faber);
+    assert!(!faber.selection.selectable);
+    assert_eq!(
+        faber.selection.reasons,
+        vec![SelectionReason::RuntimeUnavailable]
+    );
+}

@@ -83,7 +83,11 @@ pub enum SelectionReason {
     Incompatible,
     NotInstallable,
     InstallationNotInspected,
+    InstallationMissing,
+    InstallationCorrupted,
+    InstallationStaleRevision,
     ReadinessNotInspected,
+    RuntimeUnavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -103,22 +107,56 @@ pub enum CompatibilityReason {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InstallationStatus {
-    pub state: InspectionState,
+    pub state: InstallationState,
     pub verified_revision: Option<String>,
     pub installed_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ReadinessStatus {
-    pub state: InspectionState,
+    pub state: ReadinessState,
     pub active_runtime_revision: Option<String>,
-    pub failure: Option<String>,
+    pub failure: Option<ReadinessFailure>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum InspectionState {
+pub enum InstallationState {
     NotInspected,
+    NotApplicable,
+    Missing,
+    Corrupted,
+    StaleRevision,
+    Installed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadinessState {
+    NotInspected,
+    NotApplicable,
+    Ready,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadinessFailure {
+    RuntimeUnavailable,
+    RuntimeRejected,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeReadinessObservation {
+    pub model_id: String,
+    pub model_revision: Option<String>,
+    pub outcome: RuntimeReadinessOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeReadinessOutcome {
+    Ready { active_runtime_revision: String },
+    Unavailable { failure: ReadinessFailure },
 }
 
 pub(super) fn platform_name(platform: ModelPlatform) -> &'static str {
