@@ -31,6 +31,7 @@ impl ModelStore {
             .ok_or_else(|| ModelStoreError::UnknownModel(model_id.to_owned()))?;
         Ok(ModelManifest {
             model_id: model.id.to_owned(),
+            revision: crate::model_catalog::model_revision(model),
             artifacts: model
                 .artifacts
                 .iter()
@@ -166,24 +167,18 @@ impl ModelStore {
             if tokio::fs::try_exists(&target).await? {
                 tokio::fs::rename(&target, &backup).await?;
             }
-            let metadata = format!(
-                "{{\"id\":\"{}\",\"artifacts\":[{}]}}",
-                manifest.model_id,
-                installed
-                    .iter()
-                    .map(|item| {
-                        format!(
-                            "{{\"path\":\"{}\",\"sha256\":\"{}\"}}",
-                            item.path
-                                .strip_prefix(&target)
-                                .unwrap_or(&item.path)
-                                .display(),
-                            item.sha256
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
+            let metadata = serde_json::json!({
+                "id": manifest.model_id,
+                "revision": manifest.revision,
+                "artifacts": installed.iter().map(|item| serde_json::json!({
+                    "path": item.path
+                        .strip_prefix(&target)
+                        .unwrap_or(&item.path)
+                        .to_string_lossy(),
+                    "sha256": item.sha256,
+                })).collect::<Vec<_>>(),
+            })
+            .to_string();
             tokio::fs::write(staging.join("metadata.json"), metadata).await?;
             tokio::fs::rename(&staging, &target).await?;
             let _ = tokio::fs::remove_dir_all(&backup).await;

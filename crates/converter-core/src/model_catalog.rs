@@ -2,6 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
+mod metadata;
+pub use metadata::{
+    ExactLanguageDescriptor, LanguageValidation, LicenceCategory, LicenceDescriptor,
+    LicenceValidation, ModelMetadata, ModelPresentationDescriptor, QualityTier, VoiceDescriptor,
+};
+
 /// Product policy shared by native runtimes and browser/WASM selection.
 pub(crate) fn validate_piper_quality(identifier: &str) -> Result<(), String> {
     let identifier = identifier.trim().to_ascii_lowercase();
@@ -40,6 +46,8 @@ pub struct TtsModelDescriptor {
     pub download_bytes: u64,
     pub artifacts: &'static [TtsArtifactDescriptor],
     pub runtime_available: bool,
+    #[serde(skip)]
+    pub metadata: &'static ModelMetadata,
 }
 
 impl TtsModelDescriptor {
@@ -60,6 +68,15 @@ impl TtsModelDescriptor {
                 || self.minimum_android_api.is_none()
                 || android_api.unwrap_or(0) >= self.minimum_android_api.unwrap())
     }
+}
+
+pub fn model_revision(model: &TtsModelDescriptor) -> Option<String> {
+    revision_from_hashes(model.artifacts.iter().map(|artifact| artifact.sha256))
+}
+
+pub fn revision_from_hashes<'a>(hashes: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let hashes = hashes.into_iter().collect::<Vec<_>>();
+    (!hashes.is_empty()).then(|| hashes.join(":"))
 }
 
 static KOKORO_ENGLISH_ARTIFACTS: &[TtsArtifactDescriptor] = &[
@@ -123,6 +140,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         download_bytes: 63_206_149,
         artifacts: PIPER_FABER_ARTIFACTS,
         runtime_available: true,
+        metadata: &metadata::PIPER_FABER_METADATA,
     },
     TtsModelDescriptor {
         id: "kokoro-82m",
@@ -140,6 +158,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         download_bytes: 103_248_205,
         artifacts: KOKORO_ENGLISH_ARTIFACTS,
         runtime_available: false,
+        metadata: &metadata::KOKORO_METADATA,
     },
     TtsModelDescriptor {
         id: "pt_BR-edresson-low",
@@ -157,6 +176,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         download_bytes: 63_108_694,
         artifacts: PIPER_PT_BR_EDRESSON_LOW_ARTIFACTS,
         runtime_available: false,
+        metadata: &metadata::PIPER_EDRESSON_METADATA,
     },
     TtsModelDescriptor {
         id: "en_US-lessac-low",
@@ -174,6 +194,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         download_bytes: 63_206_176,
         artifacts: PIPER_EN_US_LESSAC_LOW_ARTIFACTS,
         runtime_available: false,
+        metadata: &metadata::PIPER_LESSAC_METADATA,
     },
     TtsModelDescriptor {
         id: "piper-default",
@@ -191,6 +212,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         download_bytes: 25 * 1024 * 1024,
         artifacts: &[],
         runtime_available: true,
+        metadata: &metadata::PIPER_DEFAULT_METADATA,
     },
     TtsModelDescriptor {
         id: "melotts",
@@ -206,6 +228,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         download_bytes: 150 * 1024 * 1024,
         artifacts: &[],
         runtime_available: false,
+        metadata: &metadata::MELOTTS_METADATA,
     },
     TtsModelDescriptor {
         id: "qwen3-tts-0.6b",
@@ -221,6 +244,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         download_bytes: 700 * 1024 * 1024,
         artifacts: &[],
         runtime_available: false,
+        metadata: &metadata::QWEN3_METADATA,
     },
 ];
 

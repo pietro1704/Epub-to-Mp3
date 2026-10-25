@@ -62,6 +62,7 @@ async fn manifest_rejects_empty_artifact_list_without_network_access() {
     let store = ModelStore::new(root.path());
     let manifest = ModelManifest {
         model_id: "kokoro-82m".to_owned(),
+        revision: None,
         artifacts: Vec::new(),
     };
     let error = store.install_manifest(&manifest).await.unwrap_err();
@@ -74,6 +75,7 @@ async fn manifest_rejects_path_traversal_before_network_access() {
     let store = ModelStore::new(root.path());
     let manifest = ModelManifest {
         model_id: "kokoro-82m".to_owned(),
+        revision: None,
         artifacts: vec![ModelArtifact {
             name: "../escape.bin".to_owned(),
             url: "https://example.invalid/model".to_owned(),
@@ -90,6 +92,7 @@ async fn manifest_rejects_insecure_url_before_network_access() {
     let store = ModelStore::new(root.path());
     let manifest = ModelManifest {
         model_id: "kokoro-82m".to_owned(),
+        revision: None,
         artifacts: vec![ModelArtifact {
             name: "model.onnx".to_owned(),
             url: "http://example.invalid/model".to_owned(),
@@ -110,6 +113,7 @@ fn a_voice_is_installed_only_with_both_verified_artifacts() {
     let config = b"{\"audio\":{\"sample_rate\":22050}}";
     let manifest = ModelManifest {
         model_id: "test-piper".into(),
+        revision: None,
         artifacts: vec![
             ModelArtifact {
                 name: "model.onnx".into(),
@@ -140,6 +144,16 @@ fn builds_verified_manifest_from_catalog() {
     let manifest = ModelStore::catalog_manifest("kokoro-82m").unwrap();
     assert_eq!(manifest.artifacts.len(), 1);
     assert_eq!(manifest.artifacts[0].sha256.len(), 64);
+    assert_eq!(
+        manifest.revision.as_deref(),
+        crate::model_catalog::model_revision(
+            MODELS
+                .iter()
+                .find(|model| model.id == "kokoro-82m")
+                .unwrap()
+        )
+        .as_deref()
+    );
 }
 
 #[test]
