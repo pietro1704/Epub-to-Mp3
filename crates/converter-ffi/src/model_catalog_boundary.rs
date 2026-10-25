@@ -1,5 +1,16 @@
 use super::*;
 
+fn model_platform(value: &str) -> Result<converter_core::model_catalog::ModelPlatform, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "android" => Ok(converter_core::model_catalog::ModelPlatform::Android),
+        "ios" => Ok(converter_core::model_catalog::ModelPlatform::Ios),
+        "macos" => Ok(converter_core::model_catalog::ModelPlatform::Macos),
+        "linux" => Ok(converter_core::model_catalog::ModelPlatform::Linux),
+        "windows" => Ok(converter_core::model_catalog::ModelPlatform::Windows),
+        other => Err(format!("unsupported platform: {other}")),
+    }
+}
+
 /// Versioned descriptors; catalog presence does not assert installed/readiness state.
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_catalog_json_v2() -> *mut c_char {
@@ -8,6 +19,64 @@ pub unsafe extern "C" fn converter_tts_catalog_json_v2() -> *mut c_char {
         |_| fail("TTS catalog contains an interior NUL byte".into()),
         CString::into_raw,
     )
+}
+
+/// Returns the Rust-owned v3 speech-model snapshot for one target and model root.
+///
+/// The call performs offline installed-artifact inspection only. Runtime readiness
+/// remains `not_inspected` until a concrete runtime probe supplies typed evidence.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_catalog_json_v3(
+    language: *const c_char,
+    platform: *const c_char,
+    android_api: u32,
+    architecture: *const c_char,
+    os_version: *const c_char,
+    model_root: *const c_char,
+) -> *mut c_char {
+    clear_last_error();
+    let language = match c_string(language, "language") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let platform = match c_string(platform, "platform").and_then(|value| model_platform(&value)) {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let architecture = match c_string(architecture, "architecture") {
+        Ok(value) if !value.trim().is_empty() => value,
+        Ok(_) => return fail("architecture must not be empty".into()),
+        Err(error) => return fail(error),
+    };
+    let os_version = match c_string(os_version, "OS version") {
+        Ok(value) => (!value.trim().is_empty()).then_some(value),
+        Err(error) => return fail(error),
+    };
+    let model_root = match c_string(model_root, "model root") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let query = converter_core::speech_model_library::CatalogQuery {
+        language,
+        platform,
+        android_api: (android_api > 0).then_some(android_api),
+        architecture,
+        os_version,
+    };
+    let store = converter_core::model_store::ModelStore::new(Path::new(&model_root));
+    let snapshot = match converter_core::speech_model_library::SpeechModelLibrary
+        .snapshot_with_inspection(query, &store, &[])
+    {
+        Ok(value) => value,
+        Err(error) => return fail(error.to_string()),
+    };
+    match serde_json::to_string(&snapshot) {
+        Ok(value) => CString::new(value).map_or_else(
+            |_| fail("TTS catalog v3 contains an interior NUL byte".to_owned()),
+            CString::into_raw,
+        ),
+        Err(error) => fail(error.to_string()),
+    }
 }
 
 /// Returns the shared TTS model catalog as an owned JSON string.
@@ -102,13 +171,9 @@ pub unsafe extern "C" fn converter_tts_default_engine(
         Ok(value) => value,
         Err(error) => return fail(error),
     };
-    let platform = match platform.to_ascii_lowercase().as_str() {
-        "android" => converter_core::model_catalog::ModelPlatform::Android,
-        "ios" => converter_core::model_catalog::ModelPlatform::Ios,
-        "macos" => converter_core::model_catalog::ModelPlatform::Macos,
-        "linux" => converter_core::model_catalog::ModelPlatform::Linux,
-        "windows" => converter_core::model_catalog::ModelPlatform::Windows,
-        other => return fail(format!("unsupported platform: {other}")),
+    let platform = match model_platform(&platform) {
+        Ok(value) => value,
+        Err(error) => return fail(error),
     };
     let api = (android_api > 0).then_some(android_api);
     CString::new(converter_core::model_catalog::default_engine(
@@ -158,13 +223,9 @@ pub unsafe extern "C" fn converter_tts_installed_ready_engine(
     };
     let installed: Vec<&str> = installed.iter().map(String::as_str).collect();
     let ready: Vec<&str> = ready.iter().map(String::as_str).collect();
-    let platform = match platform.to_ascii_lowercase().as_str() {
-        "android" => converter_core::model_catalog::ModelPlatform::Android,
-        "ios" => converter_core::model_catalog::ModelPlatform::Ios,
-        "macos" => converter_core::model_catalog::ModelPlatform::Macos,
-        "linux" => converter_core::model_catalog::ModelPlatform::Linux,
-        "windows" => converter_core::model_catalog::ModelPlatform::Windows,
-        other => return fail(format!("unsupported platform: {other}")),
+    let platform = match model_platform(&platform) {
+        Ok(value) => value,
+        Err(error) => return fail(error),
     };
     let api = (android_api > 0).then_some(android_api);
     let engine = converter_core::model_catalog::installed_ready_engine(

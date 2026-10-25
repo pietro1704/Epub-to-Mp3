@@ -91,7 +91,20 @@ extension NativeResponsiveScreenTests {
         // Use the suite owned by this test; teardown removes it and restores
         // shared reader/player preferences through the existing fixture.
         let settings = AppSettings(defaults: defaults)
-        let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
+        let target = SpeechModelLibraryTarget(
+            language: "pt-BR", platform: "macos", androidAPI: 0,
+            architecture: "x86_64", osVersion: "test",
+            modelsRoot: FileManager.default.temporaryDirectory
+                .appendingPathComponent("mac-settings-v3-\(UUID().uuidString)", isDirectory: true)
+        )
+        let snapshot = try ConverterFFIAdapter().speechModelSnapshot(target: target)
+        let speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+        let faberTitle = speechModelState.displayName(for: .selected(.piper))
+        let controller = MacSettingsViewController(
+            settings: settings,
+            library: LibraryStore(defaults: defaults),
+            speechModels: SpeechModelLibraryClient(initialSnapshot: snapshot, target: target)
+        )
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -111,25 +124,25 @@ extension NativeResponsiveScreenTests {
             .first { $0.accessibilityIdentifier() == "settings.tts.secondary" })
         let online = try XCTUnwrap(controls.compactMap { $0 as? NSButton }
             .first { $0.accessibilityIdentifier() == "settings.tts.onlineConsent" })
-        XCTAssertEqual(primary.titleOfSelectedItem, "Faber medium")
+        XCTAssertEqual(primary.titleOfSelectedItem, faberTitle)
         XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.systemTts"))
         XCTAssertEqual(online.state, .off)
         XCTAssertNotNil(primary.window)
 
         primary.selectItem(withTitle: "Edge")
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
-        secondary.selectItem(withTitle: "Faber medium")
+        secondary.selectItem(withTitle: faberTitle)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         let restored = AppSettings(defaults: defaults)
         XCTAssertEqual(restored.audioEngine, .edge)
-        XCTAssertEqual(restored.secondaryAudioEngine, .piper)
+        XCTAssertEqual(restored.ttsPreferences.secondary?.engine, "piper")
         XCTAssertFalse(restored.allowOnlineAudioFallback)
 
         online.performClick(nil)
         XCTAssertEqual(online.state, .on)
         XCTAssertTrue(AppSettings(defaults: defaults).allowOnlineAudioFallback)
         let captured = settings.conversionOptions
-        primary.selectItem(withTitle: "Faber medium")
+        primary.selectItem(withTitle: faberTitle)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
         XCTAssertNil(settings.secondaryAudioEngine, "A primary change must remove a duplicate secondary.")
         XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
@@ -137,13 +150,13 @@ extension NativeResponsiveScreenTests {
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         let final = AppSettings(defaults: defaults)
         XCTAssertEqual(final.audioEngine, .piper)
-        XCTAssertEqual(final.secondaryAudioEngine, .edge)
+        XCTAssertEqual(final.ttsPreferences.secondary?.engine, "edge")
         XCTAssertTrue(final.allowOnlineAudioFallback)
         XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
         XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "piper")
         secondary.selectItem(withTitle: AudioEnginePreference.system.displayName)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertEqual(AppSettings(defaults: defaults).secondaryAudioEngine, .system)
+        XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.secondary?.engine, "system")
         XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
         XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "piper")
         let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent("mac-tts-settings-\(UUID().uuidString).png")

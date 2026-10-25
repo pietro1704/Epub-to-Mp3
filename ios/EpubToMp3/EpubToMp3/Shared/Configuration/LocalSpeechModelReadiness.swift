@@ -17,12 +17,12 @@ enum LocalSpeechModelReadiness {
                 && fileManager.fileExists(atPath: directory.appendingPathComponent(artifact.name).path)
         }
     }
-    static func ttsModelsRoot(fileManager: FileManager = .default) -> URL? {
+    static func ttsModelsRoot(fileManager: FileManager = .default, create: Bool = true) -> URL? {
         try? fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
-            create: true
+            create: create
         ).appendingPathComponent("EpubToMp3/TTSModels", isDirectory: true)
     }
     /// Installation UI reports readiness only for a complete catalog installation.

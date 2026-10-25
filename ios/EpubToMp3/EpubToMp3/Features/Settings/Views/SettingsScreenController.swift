@@ -22,6 +22,9 @@ final class SettingsScreenController: UITableViewController {
     private let library: LibraryStore
     private let player: AudioPlayer
     private let playbackClock: PlaybackClock
+    private let speechModels: SpeechModelLibraryClient
+    private var speechModelState: SpeechModelLibraryViewState
+    private var speechModelsTask: Task<Void, Never>?
     private var storageUsage = StorageUsageScanner.current()
     private let diagnosticsSession: StreamingDiagnosticsSession
     private let confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)?
@@ -29,11 +32,14 @@ final class SettingsScreenController: UITableViewController {
 
     init(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock,
          diagnosticsSession: StreamingDiagnosticsSession? = nil,
-         confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil) {
+         confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
+         speechModels: SpeechModelLibraryClient = SpeechModelLibraryClient()) {
         self.settings = settings
         self.library = library
         self.player = player
         self.playbackClock = playbackClock
+        self.speechModels = speechModels
+        self.speechModelState = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
         self.diagnosticsSession = diagnosticsSession ?? .shared
         self.confirmStreamingDiagnostics = confirmStreamingDiagnostics
         super.init(style: .insetGrouped)
@@ -59,6 +65,7 @@ final class SettingsScreenController: UITableViewController {
         tableView.register(IOSContentCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
+        reloadSpeechModels()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -74,7 +81,10 @@ final class SettingsScreenController: UITableViewController {
         diagnosticsExpiryTask = nil
     }
 
-    deinit { diagnosticsExpiryTask?.cancel() }
+    deinit {
+        diagnosticsExpiryTask?.cancel()
+        speechModelsTask?.cancel()
+    }
 
     func refreshFromStores() {
         guard isViewLoaded else { return }
@@ -102,7 +112,8 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: indexPath.section) else { return UITableViewCell() }
         switch section {
         case .runtime:
-            return RuntimeSettingsRows.cell(for: indexPath, tableView: tableView, settings: settings, controller: self)
+            return RuntimeSettingsRows.cell(for: indexPath, tableView: tableView, settings: settings,
+                                            speechModels: speechModelState, controller: self)
         case .backend:
             return RuntimeSettingsRows.backendCell(for: indexPath, tableView: tableView, settings: settings, controller: self)
         case .reader:
@@ -129,13 +140,15 @@ final class SettingsScreenController: UITableViewController {
                 preferredStyle: .actionSheet
             )
             for engine in AudioEnginePreference.supportedPreferences {
-                alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
+                let selection = TtsSelection.selected(engine)
+                alert.addAction(UIAlertAction(title: speechModelState.displayName(for: selection), style: .default) { [weak self] _ in
                     self?.settings.audioEngine = engine
                     tableView.reloadData()
                 })
             }
-            for selection in (try? ConverterFFIAdapter().ttsCatalog().selections(platform: "Ios")) ?? [] {
-                alert.addAction(UIAlertAction(title: selection.modelID, style: .default) { [weak self] _ in
+            for choice in speechModelState.selectableChoices {
+                alert.addAction(UIAlertAction(title: choice.title, style: .default) { [weak self] _ in
+                    let selection = choice.selection
                     self?.settings.selectPrimaryNarration(selection)
                     tableView.reloadData()
                 })
@@ -159,8 +172,9 @@ final class SettingsScreenController: UITableViewController {
                     tableView.reloadData()
                 })
             }
-            for selection in ((try? ConverterFFIAdapter().ttsCatalog().selections(platform: "Ios")) ?? []).filter({ !$0.representsSameRequest(as: settings.ttsPreferences.primary) }) {
-                alert.addAction(UIAlertAction(title: selection.modelID, style: .default) { [weak self] _ in
+            for choice in speechModelState.selectableChoices.filter({ !$0.selection.representsSameRequest(as: settings.ttsPreferences.primary) }) {
+                alert.addAction(UIAlertAction(title: choice.title, style: .default) { [weak self] _ in
+                    let selection = choice.selection
                     self?.settings.selectSecondaryNarration(selection)
                     tableView.reloadData()
                 })
@@ -185,21 +199,41 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func installPiperModel() {
-        guard let root = LocalSpeechModelReadiness.ttsModelsRoot(), let modelID = settings.ttsPreferences.primary.modelID else { return }
-        let alert = UIAlertController(title: L10n.string("settings.piperInstall"), message: nil, preferredStyle: .alert)
+        guard let entry = speechModelState.defaultEntry,
+              entry.distribution.installable,
+              entry.installation.state != .installed else { return }
+        let title = speechModelState.installTitle(for: entry)
+        let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
         present(alert, animated: true)
-        Task.detached {
-            let result = Result { try ConverterFFIAdapter().installTtsModelFromCatalog(
-                modelID: modelID, root: root.path
-            ) }
-            await MainActor.run {
-                alert.dismiss(animated: true)
-                if case .failure(let error) = result {
-                    let failure = UIAlertController(title: L10n.string("settings.piperInstall"), message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
-                    failure.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-                    self.present(failure, animated: true)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await speechModels.install(modelID: entry.identity.modelID)
+                if let snapshot = try? await speechModels.snapshot() {
+                    speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
                 }
-                self.tableView.reloadData()
+            } catch {
+                let failure = UIAlertController(title: title,
+                    message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
+                failure.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+                present(failure, animated: true)
+            }
+            alert.dismiss(animated: true)
+            tableView.reloadData()
+        }
+    }
+
+    private func reloadSpeechModels() {
+        speechModelsTask?.cancel()
+        speechModelsTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let snapshot = try await speechModels.snapshot()
+                guard !Task.isCancelled else { return }
+                speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
+            } catch {
+                // Fail closed: keep existing selections and the last valid presentation.
             }
         }
     }

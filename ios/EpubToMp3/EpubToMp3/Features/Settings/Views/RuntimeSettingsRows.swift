@@ -3,14 +3,20 @@ import UIKit
 
 @MainActor
 enum RuntimeSettingsRows {
-    static func cell(for indexPath: IndexPath, tableView: UITableView, settings: AppSettings, controller: UIViewController) -> UITableViewCell {
+    static func cell(
+        for indexPath: IndexPath,
+        tableView: UITableView,
+        settings: AppSettings,
+        speechModels: SpeechModelLibraryViewState,
+        controller: UIViewController
+    ) -> UITableViewCell {
             if indexPath.row == 0 {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.audioEngineChoice")
-                content.secondaryText = settings.primaryNarrationDisplayName
+                content.secondaryText = speechModels.displayName(for: settings.ttsPreferences.primary)
                 cell.accessibilityIdentifier = "settings.tts.primary"
-                cell.accessibilityValue = settings.primaryNarrationDisplayName
+                cell.accessibilityValue = content.secondaryText
                 content.image = UIImage(systemName: "waveform")
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
@@ -35,7 +41,8 @@ enum RuntimeSettingsRows {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.secondaryVoice")
-                content.secondaryText = settings.secondaryNarrationDisplayName
+                content.secondaryText = settings.ttsPreferences.secondary
+                    .map(speechModels.displayName(for:)) ?? L10n.string("settings.noSecondary")
                 cell.accessibilityIdentifier = "settings.tts.secondary"
                 cell.accessibilityValue = content.secondaryText
                 cell.contentConfiguration = content
@@ -56,11 +63,19 @@ enum RuntimeSettingsRows {
             }
             let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
             var content = cell.defaultContentConfiguration()
-            content.text = L10n.string("settings.piperInstall")
-            content.secondaryText = LocalSpeechModelReadiness.isSelectionInstalled(settings.ttsPreferences.primary) ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperNotInstalled")
+            if let entry = speechModels.defaultEntry {
+                content.text = speechModels.displayName(for: entry)
+                content.secondaryText = speechModels.status(for: entry)
+                cell.accessibilityValue = content.secondaryText
+                cell.accessoryType = entry.distribution.installable && entry.installation.state != .installed
+                    ? .disclosureIndicator : .none
+            } else {
+                content.text = AudioEnginePreference.piper.displayName
+                content.secondaryText = L10n.string("settings.modelState.notInspected")
+                cell.accessoryType = .none
+            }
             content.image = UIImage(systemName: "arrow.down.circle")
             cell.contentConfiguration = content
-            cell.accessoryType = .disclosureIndicator
             return cell
     }
     static func backendCell(for indexPath: IndexPath, tableView: UITableView, settings: AppSettings, controller: UIViewController) -> UITableViewCell {

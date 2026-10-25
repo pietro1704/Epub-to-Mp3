@@ -62,6 +62,12 @@ final class ConverterFFIAdapterTests: XCTestCase {
         XCTAssertThrowsError(try adapter.ttsModelMetadata(modelID: "test-unavailable-model", root: models.path)) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
+        XCTAssertThrowsError(try adapter.speechModelSnapshot(target: SpeechModelLibraryTarget(
+            language: "pt-BR", platform: "ios", androidAPI: 0, architecture: "test",
+            osVersion: "test", modelsRoot: models
+        ))) { error in
+            XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
+        }
         XCTAssertThrowsError(try adapter.installTtsModelFromCatalog(modelID: "test-unavailable-model", root: models.path)) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }

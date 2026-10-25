@@ -82,6 +82,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         modelCatalog = ConverterModelCatalog(
             available: true, freeString: free, lastError: error, modelsJSON: models,
             catalogJSON: symbol("converter_tts_catalog_json_v2", as: ConverterTtsModels.self),
+            catalogJSONV3: symbol("converter_tts_catalog_json_v3", as: ConverterTtsCatalogV3.self),
             defaultEngine: defaultEngine,
             selectInstalledReady: symbol("converter_tts_installed_ready_engine", as: ConverterTtsInstalledReadyEngine.self),
             installArtifact: symbol("converter_tts_model_install", as: ConverterTtsModelInstall.self),
@@ -290,6 +291,9 @@ final class ConverterFFIAdapter: EmbeddedConverter {
 
     func ttsModels() throws -> Data { try modelCatalog.ttsModels() }
     func ttsCatalog() throws -> TtsCatalog { try modelCatalog.ttsCatalog() }
+    func speechModelSnapshot(target: SpeechModelLibraryTarget) throws -> SpeechModelSnapshot {
+        try modelCatalog.speechModelSnapshot(target: target)
+    }
 
     func ttsDefaultEngine(language: String, platform: String, androidAPI: UInt32 = 0) throws -> String {
         try modelCatalog.ttsDefaultEngine(language: language, platform: platform, androidAPI: androidAPI)

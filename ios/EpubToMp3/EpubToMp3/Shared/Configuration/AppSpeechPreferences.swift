@@ -17,10 +17,13 @@ extension AppSettings {
                               policyVersion: 2)
     }
     var primaryNarrationDisplayName: String {
-        primaryTtsSelection?.modelID ?? audioEngine.displayName
+        primaryTtsSelection.flatMap { AudioEnginePreference(rawValue: $0.engine)?.displayName }
+            ?? audioEngine.displayName
     }
     var secondaryNarrationDisplayName: String {
-        secondaryTtsSelection?.modelID ?? secondaryAudioEngine?.displayName ?? L10n.string("settings.noSecondary")
+        secondaryTtsSelection.flatMap { AudioEnginePreference(rawValue: $0.engine)?.displayName }
+            ?? secondaryAudioEngine?.displayName
+            ?? L10n.string("settings.noSecondary")
     }
     func selectPrimaryNarration(_ selection: TtsSelection) {
         if let engine = AudioEnginePreference(rawValue: selection.engine) { audioEngine = engine }

@@ -8,6 +8,14 @@ extern "C" {
 /* Owned UTF-8 JSON; release with converter_string_free. Catalog presence does
  * not assert installation, runtime availability or inference readiness. */
 char *converter_tts_catalog_json_v2(void);
+/* Owned v3 snapshot with offline installed-artifact inspection. Runtime
+ * readiness remains not_inspected until typed probe evidence is available. */
+char *converter_tts_catalog_json_v3(const char *language,
+                                    const char *platform,
+                                    uint32_t android_api,
+                                    const char *architecture,
+                                    const char *os_version,
+                                    const char *model_root);
 void converter_string_free(char *value);
 /* Existing conversion entry points accept contract_version=2 and captured
  * tts_preferences. Legacy selections are translated at this binding seam. */
