@@ -89,6 +89,9 @@ pub unsafe extern "C" fn converter_tts_model_install_manifest(
     };
     let manifest = converter_core::model_store::ModelManifest {
         model_id: model_id.clone(),
+        revision: converter_core::model_catalog::revision_from_hashes(
+            artifacts.iter().map(|artifact| artifact.sha256.as_str()),
+        ),
         artifacts: artifacts
             .into_iter()
             .map(|artifact| converter_core::model_store::ModelArtifact {

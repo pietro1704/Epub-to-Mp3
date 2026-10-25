@@ -109,13 +109,7 @@ impl SessionSelection {
                 return Err(invalid("Model does not support this language"));
             }
             if let Some(revision) = &self.model_revision {
-                let expected = model
-                    .artifacts
-                    .iter()
-                    .map(|artifact| artifact.sha256)
-                    .collect::<Vec<_>>()
-                    .join(":");
-                if *revision != expected {
+                if crate::model_catalog::model_revision(model).as_ref() != Some(revision) {
                     return Err(invalid(
                         "Model revision does not match its catalog manifest",
                     ));
@@ -191,12 +185,8 @@ pub fn catalog_json() -> String {
         .map(|model| {
             let mut descriptor = serde_json::to_value(model).expect("model descriptor");
             descriptor["runtime"] = serde_json::json!(runtime_for(model.engine));
-            descriptor["revision"] = serde_json::json!(model
-                .artifacts
-                .iter()
-                .map(|artifact| artifact.sha256)
-                .collect::<Vec<_>>()
-                .join(":"));
+            descriptor["revision"] =
+                serde_json::json!(crate::model_catalog::model_revision(model).unwrap_or_default());
             descriptor
         })
         .collect();

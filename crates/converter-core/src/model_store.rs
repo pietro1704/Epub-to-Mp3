@@ -19,6 +19,7 @@ pub struct ModelArtifact {
 #[derive(Debug, Clone)]
 pub struct ModelManifest {
     pub model_id: String,
+    pub revision: Option<String>,
     pub artifacts: Vec<ModelArtifact>,
 }
 

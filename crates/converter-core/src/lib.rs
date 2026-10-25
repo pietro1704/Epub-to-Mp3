@@ -35,6 +35,7 @@ pub mod pcm;
 pub mod piper;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod platform_tts;
+pub mod speech_model_library;
 pub mod structure;
 pub mod text;
 pub mod toc;
