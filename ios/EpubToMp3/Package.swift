@@ -27,6 +27,7 @@ let production = [
     "Features/Conversion/Services/ConverterABISignatures.swift",
     "Features/Conversion/Services/EmbeddedConverterError.swift",
     "Features/Conversion/Services/ConverterModelCatalog.swift",
+    "Features/Conversion/Services/SpeechModelLibraryClient.swift",
     "Features/Conversion/Services/ConverterCallbackBridge.swift",
     "Features/Conversion/Services/ConverterPlaybackControl.swift",
     "Features/Conversion/Services/ReaderConversionChapterMap.swift",
@@ -39,6 +40,7 @@ let production = [
     "Features/Conversion/Services/RustConversionResult.swift",
     "Features/Conversion/Models/JobSnapshot.swift",
     "Shared/Localization/L10n.swift",
+    "Shared/Configuration/LocalSpeechModelReadiness.swift",
 ]
 let tests = [
     "BookContentIdentityTests.swift",
