@@ -1,209 +1,43 @@
 import Foundation
 
-/// Immutable Apple projection of the Rust-owned speech-model snapshot.
-struct SpeechModelSnapshot: Decodable, Sendable {
-    let schemaVersion: UInt32
-    let generatedFromCatalogRevision: String
-    let defaultSelection: TtsSessionSelection
-    let entries: [Entry]
-
-    enum CodingKeys: String, CodingKey {
-        case entries
-        case schemaVersion = "schema_version"
-        case generatedFromCatalogRevision = "generated_from_catalog_revision"
-        case defaultSelection = "default_selection"
-    }
-
-    struct Entry: Decodable, Sendable {
-        let identity: Identity
-        let presentation: Presentation
-        let languageEvidence: LanguageEvidence
-        let distribution: Distribution
-        let compatibility: Compatibility
-        let installation: Installation
-        let readiness: Readiness
-        let selection: SelectionAvailability
-
-        enum CodingKeys: String, CodingKey {
-            case identity, presentation, distribution, compatibility, installation, readiness, selection
-            case languageEvidence = "language_evidence"
-        }
-    }
-
-    struct Identity: Decodable, Sendable {
-        let provider: String
-        let runtime: String?
-        let modelID: String
-        let modelRevision: String?
-
-        enum CodingKeys: String, CodingKey {
-            case provider, runtime
-            case modelID = "model_id"
-            case modelRevision = "model_revision"
-        }
-    }
-
-    struct Presentation: Decodable, Sendable {
-        let modelName: String
-        let familyName: String
-        let quality: Quality
-        let voiceChoices: [VoiceChoice]
-
-        enum CodingKeys: String, CodingKey {
-            case quality
-            case modelName = "model_name"
-            case familyName = "family_name"
-            case voiceChoices = "voice_choices"
-        }
-    }
-
-    enum Quality: String, Decodable, Sendable {
-        case low, medium, unspecified
-    }
-
-    struct VoiceChoice: Decodable, Sendable {
-        let voiceID: String?
-        let name: String
-
-        enum CodingKeys: String, CodingKey {
-            case name
-            case voiceID = "voice_id"
-        }
-    }
-
-    struct LanguageEvidence: Decodable, Sendable {
-        let routingTags: [String]
-        let exactTags: [ExactLanguage]
-
-        enum CodingKeys: String, CodingKey {
-            case routingTags = "routing_tags"
-            case exactTags = "exact_tags"
-        }
-    }
-
-    struct ExactLanguage: Decodable, Sendable {
-        let tag: String
-        let frontend: String?
-        let validation: String
-    }
-
-    struct Distribution: Decodable, Sendable {
-        let installable: Bool
-        let downloadBytes: UInt64?
-        let installedBytes: UInt64?
-
-        enum CodingKeys: String, CodingKey {
-            case installable
-            case downloadBytes = "download_bytes"
-            case installedBytes = "installed_bytes"
-        }
-    }
-
-    struct Compatibility: Decodable, Sendable {
-        let compatible: Bool
-        let reasons: [String]
-    }
-
-    struct Installation: Decodable, Sendable {
-        let state: InstallationState
-        let verifiedRevision: String?
-        let installedBytes: UInt64?
-
-        enum CodingKeys: String, CodingKey {
-            case state
-            case verifiedRevision = "verified_revision"
-            case installedBytes = "installed_bytes"
-        }
-    }
-
-    enum InstallationState: String, Decodable, Sendable {
-        case notInspected = "not_inspected"
-        case notApplicable = "not_applicable"
-        case missing, corrupted
-        case staleRevision = "stale_revision"
-        case installed
-    }
-
-    struct Readiness: Decodable, Sendable {
-        let state: ReadinessState
-        let activeRuntimeRevision: String?
-        let failure: String?
-
-        enum CodingKeys: String, CodingKey {
-            case state, failure
-            case activeRuntimeRevision = "active_runtime_revision"
-        }
-    }
-
-    enum ReadinessState: String, Decodable, Sendable {
-        case notInspected = "not_inspected"
-        case notApplicable = "not_applicable"
-        case ready, unavailable
-    }
-
-    struct SelectionAvailability: Decodable, Sendable {
-        let selectable: Bool
-        let reasons: [String]
-    }
-
-    static func decode(_ data: Data) throws -> Self {
-        let snapshot = try JSONDecoder().decode(Self.self, from: data)
-        guard snapshot.schemaVersion == 3 else {
-            throw EmbeddedConverterError.artifactInvalid("Unsupported speech model snapshot version")
-        }
-        return snapshot
-    }
-}
-
-struct SpeechModelLibraryTarget: Sendable {
-    let language: String
-    let platform: String
-    let androidAPI: UInt32
-    let architecture: String
-    let osVersion: String
-    let modelsRoot: URL
-
-    static func current(fileManager: FileManager = .default) -> Self {
-        #if os(macOS)
-        let platform = "macos"
-        #else
-        let platform = "ios"
-        #endif
-        #if arch(x86_64)
-        let architecture = "x86_64"
-        #elseif arch(arm64)
-        let architecture = "arm64"
-        #else
-        let architecture = "unknown"
-        #endif
-        let root = LocalSpeechModelReadiness.ttsModelsRoot(fileManager: fileManager, create: false)
-            ?? fileManager.temporaryDirectory.appendingPathComponent("EpubToMp3/TTSModels", isDirectory: true)
-        return Self(
-            language: Locale.preferredLanguages.first ?? "en",
-            platform: platform,
-            androidAPI: 0,
-            architecture: architecture,
-            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-            modelsRoot: root
-        )
-    }
-}
-
 /// Serializes access to one converter binding and keeps filesystem inspection off MainActor.
 actor SpeechModelLibraryClient {
+    static let shared = SpeechModelLibraryClient()
+
     nonisolated let initialSnapshot: SpeechModelSnapshot?
 
     private let adapter: ConverterFFIAdapter?
     private let target: SpeechModelLibraryTarget
+    private let transfer: SpeechModelBackgroundTransfer?
+    private let availableCapacity: @Sendable (URL) throws -> UInt64
     private let snapshotOverride: (() throws -> SpeechModelSnapshot)?
     private let installOverride: ((String, String) throws -> URL)?
+    private var active: [String: ActiveInstall] = [:]
+    private var installIntents: Set<String> = []
+    private var terminalOperationIDs: Set<String> = []
+    private var lastEvents: [String: SpeechModelInstallEvent] = [:]
+    private var observers: [String: [UUID: AsyncStream<SpeechModelInstallEvent>.Continuation]] = [:]
+    private var observesTransfer = false
+
+    private struct ActiveInstall {
+        let operation: ConverterModelInstallOperation
+        var plan: SpeechModelInstallPlan
+        var completion: CheckedContinuation<URL, Error>?
+        var reportedBytes: [Int: UInt64] = [:]
+    }
 
     init(
         target: SpeechModelLibraryTarget = .current(),
-        adapter: ConverterFFIAdapter = ConverterFFIAdapter()
+        adapter: ConverterFFIAdapter = ConverterFFIAdapter(),
+        transfer: SpeechModelBackgroundTransfer = .shared,
+        availableCapacity: @escaping @Sendable (URL) throws -> UInt64 = {
+            try SpeechModelLibraryClient.volumeCapacity($0)
+        }
     ) {
         self.target = target
         self.adapter = adapter
+        self.transfer = transfer
+        self.availableCapacity = availableCapacity
         self.snapshotOverride = nil
         self.installOverride = nil
         self.initialSnapshot = nil
@@ -217,6 +51,8 @@ actor SpeechModelLibraryClient {
     ) {
         self.target = target
         self.adapter = nil
+        self.transfer = nil
+        self.availableCapacity = { try SpeechModelLibraryClient.volumeCapacity($0) }
         self.snapshotOverride = loadSnapshot ?? { initialSnapshot }
         self.installOverride = install
         self.initialSnapshot = initialSnapshot
@@ -228,108 +64,329 @@ actor SpeechModelLibraryClient {
         return try adapter.speechModelSnapshot(target: target)
     }
 
-    func install(modelID: String) throws -> URL {
+    func watchInstall(modelID: String) -> AsyncStream<SpeechModelInstallEvent> {
+        observeTransferIfNeeded()
+        let last = lastEvents[modelID]
+        return AsyncStream { continuation in
+            let identifier = UUID()
+            observers[modelID, default: [:]][identifier] = continuation
+            if let last { continuation.yield(last) }
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeObserver(modelID: modelID, identifier: identifier) }
+            }
+        }
+    }
+
+    func install(modelID: String) async throws -> URL {
         if let installOverride { return try installOverride(modelID, target.modelsRoot.path) }
-        guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
-        return try adapter.installTtsModelFromCatalog(modelID: modelID, root: target.modelsRoot.path)
-    }
-}
-
-/// Presentation helpers never participate in persisted model or voice identity.
-struct SpeechModelLibraryViewState: Sendable {
-    let snapshot: SpeechModelSnapshot?
-
-    static let empty = Self(snapshot: nil)
-
-    var defaultEntry: SpeechModelSnapshot.Entry? {
-        guard let identity = snapshot?.defaultSelection.modelID else { return nil }
-        return snapshot?.entries.first { $0.identity.modelID == identity }
-    }
-
-    func entry(for selection: TtsSelection) -> SpeechModelSnapshot.Entry? {
-        guard let modelID = selection.modelID else { return nil }
-        return snapshot?.entries.first {
-            $0.identity.modelID == modelID && $0.identity.provider == selection.engine
+        observeTransferIfNeeded()
+        guard active[modelID] == nil, !installIntents.contains(modelID) else {
+            throw SpeechModelInstallationError.duplicate(modelID)
         }
-    }
-
-    func displayName(for selection: TtsSelection) -> String {
-        entry(for: selection).map(displayName(for:)) ?? fallbackName(for: selection)
-    }
-
-    func displayName(for entry: SpeechModelSnapshot.Entry) -> String {
-        var fields = [entry.presentation.modelName]
-        if let tag = entry.languageEvidence.exactTags.first?.tag {
-            fields.append(Locale.current.localizedString(forIdentifier: tag) ?? tag)
+        installIntents.insert(modelID)
+        defer { installIntents.remove(modelID) }
+        guard let adapter, let transfer else { throw EmbeddedConverterError.artifactUnavailable }
+        if let pending = await transfer.activeDescriptors().first(where: { $0.modelID == modelID }) {
+            _ = try recoverOperation(for: pending)
+            throw SpeechModelInstallationError.duplicate(modelID)
         }
-        switch entry.presentation.quality {
-        case .low: fields.append(L10n.string("settings.modelQuality.low"))
-        case .medium: fields.append(L10n.string("settings.modelQuality.medium"))
-        case .unspecified: break
-        }
-        return fields.joined(separator: " · ")
-    }
-
-    func status(for entry: SpeechModelSnapshot.Entry) -> String {
-        let installation: String
-        switch entry.installation.state {
-        case .notInspected: installation = L10n.string("settings.modelState.notInspected")
-        case .notApplicable: installation = L10n.string("settings.modelState.notInstallable")
-        case .missing: installation = L10n.string("settings.modelState.notInstalled")
-        case .corrupted: installation = L10n.string("settings.modelState.corrupted")
-        case .staleRevision: installation = L10n.string("settings.modelState.updateRequired")
-        case .installed: installation = L10n.string("settings.modelState.installed")
-        }
-        guard entry.installation.state == .installed else { return installation }
-        let readiness: String
-        switch entry.readiness.state {
-        case .ready: readiness = L10n.string("settings.modelState.ready")
-        case .unavailable: readiness = L10n.string("settings.modelState.unavailable")
-        case .notInspected: readiness = L10n.string("settings.modelState.readinessNotInspected")
-        case .notApplicable: return installation
-        }
-        return "\(installation) · \(readiness)"
-    }
-
-    func installTitle(for entry: SpeechModelSnapshot.Entry) -> String {
-        let key = entry.installation.state == .installed
-            ? "settings.modelInstalled" : "settings.modelInstall"
-        return L10n.string(key, displayName(for: entry))
-    }
-
-    var selectableChoices: [(selection: TtsSelection, title: String)] {
-        snapshot?.entries.flatMap { entry -> [(TtsSelection, String)] in
-            guard entry.selection.selectable, let runtime = entry.identity.runtime else { return [] }
-            let voices: [SpeechModelSnapshot.VoiceChoice?]
-            if entry.presentation.voiceChoices.isEmpty {
-                voices = [nil]
-            } else if entry.presentation.voiceChoices.count == 1 {
-                voices = [entry.presentation.voiceChoices[0]]
-            } else {
-                voices = entry.presentation.voiceChoices.map(Optional.some).filter { $0?.voiceID != nil }
-            }
-            return voices.map { voice in
-                let selection = TtsSelection(
-                    engine: entry.identity.provider,
-                    modelID: entry.identity.modelID,
-                    voice: voice?.voiceID,
-                    session: TtsSessionSelection(
-                        provider: entry.identity.provider,
-                        runtime: runtime,
-                        modelID: entry.identity.modelID,
-                        modelRevision: entry.identity.modelRevision,
-                        voice: voice?.voiceID
-                    )
+        try FileManager.default.createDirectory(at: target.modelsRoot, withIntermediateDirectories: true)
+        let capacity = try availableCapacity(target.modelsRoot)
+        let operation = try adapter.makeModelInstallOperation(
+            modelID: modelID,
+            root: target.modelsRoot,
+            availableBytes: capacity
+        )
+        let plan = try operation.plan()
+        terminalOperationIDs.remove(plan.operationID)
+        emit(plan.event)
+        guard plan.ready else {
+            throw SpeechModelInstallationError.failure(
+                plan.event.failure ?? .init(
+                    kind: "preflight_failed", message: "Model installation preflight failed",
+                    requiredBytes: plan.requiredBytes, availableBytes: plan.availableBytes
                 )
-                let modelName = displayName(for: entry)
-                let title = voice.flatMap { entry.presentation.voiceChoices.count > 1 ? $0.name : nil }
-                    .map { "\(modelName) · \($0)" } ?? modelName
-                return (selection, title)
+            )
+        }
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                active[modelID] = ActiveInstall(
+                    operation: operation,
+                    plan: plan,
+                    completion: continuation,
+                    reportedBytes: [:]
+                )
+                do {
+                    if plan.artifacts.allSatisfy(\.accepted) {
+                        try complete(modelID: modelID)
+                    } else {
+                        try enqueueNextArtifact(plan, using: transfer)
+                    }
+                } catch {
+                    fail(modelID: modelID, kind: "transport_start_failed", error: error)
+                }
             }
-        } ?? []
+        } onCancel: {
+            Task { await self.cancelInstall(modelID: modelID) }
+        }
     }
 
-    private func fallbackName(for selection: TtsSelection) -> String {
-        AudioEnginePreference(rawValue: selection.engine)?.displayName ?? selection.engine
+    func cancelInstall(modelID: String) {
+        guard let installation = active[modelID] else { return }
+        transfer?.cancel(operationID: installation.plan.operationID)
+        installation.operation.cancel()
+        if let event = try? installation.operation.event() { emit(event) }
+        finish(modelID: modelID, result: .failure(CancellationError()))
+    }
+
+    func reconnectPendingTransfers() async {
+        observeTransferIfNeeded()
+        guard let adapter, let transfer else { return }
+        let descriptors = await transfer.activeDescriptors()
+        let modelsWithActiveTransfers = Set(descriptors.map(\.modelID))
+        for descriptor in descriptors {
+            do {
+                _ = try recoverOperation(for: descriptor)
+            } catch {
+                transfer.cancel(operationID: descriptor.operationID)
+            }
+        }
+        guard let recoveredSnapshot = try? adapter.speechModelSnapshot(target: target) else { return }
+        for entry in recoveredSnapshot.entries
+            where entry.distribution.installable
+                && !modelsWithActiveTransfers.contains(entry.identity.modelID) {
+            do {
+                try resumeDormantOperation(
+                    modelID: entry.identity.modelID,
+                    adapter: adapter,
+                    transfer: transfer
+                )
+            } catch {
+                fail(modelID: entry.identity.modelID, kind: "recovery_failed", error: error)
+            }
+        }
+    }
+
+    private func enqueueNextArtifact(
+        _ plan: SpeechModelInstallPlan,
+        using transfer: SpeechModelBackgroundTransfer
+    ) throws {
+        guard let artifact = plan.artifacts.first(where: { !$0.accepted }) else { return }
+        let descriptor = SpeechModelTransferDescriptor(
+            operationID: plan.operationID,
+            modelID: plan.modelID,
+            revision: plan.revision,
+            modelRoot: target.modelsRoot.path,
+            artifactIndex: artifact.index,
+            expectedBytes: artifact.expectedBytes,
+            inboxPath: artifact.inboxPath.path
+        )
+        try transfer.enqueue(url: artifact.url, descriptor: descriptor)
+    }
+
+    private func receive(_ transferEvent: SpeechModelTransferEvent) {
+        let descriptor: SpeechModelTransferDescriptor
+        switch transferEvent {
+        case let .progress(value, _), let .downloaded(value),
+             let .failed(value, _, _), let .cancelled(value):
+            descriptor = value
+        }
+        guard !terminalOperationIDs.contains(descriptor.operationID) else { return }
+        do {
+            let installation = try recoverOperation(for: descriptor)
+            switch transferEvent {
+            case let .progress(_, bytes):
+                let previous = active[descriptor.modelID]?.reportedBytes[descriptor.artifactIndex] ?? 0
+                let monotonicBytes = max(previous, min(bytes, descriptor.expectedBytes))
+                active[descriptor.modelID]?.reportedBytes[descriptor.artifactIndex] = monotonicBytes
+                try installation.operation.recordProgress(
+                    artifactIndex: descriptor.artifactIndex,
+                    downloadedBytes: monotonicBytes
+                )
+                emit(try installation.operation.event())
+            case .downloaded:
+                try installation.operation.accept(
+                    artifactIndex: descriptor.artifactIndex,
+                    downloadedFile: URL(fileURLWithPath: descriptor.inboxPath)
+                )
+                let refreshedPlan = try installation.operation.plan()
+                active[descriptor.modelID]?.plan = refreshedPlan
+                emit(try installation.operation.event())
+                if refreshedPlan.artifacts.allSatisfy(\.accepted) {
+                    try complete(modelID: descriptor.modelID)
+                } else if let transfer {
+                    try enqueueNextArtifact(refreshedPlan, using: transfer)
+                }
+            case let .failed(_, kind, message):
+                try installation.operation.fail(kind: kind, message: message)
+                emit(try installation.operation.event())
+                finish(
+                    modelID: descriptor.modelID,
+                    result: .failure(SpeechModelInstallationError.transport(message))
+                )
+            case .cancelled:
+                installation.operation.cancel()
+                emit(try installation.operation.event())
+                finish(modelID: descriptor.modelID, result: .failure(CancellationError()))
+            }
+        } catch {
+            fail(modelID: descriptor.modelID, kind: "operation_failed", error: error)
+        }
+    }
+
+    private func recoverOperation(
+        for descriptor: SpeechModelTransferDescriptor
+    ) throws -> ActiveInstall {
+        let inbox = try descriptor.validatedInboxURL()
+        guard URL(fileURLWithPath: descriptor.modelRoot).standardizedFileURL
+            == target.modelsRoot.standardizedFileURL else {
+            throw SpeechModelInstallationError.transport("Background task has an unexpected model root")
+        }
+        if let installation = active[descriptor.modelID] {
+            guard installation.plan.operationID == descriptor.operationID,
+                  installation.plan.revision == descriptor.revision,
+                  let artifact = installation.plan.artifacts.first(where: {
+                      $0.index == descriptor.artifactIndex
+                  }),
+                  artifact.expectedBytes == descriptor.expectedBytes,
+                  artifact.inboxPath.standardizedFileURL == inbox,
+                  !artifact.accepted else {
+                throw SpeechModelInstallationError.transport(
+                    "Background task identity no longer matches the active operation"
+                )
+            }
+            return installation
+        }
+        guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+        try FileManager.default.createDirectory(at: target.modelsRoot, withIntermediateDirectories: true)
+        guard let operation = try adapter.recoverModelInstallOperation(
+            modelID: descriptor.modelID,
+            root: target.modelsRoot,
+            availableBytes: try availableCapacity(target.modelsRoot)
+        ) else {
+            throw SpeechModelInstallationError.transport("Background task has no matching install receipt")
+        }
+        let plan = try operation.plan()
+        guard plan.operationID == descriptor.operationID,
+              plan.modelID == descriptor.modelID,
+              plan.revision == descriptor.revision,
+              let artifact = plan.artifacts.first(where: { $0.index == descriptor.artifactIndex }),
+              artifact.expectedBytes == descriptor.expectedBytes,
+              artifact.inboxPath.standardizedFileURL == inbox,
+              !artifact.accepted else {
+            throw SpeechModelInstallationError.transport("Background task identity no longer matches the catalog")
+        }
+        emit(plan.event)
+        guard plan.ready else {
+            throw SpeechModelInstallationError.failure(
+                plan.event.failure ?? .init(
+                    kind: "preflight_failed", message: "Model installation preflight failed",
+                    requiredBytes: plan.requiredBytes, availableBytes: plan.availableBytes
+                )
+            )
+        }
+        let installation = ActiveInstall(
+            operation: operation,
+            plan: plan,
+            completion: nil,
+            reportedBytes: [:]
+        )
+        active[descriptor.modelID] = installation
+        return installation
+    }
+
+    private func resumeDormantOperation(
+        modelID: String,
+        adapter: ConverterFFIAdapter,
+        transfer: SpeechModelBackgroundTransfer
+    ) throws {
+        guard active[modelID] == nil,
+              let operation = try adapter.recoverModelInstallOperation(
+                  modelID: modelID,
+                  root: target.modelsRoot,
+                  availableBytes: try availableCapacity(target.modelsRoot)
+              ) else { return }
+        var plan = try operation.plan()
+        terminalOperationIDs.remove(plan.operationID)
+        emit(plan.event)
+        guard plan.ready else { return }
+        active[modelID] = ActiveInstall(
+            operation: operation,
+            plan: plan,
+            completion: nil,
+            reportedBytes: [:]
+        )
+
+        while let artifact = plan.artifacts.first(where: { !$0.accepted }),
+              FileManager.default.fileExists(atPath: artifact.inboxPath.path) {
+            try operation.accept(
+                artifactIndex: artifact.index,
+                downloadedFile: artifact.inboxPath
+            )
+            plan = try operation.plan()
+            active[modelID]?.plan = plan
+            emit(try operation.event())
+        }
+        if plan.artifacts.allSatisfy(\.accepted) {
+            try complete(modelID: modelID)
+        } else {
+            try enqueueNextArtifact(plan, using: transfer)
+        }
+    }
+
+    private func complete(modelID: String) throws {
+        guard let installation = active[modelID] else { return }
+        let installedURL = try installation.operation.publish()
+        emit(try installation.operation.event())
+        finish(modelID: modelID, result: .success(installedURL))
+    }
+
+    private func fail(modelID: String, kind: String, error: Error) {
+        guard let installation = active[modelID] else { return }
+        try? installation.operation.fail(kind: kind, message: error.localizedDescription)
+        if let event = try? installation.operation.event() { emit(event) }
+        finish(modelID: modelID, result: .failure(error))
+    }
+
+    private func finish(modelID: String, result: Result<URL, Error>) {
+        guard let installation = active.removeValue(forKey: modelID) else { return }
+        terminalOperationIDs.insert(installation.plan.operationID)
+        installation.completion?.resume(with: result)
+    }
+
+    private func observeTransferIfNeeded() {
+        guard !observesTransfer, let transfer else { return }
+        observesTransfer = true
+        transfer.setEventHandler { [weak self] event, delivered in
+            Task {
+                await self?.receive(event)
+                delivered()
+            }
+        }
+    }
+
+    private func emit(_ event: SpeechModelInstallEvent) {
+        if let previous = lastEvents[event.modelID],
+           previous.operationID == event.operationID,
+           event.sequence < previous.sequence {
+            return
+        }
+        lastEvents[event.modelID] = event
+        for observer in observers[event.modelID]?.values ?? [:].values {
+            observer.yield(event)
+        }
+    }
+
+    private func removeObserver(modelID: String, identifier: UUID) {
+        observers[modelID]?.removeValue(forKey: identifier)
+    }
+
+    nonisolated static func volumeCapacity(_ root: URL) throws -> UInt64 {
+        let values = try root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        guard let capacity = values.volumeAvailableCapacityForImportantUsage, capacity >= 0 else {
+            throw SpeechModelInstallationError.transport("Available storage could not be determined")
+        }
+        return UInt64(capacity)
     }
 }

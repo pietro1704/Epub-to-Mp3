@@ -3,9 +3,17 @@ import Foundation
 /// Thin namespace for localized string helpers backed by Localizable.strings.
 /// The key must match an entry in Localizable.strings for en / pt-BR / es.
 enum L10n {
+    private static var bundle: Bundle {
+        #if SWIFT_PACKAGE
+        return .module
+        #else
+        return .main
+        #endif
+    }
+
     /// Resolve a localized string by key from the app bundle.
     static func string(_ key: String) -> String {
-        Bundle.main.localizedString(forKey: key, value: key, table: nil)
+        bundle.localizedString(forKey: key, value: key, table: nil)
     }
 
     /// Localised string with a single format argument.

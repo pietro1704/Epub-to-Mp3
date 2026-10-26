@@ -15,6 +15,16 @@ struct ConverterModelCatalog {
     var modelMetadata: ConverterTtsModelMetadata?
     var installManifest: ConverterTtsModelInstallManifest?
     var installCatalogManifest: ConverterTtsModelInstallCatalogManifest?
+    var installOperationCreate: ConverterModelInstallOperationCreate?
+    var installOperationRecover: ConverterModelInstallOperationRecover?
+    var installOperationPlan: ConverterModelInstallOperationJSON?
+    var installOperationEvent: ConverterModelInstallOperationJSON?
+    var installOperationProgress: ConverterModelInstallOperationProgress?
+    var installOperationAccept: ConverterModelInstallOperationAccept?
+    var installOperationPublish: ConverterModelInstallOperationPublish?
+    var installOperationFail: ConverterModelInstallOperationFail?
+    var installOperationCancel: ConverterModelInstallOperationCancel?
+    var installOperationFree: ConverterModelInstallOperationFree?
 
     func ttsCatalog() throws -> TtsCatalog {
         guard available, let read = catalogJSON, let value = read() else {
@@ -159,6 +169,91 @@ struct ConverterModelCatalog {
         return URL(fileURLWithPath: path)
     }
 
+    func makeInstallOperation(
+        modelID: String,
+        root: URL,
+        availableBytes: UInt64
+    ) throws -> ConverterModelInstallOperation {
+        guard let operation = try loadInstallOperation(
+            modelID: modelID,
+            root: root,
+            availableBytes: availableBytes,
+            recoverOnly: false
+        ) else {
+            throw EmbeddedConverterError.conversionFailed("Model install operation was not created")
+        }
+        return operation
+    }
+
+    func recoverInstallOperation(
+        modelID: String,
+        root: URL,
+        availableBytes: UInt64
+    ) throws -> ConverterModelInstallOperation? {
+        try loadInstallOperation(
+            modelID: modelID,
+            root: root,
+            availableBytes: availableBytes,
+            recoverOnly: true
+        )
+    }
+
+    private func loadInstallOperation(
+        modelID: String,
+        root: URL,
+        availableBytes: UInt64,
+        recoverOnly: Bool
+    ) throws -> ConverterModelInstallOperation? {
+        guard available,
+              let create = installOperationCreate,
+              let plan = installOperationPlan,
+              let event = installOperationEvent,
+              let progress = installOperationProgress,
+              let accept = installOperationAccept,
+              let publish = installOperationPublish,
+              let fail = installOperationFail,
+              let cancel = installOperationCancel,
+              let release = installOperationFree else {
+            throw EmbeddedConverterError.artifactUnavailable
+        }
+        let createOrRecover: ConverterModelInstallOperationCreate
+        if recoverOnly {
+            guard let recover = installOperationRecover else {
+                throw EmbeddedConverterError.artifactUnavailable
+            }
+            createOrRecover = recover
+        } else {
+            createOrRecover = create
+        }
+        let handle = modelID.withCString { modelPointer in
+            root.path.withCString { rootPointer in
+                createOrRecover(modelPointer, rootPointer, availableBytes)
+            }
+        }
+        if recoverOnly, handle == nil {
+            if let error = takeError() {
+                throw EmbeddedConverterError.conversionFailed(error)
+            }
+            return nil
+        }
+        guard let handle else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        return ConverterModelInstallOperation(
+            handle: handle,
+            planJSON: plan,
+            eventJSON: event,
+            recordProgress: progress,
+            acceptDownload: accept,
+            publish: publish,
+            fail: fail,
+            cancel: cancel,
+            release: release,
+            freeString: freeString,
+            lastError: lastError
+        )
+    }
+
     func removeTtsModel(modelID: String, root: String) throws {
         guard available, let remove = removeModel else { throw EmbeddedConverterError.artifactUnavailable }
         let removed = modelID.withCString { modelPointer in
@@ -181,9 +276,12 @@ struct ConverterModelCatalog {
     }
 
     private func readError() -> String {
-        guard let value = lastError() else { return "unknown converter-ffi error" }
+        takeError() ?? "unknown converter-ffi error"
+    }
+
+    private func takeError() -> String? {
+        guard let value = lastError() else { return nil }
         defer { freeString(value) }
-        guard let text = String(validatingCString: value) else { return "unknown converter-ffi error" }
-        return text
+        return String(validatingCString: value)
     }
 }
