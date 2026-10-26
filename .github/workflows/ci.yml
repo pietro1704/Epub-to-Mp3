@@ -39,6 +39,7 @@ jobs:
       flutter: ${{ steps.scope.outputs.flutter }}
       python: ${{ steps.scope.outputs.python }}
       wasm: ${{ steps.scope.outputs.wasm }}
+      apple: ${{ steps.scope.outputs.apple }}
       contracts: ${{ steps.scope.outputs.contracts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -54,7 +55,7 @@ jobs:
         shell: ruby {0}
         run: |
           require 'open3'
-          scopes = %w[rust web flutter python wasm].to_h { |name| [name, false] }
+          scopes = %w[rust web flutter python wasm apple].to_h { |name| [name, false] }
           contracts = true
           if ENV.fetch('FULL_VALIDATION') == 'true'
             scopes.transform_values! { true }
@@ -73,6 +74,7 @@ jobs:
               scopes['flutter'] ||= path.start_with?('flutter_app/') || path.match?(/\Ascripts\/(?:build_flutter|build_converter_ffi_android|package_converter_ffi_android|check_direct_runtime)/)
               scopes['python'] ||= path.start_with?('python_app/', 'tests/') || path.match?(/\A(?:[^\/]+\.py|requirements[^\/]*\.txt|pyproject\.toml|pytest\.ini|setup\.cfg|(?:scripts|\.github\/scripts)\/.*\.py)\z/)
               scopes['wasm'] ||= path.start_with?('crates/converter-wasm/', 'web/src/wasm/') || path == 'scripts/build_web_wasm.sh'
+              scopes['apple'] ||= path.start_with?('ios/EpubToMp3/')
             end
           end
           File.open(ENV.fetch('GITHUB_OUTPUT'), 'a') { |file| scopes.merge('contracts' => contracts).each { |name, value| file.puts "#{name}=#{value}" } }
@@ -498,10 +500,54 @@ jobs:
         working-directory: flutter_app
         run: mise exec -- flutter analyze
 
+  apple-foundation:
+    if: needs.changes.outputs.apple == 'true'
+    name: Apple Foundation tests
+    needs: [changes]
+    timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      MISE_ENABLE_TOOLS: ruby
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Require Xcode 16.4 without launching a device
+        run: |
+          test -d "$DEVELOPER_DIR"
+          test "$(xcodebuild -version | head -n 1)" = 'Xcode 16.4'
+      - name: Install mise
+        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install scoped Ruby toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Test the Foundation-only Apple production seam
+        run: |
+          set -o pipefail
+          mkdir -p .reports/apple-foundation
+          mise run apple:foundation:test 2>&1 | tee .reports/apple-foundation/test.log
+      - name: Require the conversion history regression suite
+        shell: ruby {0}
+        run: |
+          log = File.read('.reports/apple-foundation/test.log')
+          suites = log.scan(/Test Suite 'ConversionHistoryReaderTests' passed[^\n]*\n\s*Executed (\d+) tests?, with 0 failures/)
+          abort 'Foundation history must execute without failures or skips' if suites.empty? || suites.any? { |counts| counts.first.to_i.zero? }
+          abort 'Foundation history contains a skipped or failing case' if log.match?(/Test Case '[^'\n]*ConversionHistoryReaderTests[^'\n]*' (?:skipped|failed)/)
+          puts "FOUNDATION_HISTORY_XCTEST total=#{suites.sum { |counts| counts.first.to_i }} failed=0 skipped=0"
+
 
   pr-gate:
     name: PR gate
-    needs: [changes, production-packaging-guard, python-tests, rust, flutter, web]
+    needs: [changes, production-packaging-guard, python-tests, rust, flutter, web, apple-foundation]
     if: always()
     timeout-minutes: 1
     runs-on: ubuntu-24.04
@@ -514,7 +560,7 @@ jobs:
           require 'json'
           needs = JSON.parse(ENV.fetch('NEEDS_JSON'))
           %w[changes production-packaging-guard].each { |job| abort "Required job failed: #{job}" unless needs.fetch(job).fetch('result') == 'success' }
-          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web' }.each do |job, scope|
+          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web', 'apple-foundation' => 'apple' }.each do |job, scope|
             selected = needs.fetch('changes').fetch('outputs').fetch(scope)
             abort "Missing scope evidence: #{scope}" unless %w[true false].include?(selected)
             expected = selected == 'true' ? 'success' : 'skipped'

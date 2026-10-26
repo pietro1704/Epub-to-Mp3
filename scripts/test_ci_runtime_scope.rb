@@ -50,7 +50,7 @@ class CiRuntimeScopeTest < Minitest::Test
   def test_documentation_changes_skip_runtimes_and_host_contracts_but_not_packaging
     result, status, err, contracts = scope(['docs/guide.md'])
     assert status.success?, err
-    assert_equal %w[rust web flutter python wasm].to_h { |name| [name, 'false'] }, result
+    assert_equal %w[rust web flutter python wasm apple].to_h { |name| [name, 'false'] }, result
     assert_equal 'false', contracts
     guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
     refute guard.key?('if')
@@ -58,7 +58,7 @@ class CiRuntimeScopeTest < Minitest::Test
     boundary = guard.fetch('steps').find { |step| step['name'] == 'Check production packaging boundary' }
     refute boundary.key?('if')
     assert_equal 'bash scripts/guard_no_python_production.sh', boundary.fetch('run')
-    %w[rust web flutter python wasm contracts].each do |name|
+    %w[rust web flutter python wasm apple contracts].each do |name|
       assert_equal "${{ steps.scope.outputs.#{name} }}", @workflow.fetch('jobs').fetch('changes').fetch('outputs').fetch(name)
     end
   end
@@ -102,7 +102,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[python-tests rust flutter web]
+    runtimes = %w[python-tests rust flutter web apple-foundation]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -112,6 +112,8 @@ class CiRuntimeScopeTest < Minitest::Test
   def test_platform_and_shared_runtime_dependencies
     { 'web/src/app.tsx' => %w[web], 'flutter_app/lib/main.dart' => %w[flutter],
       'python_app/src/converter.py' => %w[python], 'crates/converter-server/src/main.rs' => %w[rust],
+      'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
+      'ios/EpubToMp3/Package.swift' => %w[apple],
       'native/piper-runtime/src/lib.rs' => %w[rust],
       'Cargo.lock' => %w[rust], '.github/workflows/ci.yml' => [],
       'crates/converter-core/src/lib.rs' => %w[rust], 'crates/converter-wasm/src/lib.rs' => %w[rust web wasm],
@@ -176,7 +178,8 @@ class CiRuntimeScopeTest < Minitest::Test
   def gate(scopes, results = {})
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
-    { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web' }.each do |job, name|
+    { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web',
+      'apple-foundation' => 'apple' }.each do |job, name|
       needs[job] = { 'result' => scopes[name] == 'true' ? 'success' : 'skipped' }
     end
     results.each { |job, result| needs.fetch(job)['result'] = result }
@@ -185,7 +188,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_gate_accepts_only_confirmed_scopes_and_matching_results
-    scopes = %w[rust web flutter python wasm].to_h { |name| [name, 'false'] }.merge('web' => 'true')
+    scopes = %w[rust web flutter python wasm apple].to_h { |name| [name, 'false'] }.merge('web' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'web' => result).success? }
     refute gate(scopes, 'changes' => 'failure').success?
@@ -318,29 +321,36 @@ def test_full_client_suites_replace_duplicate_subset_runs
   end
 end
 
-def test_shared_foundation_run_requires_executed_history_cases
-  faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
-  mac = faber.fetch('jobs').fetch('macos-preferences')
-  assert_includes selected_faber_matrix(faber, event_name: 'workflow_call', workflow_inputs: {}).map { |entry| entry.fetch('os') }, 'macos-15-intel'
-  steps = mac.fetch('steps')
-  original = steps.find { |step| step['name'] == 'Test the real Foundation package without native FFI opt-in' }.fetch('run')
-  assert_includes original, 'mise run apple:foundation:test'
-  script = steps.find { |step| step['name'] == 'Require the actual Foundation history suite in the shared package run' }.fetch('run')
-  evidence = File.join(@root, '.reports/tts-preferences')
-  FileUtils.mkdir_p(evidence)
-  execute = lambda do |log|
-    File.write(File.join(evidence, 'foundation.log'), log)
-    Open3.capture3(RbConfig.ruby, '-e', script, chdir: @root).last
+  def test_foundation_run_moves_to_the_apple_pr_gate_without_faber_duplication
+    refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
+    foundation = @workflow.fetch('jobs').fetch('apple-foundation')
+    assert_equal "needs.changes.outputs.apple == 'true'", foundation.fetch('if')
+    assert_equal 'macos-15', foundation.fetch('runs-on')
+    assert_equal '/Applications/Xcode_16.4.app/Contents/Developer', foundation.fetch('env').fetch('DEVELOPER_DIR')
+    assert_equal 'ruby', foundation.fetch('env').fetch('MISE_ENABLE_TOOLS')
+    assert foundation.fetch('steps').any? { |step| step['run'].to_s.include?('mise run apple:foundation:test') }
+    history = foundation.fetch('steps').find { |step| step['name'] == 'Require the conversion history regression suite' }
+    refute_nil history
+    evidence = File.join(@root, '.reports/apple-foundation')
+    FileUtils.mkdir_p(evidence)
+    execute = lambda do |log|
+      File.write(File.join(evidence, 'test.log'), log)
+      Open3.capture3(RbConfig.ruby, '-e', history.fetch('run'), chdir: @root).last
+    end
+    suite = "Test Suite 'ConversionHistoryReaderTests' passed at 2026-10-20.\n  Executed 4 tests, with 0 failures (0 unexpected) in 0.003 seconds\n"
+    assert execute.call(suite).success?
+    refute execute.call(suite.sub('4 tests', '0 tests')).success?
+    refute execute.call(suite.sub('with 0 failures', 'with 1 test skipped and 0 failures')).success?
+    refute execute.call(suite + "Test Case '-[AppFoundationTests.ConversionHistoryReaderTests testHistory]' skipped (0.001 seconds).\n").success?
+
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    faber_commands = faber.fetch('jobs').fetch('macos-preferences').fetch('steps').filter_map { |step| step['run'] }.join("\n")
+    refute_includes faber_commands, 'mise run apple:foundation:test'
+
+    package = File.read(File.expand_path('../ios/EpubToMp3/Package.swift', __dir__))
+    assert_includes package, '"Features/Conversion/Services/SpeechModelLibraryClient.swift"'
+    assert_includes package, '"Shared/Configuration/LocalSpeechModelReadiness.swift"'
   end
-  suite = "Test Suite 'ConversionHistoryReaderTests' passed at 2026-10-20.\n  Executed 4 tests, with 0 failures (0 unexpected) in 0.003 seconds\n"
-  assert execute.call(suite).success?
-  refute execute.call(suite.sub('4 tests', '0 tests')).success?
-  refute execute.call(suite.sub('0 failures', '1 failures')).success?
-  refute execute.call(suite.sub('with 0 failures', 'with 1 test skipped and 0 failures')).success?
-  refute execute.call(suite.sub('ConversionHistoryReaderTests', 'UnrelatedTests')).success?
-  refute execute.call(suite + "Test Case '-[AppFoundationTests.ConversionHistoryReaderTests testHistory]' skipped (0.001 seconds).\n").success?
-  refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
-end
 
   def test_physical_android_fixture_requires_explicit_input_instead_of_inherited_dispatch
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
@@ -421,7 +431,7 @@ end
     assert_equal 2, jobs.fetch('changes').fetch('timeout-minutes')
     assert_equal 7, jobs.fetch('production-packaging-guard').fetch('timeout-minutes')
     assert_equal 1, jobs.fetch('pr-gate').fetch('timeout-minutes')
-    %w[python-tests rust web flutter].each do |name|
+    %w[python-tests rust web flutter apple-foundation].each do |name|
       assert_equal '${{ inputs.full_validation == true && 30 || 7 }}', jobs.fetch(name).fetch('timeout-minutes')
       assert_includes jobs.fetch(name).fetch('needs'), 'changes'
       refute_includes jobs.fetch(name).fetch('needs'), 'production-packaging-guard'

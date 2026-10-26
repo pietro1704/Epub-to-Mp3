@@ -406,19 +406,6 @@ jobs:
       - name: Generate native project with actual FFI artifact
         working-directory: ios/EpubToMp3
         run: xcodegen generate
-      - name: Test the real Foundation package without native FFI opt-in
-        run: |
-          set -o pipefail
-          mkdir -p .reports/tts-preferences
-          mise run apple:foundation:test 2>&1 | tee .reports/tts-preferences/foundation.log
-      - name: Require the actual Foundation history suite in the shared package run
-        shell: ruby {0}
-        run: |
-          log = File.read('.reports/tts-preferences/foundation.log')
-          suites = log.scan(/Test Suite 'ConversionHistoryReaderTests' passed[^\n]*\n\s*Executed (\d+) tests?, with 0 failures/)
-          abort 'Foundation history must execute without failures or skips' if suites.empty? || suites.any? { |counts| counts.first.to_i.zero? }
-          abort 'Foundation history contains a skipped or failing case' if log.match?(/Test Case '[^'\n]*ConversionHistoryReaderTests[^'\n]*' (?:skipped|failed)/)
-          puts "FOUNDATION_HISTORY_XCTEST total=#{suites.sum { |counts| counts.first.to_i }} failed=0 skipped=0"
       - name: Explicitly install checksum-pinned native Faber test model
         run: |
           model_dir="$RUNNER_TEMP/faber-models"
