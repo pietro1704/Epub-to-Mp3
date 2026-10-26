@@ -22,9 +22,16 @@ execution remains deferred to CI.
 
 Use the smallest check that proves the requested behavior. Reuse artifacts only
 after matching source, toolchain, lockfile, target and build flags. Explain a
-necessary dependency rebuild before starting it. A narrow validation request
-ends after its visible app journey and focused checks; expand only for a concrete
-failure or unresolved acceptance condition.
+necessary dependency rebuild before starting it. On this Mac, before compiling
+any dependency, runtime, library or tool, including Piper, ask Pietro whether a
+verified prebuilt binary matching the source, platform and architecture is
+available, and wait for his answer. Prefer compatible prebuilt binaries and
+immutable model artifacts; compile one locally only after Pietro confirms that
+no suitable artifact should be used. Final application targets such as
+EpubToMp3 may be compiled without this extra question when the task authorizes
+the app build. A narrow validation request ends after its visible app journey
+and focused checks; expand only for a concrete failure or unresolved acceptance
+condition.
 
 ## Apple toolchain
 
