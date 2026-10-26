@@ -12,6 +12,7 @@ actor SpeechModelLibraryClient {
     private let availableCapacity: @Sendable (URL) throws -> UInt64
     private let snapshotOverride: (() throws -> SpeechModelSnapshot)?
     private let installOverride: ((String, String) throws -> URL)?
+    private let removeOverride: ((String, String) throws -> Void)?
     private var active: [String: ActiveInstall] = [:]
     private var installIntents: Set<String> = []
     private var terminalOperationIDs: Set<String> = []
@@ -40,6 +41,7 @@ actor SpeechModelLibraryClient {
         self.availableCapacity = availableCapacity
         self.snapshotOverride = nil
         self.installOverride = nil
+        self.removeOverride = nil
         self.initialSnapshot = nil
     }
 
@@ -47,6 +49,7 @@ actor SpeechModelLibraryClient {
         initialSnapshot: SpeechModelSnapshot,
         loadSnapshot: (() throws -> SpeechModelSnapshot)? = nil,
         install: ((String, String) throws -> URL)? = nil,
+        remove: ((String, String) throws -> Void)? = nil,
         target: SpeechModelLibraryTarget = .current()
     ) {
         self.target = target
@@ -55,6 +58,7 @@ actor SpeechModelLibraryClient {
         self.availableCapacity = { try SpeechModelLibraryClient.volumeCapacity($0) }
         self.snapshotOverride = loadSnapshot ?? { initialSnapshot }
         self.installOverride = install
+        self.removeOverride = remove
         self.initialSnapshot = initialSnapshot
     }
 
@@ -77,7 +81,21 @@ actor SpeechModelLibraryClient {
         }
     }
 
-    func install(modelID: String) async throws -> URL {
+    func install(modelID: String, acceptedTermsFingerprint: String? = nil) async throws -> URL {
+        let current = try snapshot()
+        guard let entry = current.entries.first(where: { $0.identity.modelID == modelID }) else {
+            throw SpeechModelInstallationError.unknownModel(modelID)
+        }
+        guard entry.distribution.installable else {
+            throw SpeechModelInstallationError.notInstallable(modelID)
+        }
+        guard entry.compatibility.compatible else {
+            throw SpeechModelInstallationError.incompatible(modelID)
+        }
+        if entry.licence.requiresAcceptance,
+           acceptedTermsFingerprint != entry.licence.termsFingerprint {
+            throw SpeechModelInstallationError.termsAcceptanceRequired(modelID)
+        }
         if let installOverride { return try installOverride(modelID, target.modelsRoot.path) }
         observeTransferIfNeeded()
         guard active[modelID] == nil, !installIntents.contains(modelID) else {
@@ -138,6 +156,32 @@ actor SpeechModelLibraryClient {
         installation.operation.cancel()
         if let event = try? installation.operation.event() { emit(event) }
         finish(modelID: modelID, result: .failure(CancellationError()))
+    }
+
+    func remove(
+        modelID: String,
+        configuredSelections: [TtsSelection]
+    ) throws -> SpeechModelSnapshot {
+        guard active[modelID] == nil, !installIntents.contains(modelID) else {
+            throw SpeechModelRemovalError.inUse(modelID)
+        }
+        guard !configuredSelections.contains(where: { $0.modelID == modelID }) else {
+            throw SpeechModelRemovalError.configured(modelID)
+        }
+        let current = try snapshot()
+        guard current.entries.contains(where: {
+            $0.identity.modelID == modelID && $0.installation.state == .installed
+        }) else {
+            throw SpeechModelRemovalError.notInstalled(modelID)
+        }
+        if let removeOverride {
+            try removeOverride(modelID, target.modelsRoot.path)
+        } else {
+            guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+            try adapter.removeTtsModel(modelID: modelID, root: target.modelsRoot.path)
+        }
+        lastEvents.removeValue(forKey: modelID)
+        return try snapshot()
     }
 
     func reconnectPendingTransfers() async {

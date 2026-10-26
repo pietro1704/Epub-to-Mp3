@@ -71,9 +71,25 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         )
         _ = controller.view
         let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.action == NSSelectorFromString("installPiperModel") })
+            .first { $0.accessibilityIdentifier()?.hasSuffix(".install") == true })
+        let confirmation = expectation(description: "Explicit install confirmation was presented")
+        let timer = Timer(timeInterval: 0.02, repeats: true) { timer in
+            MainActor.assumeIsolated {
+                guard let modal = NSApp.modalWindow,
+                      let confirm = self.descendants(modal.contentView ?? NSView())
+                        .compactMap({ $0 as? NSButton })
+                        .first(where: { $0.title == L10n.string("settings.modelInstall.confirm") }) else { return }
+                XCTAssertEqual(installer.result().count, 0,
+                               "Opening the model action must not install before confirmation")
+                timer.invalidate()
+                confirm.performClick(nil)
+                confirmation.fulfill()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .modalPanel)
+        defer { timer.invalidate() }
         button.performClick(nil)
-        await fulfillment(of: [installer.completed], timeout: 5)
+        await fulfillment(of: [confirmation, installer.completed], timeout: 5)
         let result = installer.result()
         XCTAssertFalse(result.mainThread, "Synchronous model installation must not run on the main thread")
         XCTAssertTrue(result.heartbeat, "The MainActor must run while installation is still blocked")
@@ -105,14 +121,26 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         )
         _ = controller.view
         let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.action == NSSelectorFromString("installPiperModel") })
+            .first { $0.accessibilityIdentifier()?.hasSuffix(".install") == true })
+        let confirmation = expectation(description: "Explicit install confirmation was accepted")
         let presented = expectation(description: "Owned installation error alert was presented")
+        var acceptedConfirmation = false
         let timer = Timer(timeInterval: 0.02, repeats: true) { timer in
             MainActor.assumeIsolated {
                 guard let modal = NSApp.modalWindow else { return }
-                defer { timer.invalidate(); NSApp.abortModal(); modal.orderOut(nil) }
                 let labels = modal.contentView.map { self.descendants($0) } ?? []
+                if !acceptedConfirmation,
+                   let confirm = labels.compactMap({ $0 as? NSButton })
+                    .first(where: { $0.title == L10n.string("settings.modelInstall.confirm") }) {
+                    XCTAssertEqual(installer.result().count, 0)
+                    acceptedConfirmation = true
+                    confirm.performClick(nil)
+                    confirmation.fulfill()
+                    return
+                }
                 let text = labels.compactMap { $0 as? NSTextField }.map(\.stringValue)
+                guard text.contains(message) else { return }
+                defer { timer.invalidate(); NSApp.abortModal(); modal.orderOut(nil) }
                 XCTAssertTrue(text.contains(message), "The actual alert must retain the installer error")
                 XCTAssertTrue(text.contains { $0.contains("Faber") })
                 XCTAssertTrue(Thread.isMainThread)
@@ -122,7 +150,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         RunLoop.main.add(timer, forMode: .modalPanel)
         defer { timer.invalidate() }
         button.performClick(nil)
-        await fulfillment(of: [presented, installer.completed], timeout: 5)
+        await fulfillment(of: [confirmation, presented, installer.completed], timeout: 5)
         let result = installer.result()
         XCTAssertFalse(result.mainThread)
         XCTAssertTrue(result.heartbeat)

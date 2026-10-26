@@ -3,15 +3,42 @@ import UIKit
 
 @MainActor
 enum RuntimeSettingsRows {
+    enum Row {
+        case primary
+        case cellular
+        case model(SpeechModelSnapshot.Entry?)
+        case secondary
+        case onlineFallback
+    }
+
+    static func rowCount(speechModels: SpeechModelLibraryViewState) -> Int {
+        4 + max(1, speechModels.entries.count)
+    }
+
+    static func row(at index: Int, speechModels: SpeechModelLibraryViewState) -> Row? {
+        if index == 0 { return .primary }
+        if index == 1 { return .cellular }
+        let models = speechModels.entries
+        let modelCount = max(1, models.count)
+        if index < 2 + modelCount {
+            return .model(models.indices.contains(index - 2) ? models[index - 2] : nil)
+        }
+        if index == 2 + modelCount { return .secondary }
+        if index == 3 + modelCount { return .onlineFallback }
+        return nil
+    }
+
     static func cell(
         for indexPath: IndexPath,
         tableView: UITableView,
         settings: AppSettings,
         speechModels: SpeechModelLibraryViewState,
-        installEvent: SpeechModelInstallEvent?,
+        installEvents: [String: SpeechModelInstallEvent],
+        termsAcceptance: SpeechModelTermsAcceptanceStore,
         controller: UIViewController
     ) -> UITableViewCell {
-            if indexPath.row == 0 {
+            switch row(at: indexPath.row, speechModels: speechModels) {
+            case .primary:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.audioEngineChoice")
@@ -22,8 +49,7 @@ enum RuntimeSettingsRows {
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
                 return cell
-            }
-            if indexPath.row == 1 {
+            case .cellular:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
                 cell.configure(
                     title: L10n.string("settings.allowCellularAudio"),
@@ -37,8 +63,7 @@ enum RuntimeSettingsRows {
                 }
                 cell.accessibilityIdentifier = "settings.allowCellularAudio"
                 return cell
-            }
-            if indexPath.row == 3 {
+            case .secondary:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.secondaryVoice")
@@ -49,8 +74,7 @@ enum RuntimeSettingsRows {
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
                 return cell
-            }
-            if indexPath.row == 4 {
+            case .onlineFallback:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
                 cell.configure(title: L10n.string("settings.onlineFallback"),
                                subtitle: L10n.string("settings.onlineFallbackDescription"),
@@ -61,10 +85,18 @@ enum RuntimeSettingsRows {
                     tableView.reloadData()
                 }
                 return cell
-            }
-            let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
-            var content = cell.defaultContentConfiguration()
-            if let entry = speechModels.defaultEntry {
+            case let .model(entry):
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                var content = cell.defaultContentConfiguration()
+                guard let entry else {
+                    content.text = L10n.string("settings.voiceModels")
+                    content.secondaryText = L10n.string("settings.modelState.notInspected")
+                    content.image = UIImage(systemName: "waveform.badge.magnifyingglass")
+                    cell.contentConfiguration = content
+                    cell.selectionStyle = .none
+                    return cell
+                }
+                let installEvent = installEvents[entry.identity.modelID]
                 content.text = speechModels.displayName(for: entry)
                 if let installEvent {
                     content.secondaryText = speechModels.installStatus(for: installEvent)
@@ -73,20 +105,33 @@ enum RuntimeSettingsRows {
                             + L10n.string("settings.modelInstall.cancel")
                     }
                 } else {
-                    content.secondaryText = speechModels.status(for: entry)
+                    content.secondaryText = speechModels.details(
+                        for: entry,
+                        configuredSelections: settings.configuredNarrationSelections
+                    )
                 }
+                let selections = [settings.ttsPreferences.primary, settings.ttsPreferences.secondary]
+                    .compactMap { $0 }
+                let terms = termsAcceptance.isAccepted(
+                    modelID: entry.identity.modelID,
+                    fingerprint: entry.licence.termsFingerprint
+                )
+                let actions = speechModels.actions(
+                    for: entry,
+                    configuredSelections: selections,
+                    installEvent: installEvent,
+                    termsAccepted: terms
+                )
+                cell.accessibilityIdentifier = "settings.speechModel.\(entry.identity.modelID)"
                 cell.accessibilityValue = content.secondaryText
-                cell.accessoryType = entry.distribution.installable
-                    && (entry.installation.state != .installed || installEvent?.isActive == true)
-                    ? .disclosureIndicator : .none
-            } else {
-                content.text = AudioEnginePreference.piper.displayName
-                content.secondaryText = L10n.string("settings.modelState.notInspected")
-                cell.accessoryType = .none
+                cell.accessoryType = actions.available.isEmpty ? .none : .disclosureIndicator
+                cell.selectionStyle = actions.available.isEmpty ? .none : .default
+                content.image = UIImage(systemName: "waveform.badge.plus")
+                cell.contentConfiguration = content
+                return cell
+            case .none:
+                return UITableViewCell()
             }
-            content.image = UIImage(systemName: "arrow.down.circle")
-            cell.contentConfiguration = content
-            return cell
     }
     static func backendCell(for indexPath: IndexPath, tableView: UITableView, settings: AppSettings, controller: UIViewController) -> UITableViewCell {
             if indexPath.row == 0 {

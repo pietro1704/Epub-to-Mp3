@@ -17,7 +17,7 @@ pub use operation_types::{
 };
 
 #[path = "model_install_operation_files.rs"]
-mod operation_files;
+pub(super) mod operation_files;
 use operation_files::{
     hash_file, publish_directory, remove_owned_directory, verified_file, write_atomic,
 };

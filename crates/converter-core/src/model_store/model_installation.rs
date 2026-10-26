@@ -257,11 +257,9 @@ impl ModelStore {
     }
 
     pub async fn remove(&self, model_id: &str) -> Result<(), ModelStoreError> {
+        super::model_install_operation::operation_files::validate_model_id(model_id)?;
         let directory = self.root.join(model_id);
-        if tokio::fs::try_exists(&directory).await? {
-            tokio::fs::remove_dir_all(directory).await?;
-        }
-        Ok(())
+        super::model_install_operation::operation_files::remove_owned_directory(&directory)
     }
 
     pub fn root(&self) -> &Path {

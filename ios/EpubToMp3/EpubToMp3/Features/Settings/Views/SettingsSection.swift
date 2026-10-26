@@ -9,10 +9,10 @@ enum SettingsSection: Int, CaseIterable {
     case storage
     case advanced
     case about
-    var rowCount: Int {
+    func rowCount(speechModels: SpeechModelLibraryViewState) -> Int {
         switch self {
         case .runtime:
-            return 5
+            return RuntimeSettingsRows.rowCount(speechModels: speechModels)
         case .backend:
             return 2
         case .playback:

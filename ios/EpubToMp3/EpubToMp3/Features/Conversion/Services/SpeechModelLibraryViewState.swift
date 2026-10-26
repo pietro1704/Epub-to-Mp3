@@ -3,6 +3,10 @@ import Foundation
 enum SpeechModelInstallationError: LocalizedError, Equatable {
     case duplicate(String)
     case failure(SpeechModelInstallEvent.Failure)
+    case incompatible(String)
+    case notInstallable(String)
+    case termsAcceptanceRequired(String)
+    case unknownModel(String)
     case transport(String)
 
     var errorDescription: String? {
@@ -11,9 +15,78 @@ enum SpeechModelInstallationError: LocalizedError, Equatable {
             return "A model installation is already active for \(modelID)"
         case let .failure(failure):
             return failure.message
+        case .incompatible:
+            return L10n.string("settings.modelInstall.incompatible")
+        case .notInstallable:
+            return L10n.string("settings.modelState.notInstallable")
+        case .termsAcceptanceRequired:
+            return L10n.string("settings.modelInstall.termsRequired")
+        case .unknownModel:
+            return L10n.string("settings.modelInstall.unknownModel")
         case let .transport(message):
             return message
         }
+    }
+}
+
+enum SpeechModelRemovalError: LocalizedError, Equatable {
+    case configured(String)
+    case inUse(String)
+    case notInstalled(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .configured: return L10n.string("settings.modelRemove.configured")
+        case .inUse: return L10n.string("settings.modelRemove.inUse")
+        case .notInstalled: return L10n.string("settings.modelRemove.notInstalled")
+        }
+    }
+}
+
+enum SpeechModelProductAction: Equatable {
+    case install
+    case cancelInstall
+    case select
+    case remove
+    case revokeTerms
+}
+
+struct SpeechModelProductActions: Equatable {
+    let available: [SpeechModelProductAction]
+    let removalBlock: SpeechModelRemovalError?
+}
+
+struct SpeechModelTermsAcceptanceStore {
+    private static let defaultsKey = "speechModelAcceptedTerms.v1"
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func isAccepted(modelID: String, fingerprint: String?) -> Bool {
+        guard let fingerprint else { return false }
+        return acceptedIdentities.contains(identity(modelID: modelID, fingerprint: fingerprint))
+    }
+
+    func accept(modelID: String, fingerprint: String) {
+        var identities = acceptedIdentities
+        identities.insert(identity(modelID: modelID, fingerprint: fingerprint))
+        defaults.set(Array(identities).sorted(), forKey: Self.defaultsKey)
+    }
+
+    func revoke(modelID: String, fingerprint: String) {
+        var identities = acceptedIdentities
+        identities.remove(identity(modelID: modelID, fingerprint: fingerprint))
+        defaults.set(Array(identities).sorted(), forKey: Self.defaultsKey)
+    }
+
+    private var acceptedIdentities: Set<String> {
+        Set(defaults.stringArray(forKey: Self.defaultsKey) ?? [])
+    }
+
+    private func identity(modelID: String, fingerprint: String) -> String {
+        "\(modelID):\(fingerprint)"
     }
 }
 
@@ -22,6 +95,8 @@ struct SpeechModelLibraryViewState: Sendable {
     let snapshot: SpeechModelSnapshot?
 
     static let empty = Self(snapshot: nil)
+
+    var entries: [SpeechModelSnapshot.Entry] { snapshot?.entries ?? [] }
 
     var defaultEntry: SpeechModelSnapshot.Entry? {
         guard let identity = snapshot?.defaultSelection.modelID else { return nil }
@@ -71,6 +146,85 @@ struct SpeechModelLibraryViewState: Sendable {
         case .notApplicable: return installation
         }
         return "\(installation) · \(readiness)"
+    }
+
+    func details(
+        for entry: SpeechModelSnapshot.Entry,
+        configuredSelections: [TtsSelection] = []
+    ) -> String {
+        var fields = [status(for: entry)]
+        if isConfigured(entry, selections: configuredSelections) {
+            fields.append(L10n.string("settings.modelState.configured"))
+        }
+        if let downloadBytes = entry.distribution.downloadBytes {
+            fields.append(L10n.string(
+                "settings.modelSize.download",
+                ByteCountFormatter.string(fromByteCount: Int64(downloadBytes), countStyle: .file)
+            ))
+        }
+        if let installedBytes = entry.installation.installedBytes ?? entry.distribution.installedBytes {
+            fields.append(L10n.string(
+                "settings.modelSize.installed",
+                ByteCountFormatter.string(fromByteCount: Int64(installedBytes), countStyle: .file)
+            ))
+        }
+        fields.append(L10n.string("settings.modelPerformance.unmeasured"))
+        fields.append(languageEvidence(for: entry))
+        fields.append(licenceStatus(for: entry))
+        fields.append(compatibilityStatus(for: entry))
+        return fields.joined(separator: " · ")
+    }
+
+    func isConfigured(
+        _ entry: SpeechModelSnapshot.Entry,
+        selections: [TtsSelection]
+    ) -> Bool {
+        selections.contains {
+            $0.engine == entry.identity.provider && $0.modelID == entry.identity.modelID
+        }
+    }
+
+    func selection(for entry: SpeechModelSnapshot.Entry) -> TtsSelection? {
+        selectableChoices.first { choice in
+            choice.selection.engine == entry.identity.provider
+                && choice.selection.modelID == entry.identity.modelID
+        }?.selection
+    }
+
+    func actions(
+        for entry: SpeechModelSnapshot.Entry,
+        configuredSelections: [TtsSelection],
+        installEvent: SpeechModelInstallEvent?,
+        termsAccepted: Bool
+    ) -> SpeechModelProductActions {
+        if installEvent?.isActive == true {
+            return SpeechModelProductActions(
+                available: [.cancelInstall],
+                removalBlock: .inUse(entry.identity.modelID)
+            )
+        }
+        let configured = isConfigured(entry, selections: configuredSelections)
+        var available: [SpeechModelProductAction] = []
+        if entry.distribution.installable, entry.compatibility.compatible,
+           entry.installation.state != .installed {
+            available.append(.install)
+        }
+        if entry.selection.selectable, !configured {
+            available.append(.select)
+        }
+        let removalBlock: SpeechModelRemovalError?
+        if entry.installation.state != .installed {
+            removalBlock = .notInstalled(entry.identity.modelID)
+        } else if configured {
+            removalBlock = .configured(entry.identity.modelID)
+        } else {
+            removalBlock = nil
+            available.append(.remove)
+        }
+        if entry.licence.requiresAcceptance, termsAccepted {
+            available.append(.revokeTerms)
+        }
+        return SpeechModelProductActions(available: available, removalBlock: removalBlock)
     }
 
     func installTitle(for entry: SpeechModelSnapshot.Entry) -> String {
@@ -125,6 +279,16 @@ struct SpeechModelLibraryViewState: Sendable {
         return L10n.string("settings.modelInstall.cancel")
     }
 
+    func actionTitle(for action: SpeechModelProductAction) -> String {
+        switch action {
+        case .install: return L10n.string("settings.modelAction.install")
+        case .cancelInstall: return L10n.string("settings.modelInstall.cancel")
+        case .select: return L10n.string("settings.modelAction.select")
+        case .remove: return L10n.string("settings.modelAction.remove")
+        case .revokeTerms: return L10n.string("settings.modelAction.revokeTerms")
+        }
+    }
+
     var selectableChoices: [(selection: TtsSelection, title: String)] {
         snapshot?.entries.flatMap { entry -> [(TtsSelection, String)] in
             guard entry.selection.selectable, let runtime = entry.identity.runtime else { return [] }
@@ -159,6 +323,46 @@ struct SpeechModelLibraryViewState: Sendable {
 
     private func fallbackName(for selection: TtsSelection) -> String {
         AudioEnginePreference(rawValue: selection.engine)?.displayName ?? selection.engine
+    }
+
+    private func languageEvidence(for entry: SpeechModelSnapshot.Entry) -> String {
+        guard !entry.languageEvidence.exactTags.isEmpty else {
+            return L10n.string("settings.modelLanguage.routingOnly")
+        }
+        let labels = entry.languageEvidence.exactTags.map { evidence in
+            let locale = Locale.current.localizedString(forIdentifier: evidence.tag) ?? evidence.tag
+            let validation = evidence.validation == "runtime_validated"
+                ? L10n.string("settings.modelLanguage.runtimeValidated")
+                : L10n.string("settings.modelLanguage.artifactDeclared")
+            return "\(locale) (\(validation))"
+        }
+        return L10n.string("settings.modelLanguage.exact", labels.joined(separator: ", "))
+    }
+
+    private func licenceStatus(for entry: SpeechModelSnapshot.Entry) -> String {
+        guard let identifier = entry.licence.id else {
+            return L10n.string("settings.modelLicence.unknown")
+        }
+        guard entry.licence.validation == "partial" else {
+            return L10n.string("settings.modelLicence.unknown")
+        }
+        return L10n.string("settings.modelLicence.partial", identifier)
+    }
+
+    private func compatibilityStatus(for entry: SpeechModelSnapshot.Entry) -> String {
+        guard !entry.compatibility.compatible else {
+            return L10n.string("settings.modelCompatibility.compatible")
+        }
+        let reasons = entry.compatibility.reasons.map { reason -> String in
+            switch reason {
+            case "unsupported_language": return L10n.string("settings.modelCompatibility.language")
+            case "unsupported_platform": return L10n.string("settings.modelCompatibility.platform")
+            case "android_api_too_low": return L10n.string("settings.modelCompatibility.androidAPI")
+            case "quality_disabled": return L10n.string("settings.modelCompatibility.quality")
+            default: return L10n.string("settings.modelCompatibility.unknown")
+            }
+        }
+        return L10n.string("settings.modelCompatibility.incompatible", reasons.joined(separator: ", "))
     }
 }
 
