@@ -293,7 +293,7 @@ jobs:
           install: false
       - name: Install official prebuilt Ruby for Intel
         if: matrix.arch == 'x86_64'
-        uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
+        uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1
         with:
           ruby-version: '4.0.7'
           bundler-cache: false
