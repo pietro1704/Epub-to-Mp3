@@ -16,6 +16,9 @@ extension AppSettings {
                               allowOnlineFallback: allowOnlineAudioFallback,
                               policyVersion: 2)
     }
+    var configuredNarrationSelections: [TtsSelection] {
+        [ttsPreferences.primary, ttsPreferences.secondary].compactMap { $0 }
+    }
     var primaryNarrationDisplayName: String {
         primaryTtsSelection.flatMap { AudioEnginePreference(rawValue: $0.engine)?.displayName }
             ?? audioEngine.displayName

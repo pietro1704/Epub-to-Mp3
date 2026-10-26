@@ -19,13 +19,14 @@ struct SpeechModelSnapshot: Decodable, Sendable {
         let presentation: Presentation
         let languageEvidence: LanguageEvidence
         let distribution: Distribution
+        let licence: Licence
         let compatibility: Compatibility
         let installation: Installation
         let readiness: Readiness
         let selection: SelectionAvailability
 
         enum CodingKeys: String, CodingKey {
-            case identity, presentation, distribution, compatibility, installation, readiness, selection
+            case identity, presentation, distribution, licence, compatibility, installation, readiness, selection
             case languageEvidence = "language_evidence"
         }
     }
@@ -96,6 +97,22 @@ struct SpeechModelSnapshot: Decodable, Sendable {
             case installable
             case downloadBytes = "download_bytes"
             case installedBytes = "installed_bytes"
+        }
+    }
+
+    struct Licence: Decodable, Sendable {
+        let id: String?
+        let category: String
+        let evidenceURL: URL?
+        let termsFingerprint: String?
+        let requiresAcceptance: Bool
+        let validation: String
+
+        enum CodingKeys: String, CodingKey {
+            case id, category, validation
+            case evidenceURL = "evidence_url"
+            case termsFingerprint = "terms_fingerprint"
+            case requiresAcceptance = "requires_acceptance"
         }
     }
 

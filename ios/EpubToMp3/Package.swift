@@ -62,6 +62,7 @@ let tests = [
     "ConversionOptionsInteropOptInProviderJourneyTests.swift",
     "ConverterModelCatalogOwnershipTests.swift",
     "SpeechModelBackgroundTransferTests.swift",
+    "SpeechModelLibraryClientTests.swift",
     "EpubFixture.swift",
     "ReaderConversionChapterMapTests.swift",
     "ReaderListeningControlTests.swift",

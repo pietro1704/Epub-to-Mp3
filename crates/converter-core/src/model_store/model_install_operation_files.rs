@@ -29,7 +29,7 @@ pub(super) fn validate_artifact_name(name: &str) -> Result<(), ModelStoreError> 
     Ok(())
 }
 
-pub(super) fn validate_model_id(model_id: &str) -> Result<(), ModelStoreError> {
+pub(in crate::model_store) fn validate_model_id(model_id: &str) -> Result<(), ModelStoreError> {
     let mut components = Path::new(model_id).components();
     if model_id.is_empty()
         || !matches!(components.next(), Some(Component::Normal(_)))
@@ -210,7 +210,7 @@ pub(super) fn restore_previous_target(target: &Path, backup: &Path) -> Result<()
     Ok(())
 }
 
-pub(super) fn remove_owned_directory(path: &Path) -> Result<(), ModelStoreError> {
+pub(in crate::model_store) fn remove_owned_directory(path: &Path) -> Result<(), ModelStoreError> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),

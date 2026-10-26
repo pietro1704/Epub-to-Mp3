@@ -57,6 +57,56 @@ async fn remove_is_idempotent() {
 }
 
 #[tokio::test]
+async fn remove_preserves_unrelated_model_directories() {
+    let root = tempfile::tempdir().unwrap();
+    let selected = root.path().join("model-a");
+    let unrelated = root.path().join("model-b");
+    tokio::fs::create_dir_all(&selected).await.unwrap();
+    tokio::fs::create_dir_all(&unrelated).await.unwrap();
+    tokio::fs::write(selected.join("model.onnx"), b"remove")
+        .await
+        .unwrap();
+    tokio::fs::write(unrelated.join("model.onnx"), b"preserve")
+        .await
+        .unwrap();
+    let store = ModelStore::new(root.path());
+
+    store.remove("model-a").await.unwrap();
+
+    assert!(!selected.exists());
+    assert_eq!(
+        tokio::fs::read(unrelated.join("model.onnx")).await.unwrap(),
+        b"preserve"
+    );
+}
+
+#[tokio::test]
+async fn remove_rejects_paths_outside_the_model_root() {
+    let root = tempfile::tempdir().unwrap();
+    let store = ModelStore::new(root.path());
+
+    let error = store.remove("../unrelated").await.unwrap_err();
+
+    assert!(matches!(error, ModelStoreError::InvalidModelId(_)));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remove_unlinks_a_model_symlink_without_following_it() {
+    let root = tempfile::tempdir().unwrap();
+    let unrelated = tempfile::tempdir().unwrap();
+    let marker = unrelated.path().join("preserve.txt");
+    tokio::fs::write(&marker, b"preserve").await.unwrap();
+    std::os::unix::fs::symlink(unrelated.path(), root.path().join("model-a")).unwrap();
+    let store = ModelStore::new(root.path());
+
+    store.remove("model-a").await.unwrap();
+
+    assert!(!root.path().join("model-a").exists());
+    assert_eq!(tokio::fs::read(marker).await.unwrap(), b"preserve");
+}
+
+#[tokio::test]
 async fn manifest_rejects_empty_artifact_list_without_network_access() {
     let root = tempfile::tempdir().unwrap();
     let store = ModelStore::new(root.path());
