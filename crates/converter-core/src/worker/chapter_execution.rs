@@ -188,6 +188,7 @@ impl ConversionWorker {
                     .is_some_and(|provider| provider.contains("system"))
                 {
                     self.emit(ProgressEvent {
+                        render_progress: None,
                         model_id: None,
                         voice: None,
                         fallback_used: receipt.fallback_used,
@@ -336,6 +337,10 @@ impl ConversionWorker {
             return Err(WorkerError::Cancelled);
         }
         let name = mp3.file_name().unwrap().to_string_lossy().to_string();
+        self.render_progress
+            .lock()
+            .expect("render progress lock")
+            .complete(source_index);
         let mut result_entries = results.lock().unwrap();
         let previous = result_entries
             .iter()

@@ -15,6 +15,7 @@ mod registry;
 pub use registry::TtsRegistry;
 mod text;
 pub use text::segment_text;
+pub(crate) use text::segment_text_protecting;
 mod listening;
 pub use listening::{ListeningPlan, ListeningPosition, PlaybackFeedback};
 

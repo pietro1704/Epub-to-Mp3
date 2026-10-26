@@ -135,6 +135,7 @@ impl ConversionWorker {
                     used_system = true;
                     if !system_notice_emitted.swap(true, Ordering::AcqRel) {
                         self.emit(ProgressEvent {
+                            render_progress: None,
                             model_id: None,
                             voice: None,
                             fallback_used: engine == "edge",

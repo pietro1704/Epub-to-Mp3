@@ -4,6 +4,46 @@ use super::*;
 use crate::model_store::{InstalledModelState, ModelStore};
 
 impl SpeechModelLibrary {
+    /// Probe only a verified, compatible model; a runtime failure is model state,
+    /// not a failed catalogue refresh or a change to the configured selection.
+    pub fn snapshot_with_runtime_probe(
+        &self,
+        query: CatalogQuery,
+        store: &ModelStore,
+        mut probe: impl FnMut(&ModelIdentity) -> RuntimeReadinessOutcome,
+    ) -> Result<SpeechModelSnapshot, CatalogError> {
+        let mut snapshot = self.snapshot_with_inspection(query, store, &[])?;
+        for entry in &mut snapshot.entries {
+            if entry.installation.state != InstallationState::Installed
+                || !entry.compatibility.compatible
+            {
+                continue;
+            }
+            let outcome = probe(&entry.identity);
+            validate_readiness(&[RuntimeReadinessObservation {
+                model_id: entry.identity.model_id.clone(),
+                model_revision: entry.identity.model_revision.clone(),
+                outcome: outcome.clone(),
+            }])?;
+            entry.readiness = match outcome {
+                RuntimeReadinessOutcome::Ready {
+                    active_runtime_revision,
+                } => ReadinessStatus {
+                    state: ReadinessState::Ready,
+                    active_runtime_revision: Some(active_runtime_revision),
+                    failure: None,
+                },
+                RuntimeReadinessOutcome::Unavailable { failure } => ReadinessStatus {
+                    state: ReadinessState::Unavailable,
+                    active_runtime_revision: None,
+                    failure: Some(failure),
+                },
+            };
+            entry.selection = selection_for(entry);
+        }
+        Ok(snapshot)
+    }
+
     pub fn snapshot_with_inspection(
         &self,
         query: CatalogQuery,
@@ -35,7 +75,10 @@ impl SpeechModelLibrary {
                 verified_revision: inspection.verified_revision,
                 installed_bytes: inspection.installed_bytes,
             };
-            entry.distribution.installed_bytes = entry.installation.installed_bytes;
+            entry.distribution.installed_bytes = entry
+                .installation
+                .installed_bytes
+                .or(entry.distribution.installed_bytes);
 
             let matching = readiness
                 .iter()

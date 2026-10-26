@@ -22,6 +22,7 @@ final class SettingsScreenController: UITableViewController {
     private let player: AudioPlayer
     private let playbackClock: PlaybackClock
     private let speechModels: SpeechModelLibraryClient
+    private let audition = VoiceAuditionPresentation()
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
     private var speechModelState: SpeechModelLibraryViewState
     private var speechModelsTask: Task<Void, Never>?
@@ -158,6 +159,15 @@ final class SettingsScreenController: UITableViewController {
         switch row {
         case .primary: presentPrimaryChoices(source: source)
         case .secondary: presentSecondaryChoices(source: source)
+        case .studyLanguage:
+            SettingsAlertPresentation.studyLanguage(
+                state: speechModelState, speechModels: speechModels, on: self,
+                tableView: tableView, source: source
+            ) { [weak self] snapshot in
+                guard let self else { return }
+                speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                tableView.reloadData()
+            }
         case let .model(entry?): presentModelActions(for: entry, source: source)
         case .cellular, .model(nil), .onlineFallback: break
         }
@@ -246,6 +256,9 @@ final class SettingsScreenController: UITableViewController {
 
     private func perform(_ action: SpeechModelProductAction, for entry: SpeechModelSnapshot.Entry) {
         switch action {
+        case .preview:
+            guard let selection = speechModelState.selection(for: entry) else { return }
+            audition.present(selection: selection, language: entry.languageEvidence.exactTags.first?.tag ?? speechModelState.studyLanguage, on: self)
         case .install: confirmInstall(entry)
         case .cancelInstall:
             Task { await speechModels.cancelInstall(modelID: entry.identity.modelID) }

@@ -71,7 +71,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         )
         _ = controller.view
         let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier()?.hasSuffix(".install") == true })
+            .first { $0.accessibilityIdentifier() == "settings.speechModel.pt_BR-faber-medium.install" })
         let confirmation = expectation(description: "Explicit install confirmation was presented")
         let timer = Timer(timeInterval: 0.02, repeats: true) { timer in
             MainActor.assumeIsolated {
@@ -121,7 +121,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         )
         _ = controller.view
         let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier()?.hasSuffix(".install") == true })
+            .first { $0.accessibilityIdentifier() == "settings.speechModel.pt_BR-faber-medium.install" })
         let confirmation = expectation(description: "Explicit install confirmation was accepted")
         let presented = expectation(description: "Owned installation error alert was presented")
         var acceptedConfirmation = false

@@ -1,5 +1,9 @@
 import Foundation
 
+typealias ConverterVoiceAudition = @convention(c) (
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafeRawPointer?
+) -> Bool
+
 typealias PlatformTtsCancelled = @convention(c) (UnsafeRawPointer?) -> Bool
 typealias PlatformTtsCallback = @convention(c) (
     UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
@@ -53,6 +57,10 @@ typealias ConverterTtsModels = @convention(c) () -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsCatalogV3 = @convention(c) (
     UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?,
     UnsafePointer<CChar>?, UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>?
+typealias ConverterTtsCatalogProbeV3 = @convention(c) (
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?,
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?
 ) -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsDefaultEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsInstalledReadyEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?

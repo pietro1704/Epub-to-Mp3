@@ -15,6 +15,7 @@ fn progress_log_line_contains_wall_and_relative_timing() {
     let started = std::time::Instant::now();
     let previous = std::sync::Mutex::new(started);
     let event = converter_core::worker::ProgressEvent {
+        render_progress: None,
         model_id: None,
         voice: None,
         fallback_used: false,
@@ -187,6 +188,39 @@ fn versioned_model_catalog_v3_rejects_invalid_target_before_inspection() {
             .contains("unsupported platform"));
         converter_string_free(error);
     }
+}
+
+#[test]
+fn explicit_model_probe_does_not_load_or_create_missing_models() {
+    let root = tempfile::tempdir().unwrap();
+    let marker = root.path().join("keep.marker");
+    std::fs::write(&marker, b"preserve").unwrap();
+    let text = |value: &str| CString::new(value).unwrap();
+    unsafe {
+        let result = converter_tts_catalog_probe_json_v3(
+            text("pt-BR").as_ptr(),
+            text("macos").as_ptr(),
+            0,
+            text("x86_64").as_ptr(),
+            text("12.0").as_ptr(),
+            text(root.path().to_str().unwrap()).as_ptr(),
+            text("/no-phonemizer-needed").as_ptr(),
+        );
+        assert!(!result.is_null());
+        let snapshot: serde_json::Value =
+            serde_json::from_slice(CStr::from_ptr(result).to_bytes()).unwrap();
+        converter_string_free(result);
+        for entry in snapshot["entries"].as_array().unwrap() {
+            assert_ne!(entry["readiness"]["state"], "ready");
+            assert_eq!(entry["selection"]["selectable"], false);
+        }
+        assert_eq!(
+            snapshot["default_selection"]["model_id"],
+            "pt_BR-faber-medium"
+        );
+    }
+    assert_eq!(std::fs::read(marker).unwrap(), b"preserve");
+    assert_eq!(root.path().read_dir().unwrap().count(), 1);
 }
 
 #[test]

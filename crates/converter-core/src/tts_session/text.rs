@@ -4,6 +4,15 @@ pub fn segment_text(
     initial: usize,
     subsequent: usize,
 ) -> Result<Vec<String>, super::TtsFailure> {
+    segment_text_protecting(text, initial, subsequent, &[])
+}
+
+pub(crate) fn segment_text_protecting(
+    text: &str,
+    initial: usize,
+    subsequent: usize,
+    protected: &[(usize, usize)],
+) -> Result<Vec<String>, super::TtsFailure> {
     if initial == 0 || subsequent == 0 {
         return Err(super::TtsFailure::new(
             super::FailureKind::InvalidSelection,
@@ -11,7 +20,8 @@ pub fn segment_text(
         ));
     }
     let mut result = Vec::new();
-    let mut pending = text.trim();
+    let text = text.trim_end();
+    let mut pending = text.trim_start();
     while !pending.is_empty() {
         let limit = if result.is_empty() {
             initial
@@ -24,7 +34,7 @@ pub fn segment_text(
             .map(|(offset, _)| offset)
             .unwrap_or(pending.len());
         let prefix = &pending[..end];
-        let boundary = if end == pending.len() {
+        let mut boundary = if end == pending.len() {
             end
         } else {
             prefix
@@ -35,6 +45,13 @@ pub fn segment_text(
                 .filter(|offset| *offset > end / 2)
                 .unwrap_or(end)
         };
+        let start = text.len() - pending.len();
+        if let Some((_, protected_end)) = protected
+            .iter()
+            .find(|(begin, end)| *begin < start + boundary && *end > start + boundary)
+        {
+            boundary = *protected_end - start;
+        }
         result.push(pending[..boundary].trim().to_owned());
         pending = pending[boundary..].trim_start();
     }

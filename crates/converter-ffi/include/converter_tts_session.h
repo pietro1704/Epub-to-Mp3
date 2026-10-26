@@ -17,6 +17,14 @@ char *converter_tts_catalog_json_v3(const char *language,
                                     const char *architecture,
                                     const char *os_version,
                                     const char *model_root);
+/* Explicit offline model loading; call off the UI thread. No audio/download. */
+char *converter_tts_catalog_probe_json_v3(const char *language,
+                                          const char *platform,
+                                          uint32_t android_api,
+                                          const char *architecture,
+                                          const char *os_version,
+                                          const char *model_root,
+                                          const char *espeak_data_directory);
 typedef struct ConverterModelInstallOperation ConverterModelInstallOperation;
 ConverterModelInstallOperation *converter_tts_model_install_operation_create(
     const char *model_id, const char *model_root, uint64_t available_bytes);
@@ -49,6 +57,9 @@ void converter_string_free(char *value);
  * tts_preferences. Legacy selections are translated at this binding seam. */
 bool converter_conversion_options_validate_json_v2(const char *options_json);
 typedef struct ConverterJobControl ConverterJobControl;
+/* Bounded installed-Piper audition; creates no conversion job or selection. */
+bool converter_voice_audition_v1(const char *options_json, const char *text,
+    const char *output, const ConverterJobControl *control);
 /* Positions use normalized Unicode scalar offsets. Feedback is audio seconds
  * before playback-rate adjustment; source chapters use the Rust catalog index. */
 bool converter_job_control_set_listening_position_json_v2(const ConverterJobControl *control, const char *position_json);

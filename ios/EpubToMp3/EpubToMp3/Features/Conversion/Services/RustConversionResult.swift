@@ -100,7 +100,8 @@ extension RustConversionCoordinator {
                 logUrl: nil,
                 error: nil,
                 lastActivityAt: Date().timeIntervalSince1970,
-                chapterIndexBase: 0
+                chapterIndexBase: 0,
+                sourceChaptersTotal: envelope.manifest.sourceChaptersTotal
             )
         }
     }
@@ -116,6 +117,7 @@ extension RustConversionCoordinator {
         let cover: String?
         let ttsPreferences: TtsPreferences?
         let usedSelections: [TtsSelection]?
+        let sourceChaptersTotal: Int?
     }
     private struct Chapter: Decodable {
         let title: String?

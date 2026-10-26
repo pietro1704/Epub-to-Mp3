@@ -12,6 +12,7 @@ pub struct PreparedPiperModel {
     config: PathBuf,
     runtime: Arc<dyn PiperRuntime>,
     cache_identity: String,
+    _model_usage: crate::model_store::model_usage::ModelUsageLease,
 }
 
 impl PreparedPiperModel {
@@ -57,6 +58,8 @@ impl PreparedPiperModel {
                 "Piper model namespace escapes models_root".into(),
             ));
         }
+        let model_usage = crate::model_store::model_usage::ModelUsageLease::acquire(&namespace)
+            .map_err(|error| PiperError::Io(error.to_string()))?;
         let model = namespace
             .join(model_path)
             .canonicalize()
@@ -83,6 +86,7 @@ impl PreparedPiperModel {
             .map_err(|error| PiperError::Io(error.to_string()))?;
         let cache_identity = format!("piper:{model:?}:{config:?}:{model_hash}:{config_hash}");
         let prepared = Self {
+            _model_usage: model_usage,
             cache_identity,
             model,
             config,

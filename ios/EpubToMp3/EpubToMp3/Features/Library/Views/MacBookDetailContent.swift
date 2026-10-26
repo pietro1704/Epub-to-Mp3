@@ -12,6 +12,8 @@ final class MacBookDetailContent: NSView {
     let convertButton = NSButton()
     let downloadButton = NSButton()
     let logButton = NSButton()
+    let pronunciationButton = NSButton()
+    let recoveryPanel = BookConversionRecoveryPanel()
 
     init() {
         super.init(frame: .zero)
@@ -62,12 +64,15 @@ final class MacBookDetailContent: NSView {
             $0.cell?.isScrollable = false
         }
 
-        let actions = NSStackView(views: [readButton, listenButton, convertButton, downloadButton, logButton])
+        pronunciationButton.title = L10n.string("pronunciation.title")
+        pronunciationButton.bezelStyle = .rounded
+        pronunciationButton.setAccessibilityIdentifier("bookDetail.pronunciation")
+        let actions = NSStackView(views: [readButton, listenButton, convertButton, downloadButton, pronunciationButton, logButton])
         actions.orientation = .vertical
         actions.spacing = 12
         actions.distribution = .fill
 
-        let stack = NSStackView(views: [coverView, titleLabel, authorLabel, progressLabel, actions])
+        let stack = NSStackView(views: [coverView, titleLabel, authorLabel, progressLabel, recoveryPanel, actions])
         stack.orientation = .vertical
         stack.spacing = 12
         stack.alignment = .centerX
@@ -85,6 +90,7 @@ final class MacBookDetailContent: NSView {
     }
 
     func render(book: BookEntity, localConversionProgress: Int?) {
+        recoveryPanel.refresh(bookID: book.id)
         titleLabel.stringValue = book.resolvedTitle
         authorLabel.stringValue = book.author ?? ""
         authorLabel.isHidden = (book.author ?? "").isEmpty

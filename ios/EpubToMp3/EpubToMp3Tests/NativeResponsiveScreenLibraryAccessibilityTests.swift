@@ -83,11 +83,11 @@ extension NativeResponsiveScreenTests {
         let secondary = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "settings.tts.secondary" })
         let menu = try XCTUnwrap(secondary.menu)
         menu.update()
-        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Faber medium")).isEnabled,
+        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: AudioEnginePreference.piper.displayName)).isEnabled,
                        "AppKit menu validation must preserve the primary-voice exclusion.")
         XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
 
-        secondary.selectItem(withTitle: "Faber medium")
+        secondary.selectItem(withTitle: AudioEnginePreference.piper.displayName)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         XCTAssertNil(settings.secondaryAudioEngine, "A stale or programmatic action must not persist a duplicate voice.")
         XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
@@ -96,7 +96,7 @@ extension NativeResponsiveScreenTests {
         XCTAssertEqual(settings.secondaryAudioEngine, .edge)
 
         let captured = settings.conversionOptions
-        secondary.selectItem(withTitle: "Faber medium")
+        secondary.selectItem(withTitle: AudioEnginePreference.piper.displayName)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         XCTAssertEqual(AppSettings(defaults: defaults).secondaryAudioEngine, .edge)
         XCTAssertEqual(secondary.titleOfSelectedItem, "Edge")
@@ -114,7 +114,8 @@ extension NativeResponsiveScreenTests {
         menu.update()
         XCTAssertNil(settings.secondaryAudioEngine)
         XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
-        XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Faber medium")).isEnabled)
+        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: AudioEnginePreference.piper.displayName)).isEnabled,
+                       "Changing the primary cannot make an uninstalled model selectable.")
         XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
     }
 #endif
@@ -171,7 +172,7 @@ extension NativeResponsiveScreenTests {
                     XCTAssertEqual(choice.titleOfSelectedItem, "Edge")
                     XCTAssertEqual(secondary.state, .off, "An override must begin strict even when defaults have a secondary.")
                     XCTAssertFalse(secondary.isEnabled, "The saved Edge secondary duplicates this manual primary.")
-                    choice.selectItem(withTitle: "Faber medium")
+                    choice.selectItem(withTitle: AudioEnginePreference.piper.displayName)
                     XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
                     secondary.performClick(nil)
                     XCTAssertEqual(secondary.state, .on)

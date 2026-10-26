@@ -179,7 +179,9 @@ pub use model_installation_boundary::*;
 mod model_install_operation_boundary;
 pub use model_install_operation_boundary::*;
 mod piper_runtime_boundary;
+mod voice_audition_boundary;
 pub use piper_runtime_boundary::*;
+pub use voice_audition_boundary::converter_voice_audition_v1;
 mod job_snapshot_boundary;
 pub use job_snapshot_boundary::*;
 

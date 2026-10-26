@@ -225,6 +225,9 @@ impl ModelInstallOperation {
     }
 
     pub fn cancel(&mut self) -> Result<(), ModelStoreError> {
+        if self.event.stage.is_terminal() {
+            return Ok(());
+        }
         self.cancellation.store(true, Ordering::Release);
         let staging_cleanup = remove_owned_directory(&self.staging);
         let inbox_cleanup = remove_owned_directory(&self.inbox);
@@ -246,6 +249,9 @@ impl ModelInstallOperation {
     }
 
     fn fail_and_cleanup(&mut self, kind: &str, message: String) -> Result<(), ModelStoreError> {
+        if self.event.stage.is_terminal() {
+            return Err(ModelStoreError::OperationFinished);
+        }
         let staging_cleanup = remove_owned_directory(&self.staging);
         let inbox_cleanup = remove_owned_directory(&self.inbox);
         self.advance(
@@ -264,6 +270,8 @@ impl ModelInstallOperation {
     fn ensure_active(&self) -> Result<(), ModelStoreError> {
         if self.cancellation.load(Ordering::Acquire) {
             Err(ModelStoreError::Cancelled)
+        } else if self.event.stage.is_terminal() {
+            Err(ModelStoreError::OperationFinished)
         } else {
             Ok(())
         }
@@ -275,10 +283,7 @@ impl ModelInstallOperation {
         artifact_index: Option<usize>,
         failure: Option<ModelInstallFailure>,
     ) {
-        if matches!(
-            self.event.stage,
-            ModelInstallStage::Completed | ModelInstallStage::Cancelled | ModelInstallStage::Failed
-        ) {
+        if self.event.stage.is_terminal() {
             return;
         }
         self.event.sequence += 1;
@@ -312,3 +317,7 @@ impl ModelInstallOperation {
 #[cfg(test)]
 #[path = "model_install_operation_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "model_install_operation_lifecycle_tests.rs"]
+mod lifecycle_tests;

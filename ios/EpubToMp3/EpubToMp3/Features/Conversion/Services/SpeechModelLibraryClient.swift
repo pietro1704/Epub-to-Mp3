@@ -7,7 +7,9 @@ actor SpeechModelLibraryClient {
     nonisolated let initialSnapshot: SpeechModelSnapshot?
 
     private let adapter: ConverterFFIAdapter?
-    private let target: SpeechModelLibraryTarget
+    private var target: SpeechModelLibraryTarget
+    private let languageDefaults: UserDefaults?
+    private let presentationStore: SpeechModelPresentationStore?
     private let transfer: SpeechModelBackgroundTransfer?
     private let availableCapacity: @Sendable (URL) throws -> UInt64
     private let snapshotOverride: (() throws -> SpeechModelSnapshot)?
@@ -36,6 +38,8 @@ actor SpeechModelLibraryClient {
         }
     ) {
         self.target = target
+        self.languageDefaults = .standard
+        self.presentationStore = .shared
         self.adapter = adapter
         self.transfer = transfer
         self.availableCapacity = availableCapacity
@@ -50,9 +54,12 @@ actor SpeechModelLibraryClient {
         loadSnapshot: (() throws -> SpeechModelSnapshot)? = nil,
         install: ((String, String) throws -> URL)? = nil,
         remove: ((String, String) throws -> Void)? = nil,
-        target: SpeechModelLibraryTarget = .current()
+        target: SpeechModelLibraryTarget = .current(),
+        languageDefaults: UserDefaults? = nil
     ) {
         self.target = target
+        self.languageDefaults = languageDefaults
+        self.presentationStore = nil
         self.adapter = nil
         self.transfer = nil
         self.availableCapacity = { try SpeechModelLibraryClient.volumeCapacity($0) }
@@ -62,10 +69,32 @@ actor SpeechModelLibraryClient {
         self.initialSnapshot = initialSnapshot
     }
 
-    func snapshot() throws -> SpeechModelSnapshot {
+    func snapshot(probeRuntime: Bool = true) throws -> SpeechModelSnapshot {
         if let snapshotOverride { return try snapshotOverride() }
         guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
-        return try adapter.speechModelSnapshot(target: target)
+        let snapshot = try adapter.speechModelSnapshot(target: target, probeRuntime: probeRuntime)
+        presentationStore?.update(snapshot)
+        return snapshot
+    }
+
+    func setStudyLanguage(_ language: String) throws -> SpeechModelSnapshot {
+        let current = try snapshot(probeRuntime: false)
+        guard SpeechModelLibraryViewState(snapshot: current).studyLanguages.contains(language) else {
+            throw SpeechModelInstallationError.incompatible(language)
+        }
+        let previous = target
+        target = target.selectingLanguage(language)
+        do {
+            let updated = try snapshot()
+            guard updated.target?.language == language else {
+                throw EmbeddedConverterError.artifactInvalid("Catalogue target language does not match the request")
+            }
+            languageDefaults?.set(language, forKey: SpeechModelLibraryTarget.studyLanguageDefaultsKey)
+            return updated
+        } catch {
+            target = previous
+            throw error
+        }
     }
 
     func watchInstall(modelID: String) -> AsyncStream<SpeechModelInstallEvent> {
@@ -82,7 +111,7 @@ actor SpeechModelLibraryClient {
     }
 
     func install(modelID: String, acceptedTermsFingerprint: String? = nil) async throws -> URL {
-        let current = try snapshot()
+        let current = try snapshot(probeRuntime: false)
         guard let entry = current.entries.first(where: { $0.identity.modelID == modelID }) else {
             throw SpeechModelInstallationError.unknownModel(modelID)
         }
@@ -92,9 +121,11 @@ actor SpeechModelLibraryClient {
         guard entry.compatibility.compatible else {
             throw SpeechModelInstallationError.incompatible(modelID)
         }
-        if entry.licence.requiresAcceptance,
-           acceptedTermsFingerprint != entry.licence.termsFingerprint {
-            throw SpeechModelInstallationError.termsAcceptanceRequired(modelID)
+        if entry.licence.requiresAcceptance {
+            guard let expected = entry.licence.termsFingerprint, !expected.isEmpty,
+                  acceptedTermsFingerprint == expected else {
+                throw SpeechModelInstallationError.termsAcceptanceRequired(modelID)
+            }
         }
         if let installOverride { return try installOverride(modelID, target.modelsRoot.path) }
         observeTransferIfNeeded()
@@ -168,7 +199,7 @@ actor SpeechModelLibraryClient {
         guard !configuredSelections.contains(where: { $0.modelID == modelID }) else {
             throw SpeechModelRemovalError.configured(modelID)
         }
-        let current = try snapshot()
+        let current = try snapshot(probeRuntime: false)
         guard current.entries.contains(where: {
             $0.identity.modelID == modelID && $0.installation.state == .installed
         }) else {
@@ -197,6 +228,7 @@ actor SpeechModelLibraryClient {
             }
         }
         guard let recoveredSnapshot = try? adapter.speechModelSnapshot(target: target) else { return }
+        presentationStore?.update(recoveredSnapshot)
         for entry in recoveredSnapshot.entries
             where entry.distribution.installable
                 && !modelsWithActiveTransfers.contains(entry.identity.modelID) {

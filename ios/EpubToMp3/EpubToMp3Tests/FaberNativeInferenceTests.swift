@@ -34,9 +34,20 @@ final class FaberNativeInferenceTests: XCTestCase {
             do { try FileManager.default.linkItem(at: source, to: destination) }
             catch { try FileManager.default.copyItem(at: source, to: destination) }
         }
-        let metadata: [String: Any] = ["id": "pt_BR-faber-medium", "artifacts": artifacts.map { ["path": $0.target, "sha256": $0.hash] }]
+        let metadata: [String: Any] = [
+            "id": "pt_BR-faber-medium", "revision": artifacts.map(\.hash).joined(separator: ":"),
+            "artifacts": artifacts.map { ["path": $0.target, "sha256": $0.hash] },
+        ]
         try JSONSerialization.data(withJSONObject: metadata).write(to: modelDirectory.appendingPathComponent("metadata.json"))
-        XCTAssertTrue(LocalSpeechModelReadiness.isFaberInstalled(modelsRoot: models))
+        let adapter = ConverterFFIAdapter()
+        let current = SpeechModelLibraryTarget.current()
+        let modelTarget = SpeechModelLibraryTarget(
+            language: "pt-BR", platform: current.platform, androidAPI: current.androidAPI,
+            architecture: current.architecture, osVersion: current.osVersion, modelsRoot: models
+        )
+        let installed = try adapter.speechModelSnapshot(target: modelTarget)
+        XCTAssertEqual(installed.entries.first { $0.identity.modelID == "pt_BR-faber-medium" }?
+            .installation.state, .installed)
         let resources = try XCTUnwrap(Bundle.main.resourceURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: resources.appendingPathComponent("espeak-ng-data/phontab").path),
                       "The real application must bundle eSpeak data before offline synthesis.")
@@ -45,7 +56,6 @@ final class FaberNativeInferenceTests: XCTestCase {
             "Neste segundo capítulo, a mesma voz continua funcionando sem internet. Cada palavra deve produzir áudio válido e audível.",
         ])
         defer { try? FileManager.default.removeItem(at: book) }
-        let adapter = ConverterFFIAdapter()
         let control = try adapter.makePlaybackControl()
         control.updatePlaybackWindow(currentChapter: 0, chaptersAhead: 1)
         var options = ConversionOptions.selectedEngine(.piper, modelsRoot: models)

@@ -259,7 +259,9 @@ impl ModelStore {
     pub async fn remove(&self, model_id: &str) -> Result<(), ModelStoreError> {
         super::model_install_operation::operation_files::validate_model_id(model_id)?;
         let directory = self.root.join(model_id);
-        super::model_install_operation::operation_files::remove_owned_directory(&directory)
+        super::model_usage::with_unused_model(&directory, model_id, || {
+            super::model_install_operation::operation_files::remove_owned_directory(&directory)
+        })
     }
 
     pub fn root(&self) -> &Path {

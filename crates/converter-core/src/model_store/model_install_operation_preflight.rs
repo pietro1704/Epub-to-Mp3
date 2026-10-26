@@ -129,7 +129,13 @@ impl ModelInstallOperation {
 
         let (artifacts, outstanding_bytes) =
             prepare_artifact_plans(&manifest, expected_bytes, &staging, &inbox, &cancellation)?;
-        let required_bytes = required_capacity(outstanding_bytes)?;
+        let largest_pending_artifact = artifacts
+            .iter()
+            .filter(|artifact| !artifact.accepted)
+            .map(|artifact| artifact.expected_bytes)
+            .max()
+            .unwrap_or(0);
+        let required_bytes = required_capacity(outstanding_bytes, largest_pending_artifact)?;
         let failure = (available_bytes < required_bytes).then(|| ModelInstallFailure {
             kind: "insufficient_space".into(),
             message: ModelStoreError::InsufficientSpace {
@@ -284,15 +290,21 @@ fn prepare_artifact_plans(
     Ok((artifacts, outstanding_bytes))
 }
 
-fn required_capacity(outstanding_bytes: u64) -> Result<u64, ModelStoreError> {
+fn required_capacity(
+    outstanding_bytes: u64,
+    largest_pending_artifact: u64,
+) -> Result<u64, ModelStoreError> {
     if outstanding_bytes == 0 {
         return Ok(0);
     }
-    // Download temp files, the owned inbox and staging stay on one volume and
-    // are moved rather than copied. The existing target already consumes space
-    // before this capacity reading; publication only renames it for rollback.
+    // A server may return a complete 200 while a committed range prefix still
+    // occupies disk. Reserve one extra full pending artifact for that overlap.
+    // Verified artifacts move from inbox to staging without another copy. The
+    // existing target already consumes space at this capacity reading and is
+    // only renamed during publication/rollback.
     outstanding_bytes
-        .checked_add(INSTALL_SPACE_SAFETY_BYTES)
+        .checked_add(largest_pending_artifact)
+        .and_then(|bytes| bytes.checked_add(INSTALL_SPACE_SAFETY_BYTES))
         .ok_or_else(|| ModelStoreError::InvalidArchive("installation byte count overflow".into()))
 }
 

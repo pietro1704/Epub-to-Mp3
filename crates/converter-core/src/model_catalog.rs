@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 mod metadata;
+mod piper_voices;
 pub use metadata::{
     ExactLanguageDescriptor, LanguageValidation, LicenceCategory, LicenceDescriptor,
     LicenceValidation, ModelMetadata, ModelPresentationDescriptor, QualityTier, VoiceDescriptor,
@@ -51,6 +52,22 @@ pub struct TtsModelDescriptor {
 }
 
 impl TtsModelDescriptor {
+    /// Uncompressed Piper payload size; archive extraction footprints stay unknown.
+    pub fn installed_artifact_bytes(&self) -> Option<u64> {
+        if self.engine != "piper"
+            || self.artifacts.is_empty()
+            || self
+                .artifacts
+                .iter()
+                .any(|artifact| !matches!(artifact.name, "model.onnx" | "model.onnx.json"))
+        {
+            return None;
+        }
+        self.artifacts
+            .iter()
+            .try_fold(0u64, |bytes, artifact| bytes.checked_add(artifact.bytes))
+    }
+
     pub fn supports(
         &self,
         language: &str,
@@ -246,6 +263,13 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         runtime_available: false,
         metadata: &metadata::QWEN3_METADATA,
     },
+    piper_voices::CADU_MEDIUM,
+    piper_voices::JEFF_MEDIUM,
+    piper_voices::DAVEFX_MEDIUM,
+    piper_voices::LJSPEECH_MEDIUM,
+    piper_voices::LJSPEECH_HIGH,
+    piper_voices::CORI_MEDIUM,
+    piper_voices::KRISTIN_MEDIUM,
 ];
 
 pub fn candidates(

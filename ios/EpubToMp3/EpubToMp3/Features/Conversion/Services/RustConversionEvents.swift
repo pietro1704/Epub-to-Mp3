@@ -12,6 +12,7 @@ extension RustConversionCoordinator {
         var modelId: String? = nil
         var voice: String? = nil
         var fallbackUsed: Bool? = nil
+        var renderProgress: RenderProgressPresentation? = nil
         let message: String
 
         func updating(_ snapshot: JobSnapshot) -> JobSnapshot {
@@ -37,7 +38,8 @@ extension RustConversionCoordinator {
                 logUrl: snapshot.logUrl,
                 error: nil,
                 lastActivityAt: Date().timeIntervalSince1970,
-                chapterIndexBase: snapshot.chapterIndexBase
+                chapterIndexBase: snapshot.chapterIndexBase,
+                sourceChaptersTotal: snapshot.sourceChaptersTotal
             )
         }
     }
@@ -99,7 +101,8 @@ extension RustConversionCoordinator {
                 logUrl: current?.logUrl,
                 error: nil,
                 lastActivityAt: Date().timeIntervalSince1970,
-                chapterIndexBase: 0
+                chapterIndexBase: 0,
+                sourceChaptersTotal: current?.sourceChaptersTotal
             )
         }
     }

@@ -60,6 +60,7 @@ final class SpeechModelBackgroundTransfer: NSObject, URLSessionDownloadDelegate,
     private var bufferedEvents: [SpeechModelTransferEvent] = []
     private var terminalTasks: Set<Int> = []
     private var reportedBytes: [Int: UInt64] = [:]
+    private var cancelledOperations: Set<String> = []
     private var backgroundCompletionHandler: (() -> Void)?
     private var backgroundEventsFinished = false
     private var pendingEventDeliveries = 0
@@ -105,10 +106,28 @@ final class SpeechModelBackgroundTransfer: NSObject, URLSessionDownloadDelegate,
     func enqueue(url: URL, descriptor: SpeechModelTransferDescriptor) throws {
         guard url.scheme?.lowercased() == "https" else { throw URLError(.secureConnectionFailed) }
         _ = try descriptor.validatedInboxURL()
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        let task = session.downloadTask(with: request)
-        task.taskDescription = try Self.encode(descriptor)
+        let download = SpeechModelRangeDownload(descriptor: descriptor, sourceURL: url)
+        let initialRequest: SpeechModelRangeDownload.Request?
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            cancelledOperations.remove(descriptor.operationID)
+            initialRequest = try download.initialRequest()
+        }
+        if let request = initialRequest {
+            try start(request)
+        } else {
+            emit(.downloaded(descriptor))
+        }
+    }
+
+    private func start(_ request: SpeechModelRangeDownload.Request) throws {
+        let description = try request.encoded()
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelledOperations.contains(request.descriptor.operationID) else { return }
+        let task = session.downloadTask(with: request.urlRequest)
+        task.taskDescription = description
         task.resume()
     }
 
@@ -121,6 +140,9 @@ final class SpeechModelBackgroundTransfer: NSObject, URLSessionDownloadDelegate,
     }
 
     func cancel(operationID: String) {
+        lock.lock()
+        cancelledOperations.insert(operationID)
+        lock.unlock()
         session.getAllTasks { tasks in
             for task in tasks where Self.descriptor(for: task)?.operationID == operationID {
                 task.cancel()
@@ -147,7 +169,12 @@ final class SpeechModelBackgroundTransfer: NSObject, URLSessionDownloadDelegate,
         totalBytesExpectedToWrite: Int64
     ) {
         guard let descriptor = Self.descriptor(for: downloadTask) else { return }
-        let reported = UInt64(max(0, totalBytesWritten))
+        let offset = min(
+            SpeechModelRangeDownload.Request.decode(downloadTask.taskDescription)?.offset ?? 0,
+            descriptor.expectedBytes
+        )
+        let written = UInt64(max(0, totalBytesWritten))
+        let reported = offset + min(written, descriptor.expectedBytes - offset)
         lock.lock()
         let monotonic = max(reportedBytes[downloadTask.taskIdentifier] ?? 0, reported)
         reportedBytes[downloadTask.taskIdentifier] = monotonic
@@ -161,8 +188,7 @@ final class SpeechModelBackgroundTransfer: NSObject, URLSessionDownloadDelegate,
         didFinishDownloadingTo location: URL
     ) {
         guard let descriptor = Self.descriptor(for: downloadTask) else { return }
-        guard let response = downloadTask.response as? HTTPURLResponse,
-              (200..<300).contains(response.statusCode) else {
+        guard let response = downloadTask.response as? HTTPURLResponse else {
             finishTask(downloadTask.taskIdentifier)
             emit(.failed(
                 descriptor,
@@ -180,51 +206,78 @@ final class SpeechModelBackgroundTransfer: NSObject, URLSessionDownloadDelegate,
             ))
             return
         }
-        let inbox: URL
         do {
-            inbox = try descriptor.validatedInboxURL()
-        } catch {
+            let outcome = try accept(location, response: response, task: downloadTask, descriptor: descriptor)
             finishTask(downloadTask.taskIdentifier)
-            emit(.failed(
-                descriptor,
-                kind: "invalid_transfer_identity",
-                message: error.localizedDescription
-            ))
-            return
-        }
-        do {
-            try FileManager.default.createDirectory(
-                at: inbox.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            if FileManager.default.fileExists(atPath: inbox.path) {
-                try FileManager.default.removeItem(at: inbox)
+            switch outcome {
+            case let .next(request): try start(request)
+            case .complete: emit(.downloaded(descriptor))
+            case .none: break
             }
-            // URLSession deletes `location` when this delegate method returns.
-            try FileManager.default.moveItem(at: location, to: inbox)
-            finishTask(downloadTask.taskIdentifier)
-            emit(.downloaded(descriptor))
         } catch {
-            try? FileManager.default.removeItem(at: inbox)
             finishTask(downloadTask.taskIdentifier)
-            emit(.failed(descriptor, kind: "transport_write_failed", message: error.localizedDescription))
+            let kind = (200..<300).contains(response.statusCode)
+                ? "transport_write_failed" : "http_failure"
+            let message = kind == "http_failure" ? "HTTP \(response.statusCode)" : error.localizedDescription
+            emit(.failed(descriptor, kind: kind, message: message))
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error, let descriptor = Self.descriptor(for: task) else { return }
+    private func accept(
+        _ file: URL, response: HTTPURLResponse, task: URLSessionDownloadTask,
+        descriptor: SpeechModelTransferDescriptor
+    ) throws -> SpeechModelRangeDownload.Outcome? {
+        // Cancellation must finish its transport write before Rust removes the inbox.
         lock.lock()
-        let alreadyTerminal = terminalTasks.contains(task.taskIdentifier)
-        terminalTasks.insert(task.taskIdentifier)
+        defer { lock.unlock() }
+        guard !cancelledOperations.contains(descriptor.operationID) else { return nil }
+        let request = SpeechModelRangeDownload.Request.decode(task.taskDescription)
+            ?? task.originalRequest?.url.map {
+                SpeechModelRangeDownload.Request(
+                    descriptor: descriptor, sourceURL: $0, offset: 0,
+                    validator: nil, fullDownload: true, retryCount: 0
+                )
+            }
+        guard let request else { throw URLError(.badURL) }
+        return try SpeechModelRangeDownload(descriptor: descriptor, sourceURL: request.sourceURL)
+            .accept(response: response, file: file, request: request)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let descriptor = Self.descriptor(for: task) else { return }
+        lock.lock()
+        // Download callbacks precede this final callback. Retain suppression only
+        // until completion, rather than accumulating an ID for every range forever.
+        let alreadyTerminal = terminalTasks.remove(task.taskIdentifier) != nil
         reportedBytes.removeValue(forKey: task.taskIdentifier)
         lock.unlock()
-        guard !alreadyTerminal else { return }
+        guard let error, !alreadyTerminal else { return }
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
             emit(.cancelled(descriptor))
         } else {
+            do {
+                if let previous = SpeechModelRangeDownload.Request.decode(task.taskDescription),
+                   let next = try retry(error, request: previous) {
+                    try start(next)
+                    return
+                }
+            } catch {
+                emit(.failed(descriptor, kind: "transport_write_failed", message: error.localizedDescription))
+                return
+            }
             emit(.failed(descriptor, kind: "transport_failed", message: error.localizedDescription))
         }
+    }
+
+    private func retry(
+        _ error: Error, request: SpeechModelRangeDownload.Request
+    ) throws -> SpeechModelRangeDownload.Request? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelledOperations.contains(request.descriptor.operationID) else { return nil }
+        return try SpeechModelRangeDownload(descriptor: request.descriptor, sourceURL: request.sourceURL)
+            .retry(after: error, request: request)
     }
 
     #if os(iOS)
@@ -244,6 +297,7 @@ final class SpeechModelBackgroundTransfer: NSObject, URLSessionDownloadDelegate,
 
     static func decode(_ value: String?) -> SpeechModelTransferDescriptor? {
         guard let value else { return nil }
+        if let request = SpeechModelRangeDownload.Request.decode(value) { return request.descriptor }
         return try? JSONDecoder().decode(
             SpeechModelTransferDescriptor.self,
             from: Data(value.utf8)

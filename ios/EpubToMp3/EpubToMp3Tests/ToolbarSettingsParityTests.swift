@@ -183,10 +183,20 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let directory = root.appendingPathComponent("pt_BR-faber-medium")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        let current = SpeechModelLibraryTarget.current()
+        let target = SpeechModelLibraryTarget(
+            language: "pt-BR", platform: current.platform, androidAPI: current.androidAPI,
+            architecture: current.architecture, osVersion: current.osVersion, modelsRoot: root
+        )
+        let adapter = ConverterFFIAdapter()
         try Data([1]).write(to: directory.appendingPathComponent("model.onnx"))
-        XCTAssertFalse(LocalSpeechModelReadiness.isFaberInstalled(modelsRoot: root), "An ONNX file alone is not a complete voice installation.")
+        var snapshot = try adapter.speechModelSnapshot(target: target)
+        XCTAssertFalse(snapshot.entries.first { $0.identity.modelID == "pt_BR-faber-medium" }?
+            .installation.state == .installed, "An ONNX file alone is not a complete voice installation.")
         try Data([1]).write(to: directory.appendingPathComponent("model.onnx.json"))
-        XCTAssertFalse(LocalSpeechModelReadiness.isFaberInstalled(modelsRoot: root), "Unverified files must not claim a catalog installation.")
+        snapshot = try adapter.speechModelSnapshot(target: target)
+        XCTAssertFalse(snapshot.entries.first { $0.identity.modelID == "pt_BR-faber-medium" }?
+            .installation.state == .installed, "Unverified files must not claim a catalog installation.")
     }
 
     func testEdgeSecondaryRequiresConsentAndRevocationClearsPreference() throws {

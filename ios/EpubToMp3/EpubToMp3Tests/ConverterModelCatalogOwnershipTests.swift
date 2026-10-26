@@ -117,4 +117,41 @@ final class ConverterModelCatalogOwnershipTests: XCTestCase {
         XCTAssertEqual(allocations.liveCount, 0, "Malformed last_error leaked")
         XCTAssertEqual(allocations.freed.count, 1)
     }
+
+    func testRuntimeProbeUsesItsOwnABIAndFreesReturnedSnapshot() throws {
+        let allocations = Allocations.shared
+        defer { allocations.reset(bytes: nil) }
+        let target = SpeechModelLibraryTarget.current()
+        let catalog = ConverterModelCatalog(
+            available: true,
+            freeString: { Allocations.shared.release($0) },
+            catalogJSONV3: { _, _, _, _, _, _ in
+                XCTFail("Explicit runtime probing must not fall back to read-only inspection")
+                return nil
+            },
+            catalogProbeJSONV3: { _, _, _, _, _, _, _ in Allocations.shared.result() }
+        )
+        let snapshot = Data("""
+        {"schema_version":3,"generated_from_catalog_revision":"fixture","entries":[],
+         "default_selection":{"version":2,"provider":"piper","runtime":"piper",
+         "model_id":"pt_BR-faber-medium","model_revision":"fixture","voice":null,"options":{}}}
+        """.utf8)
+        allocations.reset(bytes: Array(snapshot))
+        XCTAssertEqual(try catalog.speechModelSnapshot(target: target, probeRuntime: true).schemaVersion, 3)
+        XCTAssertEqual(allocations.liveCount, 0)
+        XCTAssertEqual(allocations.freed.count, 1)
+
+        allocations.reset(bytes: [0xFF])
+        XCTAssertThrowsError(try catalog.speechModelSnapshot(target: target, probeRuntime: true))
+        XCTAssertEqual(allocations.liveCount, 0)
+        XCTAssertEqual(allocations.freed.count, 1)
+
+        allocations.reset(bytes: nil)
+        var unavailable = catalog
+        unavailable.catalogProbeJSONV3 = nil
+        XCTAssertThrowsError(try unavailable.speechModelSnapshot(target: target, probeRuntime: true)) { error in
+            XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
+        }
+        XCTAssertTrue(allocations.freed.isEmpty)
+    }
 }
