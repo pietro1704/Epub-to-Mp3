@@ -4,6 +4,7 @@ mod model_archive_installation;
 mod model_inspection;
 mod model_install_operation;
 mod model_installation;
+pub(crate) mod model_usage;
 pub use model_inspection::{InstalledModelInspection, InstalledModelState};
 pub use model_install_operation::{
     ModelInstallArtifactPlan, ModelInstallEvent, ModelInstallFailure, ModelInstallOperation,
@@ -52,6 +53,8 @@ pub enum ModelStoreError {
     EmptyManifest,
     #[error("unknown TTS model: {0}")]
     UnknownModel(String),
+    #[error("model is currently in use: {0}")]
+    ModelInUse(String),
     #[error("invalid model archive: {0}")]
     InvalidArchive(String),
     #[error("model installation requires {required_bytes} bytes but only {available_bytes} are available")]
@@ -61,6 +64,8 @@ pub enum ModelStoreError {
     },
     #[error("model installation was cancelled")]
     Cancelled,
+    #[error("model installation operation has already finished")]
+    OperationFinished,
     #[error(
         "model installation progress regressed from {previous_bytes} to {reported_bytes} bytes"
     )]

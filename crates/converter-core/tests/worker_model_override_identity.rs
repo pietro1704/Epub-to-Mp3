@@ -241,6 +241,56 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         wrong_model_recovery
             .set_recovery_job(&predecessor_a.job_id)
             .unwrap();
+        if typed {
+            // B's independently verified segments remain reusable even when
+            // the requested predecessor belongs to A. Its chapter receipt
+            // must still describe B, rather than adopting A's receipt.
+            let mut cached_request = request.clone();
+            cached_request.job_id = format!("cached-override-{job}");
+            let cached_recovery = converter_core::conversion_control::ConversionControl::default();
+            cached_recovery
+                .set_recovery_job(&predecessor_a.job_id)
+                .unwrap();
+            let cached_worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
+                .unwrap()
+                .with_piper_model(Some(prepare_a()))
+                .with_control(cached_recovery);
+            runtime.model_calls.lock().unwrap().clear();
+            runtime.text_calls.lock().unwrap().clear();
+            let cached = cached_worker.run(cached_request.clone()).unwrap();
+            assert!(runtime.text_calls.lock().unwrap().is_empty());
+            assert!(runtime.model_calls.lock().unwrap().is_empty());
+            let receipt = paths
+                .output_dir
+                .join(cached_request.job_id)
+                .join(&cached.chapters[0].filename)
+                .with_extension("mp3.complete.json");
+            let cached_receipt: serde_json::Value =
+                serde_json::from_slice(&fs::read(receipt).unwrap()).unwrap();
+            let selected_receipt: serde_json::Value =
+                serde_json::from_slice(&prior_receipt).unwrap();
+            let predecessor_receipt: serde_json::Value =
+                serde_json::from_slice(&predecessor_a_receipt_bytes).unwrap();
+            // A newly assembled chapter has its own session receipt, but its
+            // resolved voice, request identity and audio must still match B.
+            for field in [
+                "request_key",
+                "used_selections",
+                "synthesis_sessions",
+                "audio_sha256",
+                "size",
+            ] {
+                assert_eq!(cached_receipt[field], selected_receipt[field], "{field}");
+            }
+            assert_ne!(
+                cached_receipt["request_key"],
+                predecessor_receipt["request_key"]
+            );
+
+            // Isolate predecessor rejection below from valid B segment reuse.
+            // This directory belongs exclusively to this temporary fixture.
+            fs::remove_dir_all(paths.cache_dir.join("speech-segments-v1")).unwrap();
+        }
         let override_worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
             .unwrap()
             .with_piper_model(Some(prepare_a()))

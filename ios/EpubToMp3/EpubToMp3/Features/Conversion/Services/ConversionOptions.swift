@@ -4,6 +4,8 @@ import Foundation
 struct ConversionOptions: Codable, Sendable, Equatable {
     let schemaVersion: UInt32
     var ttsPreferences: TtsPreferences? = nil
+    var recoveryJobID: String? = nil
+    var pronunciation: BookPronunciationDictionary? = nil
     var engine: String?
     var voice: String?
     var language: String?
@@ -58,6 +60,8 @@ struct ConversionOptions: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case ttsPreferences = "tts_preferences"
+        case recoveryJobID = "recovery_job_id"
+        case pronunciation
         case engine, voice, language
         case clearCache = "clear_cache"
         case forceReprocess = "force_reprocess"

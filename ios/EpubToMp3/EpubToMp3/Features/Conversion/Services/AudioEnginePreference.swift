@@ -9,7 +9,7 @@ enum AudioEnginePreference: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .edge: return "Edge"
-        case .piper: return "Faber medium"
+        case .piper: return "Piper"
         case .system: return L10n.string("settings.systemTts")
         }
     }
@@ -70,9 +70,6 @@ extension JobSnapshot {
     /// Present the resolved voice names; installed identifiers remain in diagnostic state.
     var activeVoiceDisplayName: String? {
         guard let voice, !voice.isEmpty else { return nil }
-        return voice.components(separatedBy: " + ").map {
-            let name = $0.components(separatedBy: " (").first ?? $0
-            return name == "pt_BR-faber-medium" ? "Faber medium" : name
-        }.joined(separator: " + ")
+        return SpeechModelPresentationStore.shared.activeVoices(voice, engine: engine)
     }
 }

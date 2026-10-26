@@ -103,6 +103,7 @@ final class MacSettingsViewController: NSViewController {
         layoutPopup.action = #selector(layoutChanged(_:))
         audioEnginePopup.target = self
         audioEnginePopup.action = #selector(audioEngineChanged(_:))
+        audioEnginePopup.menu?.autoenablesItems = false
         secondaryEnginePopup.menu?.autoenablesItems = false
         secondaryEnginePopup.target = self
         secondaryEnginePopup.action = #selector(secondaryEngineChanged(_:))
@@ -194,13 +195,21 @@ final class MacSettingsViewController: NSViewController {
                    in: themePopup)
         selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0,
                    in: layoutPopup)
-        selectItem(at: narrationSelections.firstIndex(of: settings.ttsPreferences.primary) ?? 0,
+        selectItem(at: narrationSelections.firstIndex {
+            SpeechModelLibraryViewState.sameChoice($0, settings.ttsPreferences.primary)
+        } ?? 0,
                    in: audioEnginePopup)
         selectItem(at: settings.ttsPreferences.secondary
-            .flatMap { narrationSelections.firstIndex(of: $0) }.map { $0 + 1 } ?? 0,
+            .flatMap { selected in narrationSelections.firstIndex {
+                SpeechModelLibraryViewState.sameChoice($0, selected)
+            } }.map { $0 + 1 } ?? 0,
             in: secondaryEnginePopup)
         for (index, selection) in narrationSelections.enumerated() {
-            secondaryEnginePopup.item(at: index + 1)?.isEnabled = !selection.representsSameRequest(as: settings.ttsPreferences.primary) && (selection.engine != "edge" || settings.allowOnlineAudioFallback)
+            let ready = speechModelState.canSelect(selection)
+            audioEnginePopup.item(at: index)?.isEnabled = ready
+            secondaryEnginePopup.item(at: index + 1)?.isEnabled = ready
+                && !selection.representsSameRequest(as: settings.ttsPreferences.primary)
+                && (selection.engine != "edge" || settings.allowOnlineAudioFallback)
         }
         onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
         speechModelPanel.render()
@@ -236,6 +245,10 @@ final class MacSettingsViewController: NSViewController {
 
     @objc private func audioEngineChanged(_ sender: NSPopUpButton) {
         guard narrationSelections.indices.contains(sender.indexOfSelectedItem) else { return }
+        guard speechModelState.canSelect(narrationSelections[sender.indexOfSelectedItem]) else {
+            refresh()
+            return
+        }
         settings.selectPrimaryNarration(narrationSelections[sender.indexOfSelectedItem])
         speechModelPanel.render()
         refresh()
@@ -249,7 +262,9 @@ final class MacSettingsViewController: NSViewController {
             return
         }
         let selection = narrationSelections[index]
-        guard !selection.representsSameRequest(as: settings.ttsPreferences.primary) && (selection.engine != "edge" || settings.allowOnlineAudioFallback) else {
+        guard speechModelState.canSelect(selection),
+              !selection.representsSameRequest(as: settings.ttsPreferences.primary),
+              selection.engine != "edge" || settings.allowOnlineAudioFallback else {
             refresh()
             return
         }
@@ -270,7 +285,7 @@ final class MacSettingsViewController: NSViewController {
             return engine == .piper ? [] : [.selected(engine)]
         }
         for selection in settings.configuredNarrationSelections
-            where !narrationSelections.contains(selection) {
+            where !narrationSelections.contains(where: { SpeechModelLibraryViewState.sameChoice($0, selection) }) {
             narrationSelections.append(selection)
         }
         let titles = narrationSelections.map(speechModelState.displayName(for:))

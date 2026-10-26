@@ -115,6 +115,16 @@ pub(super) unsafe fn convert_job_json(
         (None, None)
     };
     let queued_audio = options.audio_chunks.clone();
+    let pronunciation = options.pronunciation.clone();
+    let control = if let Some(predecessor) = options.recovery_job_id.as_deref() {
+        let recovery_control = control.unwrap_or_default();
+        if let Err(error) = recovery_control.set_recovery_job(predecessor) {
+            return fail(error.to_string());
+        }
+        Some(recovery_control)
+    } else {
+        control
+    };
     let request = converter_core::worker::ConversionRequest {
         tts_preferences: options.tts_preferences,
         models_root: options.models_root.map(std::path::PathBuf::from),
@@ -257,6 +267,10 @@ pub(super) unsafe fn convert_job_json(
         worker.with_control(control)
     } else {
         worker
+    };
+    let worker = match worker.with_pronunciation(pronunciation) {
+        Ok(worker) => worker,
+        Err(error) => return fail(error.to_string()),
     };
     let conversion_thread = match std::thread::Builder::new()
         .name("converter-ffi-conversion".into())

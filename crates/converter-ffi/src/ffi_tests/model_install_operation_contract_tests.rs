@@ -44,17 +44,11 @@ fn model_install_operation_rejects_duplicate_canonical_identity_until_release() 
     let direct = CString::new(root.path().join("models").to_str().unwrap()).unwrap();
     let alias = CString::new(root.path().join("./models").to_str().unwrap()).unwrap();
     unsafe {
-        let first = converter_tts_model_install_operation_create(
-            model.as_ptr(),
-            direct.as_ptr(),
-            u64::MAX,
-        );
+        let first =
+            converter_tts_model_install_operation_create(model.as_ptr(), direct.as_ptr(), u64::MAX);
         assert!(!first.is_null());
-        let duplicate = converter_tts_model_install_operation_create(
-            model.as_ptr(),
-            alias.as_ptr(),
-            u64::MAX,
-        );
+        let duplicate =
+            converter_tts_model_install_operation_create(model.as_ptr(), alias.as_ptr(), u64::MAX);
         assert!(duplicate.is_null());
         let error = converter_last_error();
         assert!(CStr::from_ptr(error)
@@ -63,11 +57,8 @@ fn model_install_operation_rejects_duplicate_canonical_identity_until_release() 
             .contains("duplicate model installation request"));
         converter_string_free(error);
         converter_tts_model_install_operation_free(first);
-        let replacement = converter_tts_model_install_operation_create(
-            model.as_ptr(),
-            alias.as_ptr(),
-            u64::MAX,
-        );
+        let replacement =
+            converter_tts_model_install_operation_create(model.as_ptr(), alias.as_ptr(), u64::MAX);
         assert!(!replacement.is_null());
         converter_tts_model_install_operation_cancel(replacement);
         converter_tts_model_install_operation_free(replacement);
@@ -121,4 +112,29 @@ fn model_install_operation_recovers_only_a_persisted_attempt_identity() {
         );
         assert!(cancelled.is_null());
     }
+}
+
+#[test]
+fn model_install_preflight_failure_remains_terminal_across_ffi_calls() {
+    let root = tempfile::tempdir().unwrap();
+    let model = CString::new("pt_BR-faber-medium").unwrap();
+    let root_path = CString::new(root.path().to_str().unwrap()).unwrap();
+    unsafe {
+        let operation =
+            converter_tts_model_install_operation_create(model.as_ptr(), root_path.as_ptr(), 0);
+        assert!(!operation.is_null());
+        let original = converter_tts_model_install_operation_event_json(operation);
+        let original_bytes = CStr::from_ptr(original).to_bytes().to_vec();
+        converter_string_free(original);
+        assert!(!converter_tts_model_install_operation_record_progress(
+            operation, 0, 1
+        ));
+        assert!(converter_tts_model_install_operation_publish(operation).is_null());
+        converter_tts_model_install_operation_cancel(operation);
+        let after = converter_tts_model_install_operation_event_json(operation);
+        assert_eq!(CStr::from_ptr(after).to_bytes(), original_bytes);
+        converter_string_free(after);
+        converter_tts_model_install_operation_free(operation);
+    }
+    assert!(root.path().read_dir().unwrap().next().is_none());
 }

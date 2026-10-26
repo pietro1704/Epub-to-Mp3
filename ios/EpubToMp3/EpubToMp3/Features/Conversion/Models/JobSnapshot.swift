@@ -78,6 +78,21 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
     /// Native Rust/reader identities are zero-based even in a partial queue
     /// without chapter zero. Nil preserves legacy remote-manifest handling.
     var chapterIndexBase: Int? = nil
+    /// Job completion covers its selected range; book completeness covers the source.
+    var sourceChaptersTotal: Int? = nil
+
+    var isCompleteBookAudio: Bool? {
+        guard let total = sourceChaptersTotal, total > 0, chapterIndexBase == 0 else { return nil }
+        let full = (chapterProgress ?? []).filter { $0.isCompleted && ($0.textOffset ?? 0) == 0 }
+        let indices = Set(full.map(\.index))
+        return indices.count == total && indices.allSatisfy { (0..<total).contains($0) }
+    }
+
+    var bookAudioCoverageLabel: String? {
+        guard isCompleteBookAudio == false, let total = sourceChaptersTotal else { return nil }
+        let count = Set((chapterProgress ?? []).filter { $0.isCompleted && ($0.textOffset ?? 0) == 0 }.map(\.index)).count
+        return L10n.string("bookAudio.partial", count, total)
+    }
 
     var id: String { jobId }
 

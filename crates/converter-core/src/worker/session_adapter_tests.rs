@@ -2,8 +2,8 @@
 fn registered_runtime_runs_through_real_worker_without_provider_branches() {
     use crate::tts_preferences::{TtsPreferences, TtsSelection};
     use crate::tts_session::*;
-    struct ContractProvider(Arc<AtomicUsize>);
-    struct ContractSession(ResolvedIdentity);
+    struct ContractProvider(Arc<AtomicUsize>, Arc<AtomicUsize>);
+    struct ContractSession(ResolvedIdentity, Arc<AtomicUsize>);
     impl TtsProvider for ContractProvider {
         fn descriptor(&self) -> ProviderDescriptor {
             ProviderDescriptor {
@@ -34,12 +34,15 @@ fn registered_runtime_runs_through_real_worker_without_provider_branches() {
             _: &str,
         ) -> Result<Box<dyn TtsSession>, TtsFailure> {
             self.0.fetch_add(1, Ordering::AcqRel);
-            Ok(Box::new(ContractSession(ResolvedIdentity {
-                selection: selection.clone(),
-                runtime_revision: "1".into(),
-                artifacts: Default::default(),
-                reusable: true,
-            })))
+            Ok(Box::new(ContractSession(
+                ResolvedIdentity {
+                    selection: selection.clone(),
+                    runtime_revision: "1".into(),
+                    artifacts: Default::default(),
+                    reusable: true,
+                },
+                self.1.clone(),
+            )))
         }
     }
     impl TtsSession for ContractSession {
@@ -53,6 +56,7 @@ fn registered_runtime_runs_through_real_worker_without_provider_branches() {
             sink: &mut AudioSink,
         ) -> Result<(), TtsFailure> {
             context.check()?;
+            self.1.fetch_add(1, Ordering::AcqRel);
             if text.chars().count() > 96 {
                 return Err(TtsFailure::new(
                     FailureKind::Synthesis,
@@ -81,8 +85,12 @@ fn registered_runtime_runs_through_real_worker_without_provider_branches() {
     ));
     let mut registry = TtsRegistry::default();
     let prepared = Arc::new(AtomicUsize::new(0));
+    let synthesis_calls = Arc::new(AtomicUsize::new(0));
     registry
-        .register(Arc::new(ContractProvider(prepared.clone())))
+        .register(Arc::new(ContractProvider(
+            prepared.clone(),
+            synthesis_calls.clone(),
+        )))
         .unwrap();
     let worker = ConversionWorker::new(config)
         .unwrap()
@@ -162,7 +170,7 @@ fn registered_runtime_runs_through_real_worker_without_provider_branches() {
         },
         ..TtsPreferences::default()
     });
-    let manifest = worker.run(request).unwrap();
+    let manifest = worker.run(request.clone()).unwrap();
     assert_eq!(manifest.chapters.len(), 1);
     assert_eq!(manifest.synthesis_sessions.len(), 1);
     assert_eq!(
@@ -173,6 +181,38 @@ fn registered_runtime_runs_through_real_worker_without_provider_branches() {
         prepared.load(Ordering::Acquire),
         3,
         "cache and synthesis share one prepared session per job"
+    );
+    let calls = synthesis_calls.load(Ordering::Acquire);
+    request.job_id = "registered-segment-reuse".into();
+    worker.run(request.clone()).unwrap();
+    assert_eq!(
+        synthesis_calls.load(Ordering::Acquire),
+        calls,
+        "a fresh job reuses validated segment bytes"
+    );
+    request.job_id = "registered-different-voice".into();
+    let selection = &mut request.tts_preferences.as_mut().unwrap().primary;
+    selection.voice = Some("b".into());
+    selection.session.as_mut().unwrap().voice = Some("b".into());
+    worker.run(request.clone()).unwrap();
+    assert!(
+        synthesis_calls.load(Ordering::Acquire) > calls,
+        "different voice cannot reuse another identity"
+    );
+    let before_pronunciation = synthesis_calls.load(Ordering::Acquire);
+    let worker = worker
+        .with_pronunciation(crate::pronunciation::PronunciationDictionary {
+            rules: vec![crate::pronunciation::PronunciationRule {
+                term: "conversion".into(),
+                spoken: "spoken correction".into(),
+            }],
+        })
+        .unwrap();
+    request.job_id = "registered-pronunciation-change".into();
+    worker.run(request).unwrap();
+    assert!(
+        synthesis_calls.load(Ordering::Acquire) > before_pronunciation,
+        "changed speech input invalidates audio"
     );
 }
 

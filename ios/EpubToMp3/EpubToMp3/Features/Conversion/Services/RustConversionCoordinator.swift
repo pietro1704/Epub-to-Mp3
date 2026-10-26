@@ -14,6 +14,7 @@ final class RustConversionCoordinator {
     private let adapter: ConverterFFIAdapter
     private let fileManager: FileManager
     private let outputStore: RustConversionOutputStore
+    private let recoveryStore: BookConversionRecoveryStore
 
     typealias Executor = @MainActor (
         URL, String, Int32, Int32, ConversionOptions?,
@@ -47,11 +48,14 @@ final class RustConversionCoordinator {
     init(
         adapter: ConverterFFIAdapter = ConverterFFIAdapter(),
         fileManager: FileManager = .default,
-        outputStore: RustConversionOutputStore = .shared
+        outputStore: RustConversionOutputStore = .shared,
+        recoveryStore: BookConversionRecoveryStore? = nil
     ) {
         self.adapter = adapter
         self.fileManager = fileManager
         self.outputStore = outputStore
+        self.recoveryStore = recoveryStore ?? (outputStore === RustConversionOutputStore.shared
+            ? .shared : BookConversionRecoveryStore(root: outputStore.recoveryRoot))
     }
 
     func convert(
@@ -59,13 +63,27 @@ final class RustConversionCoordinator {
         jobID: String = UUID().uuidString,
         chapterStart: Int32 = -1,
         chapterEnd: Int32 = -1,
-        options: ConversionOptions? = nil,
+        options requestedOptions: ConversionOptions? = nil,
         playbackControl: ConverterPlaybackControl? = nil,
         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)? = nil,
         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil,
         onAudioChunk: (@Sendable (Int, Int, Data) -> Bool)? = nil,
         readerChapterMap: ReaderConversionChapterMap? = nil
     ) async throws -> Result {
+        // Reject invalid explicit options before reading book bytes or prefs.
+        if requestedOptions != nil {
+            try adapter.validateConversionSupport(options: requestedOptions)
+        }
+        var options = requestedOptions
+        if options?.pronunciation == nil {
+            let bookID = try await Task.detached { try BookContentIdentity.hash(of: bookURL) }.value
+            let dictionary = BookPronunciationStore().load(bookID: bookID)
+            if !dictionary.rules.isEmpty {
+                var captured = options ?? ConversionOptions()
+                captured.pronunciation = dictionary
+                options = captured
+            }
+        }
         if options != nil {
             try adapter.validateConversionSupport(options: options)
         }
@@ -84,6 +102,16 @@ final class RustConversionCoordinator {
                                                cancel: { effectiveControl.cancel() })
         let outputDirectory = lease.outputDirectory
         let logURL = outputDirectory.appendingPathComponent("conversion.log")
+        let recoveryStore = self.recoveryStore
+        let recoveryBookID: String?
+        do {
+            recoveryBookID = playbackControl == nil && chapterStart < 0 && chapterEnd < 0
+                ? try await recoveryStore.begin(bookURL: bookURL, jobID: jobID, options: options)
+                : nil
+        } catch {
+            await outputStore.finish(lease)
+            throw error
+        }
 
         do {
             try Task.checkCancellation()
@@ -109,24 +137,35 @@ final class RustConversionCoordinator {
                                 options: options,
                                 playbackControl: effectiveControl,
                                 onProgress: { data in
-                                    guard let onProgress,
-                                          let event = try? JSONDecoder().decode(
+                                    guard let event = try? JSONDecoder().decode(
                                             ConversionProgressEvent.self,
                                             from: try readerChapterMap?.event(data) ?? data
                                           ) else {
                                         return
                                     }
-                                    Task { @MainActor in onProgress(event) }
+                                    Task { @MainActor in
+                                        if let recoveryBookID {
+                                            try? await recoveryStore.progress(
+                                                bookID: recoveryBookID, jobID: jobID, total: event.chaptersTotal)
+                                        }
+                                        onProgress?(event)
+                                    }
                                 },
                                 onChapterCompleted: { data in
-                                    guard let onChapterCompleted,
-                                          let event = try? JSONDecoder().decode(
+                                    guard let event = try? JSONDecoder().decode(
                                             ChapterCompletionEvent.self,
                                             from: try readerChapterMap?.event(data) ?? data
                                           ) else {
                                         return
                                     }
-                                    Task { @MainActor in onChapterCompleted(event) }
+                                    Task { @MainActor in
+                                        if let recoveryBookID {
+                                            try? await recoveryStore.progress(
+                                                bookID: recoveryBookID, jobID: jobID, total: event.chaptersTotal,
+                                                completed: event.chapterIndex)
+                                        }
+                                        onChapterCompleted?(event)
+                                    }
                                 },
                                 onAudioChunk: onAudioChunk
                             )
@@ -139,13 +178,20 @@ final class RustConversionCoordinator {
             }, onCancel: { effectiveControl.cancel() })
             try Task.checkCancellation()
             let result = Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
+            _ = try result.snapshot()
             if let requestedChapterPositions {
                 try result.validateSelectedChapters(requestedChapterPositions)
             }
             try? appendLogLine("[Rust] conversion finished", to: logURL)
+            if let recoveryBookID {
+                try await recoveryStore.finish(bookID: recoveryBookID, jobID: jobID, succeeded: true)
+            }
             await outputStore.finish(lease)
             return result
         } catch {
+            if let recoveryBookID {
+                try? await recoveryStore.finish(bookID: recoveryBookID, jobID: jobID, succeeded: false)
+            }
             try? appendLogLine("[Rust] conversion failed: \(error.localizedDescription)", to: logURL)
             await outputStore.finish(lease)
             throw error

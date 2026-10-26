@@ -286,6 +286,9 @@ final class JobDetailScreenController: UITableViewController {
         if let pct = viewModel.snapshot?.progressPercent {
             rows.append((L10n.string("jobDetail.progress"), String(format: "%.0f%%", pct)))
         }
+        if let coverage = viewModel.snapshot?.bookAudioCoverageLabel {
+            rows.append((L10n.string("bookAudio.coverage"), coverage))
+        }
         rows.append((
             L10n.string("jobDetail.streaming"),
             viewModel.isStreaming ? L10n.string("jobDetail.live") : String(localized: "jobDetail.idle")

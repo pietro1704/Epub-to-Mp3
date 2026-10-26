@@ -27,6 +27,8 @@ final class BookDetailScreenController: UIViewController {
     private let listenButton = UIButton(type: .system)
     private let downloadButton = UIButton(type: .system)
     private let logButton = UIButton(type: .system)
+    private let pronunciationButton = UIButton(type: .system)
+    private let recoveryPanel = BookConversionRecoveryPanel()
     private var manualConversionGeneration: String?
     private var playbackGeneration: String?
     private var playbackControl: ConverterPlaybackControl?
@@ -69,6 +71,7 @@ final class BookDetailScreenController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         configureLayout()
+        recoveryPanel.onResume = { [weak self] options in self?.startManualConversion(options: options) }
         observePlaybackChapterChanges()
         render()
     }
@@ -148,18 +151,21 @@ final class BookDetailScreenController: UIViewController {
             $0.numberOfLines = 0
             $0.setContentCompressionResistancePriority(.required, for: .vertical)
         }
-        [readButton, listenButton, downloadButton, logButton].forEach {
+        pronunciationButton.setTitle(L10n.string("pronunciation.title"), for: .normal)
+        pronunciationButton.accessibilityIdentifier = "bookDetail.pronunciation"
+        pronunciationButton.addTarget(self, action: #selector(editPronunciation), for: .touchUpInside)
+        [readButton, listenButton, downloadButton, pronunciationButton, logButton].forEach {
             $0.titleLabel?.numberOfLines = 0
             $0.titleLabel?.adjustsFontForContentSizeCategory = true
             $0.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         }
 
-        let actions = UIStackView(arrangedSubviews: [readButton, listenButton, downloadButton, logButton])
+        let actions = UIStackView(arrangedSubviews: [readButton, listenButton, downloadButton, pronunciationButton, logButton])
         actions.axis = .vertical
         actions.spacing = 12
         actions.distribution = .fill
 
-        let stack = UIStackView(arrangedSubviews: [coverView, titleLabel, authorLabel, progressLabel, actions])
+        let stack = UIStackView(arrangedSubviews: [coverView, titleLabel, authorLabel, progressLabel, recoveryPanel, actions])
         stack.axis = .vertical
         stack.spacing = 12
         stack.alignment = .center
@@ -177,6 +183,7 @@ final class BookDetailScreenController: UIViewController {
     }
 
     private func render() {
+        recoveryPanel.refresh(bookID: book.id)
         titleLabel.text = book.resolvedTitle
         authorLabel.text = book.author
         authorLabel.isHidden = (book.author ?? "").isEmpty
@@ -373,12 +380,18 @@ final class BookDetailScreenController: UIViewController {
         navigationController?.pushViewController(RustConversionLogViewController(logURL: url), animated: true)
     }
 
+    @objc private func editPronunciation() { BookPronunciationEditor.present(bookID: book.id, on: self) }
+
     @objc private func tapDownload() {
+        startManualConversion(options: settings.conversionOptions)
+    }
+
+    private func startManualConversion(options: ConversionOptions) {
         guard manualConversionGeneration == nil else { return }
         let jobID = UUID().uuidString
         manualConversionGeneration = jobID
         let bookID = book.id
-        let conversionOptions = settings.conversionOptions
+        let conversionOptions = options
         Task { [weak self] in
             guard let self else { return }
             defer {
@@ -390,7 +403,11 @@ final class BookDetailScreenController: UIViewController {
                     let result = try await self.conversionExecutor(
                         url, jobID, -1, -1,
                         conversionOptions,
-                        nil, nil
+                        { [weak self] event in
+                            guard let self, self.manualConversionGeneration == jobID else { return }
+                            self.progressLabel.text = event.renderProgress?.label
+                                ?? L10n.string("bookDetail.progressPercent", min(99, Int(event.percent)))
+                        }, nil
                     )
                     guard self.manualConversionGeneration == jobID else { return }
                     guard result.jobID == jobID else {
@@ -403,6 +420,7 @@ final class BookDetailScreenController: UIViewController {
                     return
                 } catch {
                     guard self.manualConversionGeneration == jobID else { return }
+                    self.recoveryPanel.refresh(bookID: bookID)
                     let alert = UIAlertController(
                         title: L10n.string("bookDetail.download"),
                         message: AppErrorReporter.message(error, context: #function),

@@ -40,6 +40,7 @@ actor RustConversionOutputStore {
     }
 
     private let root: URL
+    nonisolated var recoveryRoot: URL { root }
     private let notificationCenter: NotificationCenter
     private let bookIdentity: @Sendable (URL) async throws -> String
     private var writers: [String: Writer] = [:]

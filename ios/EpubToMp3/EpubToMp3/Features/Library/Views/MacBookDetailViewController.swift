@@ -75,8 +75,13 @@ final class MacBookDetailViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         configureStreamingCallbacks()
+        detailContent.recoveryPanel.onResume = { [weak self] options in
+            self?.convertWholeBook(options: options)
+        }
         observeLocalPlaybackChapterChanges()
         detailContent.readButton.target = self
+        detailContent.pronunciationButton.target = self
+        detailContent.pronunciationButton.action = #selector(editPronunciation)
         detailContent.readButton.action = #selector(tapRead)
         detailContent.listenButton.target = self
         detailContent.listenButton.action = #selector(tapListen)
@@ -149,6 +154,8 @@ final class MacBookDetailViewController: NSViewController {
         onRead(book.id)
     }
 
+    @objc private func editPronunciation() { BookPronunciationEditor.present(bookID: book.id, on: self) }
+
     /// macOS starts local Rust streaming directly from Book Detail.
     @objc private func tapListen() { listeningSession.start() }
 
@@ -194,7 +201,9 @@ final class MacBookDetailViewController: NSViewController {
                     options,
                     { [weak self] event in
                         guard let self, self.localConversionGeneration == jobID else { return }
-                        if event.message.hasPrefix("converting chapter"),
+                        if let progress = event.renderProgress?.label {
+                            self.detailContent.progressLabel.stringValue = progress
+                        } else if event.message.hasPrefix("converting chapter"),
                            let chapterIndex = event.chapterIndex,
                            event.chaptersTotal > 0 {
                             self.detailContent.progressLabel.stringValue = L10n.string(
@@ -217,7 +226,7 @@ final class MacBookDetailViewController: NSViewController {
                             self.localConversionChapters.append(chapter)
                         }
                         self.localConversionChapters.sort { $0.index < $1.index }
-                        let percent = Int(event.progressPercent.rounded())
+                        let percent = min(99, Int(event.progressPercent.rounded()))
                         self.localConversionProgress = percent
                         self.detailContent.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
                     }
@@ -231,6 +240,7 @@ final class MacBookDetailViewController: NSViewController {
                 guard !Task.isCancelled, localConversionGeneration == jobID else { return }
                 localConversionGeneration = nil
                 let alert = NSAlert()
+                detailContent.recoveryPanel.refresh(bookID: book.id)
                 alert.messageText = L10n.string("bookDetail.listenStart")
                 alert.informativeText = AppErrorReporter.message(error, context: #function)
                 alert.addButton(withTitle: L10n.string("common.ok"))
@@ -256,6 +266,7 @@ final class MacBookDetailViewController: NSViewController {
         localConversionProgress = 100
         detailContent.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 100)
         detailContent.render(book: book, localConversionProgress: localConversionProgress)
+        if let coverage = snapshot.bookAudioCoverageLabel { detailContent.progressLabel.stringValue = coverage }
         return snapshot
     }
 

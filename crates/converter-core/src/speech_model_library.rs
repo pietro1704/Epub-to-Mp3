@@ -90,7 +90,7 @@ impl SpeechModelLibrary {
                         installable,
                         artifacts: model.artifacts.to_vec(),
                         download_bytes: installable.then_some(model.download_bytes),
-                        installed_bytes: None,
+                        installed_bytes: model.installed_artifact_bytes(),
                     },
                     licence: model.metadata.licence,
                     compatibility: Compatibility {

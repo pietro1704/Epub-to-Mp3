@@ -123,8 +123,11 @@ impl ConversionWorker {
                 "Synthesis adapter has an empty text capacity".into(),
             ));
         }
-        let mut segments =
-            std::collections::VecDeque::from(platform_tts::segments_with_limit(text, limit));
+        let mut segments = std::collections::VecDeque::from(self.pronunciation.source_segments(
+            text,
+            180.min(limit),
+            limit,
+        ));
         let adapters: Vec<_> = builtin_descriptors()
             .into_iter()
             .filter(|descriptor| !descriptor.targets.iter().any(|target| target == "web"))
@@ -138,7 +141,15 @@ impl ConversionWorker {
         let mut resolved_sessions = Vec::new();
         let mut segment_receipts = Vec::new();
         let mut index = 0;
+        let segment_cache =
+            super::segment_audio_cache::SegmentAudioCache::new(&self.config.paths.cache_dir);
+        let book_identity = self
+            .source_identity
+            .lock()
+            .expect("source identity lock")
+            .clone();
         while let Some(segment) = segments.pop_front() {
+            let cache_hit = std::cell::Cell::new(false);
             let segment_started = std::time::Instant::now();
             if self.cancel.is_cancelled() {
                 return Err(WorkerError::Cancelled);
@@ -159,6 +170,7 @@ impl ConversionWorker {
             let mut synthesize = |selection: &crate::tts_preferences::TtsSelection,
                                   segment: &str|
              -> Result<Vec<u8>, TtsFailure> {
+                cache_hit.set(false);
                 let context = SynthesisContext {
                     language: language.unwrap_or("pt-BR"),
                     cancelled: &|| self.cancel.is_cancelled(),
@@ -220,28 +232,86 @@ impl ConversionWorker {
                     sessions.insert(key.clone(), session);
                 }
                 let session = sessions.get_mut(&key).expect("prepared session");
-                let mut sink = AudioSink::new(
-                    descriptor
-                        .capabilities
-                        .audio_formats
-                        .first()
-                        .cloned()
-                        .ok_or_else(|| {
-                            TtsFailure::new(
-                                FailureKind::Unavailable,
-                                "Adapter has no audio-byte format",
-                            )
-                        })?,
-                    MAX_SEGMENT_BYTES,
-                );
-                if let Err(failure) = session.synthesize(segment, &context, &mut sink) {
-                    sessions.remove(&key);
-                    return Err(failure);
+                let spoken = self.pronunciation.apply(segment);
+                if spoken.chars().count()
+                    > segment
+                        .chars()
+                        .count()
+                        .saturating_mul(8)
+                        .saturating_add(400)
+                {
+                    return Err(TtsFailure::new(
+                        FailureKind::InvalidSelection,
+                        "Pronunciation expansion exceeds the bounded speech limit",
+                    ));
+                }
+                let segment_key = book_identity.as_deref().and_then(|book| {
+                    // Only rules that change this block invalidate its inner cache.
+                    let speech_identity =
+                        serde_json::to_string(&(segment, &spoken)).expect("speech text identity");
+                    super::segment_audio_cache::key(
+                        book,
+                        context.language,
+                        &speech_identity,
+                        session.identity(),
+                    )
+                });
+                if !self.execution_options.force_reprocess && !self.execution_options.clear_cache {
+                    if let Some(bytes) = segment_key
+                        .as_deref()
+                        .and_then(|key| segment_cache.load(key))
+                    {
+                        context.check()?;
+                        cache_hit.set(true);
+                        return Ok(bytes);
+                    }
+                }
+                let format = descriptor
+                    .capabilities
+                    .audio_formats
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| {
+                        TtsFailure::new(
+                            FailureKind::Unavailable,
+                            "Adapter has no audio-byte format",
+                        )
+                    })?;
+                let mut encoded = Vec::new();
+                let speech_limit = descriptor.capabilities.max_text_chars.min(800);
+                let passages = if spoken.chars().count() <= speech_limit {
+                    vec![spoken]
+                } else {
+                    platform_tts::segments_with_limit(&spoken, speech_limit)
+                };
+                for passage in passages {
+                    let mut sink = AudioSink::new(format.clone(), MAX_SEGMENT_BYTES);
+                    if let Err(failure) = session.synthesize(&passage, &context, &mut sink) {
+                        sessions.remove(&key);
+                        return Err(failure);
+                    }
+                    context.check()?;
+                    encoded.extend(sink.into_mp3()?);
+                    if encoded.len() > MAX_SEGMENT_BYTES {
+                        return Err(TtsFailure::new(
+                            FailureKind::InvalidAudio,
+                            "Expanded pronunciation exceeds segment limit",
+                        ));
+                    }
                 }
                 context.check()?;
-                let encoded = sink.into_mp3();
-                context.check()?;
-                encoded
+                if let Some(key) = segment_key {
+                    let _lease = self
+                        .control
+                        .as_ref()
+                        .map(|control| control.lease_generation(generation, Some(source_index)))
+                        .transpose()
+                        .map_err(|_| {
+                            TtsFailure::new(FailureKind::Replaced, "Playback window changed")
+                        })?;
+                    let _ = segment_cache.store(&key, &encoded);
+                }
+                Ok(encoded)
             };
             // A real, useful segment is the health probe. Attempts are serial
             // under the policy lock; no second voice or throwaway audio runs
@@ -250,7 +320,7 @@ impl ConversionWorker {
             let mut attempt_selection = |selection: &crate::tts_preferences::TtsSelection|
                 -> Result<(Vec<u8>, Vec<String>), TtsFailure> {
                 if selection.engine == "system" && selection != &preferences.primary {
-                    let mut passages = platform_tts::native_segments(&segment, index == 0);
+                    let mut passages = self.pronunciation.source_segments(&segment, if index == 0 { 60 } else { 240 }, 240);
                     let first = passages.remove(0);
                     Ok((synthesize(selection, &first)?, passages))
                 } else {
@@ -292,22 +362,33 @@ impl ConversionWorker {
                 });
             }
             output.write_all(&bytes)?;
-            if let Some(control) = &self.control {
-                let consumed_chars = segment
-                    .chars()
-                    .count()
-                    .saturating_sub(
-                        remainder
-                            .iter()
-                            .map(|passage| passage.chars().count())
-                            .sum::<usize>(),
-                    )
-                    .max(1);
-                control.observe_generation_at(
-                    generation,
-                    segment_started.elapsed().as_secs_f64(),
+            let consumed_chars = segment
+                .chars()
+                .count()
+                .saturating_sub(
+                    remainder
+                        .iter()
+                        .map(|passage| passage.chars().count())
+                        .sum::<usize>(),
+                )
+                .max(1);
+            self.render_progress
+                .lock()
+                .expect("render progress lock")
+                .segment(
+                    source_index,
                     consumed_chars,
+                    segment_started.elapsed().as_secs_f64(),
+                    cache_hit.get(),
                 );
+            if let Some(control) = &self.control {
+                if !cache_hit.get() {
+                    control.observe_generation_at(
+                        generation,
+                        segment_started.elapsed().as_secs_f64(),
+                        consumed_chars,
+                    );
+                }
             }
             for passage in remainder.into_iter().rev() {
                 segments.push_front(passage);
@@ -352,6 +433,7 @@ impl ConversionWorker {
                 used.push(actual_selection.clone());
             }
             self.emit(ProgressEvent {
+                render_progress: None,
                 job_id: request.job_id.clone(),
                 state: "running".into(),
                 chapter_index: Some(source_index),

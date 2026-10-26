@@ -24,6 +24,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     var onSnapshot: ((SpeechModelLibraryViewState) -> Void)?
 
     private let settings: AppSettings
+    private let audition = VoiceAuditionPresentation()
     private let speechModels: SpeechModelLibraryClient
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
     private var state: SpeechModelLibraryViewState
@@ -82,8 +83,34 @@ final class MacSpeechModelLibraryPanel: NSStackView {
             addArrangedSubview(NSTextField(labelWithString: L10n.string("settings.modelState.notInspected")))
             return
         }
-        for entry in state.entries {
+        let language = NSPopUpButton()
+        for tag in state.studyLanguages {
+            language.addItem(withTitle: state.languageTitle(tag))
+            language.lastItem?.representedObject = tag
+            if tag == state.studyLanguage { language.selectItem(at: language.numberOfItems - 1) }
+        }
+        language.target = self
+        language.action = #selector(studyLanguageChanged(_:))
+        language.setAccessibilityIdentifier("settings.speechModels.language")
+        language.setAccessibilityLabel(L10n.string("settings.modelLanguage.study"))
+        addArrangedSubview(NSStackView(views: [
+            NSTextField(labelWithString: L10n.string("settings.modelLanguage.study")), language,
+        ]))
+        for entry in state.orderedEntries {
             addArrangedSubview(makeRow(for: entry))
+        }
+    }
+
+    @objc private func studyLanguageChanged(_ sender: NSPopUpButton) {
+        guard let language = sender.selectedItem?.representedObject as? String else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                adopt(try await speechModels.setStudyLanguage(language))
+            } catch {
+                presentFailure(title: L10n.string("settings.modelLanguage.study"), error: error)
+                render()
+            }
         }
     }
 
@@ -139,6 +166,9 @@ final class MacSpeechModelLibraryPanel: NSStackView {
 
     private func perform(_ action: SpeechModelProductAction, for entry: SpeechModelSnapshot.Entry) {
         switch action {
+        case .preview:
+            guard let selection = state.selection(for: entry) else { return }
+            audition.present(selection: selection, language: entry.languageEvidence.exactTags.first?.tag ?? state.studyLanguage, on: window)
         case .install: confirmInstall(entry)
         case .cancelInstall:
             Task { await speechModels.cancelInstall(modelID: entry.identity.modelID) }
@@ -317,6 +347,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
 private extension SpeechModelProductAction {
     var rawIdentifier: String {
         switch self {
+        case .preview: return "preview"
         case .install: return "install"
         case .cancelInstall: return "cancel"
         case .select: return "select"

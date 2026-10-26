@@ -34,6 +34,53 @@ pub unsafe extern "C" fn converter_tts_catalog_json_v3(
     os_version: *const c_char,
     model_root: *const c_char,
 ) -> *mut c_char {
+    speech_model_catalog_json(
+        language,
+        platform,
+        android_api,
+        architecture,
+        os_version,
+        model_root,
+        None,
+    )
+}
+
+/// Explicit offline model loading. Call off the UI thread; no synthesis or download.
+/// The original v3 inspection endpoint retains its read-only/no-runtime-load contract.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_catalog_probe_json_v3(
+    language: *const c_char,
+    platform: *const c_char,
+    android_api: u32,
+    architecture: *const c_char,
+    os_version: *const c_char,
+    model_root: *const c_char,
+    espeak_data_directory: *const c_char,
+) -> *mut c_char {
+    let directory = match c_string(espeak_data_directory, "eSpeak data directory") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    speech_model_catalog_json(
+        language,
+        platform,
+        android_api,
+        architecture,
+        os_version,
+        model_root,
+        Some(&directory),
+    )
+}
+
+unsafe fn speech_model_catalog_json(
+    language: *const c_char,
+    platform: *const c_char,
+    android_api: u32,
+    architecture: *const c_char,
+    os_version: *const c_char,
+    model_root: *const c_char,
+    probe_directory: Option<&str>,
+) -> *mut c_char {
     clear_last_error();
     let language = match c_string(language, "language") {
         Ok(value) => value,
@@ -64,9 +111,15 @@ pub unsafe extern "C" fn converter_tts_catalog_json_v3(
         os_version,
     };
     let store = converter_core::model_store::ModelStore::new(Path::new(&model_root));
-    let snapshot = match converter_core::speech_model_library::SpeechModelLibrary
-        .snapshot_with_inspection(query, &store, &[])
-    {
+    let library = converter_core::speech_model_library::SpeechModelLibrary;
+    let result = if let Some(directory) = probe_directory {
+        library.snapshot_with_runtime_probe(query, &store, |identity| {
+            probe_embedded_model(identity, store.root(), directory)
+        })
+    } else {
+        library.snapshot_with_inspection(query, &store, &[])
+    };
+    let snapshot = match result {
         Ok(value) => value,
         Err(error) => return fail(error.to_string()),
     };
@@ -76,6 +129,43 @@ pub unsafe extern "C" fn converter_tts_catalog_json_v3(
             CString::into_raw,
         ),
         Err(error) => fail(error.to_string()),
+    }
+}
+
+fn probe_embedded_model(
+    identity: &converter_core::speech_model_library::ModelIdentity,
+    root: &Path,
+    espeak_directory: &str,
+) -> converter_core::speech_model_library::RuntimeReadinessOutcome {
+    use converter_core::speech_model_library::{ReadinessFailure, RuntimeReadinessOutcome};
+    #[cfg(feature = "piper-runtime")]
+    if identity.provider == "piper" {
+        let prepared = (|| {
+            let root = root.canonicalize().map_err(|error| error.to_string())?;
+            super::piper_runtime_boundary::configure_piper_data_directory(Path::new(
+                espeak_directory,
+            ))?;
+            converter_core::piper::PreparedPiperModel::prepare(
+                &root,
+                &identity.model_id,
+                Path::new("model.onnx"),
+                Path::new("model.onnx.json"),
+                Arc::new(super::piper_runtime_boundary::EmbeddedPiperRuntime),
+            )
+            .map_err(|error| error.to_string())
+        })();
+        return match prepared {
+            Ok(_) => RuntimeReadinessOutcome::Ready {
+                active_runtime_revision: format!("piper-embedded:{}", env!("CARGO_PKG_VERSION")),
+            },
+            Err(_) => RuntimeReadinessOutcome::Unavailable {
+                failure: ReadinessFailure::RuntimeRejected,
+            },
+        };
+    }
+    let _ = (identity, root, espeak_directory);
+    RuntimeReadinessOutcome::Unavailable {
+        failure: ReadinessFailure::RuntimeUnavailable,
     }
 }
 

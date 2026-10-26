@@ -7,6 +7,7 @@ struct EmbeddedBook { let metadataJSON: Data }
 /// Loads and invokes the stable C ABI only when the bundled dylib is present.
 final class ConverterFFIAdapter: EmbeddedConverter {
     private var setPlatformTts: ConverterSetPlatformTts?
+    private var auditionVoice: ConverterVoiceAudition?
     private var handle: UnsafeMutableRawPointer?
     private let close: (UnsafeMutableRawPointer?) -> Void
     private let metadata: (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
@@ -83,6 +84,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             available: true, freeString: free, lastError: error, modelsJSON: models,
             catalogJSON: symbol("converter_tts_catalog_json_v2", as: ConverterTtsModels.self),
             catalogJSONV3: symbol("converter_tts_catalog_json_v3", as: ConverterTtsCatalogV3.self),
+            catalogProbeJSONV3: symbol("converter_tts_catalog_probe_json_v3", as: ConverterTtsCatalogProbeV3.self),
             defaultEngine: defaultEngine,
             selectInstalledReady: symbol("converter_tts_installed_ready_engine", as: ConverterTtsInstalledReadyEngine.self),
             installArtifact: symbol("converter_tts_model_install", as: ConverterTtsModelInstall.self),
@@ -103,6 +105,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         )
         setPlatformTts = symbol("converter_session_set_platform_tts_v1", as: ConverterSetPlatformTts.self)
         _open = open
+        auditionVoice = symbol("converter_voice_audition_v1", as: ConverterVoiceAudition.self)
         convertJobJSON = symbol("converter_session_convert_job_json", as: ConverterSessionConvertJob.self)
         convertJSON = symbol("converter_session_convert_json", as: ConverterSessionConvert.self)
         convertJobOptionsJSON = symbol("converter_session_convert_job_options_json_v1", as: ConverterSessionConvertJobOptionsV1.self)
@@ -123,6 +126,21 @@ final class ConverterFFIAdapter: EmbeddedConverter {
 
     convenience init(libraryURL: URL) {
         self.init(bundle: .main, libraryURL: libraryURL)
+    }
+
+    func audition(text: String, options: ConversionOptions, output: URL, control: ConverterPlaybackControl) throws {
+        guard let auditionVoice else { throw EmbeddedConverterError.artifactInvalid("Voice audition ABI is unavailable") }
+        let json = try options.encodedJSON()
+        let accepted = json.withCString { optionsJSON in
+            text.withCString { text in output.path.withCString { path in
+                auditionVoice(optionsJSON, text, path, control.rawHandle)
+            } }
+        }
+        guard accepted else {
+            let error = lastError()
+            defer { if let error { freeString(error) } }
+            throw EmbeddedConverterError.conversionFailed(error.map { String(cString: $0) } ?? "Voice audition failed")
+        }
     }
 
     func makePlaybackControl() throws -> ConverterPlaybackControl {
@@ -301,8 +319,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
 
     func ttsModels() throws -> Data { try modelCatalog.ttsModels() }
     func ttsCatalog() throws -> TtsCatalog { try modelCatalog.ttsCatalog() }
-    func speechModelSnapshot(target: SpeechModelLibraryTarget) throws -> SpeechModelSnapshot {
-        try modelCatalog.speechModelSnapshot(target: target)
+    func speechModelSnapshot(target: SpeechModelLibraryTarget, probeRuntime: Bool = false) throws -> SpeechModelSnapshot {
+        try modelCatalog.speechModelSnapshot(target: target, probeRuntime: probeRuntime)
     }
 
     func ttsDefaultEngine(language: String, platform: String, androidAPI: UInt32 = 0) throws -> String {

@@ -108,11 +108,14 @@
 "settings.modelSize.installed" = "Installed size %@";
 "settings.modelPerformance.unmeasured" = "Speed not measured on this device";
 "settings.modelLanguage.exact" = "Language %@";
+"settings.modelLanguage.study" = "Voice catalogue language";
 "settings.modelLanguage.routingOnly" = "Exact language evidence unavailable";
 "settings.modelLanguage.runtimeValidated" = "runtime validated";
 "settings.modelLanguage.artifactDeclared" = "declared by artifact";
 "settings.modelLicence.unknown" = "Licence unknown";
-"settings.modelLicence.partial" = "Licence %@ (partial evidence)";
+"settings.modelLicence.partial" = "Dataset licence %@ (partial evidence)";
+"settings.modelLicence.creatorDeclared" = "Model licence %@ (declared by creator)";
+"settings.modelQuality.high" = "High quality";
 "settings.modelCompatibility.compatible" = "Compatible";
 "settings.modelCompatibility.incompatible" = "Incompatible: %@";
 "settings.modelCompatibility.language" = "language";
@@ -672,3 +675,19 @@
 "conversion.secondaryVoiceUsed" = "Using secondary voice %@ for a failed segment.";
 "settings.systemTts" = "System voice (Luciana when available)";
 "settings.systemVoice" = "Installed system voice";
+
+"bookRecovery.resume" = "Resume conversion";
+"bookRecovery.partial" = "Conversion interrupted — %d of %d chapters ready";
+"bookProgress.estimate" = "%d%% generated · about %d min remaining";
+"pronunciation.title" = "Pronunciation for this book";
+"pronunciation.instructions" = "One correction per line: original = spoken. Case-sensitive. Changes apply to new narration; the book text stays unchanged.";
+"pronunciation.save" = "Save";
+"pronunciation.invalid" = "Use unique terms and nonempty pronunciations: original = spoken (up to 200 rules).";
+"voiceAudition.title" = "Hear voice sample";
+"voiceAudition.preparing" = "Preparing a short sample with the installed voice…";
+"voiceAudition.stop" = "Stop sample";
+"voiceAudition.finished" = "Sample finished";
+"voiceAudition.failed" = "The sample could not be played.";
+"bookRecovery.interrupted" = "Conversion interrupted — resume to recover verified chapters";
+"bookAudio.coverage" = "Book audio";
+"bookAudio.partial" = "Partial audio — %d of %d full chapters";

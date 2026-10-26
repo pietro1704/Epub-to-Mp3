@@ -105,11 +105,14 @@
 "settings.modelSize.installed" = "Tamanho instalado %@";
 "settings.modelPerformance.unmeasured" = "Velocidade não medida neste dispositivo";
 "settings.modelLanguage.exact" = "Idioma %@";
+"settings.modelLanguage.study" = "Idioma do catálogo de vozes";
 "settings.modelLanguage.routingOnly" = "Evidência exata de idioma indisponível";
 "settings.modelLanguage.runtimeValidated" = "validado no runtime";
 "settings.modelLanguage.artifactDeclared" = "declarado pelo artefato";
 "settings.modelLicence.unknown" = "Licença desconhecida";
-"settings.modelLicence.partial" = "Licença %@ (evidência parcial)";
+"settings.modelLicence.partial" = "Licença do conjunto de dados %@ (evidência parcial)";
+"settings.modelLicence.creatorDeclared" = "Licença do modelo %@ (declarada pelo criador)";
+"settings.modelQuality.high" = "Qualidade alta";
 "settings.modelCompatibility.compatible" = "Compatível";
 "settings.modelCompatibility.incompatible" = "Incompatível: %@";
 "settings.modelCompatibility.language" = "idioma";
@@ -672,3 +675,19 @@
 "conversion.secondaryVoiceUsed" = "Usando a voz secundária %@ em um trecho com falha.";
 "settings.systemTts" = "Voz do sistema (Luciana quando disponível)";
 "settings.systemVoice" = "Voz instalada do sistema";
+
+"bookRecovery.resume" = "Retomar conversão";
+"bookRecovery.partial" = "Conversão interrompida — %d de %d capítulos prontos";
+"bookProgress.estimate" = "%d%% gerado · cerca de %d min restantes";
+"pronunciation.title" = "Pronúncia deste livro";
+"pronunciation.instructions" = "Uma correção por linha: original = pronúncia. Diferencia maiúsculas e minúsculas. Vale para novas narrações; o texto do livro é preservado.";
+"pronunciation.save" = "Salvar";
+"pronunciation.invalid" = "Use termos únicos e pronúncias preenchidas: original = pronúncia (até 200 regras).";
+"voiceAudition.title" = "Ouvir amostra da voz";
+"voiceAudition.preparing" = "Preparando uma amostra curta com a voz instalada…";
+"voiceAudition.stop" = "Parar amostra";
+"voiceAudition.finished" = "Amostra concluída";
+"voiceAudition.failed" = "Não foi possível reproduzir a amostra.";
+"bookRecovery.interrupted" = "Conversão interrompida — retome para recuperar os capítulos verificados";
+"bookAudio.coverage" = "Áudio do livro";
+"bookAudio.partial" = "Áudio parcial — %d de %d capítulos completos";

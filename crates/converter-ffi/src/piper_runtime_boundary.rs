@@ -104,7 +104,7 @@ pub fn configure_piper_data_directory(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(feature = "piper-runtime")]
-struct EmbeddedPiperRuntime;
+pub(super) struct EmbeddedPiperRuntime;
 
 #[cfg(all(test, feature = "piper-runtime"))]
 #[test]

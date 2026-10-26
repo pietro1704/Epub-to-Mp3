@@ -148,8 +148,15 @@ impl ConversionWorker {
                 identities.push(cache::sha256_file(config)?);
             }
         }
+        let pronunciation_key = if self.pronunciation.rules.is_empty() {
+            base_request_key.to_owned()
+        } else {
+            cache::sha256_bytes(
+                format!("{base_request_key}:{}", self.pronunciation.identity()).as_bytes(),
+            )
+        };
         let material = crate::tts_session::request_cache_material(
-            base_request_key,
+            &pronunciation_key,
             language,
             preferences,
             &identities,

@@ -19,6 +19,11 @@ impl ConversionWorker {
         &self,
         request: &ConversionRequest,
     ) -> Result<OutputManifest, WorkerError> {
+        if !self.pronunciation.rules.is_empty() && request.tts_preferences.is_none() {
+            return Err(WorkerError::Unsupported(
+                "Pronunciation requires an explicit captured TTS selection".into(),
+            ));
+        }
         if self
             .control
             .as_ref()
@@ -63,6 +68,7 @@ impl ConversionWorker {
         // separate file handles doubled disk I/O for every conversion.
         let source = fs::read(&request.input)?;
         let book_key = cache::sha256_bytes(&source);
+        *self.source_identity.lock().expect("source identity lock") = Some(book_key.clone());
         let book = epub::parse_epub(std::io::Cursor::new(&source))?;
         let source_chapters_total = book.chapters.len();
         let cache_dir = self.config.paths.cache_dir.join(&book_key);
@@ -95,6 +101,12 @@ impl ConversionWorker {
             .map(|(source_index, chapter)| (source_index, chapter))
             .collect();
         let total = chapters.len();
+        *self.render_progress.lock().expect("render progress lock") =
+            super::render_progress::RenderProgress::new(
+                chapters
+                    .iter()
+                    .map(|(index, chapter)| (*index, chapter.text.chars().count())),
+            );
         let source_text_chars: usize = chapters
             .iter()
             .map(|(_, chapter)| chapter.text.chars().count())

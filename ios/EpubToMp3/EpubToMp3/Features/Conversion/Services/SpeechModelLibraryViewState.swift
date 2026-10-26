@@ -44,6 +44,7 @@ enum SpeechModelRemovalError: LocalizedError, Equatable {
 }
 
 enum SpeechModelProductAction: Equatable {
+    case preview
     case install
     case cancelInstall
     case select
@@ -98,6 +99,34 @@ struct SpeechModelLibraryViewState: Sendable {
 
     var entries: [SpeechModelSnapshot.Entry] { snapshot?.entries ?? [] }
 
+    /// Installed voices remain discoverable when the study language changes.
+    /// Ordering affects presentation only, never selection or catalogue identity.
+    var orderedEntries: [SpeechModelSnapshot.Entry] {
+        entries.sorted { first, second in
+            func rank(_ entry: SpeechModelSnapshot.Entry) -> Int {
+                if entry.installation.state == .installed { return 0 }
+                return entry.compatibility.compatible && entry.distribution.installable ? 1 : 2
+            }
+            let firstRank = rank(first), secondRank = rank(second)
+            if firstRank != secondRank { return firstRank < secondRank }
+            let comparison = displayName(for: first).localizedStandardCompare(displayName(for: second))
+            if comparison != .orderedSame { return comparison == .orderedAscending }
+            return first.identity.modelID < second.identity.modelID
+        }
+    }
+
+    var studyLanguage: String {
+        snapshot?.target?.language ?? Locale.preferredLanguages.first ?? "en"
+    }
+
+    var studyLanguages: [String] {
+        Array(Set(entries.flatMap { $0.languageEvidence.exactTags.map(\.tag) } + [studyLanguage])).sorted()
+    }
+
+    func languageTitle(_ tag: String) -> String {
+        Locale.current.localizedString(forIdentifier: tag) ?? tag
+    }
+
     var defaultEntry: SpeechModelSnapshot.Entry? {
         guard let identity = snapshot?.defaultSelection.modelID else { return nil }
         return snapshot?.entries.first { $0.identity.modelID == identity }
@@ -122,6 +151,7 @@ struct SpeechModelLibraryViewState: Sendable {
         switch entry.presentation.quality {
         case .low: fields.append(L10n.string("settings.modelQuality.low"))
         case .medium: fields.append(L10n.string("settings.modelQuality.medium"))
+        case .high: fields.append(L10n.string("settings.modelQuality.high"))
         case .unspecified: break
         }
         return fields.joined(separator: " · ")
@@ -191,6 +221,20 @@ struct SpeechModelLibraryViewState: Sendable {
         }?.selection
     }
 
+    func canSelect(_ selection: TtsSelection) -> Bool {
+        if selection.engine == "piper" || entry(for: selection) != nil {
+            return selectableChoices.contains { Self.sameChoice($0.selection, selection) }
+        }
+        return selection.engine == "system" || selection.engine == "edge"
+    }
+
+    static func sameChoice(_ first: TtsSelection, _ second: TtsSelection) -> Bool {
+        guard first.representsSameRequest(as: second) else { return false }
+        guard let firstRevision = first.session?.modelRevision,
+              let secondRevision = second.session?.modelRevision else { return true }
+        return firstRevision == secondRevision
+    }
+
     func actions(
         for entry: SpeechModelSnapshot.Entry,
         configuredSelections: [TtsSelection],
@@ -205,6 +249,7 @@ struct SpeechModelLibraryViewState: Sendable {
         }
         let configured = isConfigured(entry, selections: configuredSelections)
         var available: [SpeechModelProductAction] = []
+        if entry.selection.selectable, entry.identity.provider == "piper" { available.append(.preview) }
         if entry.distribution.installable, entry.compatibility.compatible,
            entry.installation.state != .installed {
             available.append(.install)
@@ -281,6 +326,7 @@ struct SpeechModelLibraryViewState: Sendable {
 
     func actionTitle(for action: SpeechModelProductAction) -> String {
         switch action {
+        case .preview: return L10n.string("voiceAudition.title")
         case .install: return L10n.string("settings.modelAction.install")
         case .cancelInstall: return L10n.string("settings.modelInstall.cancel")
         case .select: return L10n.string("settings.modelAction.select")
@@ -343,10 +389,11 @@ struct SpeechModelLibraryViewState: Sendable {
         guard let identifier = entry.licence.id else {
             return L10n.string("settings.modelLicence.unknown")
         }
-        guard entry.licence.validation == "partial" else {
-            return L10n.string("settings.modelLicence.unknown")
+        switch entry.licence.validation {
+        case "partial": return L10n.string("settings.modelLicence.partial", identifier)
+        case "creator_declared": return L10n.string("settings.modelLicence.creatorDeclared", identifier)
+        default: return L10n.string("settings.modelLicence.unknown")
         }
-        return L10n.string("settings.modelLicence.partial", identifier)
     }
 
     private func compatibilityStatus(for entry: SpeechModelSnapshot.Entry) -> String {

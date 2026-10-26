@@ -4,6 +4,8 @@ use super::*;
 #[serde(default)]
 pub(super) struct EmbeddedConversionOptionsV1 {
     pub(super) contract_version: Option<u32>,
+    pub(super) recovery_job_id: Option<String>,
+    pub(super) pronunciation: converter_core::pronunciation::PronunciationDictionary,
     #[serde(skip)]
     pub(super) audio_chunks: Option<Arc<std::sync::Mutex<AudioChunkQueue>>>,
     pub(super) tts_policy_state: Option<converter_core::tts_preferences::SegmentPolicy>,
@@ -20,6 +22,10 @@ pub(super) struct EmbeddedConversionOptionsV1 {
 
 impl EmbeddedConversionOptionsV1 {
     pub(super) fn validate_contract(&self) -> Result<(), String> {
+        self.pronunciation.validate()?;
+        if !self.pronunciation.rules.is_empty() && self.tts_preferences.is_none() {
+            return Err("Pronunciation requires an explicit captured TTS selection".into());
+        }
         let Some(version) = self.contract_version else {
             return Ok(());
         };

@@ -13,6 +13,12 @@ pub enum ModelInstallStage {
     Failed,
 }
 
+impl ModelInstallStage {
+    pub(super) fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Cancelled | Self::Failed)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelInstallFailure {
     pub kind: String,
