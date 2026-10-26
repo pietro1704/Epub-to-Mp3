@@ -89,7 +89,17 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             removeModel: symbol("converter_tts_model_remove", as: ConverterTtsModelRemove.self),
             modelMetadata: symbol("converter_tts_model_metadata", as: ConverterTtsModelMetadata.self),
             installManifest: symbol("converter_tts_model_install_manifest", as: ConverterTtsModelInstallManifest.self),
-            installCatalogManifest: symbol("converter_tts_model_install_catalog_manifest", as: ConverterTtsModelInstallCatalogManifest.self)
+            installCatalogManifest: symbol("converter_tts_model_install_catalog_manifest", as: ConverterTtsModelInstallCatalogManifest.self),
+            installOperationCreate: symbol("converter_tts_model_install_operation_create", as: ConverterModelInstallOperationCreate.self),
+            installOperationRecover: symbol("converter_tts_model_install_operation_recover", as: ConverterModelInstallOperationRecover.self),
+            installOperationPlan: symbol("converter_tts_model_install_operation_plan_json", as: ConverterModelInstallOperationJSON.self),
+            installOperationEvent: symbol("converter_tts_model_install_operation_event_json", as: ConverterModelInstallOperationJSON.self),
+            installOperationProgress: symbol("converter_tts_model_install_operation_record_progress", as: ConverterModelInstallOperationProgress.self),
+            installOperationAccept: symbol("converter_tts_model_install_operation_accept_download", as: ConverterModelInstallOperationAccept.self),
+            installOperationPublish: symbol("converter_tts_model_install_operation_publish", as: ConverterModelInstallOperationPublish.self),
+            installOperationFail: symbol("converter_tts_model_install_operation_fail", as: ConverterModelInstallOperationFail.self),
+            installOperationCancel: symbol("converter_tts_model_install_operation_cancel", as: ConverterModelInstallOperationCancel.self),
+            installOperationFree: symbol("converter_tts_model_install_operation_free", as: ConverterModelInstallOperationFree.self)
         )
         setPlatformTts = symbol("converter_session_set_platform_tts_v1", as: ConverterSetPlatformTts.self)
         _open = open
@@ -314,6 +324,30 @@ final class ConverterFFIAdapter: EmbeddedConverter {
 
     func installTtsModelFromCatalog(modelID: String, root: String) throws -> URL {
         try modelCatalog.installTtsModelFromCatalog(modelID: modelID, root: root)
+    }
+
+    func makeModelInstallOperation(
+        modelID: String,
+        root: URL,
+        availableBytes: UInt64
+    ) throws -> ConverterModelInstallOperation {
+        try modelCatalog.makeInstallOperation(
+            modelID: modelID,
+            root: root,
+            availableBytes: availableBytes
+        )
+    }
+
+    func recoverModelInstallOperation(
+        modelID: String,
+        root: URL,
+        availableBytes: UInt64
+    ) throws -> ConverterModelInstallOperation? {
+        try modelCatalog.recoverInstallOperation(
+            modelID: modelID,
+            root: root,
+            availableBytes: availableBytes
+        )
     }
 
     func removeTtsModel(modelID: String, root: String) throws {

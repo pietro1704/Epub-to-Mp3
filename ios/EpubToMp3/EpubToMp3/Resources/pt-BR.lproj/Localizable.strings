@@ -88,6 +88,17 @@
 "settings.modelState.ready" = "Pronto";
 "settings.modelState.unavailable" = "Runtime indisponível";
 "settings.modelState.readinessNotInspected" = "Prontidão não verificada";
+"settings.modelInstall.preparing" = "Preparando download";
+"settings.modelInstall.downloading" = "Baixando · %d%%";
+"settings.modelInstall.verifying" = "Verificando download";
+"settings.modelInstall.publishing" = "Instalando modelo verificado";
+"settings.modelInstall.completed" = "Instalação concluída";
+"settings.modelInstall.cancelled" = "Instalação cancelada";
+"settings.modelInstall.failed" = "Falha na instalação";
+"settings.modelInstall.downloadFailed" = "Falha no download";
+"settings.modelInstall.verificationFailed" = "Não foi possível verificar o modelo baixado";
+"settings.modelInstall.cancel" = "Cancelar download";
+"settings.modelInstall.insufficientSpace" = "Espaço insuficiente: %@ necessários, %@ disponíveis";
 "settings.useBuiltInEngine" = "Usar motor de áudio integrado";
 "settings.useBuiltInEngineDescription" = "Sintetiza capítulos neste dispositivo. Sem necessidade de backend.";
 "settings.allowCellularAudio" = "Permitir conversão de áudio por dados móveis";

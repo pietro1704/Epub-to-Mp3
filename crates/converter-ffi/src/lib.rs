@@ -176,6 +176,8 @@ mod model_catalog_boundary;
 pub use model_catalog_boundary::*;
 mod model_installation_boundary;
 pub use model_installation_boundary::*;
+mod model_install_operation_boundary;
+pub use model_install_operation_boundary::*;
 mod piper_runtime_boundary;
 pub use piper_runtime_boundary::*;
 mod job_snapshot_boundary;

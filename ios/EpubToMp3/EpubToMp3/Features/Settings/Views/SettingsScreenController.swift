@@ -25,6 +25,8 @@ final class SettingsScreenController: UITableViewController {
     private let speechModels: SpeechModelLibraryClient
     private var speechModelState: SpeechModelLibraryViewState
     private var speechModelsTask: Task<Void, Never>?
+    private var speechModelInstallTask: Task<Void, Never>?
+    private var speechModelInstallEvent: SpeechModelInstallEvent?
     private var storageUsage = StorageUsageScanner.current()
     private let diagnosticsSession: StreamingDiagnosticsSession
     private let confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)?
@@ -33,7 +35,7 @@ final class SettingsScreenController: UITableViewController {
     init(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock,
          diagnosticsSession: StreamingDiagnosticsSession? = nil,
          confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
-         speechModels: SpeechModelLibraryClient = SpeechModelLibraryClient()) {
+         speechModels: SpeechModelLibraryClient = .shared) {
         self.settings = settings
         self.library = library
         self.player = player
@@ -84,6 +86,7 @@ final class SettingsScreenController: UITableViewController {
     deinit {
         diagnosticsExpiryTask?.cancel()
         speechModelsTask?.cancel()
+        speechModelInstallTask?.cancel()
     }
 
     func refreshFromStores() {
@@ -113,7 +116,9 @@ final class SettingsScreenController: UITableViewController {
         switch section {
         case .runtime:
             return RuntimeSettingsRows.cell(for: indexPath, tableView: tableView, settings: settings,
-                                            speechModels: speechModelState, controller: self)
+                                            speechModels: speechModelState,
+                                            installEvent: speechModelInstallEvent,
+                                            controller: self)
         case .backend:
             return RuntimeSettingsRows.backendCell(for: indexPath, tableView: tableView, settings: settings, controller: self)
         case .reader:
@@ -200,11 +205,13 @@ final class SettingsScreenController: UITableViewController {
 
     private func installPiperModel() {
         guard let entry = speechModelState.defaultEntry,
-              entry.distribution.installable,
-              entry.installation.state != .installed else { return }
+              entry.distribution.installable else { return }
+        if speechModelInstallEvent?.isActive == true {
+            Task { await speechModels.cancelInstall(modelID: entry.identity.modelID) }
+            return
+        }
+        guard entry.installation.state != .installed else { return }
         let title = speechModelState.installTitle(for: entry)
-        let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
-        present(alert, animated: true)
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -212,13 +219,14 @@ final class SettingsScreenController: UITableViewController {
                 if let snapshot = try? await speechModels.snapshot() {
                     speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
                 }
+            } catch is CancellationError {
+                // Cancellation is already rendered by the operation event.
             } catch {
                 let failure = UIAlertController(title: title,
                     message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
                 failure.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
                 present(failure, animated: true)
             }
-            alert.dismiss(animated: true)
             tableView.reloadData()
         }
     }
@@ -231,9 +239,28 @@ final class SettingsScreenController: UITableViewController {
                 let snapshot = try await speechModels.snapshot()
                 guard !Task.isCancelled else { return }
                 speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                observeInstall(modelID: snapshot.defaultSelection.modelID)
                 tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
             } catch {
                 // Fail closed: keep existing selections and the last valid presentation.
+            }
+        }
+    }
+
+    private func observeInstall(modelID: String?) {
+        speechModelInstallTask?.cancel()
+        guard let modelID else { return }
+        speechModelInstallTask = Task { [weak self] in
+            guard let self else { return }
+            let events = await speechModels.watchInstall(modelID: modelID)
+            for await event in events {
+                guard !Task.isCancelled else { return }
+                speechModelInstallEvent = event
+                if event.stage == .completed,
+                   let snapshot = try? await speechModels.snapshot() {
+                    speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                }
+                tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
             }
         }
     }

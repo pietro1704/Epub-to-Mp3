@@ -13,6 +13,11 @@ func excludedFiles(_ directory: String, keeping sources: [String]) -> [String] {
     }
 }
 
+let localizationResources = [
+    "Resources/en.lproj/Localizable.strings",
+    "Resources/es.lproj/Localizable.strings",
+    "Resources/pt-BR.lproj/Localizable.strings",
+]
 let production = [
     "Features/Library/Services/BookContentIdentity.swift",
     "Features/Offline/Services/RustConversionOutputStore.swift",
@@ -27,7 +32,11 @@ let production = [
     "Features/Conversion/Services/ConverterABISignatures.swift",
     "Features/Conversion/Services/EmbeddedConverterError.swift",
     "Features/Conversion/Services/ConverterModelCatalog.swift",
+    "Features/Conversion/Services/ConverterModelInstallOperation.swift",
+    "Features/Conversion/Services/SpeechModelBackgroundTransfer.swift",
     "Features/Conversion/Services/SpeechModelLibraryClient.swift",
+    "Features/Conversion/Services/SpeechModelLibraryViewState.swift",
+    "Features/Conversion/Services/SpeechModelSnapshot.swift",
     "Features/Conversion/Services/ConverterCallbackBridge.swift",
     "Features/Conversion/Services/ConverterPlaybackControl.swift",
     "Features/Conversion/Services/ReaderConversionChapterMap.swift",
@@ -52,16 +61,20 @@ let tests = [
     "ConversionOptionsInteropWireIdentityTests.swift",
     "ConversionOptionsInteropOptInProviderJourneyTests.swift",
     "ConverterModelCatalogOwnershipTests.swift",
+    "SpeechModelBackgroundTransferTests.swift",
     "EpubFixture.swift",
     "ReaderConversionChapterMapTests.swift",
     "ReaderListeningControlTests.swift",
 ]
 let package = Package(
     name: "AppFoundation",
+    defaultLocalization: "en",
     platforms: [.macOS(.v12)],
     targets: [
         .target(name: "AppFoundation", path: "EpubToMp3",
-                exclude: excludedFiles("EpubToMp3", keeping: production), sources: production),
+                exclude: excludedFiles("EpubToMp3", keeping: production + localizationResources),
+                sources: production,
+                resources: localizationResources.map { .process($0) }),
         .testTarget(name: "AppFoundationTests", dependencies: ["AppFoundation"], path: "EpubToMp3Tests",
                     exclude: excludedFiles("EpubToMp3Tests", keeping: tests), sources: tests,
                     swiftSettings: [.define("APP_FOUNDATION_HOST_TESTS")]),

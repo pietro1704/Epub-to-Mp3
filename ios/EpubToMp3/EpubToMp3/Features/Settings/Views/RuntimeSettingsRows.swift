@@ -8,6 +8,7 @@ enum RuntimeSettingsRows {
         tableView: UITableView,
         settings: AppSettings,
         speechModels: SpeechModelLibraryViewState,
+        installEvent: SpeechModelInstallEvent?,
         controller: UIViewController
     ) -> UITableViewCell {
             if indexPath.row == 0 {
@@ -65,9 +66,18 @@ enum RuntimeSettingsRows {
             var content = cell.defaultContentConfiguration()
             if let entry = speechModels.defaultEntry {
                 content.text = speechModels.displayName(for: entry)
-                content.secondaryText = speechModels.status(for: entry)
+                if let installEvent {
+                    content.secondaryText = speechModels.installStatus(for: installEvent)
+                    if installEvent.isActive {
+                        content.secondaryText = "\(content.secondaryText ?? "") · "
+                            + L10n.string("settings.modelInstall.cancel")
+                    }
+                } else {
+                    content.secondaryText = speechModels.status(for: entry)
+                }
                 cell.accessibilityValue = content.secondaryText
-                cell.accessoryType = entry.distribution.installable && entry.installation.state != .installed
+                cell.accessoryType = entry.distribution.installable
+                    && (entry.installation.state != .installed || installEvent?.isActive == true)
                     ? .disclosureIndicator : .none
             } else {
                 content.text = AudioEnginePreference.piper.displayName

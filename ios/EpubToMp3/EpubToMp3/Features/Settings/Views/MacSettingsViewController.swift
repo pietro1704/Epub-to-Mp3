@@ -10,6 +10,8 @@ final class MacSettingsViewController: NSViewController {
     private let speechModels: SpeechModelLibraryClient
     private var speechModelState: SpeechModelLibraryViewState
     private var speechModelsTask: Task<Void, Never>?
+    private var speechModelInstallTask: Task<Void, Never>?
+    private var speechModelInstallEvent: SpeechModelInstallEvent?
     private var isClearingDownloads = false
     private let fontSizeStepper = NSStepper()
     private let fontSizeLabel = NSTextField(labelWithString: "")
@@ -34,7 +36,7 @@ final class MacSettingsViewController: NSViewController {
          diagnosticsSession: StreamingDiagnosticsSession? = nil,
          confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
          clearDownloadsOperation: (() async throws -> Void)? = nil,
-         speechModels: SpeechModelLibraryClient = SpeechModelLibraryClient()) {
+         speechModels: SpeechModelLibraryClient = .shared) {
         self.settings = settings
         self.library = library
         self.speechModels = speechModels
@@ -80,6 +82,7 @@ final class MacSettingsViewController: NSViewController {
     deinit {
         diagnosticsExpiryTask?.cancel()
         speechModelsTask?.cancel()
+        speechModelInstallTask?.cancel()
     }
 
     private func configureControls() {
@@ -194,10 +197,14 @@ final class MacSettingsViewController: NSViewController {
         onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
         if let entry = speechModelState.defaultEntry {
             piperModelLabel.stringValue = speechModelState.displayName(for: entry)
-            piperInstallButton.title = speechModelState.installTitle(for: entry)
-            piperInstallButton.toolTip = speechModelState.status(for: entry)
+            piperInstallButton.title = speechModelState.installActionTitle(
+                for: entry,
+                event: speechModelInstallEvent
+            )
+            piperInstallButton.toolTip = speechModelInstallEvent
+                .map(speechModelState.installStatus(for:)) ?? speechModelState.status(for: entry)
             piperInstallButton.isEnabled = entry.distribution.installable
-                && entry.installation.state != .installed
+                && (entry.installation.state != .installed || speechModelInstallEvent?.isActive == true)
         } else {
             piperModelLabel.stringValue = AudioEnginePreference.piper.displayName
             piperInstallButton.title = L10n.string("settings.modelInstall", AudioEnginePreference.piper.displayName)
@@ -262,8 +269,12 @@ final class MacSettingsViewController: NSViewController {
 
     @objc private func installPiperModel() {
         guard let entry = speechModelState.defaultEntry,
-              entry.distribution.installable,
-              entry.installation.state != .installed else { return }
+              entry.distribution.installable else { return }
+        if speechModelInstallEvent?.isActive == true {
+            Task { await speechModels.cancelInstall(modelID: entry.identity.modelID) }
+            return
+        }
+        guard entry.installation.state != .installed else { return }
         let title = speechModelState.installTitle(for: entry)
         Task { [weak self] in
             guard let self else { return }
@@ -272,6 +283,8 @@ final class MacSettingsViewController: NSViewController {
                 let snapshot = try await speechModels.snapshot()
                 speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
                 rebuildNarrationChoices()
+            } catch is CancellationError {
+                // Cancellation is already rendered by the operation event.
             } catch {
                 let alert = NSAlert()
                 alert.messageText = title
@@ -313,10 +326,30 @@ final class MacSettingsViewController: NSViewController {
                 let snapshot = try await speechModels.snapshot()
                 guard !Task.isCancelled else { return }
                 speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                observeInstall(modelID: snapshot.defaultSelection.modelID)
                 rebuildNarrationChoices()
                 refresh()
             } catch {
                 // Fail closed: keep existing selections and the last valid presentation.
+            }
+        }
+    }
+
+    private func observeInstall(modelID: String?) {
+        speechModelInstallTask?.cancel()
+        guard let modelID else { return }
+        speechModelInstallTask = Task { [weak self] in
+            guard let self else { return }
+            let events = await speechModels.watchInstall(modelID: modelID)
+            for await event in events {
+                guard !Task.isCancelled else { return }
+                speechModelInstallEvent = event
+                if event.stage == .completed,
+                   let snapshot = try? await speechModels.snapshot() {
+                    speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                    rebuildNarrationChoices()
+                }
+                refresh()
             }
         }
     }

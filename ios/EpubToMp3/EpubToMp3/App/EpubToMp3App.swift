@@ -71,6 +71,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     private var rootController: MacAppKitRootController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = SpeechModelLibraryClient.shared
+        Task { await SpeechModelLibraryClient.shared.reconnectPendingTransfers() }
         configureMainWindowIfNeeded()
     }
 
@@ -145,6 +147,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        _ = SpeechModelLibraryClient.shared
+        Task { await SpeechModelLibraryClient.shared.reconnectPendingTransfers() }
         library.installUITestFixtureIfRequested()
         if ProcessInfo.processInfo.arguments.contains("-uiTestResetReaderPosition") {
             ReaderProgressStore.clearAll()
@@ -162,6 +166,22 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         // owner of the visible window; creating a fallback UIWindow here races
         // the scene connection and unbalances root appearance transitions.
         return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        guard identifier == SpeechModelBackgroundTransfer.backgroundSessionIdentifier else {
+            completionHandler()
+            return
+        }
+        _ = SpeechModelLibraryClient.shared
+        SpeechModelBackgroundTransfer.shared.reconnectBackgroundSession(
+            completionHandler: completionHandler
+        )
+        Task { await SpeechModelLibraryClient.shared.reconnectPendingTransfers() }
     }
 
     func makeIOSRootController() -> IOSRootContainerController {

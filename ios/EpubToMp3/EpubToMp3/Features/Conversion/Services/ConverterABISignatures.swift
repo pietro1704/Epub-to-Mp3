@@ -61,3 +61,24 @@ typealias ConverterTtsModelRemove = @convention(c) (UnsafePointer<CChar>?, Unsaf
 typealias ConverterTtsModelMetadata = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsModelInstallManifest = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsModelInstallCatalogManifest = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+typealias ConverterModelInstallOperationCreate = @convention(c) (
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt64
+) -> UnsafeMutableRawPointer?
+typealias ConverterModelInstallOperationRecover = ConverterModelInstallOperationCreate
+typealias ConverterModelInstallOperationJSON = @convention(c) (
+    UnsafeRawPointer?
+) -> UnsafeMutablePointer<CChar>?
+typealias ConverterModelInstallOperationProgress = @convention(c) (
+    UnsafeRawPointer?, Int, UInt64
+) -> Bool
+typealias ConverterModelInstallOperationAccept = @convention(c) (
+    UnsafeRawPointer?, Int, UnsafePointer<CChar>?
+) -> Bool
+typealias ConverterModelInstallOperationPublish = @convention(c) (
+    UnsafeRawPointer?
+) -> UnsafeMutablePointer<CChar>?
+typealias ConverterModelInstallOperationFail = @convention(c) (
+    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?
+) -> Bool
+typealias ConverterModelInstallOperationCancel = @convention(c) (UnsafeRawPointer?) -> Void
+typealias ConverterModelInstallOperationFree = @convention(c) (UnsafeMutableRawPointer?) -> Void

@@ -1,6 +1,7 @@
 #ifndef CONVERTER_TTS_SESSION_H
 #define CONVERTER_TTS_SESSION_H
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
@@ -16,6 +17,33 @@ char *converter_tts_catalog_json_v3(const char *language,
                                     const char *architecture,
                                     const char *os_version,
                                     const char *model_root);
+typedef struct ConverterModelInstallOperation ConverterModelInstallOperation;
+ConverterModelInstallOperation *converter_tts_model_install_operation_create(
+    const char *model_id, const char *model_root, uint64_t available_bytes);
+ConverterModelInstallOperation *converter_tts_model_install_operation_recover(
+    const char *model_id, const char *model_root, uint64_t available_bytes);
+char *converter_tts_model_install_operation_plan_json(
+    const ConverterModelInstallOperation *operation);
+char *converter_tts_model_install_operation_event_json(
+    const ConverterModelInstallOperation *operation);
+bool converter_tts_model_install_operation_record_progress(
+    const ConverterModelInstallOperation *operation,
+    size_t artifact_index,
+    uint64_t downloaded_bytes);
+bool converter_tts_model_install_operation_accept_download(
+    const ConverterModelInstallOperation *operation,
+    size_t artifact_index,
+    const char *downloaded_path);
+char *converter_tts_model_install_operation_publish(
+    const ConverterModelInstallOperation *operation);
+bool converter_tts_model_install_operation_fail(
+    const ConverterModelInstallOperation *operation,
+    const char *kind,
+    const char *message);
+void converter_tts_model_install_operation_cancel(
+    const ConverterModelInstallOperation *operation);
+void converter_tts_model_install_operation_free(
+    ConverterModelInstallOperation *operation);
 void converter_string_free(char *value);
 /* Existing conversion entry points accept contract_version=2 and captured
  * tts_preferences. Legacy selections are translated at this binding seam. */

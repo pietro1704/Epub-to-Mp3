@@ -91,6 +91,17 @@
 "settings.modelState.ready" = "Ready";
 "settings.modelState.unavailable" = "Runtime unavailable";
 "settings.modelState.readinessNotInspected" = "Readiness not checked";
+"settings.modelInstall.preparing" = "Preparing download";
+"settings.modelInstall.downloading" = "Downloading · %d%%";
+"settings.modelInstall.verifying" = "Verifying download";
+"settings.modelInstall.publishing" = "Installing verified model";
+"settings.modelInstall.completed" = "Installation completed";
+"settings.modelInstall.cancelled" = "Installation cancelled";
+"settings.modelInstall.failed" = "Installation failed";
+"settings.modelInstall.downloadFailed" = "Download failed";
+"settings.modelInstall.verificationFailed" = "The downloaded model could not be verified";
+"settings.modelInstall.cancel" = "Cancel download";
+"settings.modelInstall.insufficientSpace" = "Not enough space: %@ required, %@ available";
 "settings.useBuiltInEngine" = "Use built-in audio engine";
 "settings.useBuiltInEngineDescription" = "Synthesises chapters on this device. No backend needed.";
 "settings.allowCellularAudio" = "Allow cellular audio conversion";

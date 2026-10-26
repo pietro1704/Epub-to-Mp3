@@ -2,8 +2,13 @@
 #[cfg(feature = "kokoro-sherpa-runtime")]
 mod model_archive_installation;
 mod model_inspection;
+mod model_install_operation;
 mod model_installation;
 pub use model_inspection::{InstalledModelInspection, InstalledModelState};
+pub use model_install_operation::{
+    ModelInstallArtifactPlan, ModelInstallEvent, ModelInstallFailure, ModelInstallOperation,
+    ModelInstallPlan, ModelInstallStage,
+};
 pub use model_installation::ModelStore;
 
 #[cfg(test)]
@@ -49,6 +54,26 @@ pub enum ModelStoreError {
     UnknownModel(String),
     #[error("invalid model archive: {0}")]
     InvalidArchive(String),
+    #[error("model installation requires {required_bytes} bytes but only {available_bytes} are available")]
+    InsufficientSpace {
+        required_bytes: u64,
+        available_bytes: u64,
+    },
+    #[error("model installation was cancelled")]
+    Cancelled,
+    #[error(
+        "model installation progress regressed from {previous_bytes} to {reported_bytes} bytes"
+    )]
+    ProgressRegressed {
+        previous_bytes: u64,
+        reported_bytes: u64,
+    },
+    #[error("model installation artifact {0} is outside the owned download inbox")]
+    InvalidDownloadedArtifact(usize),
+    #[error("model installation is waiting for artifact {0}")]
+    ArtifactPending(usize),
+    #[error("no pending model installation exists")]
+    NoPendingInstall,
 }
 
 #[derive(Debug, Clone)]
