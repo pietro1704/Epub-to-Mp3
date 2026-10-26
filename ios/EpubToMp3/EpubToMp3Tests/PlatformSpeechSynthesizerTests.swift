@@ -218,10 +218,18 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
-    func testOptInCancellationDuringSystemSpeechCreatesNoArtifact() async throws {
-        guard ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" else {
-            throw XCTSkip("Enable EPUB2MP3_NATIVE_TTS_TEST=1 for real synthesis cancellation.")
-        }
+}
+
+final class PlatformSpeechSynthesizerOptInTests: XCTestCase {
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1",
+            "Enable EPUB2MP3_NATIVE_TTS_TEST=1 for actual installed Apple speech synthesis."
+        )
+    }
+
+    func testCancellationDuringSystemSpeechCreatesNoArtifact() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
         let result = await Task.detached {
             let deadline = Date().addingTimeInterval(0.2)
@@ -237,10 +245,7 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
-    func testOptInRealSystemSpeechProducesMonoPCM16WAV() async throws {
-        guard ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" else {
-            throw XCTSkip("Enable EPUB2MP3_NATIVE_TTS_TEST=1 for actual installed Apple speech synthesis.")
-        }
+    func testRealSystemSpeechProducesMonoPCM16WAV() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
         defer { try? FileManager.default.removeItem(at: url) }
         try await Task.detached {

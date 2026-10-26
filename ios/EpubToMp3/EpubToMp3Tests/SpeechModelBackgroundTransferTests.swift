@@ -94,6 +94,29 @@ private final class ModelInstallResultRecorder: @unchecked Sendable {
 }
 
 final class SpeechModelBackgroundTransferTests: XCTestCase {
+    func testStructuredFailureRenderingDoesNotExposeRustFilesystemDetails() {
+        let event = SpeechModelInstallEvent(
+            sequence: 4,
+            operationID: "operation-fixture",
+            modelID: "model-fixture",
+            stage: .failed,
+            artifactIndex: nil,
+            bytesCompleted: 10,
+            bytesTotal: 20,
+            failure: .init(
+                kind: "checksum_mismatch",
+                message: "checksum mismatch at /private/model/path",
+                requiredBytes: nil,
+                availableBytes: nil
+            )
+        )
+
+        let rendered = SpeechModelLibraryViewState.empty.installStatus(for: event)
+
+        XCTAssertEqual(rendered, L10n.string("settings.modelInstall.verificationFailed"))
+        XCTAssertFalse(rendered.contains("/private/model/path"))
+    }
+
     func testSuccessfulHTTPDownloadMovesTemporaryFileIntoRustInbox() async throws {
         let payload = Data("owned model fixture".utf8)
         ModelTransferURLProtocol.configure(status: 200, body: payload)
@@ -243,27 +266,15 @@ final class SpeechModelBackgroundTransferTests: XCTestCase {
 }
 
 final class SpeechModelInstallCoordinatorTests: XCTestCase {
-    func testStructuredFailureRenderingDoesNotExposeRustFilesystemDetails() {
-        let event = SpeechModelInstallEvent(
-            sequence: 4,
-            operationID: "operation-fixture",
-            modelID: "model-fixture",
-            stage: .failed,
-            artifactIndex: nil,
-            bytesCompleted: 10,
-            bytesTotal: 20,
-            failure: .init(
-                kind: "checksum_mismatch",
-                message: "checksum mismatch at /private/model/path",
-                requiredBytes: nil,
-                availableBytes: nil
-            )
-        )
-
-        let rendered = SpeechModelLibraryViewState.empty.installStatus(for: event)
-
-        XCTAssertEqual(rendered, L10n.string("settings.modelInstall.verificationFailed"))
-        XCTAssertFalse(rendered.contains("/private/model/path"))
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        #if APP_FOUNDATION_HOST_TESTS
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["APP_FOUNDATION_FFI_LIBRARY"],
+              FileManager.default.fileExists(atPath: path) else {
+            throw XCTSkip("Run apple:foundation:ffi:test for the real model-install coordinator boundary.")
+        }
+        #endif
     }
 
     func testInsufficientSpaceIsStructuredAndRenderedWithoutStartingHTTP() async throws {
