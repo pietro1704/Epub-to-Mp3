@@ -351,7 +351,8 @@ final class IOSRootContainerController: UIViewController {
                 setNeedsStatusBarAppearanceUpdate()
             }
         }
-        let needsFinalReaderLayout = readerController.applyReaderPresentation(readerPresentationCoordinator.state)
+        let needsFinalReaderLayout = readerController.applyReaderPresentation(readerPresentationCoordinator.state,
+            animated: viewportTransition != nil && !isCommittingInitialReaderPresentation)
         readerOpenStageProfiler?.recordStartupStage("root_reader_presentation_applied")
         applyReaderChromeLayout(
             viewportTransition: viewportTransition,

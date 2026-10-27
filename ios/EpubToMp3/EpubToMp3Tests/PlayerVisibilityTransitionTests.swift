@@ -7,14 +7,14 @@ import XCTest
 
 final class PlayerVisibilityTransitionTests: XCTestCase {
     func testRepeatedHideDoesNotInvalidateItsPendingCompletion() throws {
-        var transition = PlayerVisibilityTransition()
+        var transition = VisibilityTransition()
         let hide = try XCTUnwrap(transition.request(visible: false))
         XCTAssertNil(transition.request(visible: false))
         XCTAssertTrue(transition.isCurrent(hide))
     }
 
     func testReopeningRejectsTheOldHideCompletion() throws {
-        var transition = PlayerVisibilityTransition()
+        var transition = VisibilityTransition()
         let hide = try XCTUnwrap(transition.request(visible: false))
         let show = try XCTUnwrap(transition.request(visible: true))
         XCTAssertFalse(transition.isCurrent(hide))
@@ -22,7 +22,7 @@ final class PlayerVisibilityTransitionTests: XCTestCase {
     }
 
     func testRapidReversalsLeaveOnlyTheLastRequestCurrent() throws {
-        var transition = PlayerVisibilityTransition()
+        var transition = VisibilityTransition()
         let first = try XCTUnwrap(transition.request(visible: true))
         let second = try XCTUnwrap(transition.request(visible: false))
         let third = try XCTUnwrap(transition.request(visible: true))
@@ -32,7 +32,7 @@ final class PlayerVisibilityTransitionTests: XCTestCase {
     }
 
     func testImmediateHideInvalidatesAnOpeningAnimation() throws {
-        var transition = PlayerVisibilityTransition()
+        var transition = VisibilityTransition()
         let opening = try XCTUnwrap(transition.request(visible: true))
         transition.invalidate(keeping: false)
         XCTAssertFalse(transition.isCurrent(opening))
@@ -41,7 +41,7 @@ final class PlayerVisibilityTransitionTests: XCTestCase {
     }
 
     func testInteractiveRestorationCreatesANewRequestForTheSameVisibleTarget() throws {
-        var transition = PlayerVisibilityTransition()
+        var transition = VisibilityTransition()
         let opening = try XCTUnwrap(transition.request(visible: true))
         transition.invalidate(keeping: true)
         XCTAssertFalse(transition.isCurrent(opening))

@@ -8,7 +8,7 @@ final class PlayerOverlayTransition {
     private let view: UIView
     private let style: Style
     private let duration: TimeInterval
-    private var visibility = PlayerVisibilityTransition()
+    private var visibility = VisibilityTransition()
     private var isInteracting = false
 
     init(view: UIView, style: Style, duration: TimeInterval = 0.3) {

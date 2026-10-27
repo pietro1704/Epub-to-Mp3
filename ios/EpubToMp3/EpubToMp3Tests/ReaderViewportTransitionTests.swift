@@ -1,5 +1,9 @@
 import XCTest
+#if APP_FOUNDATION_HOST_TESTS
+@testable import AppFoundation
+#else
 @testable import EpubToMp3
+#endif
 
 @MainActor
 final class ReaderViewportTransitionTests: XCTestCase {
