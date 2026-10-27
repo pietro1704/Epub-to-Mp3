@@ -65,6 +65,7 @@ integration; do not merge these backup branches wholesale.
 | `wip/shutdown-main-workspace-20261027` | `7cb696d9d0fb446978a8b2ff65b57ea5bec31226` | 43 |
 | `wip/shutdown-model-download-20261027` | `6318856d3a78ddceae2260419ec61c3d1374c5da` | 71 |
 | `wip/shutdown-build-cache-20261027` | `3911c6ec2600aeceeeea7236dad72fdf88e5f334` | 15 |
+| `wip/shutdown-iphone-delivery-20261027` | `863bd3878f` | Existing clean commit |
 | `wip/shutdown-protected-pauses-20261027` | `5a48f783709dd623357289d13ed4ce2e060ce944` | 2 |
 
 Pushes were read back and verified against each local commit. Ignored build
