@@ -273,7 +273,10 @@ final class IOSRootContainerController: UIViewController {
             playbackClock: player.playbackClock,
             library: library,
             playerPresentation: playerPresentation,
-            settings: settings
+            settings: settings,
+            onStartListening: { [weak self] in
+                self?.readerController.startListeningFromMiniPlayer()
+            }
         )
         fullPlayerController = controller
         embed(controller)

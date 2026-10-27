@@ -23,7 +23,7 @@ extension NativeResponsiveScreenTests {
             UserDefaults.standard.set(displayedBook.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
             let controller = FullPlayerScreenController(player: player, playbackClock: PlaybackClock(),
                 library: LibraryStore(defaults: defaults), playerPresentation: PlayerPresentation(defaults: defaults),
-                settings: AppSettings(defaults: defaults))
+                settings: AppSettings(defaults: defaults), onStartListening: {})
             let host = UIViewController()
             host.addChild(controller)
             host.setOverrideTraitCollection(UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge),
@@ -68,7 +68,7 @@ extension NativeResponsiveScreenTests {
         defer { player.stop() }
         let controller = FullPlayerScreenController(player: player, playbackClock: PlaybackClock(),
             library: LibraryStore(defaults: defaults), playerPresentation: PlayerPresentation(defaults: defaults),
-            settings: AppSettings(defaults: defaults))
+            settings: AppSettings(defaults: defaults), onStartListening: {})
         controller.loadViewIfNeeded()
         controller.view.frame = CGRect(x: 0, y: 0, width: 320, height: 568)
         controller.view.layoutIfNeeded()

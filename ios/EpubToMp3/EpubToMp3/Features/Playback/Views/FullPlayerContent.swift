@@ -149,6 +149,7 @@ final class FullPlayerContent {
         PlayerTransportPresentation.configureTransportButton(skipBackButton, actionTarget: actionTarget, image: "gobackward.15", action: actions.skipBackTapped, pointSize: 28)
         skipBackButton.accessibilityIdentifier = "fullPlayer.skipBack"
         PlayerTransportPresentation.configureTransportButton(playPauseButton, actionTarget: actionTarget, image: "play.fill", action: actions.playPauseTapped, pointSize: 64)
+        playPauseButton.accessibilityIdentifier = "fullPlayer.playPause"
         let playWidth = playPauseButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64)
         let playHeight = playPauseButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 64)
         playWidth.priority = .required - 2

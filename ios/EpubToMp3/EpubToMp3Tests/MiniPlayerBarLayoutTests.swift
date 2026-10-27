@@ -262,7 +262,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
             playbackClock: player.playbackClock,
             library: LibraryStore(),
             playerPresentation: PlayerPresentation(defaults: defaults),
-            settings: AppSettings(defaults: defaults)
+            settings: AppSettings(defaults: defaults), onStartListening: {}
         )
         controller.loadViewIfNeeded()
 
