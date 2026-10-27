@@ -34,6 +34,7 @@ add_library(espeak-ng
   voices.c
   wavegen.c
   speech.c
+  piper_phonemes.c
 
   espeak_api.c
 )

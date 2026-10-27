@@ -161,6 +161,10 @@ end
 '
 '''
 
+[tasks."piper:phonemes:test"]
+description = "Test Piper punctuation and voice isolation with embedded eSpeak, without ONNX or a model"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo test -p espeak-rs --locked --jobs 1"
+
 [tasks."native-tts:rust:test"]
 description = "Verify platform speech policy, native PCM encoding and C callback under the shared lease"
 run = '''
