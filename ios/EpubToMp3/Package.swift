@@ -64,6 +64,7 @@ let production = [
     "Features/Conversion/Models/JobSnapshot.swift",
     "Shared/Localization/L10n.swift",
     "Shared/Configuration/LocalSpeechModelReadiness.swift",
+    "Features/Reader/Services/ReaderBookSearch.swift",
 ]
 let tests = [
     "ReaderViewportTransitionTests.swift",
@@ -98,6 +99,7 @@ let tests = [
     "EpubFixture.swift",
     "ReaderConversionChapterMapTests.swift",
     "ReaderListeningControlTests.swift",
+    "ReaderBookSearchTests.swift",
 ]
 let package = Package(
     name: "AppFoundation",

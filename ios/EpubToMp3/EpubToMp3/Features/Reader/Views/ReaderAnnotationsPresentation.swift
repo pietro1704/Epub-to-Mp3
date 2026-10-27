@@ -11,17 +11,21 @@ final class ReaderAnnotationsPresentation: NSObject, UITextViewDelegate {
     private let persistProgress: () -> Void
     private let showChapter: (Int) -> Void
     private let present: (UIViewController) -> Void
+    private let isCurrentBook: () -> Bool
+    private lazy var search = ReaderSearchPresentation(document: document, composition: composition,
+        persist: persistProgress, showChapter: showChapter, present: present, isCurrentBook: isCurrentBook)
     private var textView: UITextView { composition.textView }
 
     init(document: ReaderBookDocument, composition: ReaderViewComposition, bookmarkStore: BookmarkStore,
          persistProgress: @escaping () -> Void, showChapter: @escaping (Int) -> Void,
-         present: @escaping (UIViewController) -> Void) {
+         present: @escaping (UIViewController) -> Void, isCurrentBook: @escaping () -> Bool = { true }) {
         self.document = document
         self.composition = composition
         self.bookmarkStore = bookmarkStore
         self.persistProgress = persistProgress
         self.showChapter = showChapter
         self.present = present
+        self.isCurrentBook = isCurrentBook
         super.init()
     }
 
@@ -131,44 +135,12 @@ final class ReaderAnnotationsPresentation: NSObject, UITextViewDelegate {
         present(UINavigationController(rootViewController: sheet))
     }
 
-    // MARK: - In-chapter search
+    // MARK: - Book search
 
-    func promptSearch() {
-        let alert = UIAlertController(
-            title: L10n.string("reader.search.placeholder"), message: nil, preferredStyle: .alert
-        )
-        alert.addTextField()
-        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
-        alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default) { [weak self, weak alert] _ in
-            guard let query = alert?.textFields?.first?.text, !query.isEmpty else { return }
-            self?.performSearch(query: query)
-        })
-        present(alert)
-    }
-
-    func performSearch(query: String) {
-        guard let chapters = document.fulltext?.chapters, !chapters.isEmpty else { return }
-        let order = Array(chapters.indices.dropFirst(document.selectedChapter))
-            + Array(chapters.indices.prefix(document.selectedChapter + 1))
-        for chapterIndex in order {
-            let full = chapters[chapterIndex].text as NSString
-            let range = full.range(of: query, options: .caseInsensitive)
-            guard range.location != NSNotFound else { continue }
-            if chapterIndex != document.selectedChapter {
-                persistProgress()
-                document.selectedChapter = chapterIndex
-                showChapter(chapterIndex)
-            }
-            textView.selectedRange = range
-            textView.scrollRangeToVisible(range)
-            return
-        }
-        let alert = UIAlertController(
-            title: L10n.string("reader.search.noResults"), message: nil, preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-        present(alert)
-    }
+    func promptSearch() { search.promptSearch() }
+    func performSearch(query: String) { search.performSearch(query: query) }
+    func waitForSearchCompletion() async { await search.waitForCompletion() }
+    func cancelSearch() { search.cancel() }
 
     private func addBookmark(range: NSRange, selectedText: String, note: String?) {
         bookmarkStore.addBookmark(
