@@ -402,6 +402,16 @@
 "convert.jobSubmitted" = "Trabajo enviado: %@";
 "convert.openProgress" = "Abrir progreso";
 "convert.submitting" = "Enviando…";
+"convert.preparing" = "Preparando conversión…";
+"convert.converting" = "Convirtiendo…";
+"convert.progressPercent" = "Convirtiendo… %d%%";
+"convert.chapterProgress" = "Capítulos: %d de %d";
+"convert.cancel" = "Cancelar conversión";
+"convert.cancelling" = "Cancelando conversión…";
+"convert.cancelled" = "Conversión cancelada";
+"convert.completed" = "Conversión completada";
+"convert.openResult" = "Ver resultado";
+"convert.resultTitle" = "Resultado de la conversión";
 "convert.startConversion" = "Iniciar conversión";
 "convert.error.engineWarmingUp" = "El motor de audio aún se está iniciando. Inténtalo de nuevo en un momento o configura una URL de backend remoto en Ajustes.";
 "convert.error.pickFileFirst" = "Elige primero un EPUB o PDF.";

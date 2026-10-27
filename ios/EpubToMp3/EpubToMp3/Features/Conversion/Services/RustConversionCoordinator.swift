@@ -1,7 +1,5 @@
 import Foundation
 
-private let rustConversionQueue = DispatchQueue(label: "com.pietrocode.epubtomp3.rust-conversion", qos: .userInitiated)
-
 private struct RustConversionInvocation: @unchecked Sendable {
     let adapter: ConverterFFIAdapter
 }
@@ -126,8 +124,9 @@ final class RustConversionCoordinator {
             let manifest = try await withTaskCancellationHandler(operation: {
                 try await withCheckedThrowingContinuation { continuation in
                     let invocation = RustConversionInvocation(adapter: self.adapter)
-                    rustConversionQueue.async {
+                    RustConversionWorkQueues.shared.enqueue(for: playbackControl == nil ? .manual : .listening) {
                         do {
+                            guard !effectiveControl.isCancellationRequested else { throw CancellationError() }
                             let data = try invocation.adapter.convertBook(
                                 at: bookURL,
                                 outputDirectory: outputDirectory,

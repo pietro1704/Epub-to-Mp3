@@ -405,6 +405,16 @@
 "convert.jobSubmitted" = "Job submitted: %@";
 "convert.openProgress" = "Open progress";
 "convert.submitting" = "Submitting…";
+"convert.preparing" = "Preparing conversion…";
+"convert.converting" = "Converting…";
+"convert.progressPercent" = "Converting… %d%%";
+"convert.chapterProgress" = "Chapters: %d of %d";
+"convert.cancel" = "Cancel conversion";
+"convert.cancelling" = "Cancelling conversion…";
+"convert.cancelled" = "Conversion cancelled";
+"convert.completed" = "Conversion completed";
+"convert.openResult" = "View result";
+"convert.resultTitle" = "Conversion result";
 "convert.startConversion" = "Start conversion";
 "convert.error.engineWarmingUp" = "The audio engine is still warming up. Try again in a moment, or set a remote backend URL in Settings.";
 "convert.error.pickFileFirst" = "Pick an EPUB or PDF first.";

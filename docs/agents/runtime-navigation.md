@@ -38,6 +38,8 @@ For iOS background playback configuration and acceptance, read
 [background audio](../../ios/EpubToMp3/docs/background-audio.md).
 For first-Play versus existing-session command routing, read
 [in-app playback controls](../../ios/EpubToMp3/docs/in-app-playback-controls.md).
+For manual conversion progress, cancellation and invocation queues, read
+[manual conversion](../../ios/EpubToMp3/docs/manual-conversion.md).
 
 Native tests live in EpubToMp3Tests and EpubToMp3UITests; Rust tests live in
 their crate. Tooling host tests prove orchestration only. Review evidence using

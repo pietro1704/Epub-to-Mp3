@@ -3,12 +3,20 @@ import Foundation
 @MainActor
 final class ConvertViewModel {
     typealias ConversionExecutor = @MainActor (URL, Int32, Int32, ConversionOptions?) async throws -> RustConversionCoordinator.Result
-    private let converter: ConversionExecutor
+    let session: ManualConversionSession
 
-    init(converter: @escaping ConversionExecutor = { file, start, end, options in
-        try await RustConversionCoordinator().convert(bookURL: file, chapterStart: start, chapterEnd: end, options: options)
-    }) {
-        self.converter = converter
+    init(converter: ConversionExecutor? = nil) {
+        if let converter {
+            session = ManualConversionSession(executor: { file, _, start, end, options, _, _ in
+                try await converter(file, start, end, options)
+            })
+        } else {
+            session = ManualConversionSession()
+        }
+    }
+
+    init(session: ManualConversionSession) {
+        self.session = session
     }
     var selectedFile: URL?
     var engine = "piper"
@@ -32,9 +40,11 @@ final class ConvertViewModel {
         inheritedPreferences?.secondary.flatMap { $0 == manualPrimary ? nil : $0 }
     }
 
-    var isSubmitting = false
-    var submittedJobId: String?
-    var error: String?
+    var isSubmitting: Bool { session.isRunning }
+    var submittedJobId: String? { session.result?.jobID }
+    var error: String? { session.errorMessage }
+
+    func cancel() { session.cancel() }
 
     static func parseChapterSelection(_ input: String) throws -> (start: Int32, end: Int32) {
         do {
@@ -51,7 +61,7 @@ final class ConvertViewModel {
     ) async {
         guard !isSubmitting else { return }
         guard let file = selectedFile else {
-            error = L10n.string("convert.error.pickFileFirst")
+            session.reportValidationFailure(L10n.string("convert.error.pickFileFirst"))
             return
         }
         // Keep the legacy parameters source-compatible for callers during the
@@ -59,11 +69,6 @@ final class ConvertViewModel {
         _ = client
         _ = useEmbeddedRuntime
         _ = player // Manual conversion never owns or changes the playback session.
-
-        isSubmitting = true
-        error = nil
-        submittedJobId = nil
-        defer { isSubmitting = false }
 
         do {
             let chapterRange = try Self.parseChapterSelection(chapters)
@@ -95,11 +100,9 @@ final class ConvertViewModel {
                     allowOnlineFallback: allowSecondary && distinctManualSecondary != nil && (inheritedPreferences?.allowOnlineFallback ?? false),
                     policyVersion: allowSecondary ? inheritedPreferences?.policyVersion : nil)
             }
-            let result = try await converter(file, chapterRange.start, chapterRange.end, options)
-            submittedJobId = result.jobID
+            await session.run(file: file, start: chapterRange.start, end: chapterRange.end, options: options)
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription
-                ?? error.localizedDescription
+            session.reportValidationFailure((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         }
     }
 

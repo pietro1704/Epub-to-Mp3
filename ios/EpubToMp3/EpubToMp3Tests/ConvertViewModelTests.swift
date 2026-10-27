@@ -202,7 +202,6 @@ final class ConvertViewModelTests: XCTestCase {
         XCTAssertEqual(model.error, L10n.string("convert.error.pickFileFirst"))
 
         let client = APIClient(baseURL: URL(string: "http://127.0.0.1:1")!)
-        model.error = nil
         await model.submit(client: client)
         XCTAssertEqual(model.error, L10n.string("convert.error.pickFileFirst"))
     }

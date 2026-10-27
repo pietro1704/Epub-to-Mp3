@@ -31,6 +31,7 @@ final class JobDetailScreenController: UITableViewController {
     private var streamDeliveryGeneration: UUID?
     private let streamingClient: (any JobStreamingClient)?
     private let autoPlayOnFirstPlayableSegment: Bool
+    private let localSnapshot: JobSnapshot?
 
     init(
         jobId: String,
@@ -39,7 +40,8 @@ final class JobDetailScreenController: UITableViewController {
         player: AudioPlayer,
         playbackClock: PlaybackClock,
         streamingClient: (any JobStreamingClient)? = nil,
-        autoPlayOnFirstPlayableSegment: Bool = false
+        autoPlayOnFirstPlayableSegment: Bool = false,
+        localSnapshot: JobSnapshot? = nil
     ) {
         self.jobId = jobId
         self.settings = settings
@@ -48,6 +50,7 @@ final class JobDetailScreenController: UITableViewController {
         self.playbackClock = playbackClock
         self.streamingClient = streamingClient
         self.autoPlayOnFirstPlayableSegment = autoPlayOnFirstPlayableSegment
+        self.localSnapshot = localSnapshot
         super.init(style: .insetGrouped)
         title = L10n.string("jobDetail.title")
     }
@@ -120,7 +123,11 @@ final class JobDetailScreenController: UITableViewController {
         super.viewWillAppear(animated)
         playbackGeneration = player.remotePlaybackGeneration
         streamDeliveryGeneration = player.remoteSegmentGeneration
-        viewModel.start(client: client, jobId: jobId)
+        if let localSnapshot {
+            viewModel.showLocalSnapshot(localSnapshot)
+        } else {
+            viewModel.start(client: client, jobId: jobId)
+        }
         tableView.reloadData()
     }
 
@@ -150,8 +157,10 @@ final class JobDetailScreenController: UITableViewController {
     override func numberOfSections(in tableView: UITableView) -> Int {
         Section.allCases.filter { section in
             switch section {
-            case .job, .payload:
+            case .job:
                 return true
+            case .payload:
+                return localSnapshot == nil
             case .chapters:
                 return !(viewModel.snapshot?.playableChapters ?? []).isEmpty
             case .actions:
@@ -165,8 +174,10 @@ final class JobDetailScreenController: UITableViewController {
     private var visibleSections: [Section] {
         Section.allCases.filter { section in
             switch section {
-            case .job, .payload:
+            case .job:
                 return true
+            case .payload:
+                return localSnapshot == nil
             case .chapters:
                 return !(viewModel.snapshot?.playableChapters ?? []).isEmpty
             case .actions:
@@ -244,6 +255,7 @@ final class JobDetailScreenController: UITableViewController {
 
     private var availableActions: [Action] {
         guard viewModel.snapshot?.playableChapters.isEmpty == false else { return [] }
+        if localSnapshot != nil { return [.play] }
         var actions: [Action] = [.play, .download, .logs]
         if viewModel.downloadState == .downloading {
             actions.insert(.cancelDownloads, at: 2)
@@ -269,6 +281,13 @@ final class JobDetailScreenController: UITableViewController {
     }
 
     private var jobRows: [(String, String)] {
+        if let localSnapshot {
+            return [
+                (L10n.string("jobDetail.book"), localSnapshot.bookTitle ?? ""),
+                (L10n.string("jobDetail.state"), L10n.string("convert.completed")),
+                (L10n.string("jobDetail.progress"), "100%"),
+            ]
+        }
         var rows = [
             (L10n.string("jobDetail.id"), jobId),
             (L10n.string("jobDetail.state"), viewModel.snapshot?.state ?? "—"),
@@ -301,7 +320,7 @@ final class JobDetailScreenController: UITableViewController {
         guard let chapter = viewModel.snapshot?.playableChapters[row] else { return cell }
         var content = cell.defaultContentConfiguration()
         content.text = chapter.displayTitle
-        content.secondaryText = chapter.downloadUrl
+        content.secondaryText = localSnapshot == nil ? chapter.downloadUrl : L10n.string("convert.completed")
         content.secondaryTextProperties.numberOfLines = 1
         cell.contentConfiguration = content
         cell.accessoryType = chapter.isCompleted ? .checkmark : .none

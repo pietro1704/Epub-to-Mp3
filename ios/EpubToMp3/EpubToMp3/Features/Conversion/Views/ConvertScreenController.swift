@@ -1,4 +1,5 @@
 #if os(iOS)
+import Combine
 import UIKit
 import UniformTypeIdentifiers
 
@@ -19,7 +20,8 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     private let playbackClock: PlaybackClock
     private let preselectedFileURL: URL?
     private let preselectedBookID: String?
-    private let viewModel = ConvertViewModel()
+    private let viewModel: ConvertViewModel
+    private var submissionObserver: AnyCancellable?
 
     private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
@@ -33,7 +35,8 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         player: AudioPlayer,
         playbackClock: PlaybackClock,
         preselectedFileURL: URL? = nil,
-        preselectedBookID: String? = nil
+        preselectedBookID: String? = nil,
+        viewModel: ConvertViewModel? = nil
     ) {
         self.settings = settings
         self.library = library
@@ -41,6 +44,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         self.playbackClock = playbackClock
         self.preselectedFileURL = preselectedFileURL
         self.preselectedBookID = preselectedBookID
+        self.viewModel = viewModel ?? ConvertViewModel()
         super.init(style: .insetGrouped)
         title = L10n.string("convert.title")
         tabBarItem = UITabBarItem(
@@ -71,6 +75,9 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         tableView.register(IOSContentCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
+        submissionObserver = viewModel.session.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reloadData() }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -107,7 +114,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             if viewModel.error != nil { count += 1 }
             return count
         case .action:
-            return 1
+            return viewModel.isSubmitting ? 2 : 1
         }
     }
 
@@ -129,25 +136,34 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             return UITableViewCell()
         }
 
+        let cell: UITableViewCell
         switch section {
         case .file:
-            return fileCell(for: indexPath)
+            cell = fileCell(for: indexPath)
         case .engine:
-            return engineCell(for: indexPath)
+            cell = engineCell(for: indexPath)
         case .chapters:
-            return chaptersCell()
+            cell = chaptersCell()
         case .flags:
-            return flagCell(for: indexPath)
+            cell = flagCell(for: indexPath)
         case .result:
-            return resultCell(for: indexPath)
+            cell = resultCell(for: indexPath)
         case .action:
-            return actionCell()
+            cell = actionCell(for: indexPath)
         }
+        switch section {
+        case .file, .engine, .chapters, .flags:
+            cell.isUserInteractionEnabled = !viewModel.isSubmitting
+        case .result, .action:
+            cell.isUserInteractionEnabled = true
+        }
+        return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         defer { tableView.deselectRow(at: indexPath, animated: true) }
         guard let section = Section(rawValue: indexPath.section) else { return }
+        if viewModel.isSubmitting, section != .action, section != .result { return }
         switch section {
         case .file:
             if indexPath.row == 1 {
@@ -158,7 +174,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
                 openSubmittedJob()
             }
         case .action:
-            submit()
+            if indexPath.row == 1 { viewModel.cancel() } else { submit() }
         case .engine where indexPath.row == 0:
             let alert = UIAlertController(title: L10n.string("settings.audioEngineChoice"), message: nil, preferredStyle: .actionSheet)
             alert.addAction(UIAlertAction(title: L10n.string("convert.usePreferences"), style: .default) { [weak self] _ in
@@ -293,11 +309,17 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     private func resultCell(for indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+        cell.accessoryView = nil
+        cell.accessoryType = .none
+        cell.accessibilityIdentifier = nil
+        cell.accessibilityLabel = nil
+        cell.accessibilityHint = nil
+        cell.accessibilityTraits = .staticText
         var content = cell.defaultContentConfiguration()
         var row = indexPath.row
-        if let jobId = viewModel.submittedJobId {
+        if viewModel.submittedJobId != nil {
             if row == 0 {
-                content.text = L10n.string("convert.jobSubmitted", jobId)
+                content.text = L10n.string("convert.completed")
                 content.image = UIImage(systemName: "checkmark.seal.fill")
                 cell.selectionStyle = .none
                 cell.accessoryType = .none
@@ -306,9 +328,11 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             }
             row -= 1
             if row == 0 {
-                content.text = L10n.string("convert.openProgress")
+                content.text = L10n.string("convert.openResult")
                 content.image = UIImage(systemName: "arrow.right.circle")
                 cell.accessoryType = .disclosureIndicator
+                cell.selectionStyle = .default
+                cell.accessibilityTraits = .button
                 cell.contentConfiguration = content
                 return cell
             }
@@ -325,14 +349,27 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         return cell
     }
 
-    private func actionCell() -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: IndexPath(row: 0, section: 0))
+    private func actionCell(for indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
-        content.text = viewModel.isSubmitting
-            ? L10n.string("convert.submitting")
-            : L10n.string("convert.startConversion")
+        cell.accessoryView = nil
+        if indexPath.row == 1 {
+            let canCancel = viewModel.isSubmitting && viewModel.session.phase != .cancelling
+            content.text = L10n.string("convert.cancel")
+            content.textProperties.color = canCancel ? view.tintColor : .secondaryLabel
+            cell.contentConfiguration = content
+            cell.accessibilityIdentifier = "convert.cancel"
+            cell.accessibilityLabel = content.text
+            cell.accessibilityHint = nil
+            cell.accessibilityTraits = canCancel ? .button : [.button, .notEnabled]
+            cell.selectionStyle = canCancel ? .default : .none
+            return cell
+        }
+        content.text = ManualConversionPresentation.title(for: viewModel.session)
+        content.secondaryText = ManualConversionPresentation.detail(for: viewModel.session)
         content.textProperties.alignment = .center
-        content.textProperties.color = viewModel.selectedFile == nil ? .secondaryLabel : view.tintColor
+        content.textProperties.color = viewModel.isSubmitting ? .label
+            : (viewModel.selectedFile == nil ? .secondaryLabel : view.tintColor)
         if viewModel.isSubmitting {
             let spinner = UIActivityIndicatorView(style: .medium)
             spinner.startAnimating()
@@ -341,11 +378,12 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             cell.accessoryView = nil
         }
         cell.contentConfiguration = content
+        cell.accessibilityIdentifier = "convert.submit"
         cell.accessibilityLabel = content.text
-        cell.accessibilityTraits = viewModel.isSubmitting ? .notEnabled : .button
-        cell.accessibilityHint = viewModel.selectedFile == nil
-            ? L10n.string("convert.pickFileFirstHint")
-            : L10n.string("convert.startConversionHint")
+        cell.accessibilityTraits = viewModel.isSubmitting ? [.staticText, .updatesFrequently]
+            : (viewModel.selectedFile == nil ? [.button, .notEnabled] : .button)
+        cell.accessibilityHint = viewModel.isSubmitting ? nil : (viewModel.selectedFile == nil
+            ? L10n.string("convert.pickFileFirstHint") : L10n.string("convert.startConversionHint"))
         cell.selectionStyle = (viewModel.selectedFile == nil || viewModel.isSubmitting) ? .none : .default
         return cell
     }
@@ -364,6 +402,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     private func submit() {
         guard viewModel.selectedFile != nil, !viewModel.isSubmitting else { return }
+        view.endEditing(true)
         Task { [weak self] in
             guard let self else { return }
             await self.viewModel.submit(
@@ -378,15 +417,25 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     }
 
     private func openSubmittedJob() {
-        guard let jobId = viewModel.submittedJobId else { return }
+        guard let result = viewModel.session.result else { return }
+        let snapshot: JobSnapshot
+        do { snapshot = try result.snapshot() }
+        catch {
+            let alert = UIAlertController(title: L10n.string("convert.title"),
+                message: AppErrorReporter.message(error, context: "Manual conversion result"), preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+            present(alert, animated: true)
+            return
+        }
         let detail = JobDetailScreenController(
-            jobId: jobId,
+            jobId: result.jobID,
             settings: settings,
             library: library,
             player: player,
-            playbackClock: playbackClock
+            playbackClock: playbackClock,
+            localSnapshot: snapshot
         )
-        detail.title = L10n.string("jobDetail.title")
+        detail.title = L10n.string("convert.resultTitle")
         navigationController?.pushViewController(detail, animated: true)
     }
 
