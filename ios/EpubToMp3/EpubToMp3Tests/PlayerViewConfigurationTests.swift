@@ -22,8 +22,8 @@ final class PlayerViewConfigurationTests: XCTestCase {
                 playPauseTapped: action, skipForwardTapped: action, nextChapterTapped: action, tocTapped: action),
             traits: controller.traitCollection)
         controller.view.layoutIfNeeded()
-        XCTAssertEqual(content.stackView.spacing, 4)
-        XCTAssertEqual(content.contentScrollView.frame.maxY, controller.view.safeAreaLayoutGuide.layoutFrame.maxY, accuracy: 0.5)
+        XCTAssertFalse(controller.view.subviews.contains { $0 is UIScrollView })
+        XCTAssertEqual(content.layoutView.frame.maxY, controller.view.safeAreaLayoutGuide.layoutFrame.maxY, accuracy: 0.5)
         XCTAssertTrue(content.volumeView.showsVolumeSlider)
         XCTAssertTrue(content.volumeView.isDescendant(of: controller.view))
         XCTAssertTrue(content.airPlayView.isDescendant(of: controller.view))
