@@ -288,6 +288,8 @@ final class IOSRootContainerController: UIViewController {
             controller.view.topAnchor.constraint(equalTo: view.topAnchor),
             controller.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        view.layoutIfNeeded()
+        controller.setPresented(false, animated: false)
     }
 
     func updateTheme(_ theme: ReaderTheme) {
@@ -371,8 +373,8 @@ final class IOSRootContainerController: UIViewController {
         if playerPresentation.showingFullPlayer {
             ensureFullPlayerController()
         }
-        fullPlayerController?.view.isHidden = !playerPresentation.showingFullPlayer
-        fullPlayerController?.view.alpha = playerPresentation.showingFullPlayer ? 1 : 0
+        fullPlayerController?.setPresented(playerPresentation.showingFullPlayer,
+            animated: !isCommittingInitialReaderPresentation)
         readerOpenStageProfiler?.recordStartupStage("root_overlay_visibility_updated")
         presentPlayerErrorIfNeeded()
         readerOpenStageProfiler?.recordStartupStage("root_overlay_refresh_completed")

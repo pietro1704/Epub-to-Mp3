@@ -14,9 +14,12 @@ final class FullPlayerScreenController: UIViewController {
     private let settings: AppSettings
     private let onStartListening: () -> Void
     private let content = FullPlayerContent()
+    private lazy var overlayTransition = PlayerOverlayTransition(view: view, style: .sheet)
     private lazy var dismissInteraction = FullPlayerDismissInteraction(
         view: view,
         controls: { [weak self] in self?.nonDraggableViews ?? [] },
+        onBegin: { [weak self] in self?.overlayTransition.beginInteraction() ?? false },
+        onCancel: { [weak self] in self?.overlayTransition.restoreAfterInteraction() },
         onDismiss: { [weak self] in self?.playerPresentation.dismissFullPlayer() }
     )
     private var renderedRate: PlaybackRate?
@@ -83,6 +86,10 @@ final class FullPlayerScreenController: UIViewController {
     func refresh(library: LibraryStore) {
         self.library = library
         render()
+    }
+
+    func setPresented(_ visible: Bool, animated: Bool) {
+        overlayTransition.setVisible(visible, animated: animated)
     }
 
     private func bind() {
