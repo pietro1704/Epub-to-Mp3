@@ -20,7 +20,7 @@ remains blocked by Simulator quarantine. A merged PR is not device acceptance.
 | IOS-10 | Honor selected page-turn animation | Pending final native diagnosis; dispatch exists, inspect Reduce Motion, layout/fallback and outgoing snapshot |
 | IOS-11 | Reader center-tap chrome animation | Merged [#982](https://github.com/pietro1704/Epub-to-Mp3/pull/982); native offset/clipping/motion acceptance pending |
 | IOS-12 | Book search and rendered passage navigation | Merged [#983](https://github.com/pietro1704/Epub-to-Mp3/pull/983); UIKit acceptance pending |
-| IOS-13 | Scrollable notes/internal-link previews and explicit Go | Implemented on `fix/ios-reader-link-previews-20261027`; see [link contract](../ios/EpubToMp3/docs/reader-link-previews.md); delivery checks in progress |
+| IOS-13 | Scrollable notes/internal-link previews and explicit Go | Published in [#985](https://github.com/pietro1704/Epub-to-Mp3/pull/985), CI/automatic merge pending; see [link contract](../ios/EpubToMp3/docs/reader-link-previews.md); local checks passed, native acceptance pending |
 | IOS-14 | Original book fonts/styles by default | Pending rendering/embedded-font audit; preserve explicit user overrides |
 | IOS-15 | Apple Books reference font catalog | Pending public availability/licensing audit; no private font copying/downloads |
 | IOS-16 | Model management collapsed by default | Pending; retain selection, transfer state, errors and readiness summary |
@@ -52,3 +52,22 @@ background/overlays, generated chunk boundaries and chapter changes.
 UI suggestions UI-P01–UI-P07 remain proposals, outside approved implementation.
 Generic conversion-history detail still has a legacy HTTP-backed initializer;
 it was observed during IOS-03 and remains a separate unverified follow-up.
+
+## Preserved work outside this iOS change
+
+The shutdown request explicitly included existing uncommitted work in the other
+checkouts. These snapshots preserve it without combining it with this iOS PR
+or claiming validation. Review and split each snapshot into coherent PRs before
+integration; do not merge these backup branches wholesale.
+
+| Backup branch | Snapshot commit | Saved files |
+| --- | --- | --- |
+| `wip/shutdown-main-workspace-20261027` | `7cb696d9d0fb446978a8b2ff65b57ea5bec31226` | 43 |
+| `wip/shutdown-model-download-20261027` | `6318856d3a78ddceae2260419ec61c3d1374c5da` | 71 |
+| `wip/shutdown-build-cache-20261027` | `3911c6ec2600aeceeeea7236dad72fdf88e5f334` | 15 |
+| `wip/shutdown-protected-pauses-20261027` | `5a48f783709dd623357289d13ed4ce2e060ce944` | 2 |
+
+Pushes were read back and verified against each local commit. Ignored build
+outputs, private logs, app data and installed models remain local. The protected
+pauses snapshot includes its pre-existing 2.2 MiB Silero asset and MIT license;
+this preservation does not enable it in the app or authorize new downloads.
