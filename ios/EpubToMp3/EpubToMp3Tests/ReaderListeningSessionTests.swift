@@ -71,7 +71,7 @@ final class ReaderListeningSessionTests: XCTestCase {
         session.start(book: book("original"), priority: 0, pageRatio: nil,
                       catalog: [(index: 0, title: "Original chapter")],
                       conversionOptions: AppSettings(defaults: defaults).conversionOptions,
-                      presentsFullPlayer: false)
+                      presentsFullPlayer: false, chapterEstimates: [0: 600])
         await fulfillment(of: [started], timeout: 2)
         if replacesBook { activeBookID = "replacement" }
         else { session.cancel() }
@@ -82,6 +82,7 @@ final class ReaderListeningSessionTests: XCTestCase {
         XCTAssertEqual(failures, 0)
         XCTAssertFalse(session.isListening(to: "original"))
         XCTAssertNil(player.snapshot)
+        XCTAssertEqual(player.durationSeconds, 0, "A retired open must not install chapter estimates")
         XCTAssertFalse(player.isConverting)
     }
 

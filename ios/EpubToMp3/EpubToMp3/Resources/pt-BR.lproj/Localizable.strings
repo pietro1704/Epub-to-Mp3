@@ -189,6 +189,7 @@
 "player.play" = "Reproduzir";
 "player.nothingPlaying" = "Nada em reprodução";
 "player.remaining" = "%@ restantes";
+"player.estimatedRemaining" = "Aproximadamente %@ restantes";
 "player.preparingAudio" = "Preparando áudio…";
 "player.fullPlayer" = "Player completo";
 "player.skipForward15" = "Avançar 15 segundos";

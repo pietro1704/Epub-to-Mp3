@@ -19,6 +19,7 @@ final class PlaybackSegmentSession {
     private(set) var publications: [SegmentBacklog.Identity: LatencyObservation.StreamPublication] = [:]
     private(set) var requestReceipts: [SegmentBacklog.Identity: LatencyObservation.StreamRequestReceipt] = [:]
     private(set) var estimatedDurations: [Int: TimeInterval] = [:]
+    private var startingPositions: [Int: TimeInterval] = [:]
     private(set) var chapterIndex = -1
     private(set) var cumulativeBase: TimeInterval = 0
     private(set) var chapterDuration: TimeInterval = 0
@@ -59,6 +60,7 @@ final class PlaybackSegmentSession {
         publications.removeAll()
         requestReceipts.removeAll()
         estimatedDurations.removeAll()
+        startingPositions.removeAll()
         resetCursor()
     }
     func resetCursor() {
@@ -71,15 +73,16 @@ final class PlaybackSegmentSession {
         let changed = chapterIndex != identity.chapterIndex
         if changed {
             chapterIndex = identity.chapterIndex
-            cumulativeBase = 0
-            chapterDuration = 0
+            cumulativeBase = startingPositions[chapterIndex] ?? 0
+            chapterDuration = estimatedDurations[chapterIndex] ?? 0
         }
         activeIdentity = identity
         return changed
     }
-    func estimate(_ duration: TimeInterval, chapter: Int) {
+    func estimate(_ duration: TimeInterval, chapter: Int, startingRatio: Double = 0) {
         estimatedDurations[chapter] = duration
-        if chapterIndex == chapter { chapterDuration = max(chapterDuration, duration) }
+        startingPositions[chapter] = startingRatio.isFinite ? max(0, min(1, startingRatio)) * duration : 0
+        if chapterIndex == chapter { chapterDuration = duration }
     }
     func updateChapterDuration(_ duration: TimeInterval) { chapterDuration = duration }
     func setBase(_ value: TimeInterval) { cumulativeBase = value }
@@ -153,9 +156,11 @@ final class PlaybackSegmentSession {
     }
 
     func confirmedEnd(for chapterIndex: Int, snapshot: JobSnapshot?) -> TimeInterval? {
-        guard let snapshot,
-              let chapter = Self.chapterProgressEntry(forSegmentIndex: chapterIndex,
-                  chapterProgress: snapshot.chapterProgress ?? snapshot.playableChapters),
+        // A stream requested from a page contains only the chapter suffix.
+        guard startingPositions[chapterIndex, default: 0] == 0, let snapshot,
+              let chapter = (snapshot.chapterProgress ?? snapshot.playableChapters).first(where: {
+                  $0.index == chapterIndex + Self.segmentManifestIndexOffset(snapshot)
+              }),
               chapter.status == "completed" || snapshot.state == "finished" else { return nil }
         if let duration = chapter.durationSeconds, duration.isFinite, duration > 0 { return duration }
         let retained = files.keys.filter { $0.chapterIndex == chapterIndex }.sorted()
@@ -372,17 +377,17 @@ final class PlaybackSegmentSession {
 
 
     func observeDuration(queue: AVQueuePlayer, snapshot: JobSnapshot?) -> TimeInterval {
-        let queuedDuration = queue.items().reduce(0.0) { total, queued in
-            guard let asset = queued.asset as? AVURLAsset,
-                  Self.chapterIndexForSegmentItem(asset.url) == chapterIndex else { return total }
-            let value = queued.duration.seconds
-            return total + (value.isFinite && value > 0 ? value : 0)
+        for item in queue.items() {
+            guard let asset = item.asset as? AVURLAsset,
+                  let identity = Self.segmentIdentityForSegmentItem(asset.url),
+                  let duration = Self.validatedDurationSeconds(item.duration.seconds, isReadyToPlay: item.status == .readyToPlay)
+            else { continue }
+            recordDuration(duration, identity: identity)
         }
-        let observed = cumulativeBase + queuedDuration
-        let snapshotDuration = snapshot?.chapterProgress?
-            .first(where: { $0.index == chapterIndex || $0.index == chapterIndex + 1 })?.durationSeconds ?? 0
-        chapterDuration = max(chapterDuration, observed, estimatedDurations[chapterIndex] ?? 0,
-                              snapshotDuration.isFinite ? snapshotDuration : 0)
+        chapterDuration = ChapterPlaybackTimeline(
+            estimate: estimatedDurations[chapterIndex],
+            confirmed: confirmedEnd(for: chapterIndex, snapshot: snapshot)
+        ).duration
         return chapterDuration
     }
 

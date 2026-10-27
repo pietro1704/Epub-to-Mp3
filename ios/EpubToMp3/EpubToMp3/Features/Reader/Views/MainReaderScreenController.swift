@@ -242,6 +242,9 @@ final class MainReaderScreenController: UIViewController {
             self.emptyPresentation.listenButton.isHidden = self.currentBook == nil || isLoading
             self.onReaderLoadingChanged?(isLoading)
         }
+        reader.onPlaybackChapterEstimates = { [weak self] estimates in
+            self?.listeningSession.updateChapterEstimates(estimates, for: book.id)
+        }
         reader.onChromeVisibilityRequested = { [weak self] isHidden in
             guard let self else { return }
             self.onReaderChromeVisibilityChanged?(isHidden)
@@ -404,7 +407,10 @@ final class MainReaderScreenController: UIViewController {
             } ?? []
         listeningSession.start(book: book, priority: priority, pageRatio: pageRatio,
                                catalog: catalog, conversionOptions: settings.conversionOptions,
-                               presentsFullPlayer: presentsFullPlayer)
+                               presentsFullPlayer: presentsFullPlayer,
+                               chapterEstimates: readerController?.playbackChapterEstimates
+                                   ?? ChapterPlaybackTimeline.estimates(for:
+                                       LocalFulltextCache.inMemoryPayload(bookId: book.id)?.chapters ?? []))
     }
 }
 #endif

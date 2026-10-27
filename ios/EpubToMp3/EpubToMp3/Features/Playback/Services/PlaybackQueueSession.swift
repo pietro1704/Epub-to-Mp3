@@ -142,7 +142,8 @@ final class PlaybackQueueSession: ObservableObject {
     func activateSegment(_ identity: SegmentBacklog.Identity, segments: PlaybackSegmentSession) -> Bool {
         let changed = segments.activate(identity)
         if changed {
-            clock.update(durationSeconds: max(0, segments.estimatedDurations[identity.chapterIndex] ?? 0))
+            clock.update(positionSeconds: segments.cumulativeBase,
+                durationSeconds: max(0, segments.estimatedDurations[identity.chapterIndex] ?? 0))
             activeSentenceId = nil
         }
         currentChapterIndex = identity.chapterIndex
@@ -166,7 +167,6 @@ final class PlaybackQueueSession: ObservableObject {
         if segmentMode {
             guard let identity = PlaybackSegmentSession.segmentIdentityForSegmentItem(asset.url) else { return false }
             let changed = activateSegment(identity, segments: segments)
-            if changed { clock.update(positionSeconds: 0) }
             return changed
         }
         guard let urls = chapterURLs(), let index = PlaybackChapterQueue.resolveChapterIndex(
@@ -199,6 +199,7 @@ final class PlaybackQueueSession: ObservableObject {
             // A delayed notification cannot advance a chapter already promoted
             // by KVO. Only the still-audible chapter contributes cumulative time.
             segments.advanceBase(duration)
+            if let identity, duration > 0 { segments.recordDuration(duration, identity: identity) }
         }
         drainSegments(segments)
         _ = activateCurrentSegment(segments: segments)
