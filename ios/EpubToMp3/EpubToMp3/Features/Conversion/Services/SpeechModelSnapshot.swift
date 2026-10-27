@@ -5,13 +5,18 @@ struct SpeechModelSnapshot: Decodable, Sendable {
     let schemaVersion: UInt32
     let generatedFromCatalogRevision: String
     let defaultSelection: TtsSessionSelection
+    let target: Target?
     let entries: [Entry]
 
     enum CodingKeys: String, CodingKey {
-        case entries
+        case entries, target
         case schemaVersion = "schema_version"
         case generatedFromCatalogRevision = "generated_from_catalog_revision"
         case defaultSelection = "default_selection"
+    }
+
+    struct Target: Decodable, Sendable {
+        let language: String
     }
 
     struct Entry: Decodable, Sendable {
@@ -59,7 +64,7 @@ struct SpeechModelSnapshot: Decodable, Sendable {
     }
 
     enum Quality: String, Decodable, Sendable {
-        case low, medium, unspecified
+        case low, medium, high, unspecified
     }
 
     struct VoiceChoice: Decodable, Sendable {
@@ -196,12 +201,20 @@ struct SpeechModelLibraryTarget: Sendable {
         let root = LocalSpeechModelReadiness.ttsModelsRoot(fileManager: fileManager, create: false)
             ?? fileManager.temporaryDirectory.appendingPathComponent("EpubToMp3/TTSModels", isDirectory: true)
         return Self(
-            language: Locale.preferredLanguages.first ?? "en",
+            language: UserDefaults.standard.string(forKey: studyLanguageDefaultsKey)
+                ?? Locale.preferredLanguages.first ?? "en",
             platform: platform,
             androidAPI: 0,
             architecture: architecture,
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             modelsRoot: root
         )
+    }
+
+    static let studyLanguageDefaultsKey = "speechModelStudyLanguage.v1"
+
+    func selectingLanguage(_ language: String) -> Self {
+        Self(language: language, platform: platform, androidAPI: androidAPI,
+             architecture: architecture, osVersion: osVersion, modelsRoot: modelsRoot)
     }
 }

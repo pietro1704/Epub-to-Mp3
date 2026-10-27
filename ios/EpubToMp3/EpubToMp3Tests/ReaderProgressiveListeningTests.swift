@@ -262,7 +262,9 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let recovered = try JSONDecoder().decode(JobSnapshot.self, from: Data(#"{"jobId":"voice-fixture","state":"running","engine":"piper","voice":"pt_BR-faber-medium"}"#.utf8))
         f.player.setSnapshot(recovered)
         controller.refresh(library: f.library)
-        XCTAssertTrue(labels(in: controller.view).contains { $0.contains("Faber medium") })
+        let activeName = try XCTUnwrap(recovered.activeVoiceDisplayName)
+        XCTAssertTrue(labels(in: controller.view).contains { $0.contains(activeName) })
+        XCTAssertFalse(labels(in: controller.view).contains { $0.contains("pt_BR-faber-medium") })
         XCTAssertFalse(labels(in: controller.view).contains { $0.contains("Luciana") })
     }
 

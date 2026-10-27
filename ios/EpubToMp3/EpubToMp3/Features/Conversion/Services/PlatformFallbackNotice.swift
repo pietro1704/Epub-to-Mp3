@@ -25,9 +25,10 @@ final class PlatformFallbackNoticeTracker: @unchecked Sendable {
 /// A passive notice: changing providers never pauses playback or asks permission.
 @MainActor
 enum PlatformFallbackNotice {
-    static func show(engine: String? = nil) {
+    static func show(engine: String? = nil, modelID: String? = nil, voice: String? = nil) {
 #if !APP_FOUNDATION_HOST_TESTS
-        let message = engine.map { L10n.string("conversion.secondaryVoiceUsed", $0 == "piper" ? "Faber medium" : $0) }
+        let active = SpeechModelPresentationStore.shared.displayName(engine: engine, modelID: modelID, voice: voice)
+        let message = active.map { L10n.string("conversion.secondaryVoiceUsed", $0) }
             ?? L10n.string("conversion.systemVoiceFallback")
 #if os(iOS)
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })

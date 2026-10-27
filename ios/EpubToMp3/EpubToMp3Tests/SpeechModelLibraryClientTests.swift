@@ -35,6 +35,38 @@ final class SpeechModelLibraryClientTests: XCTestCase {
         XCTAssertThrowsError(try SpeechModelSnapshot.decode(Data(malformed)))
     }
 
+    func testNewHighQualityVoiceKeepsLiteralIdentityAndCreatorLicenceEvidence() throws {
+        var document = try XCTUnwrap(JSONSerialization.jsonObject(with: snapshotJSON()) as? [String: Any])
+        var entries = try XCTUnwrap(document["entries"] as? [[String: Any]])
+        var identity = try XCTUnwrap(entries[0]["identity"] as? [String: Any])
+        identity["model_id"] = "en_US-ljspeech-high"
+        entries[0]["identity"] = identity
+        entries[0]["presentation"] = [
+            "model_name": "LJ Speech", "family_name": "Piper", "quality": "high",
+            "voice_choices": [["voice_id": NSNull(), "name": "LJ Speech"]],
+        ]
+        entries[0]["language_evidence"] = [
+            "routing_tags": ["en"],
+            "exact_tags": [["tag": "en-US", "frontend": "espeak-ng:en", "validation": "artifact_declared"]],
+        ]
+        entries[0]["licence"] = [
+            "id": "LicenseRef-Public-Domain", "category": "model_weights",
+            "evidence_url": "https://brycebeattie.com/files/tts/",
+            "requires_acceptance": false, "validation": "creator_declared",
+        ]
+        document["entries"] = entries
+        let snapshot = try SpeechModelSnapshot.decode(JSONSerialization.data(withJSONObject: document))
+        let state = SpeechModelLibraryViewState(snapshot: snapshot)
+        let entry = try XCTUnwrap(snapshot.entries.first)
+        XCTAssertTrue(state.displayName(for: entry).contains(L10n.string("settings.modelQuality.high")))
+        XCTAssertEqual(state.selection(for: entry)?.modelID, "en_US-ljspeech-high")
+        XCTAssertNil(state.selection(for: entry)?.voice)
+        XCTAssertTrue(state.details(for: entry).contains(
+            L10n.string("settings.modelLicence.creatorDeclared", "LicenseRef-Public-Domain")
+        ))
+        XCTAssertTrue(state.details(for: entry).contains(L10n.string("settings.modelPerformance.unmeasured")))
+    }
+
     func testNonInstallableEntryIsVisibleButNeverBecomesAnAction() throws {
         let snapshot = try SpeechModelSnapshot.decode(snapshotJSON(
             installable: false,
@@ -55,6 +87,18 @@ final class SpeechModelLibraryClientTests: XCTestCase {
             installEvent: nil,
             termsAccepted: false
         ).available.isEmpty)
+    }
+
+    func testConfiguredModelCannotBeSelectedAgainWithoutReadinessOrWithStaleRevision() throws {
+        let unavailable = SpeechModelLibraryViewState(snapshot: try SpeechModelSnapshot.decode(snapshotJSON(
+            installationState: "missing", readinessState: "not_inspected", selectable: false
+        )))
+        XCTAssertFalse(unavailable.canSelect(.selected(.piper)))
+        let ready = SpeechModelLibraryViewState(snapshot: try SpeechModelSnapshot.decode(snapshotJSON()))
+        XCTAssertTrue(ready.canSelect(.selected(.piper)))
+        var stale = try XCTUnwrap(ready.selectableChoices.first?.selection)
+        stale.session?.modelRevision = "stale-revision"
+        XCTAssertFalse(ready.canSelect(stale))
     }
 
     func testCatalogueDetailsExposeEvidenceWithoutInventingSpeed() throws {
@@ -180,11 +224,16 @@ final class SpeechModelLibraryClientTests: XCTestCase {
             return URL(fileURLWithPath: root).appendingPathComponent(modelID)
         })
 
-        do {
-            _ = try await client.install(modelID: "pt_BR-faber-medium")
-            XCTFail("Expected missing terms acceptance to fail")
-        } catch let error as SpeechModelInstallationError {
-            XCTAssertEqual(error, .termsAcceptanceRequired("pt_BR-faber-medium"))
+        let rejectedFingerprints: [String?] = [nil, "", "terms-for-another-revision"]
+        for fingerprint in rejectedFingerprints {
+            do {
+                _ = try await client.install(
+                    modelID: "pt_BR-faber-medium", acceptedTermsFingerprint: fingerprint
+                )
+                XCTFail("Only the exact terms fingerprint can authorize installation")
+            } catch let error as SpeechModelInstallationError {
+                XCTAssertEqual(error, .termsAcceptanceRequired("pt_BR-faber-medium"))
+            }
         }
         XCTAssertTrue(recorder.installs.isEmpty)
 
@@ -193,6 +242,29 @@ final class SpeechModelLibraryClientTests: XCTestCase {
             acceptedTermsFingerprint: "terms-v1"
         )
         XCTAssertEqual(recorder.installs.map(\.modelID), ["pt_BR-faber-medium"])
+    }
+
+    func testRequiredTermsWithMissingFingerprintRejectsMalformedMetadata() async throws {
+        let missingFingerprints: [String?] = [nil, ""]
+        for fingerprint in missingFingerprints {
+            let snapshot = try SpeechModelSnapshot.decode(snapshotJSON(
+                requiresAcceptance: true, termsFingerprint: fingerprint
+            ))
+            let recorder = ModelActionRecorder()
+            let client = SpeechModelLibraryClient(initialSnapshot: snapshot, install: { modelID, root in
+                recorder.recordInstall(modelID: modelID, root: root)
+                return URL(fileURLWithPath: root).appendingPathComponent(modelID)
+            })
+            do {
+                _ = try await client.install(
+                    modelID: "pt_BR-faber-medium", acceptedTermsFingerprint: fingerprint
+                )
+                XCTFail("Missing/empty metadata must not count as matching consent")
+            } catch let error as SpeechModelInstallationError {
+                XCTAssertEqual(error, .termsAcceptanceRequired("pt_BR-faber-medium"))
+            }
+            XCTAssertTrue(recorder.installs.isEmpty)
+        }
     }
 
     #if !SWIFT_PACKAGE

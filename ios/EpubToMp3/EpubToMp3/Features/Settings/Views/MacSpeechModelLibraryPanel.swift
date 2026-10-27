@@ -82,8 +82,34 @@ final class MacSpeechModelLibraryPanel: NSStackView {
             addArrangedSubview(NSTextField(labelWithString: L10n.string("settings.modelState.notInspected")))
             return
         }
+        let language = NSPopUpButton()
+        for tag in state.studyLanguages {
+            language.addItem(withTitle: state.languageTitle(tag))
+            language.lastItem?.representedObject = tag
+            if tag == state.studyLanguage { language.selectItem(at: language.numberOfItems - 1) }
+        }
+        language.target = self
+        language.action = #selector(studyLanguageChanged(_:))
+        language.setAccessibilityIdentifier("settings.speechModels.language")
+        language.setAccessibilityLabel(L10n.string("settings.modelLanguage.study"))
+        addArrangedSubview(NSStackView(views: [
+            NSTextField(labelWithString: L10n.string("settings.modelLanguage.study")), language,
+        ]))
         for entry in state.entries {
             addArrangedSubview(makeRow(for: entry))
+        }
+    }
+
+    @objc private func studyLanguageChanged(_ sender: NSPopUpButton) {
+        guard let language = sender.selectedItem?.representedObject as? String else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                adopt(try await speechModels.setStudyLanguage(language))
+            } catch {
+                presentFailure(title: L10n.string("settings.modelLanguage.study"), error: error)
+                render()
+            }
         }
     }
 

@@ -122,3 +122,31 @@ fn model_install_operation_recovers_only_a_persisted_attempt_identity() {
         assert!(cancelled.is_null());
     }
 }
+
+#[test]
+fn model_install_preflight_failure_remains_terminal_across_ffi_calls() {
+    let root = tempfile::tempdir().unwrap();
+    let model = CString::new("pt_BR-faber-medium").unwrap();
+    let root_path = CString::new(root.path().to_str().unwrap()).unwrap();
+    unsafe {
+        let operation = converter_tts_model_install_operation_create(
+            model.as_ptr(),
+            root_path.as_ptr(),
+            0,
+        );
+        assert!(!operation.is_null());
+        let original = converter_tts_model_install_operation_event_json(operation);
+        let original_bytes = CStr::from_ptr(original).to_bytes().to_vec();
+        converter_string_free(original);
+        assert!(!converter_tts_model_install_operation_record_progress(
+            operation, 0, 1
+        ));
+        assert!(converter_tts_model_install_operation_publish(operation).is_null());
+        converter_tts_model_install_operation_cancel(operation);
+        let after = converter_tts_model_install_operation_event_json(operation);
+        assert_eq!(CStr::from_ptr(after).to_bytes(), original_bytes);
+        converter_string_free(after);
+        converter_tts_model_install_operation_free(operation);
+    }
+    assert!(root.path().read_dir().unwrap().next().is_none());
+}

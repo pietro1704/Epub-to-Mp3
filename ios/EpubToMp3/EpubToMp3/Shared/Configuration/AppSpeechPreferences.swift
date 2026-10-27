@@ -20,13 +20,16 @@ extension AppSettings {
         [ttsPreferences.primary, ttsPreferences.secondary].compactMap { $0 }
     }
     var primaryNarrationDisplayName: String {
-        primaryTtsSelection.flatMap { AudioEnginePreference(rawValue: $0.engine)?.displayName }
-            ?? audioEngine.displayName
+        let selection = ttsPreferences.primary
+        return SpeechModelPresentationStore.shared.displayName(
+            engine: selection.engine, modelID: selection.modelID, voice: selection.voice
+        ) ?? audioEngine.displayName
     }
     var secondaryNarrationDisplayName: String {
-        secondaryTtsSelection.flatMap { AudioEnginePreference(rawValue: $0.engine)?.displayName }
-            ?? secondaryAudioEngine?.displayName
-            ?? L10n.string("settings.noSecondary")
+        guard let selection = ttsPreferences.secondary else { return L10n.string("settings.noSecondary") }
+        return SpeechModelPresentationStore.shared.displayName(
+            engine: selection.engine, modelID: selection.modelID, voice: selection.voice
+        ) ?? L10n.string("settings.noSecondary")
     }
     func selectPrimaryNarration(_ selection: TtsSelection) {
         if let engine = AudioEnginePreference(rawValue: selection.engine) { audioEngine = engine }

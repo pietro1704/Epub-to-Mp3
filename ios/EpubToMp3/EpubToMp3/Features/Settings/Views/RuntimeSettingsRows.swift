@@ -9,10 +9,11 @@ enum RuntimeSettingsRows {
         case model(SpeechModelSnapshot.Entry?)
         case secondary
         case onlineFallback
+        case studyLanguage
     }
 
     static func rowCount(speechModels: SpeechModelLibraryViewState) -> Int {
-        4 + max(1, speechModels.entries.count)
+        5 + max(1, speechModels.entries.count)
     }
 
     static func row(at index: Int, speechModels: SpeechModelLibraryViewState) -> Row? {
@@ -25,6 +26,7 @@ enum RuntimeSettingsRows {
         }
         if index == 2 + modelCount { return .secondary }
         if index == 3 + modelCount { return .onlineFallback }
+        if index == 4 + modelCount { return .studyLanguage }
         return nil
     }
 
@@ -48,6 +50,7 @@ enum RuntimeSettingsRows {
                 content.image = UIImage(systemName: "waveform")
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
+                cell.selectionStyle = .default
                 return cell
             case .cellular:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
@@ -73,6 +76,7 @@ enum RuntimeSettingsRows {
                 cell.accessibilityValue = content.secondaryText
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
+                cell.selectionStyle = .default
                 return cell
             case .onlineFallback:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
@@ -85,6 +89,16 @@ enum RuntimeSettingsRows {
                     tableView.reloadData()
                 }
                 return cell
+            case .studyLanguage:
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                var content = cell.defaultContentConfiguration()
+                content.text = L10n.string("settings.modelLanguage.study")
+                content.secondaryText = speechModels.languageTitle(speechModels.studyLanguage)
+                cell.contentConfiguration = content
+                cell.accessibilityIdentifier = "settings.speechModels.language"
+                cell.accessoryType = .disclosureIndicator
+                cell.selectionStyle = .default
+                return cell
             case let .model(entry):
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
@@ -93,6 +107,7 @@ enum RuntimeSettingsRows {
                     content.secondaryText = L10n.string("settings.modelState.notInspected")
                     content.image = UIImage(systemName: "waveform.badge.magnifyingglass")
                     cell.contentConfiguration = content
+                    cell.accessoryType = .none
                     cell.selectionStyle = .none
                     return cell
                 }

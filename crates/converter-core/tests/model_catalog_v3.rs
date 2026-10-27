@@ -77,7 +77,7 @@ fn model_catalog_v3_exposes_faber_identity_presentation_and_distribution() {
     assert_eq!(faber["distribution"]["download_bytes"], 63_206_149);
     assert_eq!(
         faber["distribution"]["installed_bytes"],
-        serde_json::Value::Null
+        serde_json::json!(63_206_149)
     );
     assert_eq!(
         faber["distribution"]["artifacts"].as_array().unwrap().len(),

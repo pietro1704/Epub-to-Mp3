@@ -12,6 +12,7 @@ pub(super) struct NativeProvider<'a> {
     pub descriptor: ProviderDescriptor,
 }
 struct NativeSession {
+    _model_usage: Option<crate::model_store::model_usage::ModelUsageLease>,
     piper_runtime: Option<Arc<dyn crate::piper::PiperRuntime>>,
     artifact_versions: Option<(String, String)>,
     cancel: crate::piper::CancellationToken,
@@ -88,6 +89,31 @@ impl TtsProvider for NativeProvider<'_> {
         resolved.voice = legacy.voice.clone();
         let mut artifacts = std::collections::BTreeMap::new();
         let paths = self.worker.selection_model_paths(self.request, &legacy);
+        let model_usage = match legacy.engine.as_str() {
+            "piper" | "kokoro" => {
+                let namespace = if legacy.engine == "piper" {
+                    paths
+                        .0
+                        .parent()
+                        .ok_or_else(|| {
+                            TtsFailure::new(FailureKind::Unavailable, "Model namespace is missing")
+                        })?
+                        .to_owned()
+                } else {
+                    self.request
+                        .models_root
+                        .as_ref()
+                        .unwrap_or(&self.worker.config.paths.piper_models_dir)
+                        .join(legacy.model_id.as_deref().unwrap_or("kokoro-82m"))
+                };
+                Some(
+                    crate::model_store::model_usage::ModelUsageLease::acquire(&namespace).map_err(
+                        |error| TtsFailure::new(FailureKind::Unavailable, error.to_string()),
+                    )?,
+                )
+            }
+            _ => None,
+        };
         if legacy.engine == "piper" {
             crate::piper::validate_model_file_quality(&paths.0, &paths.1).map_err(|error| {
                 TtsFailure::new(FailureKind::InvalidSelection, error.to_string())
@@ -157,6 +183,7 @@ impl TtsProvider for NativeProvider<'_> {
         fs::create_dir_all(&staging)
             .map_err(|error| TtsFailure::new(FailureKind::Unavailable, error.to_string()))?;
         Ok(Box::new(NativeSession {
+            _model_usage: model_usage,
             piper_runtime,
             artifact_versions,
             cancel: self.worker.cancel.clone(),

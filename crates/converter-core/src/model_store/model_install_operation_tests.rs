@@ -2,7 +2,7 @@ use super::*;
 use crate::model_store::ModelArtifact;
 use sha2::{Digest, Sha256};
 
-fn fixture_manifest(first: &[u8], second: &[u8]) -> ModelManifest {
+pub(super) fn fixture_manifest(first: &[u8], second: &[u8]) -> ModelManifest {
     ModelManifest {
         model_id: "fixture-model".into(),
         revision: Some("fixture-revision".into()),
@@ -21,7 +21,7 @@ fn fixture_manifest(first: &[u8], second: &[u8]) -> ModelManifest {
     }
 }
 
-fn operation(
+pub(super) fn operation(
     root: &Path,
     first: &[u8],
     second: &[u8],
@@ -38,7 +38,11 @@ fn operation(
     .unwrap()
 }
 
-fn place_download(operation: &ModelInstallOperation, index: usize, bytes: &[u8]) -> PathBuf {
+pub(super) fn place_download(
+    operation: &ModelInstallOperation,
+    index: usize,
+    bytes: &[u8],
+) -> PathBuf {
     let path = operation.plan().artifacts[index].inbox_path.clone();
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, bytes).unwrap();
@@ -52,13 +56,13 @@ fn preflight_reports_exact_insufficient_space_without_creating_staging() {
         root.path(),
         b"12345",
         b"6789",
-        INSTALL_SPACE_SAFETY_BYTES + 8,
+        INSTALL_SPACE_SAFETY_BYTES + 13,
         Arc::new(AtomicBool::new(false)),
     );
     let plan = operation.plan();
     assert!(!plan.ready);
-    assert_eq!(plan.required_bytes, INSTALL_SPACE_SAFETY_BYTES + 9);
-    assert_eq!(plan.available_bytes, INSTALL_SPACE_SAFETY_BYTES + 8);
+    assert_eq!(plan.required_bytes, INSTALL_SPACE_SAFETY_BYTES + 14);
+    assert_eq!(plan.available_bytes, INSTALL_SPACE_SAFETY_BYTES + 13);
     assert_eq!(plan.event.stage, ModelInstallStage::Failed);
     assert_eq!(plan.event.failure.unwrap().kind, "insufficient_space");
     assert!(!root.path().join(".fixture-model.installing").exists());
@@ -286,7 +290,7 @@ fn relaunch_reuses_only_verified_completed_artifacts() {
     assert!(!relaunched.plan().artifacts[1].accepted);
     assert_eq!(
         relaunched.plan().required_bytes,
-        second.len() as u64 + INSTALL_SPACE_SAFETY_BYTES
+        2 * second.len() as u64 + INSTALL_SPACE_SAFETY_BYTES
     );
     let second_path = place_download(&relaunched, 1, second);
     relaunched.accept_download(1, &second_path).unwrap();
@@ -420,4 +424,57 @@ fn publication_failure_restores_the_previous_target() {
         b"previous"
     );
     assert!(!backup.exists());
+}
+
+#[test]
+fn reconstructed_ranges_require_the_full_manifest_hash_including_the_saved_prefix() {
+    use std::io::Write;
+
+    for corrupt_prefix in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let previous = root.path().join("fixture-model");
+        std::fs::create_dir_all(&previous).unwrap();
+        std::fs::write(previous.join("previous.marker"), b"preserve").unwrap();
+        let mut operation = operation(
+            root.path(),
+            b"abcdef",
+            b"config",
+            u64::MAX,
+            Arc::new(AtomicBool::new(false)),
+        );
+        let prefix: &[u8] = if corrupt_prefix { b"xyz" } else { b"abc" };
+        let inbox = place_download(&operation, 0, prefix);
+        let mut resumed = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&inbox)
+            .unwrap();
+        resumed.write_all(b"def").unwrap();
+        resumed.sync_all().unwrap();
+        drop(resumed);
+
+        let result = operation.accept_download(0, &inbox);
+
+        if corrupt_prefix {
+            assert!(matches!(
+                result,
+                Err(ModelStoreError::ChecksumMismatch { .. })
+            ));
+            assert!(!root.path().join(".fixture-model.downloads").exists());
+        } else {
+            result.unwrap();
+            let config = place_download(&operation, 1, b"config");
+            operation.accept_download(1, &config).unwrap();
+            operation.publish().unwrap();
+            assert_eq!(
+                std::fs::read(previous.join("model.onnx")).unwrap(),
+                b"abcdef"
+            );
+        }
+        if corrupt_prefix {
+            assert_eq!(
+                std::fs::read(previous.join("previous.marker")).unwrap(),
+                b"preserve"
+            );
+        }
+    }
 }

@@ -98,6 +98,18 @@ struct SpeechModelLibraryViewState: Sendable {
 
     var entries: [SpeechModelSnapshot.Entry] { snapshot?.entries ?? [] }
 
+    var studyLanguage: String {
+        snapshot?.target?.language ?? Locale.preferredLanguages.first ?? "en"
+    }
+
+    var studyLanguages: [String] {
+        Array(Set(entries.flatMap { $0.languageEvidence.exactTags.map(\.tag) } + [studyLanguage])).sorted()
+    }
+
+    func languageTitle(_ tag: String) -> String {
+        Locale.current.localizedString(forIdentifier: tag) ?? tag
+    }
+
     var defaultEntry: SpeechModelSnapshot.Entry? {
         guard let identity = snapshot?.defaultSelection.modelID else { return nil }
         return snapshot?.entries.first { $0.identity.modelID == identity }
@@ -122,6 +134,7 @@ struct SpeechModelLibraryViewState: Sendable {
         switch entry.presentation.quality {
         case .low: fields.append(L10n.string("settings.modelQuality.low"))
         case .medium: fields.append(L10n.string("settings.modelQuality.medium"))
+        case .high: fields.append(L10n.string("settings.modelQuality.high"))
         case .unspecified: break
         }
         return fields.joined(separator: " · ")
@@ -189,6 +202,20 @@ struct SpeechModelLibraryViewState: Sendable {
             choice.selection.engine == entry.identity.provider
                 && choice.selection.modelID == entry.identity.modelID
         }?.selection
+    }
+
+    func canSelect(_ selection: TtsSelection) -> Bool {
+        if selection.engine == "piper" || entry(for: selection) != nil {
+            return selectableChoices.contains { Self.sameChoice($0.selection, selection) }
+        }
+        return selection.engine == "system" || selection.engine == "edge"
+    }
+
+    static func sameChoice(_ first: TtsSelection, _ second: TtsSelection) -> Bool {
+        guard first.representsSameRequest(as: second) else { return false }
+        guard let firstRevision = first.session?.modelRevision,
+              let secondRevision = second.session?.modelRevision else { return true }
+        return firstRevision == secondRevision
     }
 
     func actions(
@@ -343,10 +370,11 @@ struct SpeechModelLibraryViewState: Sendable {
         guard let identifier = entry.licence.id else {
             return L10n.string("settings.modelLicence.unknown")
         }
-        guard entry.licence.validation == "partial" else {
-            return L10n.string("settings.modelLicence.unknown")
+        switch entry.licence.validation {
+        case "partial": return L10n.string("settings.modelLicence.partial", identifier)
+        case "creator_declared": return L10n.string("settings.modelLicence.creatorDeclared", identifier)
+        default: return L10n.string("settings.modelLicence.unknown")
         }
-        return L10n.string("settings.modelLicence.partial", identifier)
     }
 
     private func compatibilityStatus(for entry: SpeechModelSnapshot.Entry) -> String {

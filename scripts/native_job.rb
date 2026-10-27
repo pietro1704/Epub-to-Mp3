@@ -69,17 +69,107 @@ module NativeJob
     [handle, false]
   end
 
-  def self.stop_group(pid)
-    Process.kill("TERM", -pid)
+  def self.process_snapshot
+    output, status = Open3.capture2("ps", "-axo", "pid=,ppid=,lstart=")
+    raise "Cannot inspect native process ownership" unless status.success?
+    output.lines.filter_map do |line|
+      child, parent, birth = line.strip.split(/\s+/, 3)
+      [Integer(child), { parent: Integer(parent), birth: birth }] if birth
+    end.to_h
+  end
+
+  def self.same_session?(child, leader)
+    Process.respond_to?(:getsid) && Process.getsid(child) == leader
+  rescue Errno::ESRCH, Errno::EPERM
+    false
+  end
+
+  def self.owned_processes(pid)
+    snapshot = process_snapshot
+    # The isolated session survives its leader. Foundation-created process
+    # groups therefore remain identifiable even after an ordinary leader failure.
+    owned = snapshot.select { |child, _| same_session?(child, pid) }
+    owned[pid] = snapshot[pid] if snapshot[pid]
+    parents = [pid]
+    until parents.empty?
+      children = snapshot.select { |child, row| parents.include?(row[:parent]) }
+      children.reject! { |child, _| child == pid }
+      break if children.empty?
+      owned.merge!(children)
+      parents = children.keys
+    end
+    owned
+  end
+
+  def self.signal_descendants(owned, signal)
+    return if owned.empty?
+    current = process_snapshot
+    owned.each do |pid, row|
+      # A recycled PID must never authorize signalling an unrelated process.
+      next unless current[pid]&.fetch(:birth) == row[:birth]
+      Process.kill(signal, pid) rescue Errno::ESRCH
+    end
+  end
+
+  def self.signal_owned(pid, owned, signal)
+    signal_descendants(owned, signal)
+  rescue StandardError => error
+    warn "native_job: cleanup inspection failed: #{error.message}"
+    # A known PID can still be checked against the kernel-owned isolated
+    # session when ps is unavailable. Another session is never signalled.
+    owned.each_key do |child|
+      next unless same_session?(child, pid)
+      Process.kill(signal, child) rescue Errno::ESRCH
+    end
+  ensure
+    begin
+      Process.kill(signal, -pid)
+    rescue Errno::ESRCH, Errno::EPERM
+      nil
+    end
+  end
+
+  def self.stop_group(pid, owned = {})
+    begin
+      owned = owned_processes(pid).merge(owned)
+    rescue StandardError => error
+      warn "native_job: cleanup inspection failed: #{error.message}"
+    end
+    signal_owned(pid, owned, "TERM")
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2.5
     loop do
-      Process.kill(0, -pid)
+      group_alive = begin
+        Process.kill(0, -pid)
+        true
+      rescue Errno::ESRCH, Errno::EPERM
+        false
+      end
+      current = begin
+        owned.empty? ? {} : process_snapshot
+      rescue StandardError => error
+        warn "native_job: cleanup inspection failed: #{error.message}"
+        break # Force the known group/session to stop even without inspection.
+      end
+      descendants_alive = owned.any? { |child, row| current[child]&.fetch(:birth) == row[:birth] }
+      break unless group_alive || descendants_alive
       break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
       sleep 0.02
     end
-    Process.kill("KILL", -pid)
-  rescue Errno::ESRCH
-    nil
+    signal_owned(pid, owned, "KILL")
+  end
+
+  def self.spawn_owned(environment, command, handle)
+    unless Process.respond_to?(:fork)
+      return Process.spawn(environment, [command.first, command.first], *command.drop(1), CHILD_FD => handle, pgroup: true)
+    end
+    Process.fork do
+      %w[INT TERM HUP].each { |name| Signal.trap(name, "DEFAULT") }
+      Process.setsid
+      exec(environment, [command.first, command.first], *command.drop(1), CHILD_FD => handle)
+    rescue StandardError => error
+      warn "native_job: #{error.message}"
+      exit! 75
+    end
   end
 
   def self.parallelism_error(command)
@@ -126,10 +216,12 @@ module NativeJob
     %w[INT TERM HUP].each { |name| previous[name] = Signal.trap(name) { signal ||= name } }
     environment = { FD_ENV => CHILD_FD.to_s, PATH_ENV => path,
                     "CARGO_BUILD_JOBS" => "1", "CMAKE_BUILD_PARALLEL_LEVEL" => "1" }
-    pid = Process.spawn(environment, [command.first, command.first], *command.drop(1), CHILD_FD => handle, pgroup: true)
+    process_snapshot # Refuse before launch if ownership inspection is unavailable.
+    pid = spawn_owned(environment, command, handle)
     status = nil
     cancelled_at = nil
     storage_error = nil
+    owned_descendants = {}
     storage_interval = MacBuildBudget.interval
     next_storage_check = Process.clock_gettime(Process::CLOCK_MONOTONIC) + storage_interval
     until status
@@ -143,10 +235,13 @@ module NativeJob
         next_storage_check = now + storage_interval
       end
       if signal && !cancelled_at
-        Process.kill(signal, -pid) rescue Errno::ESRCH
+        # Foundation Process and other launchers can give descendants separate
+        # process groups. Capture ancestry while the leader is still alive.
+        owned_descendants = owned_processes(pid)
+        signal_owned(pid, owned_descendants, signal)
         cancelled_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       elsif cancelled_at && Process.clock_gettime(Process::CLOCK_MONOTONIC) - cancelled_at > 2
-        Process.kill("KILL", -pid) rescue Errno::ESRCH
+        signal_owned(pid, owned_descendants, "KILL")
       end
       result = Process.waitpid2(pid, Process::WNOHANG)
       status = result&.last
@@ -156,7 +251,7 @@ module NativeJob
     if signal || !status.success?
       # Give nested supervisors a chance to forward termination to their own group
       # before killing descendants that ignored it.
-      stop_group(pid)
+      stop_group(pid, owned_descendants)
     end
     storage_error ? 75 : (signal ? 128 + Signal.list.fetch(signal) : (status.exitstatus || 128 + status.termsig))
   rescue StandardError => error
@@ -165,7 +260,7 @@ module NativeJob
   ensure
     if pid && !status
       # Unexpected host-side failures must not leave work running without its lease.
-      stop_group(pid)
+      stop_group(pid, owned_descendants || {})
       Process.waitpid(pid) rescue Errno::ECHILD
     end
     previous&.each { |name, handler| Signal.trap(name, handler) }

@@ -3,6 +3,30 @@ import UIKit
 
 @MainActor
 enum SettingsAlertPresentation {
+    static func studyLanguage(
+        state: SpeechModelLibraryViewState, speechModels: SpeechModelLibraryClient,
+        on controller: UIViewController, tableView: UITableView, source: IndexPath,
+        onSnapshot: @escaping (SpeechModelSnapshot) -> Void
+    ) {
+        let alert = UIAlertController(
+            title: L10n.string("settings.modelLanguage.study"),
+            message: nil, preferredStyle: .actionSheet
+        )
+        for language in state.studyLanguages {
+            alert.addAction(UIAlertAction(title: state.languageTitle(language), style: .default) { _ in
+                Task { @MainActor in
+                    do {
+                        onSnapshot(try await speechModels.setStudyLanguage(language))
+                    } catch {
+                        info(on: controller, title: L10n.string("settings.modelLanguage.study"),
+                             message: AppErrorReporter.message(error, context: #function))
+                    }
+                }
+            })
+        }
+        actionSheet(alert, on: controller, tableView: tableView, source: source)
+    }
+
     static func actionSheet(
         _ alert: UIAlertController,
         on controller: UIViewController,

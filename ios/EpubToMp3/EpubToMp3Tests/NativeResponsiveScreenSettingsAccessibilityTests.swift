@@ -97,7 +97,26 @@ extension NativeResponsiveScreenTests {
             modelsRoot: FileManager.default.temporaryDirectory
                 .appendingPathComponent("mac-settings-v3-\(UUID().uuidString)", isDirectory: true)
         )
-        let snapshot = try ConverterFFIAdapter().speechModelSnapshot(target: target)
+        let inspected = try ConverterFFIAdapter().speechModelSnapshot(target: target)
+        // This UI persistence fixture supplies ready state; real model loading
+        // belongs to the opt-in native runtime acceptance, not this menu test.
+        let entries = inspected.entries.map { entry -> SpeechModelSnapshot.Entry in
+            guard entry.identity.modelID == "pt_BR-faber-medium" else { return entry }
+            return .init(
+                identity: entry.identity, presentation: entry.presentation,
+                languageEvidence: entry.languageEvidence, distribution: entry.distribution,
+                licence: entry.licence, compatibility: entry.compatibility,
+                installation: .init(state: .installed, verifiedRevision: entry.identity.modelRevision,
+                                    installedBytes: entry.distribution.downloadBytes),
+                readiness: .init(state: .ready, activeRuntimeRevision: "native-ui-fixture", failure: nil),
+                selection: .init(selectable: true, reasons: [])
+            )
+        }
+        let snapshot = SpeechModelSnapshot(
+            schemaVersion: inspected.schemaVersion,
+            generatedFromCatalogRevision: inspected.generatedFromCatalogRevision,
+            defaultSelection: inspected.defaultSelection, target: inspected.target, entries: entries
+        )
         let speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
         let faberTitle = speechModelState.displayName(for: .selected(.piper))
         let controller = MacSettingsViewController(

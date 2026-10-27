@@ -17,6 +17,14 @@ char *converter_tts_catalog_json_v3(const char *language,
                                     const char *architecture,
                                     const char *os_version,
                                     const char *model_root);
+/* Explicit offline model loading; call off the UI thread. No audio/download. */
+char *converter_tts_catalog_probe_json_v3(const char *language,
+                                          const char *platform,
+                                          uint32_t android_api,
+                                          const char *architecture,
+                                          const char *os_version,
+                                          const char *model_root,
+                                          const char *espeak_data_directory);
 typedef struct ConverterModelInstallOperation ConverterModelInstallOperation;
 ConverterModelInstallOperation *converter_tts_model_install_operation_create(
     const char *model_id, const char *model_root, uint64_t available_bytes);

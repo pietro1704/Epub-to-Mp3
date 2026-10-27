@@ -11,8 +11,10 @@ final class ConversionCallbackReceipt: @unchecked Sendable {
         let data = voiceReceipt.progress(raw)
         if fallbackNotice.shouldNotify(progress: data) {
             let fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let engine = fields?["fallbackUsed"] as? Bool == true ? fields?["engine"] as? String : nil
-            Task { @MainActor in PlatformFallbackNotice.show(engine: engine) }
+            let engine = fields?["engine"] as? String
+            let modelID = (fields?["modelId"] as? String) ?? (fields?["model_id"] as? String)
+            let voice = fields?["voice"] as? String
+            Task { @MainActor in PlatformFallbackNotice.show(engine: engine, modelID: modelID, voice: voice) }
         }
         progressHandler?(data)
     }

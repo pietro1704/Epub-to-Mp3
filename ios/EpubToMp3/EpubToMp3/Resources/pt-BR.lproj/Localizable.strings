@@ -105,11 +105,14 @@
 "settings.modelSize.installed" = "Tamanho instalado %@";
 "settings.modelPerformance.unmeasured" = "Velocidade não medida neste dispositivo";
 "settings.modelLanguage.exact" = "Idioma %@";
+"settings.modelLanguage.study" = "Idioma do catálogo de vozes";
 "settings.modelLanguage.routingOnly" = "Evidência exata de idioma indisponível";
 "settings.modelLanguage.runtimeValidated" = "validado no runtime";
 "settings.modelLanguage.artifactDeclared" = "declarado pelo artefato";
 "settings.modelLicence.unknown" = "Licença desconhecida";
-"settings.modelLicence.partial" = "Licença %@ (evidência parcial)";
+"settings.modelLicence.partial" = "Licença do conjunto de dados %@ (evidência parcial)";
+"settings.modelLicence.creatorDeclared" = "Licença do modelo %@ (declarada pelo criador)";
+"settings.modelQuality.high" = "Qualidade alta";
 "settings.modelCompatibility.compatible" = "Compatível";
 "settings.modelCompatibility.incompatible" = "Incompatível: %@";
 "settings.modelCompatibility.language" = "idioma";

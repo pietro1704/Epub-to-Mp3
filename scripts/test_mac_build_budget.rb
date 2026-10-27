@@ -88,7 +88,8 @@ class MacBuildBudgetTest < Minitest::Test
       snapshot = MacBuildBudget.metrics
       assert_equal [cache], snapshot.fetch(:paths)
       assert_operator snapshot.fetch(:cache_bytes), :>=, 4096
-      assert_nil MacBuildBudget.evaluate(@limits, **snapshot)
+      # This regression isolates vanished compiler files from real host capacity.
+      assert_nil MacBuildBudget.evaluate(@limits, **snapshot.merge(free_bytes: 30 * 1024**3))
     end
   end
 
@@ -268,6 +269,38 @@ class MacBuildBudgetTest < Minitest::Test
     assert_match(/Free disk below/, error)
     pid = Integer(File.read(@marker))
     assert_raises(Errno::ESRCH) { Process.kill(0, pid) }
+  end
+
+  def test_monitor_stops_a_descendant_in_a_separate_process_group
+    fixture
+    program = <<~'RUBY'
+      child = Process.spawn(RbConfig.ruby, '-e',
+        "trap('TERM') {}; File.write(ARGV.fetch(0), Process.pid); sleep 30",
+        ARGV.fetch(0), pgroup: true, out: File::NULL, err: File::NULL)
+      sleep 0.01 until File.exist?(ARGV.fetch(0))
+      File.write(ARGV.fetch(1), '0')
+      sleep 30
+    RUBY
+    _, error, status = Timeout.timeout(15) { Open3.capture3(@env, *@command, program, @marker, @free) }
+    assert_equal 75, status.exitstatus, error
+    assert_match(/Free disk below/, error)
+    descendant = Integer(File.read(@marker))
+    Timeout.timeout(2) do
+      loop do
+        Process.kill(0, descendant)
+        sleep 0.01
+      rescue Errno::ESRCH
+        break
+      end
+    end
+    assert_raises(Errno::ESRCH) { Process.kill(0, descendant) }
+    File.open(File.join(@dir, 'lease'), 'a+') do |lease|
+      assert lease.flock(File::LOCK_EX | File::LOCK_NB), 'guard must release its lease after cleanup'
+    end
+  ensure
+    if @marker && File.file?(@marker)
+      Process.kill('KILL', Integer(File.read(@marker))) rescue Errno::ESRCH
+    end
   end
 
   def test_explicit_parallel_compiler_request_is_refused_before_launch

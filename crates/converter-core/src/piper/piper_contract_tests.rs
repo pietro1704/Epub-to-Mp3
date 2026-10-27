@@ -83,6 +83,48 @@ fn explicit_model_preflight_requires_actual_initialization_and_ready_runtime() {
     );
 }
 
+#[tokio::test]
+async fn prepared_model_refuses_removal_until_every_captured_session_is_released() {
+    let root = tempfile::tempdir().unwrap();
+    installed_fixture(root.path(), "selected");
+    installed_fixture(root.path(), "unrelated");
+    let runtime = scoped_runtime(true, false);
+    let prepare = || {
+        PreparedPiperModel::prepare(
+            root.path(),
+            "selected",
+            Path::new("voice.onnx"),
+            Path::new("voice.config.json"),
+            runtime.clone(),
+        )
+        .unwrap()
+    };
+    let first = prepare();
+    let second = prepare();
+    let store = crate::model_store::ModelStore::new(root.path());
+
+    assert!(matches!(
+        store.remove("selected").await,
+        Err(crate::model_store::ModelStoreError::ModelInUse(_))
+    ));
+    drop(first);
+    assert!(matches!(
+        store.remove("selected").await,
+        Err(crate::model_store::ModelStoreError::ModelInUse(_))
+    ));
+    assert_eq!(
+        fs::read(root.path().join("selected/voice.onnx")).unwrap(),
+        b"synthetic model"
+    );
+    drop(second);
+    store.remove("selected").await.unwrap();
+    assert!(!root.path().join("selected").exists());
+    assert_eq!(
+        fs::read(root.path().join("unrelated/voice.onnx")).unwrap(),
+        b"synthetic model"
+    );
+}
+
 #[test]
 fn explicit_models_are_pinned_and_init_plus_synthesis_is_atomic_between_requests() {
     let fixture = tempfile::tempdir().unwrap();

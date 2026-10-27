@@ -158,6 +158,15 @@ final class SettingsScreenController: UITableViewController {
         switch row {
         case .primary: presentPrimaryChoices(source: source)
         case .secondary: presentSecondaryChoices(source: source)
+        case .studyLanguage:
+            SettingsAlertPresentation.studyLanguage(
+                state: speechModelState, speechModels: speechModels, on: self,
+                tableView: tableView, source: source
+            ) { [weak self] snapshot in
+                guard let self else { return }
+                speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                tableView.reloadData()
+            }
         case let .model(entry?): presentModelActions(for: entry, source: source)
         case .cellular, .model(nil), .onlineFallback: break
         }

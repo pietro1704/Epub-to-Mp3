@@ -19,6 +19,7 @@ pub struct ExactLanguageDescriptor {
 pub enum QualityTier {
     Low,
     Medium,
+    High,
     Unspecified,
 }
 
@@ -40,6 +41,7 @@ pub struct ModelPresentationDescriptor {
 #[serde(rename_all = "snake_case")]
 pub enum LicenceCategory {
     Dataset,
+    ModelWeights,
     Unknown,
 }
 
@@ -47,6 +49,7 @@ pub enum LicenceCategory {
 #[serde(rename_all = "snake_case")]
 pub enum LicenceValidation {
     Partial,
+    CreatorDeclared,
     Unknown,
 }
 

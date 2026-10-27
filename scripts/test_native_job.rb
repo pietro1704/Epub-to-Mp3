@@ -65,7 +65,8 @@ class NativeJobIntegrationTest < Minitest::Test
   end
 
   def wait_for(path)
-    Timeout.timeout(5) { sleep 0.01 until File.exist?(path) }
+    # File.write creates the inode before publishing its PID/ready bytes.
+    Timeout.timeout(5) { sleep 0.01 until File.size?(path) }
   end
 
   def assert_unlocked
@@ -234,6 +235,27 @@ class NativeJobIntegrationTest < Minitest::Test
     assert_unlocked
   end
 
+  def test_failed_leader_cannot_leave_a_separate_group_running
+    pid_file = File.join(@dir, "failed-leader-child")
+    late = File.join(@dir, "failed-leader-late")
+    program = <<~'RUBY'
+      Process.spawn(RbConfig.ruby, '-e',
+        "File.write(ARGV.fetch(0), Process.pid); sleep 0.6; File.write(ARGV.fetch(1), 'escaped'); sleep 30",
+        ARGV.fetch(0), ARGV.fetch(1), pgroup: true, out: File::NULL, err: File::NULL)
+      sleep 0.01 until File.exist?(ARGV.fetch(0))
+      exit 17
+    RUBY
+    _, error, status = run_job("build", RUBY, "-e", program, pid_file, late)
+    assert_equal 17, status.exitstatus, error
+    sleep 0.7
+    refute File.exist?(late), "A failed leader must stop its separate-group child before it writes"
+    assert_unlocked
+  ensure
+    if pid_file && File.file?(pid_file)
+      Process.kill("KILL", Integer(File.read(pid_file))) rescue Errno::ESRCH
+    end
+  end
+
   def test_cancel_nested_supervisor_reaches_descendant_group
     pid_file = File.join(@dir, "nested-pid")
     log = File.join(@dir, "nested-log")
@@ -266,6 +288,73 @@ class NativeJobIntegrationTest < Minitest::Test
       assert_unlocked
     ensure
       Process.kill("KILL", pid) rescue Errno::ESRCH if pid
+    end
+  end
+
+  def test_cancellation_stops_detached_descendants_and_preserves_an_unrelated_process
+    pid_file = File.join(@dir, "detached-pid")
+    unrelated = Process.spawn(RUBY, "-e", "sleep 30", pgroup: true, out: File::NULL, err: File::NULL)
+    program = <<~'RUBY'
+      Process.spawn(RbConfig.ruby, '-e', "File.write(ARGV.fetch(0), Process.pid); sleep 30",
+                    ARGV.fetch(0), pgroup: true, out: File::NULL, err: File::NULL)
+      sleep 30
+    RUBY
+    log = File.join(@dir, "detached-log")
+    File.open(log, "w") do |output|
+      pid = Process.spawn(@env, *command("build", RUBY, "-e", program, pid_file), out: output, err: output)
+      wait_for(pid_file)
+      detached = Integer(File.read(pid_file))
+      Process.kill("TERM", pid)
+      _, status = Timeout.timeout(6) { Process.waitpid2(pid) }
+      assert_equal 143, status.exitstatus, File.read(log)
+      assert_raises(Errno::ESRCH) { Process.kill(0, detached) }
+      assert_equal 1, Process.kill(0, unrelated), "cancellation must not signal another process group"
+      assert_unlocked
+    ensure
+      Process.kill("KILL", pid) rescue Errno::ESRCH if pid
+      Process.kill("KILL", detached) rescue Errno::ESRCH if detached
+    end
+  ensure
+    if unrelated
+      Process.kill("KILL", unrelated) rescue Errno::ESRCH
+      Process.waitpid(unrelated) rescue Errno::ECHILD
+    end
+  end
+
+  def test_a_pid_with_a_different_birth_identity_is_never_signalled
+    child = Process.spawn(RUBY, "-e", "sleep 30", out: File::NULL, err: File::NULL)
+    NativeJob.signal_descendants({ child => { birth: "another process lifetime" } }, "TERM")
+    assert_equal 1, Process.kill(0, child)
+  ensure
+    if child
+      Process.kill("KILL", child) rescue Errno::ESRCH
+      Process.waitpid(child) rescue Errno::ECHILD
+    end
+  end
+
+  def test_inspection_failure_still_stops_the_original_group_and_releases_its_lease
+    pid_file = File.join(@dir, "inspection-child")
+    log = File.join(@dir, "inspection-log")
+    write_command("ps", <<~'SH')
+      #!/bin/bash
+      [[ -f "$FIXTURE_PS_FAILURE_TRIGGER" ]] && exit 23
+      exec /bin/ps "$@"
+    SH
+    File.open(log, "w") do |output|
+      environment = @env.merge("FIXTURE_PS_FAILURE_TRIGGER" => pid_file)
+      pid = Process.spawn(environment, *command("build", RUBY, "-e",
+                          "File.write(ARGV.fetch(0), Process.pid); sleep 30", pid_file), out: output, err: output)
+      wait_for(pid_file)
+      child = Integer(File.read(pid_file))
+      Process.kill("TERM", pid)
+      _, status = Timeout.timeout(15) { Process.waitpid2(pid) }
+      assert_equal 75, status.exitstatus, File.read(log)
+      assert_match(/Cannot inspect native process ownership/, File.read(log))
+      assert_raises(Errno::ESRCH) { Process.kill(0, child) }
+      assert_unlocked
+    ensure
+      Process.kill("KILL", pid) rescue Errno::ESRCH if pid
+      Process.kill("KILL", child) rescue Errno::ESRCH if child
     end
   end
 end
