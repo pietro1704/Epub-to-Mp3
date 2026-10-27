@@ -19,6 +19,9 @@ let localizationResources = [
     "Resources/pt-BR.lproj/Localizable.strings",
 ]
 let production = [
+    "Features/Conversion/Services/ManualConversionSession.swift",
+    "Features/Conversion/Services/ManualConversionPresentation.swift",
+    "Features/Conversion/Services/RustConversionWorkQueues.swift",
     "Features/Playback/Services/InAppPlaybackRequest.swift",
     "Features/Library/Services/BookContentIdentity.swift",
     "Features/Offline/Services/RustConversionOutputStore.swift",
@@ -59,6 +62,8 @@ let production = [
     "Shared/Configuration/LocalSpeechModelReadiness.swift",
 ]
 let tests = [
+    "ManualConversionSessionTests.swift",
+    "RustConversionWorkQueuesTests.swift",
     "InAppPlaybackRequestTests.swift",
     "BackgroundAudioConfigurationTests.swift",
     "BookContentIdentityTests.swift",

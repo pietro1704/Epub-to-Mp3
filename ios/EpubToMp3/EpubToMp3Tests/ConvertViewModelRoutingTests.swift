@@ -40,7 +40,8 @@ final class ConvertViewModelRoutingTests: XCTestCase {
         model.selectedFile = URL(fileURLWithPath: "/fixture-only/input.epub")
         await model.submit(useEmbeddedRuntime: true)
         XCTAssertNil(model.submittedJobId)
-        XCTAssertNotNil(model.error)
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.session.phase, .cancelled)
         XCTAssertFalse(model.isSubmitting)
     }
 }

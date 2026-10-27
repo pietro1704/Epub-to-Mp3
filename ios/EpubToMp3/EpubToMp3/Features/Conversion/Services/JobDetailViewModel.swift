@@ -23,6 +23,17 @@ final class JobDetailViewModel: ObservableObject {
     private var progressTask: Task<Void, Never>?
     private var remoteStreamTask: Task<Void, Never>?
 
+    func showLocalSnapshot(_ snapshot: JobSnapshot) {
+        stop()
+        self.snapshot = snapshot
+        errorMessage = nil
+        latestPayload = ""
+        receivedCount = 0
+        downloadState = nil
+        downloadProgressLabel = nil
+        onSnapshot?(snapshot)
+    }
+
     func start(client: (any JobStreamingClient)?, jobId: String) {
         stop()
         guard let client else {
