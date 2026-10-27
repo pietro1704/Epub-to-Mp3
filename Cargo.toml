@@ -9,6 +9,7 @@ members = [
     "crates/converter-wasm",
     "native/piper-runtime",
     "native/vendor/espeak-rs-sys",
+    "native/vendor/espeak-rs",
     "benches",
 ]
 

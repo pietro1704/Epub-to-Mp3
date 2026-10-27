@@ -14,7 +14,10 @@ prebuilt ONNX Runtime 1.28.2 from the Sherpa maintainer's runtime releases,
 whose Intel artifact declares macOS 10.15. This preserves the product's macOS
 12 target without compiling ONNX. Actual inference must verify the API 23 /
 runtime combination. iOS uses its separately built platform artifact.
-The upstream inference and phonemization source is unchanged. All used Session,
+The upstream inference and phonemization source in this crate is unchanged.
+The patched `espeak-rs` dependency restores clause punctuation before this
+crate joins phoneme sentences; see [phonemization](../../../docs/piper-phonemization.md).
+All used Session,
 Tensor construction and extraction APIs have matching rc.11 signatures.
 Removed example manifest entries whose sample files are not vendored.
 
