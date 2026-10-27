@@ -464,11 +464,19 @@ final class BookDetailScreenController: UIViewController {
         )
     }
 
-    /// Entry point used by the library context menu. It intentionally reuses
-    /// the existing Download/Conversion flow rather than creating a second
-    /// backend or a library-specific download path.
+    /// Preserve interrupted exports until the listener explicitly resumes them.
     func downloadWholeBook() {
-        tapDownload()
+        let bookID = book.id
+        Task { [weak self] in
+            guard let self else { return }
+            let pending = try? await BookConversionRecoveryStore.shared.pending(bookID: bookID)
+            guard self.book.id == bookID else { return }
+            if pending != nil {
+                self.recoveryPanel.refresh(bookID: bookID)
+            } else {
+                self.tapDownload()
+            }
+        }
     }
 }
 #endif
