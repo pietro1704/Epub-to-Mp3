@@ -1,7 +1,7 @@
 import Foundation
 
 /// Repeated observations must not invalidate a pending visual completion.
-struct PlayerVisibilityTransition {
+struct VisibilityTransition {
     struct Request: Equatable {
         let generation: UInt64
         let visible: Bool

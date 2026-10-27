@@ -5,6 +5,7 @@ import UIKit
 final class ReaderNavigationPresentation {
     static let readerContentTopSpacing = ReaderNavigationLayoutMetrics.readerContentTopSpacing
     private var readerNavigationHeight: NSLayoutConstraint!
+    private var visibility = VisibilityTransition()
     let readerNavigationBackground = AdaptiveMaterialView()
     let readerNavigationBar = UINavigationBar()
     let readerNavigationItem = UINavigationItem()
@@ -82,44 +83,43 @@ final class ReaderNavigationPresentation {
             (shouldShow ? readerTopToNavigation : readerTopToRoot).isActive = true
         }
 
+        guard let request = visibility.request(visible: shouldShow) else {
+            if commitsLayout { view.layoutIfNeeded() }
+            return
+        }
+        let animates = animated && !ProcessInfo.processInfo.arguments.contains("-uiTestReduceMotion")
         if shouldShow {
+            let wasHidden = readerNavigationBar.isHidden
             readerNavigationBar.isHidden = false
             readerNavigationBackground.isHidden = false
-            if animated { readerNavigationBar.alpha = 0 }
-            if animated { readerNavigationBackground.alpha = 0 }
-        } else if !animated {
-            readerNavigationBar.alpha = 0
-            readerNavigationBar.isHidden = true
-            readerNavigationBackground.alpha = 0
-            readerNavigationBackground.isHidden = true
+            if animates && wasHidden {
+                readerNavigationBar.alpha = 0
+                readerNavigationBackground.alpha = 0
+            }
         }
 
         let changes = {
             self.readerNavigationBar.alpha = shouldShow ? 1 : 0
             self.readerNavigationBackground.alpha = shouldShow ? 1 : 0
-            view.layoutIfNeeded()
-        }
-        guard animated else {
-            // Visibility is presentation state, not committed reader geometry.
-            // Restore alpha even when the root defers layout until its viewport
-            // transaction finishes; otherwise a previously hidden toolbar stays
-            // transparent after a centre tap restores reader chrome.
-            readerNavigationBar.alpha = shouldShow ? 1 : 0
-            readerNavigationBackground.alpha = shouldShow ? 1 : 0
             if commitsLayout { view.layoutIfNeeded() }
+        }
+        let completion: (Bool) -> Void = { [weak self] _ in
+            guard let self, self.visibility.isCurrent(request) else { return }
+            self.readerNavigationBar.isHidden = !shouldShow
+            self.readerNavigationBackground.isHidden = !shouldShow
+        }
+        guard animates else {
+            changes()
+            completion(true)
             return
         }
         UIView.animate(
-            withDuration: ReaderChromeTransitionMetrics.duration,
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0.15 : ReaderChromeTransitionMetrics.duration,
             delay: 0,
             options: ReaderChromeTransitionMetrics.animationOptions,
-            animations: changes
-        ) { [weak self] _ in
-            guard let self else { return }
-            guard !shouldShow else { return }
-            self.readerNavigationBar.isHidden = true
-            self.readerNavigationBackground.isHidden = true
-        }
+            animations: changes,
+            completion: completion
+        )
     }
 }
 

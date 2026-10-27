@@ -316,12 +316,12 @@ final class MainReaderScreenController: UIViewController {
     /// Root owns the mutable presentation state. Main only applies this
     /// immutable snapshot to its navigation constraints.
     @discardableResult
-    func applyReaderPresentation(_ state: ReaderPresentationState) -> Bool {
+    func applyReaderPresentation(_ state: ReaderPresentationState, animated: Bool = false) -> Bool {
         let chromeChanged = readerController?.applyChromeVisibility(state.isChromeHidden) ?? false
         let navigationChanged = (readerTopToNavigation?.isActive ?? false) != state.showsReaderNavigation
         readerNavigation.applyLayout(
             shouldShow: state.showsReaderNavigation,
-            animated: false,
+            animated: animated,
             commitsLayout: false,
             readerTopToNavigation: readerTopToNavigation,
             readerTopToRoot: readerTopToRoot,
