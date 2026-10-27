@@ -138,7 +138,8 @@ final class FaberNativeInferenceTests: XCTestCase {
         let controller = FullPlayerScreenController(
             player: player, playbackClock: player.playbackClock,
             library: LibraryStore(defaults: defaults, importDirectory: root),
-            playerPresentation: PlayerPresentation(defaults: defaults), settings: AppSettings(defaults: defaults)
+            playerPresentation: PlayerPresentation(defaults: defaults), settings: AppSettings(defaults: defaults),
+            onStartListening: {}
         )
         let scene = try XCTUnwrap(
             UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

@@ -212,6 +212,12 @@ final class AudioPlayer: ObservableObject {
 
     var hasLoadedAudioQueue: Bool { player != nil }
 
+    var inAppPlaybackRequestState: InAppPlaybackRequest.State {
+        .init(isPlaying: isPlaying, hasAudioQueue: hasLoadedAudioQueue,
+              isConverting: isConverting, hasPlayableChapters: snapshot?.playableChapters.isEmpty == false,
+              usesSpeechFallback: isUsingSpeechFallback)
+    }
+
     // MARK: - Speech fallback (slice 2)
 
     func shouldUseSpeechFallback(for snapshot: JobSnapshot?, chapterIndex: Int) -> Bool {

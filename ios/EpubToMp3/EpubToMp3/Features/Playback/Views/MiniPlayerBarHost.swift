@@ -375,18 +375,15 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     @objc
     private func playPauseTapped() {
         guard let player else { return }
-        // A newly opened reader intentionally has no AVQueuePlayer yet.
-        // Its play control must begin the local conversion instead of merely
-        // arming an intent that no producer will ever consume.
-        if player.hasLoadedAudioQueue || player.isConverting || player.snapshot?.playableChapters.isEmpty == false {
+        InAppPlaybackRequest.perform(state: player.inAppPlaybackRequestState, controlPlayback: {
             if let presenter = nearestViewController() {
                 ReaderPlaybackTapHandler.handle(player: player, presenting: presenter)
             } else {
                 player.togglePlayPause()
             }
-        } else {
+        }, startListening: {
             onPlayRequested?()
-        }
+        })
         render()
     }
 

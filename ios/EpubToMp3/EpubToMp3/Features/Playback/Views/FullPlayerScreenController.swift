@@ -12,6 +12,7 @@ final class FullPlayerScreenController: UIViewController {
     private var library: LibraryStore
     private let playerPresentation: PlayerPresentation
     private let settings: AppSettings
+    private let onStartListening: () -> Void
     private let content = FullPlayerContent()
     private lazy var dismissInteraction = FullPlayerDismissInteraction(
         view: view,
@@ -31,13 +32,15 @@ final class FullPlayerScreenController: UIViewController {
         playbackClock: PlaybackClock,
         library: LibraryStore,
         playerPresentation: PlayerPresentation,
-        settings: AppSettings
+        settings: AppSettings,
+        onStartListening: @escaping () -> Void
     ) {
         self.player = player
         self.playbackClock = playbackClock
         self.library = library
         self.playerPresentation = playerPresentation
         self.settings = settings
+        self.onStartListening = onStartListening
         super.init(nibName: nil, bundle: nil)
         modalPresentationCapturesStatusBarAppearance = true
     }
@@ -246,7 +249,11 @@ final class FullPlayerScreenController: UIViewController {
 
     @objc
     private func playPauseTapped() {
-        ReaderPlaybackTapHandler.handle(player: player, presenting: self)
+        InAppPlaybackRequest.perform(
+            state: player.inAppPlaybackRequestState,
+            controlPlayback: { ReaderPlaybackTapHandler.handle(player: player, presenting: self) },
+            startListening: onStartListening
+        )
         render()
     }
 
