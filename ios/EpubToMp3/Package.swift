@@ -65,6 +65,9 @@ let production = [
     "Shared/Localization/L10n.swift",
     "Shared/Configuration/LocalSpeechModelReadiness.swift",
     "Features/Reader/Services/ReaderBookSearch.swift",
+    "Features/Reader/Services/ReaderLinkResolver.swift",
+    "Features/Reader/Services/EpubAnchorFragment.swift",
+    "Features/Reader/Services/ReaderAnchorRange.swift",
 ]
 let tests = [
     "ReaderViewportTransitionTests.swift",
@@ -100,6 +103,7 @@ let tests = [
     "ReaderConversionChapterMapTests.swift",
     "ReaderListeningControlTests.swift",
     "ReaderBookSearchTests.swift",
+    "ReaderInternalLinkTargetTests.swift",
 ]
 let package = Package(
     name: "AppFoundation",

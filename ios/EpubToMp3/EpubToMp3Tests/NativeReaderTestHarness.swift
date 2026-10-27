@@ -63,7 +63,7 @@ final class NativeReaderTestHarness {
         settings: settings, onUpdateFlicker: {}, onPDFPageReady: { _ in }
     )
     lazy var annotations: ReaderAnnotationsPresentation = ReaderAnnotationsPresentation(
-        document: document, composition: composition, bookmarkStore: bookmarks,
+        document: document, composition: composition, bookmarkStore: bookmarks, settings: settings,
         persistProgress: { [weak self] in self?.persisted += 1 },
         showChapter: { [weak self] in self?.showChapter($0) }, present: { _ in }
     )

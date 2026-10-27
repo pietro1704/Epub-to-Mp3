@@ -7,6 +7,7 @@ import UIKit
 final class ReaderAnnotationsPresentation: NSObject, UITextViewDelegate {
     private let document: ReaderBookDocument
     private let composition: ReaderViewComposition
+    private let settings: AppSettings
     private let bookmarkStore: BookmarkStore
     private let persistProgress: () -> Void
     private let showChapter: (Int) -> Void
@@ -14,14 +15,17 @@ final class ReaderAnnotationsPresentation: NSObject, UITextViewDelegate {
     private let isCurrentBook: () -> Bool
     private lazy var search = ReaderSearchPresentation(document: document, composition: composition,
         persist: persistProgress, showChapter: showChapter, present: present, isCurrentBook: isCurrentBook)
+    private lazy var links = ReaderLinkPresentation(document: document, composition: composition, settings: settings,
+        persist: persistProgress, showChapter: showChapter, present: present, isCurrentBook: isCurrentBook)
     private var textView: UITextView { composition.textView }
 
-    init(document: ReaderBookDocument, composition: ReaderViewComposition, bookmarkStore: BookmarkStore,
+    init(document: ReaderBookDocument, composition: ReaderViewComposition, bookmarkStore: BookmarkStore, settings: AppSettings,
          persistProgress: @escaping () -> Void, showChapter: @escaping (Int) -> Void,
          present: @escaping (UIViewController) -> Void, isCurrentBook: @escaping () -> Bool = { true }) {
         self.document = document
         self.composition = composition
         self.bookmarkStore = bookmarkStore
+        self.settings = settings
         self.persistProgress = persistProgress
         self.showChapter = showChapter
         self.present = present
@@ -57,34 +61,12 @@ final class ReaderAnnotationsPresentation: NSObject, UITextViewDelegate {
         in characterRange: NSRange,
         interaction: UITextItemInteraction
     ) -> Bool {
-        guard let fulltext = document.fulltext, let chapter = fulltext.chapters[safe: document.selectedChapter],
-              characterRange.location != NSNotFound,
-              NSMaxRange(characterRange) <= textView.attributedText.length else {
-            return false
-        }
+        guard characterRange.location != NSNotFound, characterRange.location >= 0, characterRange.length > 0,
+              characterRange.location <= textView.attributedText.length,
+              characterRange.length <= textView.attributedText.length - characterRange.location else { return false }
         let linkedText = (textView.attributedText.string as NSString).substring(with: characterRange)
-        switch ReaderLinkResolver.destination(
-            for: url,
-            linkText: linkedText,
-            currentChapter: chapter,
-            chapters: fulltext.chapters
-        ) {
-        case .chapter(let index):
-            guard fulltext.chapters.indices.contains(index) else { return false }
-            persistProgress()
-            document.selectedChapter = index
-            showChapter(index)
-            composition.scrollView.setContentOffset(.zero, animated: false)
-            return false
-        case .footnote(let footnote):
-            let sheet = ReaderFootnotesSheet(footnotes: [footnote])
-            present(UINavigationController(rootViewController: sheet))
-            return false
-        case .external:
-            return true
-        case .unresolved:
-            return false
-        }
+        cancelSearch()
+        return links.handle(url, linkText: linkedText)
     }
 
     @available(iOS 16.0, *)
