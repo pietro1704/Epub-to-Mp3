@@ -58,6 +58,7 @@ let production = [
     "Shared/Configuration/LocalSpeechModelReadiness.swift",
 ]
 let tests = [
+    "BackgroundAudioConfigurationTests.swift",
     "BookContentIdentityTests.swift",
     "BookConversionRecoveryTests.swift",
     "BookPronunciationTests.swift",

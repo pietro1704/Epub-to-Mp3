@@ -34,6 +34,8 @@ Locate ConverterFFIAdapter with rg before changing the Swift/C ABI seam.
 Consult ios/EpubToMp3/docs/converter-ffi-ios.md for embedding details.
 For reader layout/interaction, read ios/EpubToMp3/AGENTS.md, CONTEXT.md,
 relevant docs/adr/, and docs/agents/reader-specialists.md.
+For iOS background playback configuration and acceptance, read
+[background audio](../../ios/EpubToMp3/docs/background-audio.md).
 
 Native tests live in EpubToMp3Tests and EpubToMp3UITests; Rust tests live in
 their crate. Tooling host tests prove orchestration only. Review evidence using
