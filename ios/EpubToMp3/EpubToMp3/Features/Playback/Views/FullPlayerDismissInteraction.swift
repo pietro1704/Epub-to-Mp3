@@ -5,12 +5,19 @@ import UIKit
 final class FullPlayerDismissInteraction: NSObject {
     private let view: UIView
     private let controls: () -> [UIView]
+    private let onBegin: () -> Bool
+    private let onCancel: () -> Void
     private let onDismiss: () -> Void
+    private var isDragging = false
+    private var initialTranslation: CGFloat = 0
     fileprivate lazy var gesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
 
-    init(view: UIView, controls: @escaping () -> [UIView], onDismiss: @escaping () -> Void) {
+    init(view: UIView, controls: @escaping () -> [UIView], onBegin: @escaping () -> Bool,
+         onCancel: @escaping () -> Void, onDismiss: @escaping () -> Void) {
         self.view = view
         self.controls = controls
+        self.onBegin = onBegin
+        self.onCancel = onCancel
         self.onDismiss = onDismiss
         super.init()
     }
@@ -37,67 +44,39 @@ final class FullPlayerDismissInteraction: NSObject {
         let velocity = gesture.velocity(in: view)
 
         switch gesture.state {
+        case .began:
+            beginDrag()
         case .changed:
-            // Only downward drags are meaningful — there's nowhere "more
-            // full" to go, so upward translation is clamped to zero.
-            let clampedY = max(0, translation.y)
-            view.transform = CGAffineTransform(translationX: 0, y: clampedY)
-
-        case .ended, .cancelled:
-            let dismissDistanceThreshold: CGFloat = 120
-            let dismissVelocityThreshold: CGFloat = 800
-            let shouldDismiss = translation.y > dismissDistanceThreshold || velocity.y > dismissVelocityThreshold
-
-            guard shouldDismiss else {
-                resetTransformToIdentity(animated: !UIAccessibility.isReduceMotionEnabled, velocity: velocity.y)
-                return
-            }
-
-            if UIAccessibility.isReduceMotionEnabled {
-                // Snap instead of sliding when the user has asked for less
-                // motion — the dismissal itself still happens immediately.
-                view.transform = .identity
-                onDismiss()
-            } else {
-                UIView.animate(
-                    withDuration: 0.25,
-                    delay: 0,
-                    options: [.curveEaseIn],
-                    animations: {
-                        self.view.transform = CGAffineTransform(translationX: 0, y: self.view.bounds.height)
-                    },
-                    completion: { [weak self] _ in
-                        guard let self else { return }
-                        self.onDismiss()
-                        // `IOSRootContainer.refreshOverlayState()` only toggles
-                        // isHidden/alpha and never resets transform, so this
-                        // view must restore its own resting transform here —
-                        // otherwise it reappears off-screen next time it's shown.
-                        self.view.transform = .identity
-                    }
-                )
-            }
-
+            updateDrag(translation: translation.y)
+        case .ended:
+            finishDrag(translation: translation.y, velocity: velocity.y, cancelled: false)
+        case .cancelled, .failed:
+            finishDrag(translation: translation.y, velocity: velocity.y, cancelled: true)
         default:
             break
         }
     }
 
-    private func resetTransformToIdentity(animated: Bool, velocity: CGFloat) {
-        guard animated else {
-            view.transform = .identity
-            return
+    func beginDrag() {
+        isDragging = onBegin()
+        initialTranslation = view.transform.ty
+    }
+
+    func updateDrag(translation: CGFloat) {
+        guard isDragging, translation.isFinite else { return }
+        let offset = UIAccessibility.isReduceMotionEnabled ? 0 : max(0, initialTranslation + translation)
+        view.transform = CGAffineTransform(translationX: 0, y: offset)
+    }
+
+    func finishDrag(translation: CGFloat, velocity: CGFloat, cancelled: Bool) {
+        guard isDragging else { return }
+        isDragging = false
+        if PlayerDismissalDecision.shouldDismiss(translation: Double(translation), velocity: Double(velocity), cancelled: cancelled) {
+            // The presentation owner hides before resetting the transform.
+            onDismiss()
+        } else {
+            onCancel()
         }
-        UIView.animate(
-            withDuration: 0.3,
-            delay: 0,
-            usingSpringWithDamping: 0.8,
-            initialSpringVelocity: abs(velocity) / 1000,
-            options: [.allowUserInteraction],
-            animations: {
-                self.view.transform = .identity
-            }
-        )
     }
 
 }

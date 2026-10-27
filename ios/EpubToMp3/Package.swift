@@ -19,6 +19,8 @@ let localizationResources = [
     "Resources/pt-BR.lproj/Localizable.strings",
 ]
 let production = [
+    "Features/Playback/Models/PlayerVisibilityTransition.swift",
+    "Features/Playback/Models/PlayerDismissalDecision.swift",
     "Features/Playback/Models/ChapterPlaybackTimeline.swift",
     "Features/Conversion/Services/ManualConversionSession.swift",
     "Features/Conversion/Services/ManualConversionPresentation.swift",
@@ -63,6 +65,8 @@ let production = [
     "Shared/Configuration/LocalSpeechModelReadiness.swift",
 ]
 let tests = [
+    "PlayerVisibilityTransitionTests.swift",
+    "PlayerDismissalDecisionTests.swift",
     "ChapterPlaybackTimelineTests.swift",
     "ManualConversionSessionTests.swift",
     "RustConversionWorkQueuesTests.swift",
