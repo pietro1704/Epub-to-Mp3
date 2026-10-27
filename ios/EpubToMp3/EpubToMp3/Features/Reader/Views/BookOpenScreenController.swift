@@ -411,7 +411,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private lazy var annotations: ReaderAnnotationsPresentation = ReaderAnnotationsPresentation(
-        document: document, composition: composition, bookmarkStore: bookmarkStore,
+        document: document, composition: composition, bookmarkStore: bookmarkStore, settings: settings,
         persistProgress: { [weak self] in self?.readingPosition.persistReadingProgress() },
         showChapter: { [weak self] in self?.showChapter($0) },
         present: { [weak self] in self?.present($0, animated: true) },

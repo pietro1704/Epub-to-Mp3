@@ -705,3 +705,7 @@
 "bookRecovery.interrupted" = "Conversão interrompida — retome para recuperar os capítulos verificados";
 "bookAudio.coverage" = "Áudio do livro";
 "bookAudio.partial" = "Áudio parcial — %d de %d capítulos completos";
+
+"reader.link.goToPosition" = "Ir para a posição";
+"reader.link.title" = "Link do livro";
+"reader.link.unavailable" = "Este destino não está disponível no livro.";

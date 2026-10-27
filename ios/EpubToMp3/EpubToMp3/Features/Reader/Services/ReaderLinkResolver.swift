@@ -49,6 +49,30 @@ enum ReaderLinkResolver {
         return .unresolved
     }
 
+    struct InternalTarget {
+        let chapterPosition: Int
+        let fragment: String?
+        let html: String?
+    }
+
+    static func internalTarget(for url: URL, currentChapter: EbookFulltext.Chapter,
+                               chapters: [EbookFulltext.Chapter]) -> InternalTarget? {
+        guard url.scheme == nil || url.scheme?.lowercased() == "epub-link",
+              let target = rawTarget(from: url), !target.isEmpty else { return nil }
+        let pieces = target.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        let path = String(pieces[0])
+        let resolved = resolvePath(path, relativeTo: currentChapter.sourcePath)
+        let candidates = path.isEmpty
+            ? chapters.indices.filter { chapters[$0] == currentChapter }
+            : chapters.indices.filter { normalisedPath(chapters[$0].sourcePath ?? "") == resolved }
+        guard candidates.count == 1, let position = candidates.first else { return nil }
+        let chapter = chapters[position]
+        let fragment = pieces.count > 1 ? String(pieces[1]).removingPercentEncoding ?? String(pieces[1]) : ""
+        if fragment.isEmpty { return .init(chapterPosition: position, fragment: nil, html: chapter.html) }
+        guard let html = chapter.html, let body = EpubAnchorFragment.html(identifier: fragment, in: html) else { return nil }
+        return .init(chapterPosition: position, fragment: fragment, html: body)
+    }
+
     private static func rawTarget(from url: URL) -> String? {
         if url.scheme?.lowercased() == "epub-link" {
             return URLComponents(url: url, resolvingAgainstBaseURL: false)?
@@ -123,7 +147,7 @@ enum ReaderLinkResolver {
             default: pieces.append(part)
             }
         }
-        return pieces.joined(separator: "/").lowercased()
+        return pieces.joined(separator: "/")
     }
 
     private static func normalisedTitle(_ value: String) -> String {
