@@ -575,7 +575,10 @@
 "reader.note.placeholder" = "Note";
 "reader.footnotes.title" = "Footnotes";
 "reader.footnotes.empty" = "No footnotes in this chapter.";
-"reader.search.placeholder" = "Search in chapter";
+"reader.search" = "Search";
+"reader.search.placeholder" = "Search in book";
+"reader.search.currentChapter" = "Search this chapter while the rest of the book becomes available.";
+"reader.search.unavailable" = "Search isn't available in this document view.";
 "reader.search.noResults" = "No matches found";
 "bookDetail.read" = "Read";
 "bookDetail.download" = "Download";

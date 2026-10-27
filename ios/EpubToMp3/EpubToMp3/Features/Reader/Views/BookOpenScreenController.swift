@@ -205,6 +205,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         observeOpenStage("reader_view_did_appear_completed")
     }
 
+    override func willMove(toParent parent: UIViewController?) {
+        if parent == nil, isViewLoaded { annotations.cancelSearch() }
+        super.willMove(toParent: parent)
+    }
+
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         guard isViewLoaded,
@@ -409,7 +414,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         document: document, composition: composition, bookmarkStore: bookmarkStore,
         persistProgress: { [weak self] in self?.readingPosition.persistReadingProgress() },
         showChapter: { [weak self] in self?.showChapter($0) },
-        present: { [weak self] in self?.present($0, animated: true) }
+        present: { [weak self] in self?.present($0, animated: true) },
+        isCurrentBook: { [weak self] in
+            guard let self else { return false }
+            return sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == document.book.id
+        }
     )
     @objc private func showFootnotes() { annotations.showFootnotes() }
     @objc private func promptSearch() { annotations.promptSearch() }

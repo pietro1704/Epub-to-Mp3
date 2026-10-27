@@ -573,7 +573,10 @@
 "reader.note.placeholder" = "Nota";
 "reader.footnotes.title" = "Notas al pie";
 "reader.footnotes.empty" = "No hay notas al pie en este capítulo.";
-"reader.search.placeholder" = "Buscar en el capítulo";
+"reader.search" = "Buscar";
+"reader.search.placeholder" = "Buscar en el libro";
+"reader.search.currentChapter" = "Busca en este capítulo mientras el resto del libro está disponible.";
+"reader.search.unavailable" = "La búsqueda no está disponible en esta vista del documento.";
 "reader.search.noResults" = "No se encontraron resultados";
 "bookDetail.read" = "Leer";
 "bookDetail.download" = "Descargar";

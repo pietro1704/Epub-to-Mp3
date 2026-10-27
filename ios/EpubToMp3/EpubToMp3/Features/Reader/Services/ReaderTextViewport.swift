@@ -125,6 +125,26 @@ final class ReaderTextViewport {
         return offsets[min(max(0, page - 1), max(0, offsets.count - 1))]
     }
 
+    /// Search ranges refer to displayed UTF-16 text; move the outer viewport.
+    @discardableResult
+    func reveal(_ range: NSRange) -> Bool {
+        guard range.location != NSNotFound, range.location >= 0, range.length > 0,
+              range.location <= textView.textStorage.length,
+              range.length <= textView.textStorage.length - range.location else { return false }
+        let manager = textView.layoutManager
+        manager.ensureLayout(for: textView.textContainer)
+        let glyph = manager.glyphIndexForCharacter(at: range.location)
+        guard glyph < manager.numberOfGlyphs else { return false }
+        let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let position = max(0, line.minY + textView.textContainerInset.top)
+        let target = facts.layoutResult != nil ? pageOffset(for: pageNumber(at: position)) : position
+        let maximum = max(0, scrollView.contentSize.height + scrollView.contentInset.bottom - scrollView.bounds.height)
+        scrollView.setContentOffset(CGPoint(x: 0, y: min(target, maximum)), animated: false)
+        textView.selectedRange = range
+        updateIndicator(testPage: nil)
+        return true
+    }
+
     func updateIndicator(testPage: Int?) {
         let total = max(1, facts.canonicalPageOffsets.count)
         let page = min(total, max(1, testPage ?? pageNumber(at: scrollView.contentOffset.y)))
