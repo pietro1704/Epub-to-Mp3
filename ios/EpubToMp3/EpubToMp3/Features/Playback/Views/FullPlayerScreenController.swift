@@ -135,6 +135,7 @@ final class FullPlayerScreenController: UIViewController {
             content.coverImageView.contentMode = .scaleAspectFit
         }
 
+        content.layoutView.setNeedsLayout()
         renderPlaybackPosition()
         renderSkipButtons()
         renderPlayPauseButton()

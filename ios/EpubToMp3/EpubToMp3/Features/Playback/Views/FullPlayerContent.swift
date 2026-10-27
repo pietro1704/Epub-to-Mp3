@@ -50,8 +50,7 @@ final class FullPlayerContent {
     // slider like MPVolumeView required.
     let airPlayView = AVRoutePickerView(frame: .zero)
     let volumeView = MPVolumeView(frame: .zero)
-    let contentScrollView = UIScrollView()
-    let stackView = UIStackView()
+    private(set) var layoutView: FullPlayerLayoutView!
 
     func install(in view: UIView, actionTarget: AnyObject, actions: FullPlayerControlActions, traits: UITraitCollection) {
         let background = AdaptiveMaterialView()
@@ -98,20 +97,23 @@ final class FullPlayerContent {
             coverImageView.bottomAnchor.constraint(equalTo: coverContainer.bottomAnchor),
         ])
 
-        titleLabel.font = .preferredFont(forTextStyle: .title2, compatibleWith: traits).bold()
-        titleLabel.numberOfLines = 0
+        titleLabel.font = UIFontMetrics(forTextStyle: .title2).scaledFont(
+            for: .systemFont(ofSize: 22, weight: .bold), maximumPointSize: 38, compatibleWith: traits)
+        titleLabel.numberOfLines = 2
         titleLabel.textAlignment = .center
         titleLabel.accessibilityIdentifier = "fullPlayer.bookTitle"
 
-        authorLabel.font = .preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
-        authorLabel.numberOfLines = 0
+        authorLabel.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
+            for: .systemFont(ofSize: 15), maximumPointSize: 24, compatibleWith: traits)
+        authorLabel.numberOfLines = 1
         authorLabel.textColor = .secondaryLabel
         authorLabel.textAlignment = .center
         authorLabel.accessibilityIdentifier = "fullPlayer.bookAuthor"
 
-        chapterLabel.font = .preferredFont(forTextStyle: .footnote, compatibleWith: traits)
+        chapterLabel.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(
+            for: .systemFont(ofSize: 13), maximumPointSize: 20, compatibleWith: traits)
         chapterLabel.textColor = .tertiaryLabel
-        chapterLabel.numberOfLines = 0
+        chapterLabel.numberOfLines = 2
         chapterLabel.textAlignment = .center
 
         [titleLabel, authorLabel, chapterLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
@@ -125,9 +127,6 @@ final class FullPlayerContent {
         authorLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         chapterLabel.setContentHuggingPriority(.required, for: .vertical)
         chapterLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        titleLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 26).isActive = true
-        chapterLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 20).isActive = true
-        authorLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 18).isActive = true
 
         slider.addTarget(actionTarget, action: actions.scrubBegan, for: .touchDown)
         slider.addTarget(actionTarget, action: actions.scrubChanged, for: .valueChanged)
@@ -135,7 +134,7 @@ final class FullPlayerContent {
         slider.addTarget(actionTarget, action: actions.scrubEnded, for: .editingDidEnd)
 
         [elapsedLabel, remainingLabel].forEach {
-            $0.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedDigitSystemFont(ofSize: 12, weight: .regular))
+            $0.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedDigitSystemFont(ofSize: 12, weight: .regular), maximumPointSize: 20, compatibleWith: traits)
             $0.adjustsFontForContentSizeCategory = true
             $0.textColor = .secondaryLabel
         }
@@ -172,6 +171,12 @@ final class FullPlayerContent {
         rateConfig.contentInsets = .init(top: 8, leading: 12, bottom: 8, trailing: 12)
         rateConfig.background.backgroundColor = .secondarySystemFill
         rateConfig.background.cornerRadius = 10
+        rateConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFontMetrics(forTextStyle: .body).scaledFont(
+                for: .systemFont(ofSize: 17), maximumPointSize: 20, compatibleWith: traits)
+            return outgoing
+        }
         rateButton.configuration = rateConfig
         rateButton.translatesAutoresizingMaskIntoConstraints = false
         rateButton.accessibilityIdentifier = "fullPlayer.playbackRateButton"
@@ -223,103 +228,40 @@ final class FullPlayerContent {
         playbackControls.spacing = FullPlayerLayoutMetrics.elementSpacing
         playbackControls.translatesAutoresizingMaskIntoConstraints = false
 
-        // `coverContainer` must NOT be an arranged subview directly: the
-        // vertical stack's default `.fill` alignment pins every arranged
-        // subview's leading/trailing to the stack's own edges (full width),
-        // which unconditionally contradicts the explicit 0.7-multiplier
-        // width + centerX constraints below — "Unable to simultaneously
-        // satisfy constraints" on every single appearance, regardless of
-        // device width. A plain full-width wrapper absorbs the stack's fill
-        // pinning; `coverContainer` sizes itself against the wrapper instead.
-        let coverRow = UIView()
-        coverRow.translatesAutoresizingMaskIntoConstraints = false
-        coverRow.addSubview(coverContainer)
-
-        stackView.axis = .vertical
-        stackView.spacing = FullPlayerLayoutMetrics.elementSpacing
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.addArrangedSubview(coverRow)
-
         let metadata = UIStackView(arrangedSubviews: [titleLabel, authorLabel, chapterLabel])
         metadata.axis = .vertical
-        metadata.alignment = .fill
         metadata.spacing = FullPlayerLayoutMetrics.elementSpacing
-        metadata.translatesAutoresizingMaskIntoConstraints = false
 
-        // Keep controls together and allow the whole player to scroll when text grows.
-        let bottomContent = UIStackView(arrangedSubviews: [metadata, playbackControls, secondary])
-        bottomContent.axis = .vertical
-        bottomContent.alignment = .fill
-        bottomContent.spacing = FullPlayerLayoutMetrics.elementSpacing
-        bottomContent.translatesAutoresizingMaskIntoConstraints = false
-
-        contentScrollView.translatesAutoresizingMaskIntoConstraints = false
-        contentScrollView.alwaysBounceVertical = false
-        contentScrollView.showsVerticalScrollIndicator = false
-        contentScrollView.contentInsetAdjustmentBehavior = .never
-        view.addSubview(contentScrollView)
-        let flexibleSpace = UIView()
-        flexibleSpace.setContentHuggingPriority(.defaultLow, for: .vertical)
-        stackView.addArrangedSubview(flexibleSpace)
-        stackView.addArrangedSubview(bottomContent)
-        contentScrollView.addSubview(stackView)
+        layoutView = FullPlayerLayoutView(cover: coverContainer, metadata: metadata,
+            playback: playbackControls, secondary: secondary)
+        layoutView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(layoutView)
         view.bringSubviewToFront(dragHandle)
         view.bringSubviewToFront(closeButton)
-
-        let preferredCoverWidth = coverContainer.widthAnchor.constraint(
-            equalTo: coverRow.widthAnchor,
-            multiplier: 0.7
-        )
-        preferredCoverWidth.priority = .defaultLow
-        let preferredContentHeight = stackView.heightAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.heightAnchor)
-        preferredContentHeight.priority = .defaultHigh
         NSLayoutConstraint.activate([
             dragHandle.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             dragHandle.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             dragHandle.widthAnchor.constraint(equalToConstant: 36),
             dragHandle.heightAnchor.constraint(equalToConstant: 5),
-
             closeButton.topAnchor.constraint(equalTo: dragHandle.bottomAnchor, constant: 6),
             closeButton.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
-
-            contentScrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            contentScrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            contentScrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
-            contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                                                     constant: -FullPlayerLayoutMetrics.bottomInset),
-            preferredContentHeight,
-            stackView.heightAnchor.constraint(greaterThanOrEqualTo: contentScrollView.frameLayoutGuide.heightAnchor),
+            layoutView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            layoutView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            layoutView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
+            layoutView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             secondary.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-
-            stackView.leadingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.trailingAnchor),
-            stackView.topAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.bottomAnchor),
-            stackView.widthAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.widthAnchor),
-
-            preferredCoverWidth,
-            coverContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 72),
-            coverContainer.heightAnchor.constraint(equalTo: coverContainer.widthAnchor, multiplier: 1.5),
-            coverContainer.heightAnchor.constraint(
-                lessThanOrEqualTo: contentScrollView.frameLayoutGuide.heightAnchor,
-                multiplier: 0.70
-            ),
-            coverContainer.topAnchor.constraint(equalTo: coverRow.topAnchor),
-            coverContainer.bottomAnchor.constraint(equalTo: coverRow.bottomAnchor),
-            coverContainer.centerXAnchor.constraint(equalTo: coverRow.centerXAnchor),
             volumeView.heightAnchor.constraint(equalToConstant: 34),
         ])
-    }
-
-
-}
-
-private extension UIFont {
-    func bold() -> UIFont {
-        let descriptor = fontDescriptor.withSymbolicTraits(.traitBold) ?? fontDescriptor
-        return UIFont(descriptor: descriptor, size: pointSize)
+        let controls = [previousChapterButton, skipBackButton, playPauseButton,
+                        skipForwardButton, nextChapterButton, rateButton, tocButton, sleepButton]
+        for control in controls {
+            NSLayoutConstraint.activate([
+                control.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                control.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            ])
+        }
     }
 }
 #endif
