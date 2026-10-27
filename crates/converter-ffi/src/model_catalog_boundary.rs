@@ -110,26 +110,51 @@ unsafe fn speech_model_catalog_json(
         architecture,
         os_version,
     };
+    let probe_directory = probe_directory.map(str::to_owned);
+    let result = if probe_directory.is_some() {
+        // Swift actor executors have small stacks. Keep the complete runtime
+        // loading frame on the same stack budget as conversion and audition.
+        std::thread::Builder::new()
+            .name("converter-ffi-catalog-probe".into())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || speech_model_snapshot_json(query, model_root, probe_directory))
+            .map_err(|error| format!("Failed to start catalog probe: {error}"))
+            .and_then(|thread| {
+                thread
+                    .join()
+                    .map_err(|_| "Catalog probe panicked".to_owned())
+            })
+            .and_then(|result| result)
+    } else {
+        speech_model_snapshot_json(query, model_root, None)
+    };
+    match result {
+        Ok(value) => CString::new(value).map_or_else(
+            |_| fail("TTS catalog v3 contains an interior NUL byte".to_owned()),
+            CString::into_raw,
+        ),
+        Err(error) => fail(error),
+    }
+}
+
+// Do not inline a runtime-loading frame back onto the foreign caller's stack.
+#[inline(never)]
+fn speech_model_snapshot_json(
+    query: converter_core::speech_model_library::CatalogQuery,
+    model_root: String,
+    probe_directory: Option<String>,
+) -> Result<String, String> {
     let store = converter_core::model_store::ModelStore::new(Path::new(&model_root));
     let library = converter_core::speech_model_library::SpeechModelLibrary;
-    let result = if let Some(directory) = probe_directory {
+    let result = if let Some(directory) = probe_directory.as_deref() {
         library.snapshot_with_runtime_probe(query, &store, |identity| {
             probe_embedded_model(identity, store.root(), directory)
         })
     } else {
         library.snapshot_with_inspection(query, &store, &[])
     };
-    let snapshot = match result {
-        Ok(value) => value,
-        Err(error) => return fail(error.to_string()),
-    };
-    match serde_json::to_string(&snapshot) {
-        Ok(value) => CString::new(value).map_or_else(
-            |_| fail("TTS catalog v3 contains an interior NUL byte".to_owned()),
-            CString::into_raw,
-        ),
-        Err(error) => fail(error.to_string()),
-    }
+    let snapshot = result.map_err(|error| error.to_string())?;
+    serde_json::to_string(&snapshot).map_err(|error| error.to_string())
 }
 
 fn probe_embedded_model(

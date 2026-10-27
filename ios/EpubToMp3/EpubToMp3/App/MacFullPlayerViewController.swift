@@ -17,6 +17,7 @@ final class MacFullPlayerViewController: NSViewController {
     private let elapsedLabel = NSTextField(labelWithString: "0:00")
     private let remainingLabel = NSTextField(labelWithString: "-0:00")
     private var cancellable: AnyCancellable?
+    private var clockCancellable: AnyCancellable?
 
     init(player: AudioPlayer, library: LibraryStore, presentation: PlayerPresentation, onStartPlayback: @escaping () -> Void) {
         self.player = player
@@ -104,6 +105,9 @@ final class MacFullPlayerViewController: NSViewController {
         cancellable = player.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refresh() }
+        clockCancellable = player.playbackClock.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshClock() }
         refresh()
     }
 
@@ -124,6 +128,10 @@ final class MacFullPlayerViewController: NSViewController {
         playButton.isHidden = player.isLoading
         if player.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
         playButton.isEnabled = player.snapshot != nil || bookID != nil
+        refreshClock()
+    }
+
+    private func refreshClock() {
         let duration = max(player.durationSeconds, 1)
         progressSlider.maxValue = duration
         progressSlider.doubleValue = min(player.playbackPositionSeconds, duration)
