@@ -90,6 +90,9 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         materialView.accessibilityIdentifier = "miniPlayer.pillMaterial"
         materialView.layer.cornerRadius = 20
         materialView.clipsToBounds = true
+        // UITabAccessory already owns the surrounding glass surface.
+        // Keep this view for layout, without drawing a second inset capsule.
+        materialView.isHidden = usesSystemManagedBottomInset
         let expandTap = UITapGestureRecognizer(target: self, action: #selector(openTapped))
         expandTap.delegate = self
         expandTap.cancelsTouchesInView = false
