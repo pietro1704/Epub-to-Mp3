@@ -11,6 +11,7 @@ import 'l10n/app_localizations.dart';
 import 'screens/library_screen.dart' show libraryStoreProvider;
 import 'screens/root_screen.dart';
 import 'services/audio_player_service.dart';
+import 'services/desktop_audio_backend.dart';
 import 'services/background_audio_handler.dart';
 import 'services/app_deep_link.dart';
 import 'services/incoming_document_service.dart';
@@ -25,6 +26,7 @@ import 'views/reader_theme_colors.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  initializeDesktopAudioBackend(defaultTargetPlatform);
   // Register the Android platform adapter before Riverpod can resolve the
   // embedded converter. Without this registration, opening a book fails with
   // "converter-ffi runtime is not registered" even though the channel exists.

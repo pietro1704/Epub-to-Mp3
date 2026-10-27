@@ -17,6 +17,9 @@ dependencies:
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0
   just_audio: ^0.9.42
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_linux: ^1.2.1
+  media_kit_libs_windows_audio: ^1.0.1
   audio_service: ^0.18.18
   path_provider: ^2.1.5
   shared_preferences: ^2.3.3

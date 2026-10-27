@@ -9,7 +9,10 @@ const originalPolicy = conversionClient.getNativePlaybackPolicy;
 afterEach(() => { conversionClient.getNativePlaybackPolicy = originalPolicy; vi.restoreAllMocks(); });
 it("connects captured job fallback to reader controls and cancels on chapter changes", async () => {
   conversionClient.getNativePlaybackPolicy = vi.fn(async () => ({ language: "pt-BR", voice: null }));
-  const speech = { speak: vi.fn(() => new Promise<void>(() => undefined)), cancel: vi.fn(), pause: vi.fn(), resume: vi.fn() };
+  const speech = { speak: vi.fn((_text, _language, _voice, onVoice) => {
+    onVoice("Installed voice");
+    return new Promise<void>(() => undefined);
+  }), cancel: vi.fn(), pause: vi.fn(), resume: vi.fn() };
   vi.mocked(browserNativeSpeech).mockReturnValue(speech as unknown as ReturnType<typeof browserNativeSpeech>);
   const view = renderWithProviders(<NativeReaderFallback jobId="book" chapterIndex={0} text="Chapter one" />, { locale: "en" });
   await waitFor(() => expect(screen.getByText("Listen with installed system voice")).toBeTruthy());

@@ -7,6 +7,8 @@ import '../models/app_settings.dart';
 
 import '../models/ebook_fulltext.dart';
 import '../services/paginator.dart';
+import '../services/viewport_paginator.dart';
+
 import '../state/providers.dart';
 import 'reader_theme_colors.dart';
 import 'reader_typography.dart';
@@ -15,6 +17,7 @@ import 'reader_chapter_content.dart';
 export 'reader_typography.dart';
 export 'chapter_advance_model.dart';
 
+part 'reader_paginated_layout.dart';
 part 'reader_listening_anchor.dart';
 
 typedef ChapterStepCallback = bool Function();
@@ -57,7 +60,8 @@ class ReaderView extends ConsumerStatefulWidget {
 
 class _ReaderViewState extends ConsumerState<ReaderView> {
   int _currentPage = 0;
-  late List<ReaderPage> _pages;
+  List<ReaderPage> _pages = const [];
+  Object? _pageLayoutKey;
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _spanKeys = {};
@@ -68,7 +72,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     super.initState();
     _scrollController.addListener(_publishListeningAnchor);
     _committedChapterToken = widget.chapter.index;
-    _pages = Paginator.paginate(spans: widget.spans);
+    _pageLayoutKey = null;
   }
 
   /// The chapter the currently-displayed `_pages` were paginated from.
@@ -90,7 +94,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       // index) is what stops the "wrong interleaved page" flash where
       // the previous chapter's content was shown during the new
       // chapter's repagination window (iOS d069e9a).
-      _pages = Paginator.paginate(spans: widget.spans);
+      _pageLayoutKey = null;
       _currentPage = 0;
       _committedChapterToken = token;
     } else if (!spansContentEqual(oldWidget.spans, widget.spans)) {
@@ -99,7 +103,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       // Gating on CONTENT equality (not list identity) mirrors iOS
       // d473109: a parent rebuild that hands a fresh-but-identical
       // spans list must NOT trigger a relayout/flicker.
-      _pages = Paginator.paginate(spans: widget.spans);
+      _pageLayoutKey = null;
       if (_currentPage >= _pages.length) {
         _currentPage = _pages.isEmpty ? 0 : _pages.length - 1;
       }
@@ -313,158 +317,6 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// Expanded children so the text underneath stretches edge-to-edge.
   double _tapZoneWidth(BuildContext context) =>
       MediaQuery.of(context).size.width * 0.22;
-
-  Widget _paginatedLayout(
-    BuildContext context,
-    AppSettings settings,
-    Color bg,
-    Color fg,
-    TextStyle bodyStyle,
-    TextStyle headingStyle,
-    double margin,
-  ) {
-    final page = _pages.isEmpty
-        ? const ReaderPage(<SentenceSpan>[])
-        : _pages[_currentPage.clamp(0, _pages.length - 1)];
-    final pageIndex = _pages.isEmpty
-        ? 0
-        : _currentPage.clamp(0, _pages.length - 1);
-
-    // Safe area is an INVIOLABLE floor. Mirrors iOS `topCorridor`
-    // (ReaderLayoutMath.swift, commit fbe8ea3): when the host hides
-    // the reader chrome the top toolbar (which provided the SafeArea
-    // top) disappears, and the first line would render under the
-    // status bar / notch. Add the system top/bottom insets on top of
-    // the reader's own breathing pad so text always clears the notch
-    // and the home indicator, chrome shown or hidden.
-    final media = MediaQuery.of(context);
-    const readerVerticalPad = 24.0;
-    final topPad = media.padding.top + readerVerticalPad;
-    final bottomPad = media.padding.bottom + readerVerticalPad;
-
-    return Container(
-      color: bg,
-      child: Focus(
-        focusNode: _focusNode,
-        autofocus: true,
-        onKeyEvent: _handleKey,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragEnd: (details) {
-            final v = details.primaryVelocity ?? 0;
-            if (v < -200) {
-              advancePage();
-            } else if (v > 200) {
-              retreatPage();
-            }
-          },
-          child: Stack(
-            children: [
-              // Text body fills the FULL width of the page area (minus
-              // the user's `readerMargin` horizontal inset). The
-              // page-turn tap zones live as transparent overlays on
-              // the left and right edges so the text silhouette is
-              // as wide as the screen. Prior layout used
-              // `Expanded(flex: 1)` / `Expanded(flex: 2)` /
-              // `Expanded(flex: 1)`, which gave each tap zone 25% of
-              // the screen and the text only 50% — user-reported on
-              // Android 2026-05-22 as "margens laterais muito
-              // grandes". Mirrors the iOS `tapZones` overlay
-              // partition (see ReaderView.swift).
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: widget.onCenterTap,
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.only(
-                      left: margin,
-                      right: margin,
-                      top: topPad,
-                      bottom: bottomPad,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (pageIndex == 0) _chapterHeader(headingStyle, fg),
-                        ...page.spans.map(
-                          (s) => Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: GestureDetector(
-                              onTap: () => widget.onJumpToSentence?.call(s),
-                              child: Text(
-                                s.text,
-                                key: _spanKeys.putIfAbsent(s.id, () => GlobalKey()),
-                                style: bodyStyle,
-                                textAlign: flutterTextAlign(
-                                  settings.readerTextAlignment,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // Left page-turn zone — 22% of width, transparent
-              // overlay. `behavior: opaque` so the tap doesn't bubble
-              // through to the underlying text/centre-tap detector.
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: _tapZoneWidth(context),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: retreatPage,
-                ),
-              ),
-              // Right page-turn zone — mirror image of the left zone.
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 0,
-                width: _tapZoneWidth(context),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: advancePage,
-                ),
-              ),
-              // Page footer — hidden when the user disables page numbers.
-              if (_pages.isNotEmpty && settings.readerShowPageNumbers)
-                Positioned(
-                  bottom: 8,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        color: fg.withValues(alpha: 0.1),
-                      ),
-                      child: Text(
-                        '${pageIndex + 1} / ${_pages.length}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: fg.withValues(alpha: 0.5),
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _chapterHeader(TextStyle headingStyle, Color fg) {
     return Column(

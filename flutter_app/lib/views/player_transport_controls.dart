@@ -10,10 +10,12 @@ class PlayerTransportControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
-    return StreamBuilder<bool>(
-      stream: player.playing,
+    return StreamBuilder<PlaybackPhase>(
+      stream: player.phases,
+      initialData: player.phase,
       builder: (context, snap) {
-        final isPlaying = snap.data ?? false;
+        final isPlaying = snap.data == PlaybackPhase.playing ||
+            snap.data == PlaybackPhase.loading || snap.data == PlaybackPhase.buffering;
         return FittedBox(
           fit: BoxFit.scaleDown,
           child: Row(
@@ -33,13 +35,13 @@ class PlayerTransportControls extends StatelessWidget {
             const SizedBox(width: 12),
             // Skip -15s
             Semantics(
-              label: 'Skip back 15 seconds',
+              label: t?.skipBack15 ?? 'Skip back 15 seconds',
               button: true,
               child: IconButton(
-                icon: const Icon(Icons.replay_10),
+                icon: const SeekIntervalIcon(key: ValueKey('seek.backward.15'), forward: false, size: 32),
                 iconSize: 32,
                 onPressed: () => player.skipBackward(seconds: 15),
-                tooltip: 'Skip back 15s',
+                tooltip: t?.skipBack15 ?? 'Skip back 15 seconds',
               ),
             ),
             const SizedBox(width: 12),
@@ -60,13 +62,13 @@ class PlayerTransportControls extends StatelessWidget {
             const SizedBox(width: 12),
             // Skip +15s
             Semantics(
-              label: 'Skip forward 15 seconds',
+              label: t?.skipForward15 ?? 'Skip forward 15 seconds',
               button: true,
               child: IconButton(
-                icon: const Icon(Icons.forward_10),
+                icon: const SeekIntervalIcon(key: ValueKey('seek.forward.15'), forward: true, size: 32),
                 iconSize: 32,
                 onPressed: () => player.skipForward(seconds: 15),
-                tooltip: 'Skip forward 15s',
+                tooltip: t?.skipForward15 ?? 'Skip forward 15 seconds',
               ),
             ),
             const SizedBox(width: 12),

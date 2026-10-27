@@ -9,9 +9,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'seek_interval_icon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/audio_player_service.dart';
+import '../l10n/app_localizations.dart';
 import '../services/playback_snapshot.dart';
 
 import '../services/background_audio_handler.dart' as background_audio;
@@ -43,6 +45,7 @@ class MiniPlayerBar extends ConsumerWidget {
     PlaybackCoordinator coordinator,
     PlaybackSnapshot playback,
   ) {
+    final t = AppLocalizations.of(context);
     final playingBookId = ref.watch(currentlyPlayingBookIdProvider);
     if (playingBookId == null) return const SizedBox.shrink();
 
@@ -164,25 +167,25 @@ class MiniPlayerBar extends ConsumerWidget {
 
               // Skip -15s
               IconButton(
-                icon: const Icon(Icons.replay_10, size: 24),
+                icon: const SeekIntervalIcon(key: ValueKey('seek.backward.15'), forward: false),
                 onPressed: () => player.skipBackward(seconds: 15),
-                tooltip: 'Skip back 15 seconds',
+                tooltip: t?.skipBack15 ?? 'Skip back 15 seconds',
               ),
 
               // Play/pause or loading state. The coordinator snapshot is the
               // only state used to render this control.
               if (playback.isLoading)
-                const SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: Padding(
-                    padding: EdgeInsets.all(14),
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                IconButton(
+                  tooltip: t?.pause ?? 'Pause',
+                  onPressed: player.hasQueuedAudio ? () => player.pause() : null,
+                  icon: const Stack(alignment: Alignment.center, children: [
+                    SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2)),
+                    Icon(Icons.pause_rounded, size: 18),
+                  ]),
                 )
               else
                 Semantics(
-                  label: playback.isPlaying ? 'Pause' : 'Play',
+                  label: playback.isPlaying ? (t?.pause ?? 'Pause') : (t?.play ?? 'Play'),
                   button: true,
                   child: IconButton(
                     icon: Icon(
@@ -212,9 +215,9 @@ class MiniPlayerBar extends ConsumerWidget {
 
               // Skip +15s
               IconButton(
-                icon: const Icon(Icons.forward_10, size: 24),
+                icon: const SeekIntervalIcon(key: ValueKey('seek.forward.15'), forward: true),
                 onPressed: () => player.skipForward(seconds: 15),
-                tooltip: 'Skip forward 15 seconds',
+                tooltip: t?.skipForward15 ?? 'Skip forward 15 seconds',
               ),
 
               // Speed picker — compact label

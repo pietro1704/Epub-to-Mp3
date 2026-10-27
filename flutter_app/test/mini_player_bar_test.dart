@@ -74,7 +74,7 @@ void main() {
       expect(find.text('Playing Book'), findsOneWidget);
       expect(find.text('Author A'), findsNothing);
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
-      expect(find.byIcon(Icons.forward_10), findsOneWidget);
+      expect(find.byKey(const ValueKey('seek.forward.15')), findsOneWidget);
     });
 
     testWidgets('hidden when playing book not in library', (t) async {

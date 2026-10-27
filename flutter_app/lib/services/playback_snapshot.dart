@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'audio_player_service.dart';
 
+const _unchangedIdentity = Object();
+
 /// Immutable state published by the playback coordinator.
 class PlaybackSnapshot {
   const PlaybackSnapshot({
@@ -13,6 +15,7 @@ class PlaybackSnapshot {
     required this.playerIndex,
     required this.chapterIndex,
     required this.speed,
+    this.phase = PlaybackPhase.idle,
   });
 
   const PlaybackSnapshot.initial()
@@ -23,8 +26,10 @@ class PlaybackSnapshot {
       duration = Duration.zero,
       playerIndex = null,
       chapterIndex = null,
-      speed = 1.0;
+      speed = 1.0,
+      phase = PlaybackPhase.idle;
 
+  final PlaybackPhase phase;
   final int revision;
   final bool isPlaying;
   final bool isLoading;
@@ -35,22 +40,24 @@ class PlaybackSnapshot {
   final double speed;
 
   PlaybackSnapshot copyWith({
+    PlaybackPhase? phase,
     bool? isPlaying,
     bool? isLoading,
     Duration? position,
     Duration? duration,
-    int? playerIndex,
-    int? chapterIndex,
+    Object? playerIndex = _unchangedIdentity,
+    Object? chapterIndex = _unchangedIdentity,
     double? speed,
   }) {
     return PlaybackSnapshot(
+      phase: phase ?? this.phase,
       revision: revision + 1,
       isPlaying: isPlaying ?? this.isPlaying,
       isLoading: isLoading ?? this.isLoading,
       position: position ?? this.position,
       duration: duration ?? this.duration,
-      playerIndex: playerIndex ?? this.playerIndex,
-      chapterIndex: chapterIndex ?? this.chapterIndex,
+      playerIndex: identical(playerIndex, _unchangedIdentity) ? this.playerIndex : playerIndex as int?,
+      chapterIndex: identical(chapterIndex, _unchangedIdentity) ? this.chapterIndex : chapterIndex as int?,
       speed: speed ?? this.speed,
     );
   }
@@ -59,7 +66,7 @@ class PlaybackSnapshot {
 /// Single source of truth for playback UI and system integrations.
 class PlaybackCoordinator {
   PlaybackCoordinator(this.player) {
-    _subscriptions.add(player.playing.listen((_) => _publish()));
+    _subscriptions.add(player.phases.listen((_) => _publish()));
     _subscriptions.add(player.position.listen((_) => _publish()));
     _subscriptions.add(player.currentIndex.listen((_) => _publish()));
     _publish();
@@ -101,7 +108,8 @@ class PlaybackCoordinator {
     final next = PlaybackSnapshot(
       revision: _snapshot.revision + 1,
       isPlaying: player.isPlaying,
-      isLoading: _initialAudioPending,
+      phase: _initialAudioPending ? PlaybackPhase.loading : player.phase,
+      isLoading: _initialAudioPending || player.isLoading,
       position: Duration(milliseconds: (player.positionSeconds * 1000).round()),
       duration: Duration(milliseconds: (player.durationSeconds * 1000).round()),
       playerIndex: playerIndex,

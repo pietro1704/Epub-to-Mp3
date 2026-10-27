@@ -17,12 +17,12 @@ export const pt_application: Pick<Translations, 'locale' | 'topBar' | 'hero' | '
     badge: 'Livro em áudio',
     title: 'Transforme seu EPUB ou PDF em MP3 com poucos cliques',
     subtitle:
-      'Envie o arquivo, escolha a voz preferida e deixe o serviço Python narrar a história para você ouvir onde quiser.',
+      'Abra o livro e converta localmente com Piper. A voz instalada do sistema serve apenas para ouvir; exportar MP3 exige Piper.',
     highlights: [
       {
-        title: 'Edge → Piper',
+        title: 'Piper local',
         description:
-          'Escolhemos automaticamente o motor mais estável para manter qualidade e velocidade.',
+          'Sua voz principal é preservada. Instale o modelo somente quando quiser habilitar a conversão offline.',
       },
       {
         title: 'Multi-idioma real',
@@ -51,7 +51,7 @@ export const pt_application: Pick<Translations, 'locale' | 'topBar' | 'hero' | '
     },
     progress: {
       label: '2. Acompanhar andamento',
-      description: 'Veja o passo a passo enquanto o serviço Python trabalha.',
+      description: 'Acompanhe a conversão local do livro neste dispositivo.',
       panelTitle: 'Status da conversão',
       panelDescription: 'Aqui ficam as mensagens mais recentes.',
       activeBadge: 'Convertendo agora',

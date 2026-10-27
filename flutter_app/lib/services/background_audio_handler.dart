@@ -67,7 +67,7 @@ class BackgroundAudioHandler extends BaseAudioHandler {
     this.player, {
     WidgetPlaybackSnapshotStore? snapshotStore,
   }) : _snapshotStore = snapshotStore {
-    _subscriptions.add(player.playing.listen((_) => _publishState()));
+    _subscriptions.add(player.phases.listen((_) => _publishState()));
     _subscriptions.add(player.position.listen((_) => _publishState()));
     _subscriptions.add(player.currentIndex.listen((_) => _publishState()));
     _publishState();
@@ -170,9 +170,14 @@ class BackgroundAudioHandler extends BaseAudioHandler {
         MediaAction.seekBackward,
       },
       androidCompactActionIndices: const [0, 1, 3],
-      processingState: player.isPlaying || currentDuration != null
-          ? AudioProcessingState.ready
-          : AudioProcessingState.idle,
+      processingState: switch (player.phase) {
+        PlaybackPhase.loading => AudioProcessingState.loading,
+        PlaybackPhase.buffering => AudioProcessingState.buffering,
+        PlaybackPhase.completed => AudioProcessingState.completed,
+        PlaybackPhase.failed => AudioProcessingState.error,
+        PlaybackPhase.playing || PlaybackPhase.paused => AudioProcessingState.ready,
+        PlaybackPhase.idle => AudioProcessingState.idle,
+      },
       playing: player.isPlaying,
       updatePosition: Duration(
         milliseconds: (player.positionSeconds * 1000).round(),

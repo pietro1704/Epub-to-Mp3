@@ -11,7 +11,13 @@ abstract interface class StreamingChapterPlayer {
   void finishGrowingChapter(int chapterIndex, String finalPath);
 }
 
+enum PlaybackPhase { idle, loading, buffering, playing, paused, completed, failed }
+
 abstract class AudioPlayerInterface {
+  PlaybackPhase get phase => isLoading ? PlaybackPhase.loading
+      : isPlaying ? PlaybackPhase.playing
+      : hasQueuedAudio ? PlaybackPhase.paused : PlaybackPhase.idle;
+  Stream<PlaybackPhase> get phases => playing.map((_) => phase);
   Stream<Duration> get position;
   Stream<bool> get playing;
   bool get isPlaying;
@@ -25,7 +31,8 @@ abstract class AudioPlayerInterface {
   Stream<double> get sleepTimerStream;
   double get positionSeconds;
   double get durationSeconds;
-  Uint8List? coverArtData;
+  Uint8List? get coverArtData;
+  set coverArtData(Uint8List? value);
   List<ChapterProgress> get chapters;
   bool get hasQueuedAudio;
   int chapterIndexForPlayerIndex(int playerIndex);

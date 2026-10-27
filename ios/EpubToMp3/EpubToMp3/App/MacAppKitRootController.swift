@@ -241,7 +241,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         let contentView = controller.view
         contentView.translatesAutoresizingMaskIntoConstraints = false
         detailContainer.view.addSubview(contentView)
-        detailContainer.view.setAccessibilityChildren([contentView])
+        detailContainer.view.setAccessibilityChildren([contentView, playerBar.view])
         NSLayoutConstraint.activate([
             contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
@@ -272,7 +272,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         let contentView = detail.view
         contentView.translatesAutoresizingMaskIntoConstraints = false
         detailContainer.view.addSubview(contentView)
-        detailContainer.view.setAccessibilityChildren([contentView])
+        detailContainer.view.setAccessibilityChildren([contentView, playerBar.view])
         NSLayoutConstraint.activate([
             contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
@@ -301,7 +301,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         let contentView = reader.view
         contentView.translatesAutoresizingMaskIntoConstraints = false
         detailContainer.view.addSubview(contentView)
-        detailContainer.view.setAccessibilityChildren([contentView])
+        detailContainer.view.setAccessibilityChildren([contentView, playerBar.view])
         NSLayoutConstraint.activate([
             contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),

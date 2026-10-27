@@ -2,14 +2,20 @@ import { useTranslations } from "../i18n/I18nProvider";
 import { useEffect, useRef, useState } from "react";
 import { conversionClient } from "../services/ConversionService";
 import { browserNativeSpeech } from "../services/BrowserNativeSpeech";
+import { publishNativePlayback, type NativePlaybackPhase } from "../services/NativePlaybackPresentation";
 
 /** Native narration is independent of converted MP3 state and can never finish a job. */
 export default function NativeReaderFallback({ jobId, chapterIndex, text }: { jobId: string; chapterIndex: number; text: string }): JSX.Element | null {
   const labels = useTranslations().form.ttsPreferences;
   const [policy, setPolicy] = useState<{ language: string; voice: string | null } | null>(null);
-  const [state, setState] = useState<"idle" | "playing" | "paused">("idle");
+  const [state, setState] = useState<NativePlaybackPhase>("idle");
   const [message, setMessage] = useState("");
   const requestGeneration = useRef(0);
+  const active = state === "starting" || state === "playing" || state === "paused";
+  useEffect(() => {
+    publishNativePlayback({ jobId, chapterIndex, phase: state, voice: message });
+    return () => { publishNativePlayback(null); };
+  }, [jobId, chapterIndex, state, message]);
   useEffect(() => {
     let active = true;
     setPolicy(null);
@@ -35,34 +41,35 @@ export default function NativeReaderFallback({ jobId, chapterIndex, text }: { jo
   if (!policy || !text.trim()) return null;
   const start = async () => {
     const speech = browserNativeSpeech();
-    if (!speech) { setMessage(labels.nativeUnavailable); return; }
+    if (!speech) { setMessage(labels.nativeUnavailable); setState("failed"); return; }
     const generation = ++requestGeneration.current;
-    setState("playing");
+    setMessage("");
+    setState("starting");
     try {
       await speech.speak(text, policy.language, policy.voice, voice => {
-        if (generation === requestGeneration.current) setMessage(voice);
+        if (generation === requestGeneration.current) { setMessage(voice); setState("playing"); }
       });
-      if (generation === requestGeneration.current) setState("idle");
+      if (generation === requestGeneration.current) setState("completed");
     } catch (error) {
       if (generation !== requestGeneration.current) return;
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setMessage(String(error)); setState("idle");
+      setMessage(labels.nativeFailure); setState("failed");
     }
   };
   const retry = () => {
     const generation = ++requestGeneration.current;
     browserNativeSpeech()?.cancel();
     setState("idle");
-    void conversionClient.resume?.(jobId).catch(error => {
-      if (generation === requestGeneration.current) setMessage(String(error));
+    void conversionClient.resume?.(jobId).catch(() => {
+      if (generation === requestGeneration.current) { setMessage(labels.nativeFailure); setState("failed"); }
     });
   };
   return <div aria-label="System narration fallback">
     <p>{labels.nativeNotice}</p>
     <p role="status">{message}</p>
-    <button type="button" onClick={() => void start()} disabled={state !== "idle"}>{labels.nativeListen}</button>
-    <button type="button" disabled={state === "idle"} onClick={() => { if (state === "paused") { browserNativeSpeech()?.resume(); setState("playing"); } else { browserNativeSpeech()?.pause(); setState("paused"); } }}>{state === "paused" ? labels.nativeResume : labels.nativePause}</button>
-    <button type="button" disabled={state === "idle"} onClick={() => { requestGeneration.current++; browserNativeSpeech()?.cancel(); setState("idle"); }}>{labels.nativeStop}</button>
+    <button type="button" onClick={() => void start()} disabled={active}>{labels.nativeListen}</button>
+    <button type="button" disabled={!active || state === "starting"} onClick={() => { if (state === "paused") { browserNativeSpeech()?.resume(); setState("playing"); } else { browserNativeSpeech()?.pause(); setState("paused"); } }}>{state === "paused" ? labels.nativeResume : labels.nativePause}</button>
+    <button type="button" disabled={!active} onClick={() => { requestGeneration.current++; browserNativeSpeech()?.cancel(); setState("idle"); }}>{labels.nativeStop}</button>
     <button type="button" onClick={retry}>{labels.nativeRetry}</button>
   </div>;
 }
