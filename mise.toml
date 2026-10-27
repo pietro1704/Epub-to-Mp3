@@ -22,7 +22,7 @@ cocoapods = "1.16.2"
 # Java + Android SDK for the Flutter Android target. android-sdk plugin
 # requires JAVA_HOME to be set; mise handles that when java is in [tools].
 java = "21.0.2"
-android-sdk = "11.0"
+android-sdk = { version = "11.0", os = ["linux"] }
 ninja = "latest"
 
 [env]
@@ -474,6 +474,10 @@ run = "ruby scripts/mac_validate.rb"
 [tasks."mac:validate:test"]
 description = "Verify macOS validation selection, reuse identity and failure behavior without native compilation"
 run = "ruby scripts/test_mac_validate.rb"
+
+[tasks."mac:runtime-cache:verify"]
+description = "Verify packaging cache reuse, tamper repair and architecture rejection with existing real macOS libraries; never compiles"
+run = "ruby scripts/verify_apple_runtime_cache.rb"
 
 [tasks."pr:gate:policy"]
 description = "Verify master requires only the trusted PR gate; explicit --apply updates only required status checks"

@@ -28,7 +28,14 @@ espeak-rs = { path = "native/vendor/espeak-rs" }
 espeak-rs-sys = { path = "native/vendor/espeak-rs-sys" }
 
 [profile.release]
+incremental = true
 codegen-units = 1
 lto = "thin"
 strip = true
+
+[profile.dev]
+incremental = true
+
+[profile.test]
+incremental = true
 

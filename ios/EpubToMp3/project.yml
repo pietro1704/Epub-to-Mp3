@@ -33,8 +33,7 @@ settings:
     ONLY_ACTIVE_ARCH: NO
     "ARCHS[sdk=iphonesimulator*]": "$(NATIVE_ARCH_ACTUAL)"
     "ONLY_ACTIVE_ARCH[sdk=iphonesimulator*]": YES
-    # Faster Swift incremental compiles. The whole-module mode is
-    # locked in for Release for runtime speed.
+    # Reuse unchanged Swift files in every configuration; Release retains -O.
     SWIFT_COMPILATION_MODE: incremental
     SWIFT_OPTIMIZATION_LEVEL: "-Onone"
     DEBUG_INFORMATION_FORMAT: dwarf
@@ -104,9 +103,7 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     LOCALIZED_STRING_SWIFTUI_SUPPORT: YES
     LOCALIZED_STRING_MACRO_NAMES: "String LocalizedStringResource"
-    # Whole-module optimisation in Release was the dialog's #1 ask.
-    # Already locked per-config below; setting it at base level too so
-    # the dialog stops listing it.
+    # Release keeps optimized per-file compilation for incremental reuse.
 
     # Xcode 26 recommends explicit module verification + ARC-explicit
     # warnings on the modernisation track. Defaults at the project
@@ -168,10 +165,9 @@ settings:
       SWIFT_DISABLE_SAFETY_CHECKS: NO
     Release:
       ONLY_ACTIVE_ARCH: NO
-      SWIFT_COMPILATION_MODE: wholemodule
-      # ThinLTO: cross-module inlining without full LTO's link-time cost.
-      # Typical 5-8% runtime win in Swift-heavy apps + ~10-15% smaller binary.
-      LLVM_LTO: YES_THIN
+      SWIFT_COMPILATION_MODE: incremental
+      # Keep optimized incremental compiles without a whole-program relink.
+      LLVM_LTO: NO
       # NOTE: ENABLE_PREVIEWS stays ON (inherited from base) for Release.
       # The codebase has #Preview blocks that reference fixtures gated by
       # `#if DEBUG` (Views/PreviewFixtures.swift). Flipping previews off
@@ -246,28 +242,10 @@ targets:
       - path: EpubToMp3Widget/WidgetLibraryTimeline.swift
 
     postBuildScripts:
-      - name: Bundle platform-correct iOS Rust library
+      - name: Bundle verified native speech runtime
         basedOnDependencyAnalysis: false
         script: |
-          bash "$SRCROOT/../../scripts/bundle_converter_ffi_ios.sh"
-      - name: Verify macOS Rust packaging
-        basedOnDependencyAnalysis: false
-        script: |
-          if [ "$PLATFORM_NAME" = "macosx" ]; then
-            artifact="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/libconverter_ffi.dylib"
-            if [ ! -f "$artifact" ]; then
-              echo "error: missing embedded macOS Rust artifact; build converter-ffi and regenerate the project" >&2
-              exit 1
-            fi
-          fi
-      - name: Bundle eSpeak NG data for Piper
-        basedOnDependencyAnalysis: false
-        script: |
-          bash "$SRCROOT/../../scripts/bundle_espeak_ng_data.sh"
-      - name: Bundle linked ONNX Runtime
-        basedOnDependencyAnalysis: false
-        script: |
-          bash "$SRCROOT/../../scripts/bundle_onnxruntime_apple.sh"
+          ruby "$SRCROOT/../../scripts/bundle_apple_runtime.rb"
 
     dependencies:
       - target: EpubToMp3Widget
@@ -338,7 +316,7 @@ targets:
           CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3.entitlements
           "CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]": EpubToMp3/Resources/EpubToMp3-iOS.entitlements
           CODE_SIGN_STYLE: Automatic
-          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_COMPILATION_MODE: incremental
           SWIFT_OPTIMIZATION_LEVEL: "-O"
           GCC_OPTIMIZATION_LEVEL: s
           DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
@@ -423,6 +401,23 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
 
+  EpubToMp3DeviceAudiobookUITests:
+    type: bundle.ui-testing
+    supportedDestinations: [iOS]
+    deploymentTarget:
+      iOS: "15.0"
+    sources:
+      - path: EpubToMp3DeviceAudiobookUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.iphonejourneyuitests
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        CODE_SIGN_ENTITLEMENTS: ""
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+        SWIFT_STRICT_CONCURRENCY: minimal
+
   EpubToMp3UITests:
     type: bundle.ui-testing
     supportedDestinations: [iOS]
@@ -482,7 +477,7 @@ targets:
           "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
         Release:
           CODE_SIGN_STYLE: Automatic
-          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_COMPILATION_MODE: incremental
           SWIFT_OPTIMIZATION_LEVEL: "-O"
 
   EpubToMp3Widget:
@@ -536,7 +531,7 @@ targets:
           "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
         Release:
           CODE_SIGN_STYLE: Automatic
-          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_COMPILATION_MODE: incremental
           SWIFT_OPTIMIZATION_LEVEL: "-O"
 
 schemes:
@@ -610,6 +605,18 @@ schemes:
       testPlans:
         - path: EpubToMp3-Integration.xctestplan
           defaultPlan: true
+  EpubToMp3PhysicalAudiobookJourney:
+    build:
+      targets:
+        EpubToMp3DeviceAudiobookUITests: [test]
+    test:
+      config: Debug
+      environmentVariables:
+        EPUB2MP3_PHYSICAL_AUDIOBOOK_ACCEPTANCE: "$(EPUB2MP3_PHYSICAL_AUDIOBOOK_ACCEPTANCE)"
+        EPUB2MP3_PHYSICAL_APP_BUNDLE_ID: "$(EPUB2MP3_PHYSICAL_APP_BUNDLE_ID)"
+      targets:
+        - EpubToMp3DeviceAudiobookUITests
+
   EpubToMp3MacJourney:
     build:
       targets:
