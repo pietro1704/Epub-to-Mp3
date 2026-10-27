@@ -20,6 +20,7 @@ final class ReaderListeningSession {
     private var listeningChapters: [JobSnapshot.Chapter] = []
     private var hasDeliveredListeningChapter = false
     private var requestedPage: (chapter: Int, ratio: Double)?
+    private var chapterEstimates: [Int: TimeInterval] = [:]
     private var restartAtPage: ((Int, Double) -> Void)?
 
     init(player: AudioPlayer, playerPresentation: PlayerPresentation,
@@ -110,13 +111,14 @@ final class ReaderListeningSession {
         listeningChapters.removeAll()
         hasDeliveredListeningChapter = false
         requestedPage = nil
+        chapterEstimates.removeAll()
         restartAtPage = nil
         retiring?.cancel()
     }
 
     func start(book: BookEntity, priority: Int, pageRatio: Double?,
                catalog: [(index: Int, title: String)], conversionOptions: ConversionOptions,
-               presentsFullPlayer: Bool) {
+               presentsFullPlayer: Bool, chapterEstimates: [Int: TimeInterval] = [:]) {
         cancel()
         guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
         // The playback control schedules only the active chapter and one ahead.
@@ -125,10 +127,14 @@ final class ReaderListeningSession {
         let previousPlayerJob = player.snapshot?.jobId
         listeningJobID = jobID
         listeningBookID = book.id
+        self.chapterEstimates = chapterEstimates
         requestedPage = (priority, pageRatio ?? 0)
         restartAtPage = { [weak self] chapter, ratio in
-            self?.start(book: book, priority: chapter, pageRatio: ratio, catalog: catalog,
-                conversionOptions: conversionOptions, presentsFullPlayer: presentsFullPlayer)
+            guard let self else { return }
+            let estimates = self.chapterEstimates
+            self.start(book: book, priority: chapter, pageRatio: ratio, catalog: catalog,
+                conversionOptions: conversionOptions, presentsFullPlayer: presentsFullPlayer,
+                chapterEstimates: estimates)
         }
         listeningChapters = catalog.map {
             JobSnapshot.Chapter(index: $0.index, name: $0.title, status: "pending",
@@ -166,6 +172,7 @@ final class ReaderListeningSession {
                 }
                 player.stop()
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
+                updateChapterEstimates(self.chapterEstimates, for: book.id)
                 installedPending = true
                 player.isConverting = true
                 player.resume()
@@ -247,6 +254,16 @@ final class ReaderListeningSession {
                 guard currentBookID() == book.id else { return }
                 reportFailure(error)
             }
+        }
+    }
+
+    func updateChapterEstimates(_ estimates: [Int: TimeInterval], for bookID: String) {
+        guard listeningBookID == bookID, let jobID = listeningJobID else { return }
+        chapterEstimates.merge(estimates, uniquingKeysWith: { _, new in new })
+        guard player.snapshot?.jobId == jobID else { return }
+        for (chapter, duration) in chapterEstimates {
+            player.setSegmentChapterEstimate(duration, forChapterIndex: chapter,
+                startingRatio: chapter == requestedPage?.chapter ? (requestedPage?.ratio ?? 0) : 0)
         }
     }
 

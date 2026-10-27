@@ -233,9 +233,12 @@ final class PlaybackObservation {
             positionSeconds: positionSeconds, isPlaying: isPlaying, force: force)
     }
 
-    func setSegmentChapterEstimate(_ duration: TimeInterval, forChapterIndex chapterIndex: Int) {
+    func setSegmentChapterEstimate(_ duration: TimeInterval, forChapterIndex chapterIndex: Int, startingRatio: Double = 0) {
         guard duration.isFinite, duration > 0 else { return }
-        segments.estimate(duration, chapter: chapterIndex)
-        if isSegmentMode, segments.chapterIndex == chapterIndex { durationSeconds = segments.chapterDuration }
+        segments.estimate(duration, chapter: chapterIndex, startingRatio: startingRatio)
+        if isSegmentMode, segments.chapterIndex == chapterIndex {
+            durationSeconds = player.map { segments.observeDuration(queue: $0, snapshot: snapshot) }
+                ?? segments.chapterDuration
+        }
     }
 }

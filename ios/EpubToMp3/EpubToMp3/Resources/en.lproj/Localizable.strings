@@ -192,6 +192,7 @@
 "player.play" = "Play";
 "player.nothingPlaying" = "Nothing playing";
 "player.remaining" = "%@ remaining";
+"player.estimatedRemaining" = "About %@ remaining";
 "player.preparingAudio" = "Preparing audio…";
 "player.fullPlayer" = "Full player";
 "player.skipForward15" = "Skip forward 15 seconds";

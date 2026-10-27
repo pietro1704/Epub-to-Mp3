@@ -33,6 +33,12 @@ final class AudioPlayer: ObservableObject {
     /// Transport-only updates live in PlaybackClock to avoid global redraws.
     var positionSeconds: TimeInterval { playbackClock.positionSeconds }
     var durationSeconds: TimeInterval { playbackClock.durationSeconds }
+    var isChapterDurationEstimated: Bool {
+        isSegmentMode && ChapterPlaybackTimeline(
+            estimate: services.segments.estimatedDurations[services.segments.chapterIndex],
+            confirmed: services.segments.confirmedEnd(for: services.segments.chapterIndex, snapshot: snapshot)
+        ).isEstimated
+    }
     var activeSentenceId: String? { services.queue.activeSentenceId }
 
     /// Cleared by the consumer after presenting the playback failure.
@@ -183,8 +189,8 @@ final class AudioPlayer: ObservableObject {
     func beginRemoteStreaming(snapshot incomingSnapshot: JobSnapshot, backendBaseURL: URL) -> Bool {
         return services.lifecycle.beginRemoteStreaming(snapshot: incomingSnapshot, backendBaseURL: backendBaseURL)
     }
-    func setSegmentChapterEstimate(_ duration: TimeInterval, forChapterIndex chapterIndex: Int) {
-        services.observation.setSegmentChapterEstimate(duration, forChapterIndex: chapterIndex)
+    func setSegmentChapterEstimate(_ duration: TimeInterval, forChapterIndex chapterIndex: Int, startingRatio: Double = 0) {
+        services.observation.setSegmentChapterEstimate(duration, forChapterIndex: chapterIndex, startingRatio: startingRatio)
     }
 
     func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0, restoreAutoplay: Bool = true) {

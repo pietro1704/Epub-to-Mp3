@@ -95,6 +95,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// fulltext), so the host screen (`MainReaderScreenController`) can
     /// hide chrome like the "Ouvir" button until content is ready.
     var onLoadStateChanged: ((Bool) -> Void)?
+    var onPlaybackChapterEstimates: (([Int: TimeInterval]) -> Void)?
 
     /// The host owns presentation state; it only needs this content fact
     /// while it synchronizes the initial loading cover into its final viewport.
@@ -117,6 +118,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     /// Source metadata lets streamed playback navigate before audio is ready.
+    var playbackChapterEstimates: [Int: TimeInterval] {
+        let chapters = document.fulltext?.chapters
+            ?? document.activePreparedChapter.map { [$0.chapter] } ?? []
+        return ChapterPlaybackTimeline.estimates(for: chapters)
+    }
+
     var playbackChapterCatalog: [(index: Int, title: String)] {
         if let fulltext = document.fulltext {
             return fulltext.chapters.map { ($0.zeroBasedEpubIndex, $0.displayTitle) }
@@ -324,6 +331,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func publishReaderChapterTitles(_ payload: EbookFulltext) {
+        onPlaybackChapterEstimates?(ChapterPlaybackTimeline.estimates(for: payload.chapters))
         for chapter in payload.chapters {
             player.updateReaderChapterTitle(chapter.displayTitle, for: chapter.zeroBasedEpubIndex)
         }

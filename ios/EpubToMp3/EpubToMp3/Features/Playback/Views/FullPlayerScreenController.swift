@@ -147,14 +147,22 @@ final class FullPlayerScreenController: UIViewController {
     private func renderPlaybackPosition(_ clockSnapshot: PlaybackClock.Snapshot? = nil) {
         let snapshot = clockSnapshot ?? playbackClock.snapshot
         content.slider.maximumValue = Float(max(snapshot.durationSeconds, 1))
+        content.slider.isEnabled = snapshot.durationSeconds > 0
         let position = player.isSeeking ? player.positionSeconds : snapshot.positionSeconds
         if !isScrubbing && !player.isSeeking {
             content.slider.value = Float(position)
         }
         content.elapsedLabel.text = PlayerTransportPresentation.formatTime(position)
-        let remaining = max(0, snapshot.durationSeconds - position)
-        let rateAdjusted = remaining / Double(player.rate.rawValue)
-        content.remainingLabel.text = "-" + PlayerTransportPresentation.formatTime(rateAdjusted)
+        let timeline = ChapterPlaybackTimeline(
+            estimate: player.isChapterDurationEstimated ? snapshot.durationSeconds : nil,
+            confirmed: player.isChapterDurationEstimated ? nil : snapshot.durationSeconds)
+        let rateAdjusted = timeline.remaining(position: position, rate: Double(player.rate.rawValue))
+        let prefix = player.isChapterDurationEstimated ? "≈ -" : "-"
+        content.remainingLabel.text = snapshot.durationSeconds > 0
+            ? prefix + PlayerTransportPresentation.formatTime(rateAdjusted) : "—"
+        content.remainingLabel.accessibilityLabel = player.isChapterDurationEstimated
+            ? L10n.string("player.estimatedRemaining", PlayerTransportPresentation.formatTime(rateAdjusted))
+            : nil
     }
 
     private func renderPlayPauseButton() {
