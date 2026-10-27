@@ -31,6 +31,11 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     private var installEvents: [String: SpeechModelInstallEvent] = [:]
     private var installTasks: [String: Task<Void, Never>] = [:]
     private var reloadTask: Task<Void, Never>?
+    private struct RenderedRow {
+        let label: NSTextField
+        let actions: [SpeechModelProductAction]
+    }
+    private var renderedRows: [String: RenderedRow] = [:]
 
     init(
         settings: AppSettings,
@@ -75,6 +80,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     }
 
     func render() {
+        renderedRows.removeAll()
         arrangedSubviews.forEach { view in
             removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -114,7 +120,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
         }
     }
 
-    private func makeRow(for entry: SpeechModelSnapshot.Entry) -> NSView {
+    private func detailText(for entry: SpeechModelSnapshot.Entry) -> String {
         var labelLines = [state.displayName(for: entry)]
         if let event = installEvents[entry.identity.modelID] {
             labelLines.append(state.installStatus(for: event))
@@ -123,19 +129,38 @@ final class MacSpeechModelLibraryPanel: NSStackView {
             for: entry,
             configuredSelections: settings.configuredNarrationSelections
         ))
-        let label = NSTextField(wrappingLabelWithString: labelLines.joined(separator: "\n"))
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.setAccessibilityIdentifier("settings.speechModel.\(entry.identity.modelID).details")
-        let modelID = entry.identity.modelID
-        let actions = state.actions(
+        return labelLines.joined(separator: "\n")
+    }
+
+    private func actions(for entry: SpeechModelSnapshot.Entry) -> SpeechModelProductActions {
+        state.actions(
             for: entry,
             configuredSelections: settings.configuredNarrationSelections,
-            installEvent: installEvents[modelID],
+            installEvent: installEvents[entry.identity.modelID],
             termsAccepted: termsAcceptance.isAccepted(
-                modelID: modelID,
+                modelID: entry.identity.modelID,
                 fingerprint: entry.licence.termsFingerprint
             )
         )
+    }
+
+    private func updateInstallRow(modelID: String) {
+        guard let entry = state.entries.first(where: { $0.identity.modelID == modelID }),
+              let row = renderedRows[modelID], row.actions == actions(for: entry).available else {
+            render()
+            return
+        }
+        // Progress must not replace a button while a user is pressing it.
+        row.label.stringValue = detailText(for: entry)
+    }
+
+    private func makeRow(for entry: SpeechModelSnapshot.Entry) -> NSView {
+        let label = NSTextField(wrappingLabelWithString: detailText(for: entry))
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setAccessibilityIdentifier("settings.speechModel.\(entry.identity.modelID).details")
+        let modelID = entry.identity.modelID
+        let actions = actions(for: entry)
+        renderedRows[modelID] = RenderedRow(label: label, actions: actions.available)
         let buttons = NSStackView()
         buttons.orientation = .horizontal
         buttons.spacing = 8
@@ -335,7 +360,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
                         installEvents.removeValue(forKey: modelID)
                         adopt(snapshot)
                     } else {
-                        render()
+                        updateInstallRow(modelID: modelID)
                     }
                 }
             }

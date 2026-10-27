@@ -401,6 +401,28 @@ targets:
           SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
           GCC_TREAT_WARNINGS_AS_ERRORS: "NO"
 
+  EpubToMp3MacUITests:
+    type: bundle.ui-testing
+    supportedDestinations: [macOS]
+    deploymentTarget:
+      macOS: "14.0"
+    sources:
+      - path: EpubToMp3MacUITests
+    dependencies:
+      - target: EpubToMp3
+    settings:
+      base:
+        SUPPORTED_PLATFORMS: macosx
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.macuitests
+        ENABLE_APP_SANDBOX: NO
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        TEST_TARGET_NAME: EpubToMp3
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+
   EpubToMp3UITests:
     type: bundle.ui-testing
     supportedDestinations: [iOS]
@@ -588,6 +610,20 @@ schemes:
       testPlans:
         - path: EpubToMp3-Integration.xctestplan
           defaultPlan: true
+  EpubToMp3MacJourney:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3MacUITests: [test]
+    test:
+      config: Debug
+      environmentVariables:
+        MAC_AUDIOBOOK_ACCEPTANCE_ROOT: "$(MAC_AUDIOBOOK_ACCEPTANCE_ROOT)"
+        MAC_AUDIOBOOK_APP_DATA: "$(MAC_AUDIOBOOK_APP_DATA)"
+        MAC_AUDIOBOOK_ALLOW_FABER_DOWNLOAD: "$(MAC_AUDIOBOOK_ALLOW_FABER_DOWNLOAD)"
+      targets:
+        - EpubToMp3MacUITests
+
   EpubToMp3Mac:
     build:
       targets:

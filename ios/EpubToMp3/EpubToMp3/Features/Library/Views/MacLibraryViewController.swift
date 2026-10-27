@@ -22,7 +22,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
 
     private let searchField = NSSearchField()
     private let sortButton = NSPopUpButton()
-    private let collectionView = NSCollectionView()
+    private let collectionView = MacLibraryCollectionView()
     private let emptyLabel = NSTextField(wrappingLabelWithString: "")
     private let addButton = NSButton()
     private let toolbarAddButton = NSButton()
@@ -63,7 +63,6 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         bindStore()
         reload()
         view.setAccessibilityElement(false)
-        view.setAccessibilityChildren([searchField, sortButton, toolbarAddButton, collectionView, emptyLabel, addButton])
     }
 
     override func viewDidLayout() {
@@ -180,12 +179,6 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         )
         books = model.arrangedBooks()
         collectionView.reloadData()
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.collectionView.setAccessibilityChildren(
-                self.collectionView.visibleItems().compactMap { $0.view }
-            )
-        }
         let empty = books.isEmpty
         collectionView.isHidden = empty
         emptyLabel.isHidden = !empty || !library.books.isEmpty
@@ -337,6 +330,13 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     }
 }
 
+/// Resolve the current cards on every query; collection items are recycled during layout.
+private final class MacLibraryCollectionView: NSCollectionView {
+    override func accessibilityChildren() -> [Any]? {
+        visibleItems().map(\.view)
+    }
+}
+
 /// Commit the document width and invalidate flow metrics before AppKit lays out items.
 final class MacLibraryScrollView: NSScrollView {
     override func tile() {
@@ -434,7 +434,7 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
             openButton.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             openButton.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             openButton.topAnchor.constraint(equalTo: root.topAnchor),
-            openButton.bottomAnchor.constraint(equalTo: authorField.bottomAnchor),
+            openButton.bottomAnchor.constraint(equalTo: convertButton.topAnchor, constant: -5),
         ])
         view = root
     }
@@ -442,7 +442,10 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
     func configure(with book: BookEntity, onOpen: @escaping () -> Void, onConvert: @escaping () -> Void) {
         self.onOpen = onOpen
         self.onConvert = onConvert
-        view.setAccessibilityElement(false)
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.group)
+        view.setAccessibilityEnabled(true)
+        view.setAccessibilityLabel(book.resolvedTitle)
         view.setAccessibilityChildren([openButton, convertButton])
         view.setAccessibilityIdentifier("library.book.\(book.id)")
         openButton.setAccessibilityIdentifier("library.book.open.\(book.id)")
