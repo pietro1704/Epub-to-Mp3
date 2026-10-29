@@ -11,6 +11,31 @@ private final class ListeningWireCapture {
 }
 
 final class ReaderListeningControlTests: XCTestCase {
+    func testCancelledControlRejectsLateNavigationAndFeedback() {
+        let capture = ListeningWireCapture()
+        let handle = Unmanaged.passUnretained(capture).toOpaque()
+        let callback: ConverterJobControlJSON = { raw, json in
+            guard let raw, let json,
+                  let object = try? JSONSerialization.jsonObject(with: Data(String(cString: json).utf8)) as? [String: Any] else { return false }
+            Unmanaged<ListeningWireCapture>.fromOpaque(UnsafeMutableRawPointer(mutating: raw)).takeUnretainedValue().requests.append(object)
+            return true
+        }
+        let control = ConverterPlaybackControl(rawHandle: handle, free: { _ in }, cancel: { _ in },
+            prioritize: { _, _ in true }, setWindow: { _, _, _ in }, windowContains: { _, _ in true },
+            listeningPosition: callback, playbackFeedback: callback)
+        control.updatePlaybackWindow(currentChapter: 0)
+        control.startFromPage(ratio: 0)
+        control.cancel()
+        let count = capture.requests.count
+        control.updatePlaybackWindow(currentChapter: 4)
+        control.startFromPage(ratio: 0.9)
+        control.enableListening()
+        control.sendPlaybackFeedback(chapter: 4, remaining: 0, rate: 1)
+        XCTAssertFalse(control.prioritize(chapterIndex: 4))
+        XCTAssertFalse(control.contains(chapterIndex: 4))
+        XCTAssertEqual(capture.requests.count, count, "Retired requests must not change the Rust listening generation.")
+    }
+
     func testPositionAndFeedbackKeepVersionSourceAndTextCoordinates() throws {
         let capture = ListeningWireCapture()
         let handle = Unmanaged.passUnretained(capture).toOpaque()

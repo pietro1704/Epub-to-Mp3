@@ -62,6 +62,19 @@ final class PlaybackSeekExecution {
         actions.seeking(false)
         journeys.cancelSeek()
     }
+
+    func restoreListeningSeek(_ request: PendingPlaybackSeek.ChapterRequest, jobID: String) {
+        guard snapshot?.jobId == jobID else { return }
+        begin()
+        pending.chapter = .init(id: request.id, jobID: jobID, chapterIndex: request.chapterIndex,
+            autoplay: request.autoplay, position: request.position, navigationTarget: .chapterTime(request.position))
+        queueSession.selectChapter(request.chapterIndex)
+        actions.seeking(true)
+        actions.pauseTransport()
+        positionSeconds = request.position
+        broadcast.publishPosition(positionSeconds)
+        actions.publish()
+    }
     private func begin() {
         cancel()
         journeys.beginSeekJourney()
@@ -211,6 +224,14 @@ final class PlaybackSeekExecution {
             }, selectChapters: { self.chapterSession.adopt($0) },
             retry: { [weak self] in self?.applyPending() },
             cancel: { [weak self] in self?.cancel() },
+            waiting: { [weak self] in
+                guard let self, self.pending.chapter?.jobID == self.snapshot?.jobId else { return }
+                self.queueSession.player?.pause()
+                self.queueSession.player?.removeAllItems()
+                self.queueSession.clearOwnership()
+                self.segments.clearDeferred()
+                self.segments.resumeWaiters()
+            },
             rebuild: { [weak self] request, entries, offset, base in
                 self?.rebuild(request, entries: entries, offset: offset, base: base)
             })
