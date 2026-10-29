@@ -71,7 +71,7 @@ impl RecoveryAttempt {
         }
         if self.stage == 1
             && self.installed_system
-            && self.preferences.continues_native()
+            && self.preferences.permits_automatic_system_voice()
             && self.preferences.primary.engine != "system"
             && self
                 .preferences

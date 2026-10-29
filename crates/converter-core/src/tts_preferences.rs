@@ -128,7 +128,8 @@ impl TtsSelection {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsPreferences {
-    /// Missing means the original strict job policy. Version 2 opts into native recovery.
+    /// Missing preserves strict jobs. Version 2 permits automatic system recovery;
+    /// version 3 continues only through the explicitly configured voices.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub policy_version: Option<u8>,
     pub primary: TtsSelection,
@@ -150,14 +151,17 @@ impl TtsPreferences {
         }
     }
     pub fn continues_native(&self) -> bool {
+        matches!(self.policy_version, Some(2 | 3))
+    }
+    pub fn permits_automatic_system_voice(&self) -> bool {
         self.policy_version == Some(2)
     }
 
     pub fn validate(&self, language: Option<&str>) -> Result<(), String> {
-        if self.policy_version.is_some_and(|v| v != 2) {
+        if self.policy_version.is_some_and(|v| !matches!(v, 2 | 3)) {
             return Err("Unsupported TTS policy version".into());
         }
-        // App policy may recover through a compatible installed system voice.
+        // Continuation policies may recover through a compatible configured voice.
         // Validate language eligibility at synthesis; captured strict jobs still
         // reject an incompatible primary before conversion starts.
         let primary_language = if self.continues_native() {

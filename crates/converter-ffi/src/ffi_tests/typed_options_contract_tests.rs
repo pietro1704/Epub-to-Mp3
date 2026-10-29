@@ -121,6 +121,49 @@
     }
 
     #[test]
+    fn configured_only_missing_piper_never_invokes_registered_system_callback() {
+        let book = fixture_chapters_with_text(1, "Uma frase para testar a voz selecionada.");
+        let root = tempfile::tempdir().unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let directory = root.path().join("configured-only-job");
+        let output = CString::new(directory.to_str().unwrap()).unwrap();
+        let job = CString::new("configured-only-job").unwrap();
+        let mut preferences = converter_core::tts_preferences::TtsPreferences::app_default(true);
+        preferences.policy_version = Some(3);
+        preferences.secondary = None;
+        let options = CString::new(serde_json::json!({
+            "language": "pt-BR",
+            "models_root": root.path().join("missing-models"),
+            "tts_preferences": preferences
+        }).to_string()).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            assert!(converter_conversion_options_validate_json_v1(options.as_ptr()));
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session, Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize).cast_mut().cast()
+            ));
+            let control = converter_job_control_create();
+            let response = converter_session_convert_controlled_job_options_json_v1(
+                session, output.as_ptr(), job.as_ptr(), options.as_ptr(),
+                0, 0, None, None, ptr::null_mut(), control,
+            );
+            assert!(response.is_null(), "Missing selected Piper must fail without system audio");
+            let error = converter_last_error();
+            assert!(!error.is_null());
+            let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+            converter_string_free(error);
+            assert!(message.contains("model file operation failed"), "{message}");
+            assert_eq!(calls.load(std::sync::atomic::Ordering::Acquire), 0);
+            assert!(!directory.join("manifest.json").exists());
+            converter_session_free(session);
+            converter_job_control_free(control);
+        }
+    }
+
+    #[test]
     fn controlled_typed_options_honor_voice_and_cancel_after_first_real_chapter() {
         let book = fixture_chapters(3);
         let root = tempfile::tempdir().unwrap();

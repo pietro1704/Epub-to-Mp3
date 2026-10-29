@@ -316,3 +316,6 @@ pub fn request_cache_material(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod configured_recovery_tests;
