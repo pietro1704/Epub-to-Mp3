@@ -57,3 +57,22 @@ pub(crate) fn segment_text_protecting(
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod boundary_regressions {
+    use super::*;
+
+    #[test]
+    fn complete_sentence_precedes_a_later_word_space() {
+        let text = "Uma frase completa. Outra frase ainda incompleta que continua por bastante tempo sem terminar";
+        assert_eq!(
+            segment_text(text, 48, 48).unwrap()[0],
+            "Uma frase completa."
+        );
+    }
+
+    #[test]
+    fn an_unrepresentable_grapheme_is_rejected_instead_of_split() {
+        assert!(segment_text("e\u{301}", 1, 1).is_err());
+    }
+}
