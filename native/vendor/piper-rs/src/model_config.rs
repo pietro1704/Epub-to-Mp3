@@ -20,6 +20,7 @@ pub struct InferenceConfig {
 }
 
 #[derive(Deserialize)]
+#[serde(try_from = "ModelConfigFields")]
 pub struct ModelConfig {
     pub audio: AudioConfig,
     pub espeak: ESpeakConfig,
@@ -27,6 +28,39 @@ pub struct ModelConfig {
     pub num_speakers: u32,
     pub speaker_id_map: HashMap<String, i64>,
     pub phoneme_id_map: HashMap<char, Vec<i64>>,
+}
+
+// Piper's single-speaker exports may omit the optional name-to-ID mapping.
+// Preserve the required mapping for multi-speaker exports and reject malformed
+// present values through serde rather than silently discarding voice identity.
+#[derive(Deserialize)]
+struct ModelConfigFields {
+    audio: AudioConfig,
+    espeak: ESpeakConfig,
+    inference: InferenceConfig,
+    num_speakers: u32,
+    speaker_id_map: Option<HashMap<String, i64>>,
+    phoneme_id_map: HashMap<char, Vec<i64>>,
+}
+
+impl TryFrom<ModelConfigFields> for ModelConfig {
+    type Error = &'static str;
+
+    fn try_from(fields: ModelConfigFields) -> Result<Self, Self::Error> {
+        let speaker_id_map = match fields.speaker_id_map {
+            Some(mapping) => mapping,
+            None if fields.num_speakers == 1 => HashMap::new(),
+            None => return Err("Multi-speaker models require speaker_id_map"),
+        };
+        Ok(Self {
+            audio: fields.audio,
+            espeak: fields.espeak,
+            inference: fields.inference,
+            num_speakers: fields.num_speakers,
+            speaker_id_map,
+            phoneme_id_map: fields.phoneme_id_map,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -54,6 +88,21 @@ mod tests {
         source["speaker_id_map"] = serde_json::Value::Null;
         let parsed: ModelConfig = serde_json::from_value(source).unwrap();
         assert!(parsed.speaker_id_map.is_empty());
+    }
+
+    #[test]
+    fn piper_single_speaker_empty_or_named_map_preserves_existing_exports() {
+        let mut source = fixture();
+        for mapping in [serde_json::json!({}), serde_json::json!({"Faber": 0})] {
+            source["speaker_id_map"] = mapping.clone();
+            let parsed: ModelConfig = serde_json::from_value(source.clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(parsed.speaker_id_map).unwrap(),
+                mapping
+            );
+        }
+        source["speaker_id_map"] = serde_json::json!({"Faber": "not an ID"});
+        assert!(serde_json::from_value::<ModelConfig>(source).is_err());
     }
 
     #[test]
