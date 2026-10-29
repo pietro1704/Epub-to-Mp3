@@ -1,4 +1,4 @@
-use super::{first_heading, html_to_text, parse_epub};
+use super::{first_heading, html_to_text_projection, parse_epub};
 use std::io::{Cursor, Write};
 use zip::{write::SimpleFileOptions, ZipWriter};
 
@@ -6,7 +6,7 @@ use zip::{write::SimpleFileOptions, ZipWriter};
 fn extracts_heading_and_text_without_language_specific_rules() {
     let html = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><h2>Пролог</h2><p>Texto inicial.</p></body></html>"#;
     assert_eq!(first_heading(html).as_deref(), Some("Пролог"));
-    assert_eq!(html_to_text(html), "Пролог Texto inicial.");
+    assert_eq!(html_to_text_projection(html).0, "Пролог Texto inicial.");
 }
 
 #[test]

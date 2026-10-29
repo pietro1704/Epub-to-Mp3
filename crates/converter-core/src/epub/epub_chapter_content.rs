@@ -82,10 +82,11 @@ fn is_heading(name: &[u8]) -> bool {
     let name = local_name(name);
     name.len() == 2 && name[0].eq_ignore_ascii_case(&b'h') && (b'1'..=b'6').contains(&name[1])
 }
-pub(super) fn html_to_text(html: &str) -> String {
+pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>) {
     let mut reader = Reader::from_str(html);
     let mut skip_depth = 0usize;
     let mut out = String::new();
+    let mut paragraph_boundaries = Vec::new();
     loop {
         match reader.read_event() {
             Ok(Event::Start(event)) => {
@@ -96,6 +97,7 @@ pub(super) fn html_to_text(html: &str) -> String {
                 } else if matches!(name, b"head" | b"script" | b"style" | b"title") {
                     skip_depth = 1;
                 } else if is_block_element(name) {
+                    paragraph_boundaries.push(out.len());
                     out.push(' ');
                 }
             }
@@ -105,7 +107,13 @@ pub(super) fn html_to_text(html: &str) -> String {
                 if skip_depth > 0 {
                     skip_depth -= 1;
                 } else if is_block_element(name) {
+                    paragraph_boundaries.push(out.len());
                     out.push(' ');
+                }
+            }
+            Ok(Event::Empty(event)) if skip_depth == 0 => {
+                if is_block_element(local_name(event.name().as_ref())) {
+                    paragraph_boundaries.push(out.len());
                 }
             }
             Ok(Event::Text(event)) if skip_depth == 0 => {
@@ -120,7 +128,7 @@ pub(super) fn html_to_text(html: &str) -> String {
             _ => {}
         }
     }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
+    normalize_with_paragraph_ends(&out, &paragraph_boundaries)
 }
 
 fn is_block_element(name: &[u8]) -> bool {
@@ -170,4 +178,68 @@ fn _dedupe_anchor_keys(items: &[TocItem]) -> HashSet<String> {
             v
         })
         .collect()
+}
+
+/// Project block ends onto the existing normalized Unicode-scalar text axis.
+fn normalize_with_paragraph_ends(raw: &str, boundaries: &[usize]) -> (String, Vec<usize>) {
+    let mut normalized = String::new();
+    let mut paragraph_ends = Vec::new();
+    let mut boundary = 0;
+    let mut raw_cursor = 0;
+    let mut scalars = 0;
+    for token in raw.split_whitespace() {
+        let start = raw_cursor + raw[raw_cursor..].find(token).expect("source token");
+        while boundary < boundaries.len() && boundaries[boundary] <= start {
+            if scalars > 0 && paragraph_ends.last() != Some(&scalars) {
+                paragraph_ends.push(scalars);
+            }
+            boundary += 1;
+        }
+        if !normalized.is_empty() {
+            normalized.push(' ');
+            scalars += 1;
+        }
+        normalized.push_str(token);
+        scalars += token.chars().count();
+        raw_cursor = start + token.len();
+    }
+    if !boundaries.is_empty() && scalars > 0 && paragraph_ends.last() != Some(&scalars) {
+        paragraph_ends.push(scalars);
+    }
+    (normalized, paragraph_ends)
+}
+
+#[cfg(test)]
+mod paragraph_tests {
+    use super::*;
+
+    #[test]
+    fn paragraph_metadata_preserves_canonical_text_and_unicode_axis() {
+        let html = "<html><head><title>Ignore</title><style>hidden</style></head><body><h1>Título</h1><p>Água <em>clara</em> e fresca.</p><p>Segunda frase.</p><script>hidden</script></body></html>";
+        let (text, ends) = html_to_text_projection(html);
+        assert_eq!(text, "Título Água clara e fresca. Segunda frase.");
+        assert_eq!(ends, vec![6, 27, 42]);
+        assert!(ends.iter().all(|end| *end <= text.chars().count()));
+    }
+
+    #[test]
+    fn nested_empty_blocks_inline_markup_and_missing_metadata_are_compatible() {
+        for (html, expected) in [
+            (
+                "<div><p>One <b>bold</b> word.</p><p></p><p>Next.</p></div>",
+                "One bold word. Next.",
+            ),
+            ("plain   text", "plain text"),
+            ("<p>   </p>", ""),
+            ("<ul><li>First</li><li>Second</li></ul>", "First Second"),
+        ] {
+            let (text, ends) = html_to_text_projection(html);
+            assert_eq!(text, expected);
+            assert!(ends.windows(2).all(|pair| pair[0] < pair[1]));
+            assert!(ends
+                .iter()
+                .all(|end| *end > 0 && *end <= text.chars().count()));
+        }
+        assert!(html_to_text_projection("plain text").1.is_empty());
+    }
 }

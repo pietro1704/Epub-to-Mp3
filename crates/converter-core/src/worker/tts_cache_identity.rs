@@ -28,7 +28,7 @@ impl ConversionWorker {
             identities.push(
                 serde_json::to_string(&(
                     crate::tts_session::CONTRACT_VERSION,
-                    "text-v1",
+                    crate::tts_session::TEXT_PLANNER_PROFILE,
                     &session,
                     &descriptor,
                     crate::tts_session::AudioFormat::Mp3,
@@ -62,7 +62,7 @@ impl ConversionWorker {
                 identities.push(
                     crate::tts_session::cache_material(
                         &base_request_key,
-                        "text-v1",
+                        crate::tts_session::TEXT_PLANNER_PROFILE,
                         sessions.get(&key).expect("prepared identity").identity(),
                         &crate::tts_session::AudioFormat::Mp3,
                     )

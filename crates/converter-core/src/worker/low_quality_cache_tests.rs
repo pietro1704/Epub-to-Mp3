@@ -72,7 +72,7 @@ fn verify_rejected_legacy_low_cache(recover: bool, typed: bool) {
         let identities = vec![
             serde_json::to_string(&(
                 crate::tts_session::CONTRACT_VERSION,
-                "text-v1",
+                crate::tts_session::TEXT_PLANNER_PROFILE,
                 &session,
                 &descriptor,
                 crate::tts_session::AudioFormat::Mp3,

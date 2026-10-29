@@ -76,6 +76,7 @@ impl ConversionWorker {
             providers,
             total,
             generation,
+            &[],
         )
     }
 
@@ -91,6 +92,7 @@ impl ConversionWorker {
         providers: &Mutex<Vec<crate::tts_preferences::TtsSelection>>,
         total: usize,
         generation: Option<u64>,
+        paragraph_ends: &[usize],
     ) -> Result<(), WorkerError> {
         use std::io::Write;
         preferences.validate(language).map_err(WorkerError::Piper)?;
@@ -123,11 +125,11 @@ impl ConversionWorker {
                 "Synthesis adapter has an empty text capacity".into(),
             ));
         }
-        let mut segments = std::collections::VecDeque::from(self.pronunciation.source_segments(
-            text,
-            180.min(limit),
-            limit,
-        ));
+        let mut segments = std::collections::VecDeque::from(
+            self.pronunciation
+                .source_plan(text, 180.min(limit), limit, paragraph_ends)
+                .map_err(worker_from_failure)?,
+        );
         let adapters: Vec<_> = builtin_descriptors()
             .into_iter()
             .filter(|descriptor| !descriptor.targets.iter().any(|target| target == "web"))
@@ -282,7 +284,7 @@ impl ConversionWorker {
                 let passages = if spoken.chars().count() <= speech_limit {
                     vec![spoken]
                 } else {
-                    platform_tts::segments_with_limit(&spoken, speech_limit)
+                    platform_tts::segments_with_limit(&spoken, speech_limit)?
                 };
                 for passage in passages {
                     let mut sink = AudioSink::new(format.clone(), MAX_SEGMENT_BYTES);
@@ -317,14 +319,25 @@ impl ConversionWorker {
             // under the policy lock; no second voice or throwaway audio runs
             // in parallel. Native fallback covers only a short passage before
             // we reconsider the preferred providers.
-            let mut attempt_selection = |selection: &crate::tts_preferences::TtsSelection|
-                -> Result<(Vec<u8>, Vec<String>), TtsFailure> {
+            let mut attempt_selection = |selection: &crate::tts_preferences::TtsSelection| -> Result<
+                (Vec<u8>, Vec<SourceTextSegment>),
+                TtsFailure,
+            > {
                 if selection.engine == "system" && selection != &preferences.primary {
-                    let mut passages = self.pronunciation.source_segments(&segment, if index == 0 { 60 } else { 240 }, 240);
+                    let paragraph_ends = segment.relative_paragraph_ends(paragraph_ends);
+                    let mut passages = self.pronunciation.source_plan(
+                        &segment.source,
+                        if index == 0 { 60 } else { 240 },
+                        240,
+                        &paragraph_ends,
+                    )?;
+                    for passage in &mut passages {
+                        passage.rebase(&segment);
+                    }
                     let first = passages.remove(0);
-                    Ok((synthesize(selection, &first)?, passages))
+                    Ok((synthesize(selection, first.speech())?, passages))
                 } else {
-                    Ok((synthesize(selection, &segment)?, Vec::new()))
+                    Ok((synthesize(selection, segment.speech())?, Vec::new()))
                 }
             };
             let mut fallback_cause = None;
@@ -362,16 +375,10 @@ impl ConversionWorker {
                 });
             }
             output.write_all(&bytes)?;
-            let consumed_chars = segment
-                .chars()
-                .count()
-                .saturating_sub(
-                    remainder
-                        .iter()
-                        .map(|passage| passage.chars().count())
-                        .sum::<usize>(),
-                )
-                .max(1);
+            let consumed_chars = remainder
+                .first()
+                .map_or(segment.scalar_range.end, |next| next.scalar_range.start)
+                - segment.scalar_range.start;
             self.render_progress
                 .lock()
                 .expect("render progress lock")

@@ -17,21 +17,31 @@ pub trait PlatformTts: Send + Sync {
 }
 
 /// Small initial utterance bounds startup work; later utterances bound memory.
-pub(crate) fn segments(text: &str) -> Vec<String> {
+pub(crate) fn segments(text: &str) -> Result<Vec<String>, crate::tts_session::TtsFailure> {
     split_segments(text, 180, 800)
 }
 
-pub(crate) fn segments_with_limit(text: &str, limit: usize) -> Vec<String> {
+pub(crate) fn segments_with_limit(
+    text: &str,
+    limit: usize,
+) -> Result<Vec<String>, crate::tts_session::TtsFailure> {
     split_segments(text, 180.min(limit), limit)
 }
 
 /// Compact utterances keep legacy system voices below their per-call deadline.
-pub(crate) fn native_segments(text: &str, first: bool) -> Vec<String> {
+pub(crate) fn native_segments(
+    text: &str,
+    first: bool,
+) -> Result<Vec<String>, crate::tts_session::TtsFailure> {
     split_segments(text, if first { 60 } else { 240 }, 240)
 }
 
-fn split_segments(text: &str, initial: usize, subsequent: usize) -> Vec<String> {
-    crate::tts_session::segment_text(text, initial, subsequent).expect("validated text capacities")
+fn split_segments(
+    text: &str,
+    initial: usize,
+    subsequent: usize,
+) -> Result<Vec<String>, crate::tts_session::TtsFailure> {
+    crate::tts_session::segment_text(text, initial, subsequent)
 }
 
 /// Shared codec retains native RIFF validation and normalized 24 kHz MP3 output.
@@ -49,7 +59,7 @@ mod tests {
     #[test]
     fn unicode_segments_preserve_words_and_bound_startup() {
         let text = "Olá, ação e coração. ".repeat(150);
-        let pieces = segments(&text);
+        let pieces = segments(&text).unwrap();
         assert!(pieces[0].chars().count() <= 180);
         assert!(pieces.iter().all(|piece| piece.chars().count() <= 800));
         assert_eq!(pieces.join(" "), text.trim());
