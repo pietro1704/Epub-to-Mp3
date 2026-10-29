@@ -16,11 +16,11 @@ jobs:
     timeout-minutes: 180
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      CARGO_BUILD_TARGET: x86_64-apple-darwin
       MACOSX_DEPLOYMENT_TARGET: '12.0'
       ORT_PREFER_DYNAMIC_LINK: '1'
       ONNXRUNTIME_MACOS_ARCH: x86_64
       CARGO_BUILD_JOBS: '1'
+      MISE_ENABLE_TOOLS: rust
     steps:
       - name: Reject non-master dispatch before checkout or build
         shell: bash
@@ -36,6 +36,11 @@ jobs:
         with:
           ruby-version: '4.0.7'
 
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
+        with:
+          version: 2026.9.14
+          install: false
+
       - name: Verify fixed Intel build environment
         shell: bash
         run: |
@@ -50,6 +55,21 @@ jobs:
           rustc -Vv
           ruby --version
 
+      - name: Identify compatible Intel Rust cache
+        id: rust-cache-identity
+        run: ruby scripts/intel_rust_cache_identity.rb --direct
+
+      - name: Restore and retain compatible Intel Rust artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            target/release
+            target/espeak-data
+          key: faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs', 'native/**/*.c', 'native/**/*.cc', 'native/**/*.cpp', 'native/**/*.h', 'native/vendor/espeak-rs-sys/espeak-ng/**') }}
+          restore-keys: |
+            faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-
+
       - name: Install checksum-pinned ONNX Runtime
         shell: bash
         run: |
@@ -62,7 +82,7 @@ jobs:
         run: ruby scripts/native_job.rb build -- cargo build --locked -p espeak-rs-sys --features compile-espeak-intonations --target-dir target/espeak-data --jobs 1
 
       - name: Build Intel converter FFI with Piper
-        run: ruby scripts/native_job.rb build -- cargo build --locked -p converter-ffi --release --features piper-runtime --target x86_64-apple-darwin --jobs 1
+        run: ruby scripts/native_job.rb build -- cargo build --locked -p converter-ffi --release --features piper-runtime --jobs 1
 
       - name: Package and verify artifact
         shell: bash

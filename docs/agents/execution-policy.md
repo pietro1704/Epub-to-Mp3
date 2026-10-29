@@ -22,7 +22,12 @@ execution remains deferred to CI.
 
 Use the smallest check that proves the requested behavior. Reuse artifacts only
 after matching source, toolchain, lockfile, target and build flags. Explain a
-necessary dependency rebuild before starting it. On this Mac, before compiling
+necessary dependency rebuild before starting it. First audit verified retained
+packages in linked worktrees and trusted producer artifacts on GitHub. Retain
+the complete authenticated package and receipt outside disposable download
+staging; revalidate source/build identity and payload on every reuse. Swift or
+documentation changes alone do not require rebuilding an unchanged Rust runtime.
+On this Mac, before compiling
 any dependency, runtime, library or tool, including Piper, ask Pietro whether a
 verified prebuilt binary matching the source, platform and architecture is
 available, and wait for his answer. Prefer compatible prebuilt binaries and

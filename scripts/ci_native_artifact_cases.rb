@@ -164,17 +164,7 @@ class CiRuntimeScopeTest
     refute verify.key?('if')
     assert_equal 'mise run converter-ffi:build', build.fetch('run')
     assert_includes verify.fetch('run'), 'xcrun lipo -archs target/release/libconverter_ffi.dylib'
-    assert_includes identity.fetch('run'), 'rustc -vV'
-    assert_includes identity.fetch('run'), 'cargo --version'
-    assert_includes identity.fetch('run'), 'xcodebuild -version'
-    assert_includes identity.fetch('run'), 'ImageOS'
-    assert_includes identity.fetch('run'), 'ImageVersion'
-    assert_includes identity.fetch('run'), '--show-sdk-path'
-    assert_includes identity.fetch('run'), '--show-sdk-version'
-    assert_includes identity.fetch('run'), 'clang_sha256'
-    %w[MACOSX_DEPLOYMENT_TARGET=12.0 ORT_PREFER_DYNAMIC_LINK=1 CARGO_BUILD_JOBS=1].each do |flag|
-      assert_includes identity.fetch('run'), flag
-    end
+    assert_equal 'ruby scripts/intel_rust_cache_identity.rb', identity.fetch('run')
     assert_operator steps.index(identity), :<, steps.index(restore)
     assert_operator steps.index(restore), :<, steps.index(build)
     assert_operator steps.index(build), :<, steps.index(verify)

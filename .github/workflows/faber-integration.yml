@@ -342,24 +342,7 @@ jobs:
       - name: Identify Intel Rust cache inputs
         if: matrix.arch == 'x86_64' && !inputs.intel_prebuilt
         id: rust-cache-identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          identity=$({
-            printf 'image=%s/%s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
-            mise exec -- rustc -vV
-            mise exec -- cargo --version
-            xcodebuild -version
-            printf 'sdk_path=%s\n' "$(xcrun --sdk macosx --show-sdk-path)"
-            printf 'sdk_version=%s\n' "$(xcrun --sdk macosx --show-sdk-version)"
-            clang="$(xcrun --find clang)"
-            printf 'clang_sha256=%s\n' "$(shasum -a 256 "$clang" | awk '{print $1}')"
-            printf '%s\n' MACOSX_DEPLOYMENT_TARGET=12.0 ORT_PREFER_DYNAMIC_LINK=1 CARGO_BUILD_JOBS=1 CMAKE_BUILD_PARALLEL_LEVEL=1
-            printf 'RUSTFLAGS=%s\n' "${RUSTFLAGS:-}"
-            printf 'CARGO_ENCODED_RUSTFLAGS=%s\n' "${CARGO_ENCODED_RUSTFLAGS:-}"
-            printf 'RUSTC_WRAPPER=%s\n' "${RUSTC_WRAPPER:-}"
-          } | shasum -a 256 | awk '{print $1}')
-          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+        run: ruby scripts/intel_rust_cache_identity.rb
       - name: Restore Intel Rust build cache
         if: matrix.arch == 'x86_64' && !inputs.intel_prebuilt
         id: rust-cache

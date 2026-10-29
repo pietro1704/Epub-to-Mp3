@@ -3,6 +3,7 @@ require 'tmpdir'
 require 'fileutils'
 require 'open3'
 require_relative 'package_converter_ffi_macos'
+require_relative 'intel_rust_cache_identity'
 
 class PackageConverterFfiMacOSTest < Minitest::Test
   TOOLCHAIN = { 'rustc' => 'rustc fixture', 'xcode' => 'Xcode 16.4 Build version fixture', 'macos_sdk' => '15.5' }.freeze
@@ -56,6 +57,43 @@ class PackageConverterFfiMacOSTest < Minitest::Test
     assert_equal '123456', receipt.dig('producer', 'run_id')
     assert_equal '2', receipt.dig('producer', 'run_attempt')
     assert_equal %w[espeak-ng-data/phondata espeak-ng-data/phontab libconverter_ffi.dylib].sort, receipt.fetch('files').keys.sort
+  end
+
+  def test_packages_host_release_layout
+    FileUtils.mkdir_p(File.join(@root, 'target/release'))
+    FileUtils.mv(File.join(@root, 'target/x86_64-apple-darwin/release/libconverter_ffi.dylib'), File.join(@root, 'target/release/libconverter_ffi.dylib'))
+    assert_equal @package, package!
+    assert_equal @package, verify!
+  end
+
+  def test_cache_identity_matches_previous_recipe_and_invalidates_toolchain_or_flags
+    clang = File.join(@tmp, 'clang')
+    File.write(clang, 'compiler fixture')
+    environment = { 'ImageOS' => 'macos15', 'ImageVersion' => 'fixture' }
+    outputs = {
+      ['rustc', '-vV'] => "rustc fixture\n", ['cargo', '--version'] => "cargo fixture\n",
+      ['xcodebuild', '-version'] => "Xcode 16.4\n", ['xcrun', '--sdk', 'macosx', '--show-sdk-path'] => "/SDK\n",
+      ['xcrun', '--sdk', 'macosx', '--show-sdk-version'] => "15.5\n", ['xcrun', '--find', 'clang'] => "#{clang}\n"
+    }
+    success = Struct.new(:success?).new(true)
+    runner = lambda do |*args|
+      args = args.drop(3) if args.first == 'mise'
+      [outputs.fetch(args), '', success]
+    end
+    expected = "image=macos15/fixture\nrustc fixture\ncargo fixture\nXcode 16.4\nsdk_path=/SDK\nsdk_version=15.5\nclang_sha256=#{Digest::SHA256.file(clang).hexdigest}\nMACOSX_DEPLOYMENT_TARGET=12.0\nORT_PREFER_DYNAMIC_LINK=1\nCARGO_BUILD_JOBS=1\nCMAKE_BUILD_PARALLEL_LEVEL=1\nRUSTFLAGS=\nCARGO_ENCODED_RUSTFLAGS=\nRUSTC_WRAPPER=\n"
+    identity = IntelRustCacheIdentity.calculate(environment, runner: runner)
+    assert_equal Digest::SHA256.hexdigest(expected), identity
+    assert_equal identity, IntelRustCacheIdentity.calculate(environment, direct: true, runner: runner)
+    %w[ImageOS ImageVersion RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTC_WRAPPER].each do |key|
+      refute_equal identity, IntelRustCacheIdentity.calculate(environment.merge(key => 'changed'), runner: runner)
+    end
+    outputs[['xcrun', '--sdk', 'macosx', '--show-sdk-version']] = "16.0\n"
+    refute_equal identity, IntelRustCacheIdentity.calculate(environment, runner: runner)
+    File.write(clang, 'changed compiler')
+    refute_equal identity, IntelRustCacheIdentity.calculate(environment, runner: runner)
+    failure = ->(*) { ['', 'private diagnostic', Struct.new(:success?).new(false)] }
+    error = assert_raises(RuntimeError) { IntelRustCacheIdentity.calculate(environment, runner: failure) }
+    refute_includes error.message, 'private diagnostic'
   end
 
   def test_rejects_changed_build_inputs
