@@ -151,7 +151,7 @@ final class MacReaderTextPresentation {
                 textView.textStorage?.setAttributedString(NSAttributedString(attributedString: rendered))
             } else {
                 textView.string = chapter.text
-                textView.font = .systemFont(ofSize: settings.readerPointSize)
+                textView.font = ReaderFontCatalog.font(for: settings.readerOverrideFontFamily ? settings.readerFontFamily : .original, size: settings.readerPointSize)
                 textView.textColor = settings.readerColors.foreground
             }
             MacReaderTextLayout.fit(textView, in: contentScrollView)

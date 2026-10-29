@@ -60,7 +60,8 @@ enum EpubFontPresentation {
         #else
         let targetSize = settings.readerPointSize
         #endif
-        let targetFamily = familyName(for: settings.readerFontFamily)
+        let targetFamily = overrideFamily && settings.readerFontFamily != .original
+            ? ReaderFontCatalog.font(for: settings.readerFontFamily, size: targetSize) : nil
         let colors = settings.readerColors
 
         attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
@@ -69,7 +70,7 @@ enum EpubFontPresentation {
                 ?? serifFallbackFont(ofSize: targetSize)
             let mutatedFont = mutateFont(
                 baseFont,
-                family: overrideFamily ? targetFamily : nil,
+                family: targetFamily,
                 size: overrideSize ? targetSize : nil,
                 forceBold: boldAll,
                 stripItalic: suppressItalic
@@ -134,22 +135,14 @@ enum EpubFontPresentation {
     }
 
     private static func serifFallbackFont(ofSize size: CGFloat) -> PlatformFont {
-        #if canImport(UIKit)
-        return UIFont(name: "NewYork", size: size)
-            ?? UIFont(name: "Georgia", size: size)
-            ?? UIFont.systemFont(ofSize: size)
-        #else
-        return NSFont(name: "New York", size: size)
-            ?? NSFont(name: "Georgia", size: size)
-            ?? NSFont.systemFont(ofSize: size)
-        #endif
+        ReaderFontCatalog.font(for: .newYork, size: size)
     }
 
     // MARK: Font mutation
 
     private static func mutateFont(
         _ base: PlatformFont,
-        family: String?,
+        family: PlatformFont?,
         size: CGFloat?,
         forceBold: Bool,
         stripItalic: Bool
@@ -157,9 +150,9 @@ enum EpubFontPresentation {
         let pointSize = size ?? base.pointSize
         var descriptor = base.fontDescriptor
         if let family {
-            descriptor = descriptor.withFamily(family)
+            descriptor = family.fontDescriptor
         }
-        var traits = descriptor.symbolicTraits
+        var traits = base.fontDescriptor.symbolicTraits
         #if canImport(UIKit)
         if forceBold { traits.insert(.traitBold) }
         if stripItalic { traits.remove(.traitItalic) }
@@ -180,14 +173,4 @@ enum EpubFontPresentation {
         return PlatformFont(descriptor: descriptor, size: pointSize) ?? base
         #endif
     }
-
-    private static func familyName(for family: ReaderFontFamily) -> String {
-        switch family {
-        case .serif: return "Times New Roman"
-        case .sans:  return "Helvetica Neue"
-        case .mono:  return "Menlo"
-        }
-    }
-
-
 }

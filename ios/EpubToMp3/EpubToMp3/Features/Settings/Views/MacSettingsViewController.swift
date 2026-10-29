@@ -92,7 +92,7 @@ final class MacSettingsViewController: NSViewController {
         fontSizeStepper.increment = 1
         fontSizeStepper.target = self
         fontSizeStepper.action = #selector(fontSizeChanged(_:))
-        fontPopup.addItems(withTitles: ReaderFontFamily.allCases.map(\.displayName))
+        ReaderFontCatalog.configure(fontPopup, selected: settings.selectedReaderFontFamily)
         fontPopup.target = self
         fontPopup.action = #selector(fontChanged(_:))
         themePopup.addItems(withTitles: ReaderTheme.allCases.map(\.displayName))
@@ -189,8 +189,7 @@ final class MacSettingsViewController: NSViewController {
     private func refresh() {
         fontSizeStepper.integerValue = settings.readerFontSize
         fontSizeLabel.stringValue = L10n.string("settings.fontStep", settings.readerFontSize + 1, 5)
-        selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0,
-                   in: fontPopup)
+        ReaderFontCatalog.configure(fontPopup, selected: settings.selectedReaderFontFamily)
         selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0,
                    in: themePopup)
         selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0,
@@ -232,7 +231,8 @@ final class MacSettingsViewController: NSViewController {
     }
 
     @objc private func fontChanged(_ sender: NSPopUpButton) {
-        settings.readerFontFamily = ReaderFontFamily.allCases[sender.indexOfSelectedItem]
+        guard let key = sender.selectedItem?.representedObject as? String, let family = ReaderFontFamily(rawValue: key) else { return }
+        settings.readerFontFamily = family
     }
 
     @objc private func themeChanged(_ sender: NSPopUpButton) {

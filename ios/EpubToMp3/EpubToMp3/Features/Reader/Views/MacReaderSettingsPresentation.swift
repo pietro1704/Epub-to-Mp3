@@ -16,8 +16,7 @@ final class MacReaderSettingsPresentation: NSObject {
 
     private func configureSettingsPopover() {
         let font = NSPopUpButton()
-        font.addItems(withTitles: ReaderFontFamily.allCases.map(\.displayName))
-        font.selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0)
+        ReaderFontCatalog.configure(font, selected: settings.selectedReaderFontFamily)
         font.setAccessibilityLabel(L10n.string("reader.font"))
         font.setAccessibilityIdentifier("readerSettings.font")
         font.target = self
@@ -93,12 +92,13 @@ final class MacReaderSettingsPresentation: NSObject {
     }
 
     func showSettings(_ sender: NSButton) {
-        if settingsPopover.contentViewController == nil { configureSettingsPopover() }
+        configureSettingsPopover()
         settingsPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
 
     @objc private func fontChanged(_ sender: NSPopUpButton) {
-        settings.readerFontFamily = ReaderFontFamily.allCases[sender.indexOfSelectedItem]
+        guard let key = sender.selectedItem?.representedObject as? String, let family = ReaderFontFamily(rawValue: key) else { return }
+        settings.readerFontFamily = family
     }
 
     @objc private func themeChanged(_ sender: NSPopUpButton) {

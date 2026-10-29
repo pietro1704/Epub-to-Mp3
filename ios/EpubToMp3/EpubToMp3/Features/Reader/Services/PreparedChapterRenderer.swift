@@ -141,7 +141,7 @@ final class PreparedChapterRenderer {
             boldOverride: settings.readerBoldOverride,
             customColors: [colors.background.0, colors.background.1, colors.background.2,
                            colors.foreground.0, colors.foreground.1, colors.foreground.2],
-            fontFamily: settings.readerFontFamily.rawValue,
+            fontFamily: settings.readerFontFamily.rawValue + (settings.readerOverrideFontFamily ? ":" + ReaderFontCatalog.font(for: settings.readerFontFamily, size: settings.readerPointSize).fontName : ""),
             letterSpacing: settings.readerLetterSpacing,
             lineSpacing: Double(settings.readerLineSpacing),
             overrideColours: settings.readerOverrideColours,

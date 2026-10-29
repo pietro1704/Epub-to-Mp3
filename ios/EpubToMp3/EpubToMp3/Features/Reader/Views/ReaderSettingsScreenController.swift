@@ -106,7 +106,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         case .font:
             if indexPath.row == 0 {
                 content.text = L10n.string("readerSettings.family")
-                content.secondaryText = settings.readerFontFamily.displayName
+                content.secondaryText = ReaderFontCatalog.title(for: settings.selectedReaderFontFamily)
                 cell.accessoryType = .disclosureIndicator
             } else {
                 content.text = L10n.string("readerSettings.size")
@@ -329,15 +329,8 @@ final class ReaderSettingsScreenController: UITableViewController {
 
     private func handleFontSelection(row: Int) {
         if row == 0 {
-            presentChoice(
-                title: L10n.string("readerSettings.family"),
-                options: ReaderFontFamily.allCases.map { "\($0.displayName) — Aa Bb Cc" },
-                selectedIndex: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0
-            ) { [weak self] index in
-                self?.settings.readerFontFamily = ReaderFontFamily.allCases[index]
-                self?.settings.readerOverrideFontFamily = true
-                self?.refresh()
-            }
+            navigationController?.pushViewController(
+                ReaderFontChoiceController(settings: settings) { [weak self] in self?.refresh() }, animated: true)
         } else {
             let sizes = Array(0...4)
             presentChoice(
