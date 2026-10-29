@@ -13,14 +13,14 @@ remains blocked by Simulator quarantine. A merged PR is not device acceptance.
 | IOS-03 | Manual conversion stuck sending | Merged [#977](https://github.com/pietro1704/Epub-to-Mp3/pull/977); native conversion acceptance pending |
 | IOS-04 | Piper punctuation and clause pauses | Merged [#978](https://github.com/pietro1704/Epub-to-Mp3/pull/978); audible comparison pending |
 | IOS-05 | Whole-chapter timeline and remaining time | Merged [#979](https://github.com/pietro1704/Epub-to-Mp3/pull/979); native acceptance pending |
-| IOS-06 | Seek into unavailable audio | Pending; preserve selected time and in-chunk offset, generate containing chunk |
+| IOS-06 | Seek into unavailable audio | Implemented in [#986](https://github.com/pietro1704/Epub-to-Mp3/pull/986); preserve selected time/in-chunk offset and unblock bounded generation; native acceptance pending; see [seek contract](../ios/EpubToMp3/docs/unavailable-audio-seek.md) |
 | IOS-07 | Duplicate mini-player side material | Merged [#980](https://github.com/pietro1704/Epub-to-Mp3/pull/980); native appearance pending |
 | IOS-08 | Expanded/mini-player animation and flicker | Merged [#981](https://github.com/pietro1704/Epub-to-Mp3/pull/981); native motion acceptance pending |
 | IOS-09 | Expanded player without scrolling | Merged [#984](https://github.com/pietro1704/Epub-to-Mp3/pull/984); native fitting/accessibility acceptance pending |
 | IOS-10 | Honor selected page-turn animation | Pending final native diagnosis; dispatch exists, inspect Reduce Motion, layout/fallback and outgoing snapshot |
 | IOS-11 | Reader center-tap chrome animation | Merged [#982](https://github.com/pietro1704/Epub-to-Mp3/pull/982); native offset/clipping/motion acceptance pending |
 | IOS-12 | Book search and rendered passage navigation | Merged [#983](https://github.com/pietro1704/Epub-to-Mp3/pull/983); UIKit acceptance pending |
-| IOS-13 | Scrollable notes/internal-link previews and explicit Go | Published in [#985](https://github.com/pietro1704/Epub-to-Mp3/pull/985), CI/automatic merge pending; see [link contract](../ios/EpubToMp3/docs/reader-link-previews.md); local checks passed, native acceptance pending |
+| IOS-13 | Scrollable notes/internal-link previews and explicit Go | Merged [#985](https://github.com/pietro1704/Epub-to-Mp3/pull/985); see [link contract](../ios/EpubToMp3/docs/reader-link-previews.md); native acceptance pending |
 | IOS-14 | Original book fonts/styles by default | Pending rendering/embedded-font audit; preserve explicit user overrides |
 | IOS-15 | Apple Books reference font catalog | Pending public availability/licensing audit; no private font copying/downloads |
 | IOS-16 | Model management collapsed by default | Pending; retain selection, transfer state, errors and readiness summary |
@@ -42,8 +42,8 @@ optimal input size. eSpeak's internal 800-byte source buffer is a different limi
 
 ## Remaining acceptance and next work
 
-Resume IOS-06, then remaining reader typography/font work, Settings cleanup and
-research. Diagnose IOS-10 in the final native journey instead of changing
+After IOS-06 delivery, resume remaining reader typography/font work, Settings
+cleanup and research. Diagnose IOS-10 in the final native journey instead of changing
 accessibility behavior speculatively. UIKit regressions are authored alongside
 each native change; their execution and full app compilation remain pending.
 Check seeded-reader clipping/raw-offset preservation and player playback across
