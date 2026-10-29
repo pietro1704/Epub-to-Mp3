@@ -47,6 +47,8 @@ final class AppSettings: ObservableObject {
         }
         self.secondaryAudioEngine = speech.secondary
         self.allowOnlineAudioFallback = speech.allowOnlineFallback
+        self.allowAutomaticSystemVoiceFallback =
+            defaults.object(forKey: "allowAutomaticSystemVoiceFallback") as? Bool ?? true
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
         )
@@ -143,6 +145,12 @@ final class AppSettings: ObservableObject {
         didSet {
             guard !loadingPersistedValues else { return }
             defaults.set(try? secondaryTtsSelection.map { try JSONEncoder().encode($0) }, forKey: "secondaryTtsSelection")
+        }
+    }
+    @Published var allowAutomaticSystemVoiceFallback = true {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            defaults.set(allowAutomaticSystemVoiceFallback, forKey: "allowAutomaticSystemVoiceFallback")
         }
     }
     @Published var allowOnlineAudioFallback = false {

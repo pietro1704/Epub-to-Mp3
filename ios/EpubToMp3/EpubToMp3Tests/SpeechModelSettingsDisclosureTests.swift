@@ -10,17 +10,17 @@ final class SpeechModelSettingsDisclosureTests: XCTestCase {
         let disclosure = SpeechModelSettingsDisclosure()
         XCTAssertFalse(disclosure.isExpanded)
         for count in [0, 1, 50] {
-            XCTAssertEqual(disclosure.rows(modelCount: count), [.primary, .cellular, .summary, .secondary, .onlineFallback, .studyLanguage])
+            XCTAssertEqual(disclosure.rows(modelCount: count), [.primary, .cellular, .summary, .secondary, .automaticSystemFallback, .onlineFallback, .studyLanguage])
         }
     }
 
     func testExpandCollapseAndCatalogReplacementRetainOnlyCurrentRowIdentities() {
         var disclosure = SpeechModelSettingsDisclosure()
         disclosure.toggle()
-        XCTAssertEqual(disclosure.rows(modelCount: 2), [.primary, .cellular, .summary, .model(0), .model(1), .secondary, .onlineFallback, .studyLanguage])
-        XCTAssertEqual(disclosure.rows(modelCount: 0), [.primary, .cellular, .summary, .model(nil), .secondary, .onlineFallback, .studyLanguage])
+        XCTAssertEqual(disclosure.rows(modelCount: 2), [.primary, .cellular, .summary, .model(0), .model(1), .secondary, .automaticSystemFallback, .onlineFallback, .studyLanguage])
+        XCTAssertEqual(disclosure.rows(modelCount: 0), [.primary, .cellular, .summary, .model(nil), .secondary, .automaticSystemFallback, .onlineFallback, .studyLanguage])
         disclosure.toggle()
-        XCTAssertEqual(disclosure.rows(modelCount: 2).count, 6)
+        XCTAssertEqual(disclosure.rows(modelCount: 2).count, 7)
         disclosure.toggle()
         XCTAssertTrue(disclosure.isExpanded)
         XCTAssertEqual(disclosure.rows(modelCount: 1).filter { if case .model = $0 { return true }; return false }, [.model(0)])

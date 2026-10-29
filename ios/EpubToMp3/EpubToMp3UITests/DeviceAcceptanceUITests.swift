@@ -132,6 +132,11 @@ final class DeviceAcceptanceUITests: XCTestCase {
         open.tap()
         let elapsed = app.staticTexts["fullPlayer.elapsed"].firstMatch
         XCTAssertTrue(elapsed.waitForExistence(timeout: 90))
+        if let expectedVoice = ProcessInfo.processInfo.environment["APP_DEVICE_EXPECTED_VOICE"] {
+            let voice = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", expectedVoice)).firstMatch
+            XCTAssertTrue(voice.waitForExistence(timeout: 90), "Playback must identify the requested Piper voice.")
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Eddy")).firstMatch.exists)
+        }
         func seconds() -> Int {
             elapsed.label.split(separator: ":").compactMap { Int($0) }.reduce(0) { $0 * 60 + $1 }
         }
@@ -281,6 +286,46 @@ final class DeviceAcceptanceUITests: XCTestCase {
         reveal(online)
         XCTAssertEqual(online.value as? String, "0")
         attach(app, name: "authorized-piper-pair-persisted")
+    }
+
+    func testOptInDisableAutomaticSystemVoiceFallback() throws {
+        guard ProcessInfo.processInfo.environment["APP_DEVICE_DISABLE_SYSTEM_FALLBACK"] == "1" else {
+            throw XCTSkip("Requires explicit authorization to persist configured-voices-only recovery.")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestResetActiveReader", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        defer { app.terminate() }
+        for pass in 0..<2 {
+            app.launch()
+            closeExpandedPlayerIfPresent(app)
+            let settings = app.tabBars.buttons["Settings"].firstMatch
+            XCTAssertTrue(settings.waitForExistence(timeout: 10))
+            settings.tap()
+            let control = app.switches["settings.tts.automaticSystemFallback"].firstMatch
+            let table = app.tables.firstMatch
+            for _ in 0..<15 {
+                if control.exists && table.frame.insetBy(dx: 0, dy: 12).contains(control.frame) { break }
+                table.swipeUp()
+            }
+            XCTAssertTrue(control.exists)
+            if pass == 0 && control.value as? String == "1" { control.tap() }
+            XCTAssertEqual(control.value as? String, "0", "Configured-only recovery must survive relaunch.")
+            for (identifier, expected) in [("settings.tts.primary", "Faber"),
+                                           ("settings.tts.secondary", "LJ Speech"),
+                                           ("settings.speechModels.disclosure", "Collapsed")] {
+                let row = app.cells[identifier].firstMatch
+                for _ in 0..<20 {
+                    let viewport = table.frame.insetBy(dx: 0, dy: 12)
+                    if row.exists && viewport.contains(row.frame) { break }
+                    if row.exists && row.frame.midY > viewport.midY { table.swipeUp() }
+                    else { table.swipeDown() }
+                }
+                XCTAssertTrue((row.value as? String ?? "").hasPrefix(expected))
+            }
+            attach(app, name: "configured-only-voices-persisted-\(pass)")
+            app.terminate()
+        }
     }
 
     private func auditNavigation(portuguese: Bool) throws {

@@ -719,3 +719,6 @@
 "settings.models.collapsed" = "Contraído";
 
 "settings.downloadListFailed" = "No se pudieron cargar los libros descargados";
+
+"settings.automaticSystemFallback" = "Voz del sistema como alternativa automática";
+"settings.automaticSystemFallbackDescription" = "Si fallan las voces seleccionadas, intenta una voz instalada del sistema. Desactiva para usar solo las voces seleccionadas.";

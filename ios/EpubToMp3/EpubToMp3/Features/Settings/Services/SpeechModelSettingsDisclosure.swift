@@ -3,7 +3,7 @@ import Foundation
 /// Presentation-only disclosure; selection and transfer ownership stay in Rust/client stores.
 struct SpeechModelSettingsDisclosure {
     enum Row: Equatable {
-        case primary, cellular, summary, model(Int?), secondary, onlineFallback, studyLanguage
+        case primary, cellular, summary, model(Int?), secondary, automaticSystemFallback, onlineFallback, studyLanguage
     }
     private(set) var isExpanded = false
 
@@ -12,7 +12,7 @@ struct SpeechModelSettingsDisclosure {
     func rows(modelCount: Int) -> [Row] {
         let models: [Row] = isExpanded
             ? (modelCount > 0 ? (0..<modelCount).map { .model($0) } : [.model(nil)]) : []
-        return [.primary, .cellular, .summary] + models + [.secondary, .onlineFallback, .studyLanguage]
+        return [.primary, .cellular, .summary] + models + [.secondary, .automaticSystemFallback, .onlineFallback, .studyLanguage]
     }
 
     static func summary(state: SpeechModelLibraryViewState, primary: TtsSelection,

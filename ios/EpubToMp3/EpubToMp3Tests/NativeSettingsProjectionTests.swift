@@ -35,6 +35,50 @@ final class NativeSettingsProjectionTests: XCTestCase {
         }
     }
 
+    func testAutomaticSystemFallbackOptOutPersistsWithoutChangingSelectedVoices() {
+        withDefaults { defaults in
+            let settings = AppSettings(defaults: defaults)
+            XCTAssertTrue(settings.allowAutomaticSystemVoiceFallback)
+            XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
+            settings.selectPrimaryNarration(.selected(.piper))
+            var english = TtsSelection.selected(.piper)
+            english.modelID = "en_US-ljspeech-high"
+            settings.selectSecondaryNarration(english)
+            let primary = settings.ttsPreferences.primary
+            let secondary = settings.ttsPreferences.secondary
+            var changes = 0
+            let observation = settings.objectWillChange.sink { changes += 1 }
+            settings.allowAutomaticSystemVoiceFallback = false
+            XCTAssertGreaterThan(changes, 0)
+            let restored = AppSettings(defaults: defaults)
+            XCTAssertFalse(restored.allowAutomaticSystemVoiceFallback)
+            XCTAssertEqual(restored.ttsPreferences.policyVersion, 3)
+            XCTAssertEqual(restored.ttsPreferences.primary, primary)
+            XCTAssertEqual(restored.ttsPreferences.secondary, secondary)
+            XCTAssertFalse(restored.allowOnlineAudioFallback)
+            let captured = TtsCatalog(version: 2, models: [], providers: []).capture(restored.ttsPreferences, target: "ios")
+            restored.allowAutomaticSystemVoiceFallback = true
+            XCTAssertEqual(restored.ttsPreferences.policyVersion, 2)
+            XCTAssertEqual(captured.policyVersion, 3)
+            XCTAssertEqual(captured.secondary, secondary)
+            XCTAssertTrue(AppSettings(defaults: defaults).allowAutomaticSystemVoiceFallback)
+            withExtendedLifetime(observation) {}
+        }
+    }
+
+    func testAutomaticFallbackOptOutRetainsExplicitSystemSecondaryAndAbsentSecondary() {
+        withDefaults { defaults in
+            let settings = AppSettings(defaults: defaults)
+            settings.allowAutomaticSystemVoiceFallback = false
+            settings.selectSecondaryNarration(.selected(.system))
+            XCTAssertEqual(settings.ttsPreferences.policyVersion, 3)
+            XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
+            settings.selectSecondaryNarration(nil)
+            XCTAssertNil(AppSettings(defaults: defaults).ttsPreferences.secondary)
+            XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.policyVersion, 3)
+        }
+    }
+
     func testReaderOverridesDoNotChangeThePersistedLayoutChoice() {
         withDefaults { defaults in
             defaults.set("scrolling", forKey: "readerLayout")

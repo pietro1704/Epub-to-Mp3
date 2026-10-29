@@ -9,6 +9,7 @@ enum RuntimeSettingsRows {
         case cellular
         case model(SpeechModelSnapshot.Entry?)
         case secondary
+        case automaticSystemFallback
         case onlineFallback
         case studyLanguage
     }
@@ -28,6 +29,7 @@ enum RuntimeSettingsRows {
         case let .model(ordinal):
             return .model(ordinal.flatMap { speechModels.orderedEntries.indices.contains($0) ? speechModels.orderedEntries[$0] : nil })
         case .secondary: return .secondary
+        case .automaticSystemFallback: return .automaticSystemFallback
         case .onlineFallback: return .onlineFallback
         case .studyLanguage: return .studyLanguage
         }
@@ -95,6 +97,17 @@ enum RuntimeSettingsRows {
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
                 cell.selectionStyle = .default
+                return cell
+            case .automaticSystemFallback:
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+                cell.configure(title: L10n.string("settings.automaticSystemFallback"),
+                               subtitle: L10n.string("settings.automaticSystemFallbackDescription"),
+                               isOn: settings.allowAutomaticSystemVoiceFallback,
+                               accessibilityIdentifier: "settings.tts.automaticSystemFallback")
+                cell.onValueChanged = { [weak controller] isAllowed in
+                    guard controller != nil else { return }
+                    settings.allowAutomaticSystemVoiceFallback = isAllowed
+                }
                 return cell
             case .onlineFallback:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell

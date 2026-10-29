@@ -718,3 +718,6 @@
 "settings.models.collapsed" = "Collapsed";
 
 "settings.downloadListFailed" = "Could not load downloaded books";
+
+"settings.automaticSystemFallback" = "Automatic system voice fallback";
+"settings.automaticSystemFallbackDescription" = "If selected voices fail, try an installed system voice. Turn off to use only your selected voices.";
