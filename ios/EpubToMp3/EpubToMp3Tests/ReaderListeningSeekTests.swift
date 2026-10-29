@@ -24,12 +24,12 @@ final class ReaderListeningSeekTests: XCTestCase {
                 guard let self else { throw CancellationError() }
                 jobs.append(job)
                 controls.append(control)
-                return try await withCheckedThrowingContinuation { conversions.append($0) }
+                return try await withCheckedThrowingContinuation { self.conversions.append($0) }
             }, currentBookID: { "book" }, openBook: { [weak self] _ in
                 guard let self else { throw CancellationError() }
                 openCount += 1
                 if blockReopen {
-                    return try await withCheckedThrowingContinuation { pendingOpens.append($0) }
+                    return try await withCheckedThrowingContinuation { self.pendingOpens.append($0) }
                 }
                 return URL(fileURLWithPath: "/unused/book.epub")
             }, recordConversion: { _, _ in XCTFail("The fixture has no completed conversion") },
