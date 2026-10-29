@@ -26,8 +26,8 @@ model. [Inventory](https://huggingface.co/rhasspy/piper-voices/blob/5041a7a49ae5
 | Literal identity | Declared tier / rate | ONNX bytes declared in product catalog | Pinned config bytes / speaker map | Assessment |
 | --- | --- | ---: | --- | --- |
 | `pt_BR-faber-medium` | medium / 22,050 Hz | 63,201,294 | 4,855 / empty object | Retain primary |
-| `pt_BR-cadu-medium` | medium / 22,050 Hz | 62,950,044 | 5,040 / null | Candidate, decoder blocker |
-| `pt_BR-jeff-medium` | medium / 22,050 Hz | 62,950,044 | 5,041 / null | Candidate, decoder blocker |
+| `pt_BR-cadu-medium` | medium / 22,050 Hz | 62,950,044 | 5,040 / omitted | Candidate, decoder blocker |
+| `pt_BR-jeff-medium` | medium / 22,050 Hz | 62,950,044 | 5,041 / omitted | Candidate, decoder blocker |
 | `pt_BR-edresson-low` | low / 16,000 Hz | 63,104,526 | 4,168 / empty object | Excluded by current low-tier policy |
 
 All four pinned configs declare one speaker and eSpeak `pt-br`. Model size and
@@ -48,9 +48,10 @@ These match the product catalog. ONNX graphs were not fetched or inspected.
 
 ## Compatibility and licensing findings
 
-**The earlier report's nullable speaker-map finding is confirmed in source and
-fresh metadata.** The vendored `ModelConfig` requires a non-optional
-`HashMap<String, i64>` with no nullable/default deserializer. `Piper::new`
+**The pinned Cadu/Jeff configurations omit `speaker_id_map`; they do not
+contain an explicit null.** The decoder at this report's inspected source
+revision requires a non-optional
+`HashMap<String, i64>` with no optional/default deserializer. `Piper::new`
 deserializes the original JSON before opening ONNX; the embedded native runtime
 calls that constructor. Consequently, the unmodified Cadu/Jeff configs are
 predicted to fail configuration loading before inference. No Rust test was run
