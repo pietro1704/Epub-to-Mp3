@@ -29,7 +29,7 @@
             true
         }));
         let text = "A sentence to preserve every word. ".repeat(70);
-        let pieces = platform_tts::segments(&text);
+        let pieces = platform_tts::segments(&text).unwrap();
         let native = std::sync::atomic::AtomicBool::new(false);
         worker
             .synthesize_platform_policy(

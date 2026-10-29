@@ -75,6 +75,13 @@ impl ConversionWorker {
                 .map_err(|error| WorkerError::Unsupported(error.to_string()))?,
             None => (text.as_str(), 0),
         };
+        let paragraph_ends = chapter
+            .paragraph_ends
+            .iter()
+            .copied()
+            .filter(|end| *end > text_offset)
+            .map(|end| end - text_offset)
+            .collect::<Vec<_>>();
         let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
         let mp3 = output_dir.join(format!("{stem}.mp3"));
         let language = detected_language;
@@ -231,6 +238,7 @@ impl ConversionWorker {
                         &actual_providers,
                         total,
                         generation,
+                        &paragraph_ends,
                     )
                 } else if self.platform_tts.is_some()
                     && matches!(engine.as_str(), "edge" | "system")

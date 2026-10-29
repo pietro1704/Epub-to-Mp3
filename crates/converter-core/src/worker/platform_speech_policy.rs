@@ -82,7 +82,9 @@ impl ConversionWorker {
             *chunk_index += 1;
             Ok(())
         };
-        for segment in platform_tts::segments(text) {
+        for segment in platform_tts::segments(text)
+            .map_err(|error| WorkerError::Unsupported(error.to_string()))?
+        {
             *started.lock().expect("deadline lock") = std::time::Instant::now();
             check()?;
             let edge = if engine == "system" {
@@ -131,7 +133,8 @@ impl ConversionWorker {
                     {
                         return Err(WorkerError::PlatformTts("Edge is unavailable for consecutive segments. System speech is only an occasional fallback. Check your internet connection and retry.".into()));
                     }
-                    let native_segments = platform_tts::native_segments(&segment, !used_system);
+                    let native_segments = platform_tts::native_segments(&segment, !used_system)
+                        .map_err(|error| WorkerError::Unsupported(error.to_string()))?;
                     used_system = true;
                     if !system_notice_emitted.swap(true, Ordering::AcqRel) {
                         self.emit(ProgressEvent {

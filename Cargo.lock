@@ -704,6 +704,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tract-onnx",
+ "unicode-segmentation",
  "url",
  "webpki-roots 1.0.10",
  "zip",

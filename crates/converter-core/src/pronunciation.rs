@@ -57,6 +57,28 @@ impl PronunciationDictionary {
         output
     }
 
+    pub(crate) fn source_plan(
+        &self,
+        source: &str,
+        initial: usize,
+        subsequent: usize,
+        paragraph_ends: &[usize],
+    ) -> Result<Vec<crate::tts_session::SourceTextSegment>, crate::tts_session::TtsFailure> {
+        let protected = self
+            .matches(source)
+            .iter()
+            .map(|(begin, end, _)| (*begin, *end))
+            .collect::<Vec<_>>();
+        crate::tts_session::plan_text_protecting(
+            source,
+            initial,
+            subsequent,
+            &protected,
+            paragraph_ends,
+        )
+    }
+
+    #[cfg(test)]
     pub(crate) fn source_segments(
         &self,
         source: &str,

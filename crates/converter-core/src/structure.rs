@@ -121,6 +121,7 @@ mod tests {
                 name: "One".into(),
                 source_path: "text/chapter.xhtml".into(),
                 text: "Readable".into(),
+                paragraph_ends: Vec::new(),
                 level: 1,
             }],
         ));

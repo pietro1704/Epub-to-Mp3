@@ -102,3 +102,5 @@ include!("typed_fallback_tests.rs");
 include!("typed_persistence_tests.rs");
 include!("typed_staging_tests.rs");
 include!("session_adapter_tests.rs");
+#[path = "source_chunk_contract_tests.rs"]
+mod source_chunk_contract_tests;

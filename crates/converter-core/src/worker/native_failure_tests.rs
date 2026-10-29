@@ -18,7 +18,7 @@ fn third_consecutive_edge_failure_stops_before_more_native_speech() {
         Err(WorkerError::Edge(EdgeError::Timeout))
     }));
     let text = "A sentence that must not become a fully offline book. ".repeat(40);
-    let pieces = platform_tts::segments(&text);
+    let pieces = platform_tts::segments(&text).unwrap();
     let error = worker
         .synthesize_platform_policy(
             "edge",

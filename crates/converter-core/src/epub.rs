@@ -2,7 +2,7 @@ mod epub_chapter_content;
 mod epub_package;
 mod epub_resources;
 use epub_chapter_content::{
-    first_heading, hierarchy_indices, html_to_text, toc_levels, toc_title_for,
+    first_heading, hierarchy_indices, html_to_text_projection, toc_levels, toc_title_for,
 };
 use epub_package::{
     normalized_media_type, parse_package, resolve_resource_path, xml_attr, xml_text, Manifest,
@@ -63,6 +63,8 @@ pub struct Chapter {
     pub name: String,
     pub source_path: String,
     pub text: String,
+    /// Paragraph ends on the unchanged normalized Unicode-scalar text axis.
+    pub paragraph_ends: Vec<usize>,
     pub level: u32,
 }
 
@@ -153,7 +155,7 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
             .clone();
         let path = resolve_resource_path(opf_dir, &href);
         let html = read_entry(&mut archive, &path, &mut budget)?;
-        let text = html_to_text(&html);
+        let (text, paragraph_ends) = html_to_text_projection(&html);
         if text.trim().is_empty() {
             continue;
         }
@@ -173,6 +175,7 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
                 .unwrap_or_else(|| format!("Chapter {}", position + 1)),
             source_path: path,
             text,
+            paragraph_ends,
             level,
         });
     }
