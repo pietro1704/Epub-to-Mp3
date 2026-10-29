@@ -8,11 +8,33 @@ require "rbconfig"
 require_relative "xcode_build_paths"
 
 class XcodeBuildPathsTest < Minitest::Test
+  def test_iphone16e_selects_xcode26_without_changing_the_global_selection
+    assert_equal '/Applications/Xcode-26.3.0.app/Contents/Developer',
+                 XcodeBuildPaths.developer(environment: {
+                   'IOS_DEVICE_ID' => '44B2CFBD-2193-5086-8E8D-BF7A2876C321',
+                   'DEVELOPER_DIR' => XcodeBuildPaths::DEVELOPER
+                 }, directory: ->(_) { true })
+  end
+
+  def test_iphone16e_never_silently_falls_back_to_xcode16
+    assert_raises(RuntimeError) do
+      XcodeBuildPaths.developer(environment: { 'IOS_DEVICE_ID' => '44B2CFBD-2193-5086-8E8D-BF7A2876C321' },
+                               directory: ->(path) { path == XcodeBuildPaths::DEVELOPER })
+    end
+  end
+
+  def test_other_devices_and_unscoped_builds_keep_the_legacy_toolchain
+    [{}, { 'IOS_DEVICE_ID' => 'other-device' }].each do |environment|
+      assert_equal XcodeBuildPaths::DEVELOPER,
+                   XcodeBuildPaths.developer(environment: environment, directory: ->(_) { true })
+    end
+  end
+
   def test_local_and_hosted_xcode16_names_are_supported_without_global_selection
-    assert_equal XcodeBuildPaths::DEVELOPER, XcodeBuildPaths.developer(directory: ->(_) { true })
+    assert_equal XcodeBuildPaths::DEVELOPER, XcodeBuildPaths.developer(environment: {}, directory: ->(_) { true })
     assert_equal XcodeBuildPaths::HOSTED_DEVELOPER,
-                 XcodeBuildPaths.developer(directory: ->(path) { path == XcodeBuildPaths::HOSTED_DEVELOPER })
-    assert_raises(RuntimeError) { XcodeBuildPaths.developer(directory: ->(_) { false }) }
+                 XcodeBuildPaths.developer(environment: {}, directory: ->(path) { path == XcodeBuildPaths::HOSTED_DEVELOPER })
+    assert_raises(RuntimeError) { XcodeBuildPaths.developer(environment: {}, directory: ->(_) { false }) }
   end
 
   def make_device_app(cache, configuration: 'Debug', age: 0)
