@@ -129,6 +129,7 @@ final class PreparedChapterRendererTests: XCTestCase {
             { $0.readerFontFamily = .mono }, { $0.readerLetterSpacing = 1 },
             { $0.readerLineSpacing += 1 }, { $0.readerOverrideColours.toggle() },
             { $0.readerOverrideFontFamily.toggle() }, { $0.readerOverrideFontSize.toggle() },
+            { $0.readerOverrideTextAlignment.toggle() }, { $0.readerOverrideLineSpacing.toggle() },
             { $0.readerFontSize = 0 }, { $0.readerSuppressItalic.toggle() },
             { $0.readerTextAlignment = .left }, { $0.readerTheme = .dark }
         ]

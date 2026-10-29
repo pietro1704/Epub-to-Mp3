@@ -109,6 +109,7 @@ final class MacReaderBookLoad {
         pendingAppearanceRefresh = false
         activePreparedChapter = nil
         lastPreparedChapterOrdinal = nil
+        document.registeredFontURLs = []
         send(.resetTextSurface)
         let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         guard let book = library.books.first(where: { $0.id == id }) else {
@@ -121,6 +122,7 @@ final class MacReaderBookLoad {
             currentBookId = book.id
             hasRestoredInitialPosition = false
         }
+        document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: book.id)
         let journeyID = LatencyObservationStore.shared.beginBookOpen(
             documentKind: MacReaderOpenObservation.documentKind(for: book)
         )
@@ -145,7 +147,7 @@ final class MacReaderBookLoad {
             if let chapter = warmPayload.chapters[safe: selectedChapter],
                chapter.isImageOnly || preparedRenderer.cached(
                    bookID: book.id, chapterIndex: selectedChapter, chapter: chapter,
-                   settings: settings, fontDirectoryURL: nil) != nil {
+                   settings: settings, fontDirectoryURL: document.fontDirectoryURL) != nil {
                 presentLoadedChapter(bookID: book.id)
             } else {
                 send(.showLoading(book))
@@ -221,6 +223,11 @@ final class MacReaderBookLoad {
                         observation.recordControlsUsable()
                         return
                     }
+                    let fonts = await Task.detached(priority: .utility) {
+                        EpubFontManager.registerFonts(from: fileURL, bookID: book.id)
+                    }.value
+                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
+                    document.registeredFontURLs = fonts
                     payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
                 }
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }

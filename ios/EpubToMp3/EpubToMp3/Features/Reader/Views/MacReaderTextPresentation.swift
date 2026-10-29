@@ -124,7 +124,7 @@ final class MacReaderTextPresentation {
         guard let chapter = chapter(at: selectedChapter), !chapter.isImageOnly else { return }
         observeOpenStage("selected_chapter_restore_started")
         _ = await preparedRenderer.restore(bookID: bookID, chapterIndex: selectedChapter,
-                                           chapter: chapter, settings: settings, fontDirectoryURL: nil)
+                                           chapter: chapter, settings: settings, fontDirectoryURL: document.fontDirectoryURL)
         observeOpenStage("selected_chapter_restore_completed")
     }
 
@@ -146,7 +146,7 @@ final class MacReaderTextPresentation {
             if let bookID = currentBookId,
                let rendered = preparedRenderer.render(
                    bookID: bookID, chapterIndex: index, chapter: chapter,
-                   settings: settings, fontDirectoryURL: nil
+                   settings: settings, fontDirectoryURL: document.fontDirectoryURL
                ) {
                 textView.textStorage?.setAttributedString(NSAttributedString(attributedString: rendered))
             } else {

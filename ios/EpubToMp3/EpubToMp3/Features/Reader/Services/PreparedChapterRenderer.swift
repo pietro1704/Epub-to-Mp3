@@ -15,6 +15,8 @@ struct PreparedChapterRendererStyle: Equatable, Sendable {
     let overrideColours: Bool
     let overrideFontFamily: Bool
     let overrideFontSize: Bool
+    let overrideTextAlignment: Bool
+    let overrideLineSpacing: Bool
     let pointSize: Double
     let suppressItalic: Bool
     let textAlignment: String
@@ -27,7 +29,7 @@ struct PreparedChapterRendererStyle: Equatable, Sendable {
 }
 
 private struct PreparedChapterRendererSignature: Encodable {
-    let version = 3
+    let version = 4
     let chapter: EbookFulltext.Chapter
     let boldOverride: Bool
     let customColors: [Double]
@@ -37,6 +39,8 @@ private struct PreparedChapterRendererSignature: Encodable {
     let overrideColours: Bool
     let overrideFontFamily: Bool
     let overrideFontSize: Bool
+    let overrideTextAlignment: Bool
+    let overrideLineSpacing: Bool
     let pointSize: Double
     let suppressItalic: Bool
     let textAlignment: String
@@ -57,6 +61,8 @@ private struct PreparedChapterRendererSignature: Encodable {
         overrideColours = style.overrideColours
         overrideFontFamily = style.overrideFontFamily
         overrideFontSize = style.overrideFontSize
+        overrideTextAlignment = style.overrideTextAlignment
+        overrideLineSpacing = style.overrideLineSpacing
         pointSize = style.pointSize
         suppressItalic = style.suppressItalic
         textAlignment = style.textAlignment
@@ -141,6 +147,8 @@ final class PreparedChapterRenderer {
             overrideColours: settings.readerOverrideColours,
             overrideFontFamily: settings.readerOverrideFontFamily,
             overrideFontSize: settings.readerOverrideFontSize,
+            overrideTextAlignment: settings.readerOverrideTextAlignment,
+            overrideLineSpacing: settings.readerOverrideLineSpacing,
             pointSize: Double(settings.readerPointSize),
             suppressItalic: settings.readerSuppressItalic,
             textAlignment: settings.readerTextAlignment.rawValue,

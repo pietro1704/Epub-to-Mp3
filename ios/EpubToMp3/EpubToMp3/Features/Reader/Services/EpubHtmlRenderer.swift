@@ -32,9 +32,9 @@ typealias PlatformColor = NSColor
 ///   `@MainActor` so callers can't accidentally spin it off a queue
 ///   and crash. ~50–200 ms per chapter is normal for a 30 K-char
 ///   payload; cache aggressively at the call site.
-/// - `@font-face` rules embedded in EPUB CSS are NOT honoured by the
-///   importer (it can't fetch the font file from the EPUB bundle).
-///   Custom fonts fall back to the platform default for that family.
+/// - Registered EPUB fonts are matched through publisher CSS aliases.
+///   Unsupported/obfuscated faces retain their native fallback list; the
+///   importer is not a browser and does not implement all EPUB CSS features.
 /// - Inline `style="background-color: …"` survives but block-level
 ///   `background-color` on `<body>` / `<html>` is dropped (the
 ///   importer treats those as page-level chrome which native text views
@@ -68,7 +68,9 @@ enum EpubHtmlRenderer {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        let body = extractBodyContent(trimmed)
+        let source = EpubSourceDocument(html: trimmed, css: css)
+        let aliases = EpubFontManager.familyAliases(css: source.css, directory: fontDirectoryURL)
+        let body = EpubFontAliases.rewriteInlineStyles(source.body, families: aliases)
         // Cocoa's HTML importer drops fragment-only `href="#note"` links.
         // Rewrite every EPUB-local target to an app-owned URL first so both
         // fragment and cross-document destinations survive as `.link` runs.
@@ -76,21 +78,22 @@ enum EpubHtmlRenderer {
         let resolvedBody = EpubResourcePresentation.resolveResourceImageSources(linkedBody, resources: resources ?? [])
         let (placeholderBody, images) = EpubResourcePresentation.extractDataURIImages(resolvedBody)
         let cleanedCSS: String = {
-            let sourceCSS = css ?? ""
+            let sourceCSS = source.css
             if sourceCSS.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return """
                 p { text-align: justify; margin-top: 0; margin-bottom: 0.7em; text-indent: 1.5em; }
                 h1, h2, h3, h4, h5, h6 { text-align: center; margin-top: 1em; margin-bottom: 0.8em; text-indent: 0; }
                 """
             }
-            return EpubResourcePresentation.rewriteFontFaceURLs(sourceCSS, fontDirectory: fontDirectoryURL)
+            return EpubResourcePresentation.rewriteFontFaceURLs(
+                EpubFontAliases.rewrite(sourceCSS, families: aliases), fontDirectory: fontDirectoryURL)
         }()
 
         let doc = """
         <!DOCTYPE html>
-        <html><head><meta charset="utf-8">
+        \(EpubFontAliases.rewriteInlineStyles("<html\(source.htmlAttributes)>", families: aliases))<head><meta charset="utf-8">
         <style>\(cleanedCSS)</style>
-        </head><body>\(placeholderBody)</body></html>
+        </head>\(EpubFontAliases.rewriteInlineStyles("<body\(source.bodyAttributes)>", families: aliases))\(placeholderBody)</body></html>
         """
 
         guard let data = doc.data(using: .utf8) else { return nil }
@@ -170,18 +173,5 @@ enum EpubHtmlRenderer {
         }
         return rewritten
     }
-
-    // MARK: - HTML / CSS sanitisation
-
-    private static func extractBodyContent(_ html: String) -> String {
-        guard let bodyStart = html.range(of: #"<body[^>]*>"#, options: .regularExpression),
-              let bodyEnd = html.range(of: "</body>", options: .backwards) else {
-            return html.replacingOccurrences(
-                of: #"<link\b[^>]*>"#, with: "", options: .regularExpression
-            )
-        }
-        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
-    }
-
 
 }

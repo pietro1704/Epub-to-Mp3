@@ -68,6 +68,9 @@ let production = [
     "Shared/Configuration/LocalSpeechModelReadiness.swift",
     "Features/Reader/Services/ReaderBookSearch.swift",
     "Features/Reader/Services/ReaderLinkResolver.swift",
+    "Features/Reader/Services/EpubSourceDocument.swift",
+    "Features/Reader/Services/EpubFontAliases.swift",
+    "Shared/Configuration/ReaderParagraphPreferences.swift",
     "Features/Reader/Services/EpubAnchorFragment.swift",
     "Features/Reader/Services/ReaderAnchorRange.swift",
 ]
@@ -107,6 +110,9 @@ let tests = [
     "ReaderListeningControlTests.swift",
     "ReaderBookSearchTests.swift",
     "ReaderInternalLinkTargetTests.swift",
+    "EpubSourceDocumentTests.swift",
+    "EpubFontAliasesTests.swift",
+    "ReaderParagraphPreferencesTests.swift",
 ]
 let package = Package(
     name: "AppFoundation",

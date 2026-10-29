@@ -70,6 +70,9 @@ final class AppSettings: ObservableObject {
         self.readerOverrideFontFamily = reader.readerOverrideFontFamily
         self.readerOverrideFontSize = reader.readerOverrideFontSize
         self.readerOverrideColours = reader.readerOverrideColours
+        let paragraphs = ReaderParagraphPreferences(defaults: defaults)
+        self.readerOverrideTextAlignment = paragraphs.overridesAlignment
+        self.readerOverrideLineSpacing = paragraphs.overridesLineSpacing
         self.readerBoldOverride = reader.readerBoldOverride
         self.readerSuppressItalic = reader.readerSuppressItalic
         self.readerLetterSpacing = reader.readerLetterSpacing
@@ -226,12 +229,13 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(readerShowPageNumbers, forKey: "readerShowPageNumbers") }
     }
 
-    /// Horizontal alignment for reader body text. Default `.justified`
-    /// matches Apple Books and printed-book typography. The renderer
-    /// applies this to every paragraph (EPUB CSS alignment included)
-    /// so the setting wins over the book's own declaration.
+    /// Changing the control explicitly overrides publisher body alignment.
     @Published var readerTextAlignment: ReaderTextAlignment = .justified {
-        didSet { defaults.set(readerTextAlignment.rawValue, forKey: "readerTextAlignment") }
+        didSet {
+            guard !loadingPersistedValues else { return }
+            defaults.set(readerTextAlignment.rawValue, forKey: "readerTextAlignment")
+            readerOverrideTextAlignment = true
+        }
     }
 
     @Published var readerLayout: ReaderLayout = .paginated {
@@ -269,6 +273,7 @@ final class AppSettings: ObservableObject {
                 return
             }
             defaults.set(readerLineSpacing, forKey: "readerLineSpacing")
+            if !loadingPersistedValues { readerOverrideLineSpacing = true }
         }
     }
 
@@ -352,6 +357,14 @@ final class AppSettings: ObservableObject {
     /// inline `color:` / `background-color:` declared by the EPUB.
     @Published var readerOverrideColours: Bool = false {
         didSet { defaults.set(readerOverrideColours, forKey: "readerOverrideColours") }
+    }
+
+    @Published var readerOverrideTextAlignment: Bool = false {
+        didSet { defaults.set(readerOverrideTextAlignment, forKey: "readerOverrideTextAlignment") }
+    }
+
+    @Published var readerOverrideLineSpacing: Bool = false {
+        didSet { defaults.set(readerOverrideLineSpacing, forKey: "readerOverrideLineSpacing") }
     }
 
     /// When `true`, every run is rendered with `.bold` weight. Useful

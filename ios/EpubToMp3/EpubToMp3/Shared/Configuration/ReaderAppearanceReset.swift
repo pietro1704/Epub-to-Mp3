@@ -4,8 +4,8 @@ extension AppSettings {
     /// One-tap "show me the book exactly as the author intended".
     /// Clears every override-related field added above. Preserves
     /// preferences that aren't tied to an override (e.g. layout,
-    /// auto-scroll, line-spacing/margin/column-width — those still
-    /// affect the surrounding chrome even when no override is on).
+    /// auto-scroll, margin and column width). Paragraph controls retain
+    /// their values but no longer override the publisher after this reset.
     ///
     /// Reset set (mirrors the brief):
     ///   - readerOverrideFontFamily → false
@@ -28,6 +28,8 @@ extension AppSettings {
         readerOverrideFontFamily = false
         readerOverrideFontSize = false
         readerOverrideColours = false
+        readerOverrideTextAlignment = false
+        readerOverrideLineSpacing = false
         readerBoldOverride = false
         readerSuppressItalic = false
         readerLetterSpacing = 0

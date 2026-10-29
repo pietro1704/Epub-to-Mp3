@@ -20,6 +20,8 @@ final class MacReaderDocument {
     var hasRestoredInitialPosition: Bool = false
     var isRestoringInitialPosition: Bool = false
     var pendingAppearanceRefresh: Bool = false
+    var registeredFontURLs: [URL] = []
+    var fontDirectoryURL: URL? { registeredFontURLs.first?.deletingLastPathComponent() }
 
     deinit {
         if let journeyID = activeBookOpenJourneyID {

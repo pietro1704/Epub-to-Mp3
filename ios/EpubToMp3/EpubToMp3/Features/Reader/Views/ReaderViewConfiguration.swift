@@ -80,6 +80,8 @@ struct ReaderTextSettings: Equatable {
     let overridesFontFamily: Bool
     let overridesFontSize: Bool
     let overridesColours: Bool
+    let overridesAlignment: Bool
+    let overridesLineSpacing: Bool
     let boldOverride: Bool
     let suppressesItalic: Bool
     let letterSpacing: Double
@@ -95,6 +97,8 @@ struct ReaderTextSettings: Equatable {
         overridesFontFamily = settings.readerOverrideFontFamily
         overridesFontSize = settings.readerOverrideFontSize
         overridesColours = settings.readerOverrideColours
+        overridesAlignment = settings.readerOverrideTextAlignment
+        overridesLineSpacing = settings.readerOverrideLineSpacing
         boldOverride = settings.readerBoldOverride
         suppressesItalic = settings.readerSuppressItalic
         letterSpacing = settings.readerLetterSpacing
@@ -109,6 +113,7 @@ struct ReaderTextSettings: Equatable {
             && lineSpacing == other.lineSpacing && alignment == other.alignment
             && overridesFontFamily == other.overridesFontFamily
             && overridesFontSize == other.overridesFontSize
+            && overridesAlignment == other.overridesAlignment && overridesLineSpacing == other.overridesLineSpacing
             && boldOverride == other.boldOverride && suppressesItalic == other.suppressesItalic
             && letterSpacing == other.letterSpacing && wordSpacing == other.wordSpacing
     }
