@@ -155,7 +155,7 @@
             assert!(!error.is_null());
             let message = CStr::from_ptr(error).to_string_lossy().into_owned();
             converter_string_free(error);
-            assert!(message.to_lowercase().contains("piper"), "{message}");
+            assert!(message.contains("model file operation failed"), "{message}");
             assert_eq!(calls.load(std::sync::atomic::Ordering::Acquire), 0);
             assert!(!directory.join("manifest.json").exists());
             converter_session_free(session);
