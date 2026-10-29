@@ -23,7 +23,7 @@ enum SettingsSection: Int, CaseIterable {
         case .storage:
             return 8
         case .advanced:
-            return 5
+            return 4
         case .about:
             return 3
         }

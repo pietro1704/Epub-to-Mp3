@@ -404,16 +404,6 @@ final class SettingsScreenController: UITableViewController {
             exportPerformanceDiagnostics()
         } else if row == 3 {
             toggleStreamingDiagnostics()
-        } else {
-            SettingsAlertPresentation.destructive(on: self,
-                title: L10n.string("settings.clearCacheConfirmTitle"),
-                message: L10n.string("settings.clearCacheConfirmMessage"),
-                buttonTitle: L10n.string("settings.clearCacheConfirmButton")
-            ) { [weak self] in
-                guard let self else { return }
-                self.storageActions.clearAllDownloads()
-                SettingsAlertPresentation.info(on: self, title: L10n.string("settings.clearCacheDone"))
-            }
         }
     }
 

@@ -716,3 +716,5 @@
 "settings.models.hide" = "Ocultar modelos";
 "settings.models.expanded" = "Expandido";
 "settings.models.collapsed" = "Recolhido";
+
+"settings.downloadListFailed" = "Não foi possível carregar os livros baixados";

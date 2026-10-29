@@ -89,11 +89,7 @@ struct SettingsCellPresentation {
             cell.accessibilityIdentifier = "settings.recordStreamingDiagnostics"
             cell.accessoryType = .none
         default:
-            content.text = L10n.string("settings.clearCache")
-            content.secondaryText = L10n.string("settings.clearCacheDescription")
-            content.textProperties.color = .systemRed
-            content.image = UIImage(systemName: "trash")
-            cell.accessoryType = .none
+            return UITableViewCell()
         }
         content.secondaryTextProperties.numberOfLines = 2
         cell.contentConfiguration = content
