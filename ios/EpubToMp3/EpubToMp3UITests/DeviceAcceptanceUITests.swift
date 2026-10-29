@@ -167,6 +167,122 @@ final class DeviceAcceptanceUITests: XCTestCase {
         XCTAssertTrue(resume.waitForExistence(timeout: 5))
     }
 
+    func testOptInInstallAndAuditionAuthorizedPiperPair() throws {
+        guard ProcessInfo.processInfo.environment["APP_DEVICE_INSTALL_PIPER_PAIR"] == "1" else {
+            throw XCTSkip("Requires explicit installation and persistent Piper preference authorization.")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestResetActiveReader", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        closeExpandedPlayerIfPresent(app)
+        let settings = app.tabBars.buttons["Settings"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.tap()
+        let table = app.tables.firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 10))
+        func reveal(_ element: XCUIElement) {
+            for attempt in 0..<32 {
+                let viewport = table.frame.intersection(app.frame).insetBy(dx: 0, dy: 12)
+                if element.exists {
+                    let frame = element.frame
+                    if !frame.isEmpty && !frame.isInfinite {
+                        if viewport.contains(frame) { return }
+                        if frame.midY < viewport.midY { table.swipeDown() }
+                        else { table.swipeUp() }
+                        continue
+                    }
+                }
+                if attempt < 12 { table.swipeUp() } else { table.swipeDown() }
+            }
+            XCTFail("The requested model or preference must be reachable.")
+        }
+        func choose(_ prefix: String, rowID: String) {
+            let row = app.cells[rowID].firstMatch
+            reveal(row)
+            row.tap()
+            let choice = app.sheets.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
+            XCTAssertTrue(choice.waitForExistence(timeout: 5))
+            choice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertTrue(app.sheets.firstMatch.waitForNonExistence(timeout: 5))
+            XCTAssertTrue((row.value as? String ?? "").hasPrefix(prefix))
+        }
+        // The user explicitly requested Piper only; persist this before downloads.
+        choose("None", rowID: "settings.tts.secondary")
+        let online = app.switches["settings.tts.onlineConsent"].firstMatch
+        reveal(online)
+        if online.value as? String == "1" { online.tap() }
+        XCTAssertEqual(online.value as? String, "0")
+        let disclosure = app.cells["settings.speechModels.disclosure"].firstMatch
+        reveal(disclosure)
+        disclosure.tap()
+        for (modelID, languageName) in [("pt_BR-faber-medium", "Portuguese (Brazil)"),
+                                        ("en_US-ljspeech-high", "English (United States)")] {
+            let language = app.cells["settings.speechModels.language"].firstMatch
+            reveal(language)
+            language.tap()
+            let languageChoice = app.sheets.buttons[languageName].firstMatch
+            XCTAssertTrue(languageChoice.waitForExistence(timeout: 5))
+            languageChoice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertTrue(app.sheets.firstMatch.waitForNonExistence(timeout: 5))
+            let model = app.cells["settings.speechModel.\(modelID)"].firstMatch
+            reveal(model)
+            XCTAssertTrue(model.exists)
+            func isInstalled() -> Bool {
+                let value = model.value as? String ?? ""
+                return value.hasPrefix("Installed ·") || value == "Installed" || value.hasPrefix("Installation completed")
+            }
+            if !isInstalled() {
+                model.tap()
+                let install = app.sheets.buttons["Install"].firstMatch
+                XCTAssertTrue(install.waitForExistence(timeout: 5))
+                install.tap()
+                let confirm = app.alerts.buttons["Confirm installation"].firstMatch
+                XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+                confirm.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+                let installed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    isInstalled()
+                }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [installed], timeout: 180), .completed,
+                               "The explicitly authorized model must finish installation: \(model.value ?? "missing")")
+            }
+            reveal(model)
+            attach(app, name: "installed-\(modelID)")
+            model.tap()
+            let sample = app.sheets.buttons["Hear voice sample"].firstMatch
+            XCTAssertTrue(sample.waitForExistence(timeout: 5))
+            sample.tap()
+            let sampleText = modelID.hasPrefix("pt_")
+                ? "Esta é uma amostra da voz para narrar seus livros. Boa leitura!"
+                : "This is a sample of the voice for narrating your books. Enjoy your reading!"
+            XCTAssertTrue(app.alerts.staticTexts[sampleText].firstMatch.waitForExistence(timeout: 90),
+                          "Observe actual playback before accepting the final idle state.")
+            let finished = app.alerts.staticTexts["Sample finished"].firstMatch
+            XCTAssertTrue(finished.waitForExistence(timeout: 90), "Strict Piper audition must finish; system fallback is not accepted.")
+            attach(app, name: "piper-audition-finished-\(modelID)")
+            app.alerts.buttons["Stop sample"].firstMatch.tap()
+            XCTAssertTrue(app.alerts.firstMatch.waitForNonExistence(timeout: 5))
+            if modelID == "pt_BR-faber-medium" { choose("Faber", rowID: "settings.tts.primary") }
+        }
+        choose("LJ Speech", rowID: "settings.tts.secondary")
+        attach(app, name: "authorized-piper-pair-selected")
+        app.terminate()
+        app.launch()
+        closeExpandedPlayerIfPresent(app)
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.tap()
+        for (rowID, name) in [("settings.tts.primary", "Faber"), ("settings.tts.secondary", "LJ Speech")] {
+            let row = app.cells[rowID].firstMatch
+            reveal(row)
+            XCTAssertTrue((row.value as? String ?? "").hasPrefix(name), "Piper preference must survive relaunch.")
+        }
+        reveal(online)
+        XCTAssertEqual(online.value as? String, "0")
+        attach(app, name: "authorized-piper-pair-persisted")
+    }
+
     private func auditNavigation(portuguese: Bool) throws {
         let app = XCUIApplication()
         let language = portuguese ? "pt-BR" : "en"
