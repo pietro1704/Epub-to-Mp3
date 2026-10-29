@@ -54,3 +54,9 @@ mod zip_names;
 pub fn health() -> &'static str {
     "ok"
 }
+
+// Exercise the production Piper decoder in the model-free workspace test gate.
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../../native/vendor/piper-rs/src/model_config.rs"]
+mod piper_model_config_contract;
