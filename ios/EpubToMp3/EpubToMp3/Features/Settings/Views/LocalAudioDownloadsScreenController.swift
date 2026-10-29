@@ -8,14 +8,18 @@ import UIKit
 final class LocalAudioDownloadsScreenController: UITableViewController {
     private let library: LibraryStore
     private let artifactStore: LocalAudioArtifactStore
+    private let removeAudio: (String) async throws -> Void
+    private let removal = BookAudioRemoval()
     private var downloadedBooks: [LocalAudioArtifactStore.DownloadedBook] = []
 
     init(
         library: LibraryStore,
-        artifactStore: LocalAudioArtifactStore = .shared
+        artifactStore: LocalAudioArtifactStore = .shared,
+        removeAudio: ((String) async throws -> Void)? = nil
     ) {
         self.library = library
         self.artifactStore = artifactStore
+        self.removeAudio = removeAudio ?? { try await artifactStore.clearDownloadedAudio(bookID: $0) }
         super.init(style: .insetGrouped)
         title = L10n.string("settings.manageDownloads")
     }
@@ -88,28 +92,43 @@ final class LocalAudioDownloadsScreenController: UITableViewController {
             title: L10n.string("settings.removeBookDownload"),
             style: .destructive
         ) { [weak self] _ in
-            self?.removeDownloadedAudio(for: book)
+            Task { await self?.removeDownloadedAudio(for: book) }
         })
         alert.addAction(UIAlertAction(title: L10n.string("library.cancel"), style: .cancel))
         present(alert, animated: true)
     }
 
     func refreshDownloadedBooks() async {
-        downloadedBooks = (try? await artifactStore.downloadedBooks()) ?? []
+        do { downloadedBooks = try await artifactStore.downloadedBooks() }
+        catch {
+            presentFailure(error, title: L10n.string("settings.downloadListFailed"))
+        }
         tableView.reloadData()
     }
 
-    private func removeDownloadedAudio(for book: LocalAudioArtifactStore.DownloadedBook) {
-        Task { [weak self] in
-            guard let self else { return }
-            try? await self.artifactStore.clearDownloadedAudio(bookID: book.bookID)
-            if var libraryBook = self.library.books.first(where: { $0.id == book.bookID }) {
+    func removeDownloadedAudio(for book: LocalAudioArtifactStore.DownloadedBook) async {
+        do {
+            if try await removal.remove(bookID: book.bookID, using: removeAudio),
+               var libraryBook = library.books.first(where: { $0.id == book.bookID }) {
                 libraryBook.cachedOffline = false
-                self.library.update(libraryBook)
+                library.update(libraryBook)
             }
-            await self.refreshDownloadedBooks()
+        } catch is CancellationError {
+            // Cancellation leaves the library's retained-download state unchanged.
+        } catch {
+            presentFailure(error, title: L10n.string("settings.storageRemovalFailedTitle"))
         }
+        await refreshDownloadedBooks()
     }
+
+    private func presentFailure(_ error: Error, title: String) {
+        guard presentedViewController == nil else { return }
+        let alert = UIAlertController(title: title,
+            message: AppErrorReporter.message(error, context: "Download management"), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+        present(alert, animated: true)
+    }
+
 }
 
 private extension Collection {
