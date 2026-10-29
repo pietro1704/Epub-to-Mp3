@@ -68,6 +68,20 @@ enum EpubFontManager {
         }
     }
 
+    static func familyAliases(css: String, directory: URL?) -> [String: String] {
+        let files = fontURLs(in: directory)
+        return EpubFontAliases.families(css: css) { resource in
+            let path = resource.components(separatedBy: CharacterSet(charactersIn: "?#")).first ?? resource
+            let decoded = path.removingPercentEncoding ?? path
+            let basename = (decoded as NSString).lastPathComponent
+            guard let url = files.first(where: { $0.lastPathComponent == basename }),
+                  let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
+                  let descriptor = descriptors.first,
+                  let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String else { return nil }
+            return family
+        }
+    }
+
     /// Removes durable extracted font resources with their source book. Core
     /// Text may keep an in-process registration alive until app exit, but no
     /// reader cache or storage survives the listener's explicit removal.
