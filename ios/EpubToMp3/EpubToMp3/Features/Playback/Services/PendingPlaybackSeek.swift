@@ -15,6 +15,7 @@ final class PendingPlaybackSeek {
         var readerPageRatio: Double? = nil
         var allowsFinalEndpoint = false
         var isApplying = false
+        var navigationTarget: PlaybackNavigationTarget? = nil
     }
 
     struct ProportionalRequest {
@@ -27,7 +28,12 @@ final class PendingPlaybackSeek {
     var autoplay: Bool?
     var proportional: ProportionalRequest?
     var chapter: ChapterRequest? {
-        didSet { navigationChanged(chapter.map { .init(requestID: $0.id, jobID: $0.jobID, chapterIndex: $0.chapterIndex) }) }
+        didSet {
+            navigationChanged(chapter.map {
+                .init(requestID: $0.id, jobID: $0.jobID, chapterIndex: $0.chapterIndex,
+                      target: $0.navigationTarget ?? .chapterTime($0.position))
+            })
+        }
     }
     private var durationTask: Task<Void, Never>?
     private let navigationChanged: (PendingNavigation?) -> Void
@@ -46,6 +52,7 @@ final class PendingPlaybackSeek {
                  resolveURL: @escaping (String?, String, Int) -> URL?,
                  selectChapters: ([JobSnapshot.Chapter]) -> Void,
                  retry: @escaping () -> Void, cancel: @escaping () -> Void,
+                 waiting: @escaping () -> Void,
                  rebuild: @escaping (ChapterRequest, [(URL, SegmentBacklog.Identity?)], TimeInterval, TimeInterval) -> Void) {
         guard var pending = chapter, !pending.isApplying,
               let snapshot = currentSnapshot(), snapshot.jobId == pending.jobID, hasPlayer else { return }
@@ -85,7 +92,10 @@ final class PendingPlaybackSeek {
         if isSegmentMode {
             let retained = segments.files.filter { $0.key.chapterIndex >= pending.chapterIndex }
                 .sorted { $0.key < $1.key }
-            guard retained.first?.key.chapterIndex == pending.chapterIndex else { return }
+            guard retained.first?.key.chapterIndex == pending.chapterIndex else {
+                waiting()
+                return
+            }
             if pending.position > 0 {
                 pending.isApplying = true
                 self.chapter = pending
@@ -94,7 +104,8 @@ final class PendingPlaybackSeek {
                 durationTask = Task { @MainActor [weak self] in
                     guard let self else { return }
                     var durations: [TimeInterval] = []
-                    var total: TimeInterval = 0
+                    let origin = segments.startingPosition(for: pending.chapterIndex)
+                    var total = origin
                     for (identity, url) in retained where identity.chapterIndex == pending.chapterIndex {
                         guard !Task.isCancelled, self.chapter?.id == pending.id else { return }
                         // Missing ordinal durations cannot be treated as zero.
@@ -135,22 +146,31 @@ final class PendingPlaybackSeek {
                     }
                     // Do not silently clamp a target whose segment has not
                     // arrived yet. Enqueue retries this pending request.
-                    if total < resolved.position
-                        || (total == resolved.position && !resolved.allowsFinalEndpoint) {
+                    guard let resolution = StreamedChapterSeek.resolve(position: resolved.position,
+                        startingPosition: origin, durations: durations,
+                        allowsFinalEndpoint: resolved.allowsFinalEndpoint) else {
+                        cancel()
+                        return
+                    }
+                    switch resolution {
+                    case .waiting:
                         self.chapter?.isApplying = false
                         self.durationTask = nil
+                        // Retain files, but release paused queue capacity so Rust
+                        // can produce the segment containing the requested time.
+                        waiting()
                         if segments.files.keys.filter({ $0.chapterIndex == pending.chapterIndex }).count
                             > retained.filter({ $0.key.chapterIndex == pending.chapterIndex }).count {
                             retry()
                         }
                         return
+                    case .ready(let target):
+                        let chapterEntries = retained.filter { $0.key.chapterIndex == pending.chapterIndex }
+                        let identity = chapterEntries[target.segmentIndex].key
+                        let entries = segments.files.filter { $0.key >= identity }
+                            .sorted { $0.key < $1.key }.map { ($0.value, Optional($0.key)) }
+                        rebuild(resolved, entries, target.offset, target.chapterBase)
                     }
-                    guard let target = PlaybackSegmentSession.segmentSeekTarget(position: resolved.position, durations: durations) else { return }
-                    let chapterEntries = retained.filter { $0.key.chapterIndex == pending.chapterIndex }
-                    let identity = chapterEntries[target.segmentIndex].key
-                    let entries = segments.files.filter { $0.key >= identity }
-                        .sorted { $0.key < $1.key }.map { ($0.value, Optional($0.key)) }
-                    rebuild(pending, entries, target.offset, durations.prefix(target.segmentIndex).reduce(0, +))
                 }
                 return
             }
@@ -176,6 +196,7 @@ final class PendingPlaybackSeek {
         let requestID: UUID
         let jobID: String
         let chapterIndex: Int
+        var target: PlaybackNavigationTarget = .chapterTime(0)
     }
     func proportionalPosition(jobID: String?, chapterIndex: Int, duration: TimeInterval) -> TimeInterval? {
         guard let pending = proportional else { return nil }
@@ -277,7 +298,8 @@ final class PendingPlaybackSeek {
         }
         let request = ChapterRequest(id: pending.id, jobID: pending.jobID, chapterIndex: targetIndex,
                                      autoplay: pending.autoplay, position: pending.position,
-                                     readerPageRatio: pending.readerPageRatio)
+                                     readerPageRatio: pending.readerPageRatio,
+                                     navigationTarget: pending.navigationTarget)
         return .ready(playableOffset: target, request: request)
     }
 

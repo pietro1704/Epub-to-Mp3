@@ -273,6 +273,23 @@ final class AudioPlayer: ObservableObject {
 
     func seek(to seconds: TimeInterval) { services.seeking.seek(to: seconds) }
 
+    func pendingListeningSeek(for navigation: PendingNavigation) -> PendingPlaybackSeek.ChapterRequest? {
+        guard let request = pendingSeek.chapter, request.id == navigation.requestID,
+              request.jobID == navigation.jobID, snapshot?.jobId == navigation.jobID else { return nil }
+        return request
+    }
+
+    func restoreListeningSeek(_ request: PendingPlaybackSeek.ChapterRequest, jobID: String) {
+        guard snapshot?.jobId == jobID else { return }
+        isSegmentMode = true
+        services.seeking.restoreListeningSeek(request, jobID: jobID)
+    }
+
+    func cancelPendingListeningSeek(_ request: PendingPlaybackSeek.ChapterRequest) {
+        guard pendingSeek.chapter?.id == request.id, pendingSeek.chapter?.jobID == request.jobID else { return }
+        services.seeking.cancel()
+    }
+
     func nextChapter() { services.transport.navigateChapter(.forward) }
 
     func previousChapter() { services.transport.navigateChapter(.backward) }

@@ -86,6 +86,7 @@ final class PlaybackSegmentSession {
     }
     func updateChapterDuration(_ duration: TimeInterval) { chapterDuration = duration }
     func setBase(_ value: TimeInterval) { cumulativeBase = value }
+    func startingPosition(for chapter: Int) -> TimeInterval { startingPositions[chapter] ?? 0 }
     func advanceBase(_ duration: TimeInterval) { cumulativeBase += duration }
     func recordDuration(_ value: TimeInterval, identity: SegmentBacklog.Identity) { durations[identity] = value }
     func recordEmpty() -> Bool { backlog.recordEmpty() }
@@ -246,22 +247,6 @@ final class PlaybackSegmentSession {
     }
 
 
-    nonisolated static func segmentSeekTarget(
-        position: TimeInterval,
-        durations: [TimeInterval]
-    ) -> SegmentSeekTarget? {
-        guard !durations.isEmpty, durations.allSatisfy({ $0.isFinite && $0 > 0 }) else { return nil }
-        let target = min(segmentDuration(durations: durations), max(0, position.isFinite ? position : 0))
-        var base: TimeInterval = 0
-        for (index, duration) in durations.enumerated() where duration.isFinite && duration > 0 {
-            if target < base + duration || index == durations.count - 1 {
-                return SegmentSeekTarget(segmentIndex: index, offset: min(duration, max(0, target - base)))
-            }
-            base += duration
-        }
-        return nil
-    }
-
 
     nonisolated static func shouldDrainSegmentBacklog(queueCount: Int, maxQueueAhead: Int) -> Bool {
         queueCount < max(1, maxQueueAhead)
@@ -301,11 +286,6 @@ final class PlaybackSegmentSession {
             return SegmentBacklog.Identity(chapterIndex: chapter, segmentIndex: segment)
         }
         return nil
-    }
-
-    struct SegmentSeekTarget: Equatable {
-        let segmentIndex: Int
-        let offset: TimeInterval
     }
 
     /// Remote manifests are one-based; legacy snapshots containing chapter

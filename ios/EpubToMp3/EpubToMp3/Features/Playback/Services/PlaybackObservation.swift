@@ -129,6 +129,7 @@ final class PlaybackObservation {
             finished: { [weak self] in self?.handleFinishedItem($0) },
             itemChanged: { [weak self] in
                 guard let self else { return }
+                guard !self.isSeeking else { return }
                 // Drop a previous chapter's proportional seek before any new
                 // duration may apply it to the wrong text anchor.
                 self.seeking.pending.proportional = nil

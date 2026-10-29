@@ -38,5 +38,5 @@ acceptance remain deferred to the user's final validation campaign. No visible
 journey or red-before native execution is claimed while that campaign is deferred.
 Simulator quarantine remains in force.
 
-Seeking into unavailable chunks is a separate task. This change preserves a
-chapter-wide slider but does not choose the user's pending “next chunk” policy.
+Seeking into unavailable chunks preserves the selected chapter time and the
+offset inside its containing chunk. See [unavailable-audio seeking](unavailable-audio-seek.md).

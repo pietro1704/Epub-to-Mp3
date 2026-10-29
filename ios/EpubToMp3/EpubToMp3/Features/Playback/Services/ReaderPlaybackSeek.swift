@@ -45,7 +45,8 @@ final class ReaderPlaybackSeek {
         if !hasPlayer, snapshot.playableChapters.isEmpty, !snapshot.isTerminal {
             let ratio = ratio.flatMap { $0.isFinite ? max(0, min(1, $0)) : nil }
             return .pending(.init(id: UUID(), jobID: snapshot.jobId, chapterIndex: readerChapterIndex,
-                                  autoplay: true, readerPageRatio: ratio), waitingForFirstAudio: true)
+                                  autoplay: true, readerPageRatio: ratio,
+                                  navigationTarget: .readerPage(ratio ?? 0)), waitingForFirstAudio: true)
         }
         if segmentMode, hasPlayer {
             let duration = segments.confirmedEnd(for: readerChapterIndex, snapshot: snapshot)
@@ -54,7 +55,8 @@ final class ReaderPlaybackSeek {
             let position = sentencePosition(sentenceID, chapter: readerChapterIndex, wordRatio: wordRatio)
             return .pending(.init(id: UUID(), jobID: snapshot.jobId, chapterIndex: readerChapterIndex,
                                   autoplay: true, position: position ?? ratio * duration,
-                                  readerPageRatio: position == nil && ratio > 0 && duration <= 0 ? ratio : nil),
+                                  readerPageRatio: position == nil && ratio > 0 && duration <= 0 ? ratio : nil,
+                                  navigationTarget: position.map { .chapterTime($0) } ?? .readerPage(ratio)),
                             waitingForFirstAudio: false)
         }
         // Reader space is EPUB-zero-based. A nonnarratable preface selects the

@@ -28,34 +28,10 @@ final class AudioPlayerDurationTests: XCTestCase {
         XCTAssertEqual(PlaybackSegmentSession.segmentRemaining(position: -10, duration: 100), 100)
     }
 
-    func testSegmentModeSeekResolvesTargetAcrossSegments() {
-        let target = PlaybackSegmentSession.segmentSeekTarget(position: 75, durations: [20, 20, 20, 20, 20])
-
-        XCTAssertEqual(target?.segmentIndex, 3)
-        XCTAssertEqual(target?.offset, 15)
-        XCTAssertEqual(PlaybackSegmentSession.segmentSeekTarget(position: 100, durations: [20, 20, 20, 20, 20])?.segmentIndex, 4)
-        XCTAssertEqual(PlaybackSegmentSession.segmentSeekTarget(position: 100, durations: [20, 20, 20, 20, 20])?.offset, 20)
-    }
-
     func testSegmentQueueDrainsBacklogBeforeItCanStarve() {
         XCTAssertFalse(PlaybackSegmentSession.shouldDrainSegmentBacklog(queueCount: 5, maxQueueAhead: 5))
         XCTAssertTrue(PlaybackSegmentSession.shouldDrainSegmentBacklog(queueCount: 4, maxQueueAhead: 5))
         XCTAssertTrue(PlaybackSegmentSession.shouldDrainSegmentBacklog(queueCount: 0, maxQueueAhead: 5))
-    }
-
-    func testSegmentSeekBoundarySelectsFollowingSegment() {
-        let target = PlaybackSegmentSession.segmentSeekTarget(position: 15, durations: [15, 15, 15])
-        XCTAssertEqual(target?.segmentIndex, 1)
-        XCTAssertEqual(target?.offset, 0)
-        XCTAssertEqual(PlaybackSegmentSession.segmentSeekTarget(position: 0, durations: [15, 15])?.segmentIndex, 0)
-        XCTAssertEqual(PlaybackSegmentSession.segmentSeekTarget(position: -5, durations: [15, 15])?.offset, 0)
-    }
-
-    func testSegmentSeekDoesNotMapAcrossUnknownDurations() {
-        XCTAssertNil(PlaybackSegmentSession.segmentSeekTarget(position: 20, durations: [15, .nan, 15]))
-        XCTAssertNil(PlaybackSegmentSession.segmentSeekTarget(position: 20, durations: [15, 0, 15]))
-        XCTAssertNil(PlaybackSegmentSession.segmentSeekTarget(position: 20, durations: [15, .infinity]))
-        XCTAssertNil(PlaybackSegmentSession.segmentSeekTarget(position: 20, durations: []))
     }
 
     @MainActor
