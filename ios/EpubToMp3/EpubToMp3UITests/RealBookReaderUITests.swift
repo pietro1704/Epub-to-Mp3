@@ -87,15 +87,49 @@ final class RealBookReaderUITests: XCTestCase {
         retainLiveCapture(app, name: "authored-link-destination")
     }
 
+    func testOptInAuthoredBookScrollingAndChapterRoundTrip() throws {
+        let app = try openAuthoredLinkBook(layout: "scrolling")
+        defer { app.terminate() }
+        submitLiveSearch("ORIGIN7964", app: app)
+        let chapter = app.staticTexts["flicker.probe.chapter"].firstMatch
+        XCTAssertTrue(waitUntil(timeout: 15) { chapter.label == "0/2" })
+        XCTAssertFalse(app.staticTexts["reader.pageIndicator"].firstMatch.exists)
+        let offsetProbe = app.staticTexts["reader.scrollOffset"].firstMatch
+        func offset() -> Int? { offsetProbe.label.split(separator: "=").last.flatMap { Int($0) } }
+        let initialOffset = try XCTUnwrap(offset())
+        let viewport = app.scrollViews["reader.viewport"].firstMatch
+        XCTAssertTrue(viewport.waitForExistence(timeout: 5))
+        viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+            .press(forDuration: 0.1, thenDragTo: viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)))
+        XCTAssertTrue(waitUntil(timeout: 5) { (offset() ?? initialOffset) > initialOffset + 50 })
+        XCTAssertTrue(app.buttons["reader.search"].isHittable, "Scrolling must preserve visible chrome.")
+        let harness = ReaderModesHarness(app: app)
+        let settledOffset = try XCTUnwrap(offset())
+        harness.toggleChromeAndSettle(visible: false)
+        XCTAssertEqual(offset(), settledOffset, "Hiding chrome must preserve the raw scrolling offset.")
+        retainLiveCapture(app, name: "authored-scrolling-hidden-chrome")
+        harness.toggleChromeAndSettle(visible: true)
+        XCTAssertEqual(offset(), settledOffset, "The chrome round trip must preserve the raw scrolling offset.")
+        viewport.swipeLeft()
+        XCTAssertTrue(waitUntil(timeout: 10) { chapter.label == "1/2" })
+        viewport.swipeLeft()
+        XCTAssertEqual(chapter.label, "1/2", "The final chapter must reject navigation beyond the book.")
+        viewport.swipeRight()
+        XCTAssertTrue(waitUntil(timeout: 10) { chapter.label == "0/2" })
+        viewport.swipeRight()
+        XCTAssertEqual(chapter.label, "0/2", "The first chapter must reject navigation before the book.")
+        retainLiveCapture(app, name: "authored-scrolling-chapter-restored")
+    }
+
     // Install Fixtures/ReaderLiveLinks.epub explicitly, then pass its imported book ID.
-    private func openAuthoredLinkBook() throws -> XCUIApplication {
+    private func openAuthoredLinkBook(layout: String = "paginated") throws -> XCUIApplication {
         guard ProcessInfo.processInfo.environment["APP_DEVICE_READER_LINKS"] == "1",
               let bookID = ProcessInfo.processInfo.environment["APP_DEVICE_LINK_BOOK_ID"] else {
             throw XCTSkip("Requires the explicitly installed authored live acceptance EPUB.")
         }
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTestResetActiveReader", "-uiTestReaderLayout", "paginated",
+        app.launchArguments = ["-uiTestResetActiveReader", "-uiTestReaderLayout", layout,
             "-uiTestPaginationProbe", "-uiTestFlickerProbe", "-uiTestNoPageTurnOverlay", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         let close = app.buttons["fullPlayer.close"].firstMatch
