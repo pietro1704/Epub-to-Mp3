@@ -61,6 +61,112 @@ final class DeviceAcceptanceUITests: XCTestCase {
         attach(app, name: "actual-device-book-restored-chrome")
     }
 
+    func testOptInExistingBookNavigation() throws {
+        guard ProcessInfo.processInfo.environment["APP_DEVICE_LIVE_PLAYBACK"] == "1",
+              let bookID = ProcessInfo.processInfo.environment["APP_DEVICE_READER_BOOK_ID"] else {
+            throw XCTSkip("Requires explicit physical-device playback authorization and an existing book ID.")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestResetActiveReader", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        closeExpandedPlayerIfPresent(app)
+        let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"].firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 30))
+        tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        let search = app.buttons["reader.search"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 60))
+        XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
+        attach(app, name: "live-existing-reader")
+
+        search.tap()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("verification-no-match-792680")
+        let prompt = app.alerts.firstMatch
+        prompt.buttons["Cancel"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        attach(app, name: "live-after-search-cancel")
+        XCTAssertTrue(prompt.waitForNonExistence(timeout: 5), "Cancel must dismiss the search prompt.")
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+
+        app.buttons["reader.toc.toggle"].firstMatch.tap()
+        XCTAssertTrue(app.tables["reader.toc"].cells.firstMatch.waitForExistence(timeout: 5))
+        attach(app, name: "live-existing-toc")
+        app.navigationBars.buttons["Done"].firstMatch.tap()
+        app.buttons["reader.settings.toggle"].firstMatch.tap()
+        let done = app.navigationBars.buttons["Done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        attach(app, name: "live-existing-reader-settings")
+        done.tap()
+        XCTAssertTrue(done.waitForNonExistence(timeout: 5))
+
+    }
+
+    func testOptInExistingBookRealPlayback() throws {
+        guard ProcessInfo.processInfo.environment["APP_DEVICE_LIVE_PLAYBACK"] == "1",
+              let bookID = ProcessInfo.processInfo.environment["APP_DEVICE_READER_BOOK_ID"] else {
+            throw XCTSkip("Requires explicit physical-device playback authorization and an existing book ID.")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestResetActiveReader", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        closeExpandedPlayerIfPresent(app)
+        let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"].firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 30))
+        tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        let search = app.buttons["reader.search"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 60))
+        XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
+        attach(app, name: "live-existing-reader")
+
+        let play = app.buttons["miniPlayer.playPause"].firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 10))
+        XCTAssertEqual(play.label.lowercased(), "play", "Opening a book must not autoplay.")
+        play.tap()
+        let open = app.buttons["miniPlayer.open"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 90))
+        open.tap()
+        let elapsed = app.staticTexts["fullPlayer.elapsed"].firstMatch
+        XCTAssertTrue(elapsed.waitForExistence(timeout: 90))
+        func seconds() -> Int {
+            elapsed.label.split(separator: ":").compactMap { Int($0) }.reduce(0) { $0 * 60 + $1 }
+        }
+        func waitFor(_ predicate: @escaping () -> Bool, timeout: TimeInterval = 15) -> Bool {
+            let condition = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in predicate() }, object: nil)
+            return XCTWaiter.wait(for: [condition], timeout: timeout) == .completed
+        }
+        let initial = seconds()
+        XCTAssertTrue(waitFor({ seconds() > initial }, timeout: 60), "Real playback must advance; no canned audio is injected.")
+        attach(app, name: "live-real-playback")
+        let pause = app.buttons["Pause"].firstMatch
+        XCTAssertTrue(pause.waitForExistence(timeout: 5))
+        pause.tap()
+        let resume = app.buttons["Play"].firstMatch
+        XCTAssertTrue(resume.waitForExistence(timeout: 5))
+        let paused = seconds()
+        let interval = expectation(description: "Observe explicit pause")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { interval.fulfill() }
+        wait(for: [interval], timeout: 4)
+        XCTAssertLessThanOrEqual(abs(seconds() - paused), 1)
+        resume.tap()
+        XCTAssertTrue(waitFor({ seconds() > paused }))
+        let beforeBackground = seconds()
+        XCUIDevice.shared.press(.home)
+        let backgroundInterval = expectation(description: "Observe background playback")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { backgroundInterval.fulfill() }
+        wait(for: [backgroundInterval], timeout: 12)
+        app.activate()
+        XCTAssertTrue(elapsed.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(seconds(), beforeBackground + 5)
+        attach(app, name: "live-return-from-background")
+        pause.tap()
+        XCTAssertTrue(resume.waitForExistence(timeout: 5))
+    }
+
     private func auditNavigation(portuguese: Bool) throws {
         let app = XCUIApplication()
         let language = portuguese ? "pt-BR" : "en"
