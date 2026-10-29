@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-
 use ndarray::{Array1, Array2};
 use ort::session::Session;
 use ort::value::Tensor;
-use serde::Deserialize;
 
 use crate::PiperError;
 use crate::PiperResult;
@@ -12,32 +9,7 @@ pub const BOS: char = '^';
 pub const EOS: char = '$';
 pub const PAD: char = '_';
 
-#[derive(Deserialize)]
-pub struct AudioConfig {
-    pub sample_rate: u32,
-}
-
-#[derive(Deserialize)]
-pub struct ESpeakConfig {
-    pub voice: String,
-}
-
-#[derive(Deserialize, Clone)]
-pub struct InferenceConfig {
-    pub noise_scale: f32,
-    pub length_scale: f32,
-    pub noise_w: f32,
-}
-
-#[derive(Deserialize)]
-pub struct ModelConfig {
-    pub audio: AudioConfig,
-    pub espeak: ESpeakConfig,
-    pub inference: InferenceConfig,
-    pub num_speakers: u32,
-    pub speaker_id_map: HashMap<String, i64>,
-    pub phoneme_id_map: HashMap<char, Vec<i64>>,
-}
+pub use crate::model_config::ModelConfig;
 
 pub fn phonemes_to_ids(config: &ModelConfig, phonemes: &str) -> Vec<i64> {
     let map = &config.phoneme_id_map;

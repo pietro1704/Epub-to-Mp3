@@ -24,3 +24,10 @@ Removed example manifest entries whose sample files are not vendored.
 Native build and synthesis tests must establish runtime compatibility; source
 comparison alone does not prove it. Android and iOS use their actual target
 artifacts and the same API level, without pretending host libraries are portable.
+
+The configuration decoder also accepts an omitted or null `speaker_id_map` for
+single-speaker models, including the catalog's pinned Cadu and Jeff exports.
+Multi-speaker models still require a map; malformed present maps are rejected.
+The extracted decoder is shared with model-free Rust workspace regression tests
+so these configurations are checked before ONNX session initialization. Named
+speaker IDs and synthesis parameters are preserved.

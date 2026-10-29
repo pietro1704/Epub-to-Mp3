@@ -1,4 +1,5 @@
 mod model;
+mod model_config;
 
 use std::collections::HashMap;
 use std::fs::File;
