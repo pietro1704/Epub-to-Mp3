@@ -26,6 +26,7 @@ final class ReaderThemeAppearanceTests: XCTestCase {
         var materialOpacity: Bool?
         var materialAlpha: CGFloat?
         var originalMaterialEffect: UIVisualEffect?
+        var originalMaterialView: AdaptiveMaterialView?
         for (theme, nativeStyle) in [(ReaderTheme.light, UIUserInterfaceStyle.light), (.dark, .dark)] {
             // The chosen reading appearance must work independently of the surrounding system.
             window.overrideUserInterfaceStyle = nativeStyle == .light ? .dark : .light
@@ -40,10 +41,11 @@ final class ReaderThemeAppearanceTests: XCTestCase {
             XCTAssertNil(appearance.backgroundEffect, "The existing native material behind the bar owns the blur.")
             XCTAssertEqual(appearance.backgroundColor?.cgColor.alpha ?? 0, 0, accuracy: 0.001)
             let material: AdaptiveMaterialView = try XCTUnwrap(descendant(in: root.view))
-            XCTAssertNotNil(material.effect as? UIBlurEffect, "The iOS 15.5 reader must use UIKit's native material.")
-            if let originalMaterialEffect {
-                XCTAssertTrue(material.effect === originalMaterialEffect, "UIKit must adapt the same material effect across appearances.")
+            try assertNativeMaterial(material.effect, original: originalMaterialEffect)
+            if let originalMaterialView {
+                XCTAssertTrue(material === originalMaterialView, "Appearance changes must retain the native material surface.")
             }
+            originalMaterialView = material
             originalMaterialEffect = material.effect
             XCTAssertEqual(material.backgroundColor?.cgColor.alpha ?? 0, 0, accuracy: 0.001)
             XCTAssertFalse(material.isUserInteractionEnabled)
@@ -78,11 +80,34 @@ final class ReaderThemeAppearanceTests: XCTestCase {
         for style in [UIUserInterfaceStyle.light, .dark] {
             playerBar.overrideUserInterfaceStyle = style
             playerBar.layoutIfNeeded()
-            XCTAssertNotNil(material.effect as? UIBlurEffect)
-            XCTAssertTrue(material.effect === originalEffect)
+            try assertNativeMaterial(material.effect, original: originalEffect)
             XCTAssertEqual(material.backgroundColor?.cgColor.alpha ?? 0, 0, accuracy: 0.001)
             XCTAssertEqual(material.isOpaque, opaque)
             XCTAssertEqual(material.alpha, alpha, accuracy: 0.001)
+        }
+    }
+
+    private func assertNativeMaterial(_ candidate: UIVisualEffect?, original: UIVisualEffect?,
+                                      file: StaticString = #filePath, line: UInt = #line) throws {
+        let effect = try XCTUnwrap(candidate, file: file, line: line)
+#if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            let glass = try XCTUnwrap(effect as? UIGlassEffect, file: file, line: line)
+            XCTAssertFalse(glass.isInteractive, file: file, line: line)
+            XCTAssertNil(glass.tintColor, file: file, line: line)
+            if let original {
+                let previous = try XCTUnwrap(original as? UIGlassEffect, file: file, line: line)
+                XCTAssertEqual(glass.isInteractive, previous.isInteractive, file: file, line: line)
+                XCTAssertEqual(glass.tintColor, previous.tintColor, file: file, line: line)
+            }
+            // UIKit copies glass effects even on consecutive property reads.
+            // Preserve configuration and surface identity, not getter identity.
+            return
+        }
+#endif
+        XCTAssertNotNil(effect as? UIBlurEffect, "Legacy UIKit must retain native blur.", file: file, line: line)
+        if let original {
+            XCTAssertTrue(effect === original, "Legacy material identity must survive appearance changes.", file: file, line: line)
         }
     }
 
