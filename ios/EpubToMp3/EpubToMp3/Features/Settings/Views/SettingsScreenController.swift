@@ -24,6 +24,7 @@ final class SettingsScreenController: UITableViewController {
     private let speechModels: SpeechModelLibraryClient
     private let audition = VoiceAuditionPresentation()
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
+    private var modelDisclosure = SpeechModelSettingsDisclosure()
     private var speechModelState: SpeechModelLibraryViewState
     private var speechModelsTask: Task<Void, Never>?
     private var speechModelInstallTasks: [String: Task<Void, Never>] = [:]
@@ -100,7 +101,7 @@ final class SettingsScreenController: UITableViewController {
 
     override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        Section(rawValue: section)?.rowCount(speechModels: speechModelState) ?? 0
+        Section(rawValue: section)?.rowCount(speechModels: speechModelState, disclosure: modelDisclosure) ?? 0
     }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         Section(rawValue: section)?.title
@@ -117,7 +118,7 @@ final class SettingsScreenController: UITableViewController {
                                             speechModels: speechModelState,
                                             installEvents: speechModelInstallEvents,
                                             termsAcceptance: termsAcceptance,
-                                            controller: self)
+                                            disclosure: modelDisclosure, controller: self)
         case .backend:
             return RuntimeSettingsRows.backendCell(for: indexPath, tableView: tableView, settings: settings, controller: self)
         case .reader:
@@ -155,8 +156,11 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func handleRuntimeSelection(row index: Int, source: IndexPath) {
-        guard let row = RuntimeSettingsRows.row(at: index, speechModels: speechModelState) else { return }
+        guard let row = RuntimeSettingsRows.row(at: index, speechModels: speechModelState, disclosure: modelDisclosure) else { return }
         switch row {
+        case .models:
+            modelDisclosure.toggle()
+            tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
         case .primary: presentPrimaryChoices(source: source)
         case .secondary: presentSecondaryChoices(source: source)
         case .studyLanguage:

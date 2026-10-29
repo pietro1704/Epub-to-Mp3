@@ -28,6 +28,9 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     private let speechModels: SpeechModelLibraryClient
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
     private var state: SpeechModelLibraryViewState
+    private var disclosure = SpeechModelSettingsDisclosure()
+    private let summaryLabel = NSTextField(wrappingLabelWithString: "")
+    private lazy var disclosureButton = NSButton(title: "", target: self, action: #selector(toggleModels))
     private var installEvents: [String: SpeechModelInstallEvent] = [:]
     private var installTasks: [String: Task<Void, Never>] = [:]
     private var reloadTask: Task<Void, Never>?
@@ -51,6 +54,10 @@ final class MacSpeechModelLibraryPanel: NSStackView {
         alignment = .leading
         spacing = 10
         setAccessibilityIdentifier("settings.speechModels")
+        disclosureButton.setAccessibilityIdentifier("settings.speechModels.disclosure")
+        summaryLabel.setAccessibilityIdentifier("settings.speechModels.summary")
+        addArrangedSubview(disclosureButton)
+        addArrangedSubview(summaryLabel)
         render()
     }
 
@@ -81,10 +88,12 @@ final class MacSpeechModelLibraryPanel: NSStackView {
 
     func render() {
         renderedRows.removeAll()
-        arrangedSubviews.forEach { view in
+        refreshSummary()
+        arrangedSubviews.filter { $0 !== disclosureButton && $0 !== summaryLabel }.forEach { view in
             removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+        guard disclosure.isExpanded else { return }
         guard !state.entries.isEmpty else {
             addArrangedSubview(NSTextField(labelWithString: L10n.string("settings.modelState.notInspected")))
             return
@@ -105,6 +114,18 @@ final class MacSpeechModelLibraryPanel: NSStackView {
         for entry in state.orderedEntries {
             addArrangedSubview(makeRow(for: entry))
         }
+    }
+
+    @objc private func toggleModels() {
+        disclosure.toggle()
+        render()
+    }
+
+    private func refreshSummary() {
+        disclosureButton.title = L10n.string(disclosure.isExpanded ? "settings.models.hide" : "settings.models.show")
+        disclosureButton.setAccessibilityValue(L10n.string(disclosure.isExpanded ? "settings.models.expanded" : "settings.models.collapsed"))
+        summaryLabel.stringValue = SpeechModelSettingsDisclosure.summary(state: state,
+            primary: settings.ttsPreferences.primary, events: installEvents)
     }
 
     @objc private func studyLanguageChanged(_ sender: NSPopUpButton) {
@@ -145,6 +166,8 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     }
 
     private func updateInstallRow(modelID: String) {
+        refreshSummary()
+        guard disclosure.isExpanded else { return }
         guard let entry = state.entries.first(where: { $0.identity.modelID == modelID }),
               let row = renderedRows[modelID], row.actions == actions(for: entry).available else {
             render()
