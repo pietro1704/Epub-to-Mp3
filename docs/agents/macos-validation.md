@@ -46,6 +46,25 @@ For a GUI journey, bring the app frontmost, exercise normal flows, retain its
 identity/screenshots/logs, and verify shutdown when finished. Opening the window
 alone does not establish playback or conversion acceptance.
 
+## Retained Intel FFI packages
+
+After an authenticated producer download, the downloader retains the full
+package and receipt under `target/native-prebuilt/converter-ffi-macos-intel`.
+Before considering another build, reuse a source-matched package from this
+checkout or its linked worktrees:
+
+```sh
+mise exec -- ruby scripts/native_job.rb build -- ruby scripts/download_converter_ffi_macos.rb --reuse-local
+```
+
+This command verifies the current Rust/native inputs, build recipe, payload
+hashes, platform, architecture and ABI before installation. Identical installed
+payloads remain untouched. It requires neither network access nor a GitHub token
+and never falls back to compilation. Rejected packages remain available for
+inspection. If none matches, audit the trusted master-only producer artifacts;
+the producer shares the compiler/SDK-scoped Intel Cargo cache with Faber CI.
+Swift and documentation edits alone do not invalidate an unchanged FFI package.
+
 ## Required PR gate
 
 `mise run pr:gate:policy -- --repo OWNER/REPO` verifies the server requires only

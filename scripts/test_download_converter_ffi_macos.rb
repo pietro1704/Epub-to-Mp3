@@ -63,6 +63,7 @@ class ConverterFfiMacOSDownloaderTest < Minitest::Test
       'path' => Downloader::WORKFLOW,
       'head_sha' => SOURCE_SHA
     }
+    File.write(File.join(@package, 'receipt.json'), JSON.generate(receipt))
   end
 
   def teardown
@@ -82,6 +83,58 @@ class ConverterFfiMacOSDownloaderTest < Minitest::Test
     assert_equal 1, verify_calls.length
     assert_equal @root, verify_calls.first[0]
     assert_equal Digest::SHA256.hexdigest(Downloader.canonical_json(IDENTITY)), verify_calls.first[2]
+  end
+
+  def test_keeps_the_verified_package_and_receipt_for_future_offline_reuse
+    client, = client_for(@package)
+    Downloader.download(root: @root, run_id: RUN_ID, run_attempt: ATTEMPT, token: 'fixture-token', client: client,
+                        now: Time.utc(2026, 1, 1), verify_package: ->(*) {})
+    receipts = Dir.glob(File.join(@root, 'target/native-prebuilt/converter-ffi-macos-intel/*/receipt.json'))
+    assert_equal 1, receipts.length, 'Successful installation must retain the verified binary provenance'
+    cached = File.dirname(receipts.fetch(0))
+    assert_equal 'macho-fixture', File.binread(File.join(cached, 'libconverter_ffi.dylib'))
+    assert_equal IDENTITY, JSON.parse(File.read(receipts.first)).fetch('identity')
+  end
+
+  def test_reuses_verified_bytes_without_install_mutations_and_rejects_changed_identity
+    client, = client_for(@package)
+    Downloader.download(root: @root, run_id: RUN_ID, run_attempt: ATTEMPT, token: 'fixture-token', client: client,
+                        now: Time.utc(2026, 1, 1), verify_package: ->(*) {})
+    identity = Digest::SHA256.hexdigest(Downloader.canonical_json(IDENTITY))
+    verifier = ->(_root, package, sha) do
+      assert_equal identity, sha
+      Downloader.validate_receipt!(package, @run, RUN_ID, ATTEMPT)
+    end
+    cached = ConverterFfiArtifactCache.find(root: @root, identity_sha: identity, verify_package: verifier)
+    refute_nil cached
+    Downloader.install_package(@root, cached, rename: ->(*) { flunk 'An identical package must not replace installed files' })
+    assert_nil ConverterFfiArtifactCache.find(root: @root, identity_sha: 'f' * 64,
+        verify_package: ->(*) { flunk 'Foreign source identity must not reach native inspection' })
+    File.binwrite(File.join(cached, 'libconverter_ffi.dylib'), 'tampered')
+    assert_nil ConverterFfiArtifactCache.find(root: @root, identity_sha: identity, verify_package: verifier)
+    assert_equal 'tampered', File.binread(File.join(cached, 'libconverter_ffi.dylib')), 'Rejected evidence must remain available'
+    assert_equal 'macho-fixture', File.binread(File.join(@root, 'target/release/libconverter_ffi.dylib'))
+  end
+
+  def test_discovers_verified_packages_in_another_linked_checkout
+    client, = client_for(@package)
+    Downloader.download(root: @root, run_id: RUN_ID, run_attempt: ATTEMPT, token: 'fixture-token', client: client,
+                        now: Time.utc(2026, 1, 1), verify_package: ->(*) {})
+    commands = [['git', 'init', '-q', @root], ['git', '-C', @root, 'config', 'user.name', 'Fixture'],
+                ['git', '-C', @root, 'config', 'user.email', 'fixture@example.invalid'],
+                ['git', '-C', @root, 'commit', '--allow-empty', '-qm', 'fixture']]
+    checkout = File.join(@temporary, 'linked checkout')
+    commands << ['git', '-C', @root, 'worktree', 'add', '--detach', checkout, 'HEAD']
+    commands.each do |command|
+      output, status = Open3.capture2e(*command)
+      assert status.success?, output
+    end
+    identity = Digest::SHA256.hexdigest(Downloader.canonical_json(IDENTITY))
+    found = ConverterFfiArtifactCache.find(root: checkout, identity_sha: identity,
+        verify_package: ->(_root, package, _sha) { Downloader.validate_receipt!(package, @run, RUN_ID, ATTEMPT) })
+    refute_nil found
+    assert found.start_with?(File.realpath(File.join(@root, ConverterFfiArtifactCache::RELATIVE_ROOT)))
+    refute File.exist?(File.join(checkout, 'target')), 'Discovery alone must not install or compile'
   end
 
   def test_rejects_untrusted_run_identity_before_download

@@ -11,6 +11,7 @@ require 'pathname'
 require 'tmpdir'
 require 'time'
 require 'uri'
+require_relative 'converter_ffi_artifact_cache'
 
 module ConverterFfiMacOSDownloader
   REPOSITORY = 'pietro1704/Epub-to-Mp3'.freeze
@@ -148,6 +149,7 @@ module ConverterFfiMacOSDownloader
       receipt = validate_receipt!(extracted, run, run_id, run_attempt)
       verify_package ||= method(:verify_with_producer)
       verify_package.call(root, extracted, receipt.fetch('identity_sha256'))
+      ConverterFfiArtifactCache.remember(root, extracted)
       install_package(root, extracted)
     end
     puts "Installed verified Intel converter-ffi from Actions run #{run_id} attempt #{run_attempt}"
@@ -313,6 +315,12 @@ module ConverterFfiMacOSDownloader
     release = File.join(target, 'release')
     data_parent = File.join(target, 'espeak-data', File.dirname(DATA_DESTINATION))
     data_destination = File.join(target, 'espeak-data', DATA_DESTINATION)
+    receipt = JSON.parse(File.read(File.join(package, 'receipt.json')))
+    installed = receipt.fetch('files').all? do |relative, digest|
+      path = relative == 'libconverter_ffi.dylib' ? File.join(release, relative) : File.join(data_destination, relative.delete_prefix('espeak-ng-data/'))
+      File.file?(path) && !File.symlink?(path) && Digest::SHA256.file(path).hexdigest == digest
+    end
+    return if installed
     FileUtils.mkdir_p(release)
     FileUtils.mkdir_p(data_parent)
     stage_library = File.join(release, ".libconverter_ffi.dylib.#{Process.pid}.tmp")
@@ -352,11 +360,23 @@ module ConverterFfiMacOSDownloader
       parser.on('--root PATH') { |value| options[:root] = File.expand_path(value) }
       parser.on('--run-id ID') { |value| options[:run_id] = value }
       parser.on('--run-attempt N') { |value| options[:run_attempt] = value }
+      parser.on('--reuse-local') { options[:reuse_local] = true }
     end.parse!(argv)
     raise 'Unexpected positional arguments' unless argv.empty?
+    root = options.fetch(:root, File.expand_path('..', __dir__))
+    if options[:reuse_local]
+      raise 'Offline reuse cannot also select an Actions run' if options[:run_id] || options[:run_attempt]
+      require_relative 'package_converter_ffi_macos'
+      identity = Digest::SHA256.hexdigest(canonical_json(ConverterFfiMacOSPackage.identity(root)))
+      package = ConverterFfiArtifactCache.find(root: root, identity_sha: identity, verify_package: method(:verify_with_producer))
+      raise 'No verified local FFI package matches these sources; inspect trusted artifacts before authorizing a build' unless package
+      install_package(root, package)
+      puts "Reused verified Intel converter-ffi package #{File.basename(package)} without compilation or network access"
+      return 0
+    end
     token = ENV['GH_TOKEN'] || ENV['GITHUB_TOKEN']
     raise 'GH_TOKEN or GITHUB_TOKEN is required' if token.to_s.empty?
-    download(root: options.fetch(:root, File.expand_path('..', __dir__)), run_id: options.fetch(:run_id), run_attempt: options.fetch(:run_attempt), token: token)
+    download(root: root, run_id: options.fetch(:run_id), run_attempt: options.fetch(:run_attempt), token: token)
     0
   rescue StandardError => error
     warn "error: #{error.message}"

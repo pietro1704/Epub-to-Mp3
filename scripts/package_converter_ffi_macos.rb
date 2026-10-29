@@ -16,6 +16,8 @@ module ConverterFfiMacOSPackage
     scripts/build_onnxruntime_macos.sh scripts/prepare_onnxruntime_macos.rb
     scripts/fetch_onnxruntime_macos.rb scripts/native_job.rb scripts/bundle_espeak_ng_data.sh
     scripts/package_converter_ffi_macos.rb
+    scripts/intel_rust_cache_identity.rb
+    scripts/converter_ffi_artifact_cache.rb
     .github/workflows/converter-ffi-macos-intel-prebuilt.yml
   ].freeze
   ORT_VERSION = '1.28.2'.freeze
@@ -113,8 +115,10 @@ module ConverterFfiMacOSPackage
     raise "Untracked build input found: #{untracked.split("\0").first}" unless untracked.empty?
     output = File.expand_path(output)
     raise 'Package output must not exist' if File.exist?(output) || File.symlink?(output)
-    library = File.join(root, 'target', RUST_TARGET, 'release', 'libconverter_ffi.dylib')
-    raise "Built FFI library is missing: #{library}" unless File.file?(library) && !File.symlink?(library)
+    candidates = [File.join(root, 'target/release/libconverter_ffi.dylib'),
+                  File.join(root, 'target', RUST_TARGET, 'release', 'libconverter_ffi.dylib')]
+    library = candidates.find { |path| File.file?(path) && !File.symlink?(path) }
+    raise 'Built FFI library is missing' unless library
     data_root = File.join(root, 'target', 'espeak-data')
     data = Dir.glob(File.join(data_root, '**', 'espeak-ng-data', 'phontab')).find do |path|
       File.file?(File.join(File.dirname(path), 'phondata'))
