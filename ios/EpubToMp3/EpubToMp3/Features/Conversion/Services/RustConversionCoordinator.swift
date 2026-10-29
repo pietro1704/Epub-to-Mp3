@@ -124,7 +124,7 @@ final class RustConversionCoordinator {
             let manifest = try await withTaskCancellationHandler(operation: {
                 try await withCheckedThrowingContinuation { continuation in
                     let invocation = RustConversionInvocation(adapter: self.adapter)
-                    RustConversionWorkQueues.shared.enqueue(for: playbackControl == nil ? .manual : .listening) {
+                    RustConversionWorkQueues.shared.enqueue(for: playbackControl == nil ? .manual : .listening) { [options] in
                         do {
                             guard !effectiveControl.isCancellationRequested else { throw CancellationError() }
                             let data = try invocation.adapter.convertBook(
