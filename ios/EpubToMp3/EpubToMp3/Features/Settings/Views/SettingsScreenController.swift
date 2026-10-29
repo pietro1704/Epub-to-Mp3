@@ -173,7 +173,7 @@ final class SettingsScreenController: UITableViewController {
                 tableView.reloadData()
             }
         case let .model(entry?): presentModelActions(for: entry, source: source)
-        case .cellular, .model(nil), .onlineFallback: break
+        case .cellular, .model(nil), .automaticSystemFallback, .onlineFallback: break
         }
     }
 
