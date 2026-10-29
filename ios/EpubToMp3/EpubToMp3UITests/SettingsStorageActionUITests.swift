@@ -35,6 +35,11 @@ final class SettingsStorageActionUITests: XCTestCase {
                                "-currentlyReadingBookID", ""]
         app.launch()
         defer { app.terminate() }
+        let closePlayer = app.buttons["fullPlayer.close"].firstMatch
+        if closePlayer.waitForExistence(timeout: 2) {
+            closePlayer.tap()
+            XCTAssertTrue(closePlayer.waitForNonExistence(timeout: 5))
+        }
         let settingsTab = app.tabBars.firstMatch.buttons[settings]
         XCTAssertTrue(settingsTab.waitForExistence(timeout: 10))
         settingsTab.tap()
