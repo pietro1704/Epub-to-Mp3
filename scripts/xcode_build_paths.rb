@@ -7,8 +7,14 @@ module XcodeBuildPaths
   ROOT = File.expand_path("..", __dir__)
   DEVELOPER = "/Applications/Xcode-16.4.0.app/Contents/Developer"
   HOSTED_DEVELOPER = "/Applications/Xcode_16.4.app/Contents/Developer"
+  IPHONE_16E_DEVICE = '44B2CFBD-2193-5086-8E8D-BF7A2876C321'
+  IPHONE_16E_DEVELOPER = '/Applications/Xcode-26.3.0.app/Contents/Developer'
 
-  def self.developer(directory: ->(path) { File.directory?(path) })
+  def self.developer(environment: ENV, directory: ->(path) { File.directory?(path) })
+    if environment['IOS_DEVICE_ID'] == IPHONE_16E_DEVICE
+      return IPHONE_16E_DEVELOPER if directory.call(IPHONE_16E_DEVELOPER)
+      raise "Xcode 26.3 is required for the physical iPhone 16e at #{IPHONE_16E_DEVELOPER}"
+    end
     [DEVELOPER, HOSTED_DEVELOPER].find { |path| directory.call(path) } ||
       raise("Xcode 16.4 is required at #{DEVELOPER} or #{HOSTED_DEVELOPER}")
   end

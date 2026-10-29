@@ -40,14 +40,23 @@ condition.
 
 ## Apple toolchain
 
-Use Xcode 16.4 for app development, builds and tests because this project
+Use Xcode 26.3 for the physical iPhone 16e by default, as explicitly requested
+by Pietro. Set `IOS_DEVICE_ID=44B2CFBD-2193-5086-8E8D-BF7A2876C321` before
+invoking managed device build, run or test commands; `scripts/xcode_build_paths.rb`
+then selects `/Applications/Xcode-26.3.0.app/Contents/Developer`. This is a
+persistent device-specific choice. Reuse the verified iOS Rust package when its
+source/build inputs match; selecting the app toolchain does not authorize a
+dependency rebuild, runtime download or Simulator execution.
+
+Other development and legacy acceptance retain Xcode 16.4 because this project
 supports iOS 15.5. On this Mac its developer directory is
 `/Applications/Xcode-16.4.0.app/Contents/Developer`; managed tasks select it
 through `DEVELOPER_DIR` and `scripts/xcode_build_paths.rb`.
 
-The system Command Line Tools selection uses Xcode 26 for terminal and
-Homebrew compatibility. Preserve that selection; it does not select the app's
-development toolchain. Use the explicit development environment for Apple work.
+The system Command Line Tools selection uses Xcode 26.3 for terminal and
+Homebrew compatibility. Preserve that selection. `DEVELOPER_DIR` overrides it
+inside a project command; inspect the global selection with
+`env -u DEVELOPER_DIR xcode-select -p` when distinguishing the two.
 
 ## Native safety
 
