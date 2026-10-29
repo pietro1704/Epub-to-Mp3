@@ -19,6 +19,8 @@ let localizationResources = [
     "Resources/pt-BR.lproj/Localizable.strings",
 ]
 let production = [
+    "Features/Reader/Services/ReaderFontCatalog.swift",
+    "Shared/Configuration/ReaderFontFamily.swift",
     "Shared/Presentation/VisibilityTransition.swift",
     "Features/Reader/Services/ReaderViewportTransition.swift",
     "Features/Playback/Models/PlayerDismissalDecision.swift",
@@ -75,6 +77,7 @@ let production = [
     "Features/Reader/Services/ReaderAnchorRange.swift",
 ]
 let tests = [
+    "ReaderFontCatalogTests.swift",
     "ReaderViewportTransitionTests.swift",
     "PlayerVisibilityTransitionTests.swift",
     "PlayerDismissalDecisionTests.swift",

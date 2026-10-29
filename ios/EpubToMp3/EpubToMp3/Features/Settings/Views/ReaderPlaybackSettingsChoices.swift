@@ -49,14 +49,10 @@ final class ReaderPlaybackSettingsChoices {
                 self?.settings.readerFontSize = value
             }
         case 1:
-            SettingsChoicePresentation.present(
-            controller: controller,
-                title: L10n.string("settings.font"),
-                options: ReaderFontFamily.allCases.map { ($0.displayName, $0) },
-                currentValue: settings.readerFontFamily
-            ) { [weak self] value in
-                self?.settings.readerFontFamily = value
-            }
+            controller?.navigationController?.pushViewController(
+                ReaderFontChoiceController(settings: settings) { [weak self] in
+                    self?.controller?.tableView.reloadData()
+                }, animated: true)
         case 2:
             SettingsChoicePresentation.present(
             controller: controller,

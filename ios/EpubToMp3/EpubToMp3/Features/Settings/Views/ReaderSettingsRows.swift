@@ -17,7 +17,7 @@ struct ReaderSettingsRows {
             content.image = UIImage(systemName: "textformat.size")
         case 1:
             content.text = L10n.string("settings.font")
-            content.secondaryText = settings.readerFontFamily.displayName
+            content.secondaryText = ReaderFontCatalog.title(for: settings.selectedReaderFontFamily)
             content.image = UIImage(systemName: "textformat")
         case 2:
             content.text = L10n.string("settings.theme")

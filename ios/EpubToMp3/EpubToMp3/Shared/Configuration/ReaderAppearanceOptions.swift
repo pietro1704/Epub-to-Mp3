@@ -6,23 +6,6 @@ import UIKit
 import AppKit
 #endif
 
-/// Reader appearance choices surfaced in the native reader toolbar.
-enum ReaderFontFamily: String, CaseIterable, Identifiable {
-    case serif
-    case sans
-    case mono
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .serif: return L10n.string("font.serif")
-        case .sans:  return L10n.string("font.sans")
-        case .mono:  return L10n.string("font.mono")
-        }
-    }
-}
-
 enum ReaderTheme: String, CaseIterable, Identifiable {
     case auto
     case light

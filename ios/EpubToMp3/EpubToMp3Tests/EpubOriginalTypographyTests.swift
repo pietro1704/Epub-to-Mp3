@@ -9,6 +9,40 @@ import AppKit
 
 extension EpubHtmlRendererTests {
     @MainActor
+    func testReferenceFamilyKeepsPublisherSizeAndInlineEmphasis() throws {
+        let settings = makeSettings()
+        settings.readerFontFamily = .newYork
+        let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
+            html: "<p style='font-size:18pt'><b>ação</b> <i>coração</i></p>", css: nil, settings: settings)))
+        for (text, italic) in [("ação", false), ("coração", true)] {
+            let location = (rendered.string as NSString).range(of: text).location
+            let font = try XCTUnwrap(rendered.attribute(.font, at: location, effectiveRange: nil) as? PlatformFont)
+            XCTAssertEqual(font.pointSize, 18, accuracy: 0.5)
+            #if canImport(UIKit)
+            XCTAssertTrue(font.fontDescriptor.symbolicTraits.contains(italic ? .traitItalic : .traitBold))
+            #else
+            XCTAssertTrue(font.fontDescriptor.symbolicTraits.contains(italic ? .italic : .bold))
+            #endif
+        }
+    }
+
+    @MainActor
+    func testNamedFontSelectionPersistsAndOriginalClearsOnlyFamilyOverride() throws {
+        let suite = "font-choice-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        settings.readerOverrideFontSize = true
+        settings.readerFontFamily = .newYork
+        XCTAssertTrue(settings.readerOverrideFontFamily)
+        XCTAssertEqual(AppSettings(defaults: defaults).selectedReaderFontFamily, .newYork)
+        settings.readerFontFamily = .original
+        XCTAssertFalse(settings.readerOverrideFontFamily)
+        XCTAssertTrue(settings.readerOverrideFontSize)
+        XCTAssertEqual(AppSettings(defaults: defaults).selectedReaderFontFamily, .original)
+    }
+
+    @MainActor
     func testOriginalPreservesPublisherFontSizesAlignmentAndParagraphGeometry() throws {
         let settings = makeSettings()
         let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: """

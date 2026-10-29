@@ -710,3 +710,5 @@
 "reader.link.goToPosition" = "Ir a la posición";
 "reader.link.title" = "Enlace del libro";
 "reader.link.unavailable" = "Este destino no está disponible en el libro.";
+
+"font.unavailable" = "No disponible en este dispositivo";

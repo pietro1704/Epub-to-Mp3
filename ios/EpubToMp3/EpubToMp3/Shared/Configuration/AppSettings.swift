@@ -209,8 +209,13 @@ final class AppSettings: ObservableObject {
     }
 
     @Published var readerFontFamily: ReaderFontFamily = .serif {
-        didSet { defaults.set(readerFontFamily.rawValue, forKey: "readerFontFamily") }
+        didSet {
+            defaults.set(readerFontFamily.rawValue, forKey: "readerFontFamily")
+            if !loadingPersistedValues { readerOverrideFontFamily = readerFontFamily != .original }
+        }
     }
+
+    var selectedReaderFontFamily: ReaderFontFamily { readerOverrideFontFamily ? readerFontFamily : .original }
 
     @Published var readerTheme: ReaderTheme = .light {
         didSet { defaults.set(readerTheme.rawValue, forKey: "readerTheme") }

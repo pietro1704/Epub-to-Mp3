@@ -210,13 +210,8 @@ final class ReaderTextPresentation {
                     : chapter.text
                 composition.textView.text = fallbackText
                 composition.textView.textColor = settings.readerColors.foreground
-                let font = settings.readerFontFamily == .sans
-                    ? UIFont.systemFont(ofSize: settings.readerPointSize)
-                    : settings.readerFontFamily == .mono
-                        ? UIFont.monospacedSystemFont(ofSize: settings.readerPointSize, weight: .regular)
-                        : (UIFont(name: "NewYork", size: settings.readerPointSize)
-                            ?? UIFont(name: "Georgia", size: settings.readerPointSize)
-                            ?? UIFont.systemFont(ofSize: settings.readerPointSize))
+                let font = ReaderFontCatalog.font(for: settings.readerOverrideFontFamily ? settings.readerFontFamily : .original,
+                    size: settings.readerPointSize)
                 composition.textView.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
             }
             requestTextLayoutRefresh()
