@@ -22,6 +22,108 @@ final class RealBookReaderUITests: XCTestCase {
         try verifyExistingLOTRStyles(smallText: true)
     }
 
+    func testOptInAuthoredBookSearchResultsAndCancellation() throws {
+        let app = try openAuthoredLinkBook()
+        defer { app.terminate() }
+        let harness = ReaderModesHarness(app: app)
+        submitLiveSearch("ORIGIN7964", app: app)
+        XCTAssertTrue(waitUntil(timeout: 15) { app.staticTexts["flicker.probe.chapter"].label == "0/2" })
+        let before = try XCTUnwrap(harness.paginationMetrics)
+        submitLiveSearch("absent-verification-7964", app: app)
+        XCTAssertTrue(app.alerts.staticTexts["No matches found"].waitForExistence(timeout: 15))
+        app.alerts.buttons["OK"].firstMatch.tap()
+        XCTAssertEqual(harness.paginationMetrics?.values["offset"], before.values["offset"])
+        app.buttons["reader.search"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("DESTINATION7964")
+        app.alerts.buttons["Cancel"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(harness.paginationMetrics?.values["offset"], before.values["offset"])
+        submitLiveSearch("DESTINATION7964", app: app)
+        XCTAssertTrue(waitUntil(timeout: 15) { app.staticTexts["flicker.probe.chapter"].label == "1/2" })
+        XCTAssertTrue(app.staticTexts["flicker.probe.chapter"].label.hasPrefix("1/"))
+        harness.assertNoClippedLines(scenario: "Search reveals the destination chapter")
+        submitLiveSearch("ORIGIN7964", app: app)
+        XCTAssertTrue(waitUntil(timeout: 15) { app.staticTexts["flicker.probe.chapter"].label == "0/2" })
+        XCTAssertTrue(app.staticTexts["flicker.probe.chapter"].label.hasPrefix("0/"))
+        retainLiveCapture(app, name: "authored-search-origin-restored")
+    }
+
+    func testOptInAuthoredBookLinkPreviewAndNavigation() throws {
+        let app = try openAuthoredLinkBook()
+        defer { app.terminate() }
+        submitLiveSearch("ORIGIN7964", app: app)
+        XCTAssertTrue(waitUntil(timeout: 15) { app.staticTexts["flicker.probe.chapter"].label == "0/2" })
+        let harness = ReaderModesHarness(app: app)
+        let before = try XCTUnwrap(harness.paginationMetrics)
+        for (label, expected) in [("Short note", "SHORTNOTE7964"), ("Long note", "LONGNOTE7964")] {
+            let link = app.links[label].firstMatch
+            XCTAssertTrue(link.waitForExistence(timeout: 5))
+            link.tap()
+            let preview = app.textViews["reader.linkPreview.text"].firstMatch
+            XCTAssertTrue(preview.waitForExistence(timeout: 5))
+            XCTAssertTrue((preview.value as? String ?? "").contains(expected))
+            if label == "Long note" {
+                for _ in 0..<8 { preview.swipeUp() }
+                retainLiveCapture(app, name: "authored-long-note-scrolled")
+            }
+            app.navigationBars.buttons["Done"].firstMatch.tap()
+            XCTAssertTrue(preview.waitForNonExistence(timeout: 5))
+            XCTAssertEqual(harness.paginationMetrics?.values["offset"], before.values["offset"])
+            XCTAssertTrue(app.staticTexts["flicker.probe.chapter"].label.hasPrefix("0/"))
+        }
+        app.links["Missing destination"].firstMatch.tap()
+        XCTAssertTrue(app.alerts.staticTexts["This destination is unavailable in the book."].waitForExistence(timeout: 5))
+        app.alerts.buttons["OK"].firstMatch.tap()
+        XCTAssertEqual(harness.paginationMetrics?.values["offset"], before.values["offset"])
+        app.links["Internal destination"].firstMatch.tap()
+        let navigate = app.buttons["reader.linkPreview.goToPosition"].firstMatch
+        XCTAssertTrue(navigate.waitForExistence(timeout: 5))
+        navigate.tap()
+        XCTAssertTrue(waitUntil(timeout: 15) { app.staticTexts["flicker.probe.chapter"].label == "1/2" })
+        XCTAssertTrue(app.staticTexts["flicker.probe.chapter"].label.hasPrefix("1/"))
+        harness.assertNoClippedLines(scenario: "Explicit internal-link navigation")
+        retainLiveCapture(app, name: "authored-link-destination")
+    }
+
+    // Install Fixtures/ReaderLiveLinks.epub explicitly, then pass its imported book ID.
+    private func openAuthoredLinkBook() throws -> XCUIApplication {
+        guard ProcessInfo.processInfo.environment["APP_DEVICE_READER_LINKS"] == "1",
+              let bookID = ProcessInfo.processInfo.environment["APP_DEVICE_LINK_BOOK_ID"] else {
+            throw XCTSkip("Requires the explicitly installed authored live acceptance EPUB.")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestResetActiveReader", "-uiTestReaderLayout", "paginated",
+            "-uiTestPaginationProbe", "-uiTestFlickerProbe", "-uiTestNoPageTurnOverlay", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        let close = app.buttons["fullPlayer.close"].firstMatch
+        if close.waitForExistence(timeout: 2) { close.tap() }
+        let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"].firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 30))
+        tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
+        return app
+    }
+
+    private func submitLiveSearch(_ query: String, app: XCUIApplication) {
+        app.buttons["reader.search"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText(query)
+        app.alerts.buttons["OK"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+    }
+
+    private func retainLiveCapture(_ app: XCUIApplication, name: String) {
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = name
+        capture.lifetime = .keepAlways
+        add(capture)
+    }
+
     private func verifyExistingLOTRStyles(smallText: Bool) throws {
         guard ProcessInfo.processInfo.environment["APP_DEVICE_READER_MATRIX"] == "1" else {
             throw XCTSkip("Requires the authorized physical-device existing-book journey.")

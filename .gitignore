@@ -238,3 +238,6 @@ target/
 /.hermes/plans/
 /TODO_APP.md
 /handoff.md
+
+# Authored native reader acceptance fixture; no personal book content.
+!ios/EpubToMp3/EpubToMp3UITests/Fixtures/ReaderLiveLinks.epub
