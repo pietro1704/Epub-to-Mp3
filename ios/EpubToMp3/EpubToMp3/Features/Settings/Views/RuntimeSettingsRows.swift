@@ -4,6 +4,7 @@ import UIKit
 @MainActor
 enum RuntimeSettingsRows {
     enum Row {
+        case models
         case primary
         case cellular
         case model(SpeechModelSnapshot.Entry?)
@@ -12,22 +13,24 @@ enum RuntimeSettingsRows {
         case studyLanguage
     }
 
-    static func rowCount(speechModels: SpeechModelLibraryViewState) -> Int {
-        5 + max(1, speechModels.entries.count)
+    static func rowCount(speechModels: SpeechModelLibraryViewState, disclosure: SpeechModelSettingsDisclosure = .init()) -> Int {
+        disclosure.rows(modelCount: speechModels.entries.count).count
     }
 
-    static func row(at index: Int, speechModels: SpeechModelLibraryViewState) -> Row? {
-        if index == 0 { return .primary }
-        if index == 1 { return .cellular }
-        let models = speechModels.orderedEntries
-        let modelCount = max(1, models.count)
-        if index < 2 + modelCount {
-            return .model(models.indices.contains(index - 2) ? models[index - 2] : nil)
+    static func row(at index: Int, speechModels: SpeechModelLibraryViewState,
+                    disclosure: SpeechModelSettingsDisclosure = .init()) -> Row? {
+        let rows = disclosure.rows(modelCount: speechModels.entries.count)
+        guard rows.indices.contains(index) else { return nil }
+        switch rows[index] {
+        case .primary: return .primary
+        case .cellular: return .cellular
+        case .summary: return .models
+        case let .model(ordinal):
+            return .model(ordinal.flatMap { speechModels.orderedEntries.indices.contains($0) ? speechModels.orderedEntries[$0] : nil })
+        case .secondary: return .secondary
+        case .onlineFallback: return .onlineFallback
+        case .studyLanguage: return .studyLanguage
         }
-        if index == 2 + modelCount { return .secondary }
-        if index == 3 + modelCount { return .onlineFallback }
-        if index == 4 + modelCount { return .studyLanguage }
-        return nil
     }
 
     static func cell(
@@ -37,9 +40,24 @@ enum RuntimeSettingsRows {
         speechModels: SpeechModelLibraryViewState,
         installEvents: [String: SpeechModelInstallEvent],
         termsAcceptance: SpeechModelTermsAcceptanceStore,
+        disclosure: SpeechModelSettingsDisclosure = .init(),
         controller: UIViewController
     ) -> UITableViewCell {
-            switch row(at: indexPath.row, speechModels: speechModels) {
+            switch row(at: indexPath.row, speechModels: speechModels, disclosure: disclosure) {
+            case .models:
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                var content = cell.defaultContentConfiguration()
+                content.text = L10n.string("settings.voiceModels")
+                content.secondaryText = SpeechModelSettingsDisclosure.summary(state: speechModels,
+                    primary: settings.ttsPreferences.primary, events: installEvents)
+                content.secondaryTextProperties.numberOfLines = 0
+                content.image = UIImage(systemName: disclosure.isExpanded ? "chevron.down" : "chevron.right")
+                cell.contentConfiguration = content
+                cell.accessibilityIdentifier = "settings.speechModels.disclosure"
+                cell.accessibilityValue = L10n.string(disclosure.isExpanded ? "settings.models.expanded" : "settings.models.collapsed")
+                cell.accessoryType = .none
+                cell.selectionStyle = .default
+                return cell
             case .primary:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()

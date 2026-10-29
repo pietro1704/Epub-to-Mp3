@@ -712,3 +712,8 @@
 "reader.link.unavailable" = "Este destino no está disponible en el libro.";
 
 "font.unavailable" = "No disponible en este dispositivo";
+
+"settings.models.show" = "Mostrar modelos";
+"settings.models.hide" = "Ocultar modelos";
+"settings.models.expanded" = "Expandido";
+"settings.models.collapsed" = "Contraído";

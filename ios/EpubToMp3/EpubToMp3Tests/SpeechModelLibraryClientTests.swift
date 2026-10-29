@@ -318,11 +318,20 @@ final class SpeechModelLibraryClientTests: XCTestCase {
         controller.loadViewIfNeeded()
         let primary = controller.tableView(controller.tableView,
             cellForRowAt: IndexPath(row: 0, section: 0))
-        let model = controller.tableView(controller.tableView,
+        let collapsedCount = controller.tableView(controller.tableView, numberOfRowsInSection: 0)
+        let selection = settings.ttsPreferences
+        let summary = controller.tableView(controller.tableView,
             cellForRowAt: IndexPath(row: 2, section: 0))
+        XCTAssertEqual(summary.accessibilityIdentifier, "settings.speechModels.disclosure")
+        controller.tableView(controller.tableView, didSelectRowAt: IndexPath(row: 2, section: 0))
+        let model = controller.tableView(controller.tableView,
+            cellForRowAt: IndexPath(row: 3, section: 0))
         XCTAssertEqual((primary.contentConfiguration as? UIListContentConfiguration)?.secondaryText, expected)
         XCTAssertEqual((model.contentConfiguration as? UIListContentConfiguration)?.text, expected)
         XCTAssertFalse(expected.contains("pt_BR-faber-medium"))
+        controller.tableView(controller.tableView, didSelectRowAt: IndexPath(row: 2, section: 0))
+        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 0), collapsedCount)
+        XCTAssertEqual(settings.ttsPreferences, selection)
         #else
         let controller = MacSettingsViewController(
             settings: settings,
@@ -338,6 +347,15 @@ final class SpeechModelLibraryClientTests: XCTestCase {
             $0.stringValue.components(separatedBy: "\n").first == expected
         })
         XCTAssertFalse(expected.contains("pt_BR-faber-medium"))
+        let disclosure = try XCTUnwrap(controls.compactMap { $0 as? NSButton }.first {
+            $0.accessibilityIdentifier() == "settings.speechModels.disclosure"
+        })
+        let selection = settings.ttsPreferences
+        disclosure.performClick(nil)
+        XCTAssertEqual(disclosure.title, L10n.string("settings.models.hide"))
+        disclosure.performClick(nil)
+        XCTAssertEqual(disclosure.title, L10n.string("settings.models.show"))
+        XCTAssertEqual(settings.ttsPreferences, selection)
         #endif
     }
     #endif
