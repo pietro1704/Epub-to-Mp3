@@ -117,6 +117,7 @@ fn typed_worker_consumes_boundary_whitespace_and_uses_paragraph_metadata() {
             1,
             None,
             &[paragraph_end],
+            &[],
         )
         .unwrap();
     assert_eq!(calls.lock().unwrap()[0], first);
@@ -149,7 +150,8 @@ fn epub_paragraph_projection_reaches_real_worker_and_completed_artifact() {
     request.engine = Some("chunk-contract".into());
     request.tts_preferences = Some(chunk_preferences());
     let manifest = worker.run(request).unwrap();
-    assert_eq!(calls.lock().unwrap()[0], format!("Chapter {first}"));
+    assert_eq!(calls.lock().unwrap()[0], "Chapter");
+    assert_eq!(calls.lock().unwrap()[1], first);
     assert_eq!(manifest.chapters.len(), 1);
     assert_eq!(
         manifest.synthesis_sessions[0].selection.provider,
@@ -192,5 +194,59 @@ fn new_planner_profile_invalidates_legacy_whole_chapter_identity() {
         worker
             .typed_cache_request_key(&request, &preferences, Some("pt-BR"), "source")
             .unwrap()
+    );
+}
+
+#[test]
+fn heading_pause_reaches_streamed_bytes_and_final_artifact_once() {
+    let root = tempfile::tempdir().unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let chunks = Arc::new(Mutex::new(Vec::new()));
+    let captured = chunks.clone();
+    let worker = chunk_worker(root.path(), calls.clone()).with_streaming_chunks(Arc::new(
+        move |_, _, bytes| {
+            captured.lock().unwrap().push(bytes.to_vec());
+            true
+        },
+    ));
+    *worker.source_identity.lock().unwrap() = Some("heading-book".into());
+    let text = "Title Ordinary body.";
+    let output = root.path().join("heading.mp3");
+    let synthesize = || {
+        worker
+            .synthesize_preferences_at_generation(
+                &preference_test_request(),
+                &chunk_preferences(),
+                text,
+                &output,
+                0,
+                Some("pt-BR"),
+                &std::sync::atomic::AtomicBool::new(false),
+                &Mutex::new(Vec::new()),
+                1,
+                None,
+                &[5, text.chars().count()],
+                &[5],
+            )
+            .unwrap()
+    };
+    synthesize();
+    let original = fs::read(&output).unwrap();
+    synthesize();
+    assert_eq!(fs::read(&output).unwrap(), original);
+    assert_eq!(*calls.lock().unwrap(), ["Title", "Ordinary body."]);
+    let chunks = chunks.lock().unwrap();
+    assert_eq!(
+        chunks.len(),
+        4,
+        "The second playback reuses both cached segments"
+    );
+    assert_eq!(original, chunks[..2].concat());
+    assert_eq!(chunks[..2], chunks[2..]);
+    let first = crate::pcm::mp3_duration_seconds(&chunks[0]).unwrap();
+    let body = crate::pcm::mp3_duration_seconds(&chunks[1]).unwrap();
+    assert!(
+        (0.8..0.95).contains(&(first - body)),
+        "title={first}, body={body}"
     );
 }

@@ -63,18 +63,20 @@ impl PronunciationDictionary {
         initial: usize,
         subsequent: usize,
         paragraph_ends: &[usize],
+        heading_ends: &[usize],
     ) -> Result<Vec<crate::tts_session::SourceTextSegment>, crate::tts_session::TtsFailure> {
         let protected = self
             .matches(source)
             .iter()
             .map(|(begin, end, _)| (*begin, *end))
             .collect::<Vec<_>>();
-        crate::tts_session::plan_text_protecting(
+        crate::tts_session::plan_text_with_headings(
             source,
             initial,
             subsequent,
             &protected,
             paragraph_ends,
+            heading_ends,
         )
     }
 

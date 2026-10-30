@@ -82,6 +82,13 @@ impl ConversionWorker {
             .filter(|end| *end > text_offset)
             .map(|end| end - text_offset)
             .collect::<Vec<_>>();
+        let heading_ends = chapter
+            .heading_ends
+            .iter()
+            .copied()
+            .filter(|end| *end > text_offset)
+            .map(|end| end - text_offset)
+            .collect::<Vec<_>>();
         let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
         let mp3 = output_dir.join(format!("{stem}.mp3"));
         let language = detected_language;
@@ -141,6 +148,11 @@ impl ConversionWorker {
             request.voice.as_deref(),
             language,
         )?;
+        let base_request_key = if request.tts_preferences.is_some() {
+            super::heading_pauses::request_key(&base_request_key, &heading_ends)
+        } else {
+            base_request_key
+        };
         let request_key = if let Some(preferences) = &request.tts_preferences {
             self.typed_cache_request_key(request, preferences, language, &base_request_key)?
         } else {
@@ -239,6 +251,7 @@ impl ConversionWorker {
                         total,
                         generation,
                         &paragraph_ends,
+                        &heading_ends,
                     )
                 } else if self.platform_tts.is_some()
                     && matches!(engine.as_str(), "edge" | "system")

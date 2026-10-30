@@ -122,6 +122,7 @@ mod tests {
                 source_path: "text/chapter.xhtml".into(),
                 text: "Readable".into(),
                 paragraph_ends: Vec::new(),
+                heading_ends: Vec::new(),
                 level: 1,
             }],
         ));

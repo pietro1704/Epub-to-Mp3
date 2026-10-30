@@ -65,6 +65,8 @@ pub struct Chapter {
     pub text: String,
     /// Paragraph ends on the unchanged normalized Unicode-scalar text axis.
     pub paragraph_ends: Vec<usize>,
+    /// Heading ends on the same unchanged normalized Unicode-scalar axis.
+    pub heading_ends: Vec<usize>,
     pub level: u32,
 }
 
@@ -155,7 +157,7 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
             .clone();
         let path = resolve_resource_path(opf_dir, &href);
         let html = read_entry(&mut archive, &path, &mut budget)?;
-        let (text, paragraph_ends) = html_to_text_projection(&html);
+        let (text, paragraph_ends, heading_ends) = html_to_text_projection(&html);
         if text.trim().is_empty() {
             continue;
         }
@@ -176,6 +178,7 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
             source_path: path,
             text,
             paragraph_ends,
+            heading_ends,
             level,
         });
     }

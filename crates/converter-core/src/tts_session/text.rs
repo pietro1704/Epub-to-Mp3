@@ -64,6 +64,17 @@ pub(crate) fn plan_text_protecting(
     protected: &[(usize, usize)],
     paragraph_ends: &[usize],
 ) -> Result<Vec<SourceTextSegment>, TtsFailure> {
+    plan_text_with_headings(text, initial, subsequent, protected, paragraph_ends, &[])
+}
+
+pub(crate) fn plan_text_with_headings(
+    text: &str,
+    initial: usize,
+    subsequent: usize,
+    protected: &[(usize, usize)],
+    paragraph_ends: &[usize],
+    heading_ends: &[usize],
+) -> Result<Vec<SourceTextSegment>, TtsFailure> {
     if initial == 0 || subsequent == 0 {
         return Err(invalid("Text capacities must be nonzero"));
     }
@@ -101,7 +112,24 @@ pub(crate) fn plan_text_protecting(
             requested.next();
         }
     }
+    if heading_ends
+        .iter()
+        .any(|end| *end == 0 || *end > total_scalars)
+        || heading_ends.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return Err(invalid(
+            "Heading ends must be ordered canonical scalar offsets",
+        ));
+    }
+    let heading_bytes: Vec<_> = text
+        .char_indices()
+        .map(|(byte, _)| byte)
+        .chain(std::iter::once(text.len()))
+        .enumerate()
+        .filter_map(|(scalar, byte)| heading_ends.binary_search(&scalar).is_ok().then_some(byte))
+        .collect();
     let mut result = Vec::new();
+
     let mut cursor = 0;
     let mut scalar_cursor = 0;
     while cursor < text.len() {
@@ -181,6 +209,15 @@ pub(crate) fn plan_text_protecting(
                 })
                 .unwrap_or(content_start + ceiling)
         };
+        // A title remains a complete source span even when the provider could fit
+        // its following paragraph. Protected pronunciation ranges still win.
+        if let Some(end) = heading_bytes
+            .iter()
+            .copied()
+            .find(|end| *end > content_start && *end <= boundary)
+        {
+            boundary = end;
+        }
         if let Some((start, end)) = protected
             .iter()
             .find(|(start, end)| *start < boundary && *end > boundary)
@@ -320,3 +357,34 @@ fn clause_end(prefix: &str) -> Option<usize> {
 #[cfg(test)]
 #[path = "text_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod heading_tests {
+    use super::*;
+
+    #[test]
+    fn heading_ends_force_a_separate_source_preserving_segment() {
+        let text = "Água clara Body follows without a title period.";
+        let segments = plan_text_with_headings(text, 180, 800, &[], &[10, 47], &[10]).unwrap();
+        assert_eq!(segments[0].speech(), "Água clara");
+        assert_eq!(
+            segments
+                .iter()
+                .map(|s| s.source.as_str())
+                .collect::<String>(),
+            text
+        );
+        assert_eq!(segments[1].scalar_range.start, 11);
+    }
+
+    #[test]
+    fn invalid_heading_offsets_fail_and_protected_pronunciation_is_not_split() {
+        for ends in [vec![0], vec![99], vec![3, 2]] {
+            assert!(plan_text_with_headings("Title body", 180, 800, &[], &[], &ends).is_err());
+        }
+        let segments =
+            plan_text_with_headings("Title body", 180, 800, &[(0, 10)], &[], &[5]).unwrap();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].source, "Title body");
+    }
+}

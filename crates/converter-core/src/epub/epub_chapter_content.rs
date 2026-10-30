@@ -82,11 +82,13 @@ fn is_heading(name: &[u8]) -> bool {
     let name = local_name(name);
     name.len() == 2 && name[0].eq_ignore_ascii_case(&b'h') && (b'1'..=b'6').contains(&name[1])
 }
-pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>) {
+pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>, Vec<usize>) {
     let mut reader = Reader::from_str(html);
     let mut skip_depth = 0usize;
     let mut out = String::new();
     let mut paragraph_boundaries = Vec::new();
+    let mut heading_boundaries = Vec::new();
+    let mut heading_start = None;
     loop {
         match reader.read_event() {
             Ok(Event::Start(event)) => {
@@ -96,9 +98,12 @@ pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>) {
                     skip_depth += 1;
                 } else if matches!(name, b"head" | b"script" | b"style" | b"title") {
                     skip_depth = 1;
-                } else if is_block_element(name) {
+                } else if is_block_element(name) || is_heading(name) {
                     paragraph_boundaries.push(out.len());
                     out.push(' ');
+                    if is_heading(name) {
+                        heading_start = Some(out.len());
+                    }
                 }
             }
             Ok(Event::End(event)) => {
@@ -106,7 +111,15 @@ pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>) {
                 let name = local_name(&name);
                 if skip_depth > 0 {
                     skip_depth -= 1;
-                } else if is_block_element(name) {
+                } else if is_block_element(name) || is_heading(name) {
+                    if is_heading(name) {
+                        if heading_start
+                            .take()
+                            .is_some_and(|start| !out[start..].trim().is_empty())
+                        {
+                            heading_boundaries.push(out.len());
+                        }
+                    }
                     paragraph_boundaries.push(out.len());
                     out.push(' ');
                 }
@@ -128,7 +141,7 @@ pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>) {
             _ => {}
         }
     }
-    normalize_with_paragraph_ends(&out, &paragraph_boundaries)
+    normalize_with_paragraph_ends(&out, &paragraph_boundaries, &heading_boundaries)
 }
 
 fn is_block_element(name: &[u8]) -> bool {
@@ -181,14 +194,26 @@ fn _dedupe_anchor_keys(items: &[TocItem]) -> HashSet<String> {
 }
 
 /// Project block ends onto the existing normalized Unicode-scalar text axis.
-fn normalize_with_paragraph_ends(raw: &str, boundaries: &[usize]) -> (String, Vec<usize>) {
+fn normalize_with_paragraph_ends(
+    raw: &str,
+    boundaries: &[usize],
+    headings: &[usize],
+) -> (String, Vec<usize>, Vec<usize>) {
     let mut normalized = String::new();
     let mut paragraph_ends = Vec::new();
+    let mut heading_ends = Vec::new();
+    let mut heading = 0;
     let mut boundary = 0;
     let mut raw_cursor = 0;
     let mut scalars = 0;
     for token in raw.split_whitespace() {
         let start = raw_cursor + raw[raw_cursor..].find(token).expect("source token");
+        while heading < headings.len() && headings[heading] <= start {
+            if scalars > 0 && heading_ends.last() != Some(&scalars) {
+                heading_ends.push(scalars);
+            }
+            heading += 1;
+        }
         while boundary < boundaries.len() && boundaries[boundary] <= start {
             if scalars > 0 && paragraph_ends.last() != Some(&scalars) {
                 paragraph_ends.push(scalars);
@@ -206,7 +231,10 @@ fn normalize_with_paragraph_ends(raw: &str, boundaries: &[usize]) -> (String, Ve
     if !boundaries.is_empty() && scalars > 0 && paragraph_ends.last() != Some(&scalars) {
         paragraph_ends.push(scalars);
     }
-    (normalized, paragraph_ends)
+    if heading < headings.len() && scalars > 0 && heading_ends.last() != Some(&scalars) {
+        heading_ends.push(scalars);
+    }
+    (normalized, paragraph_ends, heading_ends)
 }
 
 #[cfg(test)]
@@ -216,7 +244,7 @@ mod paragraph_tests {
     #[test]
     fn paragraph_metadata_preserves_canonical_text_and_unicode_axis() {
         let html = "<html><head><title>Ignore</title><style>hidden</style></head><body><h1>Título</h1><p>Água <em>clara</em> e fresca.</p><p>Segunda frase.</p><script>hidden</script></body></html>";
-        let (text, ends) = html_to_text_projection(html);
+        let (text, ends, _) = html_to_text_projection(html);
         assert_eq!(text, "Título Água clara e fresca. Segunda frase.");
         assert_eq!(ends, vec![6, 27, 42]);
         assert!(ends.iter().all(|end| *end <= text.chars().count()));
@@ -233,7 +261,7 @@ mod paragraph_tests {
             ("<p>   </p>", ""),
             ("<ul><li>First</li><li>Second</li></ul>", "First Second"),
         ] {
-            let (text, ends) = html_to_text_projection(html);
+            let (text, ends, _) = html_to_text_projection(html);
             assert_eq!(text, expected);
             assert!(ends.windows(2).all(|pair| pair[0] < pair[1]));
             assert!(ends
@@ -241,5 +269,37 @@ mod paragraph_tests {
                 .all(|end| *end > 0 && *end <= text.chars().count()));
         }
         assert!(html_to_text_projection("plain text").1.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod heading_tests {
+    use super::*;
+
+    #[test]
+    fn headings_preserve_plain_text_and_only_mark_structural_titles() {
+        let (text, _, ends) = html_to_text_projection("<head><title>Hidden</title></head><x:H1>Água <em>clara</em></x:H1><p>A body title is ordinary prose.</p><h2>Fim</h2><p>Final.</p>");
+        assert_eq!(
+            text,
+            "Água clara A body title is ordinary prose. Fim Final."
+        );
+        assert_eq!(
+            ends,
+            [
+                "Água clara".chars().count(),
+                "Água clara A body title is ordinary prose. Fim"
+                    .chars()
+                    .count()
+            ]
+        );
+    }
+
+    #[test]
+    fn final_heading_is_marked_without_marking_a_later_body_end() {
+        assert_eq!(html_to_text_projection("<h1>Title</h1><p>Body</p>").2, [5]);
+        assert_eq!(html_to_text_projection("<p>Body</p><h6>Title</h6>").2, [10]);
+        assert!(html_to_text_projection("<p>Only body</p><h1> </h1>")
+            .2
+            .is_empty());
     }
 }
