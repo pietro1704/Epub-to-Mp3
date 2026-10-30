@@ -44,6 +44,7 @@ actor AudiobookDownloads {
         let baseURL: URL?
     }
     private var storageMaintenance: Set<UUID> = []
+    private var bookStorageMaintenance: [UUID: String] = [:]
     private var deferredDownloads: [String: DeferredDownload] = [:]
 
     func watchProgress(jobId: String) -> AsyncStream<DownloadProgress> {
@@ -112,7 +113,7 @@ actor AudiobookDownloads {
     }
 
     private func startDownload(snapshot: JobSnapshot, chapters: [JobSnapshot.Chapter], baseURL: URL?) {
-        guard storageMaintenance.isEmpty else {
+        guard storageMaintenance.isEmpty, !bookStorageMaintenance.values.contains(snapshot.jobId) else {
             deferredDownloads[snapshot.jobId] = DeferredDownload(
                 snapshot: snapshot, chapters: chapters, baseURL: baseURL)
             emit(DownloadProgress(jobId: snapshot.jobId, chapterIndex: chapters.first?.index ?? 0,
@@ -192,6 +193,26 @@ actor AudiobookDownloads {
         // Do not use cancelAll: requests queued by an overlapping maintenance
         // operation belong to the listener and must survive this cleanup.
         for jobId in Array(activeTasks.keys) { cancel(jobId: jobId) }
+        for task in retiring { await task.value }
+        try Task.checkCancellation()
+        try await operation()
+    }
+
+    /// Wait for this job's writers without cancelling another book's download.
+    func withBookStorageMaintenance(jobId: String,
+                                    operation: @Sendable () async throws -> Void) async throws {
+        let lease = UUID()
+        bookStorageMaintenance[lease] = jobId
+        defer {
+            bookStorageMaintenance.removeValue(forKey: lease)
+            if storageMaintenance.isEmpty, !bookStorageMaintenance.values.contains(jobId),
+               let request = deferredDownloads.removeValue(forKey: jobId) {
+                startDownload(snapshot: request.snapshot, chapters: request.chapters, baseURL: request.baseURL)
+            }
+        }
+        let retiring = writingTasks.values.filter { $0.jobId == jobId }.map(\.task)
+        for task in retiring { task.cancel() }
+        cancel(jobId: jobId)
         for task in retiring { await task.value }
         try Task.checkCancellation()
         try await operation()
