@@ -127,7 +127,7 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
         }
     }
 
-    func testOptInPiperManualConversionKeepsPausedPlayback() throws {
+    func testOptInPiperManualConversionPreservesListeningState() throws {
         guard ProcessInfo.processInfo.environment["APP_DEVICE_MANUAL_MATRIX"] == "1" else {
             throw XCTSkip("Requires the installed authored EPUBs and authorized physical-device conversion.")
         }
@@ -140,16 +140,48 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
         if close.waitForExistence(timeout: 2) { close.tap() }
         let open = app.buttons["miniPlayer.open"].firstMatch
         XCTAssertTrue(open.waitForExistence(timeout: 10))
+        let activeListening = ProcessInfo.processInfo.environment["APP_DEVICE_MANUAL_ACTIVE"] == "1"
+        let cancelRetry = ProcessInfo.processInfo.environment["APP_DEVICE_MANUAL_CANCEL_RETRY"] == "1"
+        let sourceStem = cancelRetry ? "Reader-Live-Links-20261029" : "Piper-Live-Portuguese-20261029"
+        var initialElapsed = 0
         let miniTransport = app.buttons["miniPlayer.playPause"].firstMatch
-        if miniTransport.label.lowercased() == "pause" { miniTransport.tap() }
-        XCTAssertEqual(miniTransport.label.lowercased(), "play")
+        if activeListening {
+            app.tabBars.buttons["Library"].tap()
+            let tile = app.descendants(matching: .any)["library.bookTile.a5fc26a75879871f5f6ce8dbfe88790a"].firstMatch
+            XCTAssertTrue(tile.waitForExistence(timeout: 10))
+            let books = app.collectionViews.firstMatch
+            for _ in 0..<8 {
+                if tile.frame.intersection(books.frame).height >= 80 { break }
+                books.swipeUp()
+            }
+            let visible = tile.frame.intersection(books.frame)
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: visible.midX, dy: visible.minY + 30)).tap()
+            XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+            XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
+            if miniTransport.label.lowercased() == "play" { miniTransport.tap() }
+            open.tap()
+            let elapsed = app.staticTexts["fullPlayer.elapsed"].firstMatch
+            XCTAssertTrue(elapsed.waitForExistence(timeout: 90))
+            XCTAssertTrue(wait(timeout: 120) { self.seconds(elapsed.label) > 1 })
+            let before = seconds(elapsed.label)
+            XCTAssertTrue(wait(timeout: 10) { self.seconds(elapsed.label) > before })
+            initialElapsed = seconds(elapsed.label)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Faber")).firstMatch.exists)
+            close.tap()
+            app.buttons["reader.close"].firstMatch.tap()
+        }
+        if !activeListening && miniTransport.label.lowercased() == "pause" { miniTransport.tap() }
+        XCTAssertEqual(miniTransport.label.lowercased(), activeListening ? "pause" : "play")
         let listeningIdentity = open.value as? String
         XCTAssertTrue(listeningIdentity?.contains("Reader Live Links") == true)
         app.tabBars.buttons["Convert"].tap()
         let table = app.tables.firstMatch
         func reveal(_ element: XCUIElement) {
             for _ in 0..<16 {
-                if element.exists && table.frame.insetBy(dx: 0, dy: 15).contains(element.frame) { return }
+                let top = app.navigationBars.firstMatch.frame.maxY + 12
+                let bottom = open.frame.minY - 12
+                let visible = CGRect(x: table.frame.minX, y: top, width: table.frame.width, height: max(0, bottom - top))
+                if element.exists && element.isHittable && visible.contains(element.frame) { return }
                 if element.exists && element.frame.midY < table.frame.midY { table.swipeDown() }
                 else { table.swipeUp() }
             }
@@ -183,20 +215,34 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
         XCTAssertTrue(folder.waitForExistence(timeout: 5), app.debugDescription)
         folder.tap()
         let source = app.staticTexts.matching(NSPredicate(format: "label == %@ OR label == %@",
-            "Piper-Live-Portuguese-20261029", "Piper-Live-Portuguese-20261029.epub")).firstMatch
+            sourceStem, sourceStem + ".epub")).firstMatch
         for _ in 0..<16 {
             if source.exists && source.isHittable { break }
             app.collectionViews.firstMatch.swipeUp()
         }
         XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
         source.tap()
-        let selected = app.cells.matching(NSPredicate(format: "value CONTAINS %@", "Piper-Live-Portuguese-20261029.epub")).firstMatch
+        let selected = app.cells.matching(NSPredicate(format: "value CONTAINS %@", sourceStem + ".epub")).firstMatch
         XCTAssertTrue(selected.waitForExistence(timeout: 10), app.debugDescription)
         let submit = app.cells["convert.submit"].firstMatch
         reveal(submit)
         XCTAssertTrue(submit.isEnabled)
         capture(app, name: "manual-piper-ready")
         submit.tap()
+        if cancelRetry {
+            let cancel = app.cells["convert.cancel"].firstMatch
+            XCTAssertTrue(cancel.waitForExistence(timeout: 5), "The real job must expose cancellation before completing.")
+            reveal(cancel)
+            cancel.tap()
+            let cancelled = app.staticTexts["Conversion cancelled"].firstMatch
+            XCTAssertTrue(cancelled.waitForExistence(timeout: 90), app.debugDescription)
+            XCTAssertFalse(app.staticTexts["Conversion completed"].firstMatch.exists)
+            XCTAssertEqual(miniTransport.label.lowercased(), activeListening ? "pause" : "play")
+            XCTAssertEqual(open.value as? String, listeningIdentity)
+            capture(app, name: "manual-piper-cancelled-with-listening-preserved")
+            reveal(submit)
+            submit.tap()
+        }
         let completed = app.staticTexts["Conversion completed"].firstMatch
         XCTAssertTrue(wait(timeout: 180) { completed.exists }, app.debugDescription)
         reveal(completed)
@@ -204,16 +250,22 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
         let result = app.staticTexts["View result"].firstMatch
         reveal(result)
         result.tap()
-        let title = app.staticTexts["Piper Live Portuguese"].firstMatch
+        let title = app.staticTexts[cancelRetry ? "Reader Live Links" : "Piper Live Portuguese"].firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 15), app.debugDescription)
         capture(app, name: "manual-piper-local-result")
         XCTAssertTrue(open.exists)
         open.tap()
         let transport = app.buttons["fullPlayer.playPause"].firstMatch
         XCTAssertTrue(transport.waitForExistence(timeout: 5))
-        XCTAssertEqual(transport.label.lowercased(), "play", "Manual conversion must retain explicit pause.")
+        XCTAssertEqual(transport.label.lowercased(), activeListening ? "pause" : "play")
         XCTAssertTrue(app.staticTexts["Reader Live Links"].firstMatch.exists, "The listening book must not be replaced.")
         XCTAssertEqual(listeningIdentity, open.value as? String)
+        if activeListening {
+            let elapsed = app.staticTexts["fullPlayer.elapsed"].firstMatch
+            XCTAssertGreaterThan(seconds(elapsed.label), initialElapsed)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Faber")).firstMatch.exists)
+            transport.tap()
+        }
         capture(app, name: "manual-piper-preserved-listening")
     }
 
