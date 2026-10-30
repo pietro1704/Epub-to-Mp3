@@ -113,8 +113,11 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
         }
         player.resume()
         afterResume()
+        let expectsChapterDuration = !streaming || providesStreamEstimates || streamCurrentComplete
         for _ in 0..<100 {
-            if player.positionSeconds > 0 && player.durationSeconds > 0 { break }
+            let mediaDuration = player.testHook_currentPlayerItem()?.duration.seconds ?? 0
+            if player.positionSeconds > 0 && mediaDuration > 0
+                && (!expectsChapterDuration || player.durationSeconds > 0) { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         let initialItem = player.testHook_currentPlayerItem()
@@ -124,7 +127,10 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             + "itemTime=\(initialItem?.currentTime().seconds ?? -1) status=\(initialItem?.status.rawValue ?? -1) "
             + "playing=\(player.isPlaying) duration=\(player.durationSeconds) "
             + "error=\(initialError?.domain ?? "none"):\(initialError?.code ?? 0)")
-        XCTAssertGreaterThan(player.durationSeconds, 0, "Seeking must use the real media duration.")
+        XCTAssertGreaterThan(initialItem?.duration.seconds ?? 0, 0, "The playing media must have a real duration.")
+        if expectsChapterDuration {
+            XCTAssertGreaterThan(player.durationSeconds, 0, "The chapter duration must be available for this fixture.")
+        }
         do {
             try await body(player, { snapshot(targetReady: $0) })
         } catch {

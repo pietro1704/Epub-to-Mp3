@@ -37,6 +37,7 @@ extension AudioPlayerPendingSeekTests {
     func testReaderPageChoiceWaitsForUnknownChapterDurationAndKeepsItsRatio() async throws {
         try await withPlayingFixture(streaming: true, streamTargetReady: false,
                                      providesStreamEstimates: false) { player, snapshot in
+            XCTAssertEqual(player.durationSeconds, 0, "A playable segment must not imply a known chapter duration.")
             player.pause()
             player.startFromReaderPage(1, sentenceOffsetRatio: 0.5)
             XCTAssertEqual(player.pendingNavigation?.chapterIndex, 1)
@@ -55,14 +56,28 @@ extension AudioPlayerPendingSeekTests {
     func testReaderPageRatioSurvivesStreamingFinalFileHandoff() async throws {
         try await withPlayingFixture(streaming: true, streamTargetReady: false,
                                      providesStreamEstimates: false) { player, snapshot in
+            XCTAssertEqual(player.durationSeconds, 0, "The final-file journey must start without a chapter estimate.")
             player.pause()
             player.startFromReaderPage(1, sentenceOffsetRatio: 0.5)
             XCTAssertEqual(player.pendingNavigation?.chapterIndex, 1)
             player.finishStreaming(snapshot: snapshot(true))
             try await self.waitForNavigation(player)
+            let targetItem = try XCTUnwrap(player.testHook_currentPlayerItem())
+            // A completed seek can precede readiness of the replacement item.
+            // Its clock is authoritative only after AVFoundation prepares it.
+            for _ in 0..<100 {
+                if targetItem.status != .unknown { break }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            XCTAssertEqual(targetItem.status, .readyToPlay)
+            XCTAssertTrue(player.testHook_currentPlayerItem() === targetItem)
             XCTAssertEqual(player.currentChapterIndex, 1)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 7.5, accuracy: 1)
+            XCTAssertEqual(targetItem.currentTime().seconds, 7.5, accuracy: 1)
             XCTAssertTrue(player.isPlaying)
+            let resumedPosition = targetItem.currentTime().seconds
+            try await Task.sleep(nanoseconds: 300_000_000)
+            XCTAssertGreaterThan(targetItem.currentTime().seconds, resumedPosition)
+            XCTAssertTrue(player.testHook_currentPlayerItem() === targetItem)
         }
     }
 
