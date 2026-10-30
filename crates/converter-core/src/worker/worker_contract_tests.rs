@@ -70,8 +70,14 @@ fn platform_test_book_with_text(path: &Path, text: &str) {
     platform_test_book_in_language(path, text, "pt-BR");
 }
 fn platform_test_book_in_language(path: &Path, text: &str, language: &str) {
+    platform_test_book_with_heading(path, text, language, Some("Chapter"));
+}
+fn platform_test_book_with_heading(path: &Path, text: &str, language: &str, heading: Option<&str>) {
     use std::io::Write;
-    let body = format!("<html><body><h1>Chapter</h1><p>{text}</p></body></html>");
+    let heading = heading
+        .map(|title| format!("<h1>{title}</h1>"))
+        .unwrap_or_default();
+    let body = format!("<html><body>{heading}<p>{text}</p></body></html>");
     let package = format!("<package xmlns:dc=\"x\"><metadata><dc:title>System speech</dc:title><dc:language>{language}</dc:language></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/></spine></package>");
     let mut archive = zip::ZipWriter::new(fs::File::create(path).unwrap());
     let options = zip::write::SimpleFileOptions::default();

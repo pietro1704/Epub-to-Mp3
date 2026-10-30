@@ -384,6 +384,7 @@ mod chapter_execution;
 mod conversion_input_policy;
 mod conversion_schedule;
 mod edge_synthesis_execution;
+mod heading_pauses;
 mod kokoro_model_identity;
 mod native_tts_adapters;
 mod platform_speech_policy;
@@ -391,6 +392,7 @@ mod playback_chunk_delivery;
 mod provider_execution;
 pub mod render_progress;
 mod segment_audio_cache;
+mod selection_model_paths;
 mod tts_cache_identity;
 mod typed_speech_policy;
 

@@ -124,11 +124,13 @@ fn fallback_metadata_tracks_actual_role_when_primary_and_secondary_resolve_to_sa
 }
 
 #[test]
+// Each request intentionally contains one body segment, so failures are counted
+// across requests rather than across structural title/body boundaries.
 fn typed_primary_success_persists_zero_before_resuming_after_another_failure() {
     use crate::tts_preferences::{SegmentPolicy, TtsPreferences, TtsSelection};
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("recovered.epub");
-    platform_test_book_with_text(&input, "Primário recuperado.");
+    platform_test_book_with_heading(&input, "Primário recuperado.", "pt-BR", None);
     let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
         std::iter::empty::<(String, String)>(),
         temp.path().to_path_buf(),
@@ -171,7 +173,7 @@ fn typed_primary_success_persists_zero_before_resuming_after_another_failure() {
         .expect("typed success must explicitly publish the reset");
     assert!(reset.is_initial());
     let next_input = temp.path().join("next.epub");
-    platform_test_book_with_text(&next_input, "Um próximo segmento.");
+    platform_test_book_with_heading(&next_input, "Um próximo segmento.", "pt-BR", None);
     spoken.lock().unwrap().clear();
     let attempts = Arc::new(AtomicUsize::new(0));
     let recorded_attempts = Arc::clone(&attempts);
@@ -224,7 +226,7 @@ fn typed_failure_policy_survives_separate_single_chapter_requests() {
     let spoken = Arc::new(Mutex::new(Vec::new()));
     for chapter in 0..3 {
         let input = temp.path().join(format!("chapter-{chapter}.epub"));
-        platform_test_book_with_text(&input, &format!("Unique chapter {chapter}."));
+        platform_test_book_with_heading(&input, &format!("Unique chapter {chapter}."), "pt-BR", None);
         let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
             std::iter::empty::<(String, String)>(),
             temp.path().to_path_buf(),

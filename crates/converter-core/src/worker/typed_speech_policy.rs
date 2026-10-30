@@ -6,47 +6,11 @@ use super::{
 use crate::{platform_tts, tts_session::*};
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{atomic::Ordering, Mutex},
 };
 
 impl ConversionWorker {
-    pub(super) fn selection_model_paths(
-        &self,
-        request: &ConversionRequest,
-        selection: &crate::tts_preferences::TtsSelection,
-    ) -> (PathBuf, PathBuf) {
-        let id = selection
-            .model_id
-            .as_deref()
-            .unwrap_or(crate::tts_preferences::FABER_MODEL_ID);
-        let explicit_selection = request.tts_preferences.as_ref().and_then(|preferences| {
-            std::iter::once(&preferences.primary)
-                .chain(preferences.secondary.iter())
-                .find(|candidate| candidate.engine == "piper")
-        });
-        let explicit_applies = selection.engine == "piper"
-            && explicit_selection.is_none_or(|candidate| candidate.model_id == selection.model_id);
-        let model = if explicit_applies && request.piper_model.is_some() {
-            request.piper_model.clone().expect("explicit model")
-        } else if let Some(root) = &request.models_root {
-            root.join(id).join("model.onnx")
-        } else {
-            self.config
-                .paths
-                .piper_models_dir
-                .join(format!("{id}.onnx"))
-        };
-        let config = if explicit_applies && request.piper_config.is_some() {
-            request.piper_config.clone().expect("explicit config")
-        } else if let Some(root) = &request.models_root {
-            root.join(id).join("model.onnx.json")
-        } else {
-            model.with_extension("onnx.json")
-        };
-        (model, config)
-    }
-
     #[cfg(test)]
     pub(super) fn synthesize_preferences(
         &self,
@@ -77,6 +41,7 @@ impl ConversionWorker {
             total,
             generation,
             &[],
+            &[],
         )
     }
 
@@ -93,6 +58,7 @@ impl ConversionWorker {
         total: usize,
         generation: Option<u64>,
         paragraph_ends: &[usize],
+        heading_ends: &[usize],
     ) -> Result<(), WorkerError> {
         use std::io::Write;
         preferences.validate(language).map_err(WorkerError::Piper)?;
@@ -127,7 +93,7 @@ impl ConversionWorker {
         }
         let mut segments = std::collections::VecDeque::from(
             self.pronunciation
-                .source_plan(text, 180.min(limit), limit, paragraph_ends)
+                .source_plan(text, 180.min(limit), limit, paragraph_ends, heading_ends)
                 .map_err(worker_from_failure)?,
         );
         let adapters: Vec<_> = builtin_descriptors()
@@ -170,8 +136,10 @@ impl ConversionWorker {
                 RecoveryAttempt::new(&policy, preferences, self.platform_tts.is_some())
                     .map_err(worker_from_failure)?;
             let mut synthesize = |selection: &crate::tts_preferences::TtsSelection,
-                                  segment: &str|
+                                  source_segment: &SourceTextSegment|
              -> Result<Vec<u8>, TtsFailure> {
+                let segment = source_segment.speech();
+                let pause = super::heading_pauses::follows_heading(source_segment, heading_ends);
                 cache_hit.set(false);
                 let context = SynthesisContext {
                     language: language.unwrap_or("pt-BR"),
@@ -250,7 +218,7 @@ impl ConversionWorker {
                 let segment_key = book_identity.as_deref().and_then(|book| {
                     // Only rules that change this block invalidate its inner cache.
                     let speech_identity =
-                        serde_json::to_string(&(segment, &spoken)).expect("speech text identity");
+                        super::heading_pauses::speech_identity(segment, &spoken, pause);
                     super::segment_audio_cache::key(
                         book,
                         context.language,
@@ -301,6 +269,7 @@ impl ConversionWorker {
                         ));
                     }
                 }
+                super::heading_pauses::append(&mut encoded, pause, &context)?;
                 context.check()?;
                 if let Some(key) = segment_key {
                     let _lease = self
@@ -330,14 +299,15 @@ impl ConversionWorker {
                         if index == 0 { 60 } else { 240 },
                         240,
                         &paragraph_ends,
+                        &segment.relative_paragraph_ends(heading_ends),
                     )?;
                     for passage in &mut passages {
                         passage.rebase(&segment);
                     }
                     let first = passages.remove(0);
-                    Ok((synthesize(selection, first.speech())?, passages))
+                    Ok((synthesize(selection, &first)?, passages))
                 } else {
-                    Ok((synthesize(selection, segment.speech())?, Vec::new()))
+                    Ok((synthesize(selection, &segment)?, Vec::new()))
                 }
             };
             let mut fallback_cause = None;

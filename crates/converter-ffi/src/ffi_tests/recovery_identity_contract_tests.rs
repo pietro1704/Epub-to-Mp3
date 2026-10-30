@@ -53,8 +53,8 @@ fn controlled_ffi_recovery_regenerates_opaque_voice_after_selection_renumbers_it
         let original = convert("selection-predecessor", 0);
         let original_calls = calls.load(std::sync::atomic::Ordering::Acquire);
         assert_eq!(
-            original_calls, 2,
-            "Both source chapters must really synthesize"
+            original_calls, 4,
+            "Both source chapters must synthesize their heading and body"
         );
         let chapter = &original["manifest"]["chapters"][1];
         let source_audio = root
@@ -70,7 +70,7 @@ fn controlled_ffi_recovery_regenerates_opaque_voice_after_selection_renumbers_it
 
         assert_eq!(
             calls.load(std::sync::atomic::Ordering::Acquire),
-            original_calls + 1,
+            original_calls + 2,
             "Source identity alone must not admit an unresolved system voice"
         );
         let destination = Path::new(recovered["audioPath"].as_str().unwrap());
