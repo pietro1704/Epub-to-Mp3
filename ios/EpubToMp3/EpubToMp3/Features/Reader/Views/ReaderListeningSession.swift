@@ -83,6 +83,7 @@ final class ReaderListeningSession {
                     switch navigation.target {
                     case .chapterTime: self.restartListening?(navigation.chapterIndex, 0, request)
                     case .readerPage(let ratio): self.restartListening?(navigation.chapterIndex, ratio, nil)
+                    case .approximateTime(let ratio): self.restartListening?(navigation.chapterIndex, ratio, request)
                     }
                     return
                 }
@@ -94,7 +95,13 @@ final class ReaderListeningSession {
                         self.restartListening?(navigation.chapterIndex, ratio, nil)
                         return
                     }
+                case .approximateTime(let ratio):
+                    if !request.startsAtGeneratedOrigin {
+                        self.restartListening?(navigation.chapterIndex, ratio, request)
+                        return
+                    }
                 case .chapterTime:
+                    if request.approximateRatio != nil { return }
                     // A text suffix has no measured absolute audio-time origin.
                     // Resolve a timeline seek from chapter start, carrying its
                     // exact seconds and current pause intent into the new job.
@@ -123,6 +130,7 @@ final class ReaderListeningSession {
     }
 
     func cancel() {
+        if player.approximateSeekJobID == listeningJobID { player.approximateSeekJobID = nil }
         task?.cancel()
         listeningJobID = nil
         pendingRestartJobID = nil
@@ -149,6 +157,7 @@ final class ReaderListeningSession {
         let previousPlayerJob = player.snapshot?.jobId
         listeningJobID = jobID
         pendingRestartJobID = pendingSeek?.jobID
+        player.approximateSeekJobID = pendingSeek?.jobID
         listeningBookID = book.id
         self.chapterEstimates = chapterEstimates
         requestedPage = (priority, pageRatio ?? 0)
@@ -170,6 +179,7 @@ final class ReaderListeningSession {
             var installedPending = false
             defer {
                 if self.listeningJobID == jobID {
+                    if self.player.approximateSeekJobID == jobID { self.player.approximateSeekJobID = nil }
                     self.listeningJobID = nil
                     self.pendingRestartJobID = nil
                     self.listeningBookID = nil
@@ -190,11 +200,21 @@ final class ReaderListeningSession {
                             restartListening?(current.chapterIndex, 0, current)
                             return
                         }
+                    case .approximateTime(let ratio):
+                        if current.chapterIndex != priority || ratio != pageRatio {
+                            restartListening?(current.chapterIndex, ratio, current)
+                            return
+                        }
                     case .readerPage(let ratio):
                         restartListening?(current.chapterIndex, ratio, nil)
                         return
                     }
-                    carriedSeek = current
+                    var restored = current
+                    if case .approximateTime = navigation.target {
+                        restored.startsAtGeneratedOrigin = true
+                        restored.approximateRatio = nil
+                    }
+                    carriedSeek = restored
                 } else { carriedSeek = nil }
                 let playbackControl = try makePlaybackControl()
                 playbackControl.updatePlaybackWindow(currentChapter: priority, chaptersAhead: 1)
@@ -214,6 +234,7 @@ final class ReaderListeningSession {
                 player.stop()
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
                 updateChapterEstimates(self.chapterEstimates, for: book.id)
+                player.approximateSeekJobID = jobID
                 installedPending = true
                 player.isConverting = true
                 if let carriedSeek { player.restoreListeningSeek(carriedSeek, jobID: jobID) }

@@ -15,6 +15,8 @@ final class PendingPlaybackSeek {
         var readerPageRatio: Double? = nil
         var allowsFinalEndpoint = false
         var isApplying = false
+        var approximateRatio: Double? = nil
+        var startsAtGeneratedOrigin = false
         var navigationTarget: PlaybackNavigationTarget? = nil
     }
 
@@ -47,6 +49,15 @@ final class PendingPlaybackSeek {
         activeID = nil
         autoplay = nil
     }
+    /// Promote only after retained audio has been measured and found unavailable.
+    func requestApproximateStart() -> Bool {
+        guard var request = chapter, let ratio = request.approximateRatio else { return false }
+        request.isApplying = false
+        request.navigationTarget = .approximateTime(ratio)
+        chapter = request
+        return true
+    }
+
     func resolve(snapshot currentSnapshot: @escaping () -> JobSnapshot?,
                  hasPlayer: Bool, isSegmentMode: Bool, segments: PlaybackSegmentSession,
                  resolveURL: @escaping (String?, String, Int) -> URL?,
@@ -56,6 +67,7 @@ final class PendingPlaybackSeek {
                  rebuild: @escaping (ChapterRequest, [(URL, SegmentBacklog.Identity?)], TimeInterval, TimeInterval) -> Void) {
         guard var pending = chapter, !pending.isApplying,
               let snapshot = currentSnapshot(), snapshot.jobId == pending.jobID, hasPlayer else { return }
+        if case .approximateTime = pending.navigationTarget, !pending.startsAtGeneratedOrigin { return }
         if let ratio = pending.readerPageRatio {
             if isSegmentMode {
                 guard let duration = segments.confirmedEnd(for: pending.chapterIndex, snapshot: currentSnapshot())
@@ -96,6 +108,15 @@ final class PendingPlaybackSeek {
                 waiting()
                 return
             }
+            if pending.startsAtGeneratedOrigin {
+                guard retained.first?.key.segmentIndex == 0 else { waiting(); return }
+                pending.position = segments.startingPosition(for: pending.chapterIndex)
+                self.chapter = pending
+                rebuild(pending, retained.map { ($0.value, Optional($0.key)) }, 0, pending.position)
+                return
+            }
+            if pending.position < segments.startingPosition(for: pending.chapterIndex),
+               requestApproximateStart() { return }
             if pending.position > 0 {
                 pending.isApplying = true
                 self.chapter = pending
@@ -296,10 +317,17 @@ final class PendingPlaybackSeek {
         guard let target = snapshot.playableChapters.firstIndex(where: { $0.index == targetIndex }) else {
             return .waiting(terminal: snapshot.isTerminal)
         }
+        // A completed suffix starts at local media time zero. If the original
+        // producer wins the race before replacement, its complete file can
+        // satisfy the original seconds without a text restart.
+        let position = pending.startsAtGeneratedOrigin ? 0 : pending.position
+        let navigationTarget: PlaybackNavigationTarget?
+        if case .approximateTime = pending.navigationTarget { navigationTarget = .chapterTime(position) }
+        else { navigationTarget = pending.navigationTarget }
         let request = ChapterRequest(id: pending.id, jobID: pending.jobID, chapterIndex: targetIndex,
-                                     autoplay: pending.autoplay, position: pending.position,
+                                     autoplay: pending.autoplay, position: position,
                                      readerPageRatio: pending.readerPageRatio,
-                                     navigationTarget: pending.navigationTarget)
+                                     navigationTarget: navigationTarget)
         return .ready(playableOffset: target, request: request)
     }
 

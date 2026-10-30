@@ -38,5 +38,6 @@ acceptance remain deferred to the user's final validation campaign. No visible
 journey or red-before native execution is claimed while that campaign is deferred.
 Simulator quarantine remains in force.
 
-Seeking into unavailable chunks preserves the selected chapter time and the
-offset inside its containing chunk. See [unavailable-audio seeking](unavailable-audio-seek.md).
+Slider seeks into unavailable chunks of an active listening session can start
+from an approximate text position, marked with `≈` on the elapsed label.
+Prepared audio and transport skips retain precise media-time seeks. See [unavailable-audio seeking](unavailable-audio-seek.md).

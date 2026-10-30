@@ -79,6 +79,92 @@ final class ReaderListeningSeekTests: XCTestCase {
         }
     }
 
+    func testApproximateRestartPreservesIdentityAndPausedIntent() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        fixture.start(ratio: 0)
+        try await fixture.waitUntil { fixture.jobs.count == 1 }
+        let request = PendingPlaybackSeek.ChapterRequest(id: UUID(), jobID: fixture.jobs[0],
+            chapterIndex: 0, autoplay: false, position: 300, navigationTarget: .approximateTime(0.5))
+        fixture.player.restoreListeningSeek(request, jobID: request.jobID)
+        try await fixture.waitUntil { fixture.jobs.count == 2 }
+        let navigation = try XCTUnwrap(fixture.player.pendingNavigation)
+        let restored = try XCTUnwrap(fixture.player.pendingListeningSeek(for: navigation))
+        XCTAssertEqual(restored.id, request.id)
+        XCTAssertEqual(navigation.target, .approximateTime(0.5))
+        XCTAssertTrue(restored.startsAtGeneratedOrigin)
+        XCTAssertFalse(restored.autoplay)
+        XCTAssertFalse(fixture.player.isPlaying)
+        XCTAssertTrue(fixture.controls[0].isCancellationRequested)
+        XCTAssertTrue(fixture.player.isPositionApproximate)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(fixture.jobs.count, 2, "The restored suffix must not restart itself.")
+    }
+
+    func testApproximateRestartFailureClearsPendingRequest() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        fixture.start(ratio: 0)
+        try await fixture.waitUntil { fixture.jobs.count == 1 }
+        fixture.blockReopen = true
+        let request = PendingPlaybackSeek.ChapterRequest(id: UUID(), jobID: fixture.jobs[0],
+            chapterIndex: 0, autoplay: true, position: 300, navigationTarget: .approximateTime(0.5))
+        fixture.player.restoreListeningSeek(request, jobID: request.jobID)
+        try await fixture.waitUntil { fixture.pendingOpens.count == 1 }
+        fixture.pendingOpens.removeFirst().resume(throwing: OpenFailure())
+        await fixture.session.waitForCompletion()
+        XCTAssertNil(fixture.player.pendingNavigation)
+        XCTAssertFalse(fixture.player.isSeeking)
+        XCTAssertFalse(fixture.player.isPlaying)
+        XCTAssertEqual(fixture.failures, 1)
+    }
+
+    func testLatestApproximateSeekAndPauseWinDuringReopen() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        fixture.start(ratio: 0)
+        try await fixture.waitUntil { fixture.jobs.count == 1 }
+        fixture.blockReopen = true
+        let job = fixture.jobs[0]
+        let first = PendingPlaybackSeek.ChapterRequest(id: UUID(), jobID: job,
+            chapterIndex: 0, autoplay: true, position: 300, navigationTarget: .approximateTime(0.5))
+        fixture.player.restoreListeningSeek(first, jobID: job)
+        try await fixture.waitUntil { fixture.pendingOpens.count == 1 }
+        let latest = PendingPlaybackSeek.ChapterRequest(id: UUID(), jobID: job,
+            chapterIndex: 0, autoplay: true, position: 420, navigationTarget: .approximateTime(0.7))
+        fixture.player.restoreListeningSeek(latest, jobID: job)
+        fixture.player.pause()
+        try await fixture.waitUntil { fixture.pendingOpens.count == 2 }
+        let opens = fixture.pendingOpens
+        fixture.pendingOpens.removeAll()
+        opens.forEach { $0.resume(returning: URL(fileURLWithPath: "/unused/book.epub")) }
+        try await fixture.waitUntil { fixture.jobs.count == 2 }
+        let navigation = try XCTUnwrap(fixture.player.pendingNavigation)
+        XCTAssertEqual(navigation.requestID, latest.id)
+        XCTAssertEqual(navigation.target, .approximateTime(0.7))
+        XCTAssertFalse(try XCTUnwrap(fixture.player.pendingListeningSeek(for: navigation)).autoplay)
+        XCTAssertEqual(fixture.failures, 0)
+    }
+
+    func testStopRejectsLateApproximateReopen() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        fixture.start(ratio: 0)
+        try await fixture.waitUntil { fixture.jobs.count == 1 }
+        fixture.blockReopen = true
+        let request = PendingPlaybackSeek.ChapterRequest(id: UUID(), jobID: fixture.jobs[0],
+            chapterIndex: 0, autoplay: true, position: 300, navigationTarget: .approximateTime(0.5))
+        fixture.player.restoreListeningSeek(request, jobID: request.jobID)
+        try await fixture.waitUntil { fixture.pendingOpens.count == 1 }
+        fixture.player.stop()
+        fixture.pendingOpens.removeFirst().resume(returning: URL(fileURLWithPath: "/unused/book.epub"))
+        await fixture.session.waitForCompletion()
+        XCTAssertEqual(fixture.jobs.count, 1)
+        XCTAssertNil(fixture.player.pendingNavigation)
+        XCTAssertFalse(fixture.player.isPlaying)
+        XCTAssertEqual(fixture.failures, 0)
+    }
+
     func testTimelineSeekNeverUsesConflictingSavedReaderPage() async throws {
         let standard = UserDefaults.standard
         let keys = [ReaderSessionState.currentlyReadingBookIDKey,

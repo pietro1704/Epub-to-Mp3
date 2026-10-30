@@ -157,6 +157,24 @@ final class PlaybackPlanTests: XCTestCase {
     }
 
     @MainActor
+    func testApproximateFullFileHandoffUsesTheCompletedFilesOwnTimeOrigin() {
+        let pending = PendingPlaybackSeek { _ in }
+        let completed = snapshot([chapter(1, url: URL(fileURLWithPath: "/suffix.wav"))], state: "finished")
+        for installedSuffix in [false, true] {
+            let id = UUID()
+            pending.chapter = .init(id: id, jobID: "book", chapterIndex: 0, autoplay: false,
+                position: 150, startsAtGeneratedOrigin: installedSuffix, navigationTarget: .approximateTime(0.5))
+            guard case .ready(_, let request) = pending.fullFileHandoff(snapshot: completed, segmentMode: true) else {
+                return XCTFail("A completed file must settle the pending navigation")
+            }
+            XCTAssertEqual(request.id, id)
+            XCTAssertFalse(request.autoplay)
+            XCTAssertEqual(request.position, installedSuffix ? 0 : 150)
+            XCTAssertEqual(request.navigationTarget, .chapterTime(installedSuffix ? 0 : 150))
+        }
+    }
+
+    @MainActor
     func testNavigationPlanUsesCanonicalSparseChapterIdentity() {
         let state = snapshot([chapter(0), chapter(8)])
         guard case .segment(let chapter) = PlaybackChapterQueue.navigation(direction: .forward,
