@@ -67,7 +67,8 @@ final class PlaybackSeekExecution {
         guard snapshot?.jobId == jobID else { return }
         begin()
         pending.chapter = .init(id: request.id, jobID: jobID, chapterIndex: request.chapterIndex,
-            autoplay: request.autoplay, position: request.position, navigationTarget: .chapterTime(request.position))
+            autoplay: request.autoplay, position: request.position, startsAtGeneratedOrigin: request.startsAtGeneratedOrigin,
+            navigationTarget: request.navigationTarget ?? .chapterTime(request.position))
         queueSession.selectChapter(request.chapterIndex)
         actions.seeking(true)
         actions.pauseTransport()
@@ -150,7 +151,7 @@ final class PlaybackSeekExecution {
         pending.proportional = nil
     }
 
-    func seek(to seconds: TimeInterval) {
+    func seek(to seconds: TimeInterval, allowsApproximation: Bool = false) {
         let requested = seconds.isFinite ? max(0, seconds) : 0
         let confirmedEnd = isSegmentMode ? confirmedSegmentChapterEnd(for: currentChapterIndex) : nil
         let target = confirmedEnd.map { min($0, requested) } ?? requested
@@ -174,7 +175,9 @@ final class PlaybackSeekExecution {
                 id: UUID(), jobID: snapshot.jobId, chapterIndex: currentChapterIndex,
                 autoplay: autoplay, position: target,
                 allowsFinalEndpoint: confirmedEnd.map { target >= $0 } == true
-                    && nextCanonicalChapterIndex == nil
+                    && nextCanonicalChapterIndex == nil,
+                approximateRatio: allowsApproximation && durationSeconds > 0
+                    ? min(1, target / durationSeconds) : nil
             )
             actions.seeking(true)
             actions.pauseTransport()
@@ -226,6 +229,7 @@ final class PlaybackSeekExecution {
             cancel: { [weak self] in self?.cancel() },
             waiting: { [weak self] in
                 guard let self, self.pending.chapter?.jobID == self.snapshot?.jobId else { return }
+                if self.pending.requestApproximateStart() { return }
                 self.queueSession.player?.pause()
                 self.queueSession.player?.removeAllItems()
                 self.queueSession.clearOwnership()

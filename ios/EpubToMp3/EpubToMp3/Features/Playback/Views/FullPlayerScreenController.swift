@@ -160,7 +160,8 @@ final class FullPlayerScreenController: UIViewController {
         if !isScrubbing && !player.isSeeking {
             content.slider.value = Float(position)
         }
-        content.elapsedLabel.text = PlayerTransportPresentation.formatTime(position)
+        content.elapsedLabel.text = (player.isPositionApproximate ? "≈ " : "")
+            + PlayerTransportPresentation.formatTime(position)
         let timeline = ChapterPlaybackTimeline(
             estimate: player.isChapterDurationEstimated ? snapshot.durationSeconds : nil,
             confirmed: player.isChapterDurationEstimated ? nil : snapshot.durationSeconds)

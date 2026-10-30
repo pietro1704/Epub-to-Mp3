@@ -271,7 +271,16 @@ final class AudioPlayer: ObservableObject {
 
     func togglePlayPause() { isPlaying ? pause() : resume() }
 
-    func seek(to seconds: TimeInterval) { services.seeking.seek(to: seconds) }
+    /// Only the active listening coordinator can fulfill a text-range restart.
+    var approximateSeekJobID: String?
+    var isPositionApproximate: Bool {
+        if case .approximateTime = pendingNavigation?.target { return true }
+        return isSegmentMode && services.segments.startingPosition(for: currentChapterIndex) > 0
+    }
+    func seek(to seconds: TimeInterval) {
+        services.seeking.seek(to: seconds,
+            allowsApproximation: approximateSeekJobID != nil && approximateSeekJobID == snapshot?.jobId)
+    }
 
     func pendingListeningSeek(for navigation: PendingNavigation) -> PendingPlaybackSeek.ChapterRequest? {
         guard let request = pendingSeek.chapter, request.id == navigation.requestID,

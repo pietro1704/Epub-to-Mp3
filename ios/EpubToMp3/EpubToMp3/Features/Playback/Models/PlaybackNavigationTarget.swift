@@ -4,4 +4,5 @@ import Foundation
 enum PlaybackNavigationTarget: Equatable {
     case chapterTime(TimeInterval)
     case readerPage(Double)
+    case approximateTime(Double)
 }

@@ -5,6 +5,52 @@ import XCTest
 
 extension AudioPlayerPendingSeekTests {
     @MainActor
+    func testUnavailableSliderPromotesToTextRatioButReadyAudioStaysExact() async throws {
+        try await withPlayingFixture(streaming: true, streamTargetReady: false,
+                                     streamSegmentCount: 1) { player, _ in
+            player.pause()
+            player.approximateSeekJobID = player.snapshot?.jobId
+            player.setSegmentChapterEstimate(300, forChapterIndex: 0)
+            player.seek(to: 155)
+            for _ in 0..<100 {
+                if player.pendingNavigation?.target == .approximateTime(155.0 / 300) { break }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let navigation = try XCTUnwrap(player.pendingNavigation)
+            XCTAssertEqual(navigation.target, .approximateTime(155.0 / 300))
+            XCTAssertFalse(try XCTUnwrap(player.pendingListeningSeek(for: navigation)).autoplay)
+            player.seek(to: 2)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
+            XCTAssertEqual(player.positionSeconds, 2, accuracy: 0.1)
+            XCTAssertFalse(player.isPlaying)
+            XCTAssertFalse(player.isPositionApproximate)
+        }
+    }
+
+    @MainActor
+    func testApproximateSuffixStartsAtFirstChunkWithoutGeneratingPrefix() async throws {
+        try await withPlayingFixture(streaming: true, streamTargetReady: false,
+                                     streamSegmentCount: 1) { player, snapshot in
+            player.pause()
+            player.setSegmentChapterEstimate(300, forChapterIndex: 0, startingRatio: 0.5)
+            let request = PendingPlaybackSeek.ChapterRequest(id: UUID(),
+                jobID: try XCTUnwrap(player.snapshot?.jobId), chapterIndex: 0,
+                autoplay: false, position: 150, startsAtGeneratedOrigin: true,
+                navigationTarget: .approximateTime(0.5))
+            player.restoreListeningSeek(request, jobID: request.jobID)
+            let url = try XCTUnwrap(URL(string: try XCTUnwrap(snapshot(true).playableChapters.first?.downloadUrl)))
+            player.enqueueSegment(data: try Data(contentsOf: url), chapterIndex: 0, segmentIndex: 1)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
+            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 0, accuracy: 0.1)
+            XCTAssertEqual(player.positionSeconds, 150, accuracy: 0.1)
+            XCTAssertFalse(player.isPlaying)
+            XCTAssertTrue(player.isPositionApproximate)
+        }
+    }
+
+    @MainActor
     func testDistantPausedSeekLetsBoundedProducerReachContainingChunk() async throws {
         try await withPlayingFixture(streaming: true, streamTargetReady: false,
                                      streamSegmentCount: 1) { player, snapshot in
