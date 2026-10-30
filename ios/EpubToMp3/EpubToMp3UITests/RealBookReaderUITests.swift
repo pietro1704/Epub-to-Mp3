@@ -121,8 +121,79 @@ final class RealBookReaderUITests: XCTestCase {
         retainLiveCapture(app, name: "authored-scrolling-chapter-restored")
     }
 
+    func testOptInAuthoredBookDarkMinimumTextNavigation() throws {
+        try verifyDarkTextNavigation(category: "UICTContentSizeCategoryXS", readerSize: 0)
+    }
+
+    func testOptInAuthoredBookDarkMaximumTextNavigation() throws {
+        try verifyDarkTextNavigation(category: "UICTContentSizeCategoryAccessibilityXXXL", readerSize: 4)
+    }
+
+    private func verifyDarkTextNavigation(category: String, readerSize: Int) throws {
+        XCUIDevice.shared.orientation = .portrait
+        let app = try openAuthoredLinkBook(additionalArguments: [
+            "-AppleInterfaceStyle", "Dark", "-readerTheme", "dark",
+            "-UIPreferredContentSizeCategoryName", category,
+            "-uiTestReaderFontSize", String(readerSize), "-uiTestReaderOverrideFontSize"])
+        defer { app.terminate() }
+        submitLiveSearch("ORIGIN7964", app: app)
+        XCTAssertTrue(waitUntil(timeout: 15) { app.staticTexts["flicker.probe.chapter"].label == "0/2" })
+        let harness = ReaderModesHarness(app: app)
+        harness.assertNoClippedLines(scenario: "Dark reader at \(category)")
+        retainLiveCapture(app, name: "dark-\(category)-reader")
+        let before = try XCTUnwrap(harness.paginationMetrics)
+        app.buttons["reader.search"].tap()
+        let cancel = app.alerts.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        let alert = app.alerts.firstMatch
+        if category == "UICTContentSizeCategoryAccessibilityXXXL" {
+            // Native alerts scroll their actions at accessibility text sizes.
+            alert.swipeUp()
+            retainLiveCapture(app, name: "dark-maximum-search-alert-scrolled")
+        }
+        XCTAssertTrue(cancel.isHittable)
+        XCTAssertTrue(alert.frame.insetBy(dx: -1, dy: -1).contains(cancel.frame))
+        cancel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(cancel.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(harness.paginationMetrics?.values["offset"], before.values["offset"])
+        app.buttons["miniPlayer.open"].firstMatch.tap()
+        let close = app.buttons["fullPlayer.close"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        let window = app.windows.firstMatch.frame
+        for identifier in ["fullPlayer.close", "fullPlayer.previousChapter", "fullPlayer.skipBack",
+                           "fullPlayer.playPause", "fullPlayer.skipForward", "fullPlayer.nextChapter",
+                           "fullPlayer.playbackRateButton"] {
+            let control = app.buttons[identifier].firstMatch
+            XCTAssertTrue(control.exists, "The expanded player must expose \(identifier).")
+            XCTAssertTrue(window.insetBy(dx: -1, dy: -1).contains(control.frame), "\(identifier) must fit without scrolling.")
+            if control.isEnabled { XCTAssertTrue(control.isHittable, "\(identifier) must remain reachable.") }
+        }
+        retainLiveCapture(app, name: "dark-\(category)-expanded-player")
+        close.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+        app.buttons["reader.close"].firstMatch.tap()
+        let search = app.searchFields["library.searchField"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.isHittable)
+        retainLiveCapture(app, name: "dark-\(category)-library")
+        app.tabBars.buttons["Settings"].firstMatch.tap()
+        let table = app.tables.firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+        retainLiveCapture(app, name: "dark-\(category)-settings")
+        let primary = app.cells["settings.tts.primary"].firstMatch
+        for _ in 0..<12 {
+            if primary.exists && primary.isHittable { break }
+            table.swipeUp()
+        }
+        XCTAssertTrue(primary.exists && primary.isHittable)
+        XCTAssertTrue((primary.value as? String ?? "").hasPrefix("Faber"), "The appearance journey must preserve the selected voice.")
+        retainLiveCapture(app, name: "dark-\(category)-settings-voice")
+        app.tabBars.buttons["Library"].firstMatch.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+    }
+
     // Install Fixtures/ReaderLiveLinks.epub explicitly, then pass its imported book ID.
-    private func openAuthoredLinkBook(layout: String = "paginated") throws -> XCUIApplication {
+    private func openAuthoredLinkBook(layout: String = "paginated", additionalArguments: [String] = []) throws -> XCUIApplication {
         guard ProcessInfo.processInfo.environment["APP_DEVICE_READER_LINKS"] == "1",
               let bookID = ProcessInfo.processInfo.environment["APP_DEVICE_LINK_BOOK_ID"] else {
             throw XCTSkip("Requires the explicitly installed authored live acceptance EPUB.")
@@ -131,12 +202,31 @@ final class RealBookReaderUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTestResetActiveReader", "-uiTestReaderLayout", layout,
             "-uiTestPaginationProbe", "-uiTestFlickerProbe", "-uiTestNoPageTurnOverlay", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += additionalArguments
         app.launch()
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(waitUntil(timeout: 5) {
+            app.windows.firstMatch.frame.height > app.windows.firstMatch.frame.width
+        }, "Authored-book acceptance requires the committed portrait viewport.")
         let close = app.buttons["fullPlayer.close"].firstMatch
         if close.waitForExistence(timeout: 2) { close.tap() }
         let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"].firstMatch
         XCTAssertTrue(tile.waitForExistence(timeout: 30))
-        tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        let collection = app.collectionViews.firstMatch
+        XCTAssertTrue(collection.waitForExistence(timeout: 5))
+        func visibleTile() -> CGRect {
+            var viewport = collection.frame.intersection(app.windows.firstMatch.frame)
+            let miniPlayer = app.buttons["miniPlayer.open"].firstMatch
+            if miniPlayer.exists { viewport.size.height = max(0, min(viewport.maxY, miniPlayer.frame.minY) - viewport.minY) }
+            return tile.frame.intersection(viewport)
+        }
+        for _ in 0..<8 {
+            if visibleTile().height >= 44 { break }
+            collection.swipeUp()
+        }
+        let visible = visibleTile()
+        XCTAssertGreaterThanOrEqual(visible.height, 44, "The book card must expose a usable tap target.")
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: visible.midX, dy: visible.midY)).tap()
         XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
         return app
