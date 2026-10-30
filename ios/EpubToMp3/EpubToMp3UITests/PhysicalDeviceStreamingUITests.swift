@@ -127,6 +127,96 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
         }
     }
 
+    func testOptInPiperManualConversionKeepsPausedPlayback() throws {
+        guard ProcessInfo.processInfo.environment["APP_DEVICE_MANUAL_MATRIX"] == "1" else {
+            throw XCTSkip("Requires the installed authored EPUBs and authorized physical-device conversion.")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestResetActiveReader", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        let close = app.buttons["fullPlayer.close"].firstMatch
+        if close.waitForExistence(timeout: 2) { close.tap() }
+        let open = app.buttons["miniPlayer.open"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        let miniTransport = app.buttons["miniPlayer.playPause"].firstMatch
+        if miniTransport.label.lowercased() == "pause" { miniTransport.tap() }
+        XCTAssertEqual(miniTransport.label.lowercased(), "play")
+        let listeningIdentity = open.value as? String
+        XCTAssertTrue(listeningIdentity?.contains("Reader Live Links") == true)
+        app.tabBars.buttons["Convert"].tap()
+        let table = app.tables.firstMatch
+        func reveal(_ element: XCUIElement) {
+            for _ in 0..<16 {
+                if element.exists && table.frame.insetBy(dx: 0, dy: 15).contains(element.frame) { return }
+                if element.exists && element.frame.midY < table.frame.midY { table.swipeDown() }
+                else { table.swipeUp() }
+            }
+            XCTFail("Manual conversion control must be reachable.")
+        }
+        let primary = app.cells["convert.tts.primary"].firstMatch
+        reveal(primary)
+        XCTAssertEqual(primary.value as? String, "Use preferences")
+        let picker = app.cells.containing(.staticText, identifier: "Pick EPUB or PDF").firstMatch
+        reveal(picker)
+        picker.tap()
+        let browse = app.buttons["Browse"].firstMatch
+        if browse.waitForExistence(timeout: 3) { browse.tap() }
+        let local = app.cells["DOC.sidebar.item.On My iPhone"].firstMatch
+        if !local.waitForExistence(timeout: 3), browse.exists { browse.tap() }
+        let browser = app.collectionViews["Browse View"].firstMatch
+        for _ in 0..<8 {
+            if local.exists && local.isHittable { break }
+            browser.swipeUp()
+        }
+        XCTAssertTrue(local.waitForExistence(timeout: 5), app.debugDescription)
+        let settle = expectation(description: "Document browser scrolling has settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { settle.fulfill() }
+        wait(for: [settle], timeout: 4)
+        local.tap()
+        let folder = app.staticTexts["EpubToMp3"].firstMatch
+        for _ in 0..<16 {
+            if folder.exists && folder.isHittable { break }
+            app.collectionViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(folder.waitForExistence(timeout: 5), app.debugDescription)
+        folder.tap()
+        let source = app.staticTexts.matching(NSPredicate(format: "label == %@ OR label == %@",
+            "Piper-Live-Portuguese-20261029", "Piper-Live-Portuguese-20261029.epub")).firstMatch
+        for _ in 0..<16 {
+            if source.exists && source.isHittable { break }
+            app.collectionViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
+        source.tap()
+        let selected = app.cells.matching(NSPredicate(format: "value CONTAINS %@", "Piper-Live-Portuguese-20261029.epub")).firstMatch
+        XCTAssertTrue(selected.waitForExistence(timeout: 10), app.debugDescription)
+        let submit = app.cells["convert.submit"].firstMatch
+        reveal(submit)
+        XCTAssertTrue(submit.isEnabled)
+        capture(app, name: "manual-piper-ready")
+        submit.tap()
+        let completed = app.staticTexts["Conversion completed"].firstMatch
+        XCTAssertTrue(wait(timeout: 180) { completed.exists }, app.debugDescription)
+        reveal(completed)
+        capture(app, name: "manual-piper-completed")
+        let result = app.staticTexts["View result"].firstMatch
+        reveal(result)
+        result.tap()
+        let title = app.staticTexts["Piper Live Portuguese"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 15), app.debugDescription)
+        capture(app, name: "manual-piper-local-result")
+        XCTAssertTrue(open.exists)
+        open.tap()
+        let transport = app.buttons["fullPlayer.playPause"].firstMatch
+        XCTAssertTrue(transport.waitForExistence(timeout: 5))
+        XCTAssertEqual(transport.label.lowercased(), "play", "Manual conversion must retain explicit pause.")
+        XCTAssertTrue(app.staticTexts["Reader Live Links"].firstMatch.exists, "The listening book must not be replaced.")
+        XCTAssertEqual(listeningIdentity, open.value as? String)
+        capture(app, name: "manual-piper-preserved-listening")
+    }
+
     func testOptInSleepTimerUsesBrazilianPortugueseText() throws {
         guard ProcessInfo.processInfo.environment["APP_IOS_LIVE_EDGE"] == "1" else {
             throw XCTSkip("Run after the dedicated real playback fixture has been converted.")

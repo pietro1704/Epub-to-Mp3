@@ -2,6 +2,16 @@ import XCTest
 @testable import EpubToMp3
 
 final class ProjectTargetConfigurationTests: XCTestCase {
+    func testIOSApplicationExposesDocumentsForLocalFileSelection() throws {
+#if os(iOS)
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "UIFileSharingEnabled") as? Bool, true,
+                       "The installed app must expose its Documents folder in Files.")
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "LSSupportsOpeningDocumentsInPlace") as? Bool, true)
+#else
+        throw XCTSkip("Requires the processed iOS application bundle.")
+#endif
+    }
+
     func testShareExtensionTargetIsDeclaredAndEmbeddedOnlyForIOS() throws {
         let projectURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
