@@ -274,6 +274,7 @@ final class JobDetailScreenController: UITableViewController {
         content.secondaryText = rows[row].1
         content.secondaryTextProperties.numberOfLines = 3
         cell.contentConfiguration = content
+        cell.accessoryType = .none
         cell.selectionStyle = .none
         cell.accessibilityLabel = content.text
         cell.accessibilityValue = content.secondaryText
