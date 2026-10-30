@@ -2,6 +2,131 @@ import XCTest
 
 @MainActor
 final class PhysicalDeviceStreamingUITests: XCTestCase {
+    func testOptInPiperPlaybackNavigationAndPresentation() throws {
+        guard ProcessInfo.processInfo.environment["APP_DEVICE_PIPER_MATRIX"] == "1",
+              let bookID = ProcessInfo.processInfo.environment["APP_DEVICE_LINK_BOOK_ID"] else {
+            throw XCTSkip("Requires the installed authored Portuguese EPUB and authorized Piper playback.")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestResetActiveReader", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .portrait
+        let close = app.buttons["fullPlayer.close"].firstMatch
+        if close.waitForExistence(timeout: 2) { close.tap() }
+        app.tabBars.buttons["Settings"].tap()
+        let table = app.tables.firstMatch
+        func reveal(_ element: XCUIElement) {
+            for _ in 0..<24 {
+                if element.exists && table.frame.insetBy(dx: 0, dy: 12).contains(element.frame) { return }
+                if element.exists && element.frame.midY < table.frame.midY { table.swipeDown() }
+                else { table.swipeUp() }
+            }
+            XCTFail("The requested saved preference must be reachable.")
+        }
+        let primary = app.cells["settings.tts.primary"].firstMatch
+        reveal(primary)
+        XCTAssertTrue((primary.value as? String ?? "").hasPrefix("Faber"))
+        for id in ["settings.tts.automaticSystemFallback", "settings.tts.onlineConsent"] {
+            let control = app.switches[id].firstMatch
+            reveal(control)
+            XCTAssertEqual(control.value as? String, "0", "This journey must not enable another provider.")
+        }
+        app.tabBars.buttons["Library"].tap()
+        let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"].firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 15))
+        let collection = app.collectionViews.firstMatch
+        for _ in 0..<8 {
+            if tile.frame.intersection(collection.frame).height >= 80 { break }
+            collection.swipeUp()
+        }
+        let visible = tile.frame.intersection(collection.frame)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: visible.midX, dy: visible.minY + 30)).tap()
+        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
+        let miniPlay = app.buttons["miniPlayer.playPause"].firstMatch
+        XCTAssertEqual(miniPlay.label.lowercased(), "play", "Opening must not autoplay.")
+        miniPlay.tap()
+        app.buttons["miniPlayer.open"].firstMatch.tap()
+        let elapsed = app.staticTexts["fullPlayer.elapsed"].firstMatch
+        XCTAssertTrue(elapsed.waitForExistence(timeout: 90))
+        let voice = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Faber")).firstMatch
+        XCTAssertTrue(voice.waitForExistence(timeout: 120))
+        XCTAssertTrue(wait(timeout: 120) { self.seconds(elapsed.label) > 1 })
+        capture(app, name: "piper-matrix-playing-faber")
+        let transport = app.buttons["fullPlayer.playPause"].firstMatch
+        XCTAssertEqual(transport.label.lowercased(), "pause")
+        transport.tap()
+        XCTAssertTrue(wait(timeout: 5) { transport.label.lowercased() == "play" })
+        let paused = seconds(elapsed.label)
+        XCUIDevice.shared.press(.home)
+        let pauseDelay = expectation(description: "Explicit pause survives background")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { pauseDelay.fulfill() }
+        wait(for: [pauseDelay], timeout: 5)
+        app.activate()
+        XCTAssertTrue(elapsed.waitForExistence(timeout: 10))
+        XCTAssertLessThanOrEqual(abs(seconds(elapsed.label) - paused), 1)
+        XCTAssertEqual(transport.label.lowercased(), "play")
+        app.buttons["fullPlayer.skipForward"].tap()
+        XCTAssertTrue(wait(timeout: 90) { self.seconds(elapsed.label) >= paused + 10 })
+        XCTAssertEqual(transport.label.lowercased(), "play")
+        app.buttons["fullPlayer.skipBack"].tap()
+        XCTAssertTrue(wait(timeout: 30) { self.seconds(elapsed.label) <= paused + 2 })
+        capture(app, name: "piper-matrix-seek-paused")
+        for index in [1, 0] {
+            app.buttons[index == 1 ? "fullPlayer.nextChapter" : "fullPlayer.previousChapter"].tap()
+            let title = app.staticTexts[index == 1 ? "Destination" : "Origin"].firstMatch
+            XCTAssertTrue(title.waitForExistence(timeout: 90))
+            XCTAssertEqual(transport.label.lowercased(), "play", "Chapter navigation must retain pause.")
+        }
+        transport.tap()
+        let resumed = seconds(elapsed.label)
+        XCTAssertTrue(wait(timeout: 90) { self.seconds(elapsed.label) > resumed + 1 })
+        let beforeHome = seconds(elapsed.label)
+        XCUIDevice.shared.press(.home)
+        let playingDelay = expectation(description: "Prepared playback advances in background")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { playingDelay.fulfill() }
+        wait(for: [playingDelay], timeout: 12)
+        app.activate()
+        XCTAssertTrue(elapsed.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(seconds(elapsed.label), beforeHome + 5)
+        transport.tap()
+        XCTAssertTrue(wait(timeout: 5) { transport.label.lowercased() == "play" })
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            XCTAssertTrue(wait(timeout: 5) {
+                let frame = app.windows.firstMatch.frame
+                return orientation == .portrait ? frame.height > frame.width : frame.width > frame.height
+            })
+            XCTAssertTrue(wait(timeout: 5) {
+                let size = XCUIScreen.main.screenshot().image.size
+                return orientation == .portrait ? size.height > size.width : size.width > size.height
+            }, "The rendered screen must finish rotating before inspecting player geometry.")
+            for id in ["fullPlayer.close", "fullPlayer.playPause", "fullPlayer.skipBack", "fullPlayer.skipForward"] {
+                XCTAssertTrue(app.buttons[id].isHittable)
+                XCTAssertTrue(app.windows.firstMatch.frame.contains(app.buttons[id].frame))
+            }
+            capture(app, name: "piper-matrix-player-\(orientation.rawValue)")
+        }
+        close.tap()
+        app.buttons["reader.close"].firstMatch.tap()
+        for tab in ["Library", "Settings", "Convert", "Library"] {
+            app.tabBars.buttons[tab].tap()
+            let mini = app.buttons["miniPlayer.open"].firstMatch
+            XCTAssertTrue(mini.waitForExistence(timeout: 5))
+            let initial = mini.frame
+            for sample in 0..<3 {
+                let delay = expectation(description: "Observe stable mini-player")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { delay.fulfill() }
+                wait(for: [delay], timeout: 2)
+                XCTAssertTrue(mini.exists && mini.isHittable)
+                XCTAssertEqual(mini.frame.minY, initial.minY, accuracy: 1)
+                capture(app, name: "piper-matrix-\(tab)-mini-\(sample)")
+            }
+        }
+    }
+
     func testOptInSleepTimerUsesBrazilianPortugueseText() throws {
         guard ProcessInfo.processInfo.environment["APP_IOS_LIVE_EDGE"] == "1" else {
             throw XCTSkip("Run after the dedicated real playback fixture has been converted.")
@@ -182,7 +307,7 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
     }
 
     private func capture(_ app: XCUIApplication, name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
