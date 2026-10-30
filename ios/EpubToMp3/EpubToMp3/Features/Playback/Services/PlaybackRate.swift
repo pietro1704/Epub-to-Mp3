@@ -50,6 +50,6 @@ enum PlaybackRate: Float, CaseIterable, Identifiable {
 
     /// The ordered options shared by native menus and rate cycling.
     static let primaryRates: [PlaybackRate] = [
-        .x075, .x125, .x150, .x175, .x250, .x300
+        .x075, .x125, .x150, .x175, .x200, .x250, .x300
     ]
 }
