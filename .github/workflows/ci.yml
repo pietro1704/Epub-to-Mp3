@@ -185,6 +185,13 @@ jobs:
       - name: Install lightweight legacy validation dependencies
         if: inputs.full_validation != true
         run: mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.6.9
+      - name: Resolve and verify the current pandas requirement
+        if: inputs.full_validation != true
+        run: |
+          pandas_requirement=$(sed -n '/^pandas[<>=]/p' requirements.txt)
+          test -n "$pandas_requirement"
+          mise exec -- python -m pip install --only-binary=:all: "$pandas_requirement"
+          mise exec -- python -m pytest --noconftest -q python_app/tests/test_requirements_consistency.py
       - name: Validate legacy syntax, lint and offline consent contracts
         if: inputs.full_validation != true
         run: |
