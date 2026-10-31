@@ -90,7 +90,14 @@ export default defineConfig(({ mode }) => {
       target: ["es2020", "edge88", "firefox78", "chrome87", "safari14"],
     },
     optimizeDeps: {
-      include: ["react", "react-dom"],
+      // Worker-only imports must be prepared before the first conversion;
+      // late dependency discovery otherwise reloads the page during synthesis.
+      include: [
+        "react",
+        "react-dom",
+        "@diffusionstudio/piper-wasm/build/piper_phonemize.js",
+        "onnxruntime-web/wasm",
+      ],
       rolldownOptions: {
         target: "es2020",
         minify: true,
