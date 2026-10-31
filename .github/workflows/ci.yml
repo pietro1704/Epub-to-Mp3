@@ -113,7 +113,7 @@ jobs:
 
       - name: Set up Ruby for host workflow checks
         if: needs.changes.outputs.contracts == 'true'
-        uses: ruby/setup-ruby@b1da4809b005e0178fe08a1d57317bffc00b7b4c # v1
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1
         with:
           ruby-version: "4.0"
           bundler-cache: false
@@ -124,7 +124,7 @@ jobs:
 
       - name: Set up mise for task metadata checks
         if: needs.changes.outputs.contracts == 'true'
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
         with:
           version: 2026.9.14
           install: false
@@ -167,7 +167,7 @@ jobs:
           persist-credentials: false
 
       - name: Install mise
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
         with:
           version: 2026.9.14
           install: false
@@ -307,7 +307,7 @@ jobs:
         working-directory: native/vendor/espeak-rs-sys
         run: sha256sum --check phsource-wav.sha256
       - name: Install mise
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
         with:
           version: 2026.9.14
           install: false
@@ -398,7 +398,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install mise
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
         with:
           version: 2026.9.14
           install: false
@@ -468,7 +468,7 @@ jobs:
           persist-credentials: false
 
       - name: Install mise
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
         with:
           version: 2026.9.14
           install: false
@@ -548,7 +548,7 @@ jobs:
           test -d "$DEVELOPER_DIR"
           test "$(xcodebuild -version | head -n 1)" = 'Xcode 16.4'
       - name: Install mise
-        uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
         with:
           version: 2026.9.14
           install: false
