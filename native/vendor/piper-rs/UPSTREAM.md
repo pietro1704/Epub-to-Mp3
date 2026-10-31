@@ -14,7 +14,11 @@ prebuilt ONNX Runtime 1.28.2 from the Sherpa maintainer's runtime releases,
 whose Intel artifact declares macOS 10.15. This preserves the product's macOS
 12 target without compiling ONNX. Actual inference must verify the API 23 /
 runtime combination. iOS uses its separately built platform artifact.
-The upstream inference and phonemization source in this crate is unchanged.
+Inference now accepts request cancellation through ONNX RunOptions termination.
+A scoped monitor is joined after inference; no worker is detached. Cancellation
+is checked before and after synchronous phonemization, which cannot itself be
+interrupted through the current eSpeak API. The original create API delegates
+to the cancellable implementation with an always-active request.
 The patched `espeak-rs` dependency restores clause punctuation before this
 crate joins phoneme sentences; see [phonemization](../../../docs/piper-phonemization.md).
 All used Session,

@@ -37,6 +37,7 @@ pub fn infer(
     length_scale: f32,
     noise_w: f32,
     speaker_id: i64,
+    cancelled: &(dyn Fn() -> bool + Sync),
 ) -> PiperResult<Vec<f32>> {
     let ids = phonemes_to_ids(config, phonemes);
     let input_len = ids.len();
@@ -58,16 +59,42 @@ pub fn infer(
         Tensor::<f32>::from_array(([3], scales.into_raw_vec_and_offset().0.into_boxed_slice()))
             .unwrap();
 
-    let outputs = if config.num_speakers > 1 {
-        let sid = Array1::<i64>::from_iter([speaker_id]);
-        let sid_t =
-            Tensor::<i64>::from_array(([1], sid.into_raw_vec_and_offset().0.into_boxed_slice()))
-                .unwrap();
-        session.run(ort::inputs![input_t, lengths_t, scales_t, sid_t])
-    } else {
-        session.run(ort::inputs![input_t, lengths_t, scales_t])
-    }
-    .map_err(|e| PiperError::InferenceError(format!("Inference failed: {}", e)))?;
+    let options = ort::session::run_options::RunOptions::new()
+        .map_err(|error| PiperError::InferenceError(error.to_string()))?;
+    // The monitor is joined on every path. Dropping the sender also releases it
+    // if inference panics; no synthesis or cancellation thread is detached.
+    let outputs = std::thread::scope(|scope| {
+        let (finished, completion) = std::sync::mpsc::channel::<()>();
+        let options = &options;
+        let monitor = scope.spawn(move || loop {
+            if cancelled() {
+                return options.terminate();
+            }
+            match completion.recv_timeout(std::time::Duration::from_millis(10)) {
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                _ => return Ok(()),
+            }
+        });
+        let result = if config.num_speakers > 1 {
+            let sid = Array1::<i64>::from_iter([speaker_id]);
+            let sid_t = Tensor::<i64>::from_array((
+                [1],
+                sid.into_raw_vec_and_offset().0.into_boxed_slice(),
+            ))
+            .unwrap();
+            session.run_with_options(ort::inputs![input_t, lengths_t, scales_t, sid_t], options)
+        } else {
+            session.run_with_options(ort::inputs![input_t, lengths_t, scales_t], options)
+        };
+        drop(finished);
+        monitor
+            .join()
+            .map_err(|_| PiperError::InferenceError("Cancellation monitor panicked".into()))?
+            .map_err(|error| {
+                PiperError::InferenceError(format!("Cannot interrupt inference: {error}"))
+            })?;
+        result.map_err(|error| PiperError::InferenceError(format!("Inference failed: {error}")))
+    })?;
 
     let (_, audio) = outputs[0]
         .try_extract_tensor::<f32>()

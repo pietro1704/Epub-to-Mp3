@@ -81,6 +81,34 @@ impl Piper {
         noise_scale: Option<f32>,
         noise_w: Option<f32>,
     ) -> PiperResult<(Vec<f32>, u32)> {
+        self.create_cancellable(
+            text,
+            is_phonemes,
+            speaker_id,
+            length_scale,
+            noise_scale,
+            noise_w,
+            &|| false,
+        )
+    }
+
+    /// Cooperatively cancel inference and reject results from an expired request.
+    /// Phonemization is synchronous; cancellation is checked on both sides of it.
+    pub fn create_cancellable(
+        &mut self,
+        text: &str,
+        is_phonemes: bool,
+        speaker_id: Option<i64>,
+        length_scale: Option<f32>,
+        noise_scale: Option<f32>,
+        noise_w: Option<f32>,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> PiperResult<(Vec<f32>, u32)> {
+        if cancelled() {
+            return Err(PiperError::InferenceError(
+                "Piper synthesis cancelled".into(),
+            ));
+        }
         let phonemes = if is_phonemes {
             text.to_string()
         } else {
@@ -88,6 +116,11 @@ impl Piper {
                 .map_err(|e| PiperError::PhonemizationError(format!("{}", e)))?
                 .join(" ")
         };
+        if cancelled() {
+            return Err(PiperError::InferenceError(
+                "Piper synthesis cancelled".into(),
+            ));
+        }
 
         let inf = &self.config.inference;
         let samples = infer(
@@ -98,6 +131,7 @@ impl Piper {
             length_scale.unwrap_or(inf.length_scale),
             noise_w.unwrap_or(inf.noise_w),
             speaker_id.unwrap_or(0),
+            cancelled,
         )?;
 
         Ok((samples, self.config.audio.sample_rate))

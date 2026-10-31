@@ -405,6 +405,20 @@ jobs:
             '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$model_dir/pt_BR-faber-medium.onnx.json" \
             | shasum -a 256 --check
           echo "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$model_dir" >> "$GITHUB_ENV"
+      - name: Verify native Piper cancellation and subsequent inference
+        if: matrix.arch == 'arm64'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '12.0'
+          ORT_PREFER_DYNAMIC_LINK: '1'
+        run: |
+          set -euo pipefail
+          export ORT_LIB_LOCATION="$PWD/target/onnxruntime-macos-prebuilt/$EXPECTED_ARCH/lib"
+          export DYLD_LIBRARY_PATH="$ORT_LIB_LOCATION"
+          # Cargo's test loader searches its target directory for dynamic libraries.
+          ln -s "$ORT_LIB_LOCATION/libonnxruntime.dylib" target/release/deps/libonnxruntime.dylib
+          mise exec -- ruby scripts/native_job.rb build -- cargo test --locked -p piper-runtime --release --lib \
+            --features onnxruntime,piper-inference,heavy-runtime-tests --jobs 1 \
+            piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
       - name: Run real macOS preference and installation XCTest
         working-directory: ios/EpubToMp3
         run: |

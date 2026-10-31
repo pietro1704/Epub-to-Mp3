@@ -74,7 +74,12 @@ impl piper::PiperRuntime for ExplicitRuntime {
             .push((model.to_owned(), config.to_owned()));
         Ok(())
     }
-    fn synthesize(&self, text: &str, output: &Path) -> Result<(), piper::PiperError> {
+    fn synthesize(
+        &self,
+        text: &str,
+        output: &Path,
+        _: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(), piper::PiperError> {
         self.text_calls.lock().unwrap().push(text.to_owned());
         fs::write(output, waveform()).map_err(|error| piper::PiperError::Io(error.to_string()))
     }

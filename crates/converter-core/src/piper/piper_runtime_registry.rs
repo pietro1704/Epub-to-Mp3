@@ -6,19 +6,43 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 pub(super) static MODEL_TRANSACTION: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+pub(super) fn cancellable_transaction(
+    cancel: &super::CancellationToken,
+) -> Result<std::sync::MutexGuard<'static, ()>, PiperError> {
+    loop {
+        if cancel.is_cancelled() {
+            return Err(PiperError::Cancelled);
+        }
+        match MODEL_TRANSACTION.try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err(PiperError::Synthesis("Piper runtime lock poisoned".into()))
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                std::thread::sleep(std::time::Duration::from_millis(10))
+            }
+        }
+    }
+}
+
 pub fn registered_runtime() -> Option<Arc<dyn PiperRuntime>> {
     runtime_slot().read().ok()?.clone()
 }
 
 /// Runtime adapter for platform glue and deterministic integration tests.
 pub struct RegisteredPiperRuntime {
-    synthesize_fn: Box<dyn Fn(&str, &Path) -> Result<(), PiperError> + Send + Sync>,
+    synthesize_fn: Box<
+        dyn Fn(&str, &Path, &(dyn Fn() -> bool + Sync)) -> Result<(), PiperError> + Send + Sync,
+    >,
 }
 
 impl RegisteredPiperRuntime {
     pub fn new<F>(synthesize_fn: F) -> Self
     where
-        F: Fn(&str, &Path) -> Result<(), PiperError> + Send + Sync + 'static,
+        F: Fn(&str, &Path, &(dyn Fn() -> bool + Sync)) -> Result<(), PiperError>
+            + Send
+            + Sync
+            + 'static,
     {
         Self {
             synthesize_fn: Box::new(synthesize_fn),
@@ -40,8 +64,13 @@ impl PiperRuntime for RegisteredPiperRuntime {
         Ok(())
     }
 
-    fn synthesize(&self, text: &str, output: &Path) -> Result<(), PiperError> {
-        (self.synthesize_fn)(text, output)
+    fn synthesize(
+        &self,
+        text: &str,
+        output: &Path,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(), PiperError> {
+        (self.synthesize_fn)(text, output, cancelled)
     }
 
     fn shutdown(&self) {}
@@ -102,7 +131,7 @@ pub fn piper_synthesize(text: &str, output: &Path) -> Result<PathBuf, PiperError
         .expect("Piper runtime lock poisoned")
         .clone()
         .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
-    runtime.synthesize(text, output)?;
+    runtime.synthesize(text, output, &|| false)?;
     validate_wav(output)?;
     Ok(output.to_path_buf())
 }

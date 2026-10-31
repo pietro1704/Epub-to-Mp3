@@ -13,20 +13,36 @@ pub(super) fn validate_wav(path: &Path) -> Result<(), PiperError> {
     }
     Ok(())
 }
+#[cfg(test)]
 pub(super) fn publish_piper_audio(wav: &Path, output: &Path) -> Result<PathBuf, PiperError> {
+    publish_piper_audio_cancellable(wav, output, &|| false)
+}
+
+pub(super) fn publish_piper_audio_cancellable(
+    wav: &Path,
+    output: &Path,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<PathBuf, PiperError> {
     validate_wav(wav)?;
+    if cancelled() {
+        return Err(PiperError::Cancelled);
+    }
     if output
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("mp3"))
     {
-        encode_piper_mp3(wav, output)?;
+        encode_piper_mp3(wav, output, cancelled)?;
     } else if wav != output {
         fs::rename(wav, output).map_err(|error| PiperError::Io(error.to_string()))?;
     }
     Ok(output.to_path_buf())
 }
 
-fn encode_piper_mp3(wav: &Path, output: &Path) -> Result<(), PiperError> {
+fn encode_piper_mp3(
+    wav: &Path,
+    output: &Path,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<(), PiperError> {
     let wav_bytes = fs::read(wav).map_err(|error| PiperError::Io(error.to_string()))?;
     let encoded =
         crate::pcm::encode_wav_mp3_at_source_rate(&wav_bytes).map_err(PiperError::InvalidWav)?;
@@ -44,6 +60,9 @@ fn encode_piper_mp3(wav: &Path, output: &Path) -> Result<(), PiperError> {
     let file = fs::File::open(&staged).map_err(|error| PiperError::Io(error.to_string()))?;
     file.sync_all()
         .map_err(|error| PiperError::Io(error.to_string()))?;
+    if cancelled() {
+        return Err(PiperError::Cancelled);
+    }
     fs::rename(staged, output).map_err(|error| PiperError::Io(error.to_string()))?;
     Ok(())
 }

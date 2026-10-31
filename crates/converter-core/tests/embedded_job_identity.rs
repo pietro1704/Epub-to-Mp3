@@ -81,9 +81,11 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
     let model = paths.piper_models_dir.join("pt_BR-faber-medium.onnx");
     fs::write(&model, b"owned synthetic model").unwrap();
     fs::write(model.with_extension("onnx.json"), b"{}").unwrap();
-    piper::register_runtime(Arc::new(piper::RegisteredPiperRuntime::new(|_, target| {
-        fs::write(target, waveform()).map_err(|error| piper::PiperError::Io(error.to_string()))
-    })));
+    piper::register_runtime(Arc::new(piper::RegisteredPiperRuntime::new(
+        |_, target, _| {
+            fs::write(target, waveform()).map_err(|error| piper::PiperError::Io(error.to_string()))
+        },
+    )));
     let first_input = root.join("first.epub");
     let second_input = root.join("second.epub");
     book(&first_input, "First book", "First independent conversion.");
