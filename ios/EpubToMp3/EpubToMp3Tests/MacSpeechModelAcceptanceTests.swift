@@ -59,6 +59,7 @@ final class MacSpeechModelAcceptanceTests: XCTestCase {
         defer { window.close(); previous?.makeKeyAndOrderFront(nil) }
 
         try await waitUntil { window.isVisible && NSApp.isActive && window.isKeyWindow }
+        try MacSpeechModelTestControls.revealModels(in: controller.view)
         try await waitUntil { self.button("\(id).install", in: controller.view) != nil }
         XCTAssertTrue(window.isVisible && NSApp.isActive)
         let install = try XCTUnwrap(button("\(id).install", in: controller.view))
