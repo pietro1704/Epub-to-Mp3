@@ -76,3 +76,26 @@ fn zip_upgrade_keeps_missing_resource_and_corrupt_archive_failures() {
         Err(super::EpubError::Archive(_))
     ));
 }
+
+#[test]
+fn rejects_epub_with_different_local_and_central_resource_names() {
+    for compression in [
+        zip::CompressionMethod::Stored,
+        zip::CompressionMethod::Deflated,
+    ] {
+        let mut archive = zip_compatibility_book(compression, true);
+        let name = b"OPS/chapter.xhtml";
+        let offset = archive
+            .windows(name.len())
+            .position(|bytes| bytes == name)
+            .unwrap();
+        // Change only the first (local-header) name, retaining its byte length.
+        // The central directory still advertises the legitimate EPUB resource.
+        archive[offset..offset + name.len()].copy_from_slice(b"OPS/hidden!.xhtml");
+        let parsed = parse_epub(Cursor::new(archive));
+        assert!(
+            matches!(parsed, Err(super::EpubError::Archive(_))),
+            "{parsed:?}"
+        );
+    }
+}
