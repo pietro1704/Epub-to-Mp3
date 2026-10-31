@@ -69,9 +69,8 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
             settings: settings, library: LibraryStore(defaults: defaults),
             speechModels: speechModels
         )
-        _ = controller.view
-        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "settings.speechModel.pt_BR-faber-medium.install" })
+        let button = try revealFaberInstallButton(in: controller)
+        XCTAssertEqual(installer.result().count, 0, "Expanding model settings must not install a model")
         let confirmation = expectation(description: "Explicit install confirmation was presented")
         let timer = Timer(timeInterval: 0.02, repeats: true) { timer in
             MainActor.assumeIsolated {
@@ -119,9 +118,8 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
             settings: settings, library: LibraryStore(defaults: defaults),
             speechModels: speechModels
         )
-        _ = controller.view
-        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "settings.speechModel.pt_BR-faber-medium.install" })
+        let button = try revealFaberInstallButton(in: controller)
+        XCTAssertEqual(installer.result().count, 0, "Expanding model settings must not install a model")
         let confirmation = expectation(description: "Explicit install confirmation was accepted")
         let presented = expectation(description: "Owned installation error alert was presented")
         var acceptedConfirmation = false
@@ -158,6 +156,59 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         XCTAssertEqual(result.count, 1)
         XCTAssertEqual(settings.conversionOptions, original)
         XCTAssertNil(NSApp.modalWindow, "Dismiss the owned fixture alert before finishing")
+    }
+
+    func testCancellingRevealedInstallationDoesNotInstallOrChangeSelection() async throws {
+        let suite = "MacModelInstallationCancel.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        let original = settings.conversionOptions
+        let installer = BlockingModelInstaller()
+        defer { installer.release() }
+        let speechModels = try makeSpeechModels { installer.install(modelID: $0, root: $1) }
+        let controller = MacSettingsViewController(
+            settings: settings, library: LibraryStore(defaults: defaults), speechModels: speechModels
+        )
+        let button = try revealFaberInstallButton(in: controller)
+        let cancelled = expectation(description: "The real install confirmation was cancelled")
+        let deadline = Date().addingTimeInterval(5)
+        let timer = Timer(timeInterval: 0.02, repeats: true) { timer in
+            MainActor.assumeIsolated {
+                guard Date() < deadline else {
+                    timer.invalidate()
+                    XCTFail("The owned install confirmation did not expose its cancel action")
+                    if let modal = NSApp.modalWindow { NSApp.abortModal(); modal.orderOut(nil) }
+                    cancelled.fulfill()
+                    return
+                }
+                guard let modal = NSApp.modalWindow,
+                      let cancel = self.descendants(modal.contentView ?? NSView())
+                        .compactMap({ $0 as? NSButton })
+                        .first(where: { $0.title == L10n.string("common.cancel") }) else { return }
+                timer.invalidate()
+                cancel.performClick(nil)
+                cancelled.fulfill()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .modalPanel)
+        defer { timer.invalidate() }
+        button.performClick(nil)
+        await fulfillment(of: [cancelled], timeout: 5)
+        XCTAssertEqual(installer.result().count, 0)
+        XCTAssertEqual(settings.conversionOptions, original)
+        XCTAssertNil(NSApp.modalWindow)
+    }
+
+    private func revealFaberInstallButton(in controller: MacSettingsViewController) throws -> NSButton {
+        let identifier = "settings.speechModel.pt_BR-faber-medium.install"
+        func installButton() -> NSButton? {
+            descendants(controller.view).compactMap { $0 as? NSButton }
+                .first { $0.accessibilityIdentifier() == identifier }
+        }
+        XCTAssertNil(installButton(), "Model actions must initially remain collapsed")
+        try MacSpeechModelTestControls.revealModels(in: controller.view)
+        return try XCTUnwrap(installButton(), "The disclosure action must expose Faber installation")
     }
 
     private func descendants(_ view: NSView) -> [NSView] {

@@ -46,6 +46,7 @@ final class MacSpeechModelProductActionsTests: XCTestCase {
         if #available(macOS 14.0, *) { NSApp.activate() }
         else { NSApp.activate(ignoringOtherApps: true) }
         defer { window.close() }
+        try MacSpeechModelTestControls.revealModels(in: controller.view)
         let select = try button("pt_BR-cadu-medium.select", in: controller.view)
 
         select.performClick(nil)
@@ -77,6 +78,7 @@ final class MacSpeechModelProductActionsTests: XCTestCase {
             speechModels: fixture.client
         )
         controller.loadViewIfNeeded()
+        try MacSpeechModelTestControls.revealModels(in: controller.view)
         let remove = try button("pt_BR-cadu-medium.remove", in: controller.view)
         let selection = fixture.settings.ttsPreferences
         try driveModal(buttonTitle: L10n.string("common.cancel")) { remove.performClick(nil) }
