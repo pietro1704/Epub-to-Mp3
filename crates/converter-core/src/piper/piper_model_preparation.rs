@@ -1,6 +1,6 @@
 //! Request-scoped model identity, readiness and atomic synthesis preparation.
 use super::piper_runtime_registry::{registered_runtime, MODEL_TRANSACTION};
-use super::piper_wav_validation::{publish_piper_audio, validate_wav};
+use super::piper_wav_validation::{publish_piper_audio_cancellable, validate_wav};
 use super::{select_model, CancellationToken, PiperConfig, PiperError, PiperRuntime};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -121,9 +121,7 @@ impl PreparedPiperModel {
         output: &Path,
         cancel: &CancellationToken,
     ) -> Result<(), PiperError> {
-        let _transaction = MODEL_TRANSACTION
-            .lock()
-            .map_err(|_| PiperError::Synthesis("Piper runtime lock poisoned".into()))?;
+        let _transaction = super::piper_runtime_registry::cancellable_transaction(cancel)?;
         if cancel.is_cancelled() {
             return Err(PiperError::Cancelled);
         }
@@ -131,6 +129,9 @@ impl PreparedPiperModel {
             return Err(PiperError::EmptyOutput);
         }
         self.initialize()?;
+        if cancel.is_cancelled() {
+            return Err(PiperError::Cancelled);
+        }
         let parent = output
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -141,11 +142,12 @@ impl PreparedPiperModel {
             .tempdir_in(parent)
             .map_err(|error| PiperError::Io(error.to_string()))?;
         let wav = staging.path().join("speech.wav");
-        self.runtime.synthesize(text, &wav)?;
+        self.runtime
+            .synthesize(text, &wav, &|| cancel.is_cancelled())?;
         if cancel.is_cancelled() {
             return Err(PiperError::Cancelled);
         }
-        publish_piper_audio(&wav, output).map(|_| ())
+        publish_piper_audio_cancellable(&wav, output, &|| cancel.is_cancelled()).map(|_| ())
     }
 }
 
@@ -200,11 +202,12 @@ pub fn synthesize_with_runtime(
     if text.trim().is_empty() {
         return Err(PiperError::EmptyOutput);
     }
-    let _transaction = MODEL_TRANSACTION
-        .lock()
-        .map_err(|_| PiperError::Synthesis("Piper runtime lock poisoned".into()))?;
+    let _transaction = super::piper_runtime_registry::cancellable_transaction(cancel)?;
     validate_model_files(&model, &config.config)?;
     runtime.init(&model, &config.config)?;
+    if cancel.is_cancelled() {
+        return Err(PiperError::Cancelled);
+    }
     let parent = output
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -214,10 +217,10 @@ pub fn synthesize_with_runtime(
         .tempdir_in(parent)
         .map_err(|error| PiperError::Io(error.to_string()))?;
     let wav = staging.path().join("speech.wav");
-    runtime.synthesize(text, &wav)?;
+    runtime.synthesize(text, &wav, &|| cancel.is_cancelled())?;
     validate_wav(&wav)?;
     if cancel.is_cancelled() {
         return Err(PiperError::Cancelled);
     }
-    publish_piper_audio(&wav, output)
+    publish_piper_audio_cancellable(&wav, output, &|| cancel.is_cancelled())
 }

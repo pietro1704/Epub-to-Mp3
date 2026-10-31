@@ -70,7 +70,7 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&calls);
     piper::register_runtime(Arc::new(piper::RegisteredPiperRuntime::new(
-        move |text, target| {
+        move |text, target, _| {
             recorded.lock().unwrap().push(text.to_owned());
             let mut audio = waveform();
             audio[44] = 1;
@@ -235,7 +235,7 @@ fn cancellation_from_final_chapter_completion_preserves_resumable_audio() {
     let calls = Arc::new(Mutex::new(0));
     let recorded = Arc::clone(&calls);
     piper::register_runtime(Arc::new(piper::RegisteredPiperRuntime::new(
-        move |_, target| {
+        move |_, target, _| {
             *recorded.lock().unwrap() += 1;
             fs::write(target, waveform()).map_err(|error| piper::PiperError::Io(error.to_string()))
         },

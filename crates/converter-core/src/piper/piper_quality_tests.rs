@@ -100,7 +100,12 @@ impl PiperRuntime for PreparationProbe {
         self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
-    fn synthesize(&self, _: &str, _: &Path) -> Result<(), PiperError> {
+    fn synthesize(
+        &self,
+        _: &str,
+        _: &Path,
+        _: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(), PiperError> {
         panic!("rejected model must not reach synthesis")
     }
     fn shutdown(&self) {}

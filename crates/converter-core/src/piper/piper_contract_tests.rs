@@ -27,7 +27,12 @@ impl PiperRuntime for ScopedRuntime {
         *self.active.lock().unwrap() = Some((model.to_owned(), config.to_owned()));
         Ok(())
     }
-    fn synthesize(&self, text: &str, output: &Path) -> Result<(), PiperError> {
+    fn synthesize(
+        &self,
+        text: &str,
+        output: &Path,
+        _: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(), PiperError> {
         // Give another request an opportunity to initialize this shared runtime.
         std::thread::sleep(std::time::Duration::from_millis(10));
         let (model, config) = self.active.lock().unwrap().clone().unwrap();
@@ -68,7 +73,7 @@ fn explicit_model_preflight_requires_actual_initialization_and_ready_runtime() {
         )
         .is_err());
     }
-    let ignored_paths = Arc::new(RegisteredPiperRuntime::new(|_, _| Ok(())));
+    let ignored_paths = Arc::new(RegisteredPiperRuntime::new(|_, _, _| Ok(())));
     assert!(PreparedPiperModel::prepare(
         fixture.path(),
         "selected",
@@ -281,7 +286,7 @@ fn replacing_model_or_config_at_same_paths_changes_prepared_cache_identity() {
     );
 }
 
-fn write_test_wav(path: &Path) {
+pub(super) fn write_test_wav(path: &Path) {
     let sample_rate = 22_050_u32;
     let sample_count = sample_rate / 4;
     let data_length = sample_count * 2;

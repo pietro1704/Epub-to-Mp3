@@ -111,13 +111,31 @@ pub fn classify_stderr(stderr: &str) -> StderrClass {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct CancellationToken(Arc<std::sync::atomic::AtomicBool>);
+pub struct CancellationToken {
+    cancelled: Arc<std::sync::atomic::AtomicBool>,
+    deadline: Option<std::time::Instant>,
+}
 impl CancellationToken {
     pub fn cancel(&self) {
-        self.0.store(true, std::sync::atomic::Ordering::Release);
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Release);
     }
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(std::sync::atomic::Ordering::Acquire)
+        self.cancelled.load(std::sync::atomic::Ordering::Acquire) || self.timed_out()
+    }
+    pub(crate) fn with_timeout(&self, timeout: Duration) -> Self {
+        let deadline = std::time::Instant::now().checked_add(timeout);
+        Self {
+            cancelled: Arc::clone(&self.cancelled),
+            deadline: match (self.deadline, deadline) {
+                (Some(existing), Some(requested)) => Some(existing.min(requested)),
+                (existing, requested) => existing.or(requested),
+            },
+        }
+    }
+    pub(crate) fn timed_out(&self) -> bool {
+        self.deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
     }
 }
 
@@ -176,7 +194,14 @@ pub struct PiperRuntimeStatus {
 pub trait PiperRuntime: Send + Sync {
     fn status(&self) -> PiperRuntimeStatus;
     fn init(&self, model: &Path, config: &Path) -> Result<(), PiperError>;
-    fn synthesize(&self, text: &str, output: &Path) -> Result<(), PiperError>;
+    /// Cooperatively stop active work when cancellation or the chapter deadline fires.
+    /// Implementations must return only after their synthesis resources are reclaimed.
+    fn synthesize(
+        &self,
+        text: &str,
+        output: &Path,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(), PiperError>;
     fn shutdown(&self);
     /// Closure adapters may ignore init paths and cannot honor explicit model selection.
     fn supports_explicit_model_paths(&self) -> bool {
@@ -207,3 +232,7 @@ mod tests;
 #[cfg(test)]
 #[path = "piper/piper_quality_tests.rs"]
 mod quality_tests;
+
+#[cfg(test)]
+#[path = "piper/piper_cancellation_tests.rs"]
+mod cancellation_tests;

@@ -182,34 +182,16 @@ pub extern "C" fn piper_synthesize(
             return Err("Piper runtime is not initialized".to_owned());
         }
         let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
-        #[cfg(not(feature = "piper-inference"))]
-        let _ = output;
-        #[cfg(feature = "piper-inference")]
-        let output_path = unsafe { CStr::from_ptr(output) }
-            .to_string_lossy()
-            .into_owned();
-        if text.trim().is_empty() {
-            return Err("Piper synthesis text is empty".to_owned());
-        }
         #[cfg(feature = "piper-inference")]
         {
-            let runtime = RUNTIME
-                .get()
-                .ok_or_else(|| "Piper inference runtime is not initialized".to_owned())?;
-            let mut runtime = runtime
-                .lock()
-                .map_err(|_| "Piper runtime lock poisoned".to_owned())?;
-            let piper = runtime
-                .as_mut()
-                .ok_or_else(|| "Piper inference runtime is not initialized".to_owned())?;
-            let (samples, sample_rate) = piper
-                .create(text.as_ref(), false, None, None, None, None)
-                .map_err(|error| error.to_string())?;
-            write_wav(Path::new(&output_path), &samples, sample_rate)?;
-            return Ok(());
+            let output_path = unsafe { CStr::from_ptr(output) }.to_string_lossy();
+            synthesize_cancellable(text.as_ref(), Path::new(output_path.as_ref()), &|| false)
         }
         #[cfg(not(feature = "piper-inference"))]
-        Err("Piper phonemizer/inference pipeline is not linked".to_owned())
+        {
+            let _ = output;
+            synthesize_cancellable(text.as_ref(), Path::new(""), &|| false)
+        }
     });
     match result {
         Ok(Ok(())) => 1,
@@ -221,6 +203,69 @@ pub extern "C" fn piper_synthesize(
             error(error_buffer, error_len, "Piper synthesis panicked");
             0
         }
+    }
+}
+
+/// Rust adapters carry request cancellation without changing the legacy C ABI.
+pub fn synthesize_cancellable(
+    text: &str,
+    output: &Path,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<(), String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        synthesize_cancellable_inner(text, output, cancelled)
+    }))
+    .unwrap_or_else(|_| Err("Piper synthesis panicked".into()))
+}
+
+fn synthesize_cancellable_inner(
+    text: &str,
+    output: &Path,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<(), String> {
+    if cancelled() {
+        return Err("Piper synthesis cancelled".into());
+    }
+    if !INITIALIZED.load(Ordering::Acquire) {
+        return Err("Piper runtime is not initialized".into());
+    }
+    if text.trim().is_empty() {
+        return Err("Piper synthesis text is empty".into());
+    }
+    #[cfg(feature = "piper-inference")]
+    {
+        let runtime = RUNTIME
+            .get()
+            .ok_or_else(|| "Piper inference runtime is not initialized".to_owned())?;
+        let mut runtime = loop {
+            if cancelled() {
+                return Err("Piper synthesis cancelled".into());
+            }
+            match runtime.try_lock() {
+                Ok(guard) => break guard,
+                Err(std::sync::TryLockError::Poisoned(_)) => {
+                    return Err("Piper runtime lock poisoned".into())
+                }
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    std::thread::sleep(std::time::Duration::from_millis(10))
+                }
+            }
+        };
+        let piper = runtime
+            .as_mut()
+            .ok_or_else(|| "Piper inference runtime is not initialized".to_owned())?;
+        let (samples, sample_rate) = piper
+            .create_cancellable(text, false, None, None, None, None, cancelled)
+            .map_err(|error| error.to_string())?;
+        if cancelled() {
+            return Err("Piper synthesis cancelled".into());
+        }
+        return write_wav(output, &samples, sample_rate);
+    }
+    #[cfg(not(feature = "piper-inference"))]
+    {
+        let _ = output;
+        Err("Piper phonemizer/inference pipeline is not linked".into())
     }
 }
 
@@ -299,9 +344,12 @@ mod tests {
     #[test]
     fn piper_inference_generates_valid_wav_from_vendored_model() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let models = std::env::var_os("EPUB2MP3_PIPER_TEST_MODEL_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| root.join("../../models/piper"));
         let model = [
-            root.join("../../models/piper/en_US-lessac-medium.onnx"),
-            root.join("../../models/piper/pt_BR-faber-medium.onnx"),
+            models.join("en_US-lessac-medium.onnx"),
+            models.join("pt_BR-faber-medium.onnx"),
         ]
         .into_iter()
         .find(|path| path.is_file())
@@ -336,6 +384,25 @@ mod tests {
         assert!(wav.len() > 44);
         assert_eq!(&wav[0..4], b"RIFF");
         assert_eq!(&wav[8..12], b"WAVE");
+        let cancelled_output = output.with_extension("cancelled.wav");
+        let checks = std::sync::atomic::AtomicUsize::new(0);
+        let result = super::synthesize_cancellable(
+            "An active inference must stop and release its model for the next request.",
+            &cancelled_output,
+            &|| checks.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 4,
+        );
+        assert!(
+            result.is_err(),
+            "Cancelled inference unexpectedly succeeded"
+        );
+        assert!(checks.load(std::sync::atomic::Ordering::SeqCst) >= 5);
+        assert!(!cancelled_output.exists());
+        super::synthesize_cancellable("The next request still works.", &cancelled_output, &|| {
+            false
+        })
+        .unwrap();
+        assert!(std::fs::metadata(&cancelled_output).unwrap().len() > 44);
+        std::fs::remove_file(cancelled_output).unwrap();
         super::piper_runtime_shutdown();
         let _ = std::fs::remove_file(output);
     }

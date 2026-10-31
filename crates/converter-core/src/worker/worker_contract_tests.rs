@@ -3,6 +3,8 @@ use super::*;
 mod listening_contract_tests;
 #[path = "low_quality_cache_tests.rs"]
 mod low_quality_cache_tests;
+#[path = "provider_deadline_tests.rs"]
+mod provider_deadline_tests;
 
 struct TestSystem {
     texts: Arc<Mutex<Vec<String>>>,

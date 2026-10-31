@@ -85,7 +85,12 @@ impl piper::PiperRuntime for UnavailablePiperRuntime {
             "Native Piper implementation is not linked".into(),
         ))
     }
-    fn synthesize(&self, _: &str, _: &Path) -> Result<(), piper::PiperError> {
+    fn synthesize(
+        &self,
+        _: &str,
+        _: &Path,
+        _: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(), piper::PiperError> {
         self.init(Path::new(""), Path::new(""))
     }
     fn shutdown(&self) {}
@@ -152,24 +157,14 @@ impl converter_core::piper::PiperRuntime for EmbeddedPiperRuntime {
         &self,
         text: &str,
         output: &Path,
+        cancelled: &(dyn Fn() -> bool + Sync),
     ) -> Result<(), converter_core::piper::PiperError> {
-        let text = CString::new(text)
+        CString::new(text)
             .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
-        let output = CString::new(output.to_string_lossy().as_bytes())
+        CString::new(output.to_string_lossy().as_bytes())
             .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
-        let mut error = vec![0 as std::ffi::c_char; 2048];
-        if piper_runtime::piper_synthesize(
-            text.as_ptr(),
-            output.as_ptr(),
-            error.as_mut_ptr(),
-            error.len() as u32,
-        ) == 0
-        {
-            return Err(converter_core::piper::PiperError::Synthesis(c_error(
-                unsafe { std::slice::from_raw_parts(error.as_ptr().cast::<u8>(), error.len()) },
-            )));
-        }
-        Ok(())
+        piper_runtime::synthesize_cancellable(text, output, cancelled)
+            .map_err(converter_core::piper::PiperError::Synthesis)
     }
 
     fn shutdown(&self) {

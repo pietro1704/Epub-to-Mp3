@@ -100,7 +100,13 @@ impl ConversionWorker {
                 "No system speech adapter is installed for this conversion".into(),
             ));
         }
-        self.synthesize_with_piper(text, out, piper_model, piper_config)
+        self.synthesize_with_piper(
+            text,
+            out,
+            piper_model,
+            piper_config,
+            &self.cancel.with_timeout(timeout),
+        )
     }
 }
 
@@ -111,7 +117,11 @@ impl ConversionWorker {
         out: &Path,
         piper_model: Option<&Path>,
         piper_config: Option<&Path>,
+        cancel: &piper::CancellationToken,
     ) -> Result<(), WorkerError> {
+        if cancel.is_cancelled() {
+            return Err(self.piper_cancellation_error(cancel));
+        }
         let runtime_status = piper::piper_runtime_status();
         if cfg!(target_os = "android") {
             ensure_android_piper_runtime(runtime_status)?;
@@ -120,8 +130,8 @@ impl ConversionWorker {
         if piper_model.is_none() && piper_config.is_none() {
             if let Some(model) = &self.piper_model {
                 return model
-                    .synthesize(text, out, &self.cancel)
-                    .map_err(|error| WorkerError::Piper(error.to_string()));
+                    .synthesize(text, out, cancel)
+                    .map_err(|error| self.piper_execution_error(error, cancel));
             }
         }
         let model = piper_model.map(Path::to_path_buf).unwrap_or_else(|| {
@@ -146,9 +156,9 @@ impl ConversionWorker {
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(5_000);
-        piper::synthesize(&c, text, out, &self.cancel)
+        piper::synthesize(&c, text, out, cancel)
             .map(|_| ())
-            .map_err(|e| WorkerError::Piper(e.to_string()))
+            .map_err(|error| self.piper_execution_error(error, cancel))
     }
     pub(super) fn synthesize_with_timeout(
         &self,
@@ -185,44 +195,45 @@ impl ConversionWorker {
                 stale_window_cancelled,
             );
         }
-        let result = std::thread::scope(|scope| {
-            let handle = scope.spawn(|| {
-                self.synthesize(
-                    engine,
-                    text,
-                    out,
-                    source_index,
-                    voice,
-                    language,
-                    piper_model,
-                    piper_config,
-                    timeout,
-                    stale_window_cancelled,
-                )
-            });
-            let started = std::time::Instant::now();
-            while !handle.is_finished() {
-                if self.cancel.is_cancelled()
-                    || started.elapsed() >= std::time::Duration::from_secs(timeout_secs)
-                {
-                    return Err(if engine == "edge" {
-                        WorkerError::Edge(EdgeError::Transport(
-                            "chapter synthesis timed out".into(),
-                        ))
-                    } else {
-                        WorkerError::Piper("chapter synthesis timed out".into())
-                    });
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            handle.join().unwrap_or_else(|_| {
-                Err(if engine == "edge" {
-                    WorkerError::Edge(EdgeError::Transport("synthesis thread panicked".into()))
-                } else {
-                    WorkerError::Piper("synthesis thread panicked".into())
-                })
-            })
-        });
-        result
+        if self.cancel.is_cancelled() {
+            return Err(WorkerError::Cancelled);
+        }
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.synthesize(
+                engine,
+                text,
+                out,
+                source_index,
+                voice,
+                language,
+                piper_model,
+                piper_config,
+                timeout,
+                stale_window_cancelled,
+            )
+        }))
+        .unwrap_or_else(|_| Err(WorkerError::Piper("synthesis thread panicked".into())))
+    }
+
+    fn piper_cancellation_error(&self, cancel: &piper::CancellationToken) -> WorkerError {
+        if self.cancel.is_cancelled() {
+            WorkerError::Cancelled
+        } else if cancel.timed_out() {
+            WorkerError::Piper("chapter synthesis timed out".into())
+        } else {
+            WorkerError::Cancelled
+        }
+    }
+
+    fn piper_execution_error(
+        &self,
+        error: piper::PiperError,
+        cancel: &piper::CancellationToken,
+    ) -> WorkerError {
+        if cancel.is_cancelled() {
+            self.piper_cancellation_error(cancel)
+        } else {
+            WorkerError::Piper(error.to_string())
+        }
     }
 }
