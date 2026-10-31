@@ -114,9 +114,24 @@ class CiRuntimeScopeTest < Minitest::Test
       'python_app/src/converter.py' => %w[python], 'crates/converter-server/src/main.rs' => %w[rust],
       'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
       'ios/EpubToMp3/Package.swift' => %w[apple],
-      'native/piper-runtime/src/lib.rs' => %w[rust],
-      'Cargo.lock' => %w[rust], '.github/workflows/ci.yml' => [],
-      'crates/converter-core/src/lib.rs' => %w[rust], 'crates/converter-wasm/src/lib.rs' => %w[rust web wasm],
+      'native/piper-runtime/src/lib.rs' => %w[rust apple flutter],
+      'crates/converter-ffi/include/converter_tts_session.h' => %w[rust apple flutter],
+      'crates/converter-ffi/src/lib.rs' => %w[rust apple flutter],
+      'Cargo.lock' => %w[rust apple flutter web wasm],
+      'Cargo.toml' => %w[rust apple flutter web wasm],
+      'rust-toolchain.toml' => %w[rust apple flutter web wasm],
+      'mise.toml' => %w[rust apple flutter web wasm python],
+      'mise.lock' => %w[rust apple flutter web wasm python],
+      '.github/workflows/ci.yml' => %w[rust apple flutter web wasm python],
+      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter web wasm python],
+      '.github/workflows/browser-runtime.yml' => %w[web wasm],
+      '.github/workflows/faber-integration.yml' => %w[rust apple flutter web wasm],
+      '.github/workflows/converter-ffi.yml' => %w[rust apple flutter],
+      '.github/actions/rust-build-cache/action.yml' => %w[rust apple flutter web wasm],
+      'scripts/build_web_wasm.sh' => %w[web wasm],
+      'Cargo.lock.notes.md' => [],
+      'crates/converter-core/src/lib.rs' => %w[rust apple flutter web wasm],
+      'crates/converter-wasm/src/lib.rs' => %w[rust web wasm],
       'web/src/wasm/converter_wasm.js' => %w[web wasm] }.each do |path, expected|
       result, status, err = scope([path])
       assert status.success?, err
@@ -128,6 +143,13 @@ class CiRuntimeScopeTest < Minitest::Test
     result, status, err = scope(['docs/removed.md', 'web/src/deleted.ts', 'flutter_app/lib/new.dart'])
     assert status.success?, err
     assert_equal %w[flutter web], result.select { |_, value| value == 'true' }.keys.sort
+  end
+
+  def test_deleted_or_renamed_shared_source_keeps_its_consumers
+    # --no-renames makes both the removed and new names visible to classification.
+    result, status, err = scope(['crates/converter-core/src/deleted.rs', 'docs/moved.md'])
+    assert status.success?, err
+    assert_equal %w[apple flutter rust wasm web], result.select { |_, value| value == 'true' }.keys.sort
   end
 
   def test_extracted_python_helpers_keep_runtime_selection
@@ -196,6 +218,9 @@ class CiRuntimeScopeTest < Minitest::Test
       refute gate(scopes, 'production-packaging-guard' => result).success?
     end
     refute gate(scopes.reject { |name, _| name == 'rust' }).success?
+    refute gate(scopes.reject { |name, _| name == 'wasm' }).success?
+    refute gate(scopes.merge('wasm' => 'unknown')).success?
+    refute gate(scopes.merge('web' => 'false', 'wasm' => 'true')).success?
     refute gate(scopes, 'rust' => 'success').success?
   end
   def test_redundant_workflows_have_concrete_replacements

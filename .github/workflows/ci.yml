@@ -68,13 +68,18 @@ jobs:
               !((path.start_with?('docs/') && path.end_with?('.md')) || %w[README.md CHANGELOG.md].include?(path))
             end
             paths.each do |path|
-              shared = path.match?(/\A(?:Cargo\.(?:toml|lock)|mise\.toml|\.mise\.toml|rust-toolchain(?:\.toml)?|native\/|crates\/(?:converter-core|converter-ffi)\/)/)
-              scopes['rust'] ||= shared || path.start_with?('crates/') || path.end_with?('.rs')
-              scopes['web'] ||= path.start_with?('web/', 'crates/converter-wasm/') || path.match?(/\Ascripts\/(?:build_web|check_direct_runtime)/)
-              scopes['flutter'] ||= path.start_with?('flutter_app/') || path.match?(/\Ascripts\/(?:build_flutter|build_converter_ffi_android|package_converter_ffi_android|check_direct_runtime)/)
-              scopes['python'] ||= path.start_with?('python_app/', 'tests/') || path.match?(/\A(?:[^\/]+\.py|requirements[^\/]*\.txt|pyproject\.toml|pytest\.ini|setup\.cfg|(?:scripts|\.github\/scripts)\/.*\.py)\z/)
-              scopes['wasm'] ||= path.start_with?('crates/converter-wasm/', 'web/src/wasm/') || path == 'scripts/build_web_wasm.sh'
-              scopes['apple'] ||= path.start_with?('ios/EpubToMp3/')
+              # Shared contracts select their consumers, not only the owning crate.
+              orchestration = %w[mise.toml .mise.toml mise.lock .mise.lock .github/workflows/ci.yml .github/workflows/post-merge-validation.yml].include?(path)
+              shared_build = %w[Cargo.toml Cargo.lock rust-toolchain rust-toolchain.toml .github/workflows/faber-integration.yml].include?(path) || path.start_with?('.github/actions/rust-build-cache/')
+              shared_core = path.start_with?('crates/converter-core/')
+              native_abi = path.start_with?('native/', 'crates/converter-ffi/') || path == '.github/workflows/converter-ffi.yml'
+              wasm = orchestration || shared_build || shared_core || path.start_with?('crates/converter-wasm/', 'web/src/wasm/') || %w[scripts/build_web_wasm.sh .github/workflows/browser-runtime.yml].include?(path)
+              scopes['rust'] ||= orchestration || shared_build || native_abi || path.start_with?('crates/') || path.end_with?('.rs')
+              scopes['web'] ||= wasm || path.start_with?('web/') || path.match?(/\Ascripts\/(?:build_web|check_direct_runtime)/)
+              scopes['flutter'] ||= orchestration || shared_build || shared_core || native_abi || path.start_with?('flutter_app/') || path.match?(/\Ascripts\/(?:build_flutter|build_converter_ffi_android|package_converter_ffi_android|check_direct_runtime)/)
+              scopes['python'] ||= orchestration || path.start_with?('python_app/', 'tests/') || path.match?(/\A(?:[^\/]+\.py|requirements[^\/]*\.txt|pyproject\.toml|pytest\.ini|setup\.cfg|(?:scripts|\.github\/scripts)\/.*\.py)\z/)
+              scopes['wasm'] ||= wasm
+              scopes['apple'] ||= orchestration || shared_build || shared_core || native_abi || path.start_with?('ios/EpubToMp3/')
             end
           end
           File.open(ENV.fetch('GITHUB_OUTPUT'), 'a') { |file| scopes.merge('contracts' => contracts).each { |name, value| file.puts "#{name}=#{value}" } }
@@ -570,8 +575,12 @@ jobs:
           require 'json'
           needs = JSON.parse(ENV.fetch('NEEDS_JSON'))
           %w[changes production-packaging-guard].each { |job| abort "Required job failed: #{job}" unless needs.fetch(job).fetch('result') == 'success' }
+          scopes = needs.fetch('changes').fetch('outputs')
+          wasm = scopes.fetch('wasm')
+          abort 'Missing scope evidence: wasm' unless %w[true false].include?(wasm)
+          abort 'WASM validation requires the Web job' if wasm == 'true' && scopes.fetch('web') != 'true'
           { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web', 'apple-foundation' => 'apple' }.each do |job, scope|
-            selected = needs.fetch('changes').fetch('outputs').fetch(scope)
+            selected = scopes.fetch(scope)
             abort "Missing scope evidence: #{scope}" unless %w[true false].include?(selected)
             expected = selected == 'true' ? 'success' : 'skipped'
             abort "Unexpected runtime result: #{job}" unless needs.fetch(job).fetch('result') == expected
