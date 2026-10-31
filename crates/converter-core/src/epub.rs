@@ -92,6 +92,8 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
 ) -> Result<Book, EpubError> {
     let mut budget = EpubReadBudget::new(limits);
     let mut archive = ZipArchive::new(reader)?;
+    // Reject conflicting resource identities before trusting the central directory.
+    archive.validate_header_consistency()?;
     let container = read_entry(&mut archive, "META-INF/container.xml", &mut budget)?;
     let rootfile =
         xml_attr(&container, b"rootfile", b"full-path").ok_or(EpubError::MissingRootfile)?;
