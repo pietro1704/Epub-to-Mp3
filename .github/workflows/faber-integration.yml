@@ -414,6 +414,12 @@ jobs:
           set -euo pipefail
           export ORT_LIB_LOCATION="$PWD/target/onnxruntime-macos-prebuilt/$EXPECTED_ARCH/lib"
           export DYLD_LIBRARY_PATH="$ORT_LIB_LOCATION"
+          piper_data_directory="$(mise exec -- ruby -e '
+            table = Dir.glob("target/espeak-data/**/espeak-ng-data/phontab").find { |path| File.file?(File.join(File.dirname(path), "phondata")) }
+            abort "Built eSpeak data is missing" unless table
+            puts File.expand_path(File.dirname(File.dirname(table)))
+          ')"
+          export PIPER_ESPEAKNG_DATA_DIRECTORY="$piper_data_directory"
           # Cargo's test loader searches its target directory for dynamic libraries.
           ln -s "$ORT_LIB_LOCATION/libonnxruntime.dylib" target/release/deps/libonnxruntime.dylib
           mise exec -- ruby scripts/native_job.rb build -- cargo test --locked -p piper-runtime --release --lib \
