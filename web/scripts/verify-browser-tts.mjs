@@ -63,8 +63,11 @@ try {
   if (production && (!scripts.some(source => source.includes("/assets/")) || scripts.some(source => source.includes("/@vite/")))) {
     throw new Error("Production verification must load the built assets, not the development server.");
   }
-  await page.getByRole("button", { name: /Instalar Faber medium|Install Faber medium/ }).click();
-  await page.getByText(/Faber medium instalado|Faber medium installed/, { exact: true }).waitFor();
+  // Installation acts on the selected catalogue model, not a Faber-only button.
+  await page.getByRole("combobox", { name: /^(Voz principal|Primary voice)$/ }).selectOption("pt_BR-faber-medium");
+  if (modelDownloads.length !== 0) throw new Error("Selecting a voice must not install its model.");
+  await page.getByRole("button", { name: /^(Instalar modelo selecionado|Install selected model)$/ }).click();
+  await page.getByText(/^(Modelo selecionado instalado|Selected model installed)$/).waitFor();
   if (modelDownloads.length !== 2) throw new Error("Model installation must fetch exactly two verified artifacts.");
   await page.unroute("https://huggingface.co/**");
   await page.route("https://**", route => route.abort("internetdisconnected"));
