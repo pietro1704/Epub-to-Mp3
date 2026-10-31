@@ -16,11 +16,12 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def selected_faber_matrix(faber, event_name:, workflow_inputs:)
     expression = faber.fetch('jobs').fetch('macos-preferences').fetch('strategy').fetch('matrix').fetch('include')
-    structure = /\A\$\{\{\s*fromJSON\(\s*github\.event_name\s*==\s*'workflow_dispatch'\s*&&\s*inputs\.intel_only\s*==\s*true\s*&&\s*'(?<intel>\[[^']+\])'\s*\|\|\s*'(?<full>\[[^']+\])'\s*\)\s*\}\}\z/
+    structure = /\A\$\{\{\s*fromJSON\(\s*inputs\.macos_only\s*==\s*true\s*&&\s*'(?<arm>\[[^']+\])'\s*\|\|\s*github\.event_name\s*==\s*'workflow_dispatch'\s*&&\s*inputs\.intel_only\s*==\s*true\s*&&\s*'(?<intel>\[[^']+\])'\s*\|\|\s*'(?<full>\[[^']+\])'\s*\)\s*\}\}\z/
     match = structure.match(expression)
-    assert match, 'Matrix expression must guard the Intel-only choice with the dispatch event and input before falling back to the full matrix'
+    assert match, 'Matrix must select the explicit app gate or dispatch-only Intel mode before the full matrix'
     focused = event_name == 'workflow_dispatch' && workflow_inputs.fetch('intel_only', false) == true
-    JSON.parse(match[focused ? 'intel' : 'full'])
+    mode = workflow_inputs.fetch('macos_only', false) == true ? 'arm' : (focused ? 'intel' : 'full')
+    JSON.parse(match[mode])
   end
 
   def setup
@@ -102,7 +103,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[python-tests rust flutter web apple-foundation]
+    runtimes = %w[python-tests rust flutter web apple-foundation apple-app]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -197,16 +198,26 @@ class CiRuntimeScopeTest < Minitest::Test
     refute status.success?
   end
 
-  def gate(scopes, results = {})
+  def gate(scopes, results = {}, integrated = false)
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
     { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web',
-      'apple-foundation' => 'apple' }.each do |job, name|
-      needs[job] = { 'result' => scopes[name] == 'true' ? 'success' : 'skipped' }
+      'apple-foundation' => 'apple', 'apple-app' => 'apple' }.each do |job, name|
+      selected = scopes[name] == 'true' && !(job == 'apple-app' && integrated == true)
+      needs[job] = { 'result' => selected ? 'success' : 'skipped' }
     end
     results.each { |job, result| needs.fetch(job)['result'] = result }
     script = @workflow.fetch('jobs').fetch('pr-gate').fetch('steps').first.fetch('run')
-    Open3.capture3({ 'NEEDS_JSON' => JSON.generate(needs) }, RbConfig.ruby, '-e', script).last
+    Open3.capture3({ 'NEEDS_JSON' => JSON.generate(needs), 'INTEGRATED_VALIDATION' => integrated.to_s }, RbConfig.ruby, '-e', script).last
+  end
+
+  def test_native_app_gate_rejects_failures_and_integrated_validation_avoids_duplicate_app_runs
+    scopes = %w[rust web flutter python wasm apple].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
+    assert gate(scopes).success?
+    %w[failure cancelled skipped].each { |result| refute gate(scopes, 'apple-app' => result).success? }
+    assert gate(scopes, {}, true).success?
+    refute gate(scopes, { 'apple-app' => 'success' }, true).success?
+    refute gate(scopes, {}, 'unknown').success?
   end
 
   def test_gate_accepts_only_confirmed_scopes_and_matching_results
@@ -300,7 +311,7 @@ def test_reusable_jobs_cannot_share_the_callers_concurrency_group
   faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
   jobs = faber.fetch('jobs')
   %w[ffi-jni android-package browser-runtime].each do |job|
-    assert_equal "${{ !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}", jobs.fetch(job).fetch('if')
+    assert_equal "${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}", jobs.fetch(job).fetch('if')
   end
   refute jobs.fetch('macos-preferences').key?('if')
   group = faber.fetch('concurrency').fetch('group')
@@ -308,6 +319,7 @@ def test_reusable_jobs_cannot_share_the_callers_concurrency_group
   assert_includes group, 'inputs.intel_only == true'
   assert_includes group, 'intel-only'
   assert_includes group, 'full'
+  assert_includes group, 'app-gate'
 end
 
 def test_faber_intel_only_is_dispatch_only_and_leaves_reusable_calls_full
@@ -327,6 +339,9 @@ def test_faber_intel_only_is_dispatch_only_and_leaves_reusable_calls_full
   assert_equal expected_intel, selected_faber_matrix(faber, event_name: 'workflow_dispatch', workflow_inputs: defaults.merge('intel_only' => true))
 
   call_inputs = events.fetch('workflow_call').fetch('inputs').to_h { |name, config| [name, config.fetch('default', false)] }
+  assert_equal false, call_inputs.fetch('macos_only')
+  refute dispatch_inputs.key?('macos_only')
+  assert_equal [expected_full.first], selected_faber_matrix(faber, event_name: 'pull_request', workflow_inputs: call_inputs.merge('macos_only' => true))
   assert_equal expected_full, selected_faber_matrix(faber, event_name: 'workflow_dispatch', workflow_inputs: call_inputs),
     'A reusable caller event may be workflow_dispatch, but undeclared workflow_call inputs keep the full matrix'
   assert_equal expected_full, selected_faber_matrix(faber, event_name: 'pull_request', workflow_inputs: defaults.merge('intel_only' => true))
@@ -347,6 +362,12 @@ def test_full_client_suites_replace_duplicate_subset_runs
 end
 
   def test_foundation_run_moves_to_the_apple_pr_gate_without_faber_duplication
+    app = @workflow.fetch('jobs').fetch('apple-app')
+    integrated = "inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master'"
+    assert_equal "needs.changes.outputs.apple == 'true' && !(#{integrated})", app.fetch('if')
+    assert_equal "${{ #{integrated} }}", @workflow.fetch('jobs').fetch('pr-gate').fetch('steps').first.fetch('env').fetch('INTEGRATED_VALIDATION')
+    assert_equal './.github/workflows/faber-integration.yml', app.fetch('uses')
+    assert_equal({ 'macos_only' => true }, app.fetch('with'))
     refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
     foundation = @workflow.fetch('jobs').fetch('apple-foundation')
     assert_equal "needs.changes.outputs.apple == 'true'", foundation.fetch('if')
@@ -370,6 +391,11 @@ end
 
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     faber_commands = faber.fetch('jobs').fetch('macos-preferences').fetch('steps').filter_map { |step| step['run'] }.join("\n")
+    artifact = faber.fetch('jobs').fetch('macos-preferences').fetch('steps').find { |step| step['name'] == 'Retain macOS XCTest evidence' }
+    assert_equal "${{ inputs.macos_only == true && 'apple-app-gate' || 'faber-macos-prefs' }}-${{ matrix.arch }}", artifact.fetch('with').fetch('name')
+    %w[build-for-testing test-without-building].each do |action|
+      assert_includes faber_commands, "ruby ../../scripts/native_job.rb build -- xcodebuild #{action}"
+    end
     refute_includes faber_commands, 'mise run apple:foundation:test'
 
     package = File.read(File.expand_path('../ios/EpubToMp3/Package.swift', __dir__))

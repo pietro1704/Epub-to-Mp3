@@ -515,6 +515,17 @@ jobs:
         working-directory: flutter_app
         run: mise exec -- flutter analyze
 
+  apple-app:
+    name: Apple app tests
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true' && !(inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master')
+    uses: ./.github/workflows/faber-integration.yml
+    with:
+      macos_only: true
+    permissions:
+      contents: read
+      actions: read
+
   apple-foundation:
     if: needs.changes.outputs.apple == 'true'
     name: Apple Foundation tests
@@ -562,7 +573,7 @@ jobs:
 
   pr-gate:
     name: PR gate
-    needs: [changes, production-packaging-guard, python-tests, rust, flutter, web, apple-foundation]
+    needs: [changes, production-packaging-guard, python-tests, rust, flutter, web, apple-foundation, apple-app]
     if: always()
     timeout-minutes: 1
     runs-on: ubuntu-24.04
@@ -570,18 +581,23 @@ jobs:
       - name: Require every selected runtime and reject missing scope evidence
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
+          INTEGRATED_VALIDATION: ${{ inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         shell: ruby {0}
         run: |
           require 'json'
           needs = JSON.parse(ENV.fetch('NEEDS_JSON'))
+          integrated = ENV.fetch('INTEGRATED_VALIDATION')
+          abort 'Missing validation mode' unless %w[true false].include?(integrated)
           %w[changes production-packaging-guard].each { |job| abort "Required job failed: #{job}" unless needs.fetch(job).fetch('result') == 'success' }
           scopes = needs.fetch('changes').fetch('outputs')
           wasm = scopes.fetch('wasm')
           abort 'Missing scope evidence: wasm' unless %w[true false].include?(wasm)
           abort 'WASM validation requires the Web job' if wasm == 'true' && scopes.fetch('web') != 'true'
-          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web', 'apple-foundation' => 'apple' }.each do |job, scope|
+          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web', 'apple-foundation' => 'apple', 'apple-app' => 'apple' }.each do |job, scope|
             selected = scopes.fetch(scope)
             abort "Missing scope evidence: #{scope}" unless %w[true false].include?(selected)
-            expected = selected == 'true' ? 'success' : 'skipped'
+            # Full post-merge validation already requires the complete Faber matrix.
+            required = selected == 'true' && !(job == 'apple-app' && integrated == 'true')
+            expected = required ? 'success' : 'skipped'
             abort "Unexpected runtime result: #{job}" unless needs.fetch(job).fetch('result') == expected
           end
