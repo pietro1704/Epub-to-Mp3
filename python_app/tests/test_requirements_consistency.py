@@ -1,32 +1,27 @@
-"""Static guard: the two requirements manifests must agree on shared pins.
+"""Check manifest consistency against the distribution installed by CI.
 
 The repo ships two `requirements.txt` files (root + `python_app/`). When a
 Dependabot bump touches only one, the two drift and CI installs a different
 set of dependencies than local runs.
 
-This test also pins the lower bound of `pandas` at 3.0.3. The 3.0.4 release
-was *yanked* from PyPI after Dependabot pinned `pandas>=3.0.4` (#341), which
-broke every `pip install -r requirements.txt` with
-`No matching distribution found for pandas<4.0.0,>=3.0.4`. The lower bound
-must never climb to a version that is not installable — guard against that
-regression here.
+Pandas 3.0.4 was yanked after the dependency update in #341. Reject that
+known-bad installation without freezing the newest acceptable release.
+CI must resolve and install the current requirement before running this suite.
 """
 
 from __future__ import annotations
 
-import re
+from importlib.metadata import version
 from pathlib import Path
+
+import pytest
+from packaging.requirements import Requirement
+from packaging.version import Version
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _ROOT_REQ = REPO_ROOT / "requirements.txt"
 _APP_REQ = REPO_ROOT / "python_app" / "requirements.txt"
-
-# Lowest pandas release that is currently installable from PyPI. 3.0.4 was
-# yanked; if the lower bound is ever raised above the newest published
-# release again, CI breaks — this floor documents the known-good minimum.
-_PANDAS_MIN_INSTALLABLE = (3, 0, 3)
-
 
 def _pandas_pin(path: Path) -> str:
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -36,10 +31,12 @@ def _pandas_pin(path: Path) -> str:
     raise AssertionError(f"{path} does not pin pandas")
 
 
-def _pandas_lower_bound(pin: str) -> tuple[int, ...]:
-    match = re.search(r">=\s*(\d+(?:\.\d+)*)", pin)
-    assert match, f"pandas pin missing a >= lower bound: {pin!r}"
-    return tuple(int(part) for part in match.group(1).split("."))
+def _assert_pandas_installation(installed: str, pin: str) -> None:
+    candidate = Version(installed)
+    assert candidate != Version("3.0.4"), "pandas 3.0.4 was yanked from PyPI (#341)"
+    assert candidate in Requirement(pin).specifier, (
+        f"Installed pandas {installed} does not satisfy {pin}"
+    )
 
 
 def test_both_manifests_pin_pandas_identically() -> None:
@@ -51,11 +48,23 @@ def test_both_manifests_pin_pandas_identically() -> None:
     )
 
 
-def test_pandas_lower_bound_is_installable() -> None:
-    """Regression guard for the yanked 3.0.4 that broke CI (#341)."""
-    lower = _pandas_lower_bound(_pandas_pin(_ROOT_REQ))
-    assert lower <= _PANDAS_MIN_INSTALLABLE, (
-        f"pandas lower bound {lower} is above the last known-installable "
-        f"release {_PANDAS_MIN_INSTALLABLE}; 3.0.4 was yanked from PyPI. "
-        "Do not raise the floor past a published version."
-    )
+def test_installed_pandas_satisfies_current_manifests() -> None:
+    installed = version("pandas")
+    for manifest in (_ROOT_REQ, _APP_REQ):
+        _assert_pandas_installation(installed, _pandas_pin(manifest))
+
+
+@pytest.mark.parametrize("installed", ["3.1.0", "3.2.0"])
+def test_newer_compatible_releases_do_not_require_an_oracle_update(installed: str) -> None:
+    _assert_pandas_installation(installed, "pandas>=3.1.0,<4.0.0")
+
+
+def test_known_yanked_release_is_rejected_even_inside_the_requested_range() -> None:
+    with pytest.raises(AssertionError, match="yanked"):
+        _assert_pandas_installation("3.0.4", "pandas>=3.0.3,<4.0.0")
+
+
+@pytest.mark.parametrize("installed", ["3.0.3", "4.0.0"])
+def test_installed_release_must_satisfy_both_bounds(installed: str) -> None:
+    with pytest.raises(AssertionError, match="does not satisfy"):
+        _assert_pandas_installation(installed, "pandas>=3.1.0,<4.0.0")
