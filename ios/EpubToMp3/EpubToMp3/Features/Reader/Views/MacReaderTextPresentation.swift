@@ -320,7 +320,9 @@ final class MacReaderTextPresentation {
     func showPDF(_ url: URL) async -> Bool? {
         let generation = loadGeneration
         let bookID = currentBookId
-        let view = PDFView()
+        let view = PDFView(frame: contentScrollView.contentView.bounds)
+        // PDFKit owns page scrolling; its outer surface fills the reader viewport.
+        view.autoresizingMask = [.width, .height]
         view.autoScales = true
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
