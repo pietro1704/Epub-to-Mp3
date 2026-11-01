@@ -317,10 +317,9 @@ final class LibraryStore: ObservableObject {
         return url
     }
 
-    /// Async variant of `openBookFile(id:)` for reader flows. Bookmark
-    /// resolution can wait for iCloud I/O, so that non-cancellable system
-    /// call must never occupy the main actor while the reader is showing its
-    /// loading state.
+    /// Reader opening prepares bookmark resolution and legacy file migration on
+    /// the serial I/O worker. Publish only after cancellation and entry identity
+    /// checks; metadata edits made while waiting remain authoritative.
     @MainActor
     func openBookFileAsync(id: String) async throws -> URL {
         guard let initialIndex = books.firstIndex(where: { $0.id == id }) else {
@@ -337,38 +336,36 @@ final class LibraryStore: ObservableObject {
             )
         }
 
-        let resolved = try await LibraryBookmarkAccess.resolveBookBookmarkAsync(bookmark)
-        let stale = resolved.stale
-        var url = resolved.url
-
-        guard let currentIndex = books.firstIndex(where: { $0.id == id }) else {
-            throw NSError(domain: "LibraryStore", code: 404,
-                          userInfo: [NSLocalizedDescriptionKey: "Book was removed from library while opening"])
+        let snapshot = books[initialIndex]
+        let removalGeneration = removalGenerations[id, default: 0]
+        let resources = ImportResources(fileManager: fileManager, defaults: nil)
+        let directory = importDirectory
+        try Task.checkCancellation()
+        let prepared = try await LibraryImportExecutor.perform {
+            try LibraryBookOpening.prepare(snapshot, fileManager: resources.fileManager, importDirectory: directory)
         }
-        #if os(macOS)
-        if !LibraryImportFiles.isAppOwnedLibraryURL(url, baseDirectory: importDirectory) {
-            let started = url.startAccessingSecurityScopedResource()
-            defer { if started { url.stopAccessingSecurityScopedResource() } }
-            let durableURL = try LibraryImportFiles.persistImportedFileForLibrary(
-                originalURL: url,
-                id: books[currentIndex].id,
-                fileType: books[currentIndex].fileType,
-                fileManager: fileManager,
-                baseDirectory: importDirectory
-            )
-            books[currentIndex].bookmark = try LibraryBookmarkAccess.makeBookmark(for: durableURL)
-            url = durableURL
-        } else if stale, let fresh = try? LibraryBookmarkAccess.makeBookmark(for: url) {
-            books[currentIndex].bookmark = fresh
+        do {
+            try Task.checkCancellation()
+            guard let currentIndex = books.firstIndex(where: { $0.id == id }) else {
+                throw NSError(domain: "LibraryStore", code: 404,
+                              userInfo: [NSLocalizedDescriptionKey: "Book was removed from library while opening"])
+            }
+            guard removalGenerations[id, default: 0] == removalGeneration,
+                  books[currentIndex].bookmark == bookmark,
+                  books[currentIndex].fileType == snapshot.fileType else {
+                throw NSError(domain: "LibraryStore", code: 409,
+                              userInfo: [NSLocalizedDescriptionKey: "Book changed in the library while opening. Please try again."])
+            }
+            if let fresh = prepared.bookmark { books[currentIndex].bookmark = fresh }
+            books[currentIndex].lastOpenedAt = Date()
+            persist()
+            return prepared.url
+        } catch {
+            // Discard only this unpublished opening's directory, never source/user data
+            // or a durable file created by a concurrent import/open.
+            try await LibraryImportExecutor.perform { prepared.discard(using: resources.fileManager) }
+            throw error
         }
-        #else
-        if stale, let fresh = try? LibraryBookmarkAccess.makeBookmark(for: url) {
-            books[currentIndex].bookmark = fresh
-        }
-        #endif
-        books[currentIndex].lastOpenedAt = Date()
-        persist()
-        return url
     }
 
     // MARK: - Tags
