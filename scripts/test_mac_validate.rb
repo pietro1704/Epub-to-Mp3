@@ -5,6 +5,9 @@ require 'fileutils'
 require 'open3'
 require 'rbconfig'
 require_relative 'mac_validate'
+require_relative 'test_bundle_onnxruntime_incremental'
+require_relative 'test_bundle_espeak_incremental'
+require_relative 'test_xcode_script_environment'
 
 class MacValidateTest < Minitest::Test
   def setup

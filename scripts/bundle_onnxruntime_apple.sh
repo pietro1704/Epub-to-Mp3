@@ -37,6 +37,20 @@ if [[ "${PLATFORM_NAME:-}" == macosx ]]; then
 fi
 [[ -f "$source" ]] || { echo "error: missing linked ONNX Runtime: $source" >&2; exit 1; }
 destination="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/$linked_name"
+signing_identity="${EXPANDED_CODE_SIGN_IDENTITY:--}"
+# The verified macOS source already has the canonical install name. Preserve an
+# identical, valid ad-hoc copy instead of rewriting and signing it on every build.
+# Certificate signing and Simulator packaging keep their existing full path.
+if [[ "${PLATFORM_NAME:-}" == macosx && "$signing_identity" == - &&
+      "$linked_name" == libonnxruntime.dylib && -f "$destination" && ! -L "$destination" ]] &&
+    cmp -s "$source" "$destination"; then
+  if signature_details="$(codesign --display --verbose=2 "$destination" 2>&1)" &&
+      printf '%s\n' "$signature_details" | grep -Fxq 'Signature=adhoc' &&
+      codesign --verify --strict "$destination"; then
+    echo "ONNX Runtime unchanged; preserved verified ad-hoc signature"
+    exit 0
+  fi
+fi
 cp "$source" "$destination"
 # Avoid invalidating the copied signature when the install name already matches.
 if ! install_names="$(otool -D "$destination")"; then
@@ -51,5 +65,5 @@ current_name="$(printf '%s\n' "$install_names" | awk 'NR > 1 && NF { print }')"
 if [[ "$current_name" != "@rpath/$linked_name" ]]; then
   install_name_tool -id "@rpath/$linked_name" "$destination"
 fi
-codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$destination"
+codesign --force --sign "$signing_identity" "$destination"
 codesign --verify --strict "$destination"

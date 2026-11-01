@@ -246,10 +246,12 @@ targets:
     postBuildScripts:
       - name: Bundle platform-correct iOS Rust library
         basedOnDependencyAnalysis: false
+        showEnvVars: false
         script: |
           bash "$SRCROOT/../../scripts/bundle_converter_ffi_ios.sh"
       - name: Verify macOS Rust packaging
         basedOnDependencyAnalysis: false
+        showEnvVars: false
         script: |
           if [ "$PLATFORM_NAME" = "macosx" ]; then
             artifact="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/libconverter_ffi.dylib"
@@ -260,10 +262,12 @@ targets:
           fi
       - name: Bundle eSpeak NG data for Piper
         basedOnDependencyAnalysis: false
+        showEnvVars: false
         script: |
           bash "$SRCROOT/../../scripts/bundle_espeak_ng_data.sh"
       - name: Bundle linked ONNX Runtime
         basedOnDependencyAnalysis: false
+        showEnvVars: false
         script: |
           bash "$SRCROOT/../../scripts/bundle_onnxruntime_apple.sh"
 
