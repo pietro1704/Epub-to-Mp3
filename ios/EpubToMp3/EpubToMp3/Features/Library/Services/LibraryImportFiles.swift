@@ -51,7 +51,7 @@ enum LibraryImportFiles {
                 userInfo: [NSLocalizedDescriptionKey: "The selected book content changed during import."])
     }
 
-    private static func importedBooksDirectory(
+    static func importedBooksDirectory(
         fileManager: FileManager,
         baseDirectory: URL?
     ) throws -> URL {
