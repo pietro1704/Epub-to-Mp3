@@ -17,5 +17,12 @@ if [[ -z "$source" || ! -f "$source/phondata" ]]; then
   exit 1
 fi
 destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/espeak-ng-data"
+# Compare bytes as well as directory entries; timestamps alone can hide changes.
+# Preserve existing generated resources when the complete tree is unchanged.
+if [[ -d "$destination" && ! -L "$destination" ]] &&
+    diff -qr "$source" "$destination" >/dev/null 2>&1; then
+  echo "eSpeak NG data unchanged; preserved existing resources"
+  exit 0
+fi
 mkdir -p "$destination"
 ditto "$source" "$destination"
