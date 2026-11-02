@@ -393,6 +393,23 @@ class NativeTaskWiringTest < Minitest::Test
     end
   end
 
+  def test_android_sdk_is_selected_only_on_linux
+    output, error, status = Open3.capture3(
+      { "MISE_AUTO_INSTALL" => "0", "MISE_ENABLE_TOOLS" => "android-sdk", "MISE_DISABLE_TOOLS" => nil },
+      "mise", "ls", "--current", "--json", "android-sdk", chdir: ROOT
+    )
+    assert status.success?, error
+    selected = JSON.parse(output).select do |tool|
+      source = tool.dig("source", "path")
+      source && File.realpath(source) == File.realpath(File.join(ROOT, "mise.toml"))
+    end
+    if RUBY_PLATFORM.include?("linux")
+      assert_equal ["11.0"], selected.map { |tool| tool.fetch("requested_version") }.uniq
+    else
+      assert_empty selected, "Non-Linux work must not activate the Android SDK"
+    end
+  end
+
 end
 
 require_relative "native_task_test_execution_cases"
