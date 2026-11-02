@@ -12,6 +12,10 @@
     "codeCoverage" : false,
     "environmentVariableEntries" : [
       {
+        "key" : "EPUB_MAC_PLAYER_GUI_ACCEPTANCE",
+        "value" : "$(EPUB_MAC_PLAYER_GUI_ACCEPTANCE)"
+      },
+      {
         "key" : "EPUB_PDF_GUI_ACCEPTANCE",
         "value" : "$(EPUB_PDF_GUI_ACCEPTANCE)"
       },
