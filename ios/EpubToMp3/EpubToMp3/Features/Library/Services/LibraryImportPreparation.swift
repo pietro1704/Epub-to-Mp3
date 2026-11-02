@@ -153,6 +153,7 @@ enum LibraryImportPreparation {
             displayFilename: filename,
             addedAt: Date(),
             coverPNG: resolvedCover,
+            pdfCoverVersion: fileType == .pdf && resolvedCover != nil ? PdfMetadataReader.coverVersion : nil,
             fileType: fileType
         )
         return PreparedLibraryImport(book: book, metadataTitle: resolvedTitle, metadataAuthor: resolvedAuthor)

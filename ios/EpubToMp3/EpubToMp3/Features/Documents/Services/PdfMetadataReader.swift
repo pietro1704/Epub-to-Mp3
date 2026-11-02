@@ -14,6 +14,7 @@ import AppKit
 /// Mirrors the shape of `EpubMetadataReader.Payload` so `LibraryStore`
 /// can call either reader interchangeably.
 enum PdfMetadataReader {
+    static let coverVersion = 1
 
     /// Errors surfaced when the PDF is unreadable. Currently the only
     /// recoverable case is "encrypted with a password we don't have" —

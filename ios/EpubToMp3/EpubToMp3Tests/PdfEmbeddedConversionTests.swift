@@ -66,7 +66,11 @@ final class PdfEmbeddedConversionTests: XCTestCase {
             bodyText: "Olá. Este PDF agora pode virar áudio.")
         let original = try Data(contentsOf: source)
         let library = LibraryStore(defaults: defaults, importDirectory: root.appendingPathComponent("library"))
-        let book = try library.importBook(from: source)
+        var book = try library.importBook(from: source)
+        book.coverPNG = Data("Legacy cached PDF cover".utf8)
+        book.pdfCoverVersion = nil
+        library.update(book)
+        try await library.flushPersistence()
         let settings = AppSettings(defaults: defaults)
         settings.audioEngine = .system
         settings.secondaryAudioEngine = nil
@@ -152,6 +156,12 @@ final class PdfEmbeddedConversionTests: XCTestCase {
         let decoded = try AVAudioFile(forReading: audioURL)
         XCTAssertGreaterThan(decoded.length, 0)
         XCTAssertEqual(try Data(contentsOf: source), original)
+        let refreshedBook = try XCTUnwrap(library.books.first(where: { $0.id == book.id }))
+        XCTAssertEqual(refreshedBook.pdfCoverVersion, PdfMetadataReader.coverVersion)
+        let refreshedImage = try XCTUnwrap(refreshedBook.coverPNG.flatMap(NSImage.init(data:)))
+        XCTAssertTrue(descendants(controller.view).compactMap { $0 as? NSImageView }.contains {
+            $0.image?.tiffRepresentation == refreshedImage.tiffRepresentation
+        }, "The existing detail window must display the refreshed persisted cover")
         let audio = try AVAudioPlayer(contentsOf: audioURL)
         XCTAssertTrue(audio.play())
         try await Task.sleep(nanoseconds: 1_000_000_000)
