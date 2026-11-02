@@ -1,5 +1,9 @@
 import XCTest
+#if APP_FOUNDATION_HOST_TESTS
+@testable import AppFoundation
+#else
 @testable import EpubToMp3
+#endif
 
 final class ConversionCallbackBoundaryTests: XCTestCase {
     private final class Capture: @unchecked Sendable {
@@ -50,6 +54,26 @@ final class ConversionCallbackBoundaryTests: XCTestCase {
         for _ in 0..<100 { XCTAssertNil(boundary.progress(try progress())) }
         XCTAssertEqual(capture.lines.count, 1)
         XCTAssertTrue(capture.lines.first?.contains("cancelled") == true)
+    }
+
+    func testDiagnosticLimitIsSharedByEventKindsAndPreservesValidDelivery() throws {
+        let capture = Capture()
+        let map = try JSONDecoder().decode(ReaderConversionChapterMap.self,
+            from: Data(#"{"coreToReader":{"0":3},"coreTextChars":{"0":50}}"#.utf8))
+        let boundary = ConversionCallbackBoundary(jobID: "active", chapterMap: map,
+            diagnostic: { capture.append($0) })
+        for payload in [Data("PRIVATE BOOK TEXT".utf8), try progress(version: 99),
+                        try progress(job: "foreign"), try progress(chapter: 99)] {
+            XCTAssertNil(boundary.progress(payload))
+            XCTAssertNil(boundary.chapter(payload))
+        }
+        XCTAssertEqual(capture.lines.count, 8)
+        XCTAssertEqual(boundary.progress(try progress())?.chapterIndex, 3)
+        boundary.finish()
+        XCTAssertNil(boundary.progress(try progress()))
+        XCTAssertNil(boundary.chapter(try progress()))
+        XCTAssertEqual(capture.lines.count, 8)
+        XCTAssertTrue(capture.lines.allSatisfy { !$0.contains("PRIVATE BOOK TEXT") })
     }
 
     func testChapterMappingFailureIsDiagnosedAndValidChapterPreservesLiteralPath() throws {
