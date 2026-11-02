@@ -5,6 +5,20 @@ import 'package:flutter_app/services/playback_snapshot.dart';
 
 void main() {
   test(
+    'explicitly clears retired identity without changing omitted fields',
+    () {
+      final initial = const PlaybackSnapshot.initial().copyWith(
+        playerIndex: 2,
+        chapterIndex: 16,
+      );
+      expect(initial.copyWith(isPlaying: false).chapterIndex, 16);
+      final retired = initial.copyWith(playerIndex: null, chapterIndex: null);
+      expect(retired.playerIndex, isNull);
+      expect(retired.chapterIndex, isNull);
+      expect(retired.revision, initial.revision + 1);
+    },
+  );
+  test(
     'publishes one immutable snapshot for playing and chapter changes',
     () async {
       final player = FakeAudioPlayerService();

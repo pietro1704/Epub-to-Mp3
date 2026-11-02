@@ -32,6 +32,29 @@ production prerequisite.
 
 ## Application seams
 
+Desktop playback registers `just_audio_media_kit` before constructing a player.
+Linux and Windows use the bundled media-kit decoder; Android retains its native
+player. `AudioPlaybackState` translates decoder readiness, buffering, completion
+and `just_audio` errors into the same phase used by the full player, mini-player
+and system media controls. A play request alone does not establish playback.
+Completion exposes Play again; restarting reopens the decoder before seeking.
+Playlist updates use the `just_audio` 0.10 API, preserving progressive chapter
+sources. Queued segment updates are serialized and retired when their chapter
+is replaced or cleared.
+
+On authorized Arch, the real-decoder regression generates a four-second PCM
+tone in a temporary directory and exercises playback, pause/resume, completion,
+restart, an invalid replacement and recovery with a new chapter identity:
+
+```sh
+mise run flutter:test -- --dart-define=EPUB2MP3_NATIVE_DECODER=true test/linux_audio_backend_integration_test.dart
+```
+
+This opt-in test can emit fixture audio. Ordinary tests skip it; it installs no
+models and performs no TTS conversion. Windows decoder acceptance and whole-app
+conversion/reader journeys remain separate from this Linux playback check.
+
+
 - `lib/state/providers.dart`: runtime and state composition.
 - `lib/services/local_conversion_job.dart`: local history from Rust manifests.
 - `lib/services/audio_player_service.dart`: playback and progressive sources.

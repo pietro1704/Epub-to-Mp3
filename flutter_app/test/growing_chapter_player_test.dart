@@ -28,7 +28,7 @@ void main() {
         ),
       ]);
       final playlist = native.audioSource;
-      expect(native.sequence!.single, same(source));
+      expect(native.sequence.single, same(source));
       source.complete();
       player.finishGrowingChapter(4, '/final/chapter4.mp3');
       await player.setQueue([
@@ -40,7 +40,7 @@ void main() {
         ),
       ]);
       expect(native.audioSource, same(playlist));
-      expect(native.sequence!.single, same(source));
+      expect(native.sequence.single, same(source));
       expect(player.chapters.single.index, 4);
       expect(player.chapters.single.status, 'completed');
       await player.dispose();
