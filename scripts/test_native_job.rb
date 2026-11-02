@@ -65,7 +65,18 @@ class NativeJobIntegrationTest < Minitest::Test
   end
 
   def wait_for(path)
-    Timeout.timeout(5) { sleep 0.01 until File.exist?(path) }
+    # File.write creates the inode before publishing its PID/ready bytes.
+    Timeout.timeout(5) { sleep 0.01 until File.size?(path) }
+  end
+
+  def test_readiness_waits_for_pid_bytes_after_file_creation
+    pid_file = File.join(@dir, "delayed-pid")
+    File.write(pid_file, "")
+    publisher = Thread.new { sleep 0.1; File.write(pid_file, Process.pid) }
+    wait_for(pid_file)
+    assert_equal Process.pid.to_s, File.read(pid_file)
+  ensure
+    publisher&.join
   end
 
   def assert_unlocked
