@@ -1,6 +1,7 @@
 # EpubToMp3 consolidation: resume plan
 
-Status reconciled on 2026-11-02 through PR #1047. This user-requested plan and
+Status reconciled on 2026-11-02 through PR #1047, with PDF implementation and
+focused macOS acceptance recorded below. This user-requested plan and
 its supporting documents are published technical status, not execution authority.
 Follow the current request, AGENTS.md and execution policy before continuing.
 
@@ -10,18 +11,21 @@ Keep the canonical `~/Developer/epubtomp3` checkout, preserve valuable work from
 removed copies, integrate useful changes in atomic PRs, and improve build feedback.
 The user requested sequential TODO execution and deferred final visible/audible
 app validation until the implementation round is finished. Local compilation of
-the shared Rust silence change was authorized after the prebuilt question.
+the shared Rust silence change and subsequent PDF runtime was explicitly authorized
+after the source/platform-matched prebuilt questions.
 
 Filesystem consolidation is complete. The reconciled Rust, host/build and Web
-changes below are integrated. PDF narration, Flutter, native accessibility/startup
-proposals and final app acceptance remain pending; this list is not fully done.
+changes below are integrated. Text-layer PDF narration is now implemented and has focused macOS acceptance.
+Flutter, native accessibility/startup proposals, the PDF cover-preview follow-up
+and final combined-app/iPhone acceptance remain pending; this list is not fully done.
 
 - Preserve the unrelated `ios/EpubToMp3/mise.toml` Codex tool entry.
 - Keep models, books, complete packages, source snapshots and evidence intact.
 - Use the native guard, storage preflight/safe cleanup and one compiler job.
 - Revalidate source/platform/architecture/recipe identity before binary reuse.
-  None of the five inspected retained Intel FFI receipts matches current inputs;
-  the five inspected trusted producer runs predate the silence integration.
+  The earlier retained-package audit found no matching Intel FFI receipt. The PDF
+  task subsequently authorized a local Piper-enabled FFI build; its current native
+  source/product identity and focused test results are retained locally.
 - Simulator remains quarantined. Required SE1/iOS 15.5 acceptance is blocked.
 - Android/Flutter Linux belong on Arch. Arch remains deferred; its earlier intended
   pull/cleanup scope does not authorize new runtime, device or audio work.
@@ -61,11 +65,13 @@ assert comprehensive post-merge CI or final visible/audible app acceptance.
   ignored. Final embedded app/audio acceptance remains in item 14.
 - [x] **5. Reconcile callback diagnostics.** Existing PR #1037 was repaired and
   integrated, including stale identity and bounded diagnostic coverage.
-- [ ] **6. Integrate PDF narration.** Investigation completed: native reading uses
-  PDFKit, but `EmbeddedBookSession` still parses EPUB. The retained parser is
-  disconnected, references missing `pdf_page_labels` and adds `pdf-extract 0.12.1`.
-  Define chapter/label fidelity and known-input/error cases before selecting the
-  dependency. The private-book/absolute-coordinate UI probe is historical only.
+- [x] **6. Integrate text-layer PDF narration.** Shared Rust format dispatch,
+  `pdf-extract 0.12.1`, outline/page-label fidelity, cancellation and validated MP3
+  publication are implemented. Focused core/FFI and native macOS PDFKit/Faber/
+  Luciana acceptance passed; see the [PDF contract](docs/pdf-conversion.md).
+  Image-only or mixed pages requiring OCR fail explicitly; OCR is not installed.
+  A native Mac cover-preview inversion found during acceptance needs a separate
+  follow-up. The old private-book/absolute-coordinate probe remains historical.
 - [x] **7. Reconcile model catalog/selection.** The relevant `6318856d3a` work
   already landed via #969 (`2ead9a9f76`) and later catalog/FFI/UI improvements.
 - [x] **8. Reconcile model download/installation.** Resume, cancellation, crash
@@ -88,7 +94,10 @@ assert comprehensive post-merge CI or final visible/audible app acceptance.
   The missing persistent-player accessibility child change also remains pending,
   with an isolated XCTest needed; the retained test requires current API and
   library/defaults isolation before reuse. Neither proposal is a measured speedup.
-- [ ] **14. Final native builds and real-app acceptance.** Deferred by user request.
+- [ ] **14. Final combined-app builds and real-app acceptance.** The broader round
+  remains pending. Focused PDF macOS acceptance has passed with native tests and
+  visible/audible fixture conversion; it does not close the remaining iPhone or
+  combined silence/reader/provider journeys.
   Revalidate/build the necessary FFI/app targets under the guard, then exercise
   actual macOS/iPhone flows and audible silence behavior. Inspect source identity,
   provider/voice, cancellation and retained outputs. A green XCTest/build is not

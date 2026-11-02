@@ -107,6 +107,8 @@ fn no_fallback(value: &bool) -> bool {
 
 #[derive(Debug, Error)]
 pub enum WorkerError {
+    #[error(transparent)]
+    BookInput(#[from] crate::book_input::BookInputError),
     #[error("job error: {0}")]
     Job(#[from] JobError),
     #[error("EPUB error: {0}")]

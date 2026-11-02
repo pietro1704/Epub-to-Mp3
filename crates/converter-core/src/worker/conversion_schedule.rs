@@ -4,7 +4,7 @@ use super::{
     refresh_chapter_audio_receipt, sanitize, ChapterAudioReceipt, ConversionRequest,
     ConversionWorker, OutputManifest, WorkerError,
 };
-use crate::{audio, cache, epub};
+use crate::{audio, cache};
 use rayon::prelude::*;
 use std::{
     fs, io,
@@ -61,7 +61,7 @@ impl ConversionWorker {
             .and_then(|x| x.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        if ext != "epub" {
+        if ext != "epub" && ext != "pdf" {
             return Err(WorkerError::Unsupported(ext));
         }
         // Read the immutable source once: parsing the ZIP and hashing it from
@@ -69,7 +69,16 @@ impl ConversionWorker {
         let source = fs::read(&request.input)?;
         let book_key = cache::sha256_bytes(&source);
         *self.source_identity.lock().expect("source identity lock") = Some(book_key.clone());
-        let book = epub::parse_epub(std::io::Cursor::new(&source))?;
+        let book =
+            crate::book_input::parse_book_source_with_cancel(&request.input, &source, &|| {
+                self.cancel.is_cancelled()
+            })
+            .map_err(|error| match error {
+                crate::book_input::BookInputError::Pdf(
+                    crate::ingestion::IngestionError::Cancelled,
+                ) => WorkerError::Cancelled,
+                other => WorkerError::BookInput(other),
+            })?;
         let source_chapters_total = book.chapters.len();
         let cache_dir = self.config.paths.cache_dir.join(&book_key);
         let output_dir = self.config.paths.output_dir.join(&request.job_id);
@@ -87,6 +96,8 @@ impl ConversionWorker {
             .chapters
             .iter()
             .enumerate()
+            // Keep physical page ordinals stable, but do not synthesize blank PDF pages.
+            .filter(|(_, chapter)| ext != "pdf" || !chapter.text.trim().is_empty())
             .filter(|(position, chapter)| {
                 request
                     .chapter_indices

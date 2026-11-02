@@ -9,8 +9,27 @@ import UIKit
 
 /// Requires the real app bundle and its installed offline speech resources.
 final class FaberNativeInferenceTests: XCTestCase {
+    private static let passages = [
+        "Olá. Esta primeira página verifica a voz Faber em português. O áudio começa antes de terminar a conversão completa.",
+        "Neste segundo capítulo, a mesma voz continua funcionando sem internet. Cada palavra deve produzir áudio válido e audível.",
+    ]
+
     @MainActor
     func testOptInFaberStreamsFirstPlayableAudioAndPublishesOfflineChapters() async throws {
+        try await exerciseFaber { try EpubFixture.createWithChapters(Self.passages) }
+    }
+
+    @MainActor
+    func testOptInFaberPDFStreamsAndPublishesPlayableOfflineChapters() async throws {
+        try await exerciseFaber {
+            try PdfFixture.createMultiPage(pages: Self.passages.enumerated().map {
+                (heading: "Page \($0.offset + 1)", body: $0.element)
+            })
+        }
+    }
+
+    @MainActor
+    private func exerciseFaber(source: () throws -> URL) async throws {
         guard let suppliedRoot = ProcessInfo.processInfo.environment["EPUB2MP3_PIPER_TEST_MODEL_ROOT"],
               !suppliedRoot.isEmpty, !suppliedRoot.contains("$("), !suppliedRoot.contains("${") else {
             throw XCTSkip("Set EPUB2MP3_PIPER_TEST_MODEL_ROOT to the existing original Faber model directory; this test never downloads voices.")
@@ -51,10 +70,7 @@ final class FaberNativeInferenceTests: XCTestCase {
         let resources = try XCTUnwrap(Bundle.main.resourceURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: resources.appendingPathComponent("espeak-ng-data/phontab").path),
                       "The real application must bundle eSpeak data before offline synthesis.")
-        let book = try EpubFixture.createWithChapters([
-            "Olá. Esta primeira página verifica a voz Faber em português. O áudio começa antes de terminar a conversão completa.",
-            "Neste segundo capítulo, a mesma voz continua funcionando sem internet. Cada palavra deve produzir áudio válido e audível.",
-        ])
+        let book = try source()
         defer { try? FileManager.default.removeItem(at: book) }
         let control = try adapter.makePlaybackControl()
         control.updatePlaybackWindow(currentChapter: 0, chaptersAhead: 1)

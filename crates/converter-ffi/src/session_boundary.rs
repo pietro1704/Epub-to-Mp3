@@ -1,6 +1,6 @@
 use super::*;
 
-/// Opens and parses an EPUB at a NUL-terminated UTF-8 path.
+/// Opens and parses an EPUB or text-layer PDF at a NUL-terminated UTF-8 path.
 ///
 /// On failure, returns null and stores a thread-local error retrievable with
 /// `converter_last_error`.
@@ -44,7 +44,7 @@ pub unsafe extern "C" fn converter_session_metadata_json(
     }
 }
 
-/// Converts the EPUB and returns the generated manifest as an owned JSON
+/// Converts the book and returns the generated manifest as an owned JSON
 /// string. Audio files are written by the Rust worker under its configured
 /// persistent output directory.
 #[no_mangle]

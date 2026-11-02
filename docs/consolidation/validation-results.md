@@ -128,3 +128,57 @@ Pending acceptance/implementation:
 
 The 84 historical Markdown hashes still establish retained-file integrity only.
 Models, books, original source/evidence and useful retained packages were preserved.
+
+## 2026-11-02 — PDF narration and focused native acceptance
+
+Pietro selected PDF as the next priority and confirmed no source/platform-matched
+prebuilt was available, authorizing local Rust/PDF dependency compilation.
+
+- RED: opening an independently generated valid PDF through
+  `EmbeddedConversionSession` fails with the old EPUB ZIP EOCD error.
+- RED: malformed page geometry unwinds in the dependency, and a mixed image/text
+  document silently omits its image page. Both cases fail before the protections.
+- RED: readable front matter is incorrectly marked as fully mapped TOC content,
+  and non-monotonic outline order is silently reordered. Both cases fail before
+  source-structure verification is corrected.
+- GREEN: guarded complete core/FFI regression: **318 core tests pass, 1 existing
+  manual benchmark ignored; 14 PDF integration tests pass; 52 FFI tests pass**.
+  Selection, valid MP3, cancellation, source/cache replacement, metadata, Unicode,
+  page labels, named destinations, passwords, blank pages, malformed input and
+  contained parser panic behavior are covered.
+- PASS: source-built Piper-enabled Intel FFI and macOS Debug app under the existing
+  one-job/storage guard. The full runtime/dependency build took 17m34s; the final
+  incremental FFI build took 1m56s. These are build times, not startup or narration
+  performance claims. Existing package versions/checksums were preserved; 21
+  dependency packages were added. Original Faber model/config hashes match.
+- PASS: **9 focused native XCTest cases, zero failures/skips**, including a
+  PDFKit-generated Unicode document through the bundled Rust library, same-path
+  replacement, malformed PDF, visible PDF reader/viewport, real offline Faber PDF
+  conversion and the actual macOS Convert button with installed system speech.
+- PASS: the existing EPUB/Faber streaming/playback regression also passes after
+  sharing its fixture exercise with PDF (1 native XCTest, no failures/skips).
+- PASS: actual resolved system voice is **Luciana**
+  (`com.apple.voice.compact.pt-BR.Luciana`), 148,608 decoded frames. Exported MP3
+  independently decoded: 6.19 seconds, maximum level -3.7 dB. Faber produced two
+  non-silent completed chapters with provider/model identity and playback evidence.
+- PASS: the final visible-window case asserts foreground ownership, a visible
+  Convert button, unchanged original PDF, playable audio and advancing playback.
+  Fixture windows closed and the agent-started app exited after validation.
+
+Evidence root: `.reports/pdf-narration-20261102/`. Relevant artifacts are
+`embedded-red.log`, `parser-hardening-red.log`, `structure-red.log`,
+`core-ffi-reviewed.log`, `host-ffi-final-build.log`, `mac-app-build.log`,
+`native-pdf-foreground-validation/`, `native-pdf-foreground.xcresult`,
+`native-attachments/`, `system-output-audio-analysis.log`, `dependency-audit.json`
+and `native-test-build-identity.json`.
+
+An initial XCTest build required a provisioning profile. Local test invocation
+used ad-hoc signing with cleared test-only entitlements/profile settings; shipping
+signing configuration was unchanged. Early fixture runs failed button visibility
+and foreground ownership. Explicit window sizing/scrolling and activation of the
+existing app through Launch Services resolved them without removing assertions.
+
+The screenshot also revealed an existing inverted Mac PDF cover preview; retain
+it as a separate scoped follow-up. OCR, physical iPhone acceptance, required
+quarantined SE1/iOS 15.5 checks and the broader combined-app journey remain pending.
+This focused PDF result does not establish those other acceptance conditions.

@@ -2,15 +2,11 @@
 
 use crate::{
     config::AppConfig,
-    epub::{self, Book},
-    structure::{self, StructureVerification},
+    epub::Book,
+    structure::StructureVerification,
     worker::{ConversionRequest, ConversionWorker, OutputManifest, WorkerError},
 };
-use std::{
-    fs::File,
-    io::BufReader,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Explicit options for an embedded conversion.
@@ -37,7 +33,7 @@ pub fn fresh_embedded_job_id() -> String {
     )
 }
 
-/// Parsed EPUB metadata exposed before audio conversion.
+/// Parsed EPUB/PDF metadata exposed before audio conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedBookMetadata {
     pub title: String,
@@ -67,7 +63,7 @@ pub enum EmbeddedConversionError {
     #[error("failed to parse input '{}': {source}", path.display())]
     ParseInput {
         path: PathBuf,
-        source: epub::EpubError,
+        source: crate::book_input::BookInputError,
     },
     #[error(transparent)]
     Conversion(#[from] WorkerError),
@@ -84,28 +80,30 @@ pub struct EmbeddedConversionSession {
 }
 
 impl EmbeddedConversionSession {
-    /// Parse a local EPUB and prepare an embedded conversion session.
+    /// Parse a local EPUB or text-layer PDF and prepare a conversion session.
     pub fn open<P: AsRef<Path>>(
         input: P,
         options: EmbeddedConversionOptions,
         config: AppConfig,
     ) -> Result<Self, EmbeddedConversionError> {
         let input = input.as_ref().to_path_buf();
-        let file = File::open(&input).map_err(|source| EmbeddedConversionError::ReadInput {
-            path: input.clone(),
-            source,
-        })?;
-        let book = epub::parse_epub(BufReader::new(file)).map_err(|source| {
+        let source =
+            std::fs::read(&input).map_err(|source| EmbeddedConversionError::ReadInput {
+                path: input.clone(),
+                source,
+            })?;
+        let book = crate::book_input::parse_book_source(&input, &source).map_err(|source| {
             EmbeddedConversionError::ParseInput {
                 path: input.clone(),
                 source,
             }
         })?;
+        let structure = crate::book_input::verify_book_source(&input, &book);
         Ok(Self {
             input,
             options,
             metadata: metadata_from_book(&book),
-            structure: structure::verify_epub_toc(&book),
+            structure,
             config,
         })
     }
