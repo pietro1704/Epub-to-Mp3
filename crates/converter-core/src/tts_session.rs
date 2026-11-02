@@ -198,12 +198,27 @@ impl AudioSink {
         Ok(())
     }
     pub fn into_mp3(self) -> Result<Vec<u8>, TtsFailure> {
-        normalize_audio(&self.format, &self.bytes)
+        normalize_with_compaction(&self.format, &self.bytes, true)
     }
 }
 
 pub fn normalize_audio(format: &AudioFormat, bytes: &[u8]) -> Result<Vec<u8>, TtsFailure> {
+    normalize_with_compaction(format, bytes, false)
+}
+
+fn normalize_with_compaction(
+    format: &AudioFormat,
+    bytes: &[u8],
+    compact: bool,
+) -> Result<Vec<u8>, TtsFailure> {
     let invalid = |message| TtsFailure::new(FailureKind::InvalidAudio, message);
+    let encode = |wav: &[u8]| {
+        if compact {
+            crate::pcm::encode_speech_wav_mp3(wav)
+        } else {
+            crate::pcm::encode_wav_mp3(wav)
+        }
+    };
     if bytes.len() > MAX_SEGMENT_BYTES {
         return Err(invalid("Segment audio exceeds its byte limit".into()));
     }
@@ -212,7 +227,7 @@ pub fn normalize_audio(format: &AudioFormat, bytes: &[u8]) -> Result<Vec<u8>, Tt
             crate::pcm::validate_mp3(bytes).map_err(invalid)?;
             Ok(bytes.to_vec())
         }
-        AudioFormat::WavPcm16 => crate::pcm::encode_wav_mp3(bytes).map_err(invalid),
+        AudioFormat::WavPcm16 => encode(bytes).map_err(invalid),
         AudioFormat::Pcm16 {
             sample_rate,
             channels,
@@ -235,7 +250,7 @@ pub fn normalize_audio(format: &AudioFormat, bytes: &[u8]) -> Result<Vec<u8>, Tt
             wav.extend_from_slice(b"\x02\0\x10\0data");
             wav.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
             wav.extend_from_slice(bytes);
-            crate::pcm::encode_wav_mp3(&wav).map_err(invalid)
+            encode(&wav).map_err(invalid)
         }
     }
 }
@@ -292,8 +307,15 @@ pub fn cache_material(
             "Resolved voice identity is not reusable",
         ));
     }
-    serde_json::to_string(&(CONTRACT_VERSION, source, text_revision, identity, format))
-        .map_err(|error| TtsFailure::new(FailureKind::InvalidSelection, error.to_string()))
+    serde_json::to_string(&(
+        CONTRACT_VERSION,
+        crate::speech_silence::PROFILE,
+        source,
+        text_revision,
+        identity,
+        format,
+    ))
+    .map_err(|error| TtsFailure::new(FailureKind::InvalidSelection, error.to_string()))
 }
 
 /// Canonical request identity used by native and WASM persistence adapters.
@@ -306,6 +328,7 @@ pub fn request_cache_material(
     serde_json::to_string(&(
         CONTRACT_VERSION,
         "text-v1",
+        crate::speech_silence::PROFILE,
         source,
         language,
         preferences,
@@ -316,6 +339,9 @@ pub fn request_cache_material(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod speech_silence_tests;
 
 #[cfg(test)]
 mod configured_recovery_tests;
