@@ -19,6 +19,7 @@ import Combine
 final class LibraryStore: ObservableObject {
     private let indexPersistence: LibraryIndexPersistence
     private let importDirectory: URL?
+    private let startupTiming: AppStartupTiming
     private var removalGenerations: [String: Int] = [:]
 
     @Published private(set) var books: [BookEntity] = []
@@ -37,7 +38,8 @@ final class LibraryStore: ObservableObject {
         defaultsKey: String = "library.books.v1",
         fileManager: FileManager = .default,
         importDirectory: URL? = nil,
-        indexEncoder: @escaping @Sendable ([BookEntity]) throws -> Data = { try JSONEncoder().encode($0) }
+        indexEncoder: @escaping @Sendable ([BookEntity]) throws -> Data = { try JSONEncoder().encode($0) },
+        startupTiming: AppStartupTiming = .shared
     ) {
         // Prefer the App Group suite so the WidgetKit extension can
         // share the same UserDefaults store. Falls back to `.standard`
@@ -55,6 +57,7 @@ final class LibraryStore: ObservableObject {
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
         self.importDirectory = importDirectory
+        self.startupTiming = startupTiming
         self.indexPersistence = LibraryIndexPersistence(defaults: resolvedDefaults, key: defaultsKey,
                                                        encoder: indexEncoder)
         // UI tests install a deterministic fixture immediately after app
@@ -73,7 +76,9 @@ final class LibraryStore: ObservableObject {
     /// caller passed a specific `UserDefaults` and expects the books
     /// array to be hydrated before control returns.
     private func loadSync() {
-        apply(LibraryIndexCodec.decode(data: defaults.data(forKey: defaultsKey)))
+        startupTiming.measure(.libraryDecodeApply) {
+            apply(LibraryIndexCodec.decode(data: defaults.data(forKey: defaultsKey)))
+        }
     }
 
     private func apply(_ outcome: LibraryIndexCodec.DecodeOutcome) {

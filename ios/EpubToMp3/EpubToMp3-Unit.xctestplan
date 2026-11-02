@@ -10,7 +10,17 @@
   ],
   "defaultOptions" : {
     "codeCoverage" : false,
+    "commandLineArgumentEntries" : [
+      {
+        "argument" : "$(STARTUP_DIAGNOSTICS_ARGUMENT)",
+        "enabled" : true
+      }
+    ],
     "environmentVariableEntries" : [
+      {
+        "key" : "EPUB_STARTUP_GUI_ACCEPTANCE",
+        "value" : "$(EPUB_STARTUP_GUI_ACCEPTANCE)"
+      },
       {
         "key" : "EPUB_MAC_PLAYER_GUI_ACCEPTANCE",
         "value" : "$(EPUB_MAC_PLAYER_GUI_ACCEPTANCE)"

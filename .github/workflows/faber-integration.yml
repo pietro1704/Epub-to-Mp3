@@ -439,6 +439,7 @@ jobs:
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
             "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$EPUB2MP3_PIPER_TEST_MODEL_ROOT"
             -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests
+            -only-testing:EpubToMp3Tests/AppStartupTimingTests
             -only-testing:EpubToMp3Tests/ConvertViewModelTests
             -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests
             -only-testing:EpubToMp3Tests/PlatformSpeechSynthesizerTests
