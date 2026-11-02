@@ -156,7 +156,8 @@ enum PdfMetadataReader {
         }
         return image.jpegData(compressionQuality: 0.7)
         #else
-        let image = NSImage(size: size, flipped: true) { rect in
+        // PDFPage.draw uses an unflipped Core Graphics coordinate system.
+        let image = NSImage(size: size, flipped: false) { rect in
             NSColor.white.setFill()
             rect.fill()
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
