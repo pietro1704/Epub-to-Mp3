@@ -8,7 +8,7 @@ Integrated through #1047; see the [delivery table and ordered TODO](../../RESUME
 | --- | --- |
 | Main WIP `7cb696d9d0`: Web | Native speech state/voice, queue phases and obsolete product copy integrated in #1045–#1047 |
 | Main WIP: Flutter playback/reader | Pending independent Arch integration and runtime tests |
-| Main WIP: Mac player accessibility | Missing child inclusion/test preserved; pending native integration and isolated acceptance |
+| Main WIP: Mac player accessibility | Child inclusion implemented; isolated AppKit regressions and visible Mac acceptance passed |
 | `ff91fa703b`: callback diagnostics | Integrated by repaired existing PR #1037, including Foundation package wiring |
 | `6318856d3a`: model/catalog/download | Already integrated via #969 and later improvements; old UI superseded |
 | `6318856d3a`: detached-descendant process cleanup | Separate unvalidated safety proposal; not adopted |

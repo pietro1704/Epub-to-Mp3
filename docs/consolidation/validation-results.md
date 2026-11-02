@@ -189,3 +189,21 @@ The screenshot also revealed an existing inverted Mac PDF cover preview; retain
 it as a separate scoped follow-up. OCR, physical iPhone acceptance, required
 quarantined SE1/iOS 15.5 checks and the broader combined-app journey remain pending.
 This focused PDF result does not establish those other acceptance conditions.
+
+## 2026-11-02 — Persistent macOS player accessibility
+
+- Original explicit detail children omit the visible persistent player. Two
+  native cases reproduce the missing child and unreachable transport.
+- The detail owner now publishes current content and the visible player together;
+  collapsed transport and retired content are excluded. No player layout changes.
+- Three isolated native XCTest cases pass, covering library/settings navigation,
+  missing-book reader presentation and an empty library. The actual transport
+  cell is reachable, has button role and a meaningful localized label. AppKit
+  cells are inspected directly; their symbol labels may normalize capitalization.
+- Opt-in visible acceptance uses `EPUB_MAC_PLAYER_GUI_ACCEPTANCE=1`, asserts the
+  current app owns the foreground and retains a window screenshot. This flag is
+  test-only and does not measure startup. No audio or Simulator was exercised.
+
+Evidence: `.reports/mac-player-accessibility-20261102/`, including the original
+`red.xcresult`, `acceptance.xcresult`, the repeated `integrated.xcresult` on the
+#1060 base and source/product identity.
