@@ -1,6 +1,10 @@
 import 'package:flutter/painting.dart';
 import '../models/ebook_fulltext.dart';
-import 'paginator.dart';
+
+class ReaderPage {
+  final List<SentenceSpan> spans;
+  const ReaderPage(this.spans);
+}
 
 /// Splits rendered text at complete lines while retaining raw source ranges.
 /// The renderer uses the same style, scale, width and per-span padding.
