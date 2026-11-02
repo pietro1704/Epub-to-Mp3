@@ -36,3 +36,8 @@ packaging behavior, not an end-to-end speed improvement.
 Machine-local `mise.local.toml` can set `[settings] auto_install = false` to prevent
 implicit tool installation during CLI work. Provision missing tools explicitly
 on their owning platform. This local policy is excluded from Git.
+
+The root `mise.toml` selects Android SDK `11.0` only on Linux. Mac project
+commands skip that tool request; existing SDK installations are retained.
+The executable task-wiring regression checks mise's actual tool selection on
+the current platform without installing tools.
