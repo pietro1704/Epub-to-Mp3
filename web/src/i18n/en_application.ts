@@ -17,11 +17,11 @@ export const en_application: Pick<Translations, 'locale' | 'topBar' | 'hero' | '
     badge: 'Audio book',
     title: 'Turn your EPUB or PDF into MP3 in just a few clicks',
     subtitle:
-      'Upload the file, pick a voice you like, and let the Python service narrate the story so you can listen anywhere.',
+      'Open your book and convert locally with Piper. Installed system voices are listening-only; MP3 export requires Piper.',
     highlights: [
       {
-        title: 'Edge → Piper',
-        description: 'Automatically picks the most reliable engine to keep quality and speed high.',
+        title: 'Local Piper',
+        description: 'Your primary voice is preserved. Install the model when you choose to enable offline conversion.',
       },
       {
         title: 'True multilingual',
@@ -49,7 +49,7 @@ export const en_application: Pick<Translations, 'locale' | 'topBar' | 'hero' | '
     },
     progress: {
       label: '2. Track progress',
-      description: 'Follow each step while the Python service works.',
+      description: 'Follow the local book conversion on this device.',
       panelTitle: 'Conversion status',
       panelDescription: 'The latest messages show up here.',
       activeBadge: 'Running',
