@@ -91,7 +91,16 @@ final class MacBookDetailViewController: NSViewController {
         detailContent.downloadButton.action = #selector(tapDownload)
         detailContent.logButton.target = self
         detailContent.logButton.action = #selector(tapLog)
-        detailContent.render(book: book, localConversionProgress: localConversionProgress)
+        detailContent.render(book: library.books.first(where: { $0.id == book.id }) ?? book,
+                             localConversionProgress: localConversionProgress)
+        let bookID = book.id
+        library.$books.map { $0.first(where: { $0.id == bookID })?.coverPNG }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] cover in
+                MainActor.assumeIsolated { self?.detailContent.updateCover(cover) }
+            }
+            .store(in: &playbackCancellables)
     }
 
     private func observeLocalPlaybackChapterChanges() {
@@ -265,7 +274,8 @@ final class MacBookDetailViewController: NSViewController {
         localConversionGeneration = nil
         localConversionProgress = 100
         detailContent.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 100)
-        detailContent.render(book: book, localConversionProgress: localConversionProgress)
+        detailContent.render(book: library.books.first(where: { $0.id == book.id }) ?? book,
+                             localConversionProgress: localConversionProgress)
         if let coverage = snapshot.bookAudioCoverageLabel { detailContent.progressLabel.stringValue = coverage }
         return snapshot
     }

@@ -50,6 +50,20 @@ a bound on a third-party parser's peak memory or the initial synchronous PDF
 object loading duration. Cancellation is checked before
 extraction and between pages.
 
+## macOS cover cache
+
+PDFKit renders covers separately from Rust narration. Imported PDF cover payloads
+record their rendering revision. A legacy row without the current revision is
+refreshed on its next asynchronous book open, using the existing serial I/O worker;
+startup does not scan PDF files. The visible Mac detail image follows the updated
+library payload.
+
+Only the derived cover and its revision are replaced. Source bytes, book identity,
+reading position, tags and audio records remain intact. Cancellation, a replaced
+bookmark or a concurrent cover edit prevents publishing an obsolete refresh.
+Rendering failure retains the old cover and leaves the row eligible for a later
+retry. Successfully persisted current revisions are not rendered again on open.
+
 ## Regression verification
 
 `crates/converter-core/tests/pdf_ingestion.rs` uses standards-shaped PDF bytes

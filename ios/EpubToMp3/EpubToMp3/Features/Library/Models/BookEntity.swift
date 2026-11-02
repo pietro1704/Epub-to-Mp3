@@ -101,6 +101,8 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
     /// Optional cached cover art. PNG/JPEG bytes, kept inline for now;
     /// large covers can be moved to a separate file cache later.
     var coverPNG: Data?
+    /// Missing on legacy rows; refreshed lazily from the PDF on macOS.
+    var pdfCoverVersion: Int?
 
     /// If the user has run a conversion for this book, we keep the
     /// most recent jobId so we can reattach to the audio assets
@@ -150,7 +152,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, title, author, bookmark, displayFilename, addedAt,
              lastOpenedAt, lastChapterIndex, lastPositionSeconds,
-             coverPNG, lastJobId, cachedOffline, fileType, tags
+             coverPNG, pdfCoverVersion, lastJobId, cachedOffline, fileType, tags
     }
 
     init(
@@ -164,6 +166,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
         lastChapterIndex: Int? = nil,
         lastPositionSeconds: TimeInterval? = nil,
         coverPNG: Data? = nil,
+        pdfCoverVersion: Int? = nil,
         lastJobId: String? = nil,
         cachedOffline: Bool = false,
         fileType: BookFileType = .epub,
@@ -179,6 +182,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
         self.lastChapterIndex = lastChapterIndex
         self.lastPositionSeconds = lastPositionSeconds
         self.coverPNG = coverPNG
+        self.pdfCoverVersion = pdfCoverVersion
         self.lastJobId = lastJobId
         self.cachedOffline = cachedOffline
         self.fileType = fileType
@@ -197,6 +201,7 @@ struct BookEntity: Codable, Identifiable, Hashable, Sendable {
         self.lastChapterIndex = try c.decodeIfPresent(Int.self, forKey: .lastChapterIndex)
         self.lastPositionSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .lastPositionSeconds)
         self.coverPNG = try c.decodeIfPresent(Data.self, forKey: .coverPNG)
+        self.pdfCoverVersion = try c.decodeIfPresent(Int.self, forKey: .pdfCoverVersion)
         self.lastJobId = try c.decodeIfPresent(String.self, forKey: .lastJobId)
         self.cachedOffline = (try c.decodeIfPresent(Bool.self, forKey: .cachedOffline)) ?? false
         if let raw = try c.decodeIfPresent(BookFileType.self, forKey: .fileType) {

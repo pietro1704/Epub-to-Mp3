@@ -8,6 +8,7 @@ enum LibraryBookOpening {
         let url: URL
         let bookmark: Data?
         let ownedDirectory: URL?
+        let refreshedCover: Data?
 
         func discard(using fileManager: FileManager) {
             if let ownedDirectory { try? fileManager.removeItem(at: ownedDirectory) }
@@ -37,7 +38,7 @@ enum LibraryBookOpening {
                 let destination = owned.appendingPathComponent(name)
                 try fileManager.copyItem(at: source, to: destination)
                 return Prepared(url: destination, bookmark: try LibraryBookmarkAccess.makeBookmark(for: destination),
-                                ownedDirectory: owned)
+                                ownedDirectory: owned, refreshedCover: refreshCover(book, at: destination))
             } catch {
                 try? fileManager.removeItem(at: owned)
                 throw error
@@ -45,6 +46,19 @@ enum LibraryBookOpening {
         }
         #endif
         let refreshed = resolved.stale ? try? LibraryBookmarkAccess.makeBookmark(for: source) : nil
-        return Prepared(url: source, bookmark: refreshed, ownedDirectory: nil)
+        return Prepared(url: source, bookmark: refreshed, ownedDirectory: nil,
+                        refreshedCover: refreshCover(book, at: source))
+    }
+
+    private static func refreshCover(_ book: BookEntity, at url: URL) -> Data? {
+        #if os(macOS)
+        guard book.fileType == .pdf,
+              (book.pdfCoverVersion ?? 0) < PdfMetadataReader.coverVersion else { return nil }
+        // Optional metadata must never prevent opening a readable source. Keep
+        // the old payload and retry on a later open if rendering fails.
+        return LibraryCoverThumbnail.downsampleCover((try? PdfMetadataReader.readMetadata(from: url))?.cover)
+        #else
+        return nil
+        #endif
     }
 }

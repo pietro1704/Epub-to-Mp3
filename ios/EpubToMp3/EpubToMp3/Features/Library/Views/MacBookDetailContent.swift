@@ -94,7 +94,7 @@ final class MacBookDetailContent: NSView {
         titleLabel.stringValue = book.resolvedTitle
         authorLabel.stringValue = book.author ?? ""
         authorLabel.isHidden = (book.author ?? "").isEmpty
-        coverView.image = book.coverPNG.flatMap(NSImage.init(data:))
+        updateCover(book.coverPNG)
         if let localConversionProgress {
             progressLabel.stringValue = L10n.string("bookDetail.progressPercent", localConversionProgress)
         } else if let entry = ReaderProgressStore.read(bookId: book.id) {
@@ -116,5 +116,8 @@ final class MacBookDetailContent: NSView {
         }
     }
 
+    func updateCover(_ cover: Data?) {
+        coverView.image = cover.flatMap(NSImage.init(data:))
+    }
 }
 #endif

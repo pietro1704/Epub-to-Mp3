@@ -14,6 +14,7 @@ import AppKit
 /// Mirrors the shape of `EpubMetadataReader.Payload` so `LibraryStore`
 /// can call either reader interchangeably.
 enum PdfMetadataReader {
+    static let coverVersion = 1
 
     /// Errors surfaced when the PDF is unreadable. Currently the only
     /// recoverable case is "encrypted with a password we don't have" —
@@ -156,7 +157,8 @@ enum PdfMetadataReader {
         }
         return image.jpegData(compressionQuality: 0.7)
         #else
-        let image = NSImage(size: size, flipped: true) { rect in
+        // PDFPage.draw uses an unflipped Core Graphics coordinate system.
+        let image = NSImage(size: size, flipped: false) { rect in
             NSColor.white.setFill()
             rect.fill()
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }

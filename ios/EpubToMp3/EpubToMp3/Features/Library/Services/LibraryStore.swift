@@ -216,6 +216,7 @@ final class LibraryStore: ObservableObject {
             }
             if existing.coverPNG == baseline?.coverPNG, existing.coverPNG == nil, let cover = incoming.coverPNG {
                 existing.coverPNG = cover
+                existing.pdfCoverVersion = incoming.pdfCoverVersion
             }
             books[existingIndex] = existing
             return existing
@@ -357,6 +358,12 @@ final class LibraryStore: ObservableObject {
                               userInfo: [NSLocalizedDescriptionKey: "Book changed in the library while opening. Please try again."])
             }
             if let fresh = prepared.bookmark { books[currentIndex].bookmark = fresh }
+            if let cover = prepared.refreshedCover,
+               books[currentIndex].coverPNG == snapshot.coverPNG,
+               books[currentIndex].pdfCoverVersion == snapshot.pdfCoverVersion {
+                books[currentIndex].coverPNG = cover
+                books[currentIndex].pdfCoverVersion = PdfMetadataReader.coverVersion
+            }
             books[currentIndex].lastOpenedAt = Date()
             persist()
             return prepared.url
