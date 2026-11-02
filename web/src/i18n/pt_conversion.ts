@@ -40,6 +40,16 @@ export const pt_conversion: Pick<
       nativeRetry: "Tentar conversão com Piper novamente",
       nativeUnavailable:
         "A voz do sistema não está disponível neste navegador.",
+      nativeFailure: "Não foi possível narrar com a voz instalada. Verifique as vozes offline do sistema ou tente novamente com Piper.",
+      nativeRetryFailure: "Não foi possível retomar a conversão com Piper. Tente novamente.",
+      nativeStates: {
+        idle: "Narração do sistema parada",
+        starting: "Preparando voz do sistema",
+        playing: "Ouvindo com voz do sistema",
+        paused: "Narração do sistema pausada",
+        completed: "Narração do sistema concluída",
+        failed: "Falha na narração do sistema",
+      },
       capability:
         "Modelos Piper compatíveis funcionam localmente após a instalação. Edge não está disponível neste navegador.",
       unavailable: "indisponível neste navegador",

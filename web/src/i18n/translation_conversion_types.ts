@@ -59,6 +59,9 @@ export interface TtsPreferenceText {
   nativeStop: string;
   nativeRetry: string;
   nativeUnavailable: string;
+  nativeFailure: string;
+  nativeRetryFailure: string;
+  nativeStates: Record<'idle' | 'starting' | 'playing' | 'paused' | 'completed' | 'failed', string>;
   unavailable: string;
   manualVoice: string;
 }

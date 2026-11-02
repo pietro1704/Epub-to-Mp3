@@ -38,6 +38,16 @@ export const en_conversion: Pick<
       nativeStop: "Stop",
       nativeRetry: "Retry Piper conversion",
       nativeUnavailable: "System speech is unavailable in this browser.",
+      nativeFailure: "The installed voice could not narrate this text. Check offline system voices or retry with Piper.",
+      nativeRetryFailure: "Could not resume Piper conversion. Try again.",
+      nativeStates: {
+        idle: "System narration stopped",
+        starting: "Preparing system voice",
+        playing: "Listening with system voice",
+        paused: "System narration paused",
+        completed: "System narration completed",
+        failed: "System narration failed",
+      },
       capability:
         "Compatible Piper models run locally after installation. Edge is unavailable in this browser.",
       unavailable: "unavailable in this browser",
