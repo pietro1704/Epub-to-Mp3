@@ -34,7 +34,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 #endif
 
     override init() {
-        library = LibraryStore()
+        library = AppStartupTiming.shared.measure(.libraryStoreCreation) { LibraryStore() }
         super.init()
 #if os(iOS)
         library.installUITestFixtureIfRequested()
@@ -57,7 +57,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     static func runApp() {
         let application = NSApplication.shared
-        let delegate = EpubToMp3App()
+        let delegate = AppStartupTiming.shared.measure(.macDelegateCreation) { EpubToMp3App() }
         macOSDelegate = delegate
         application.setActivationPolicy(.regular)
         application.delegate = delegate
@@ -92,32 +92,10 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     private func configureMainWindowIfNeeded() {
         guard window == nil else { return }
-        let root = MacAppKitRootController(
-            settings: settings,
-            library: library,
-            player: player,
-            bookmarkStore: bookmarkStore,
-            playerPresentation: playerPresentation
-        )
-        rootController = root
-        let window = EpubToMp3WindowConfiguration.makeMacOSWindow()
-        window.title = "Epub-to-Mp3"
-        window.contentViewController = root
-        root.configureWindowToolbar(window)
-        // Pin the programmatic split view to the content view. Its intrinsic
-        // width otherwise leaves an unused trailing region in NSWindow.
-        if let contentView = window.contentView, contentView !== root.view {
-            root.view.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                root.view.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-                root.view.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                root.view.topAnchor.constraint(equalTo: contentView.topAnchor),
-                root.view.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            ])
-        }
-        EpubToMp3WindowConfiguration.centerOnActiveScreen(window)
-        window.makeKeyAndOrderFront(nil)
-        self.window = window
+        let setup = MacApplicationWindowSetup.make(settings: settings, library: library, player: player,
+            bookmarkStore: bookmarkStore, playerPresentation: playerPresentation)
+        rootController = setup.root
+        window = setup.window
         NSApplication.shared.activate(ignoringOtherApps: true)
         activateRuntime()
     }
@@ -271,15 +249,17 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 #endif
 
     private func activateRuntime() {
-        ApplicationWidgetIntents.bind(player: player)
-        importPendingLibraryBooks()
-        drainPendingIntent()
-        ApplicationWidgetIntents.drainPending(player: player)
-        WidgetDataSync.reloadAll()
-        setIdleTimerDisabled(true)
-        guard !Self.isRunningUnderXCTest() else { return }
-        pruneOrphanBookmarks()
-        pruneOrphanFulltextCache()
+        AppStartupTiming.shared.measure(.runtimeActivation) {
+            ApplicationWidgetIntents.bind(player: player)
+            importPendingLibraryBooks()
+            drainPendingIntent()
+            ApplicationWidgetIntents.drainPending(player: player)
+            AppStartupTiming.shared.measure(.widgetReloadRequest) { WidgetDataSync.reloadAll() }
+            setIdleTimerDisabled(true)
+            guard !Self.isRunningUnderXCTest() else { return }
+            pruneOrphanBookmarks()
+            pruneOrphanFulltextCache()
+        }
     }
 
     private func deactivateRuntime() {
@@ -345,11 +325,15 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     }
 
     private func pruneOrphanBookmarks() {
-        _ = bookmarkStore.pruneOrphans(validBookIds: Set(library.books.map(\.id)))
+        AppStartupTiming.shared.measure(.bookmarksPrune) {
+            _ = bookmarkStore.pruneOrphans(validBookIds: Set(library.books.map(\.id)))
+        }
     }
 
     private func pruneOrphanFulltextCache() {
-        _ = LocalFulltextCache.pruneOrphans(validBookIds: Set(library.books.map(\.id)))
+        AppStartupTiming.shared.measure(.fulltextPrune) {
+            _ = LocalFulltextCache.pruneOrphans(validBookIds: Set(library.books.map(\.id)))
+        }
     }
 
     static func isRunningUnderXCTest(

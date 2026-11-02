@@ -16,16 +16,33 @@ final class AppWindowConfigurationTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(size.height, 700)
     }
 
-    func testMacOSNativeDelegateOwnsTheWindow() throws {
-        let source = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift")
-        )
-        XCTAssertTrue(source.contains("NSApplicationDelegate"))
-        XCTAssertTrue(source.contains("contentViewController = root"))
-        XCTAssertFalse(source.contains("WindowGroup"))
+    @MainActor
+    func testShippingWindowOwnsItsNativeRootController() throws {
+        let suite = "window-ownership.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.currentBookIDDefaultsKey, "readerWarmBookIDs.v1"]
+        let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
+        keys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
+        let policy = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.regular)
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let timing = AppStartupTiming(arguments: [])
+        let setup = MacApplicationWindowSetup.make(settings: AppSettings(defaults: defaults),
+            library: LibraryStore(defaults: defaults, defaultsKey: "library", startupTiming: timing), player: player,
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+            playerPresentation: PlayerPresentation(defaults: defaults), timing: timing)
+        setup.window.isReleasedWhenClosed = false
+        defer {
+            LocalFulltextCache.cancelPrewarming()
+            player.stop()
+            setup.window.orderOut(nil); setup.window.contentViewController = nil; setup.window.close()
+            for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }
+            defaults.removePersistentDomain(forName: suite)
+            NSApp.setActivationPolicy(policy)
+        }
+        XCTAssertTrue(setup.window.contentViewController === setup.root)
+        XCTAssertTrue(setup.root.view.window === setup.window)
+        XCTAssertEqual(setup.root.splitViewItems.count, 2)
     }
 
     @MainActor

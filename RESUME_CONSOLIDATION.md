@@ -16,8 +16,9 @@ after the source/platform-matched prebuilt questions.
 
 Filesystem consolidation is complete. The reconciled Rust, host/build and Web
 changes below are integrated. Text-layer PDF narration is now implemented and has focused macOS acceptance.
-Flutter, optional startup timing and final combined-app/iPhone acceptance remain
-pending; this list is not fully done.
+Flutter and final combined-app/iPhone acceptance remain pending; accessibility
+is integrated through PR #1061. Optional setup timing is implemented
+and disabled by default; this list is not fully done.
 
 - Preserve the unrelated `ios/EpubToMp3/mise.toml` Codex tool entry.
 - Keep models, books, complete packages, source snapshots and evidence intact.
@@ -69,9 +70,9 @@ assert comprehensive post-merge CI or final visible/audible app acceptance.
   `pdf-extract 0.12.1`, outline/page-label fidelity, cancellation and validated MP3
   publication are implemented. Focused core/FFI and native macOS PDFKit/Faber/
   Luciana acceptance passed; see the [PDF contract](docs/pdf-conversion.md).
-  Mac cover orientation and lazy repair of persisted covers are integrated in #1060.
   Image-only or mixed pages requiring OCR fail explicitly; OCR is not installed.
-  The old private-book/absolute-coordinate probe remains historical.
+  Mac cover rendering and lazy repair are integrated in #1060. The old
+  private-book/absolute-coordinate probe remains historical.
 - [x] **7. Reconcile model catalog/selection.** The relevant `6318856d3a` work
   already landed via #969 (`2ead9a9f76`) and later catalog/FFI/UI improvements.
 - [x] **8. Reconcile model download/installation.** Resume, cancellation, crash
@@ -88,13 +89,14 @@ assert comprehensive post-merge CI or final visible/audible app acceptance.
 - [x] **12. Web reconciliation.** #1045–#1047 integrate native playback presentation,
   queue phase handling and current product copy. Native speech stays listening-only;
   Piper remains required for MP3 export. Audible browser acceptance is pending.
-- [ ] **13. Optional native proposals.** Keep `-measureStartup` unapplied until an
-  isolated tested implementation is ready. It must remain off by default; setup
-  completion is not first-frame timing, and nested spans must not be summed.
-  Persistent-player accessibility child inclusion is implemented with isolated
-  AppKit regressions and focused visible macOS acceptance. Current content and
-  the visible transport remain reachable; collapsed transport is excluded.
-  Optional startup timing remains unapplied and is not a measured speedup.
+- [ ] **13. Native diagnostics and accessibility.** Optional `-measureStartup`
+  setup timing is implemented and disabled by default; see the
+  [timing contract](docs/native-startup-timing.md). Deterministic native tests and
+  visible Mac setup acceptance cover the process flag, library decoder and shipping
+  window seam. These are inclusive synchronous intervals, not first-frame timing
+  or measured speedup. Persistent-player accessibility is integrated in #1061
+  with isolated AppKit regressions and focused visible acceptance; collapsed transport and
+  retired content are excluded. Combined-app acceptance remains pending.
 - [ ] **14. Final combined-app builds and real-app acceptance.** The broader round
   remains pending. Focused PDF macOS acceptance has passed with native tests and
   visible/audible fixture conversion; it does not close the remaining iPhone or

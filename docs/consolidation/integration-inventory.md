@@ -8,7 +8,7 @@ Integrated through #1047; see the [delivery table and ordered TODO](../../RESUME
 | --- | --- |
 | Main WIP `7cb696d9d0`: Web | Native speech state/voice, queue phases and obsolete product copy integrated in #1045–#1047 |
 | Main WIP: Flutter playback/reader | Pending independent Arch integration and runtime tests |
-| Main WIP: Mac player accessibility | Child inclusion implemented; isolated AppKit regressions and visible Mac acceptance passed |
+| Main WIP: Mac player accessibility | Integrated in PR #1061 with isolated AppKit regressions and visible Mac acceptance |
 | `ff91fa703b`: callback diagnostics | Integrated by repaired existing PR #1037, including Foundation package wiring |
 | `6318856d3a`: model/catalog/download | Already integrated via #969 and later improvements; old UI superseded |
 | `6318856d3a`: detached-descendant process cleanup | Separate unvalidated safety proposal; not adopted |
@@ -16,7 +16,7 @@ Integrated through #1047; see the [delivery table and ordered TODO](../../RESUME
 | Dirty generated-speech silence | Integrated in #1040; final app/audio acceptance pending |
 | Dirty PDF parser/probe | Text-layer Rust ingestion, source dispatch, outline/page labels and MP3 conversion integrated in current source; focused macOS PDFKit/Faber/Luciana acceptance passed. Private UI probe remains historical; Mac cover-preview inversion is a separate follow-up |
 | `5a48f78370`: protected-pauses | Weights/license retained; no connected compaction implementation to port |
-| Startup timing proposal | Reviewed, unapplied; opt-in setup spans are not first-frame or performance evidence |
+| Startup timing proposal | Implemented off by default; native flag/window/decode acceptance; inclusive scopes are not first-frame or speedup evidence |
 | Historical reports/backlogs | 84/84 Markdown hashes verified; original bytes retained, no promotion to current acceptance |
 
 File-level details remain local in `resumed-inventory.json` and `resume-triage.md`

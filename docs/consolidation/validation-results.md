@@ -207,3 +207,25 @@ This focused PDF result does not establish those other acceptance conditions.
 Evidence: `.reports/mac-player-accessibility-20261102/`, including the original
 `red.xcresult`, `acceptance.xcresult`, the repeated `integrated.xcresult` on the
 #1060 base and source/product identity.
+
+## 2026-11-02 — Optional setup timing
+
+- `-measureStartup` enables structured monotonic setup scopes; absent/near-match
+  arguments do not enable recording. Disabled recording reads no clock and emits
+  nothing. Each invocation has trace/span identity, inclusive duration and outcome.
+- Native checks cover units, nested intervals, concurrent identity, return/error/
+  cancellation preservation, structured output and the real isolated library load.
+- Default process: **16 native cases pass, one opt-in GUI case intentionally skips**;
+  the complete captured process output contains zero `[StartupTiming]` records.
+- Enabled process: **17 native cases pass, zero failures/skips**. The shipping Mac
+  window setup seam is exercised visibly/frontmost with isolated library/defaults.
+  Three real setup records include library decode/apply and window setup; parsed
+  JSON confirms interval arithmetic, units and unique identity.
+- A retained source-text window-attachment check no longer described the extracted
+  setup seam. It is replaced by actual native root/controller/window ownership
+  assertions. This does not treat source parsing as runtime acceptance.
+
+Evidence: `.reports/startup-timing-20261102/`, including `default-final.xcresult`,
+`enabled.xcresult` and `trace-validation.json`. These observations do not measure
+cold launch, first rendered frame, asynchronous completion or a startup speedup.
+The iPhone/combined-app journey remains separate; Simulator was not exercised.
