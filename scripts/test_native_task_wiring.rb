@@ -110,6 +110,12 @@ class NativeTaskWiringTest < Minitest::Test
       esac
     SH
     shim("pgrep", 'exit 1')
+    # Task fixtures own their capacity as well as compiler/tool shims.
+    # The low-capacity case still exercises this same production guard.
+    shim("df", <<~'SH')
+      printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+      printf 'fixture 41943040 0 %s 0%% /\n' "${FIXTURE_FREE_KIB:-31457280}"
+    SH
     shim("python3", 'exit 0')
     shim("cargo", <<~'SH')
       "$FIXTURE_RUBY" -e 'f=File.open(ARGV[0], "a+"); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 97 : 0)' "$FIXTURE_LOCK"
@@ -138,6 +144,7 @@ class NativeTaskWiringTest < Minitest::Test
       "APPLE_DERIVED_DATA_PATH" => File.join(@dir, "ios/EpubToMp3/.build"),
       "PATH" => "#{@bin}:#{ENV.fetch('PATH')}", "MISE_PROJECT_ROOT" => @dir, "CARGO_TARGET_DIR" => @target_dir,
       "FIXTURE_RUBY" => RbConfig.ruby, "FIXTURE_EVENTS" => @events,
+      "FIXTURE_FREE_KIB" => nil,
       "FIXTURE_LOCK" => File.join(@dir, "lease"), "TMPDIR" => @dir,
       "IOS_SIMULATOR_UDID" => "00000000-0000-0000-0000-000000000001",
       "IOS_DEST" => "id=00000000-0000-0000-0000-000000000001",
@@ -408,6 +415,32 @@ class NativeTaskWiringTest < Minitest::Test
     else
       assert_empty selected, "Non-Linux work must not activate the Android SDK"
     end
+  end
+
+  def test_task_fixture_capacity_ignores_parent_disk_capacity
+    skip "Mac storage policy only" unless RUBY_PLATFORM.include?("darwin")
+    ambient = File.join(@dir, "ambient")
+    FileUtils.mkdir_p(ambient)
+    ambient_df = File.join(ambient, "df")
+    File.write(ambient_df, <<~'SH')
+      #!/bin/bash
+      printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+      printf 'fixture 41943040 0 1 0%% /\n'
+    SH
+    File.chmod(0o755, ambient_df)
+    _, error, status = run_task("rust:health", "PATH" => "#{@bin}:#{ambient}:#{ENV.fetch('PATH')}")
+    assert status.success?, error
+    assert events.any? { |event| event.start_with?("cargo ") }
+    assert_unlocked
+  end
+
+  def test_low_fixture_capacity_refuses_before_compiler_launch
+    skip "Mac storage policy only" unless RUBY_PLATFORM.include?("darwin")
+    _, error, status = run_task("rust:health", "FIXTURE_FREE_KIB" => "1")
+    assert_equal 75, status.exitstatus, error
+    assert_match(/Free disk below/, error)
+    assert_empty events
+    assert_unlocked
   end
 
 end
