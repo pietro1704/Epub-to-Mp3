@@ -1,5 +1,10 @@
 # Consolidation validation results
 
+The latest reconciliation is [2026-11-02 delivery verification](#2026-11-02--delivery-verification).
+Earlier dated blocks preserve the state observed then; resolved cache, lease,
+worktree and PR blockers are historical. Current implementation/acceptance status
+is in the [ordered TODO](../../RESUME_CONSOLIDATION.md).
+
 ## 2026-11-01 — inventory and storage preflight
 
 - PASS: read branch/status/diffs for the eight EPUB worktrees; fetched origin and checked patch equivalence for narration and interrupted export recovery.
@@ -74,3 +79,52 @@ authorized after the user confirmed no matching verified prebuilt was available.
 
 The unrelated nested mise edit is excluded from this delivery. No broader VAD
 or noise-removal behavior is claimed.
+
+## 2026-11-02 — delivery verification
+
+The [delivery table](../../RESUME_CONSOLIDATION.md#integrated-deliveries) records
+PRs and exact merge commits. #1040, repaired #1037 and #1041–#1047 all merged
+after their required exact-head CI gate passed. Local master was fast-forwarded
+after each integration; unrelated nested mise bytes remained unchanged.
+
+| Responsibility | Executed local evidence | Result |
+| --- | --- | --- |
+| Generated-speech silence (#1040) | `resume-silence-red.log`, `resume-core-green.log` | Actual duration regression fails before fix; 318 core tests pass, 1 existing manual benchmark ignored |
+| Callback boundary (#1037) | `callback-foundation-{red,green,preflight}.log` | Missing-source RED; Foundation XCTest: 208 executions, 15 existing opt-in skips, zero failures, including all five boundary cases |
+| Linux-only SDK (#1041) | Actual mise resolution plus task-wiring suite | RED before fix; 29 tests / 247 assertions pass; no Android compilation on Mac |
+| PID fixture (#1042) | Controlled empty-inode RED and supervisor suite | 15 tests / 86 assertions pass |
+| TypeScript metadata (#1043) | Real compiler tests plus guarded Web validation | Distinct identities, same-size edits, error recovery and truncated metadata verified; lint/build pass |
+| Capacity fixture (#1044) | Two RED cases, wiring and storage suites | Focused 2/9, wiring 31/256 and storage 21/116 pass; production low-space refusal retained |
+| Web narration (#1045) | `web-native-reviewed-validation/`, `web-native-late-start-red.log`, `web-native-reviewed-preflight.log` | Original UI RED and two late-start RED cases; 287 pass, 2 existing skips; lint/build/preflight pass |
+| Web queue (#1046) | `web-queue-{red-verified,green,preflight}.log`, `web-queue-validation/` | 8 expected RED failures; focused 11 pass; complete suite 298 pass, 2 existing skips; lint/build/preflight pass |
+| Web product copy (#1047) | `web-copy-{lint,tests,preflight}.log` | Existing Hero/i18n tests: 50 pass; lint/whitespace/preflight pass |
+
+Paths in this table are relative to `.reports/consolidation-20261101/`; raw logs
+remain local. Each row reports its owning runtime/source stage, not a single
+combined app acceptance run. Web builds bundled the versioned WASM artifact;
+Rust/WASM was not rebuilt locally for the Web presentation changes.
+
+An initial Web preflight hit the supervisor cancellation fixture timeout while
+checks overlapped. The isolated fixture passed (1 test / 3 assertions), then final
+preflights were run sequentially and passed. A scoped-index stale baseline was
+rejected during product-copy delivery; the index had no staged content, scoped
+bytes were unchanged, and a fresh capture/stage/verify passed before commit.
+No guard or merge requirement was weakened.
+
+Read-only current native package audit: five retained Intel receipts inspected,
+zero current source/build identity matches. The five latest inspected trusted
+producer runs predate silence integration. Evidence:
+`native-final-package-audit.json`. No old binary was installed or accepted.
+
+Pending acceptance/implementation:
+
+- Final FFI/app rebuild, visible macOS/iPhone and audible silence/native-Web
+  journeys, deferred by the user. No startup improvement is claimed.
+- Required SE1/iOS 15.5 acceptance remains blocked by Simulator quarantine.
+- PDF narration parser integration, chapter/page-label contract and regressions.
+- Flutter playback/reader integration and actual Linux runtime checks on Arch.
+- Isolated native player accessibility and optional startup instrumentation.
+- Arch pull/cleanup and any separately authorized runtime/device round.
+
+The 84 historical Markdown hashes still establish retained-file integrity only.
+Models, books, original source/evidence and useful retained packages were preserved.

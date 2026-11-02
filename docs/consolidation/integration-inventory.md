@@ -1,6 +1,31 @@
-# Integration inventory — 2026-11-01
+# Integration inventory
 
-Baseline: `525a9bd96a2bbc9a23304d3cbed7884b09c9e07b` (`origin/master`).
+## Current reconciliation — 2026-11-02
+
+Integrated through #1047; see the [delivery table and ordered TODO](../../RESUME_CONSOLIDATION.md).
+
+| Retained responsibility | Current disposition |
+| --- | --- |
+| Main WIP `7cb696d9d0`: Web | Native speech state/voice, queue phases and obsolete product copy integrated in #1045–#1047 |
+| Main WIP: Flutter playback/reader | Pending independent Arch integration and runtime tests |
+| Main WIP: Mac player accessibility | Missing child inclusion/test preserved; pending native integration and isolated acceptance |
+| `ff91fa703b`: callback diagnostics | Integrated by repaired existing PR #1037, including Foundation package wiring |
+| `6318856d3a`: model/catalog/download | Already integrated via #969 and later improvements; old UI superseded |
+| `6318856d3a`: detached-descendant process cleanup | Separate unvalidated safety proposal; not adopted |
+| `3911c6ec26`: packaging/cache | #1038 plus justified #1041–#1044 integrated; Release/LTO unmeasured, XcodeGen cache rejected, old combined wrapper unapplied |
+| Dirty generated-speech silence | Integrated in #1040; final app/audio acceptance pending |
+| Dirty PDF parser/probe | Disconnected parser with missing page-label module/new dependency; private UI probe is historical only |
+| `5a48f78370`: protected-pauses | Weights/license retained; no connected compaction implementation to port |
+| Startup timing proposal | Reviewed, unapplied; opt-in setup spans are not first-frame or performance evidence |
+| Historical reports/backlogs | 84/84 Markdown hashes verified; original bytes retained, no promotion to current acceptance |
+
+File-level details remain local in `resumed-inventory.json` and `resume-triage.md`
+under `.reports/consolidation-20261101/`. No old snapshot was applied wholesale.
+No local Flutter/Arch runtime, final native app or audible acceptance was performed.
+
+## Historical pre-cleanup inventory — 2026-11-01
+
+Baseline: `525a9bd96a2bbc9a23304d3cbed7884b09c9e07b` (master at that snapshot).
 
 | Source | Verified inventory | Integration status |
 | --- | --- | --- |
@@ -20,8 +45,9 @@ Patch equivalence was checked with `git cherry origin/master <branch>`, after fe
 All eight linked worktrees and five historical temporary/preservation directories
 were removed after source snapshots, dirty patches and non-cache files were
 retained and checked. The audit baseline created during the other session is
-included. No retained branch was deleted. Historical integration statuses above
-remain pending where stated; removing a worktree does not integrate its code.
+included. No retained branch was deleted during that cleanup. The pre-cleanup
+integration statuses above are historical; current dispositions are listed first.
+Removing a worktree does not integrate its code.
 
 The approved ONNX/eSpeak incremental packaging and Xcode environment-log changes
 were ported to the canonical working tree and delivered separately in PR #1038,

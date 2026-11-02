@@ -2,8 +2,9 @@
 
 The canonical working directory is `epubtomp3`. It is now the only EPUB project
 directory under `~/Developer`, and the only registered worktree. Filesystem
-consolidation is complete; functional integration of the retained WIP snapshots
-and final native acceptance remain pending.
+consolidation is complete. The shared-core silence, callback, justified build/cache
+and Web changes are integrated through #1047. PDF narration, Flutter, optional
+native proposals and final visible/audible app acceptance remain pending.
 
 - [Ordered execution and resume plan](../../RESUME_CONSOLIDATION.md)
 - [Integration inventory](integration-inventory.md)
