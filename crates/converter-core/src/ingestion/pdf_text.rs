@@ -4,10 +4,16 @@ use crate::epub::{Book, Chapter};
 use pdf_extract::{decode_text_string, Document, PlainTextOutput};
 use std::path::Path;
 
+pub(crate) const MAX_SOURCE_BYTES: usize = 256 * 1024 * 1024;
+
 pub struct PdfTextIngestion;
 impl PdfIngestionAdapter for PdfTextIngestion {
     fn ingest_pdf(&self, path: &Path) -> Result<IngestedBook, IngestionError> {
-        let source = std::fs::read(path).map_err(extraction_error)?;
+        let file = std::fs::File::open(path).map_err(extraction_error)?;
+        let source = crate::book_input::read_pdf_source(file).map_err(|error| match error {
+            crate::book_input::BookInputError::Pdf(error) => error,
+            other => extraction_error(other),
+        })?;
         let book = Self::from_bytes(path, &source)?;
         Ok(IngestedBook {
             title: book.title,
@@ -53,7 +59,7 @@ impl PdfTextIngestion {
         if cancelled() {
             return Err(IngestionError::Cancelled);
         }
-        if source.len() > 256 * 1024 * 1024 {
+        if source.len() > MAX_SOURCE_BYTES {
             return Err(invalid("PDF exceeds the 256 MiB input limit"));
         }
         let mut doc = Document::load_mem(source).map_err(extraction_error)?;

@@ -8,6 +8,8 @@ use std::path::Path;
 #[derive(Debug, thiserror::Error)]
 pub enum BookInputError {
     #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
     Epub(#[from] epub::EpubError),
     #[error(transparent)]
     Pdf(#[from] IngestionError),
@@ -64,4 +66,54 @@ pub fn verify_book_source(path: &Path, book: &Book) -> crate::structure::Structu
         }
     }
     result
+}
+
+/// Metadata inspection preserves seekable EPUB reads instead of buffering assets.
+pub fn parse_book_reader<R: std::io::Read + std::io::Seek>(
+    path: &Path,
+    reader: R,
+) -> Result<Book, BookInputError> {
+    if is_pdf(path) {
+        let source = read_pdf_source(reader)?;
+        Ok(PdfTextIngestion::from_bytes(path, &source)?)
+    } else {
+        Ok(epub::parse_epub(reader)?)
+    }
+}
+
+/// Conversion hashes the immutable source bytes; PDF reads remain bounded.
+pub fn read_book_source(path: &Path) -> Result<Vec<u8>, BookInputError> {
+    if is_pdf(path) {
+        read_pdf_source(std::fs::File::open(path)?)
+    } else {
+        Ok(std::fs::read(path)?)
+    }
+}
+
+fn is_pdf(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+}
+
+pub(crate) fn read_pdf_source<R: std::io::Read + std::io::Seek>(
+    mut reader: R,
+) -> Result<Vec<u8>, BookInputError> {
+    use std::io::{Read, SeekFrom};
+    let limit = crate::ingestion::pdf_text::MAX_SOURCE_BYTES;
+    let length = reader.seek(SeekFrom::End(0))?;
+    let too_large = || {
+        BookInputError::Pdf(IngestionError::InvalidInput {
+            message: "PDF exceeds the 256 MiB input limit".into(),
+        })
+    };
+    if length > limit as u64 {
+        return Err(too_large());
+    }
+    reader.seek(SeekFrom::Start(0))?;
+    let mut source = Vec::new();
+    reader.take(limit as u64 + 1).read_to_end(&mut source)?;
+    if source.len() > limit {
+        return Err(too_large());
+    }
+    Ok(source)
 }

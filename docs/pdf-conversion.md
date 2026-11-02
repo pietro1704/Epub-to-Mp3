@@ -8,7 +8,8 @@ and provider policy as EPUB. Python is not an Apple sidecar.
 
 - `EmbeddedConversionSession::open` and `ConversionWorker` share format dispatch.
   A case-insensitive `.pdf` extension selects `pdf-extract 0.12.1`; EPUB retains
-  its existing parser. `pdf-extract` and its `lopdf 0.42` backend are MIT licensed.
+  its existing seekable metadata parser without buffering the full archive.
+  `pdf-extract` and its `lopdf 0.42` backend are MIT licensed.
 - Metadata includes title, author and catalog language when present. Title falls
   back to the file stem. Extraction does not modify the source document.
 - Distinct local outline destination pages define chapter boundaries. Bookmarks
@@ -43,8 +44,10 @@ This parser cannot recover missing OCR text or repair invalid source indexes.
 
 The parser limits source bytes to 256 MiB, page count to 20,000, extracted text to
 32 MiB and outline depth to 32. Tree traversal and page-label expansion are bounded.
-These checks do not promise a bound on a third-party parser's peak memory or the
-initial synchronous PDF object loading duration. Cancellation is checked before
+File-backed PDF input is size-checked before allocation and read with a byte
+limit, including if the source grows during reading. These checks do not promise
+a bound on a third-party parser's peak memory or the initial synchronous PDF
+object loading duration. Cancellation is checked before
 extraction and between pages.
 
 ## Regression verification
@@ -53,7 +56,9 @@ extraction and between pages.
 constructed independently of the extraction dependency. `pdf_conversion.rs`
 exercises real WAV-to-MP3 encoding, selected sections, blank-page source ordinals,
 source replacement/cache invalidation and cancellation with a deterministic speech
-adapter. FFI regressions cover metadata/error recovery and real platform callbacks.
+adapter. `book_input_streaming.rs` protects seekable EPUB metadata reads,
+pre-allocation PDF size rejection and legacy worker error identity. FFI regressions
+cover metadata/error recovery and real platform callbacks.
 
 `PdfEmbeddedConversionTests` verifies a PDFKit-generated Unicode PDF through the
 bundled Rust artifact, same-path replacement and meaningful corrupt-PDF errors.

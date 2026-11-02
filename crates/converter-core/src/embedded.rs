@@ -87,17 +87,16 @@ impl EmbeddedConversionSession {
         config: AppConfig,
     ) -> Result<Self, EmbeddedConversionError> {
         let input = input.as_ref().to_path_buf();
-        let source =
-            std::fs::read(&input).map_err(|source| EmbeddedConversionError::ReadInput {
+        let file =
+            std::fs::File::open(&input).map_err(|source| EmbeddedConversionError::ReadInput {
                 path: input.clone(),
                 source,
             })?;
-        let book = crate::book_input::parse_book_source(&input, &source).map_err(|source| {
-            EmbeddedConversionError::ParseInput {
+        let book = crate::book_input::parse_book_reader(&input, std::io::BufReader::new(file))
+            .map_err(|source| EmbeddedConversionError::ParseInput {
                 path: input.clone(),
                 source,
-            }
-        })?;
+            })?;
         let structure = crate::book_input::verify_book_source(&input, &book);
         Ok(Self {
             input,

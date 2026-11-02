@@ -142,17 +142,21 @@ prebuilt was available, authorizing local Rust/PDF dependency compilation.
   and non-monotonic outline order is silently reordered. Both cases fail before
   source-structure verification is corrected.
 - GREEN: guarded complete core/FFI regression: **318 core tests pass, 1 existing
-  manual benchmark ignored; 14 PDF integration tests pass; 52 FFI tests pass**.
+  manual benchmark ignored; 17 input/PDF integration tests pass; 52 FFI tests pass**.
   Selection, valid MP3, cancellation, source/cache replacement, metadata, Unicode,
   page labels, named destinations, passwords, blank pages, malformed input and
   contained parser panic behavior are covered.
+- RED/GREEN: two input regressions reject upfront whole-archive buffering and
+  oversized-PDF reads before allocation. The corrected metadata path retains
+  seekable EPUB parsing. A worker regression preserves the legacy EPUB error
+  identity expected by existing server resume consumers. All 26 server tests pass.
 - PASS: source-built Piper-enabled Intel FFI and macOS Debug app under the existing
   one-job/storage guard. The full runtime/dependency build took 17m34s; the final
-  incremental FFI build took 1m56s. These are build times, not startup or narration
-  performance claims. Existing package versions/checksums were preserved; 21
+  incremental corrected-source FFI build took 2m15s. These are build times,
+  not startup or narration performance claims. Existing package versions/checksums were preserved; 21
   dependency packages were added. Original Faber model/config hashes match.
-- PASS: **9 focused native XCTest cases, zero failures/skips**, including a
-  PDFKit-generated Unicode document through the bundled Rust library, same-path
+- PASS: **10 final native XCTest cases, zero failures/skips**, including the
+  existing EPUB/Faber regression and a PDFKit-generated Unicode document through the bundled Rust library, same-path
   replacement, malformed PDF, visible PDF reader/viewport, real offline Faber PDF
   conversion and the actual macOS Convert button with installed system speech.
 - PASS: the existing EPUB/Faber streaming/playback regression also passes after
@@ -167,10 +171,13 @@ prebuilt was available, authorizing local Rust/PDF dependency compilation.
 
 Evidence root: `.reports/pdf-narration-20261102/`. Relevant artifacts are
 `embedded-red.log`, `parser-hardening-red.log`, `structure-red.log`,
-`core-ffi-reviewed.log`, `host-ffi-final-build.log`, `mac-app-build.log`,
+`core-ffi-streaming-final.log`, `input-streaming-exact-red.log`,
+`input-streaming-restoration.json`, `server-compatibility.log`,
+`host-ffi-streaming-build.log`, `mac-app-build.log`,
 `native-pdf-foreground-validation/`, `native-pdf-foreground.xcresult`,
-`native-attachments/`, `system-output-audio-analysis.log`, `dependency-audit.json`
-and `native-test-build-identity.json`.
+`native-attachments/`, `system-output-audio-analysis.log`, `dependency-audit.json`,
+`native-final-validation/`, `native-final.xcresult` and
+`native-final-build-identity.json`. Earlier evidence is retained separately.
 
 An initial XCTest build required a provisioning profile. Local test invocation
 used ad-hoc signing with cleared test-only entitlements/profile settings; shipping

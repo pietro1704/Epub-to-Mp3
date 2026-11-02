@@ -66,19 +66,14 @@ impl ConversionWorker {
         }
         // Read the immutable source once: parsing the ZIP and hashing it from
         // separate file handles doubled disk I/O for every conversion.
-        let source = fs::read(&request.input)?;
+        let source = crate::book_input::read_book_source(&request.input)?;
         let book_key = cache::sha256_bytes(&source);
         *self.source_identity.lock().expect("source identity lock") = Some(book_key.clone());
         let book =
             crate::book_input::parse_book_source_with_cancel(&request.input, &source, &|| {
                 self.cancel.is_cancelled()
             })
-            .map_err(|error| match error {
-                crate::book_input::BookInputError::Pdf(
-                    crate::ingestion::IngestionError::Cancelled,
-                ) => WorkerError::Cancelled,
-                other => WorkerError::BookInput(other),
-            })?;
+            .map_err(WorkerError::from)?;
         let source_chapters_total = book.chapters.len();
         let cache_dir = self.config.paths.cache_dir.join(&book_key);
         let output_dir = self.config.paths.output_dir.join(&request.job_id);
