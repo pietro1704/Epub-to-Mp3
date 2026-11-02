@@ -88,7 +88,8 @@ class MacBuildBudgetTest < Minitest::Test
       snapshot = MacBuildBudget.metrics
       assert_equal [cache], snapshot.fetch(:paths)
       assert_operator snapshot.fetch(:cache_bytes), :>=, 4096
-      assert_nil MacBuildBudget.evaluate(@limits, **snapshot)
+      # Isolate vanished compiler files from the host's current free capacity.
+      assert_nil MacBuildBudget.evaluate(@limits, **snapshot.merge(free_bytes: 30 * 1024**3))
     end
   end
 
