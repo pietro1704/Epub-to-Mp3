@@ -5,7 +5,7 @@ import '../models/job_snapshot.dart';
 import 'audio_player_interface.dart';
 
 /// Test double — pure Dart, no native plugins.
-class FakeAudioPlayerService implements AudioPlayerInterface {
+class FakeAudioPlayerService extends AudioPlayerInterface {
   @override
   String? activeSentenceId;
   @override

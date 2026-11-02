@@ -9,6 +9,7 @@ import 'latency_observation.dart';
 import 'growing_chapter_audio_source.dart';
 
 import 'audio_player_interface.dart';
+import 'audio_playback_state.dart';
 
 export 'audio_player_interface.dart';
 export 'fake_audio_player_service.dart';
@@ -22,35 +23,33 @@ class _GrowingChapterEntry {
       uri == identity || finalPath != null && uri == Uri.file(finalPath!);
 }
 
-class AudioPlayerService
-    implements AudioPlayerInterface, StreamingChapterPlayer {
+class AudioPlayerService extends AudioPlayerInterface
+    implements StreamingChapterPlayer {
   AudioPlayerService({String? backendBase, AudioPlayer? player})
     : _baseUrl = backendBase,
       _player = player ?? AudioPlayer() {
-    _player.playerStateStream.listen(_logPlayerState);
-    _player.playbackEventStream.listen((event) {
-      // ignore: avoid_print
-      print(
-        'AudioPlayer event processing=${event.processingState.name} '
-        'index=${event.currentIndex} buffered=${event.bufferedPosition}',
-      );
-    });
+    _playbackState = AudioPlaybackState(_player);
   }
 
   final AudioPlayer _player;
+  late final AudioPlaybackState _playbackState;
+  @override
+  PlaybackPhase get phase => _playbackState.phase;
+  @override
+  Stream<PlaybackPhase> get phases => _playbackState.changes;
   final String? _baseUrl;
   List<ChapterProgress> _chapters = const [];
 
   @override
   Stream<Duration> get position => _player.positionStream;
   @override
-  Stream<bool> get playing => _player.playingStream;
+  Stream<bool> get playing =>
+      phases.map((phase) => phase == PlaybackPhase.playing);
   @override
-  bool get isPlaying => _player.playing;
+  bool get isPlaying => phase == PlaybackPhase.playing;
   @override
   bool get isLoading =>
-      _player.processingState == ProcessingState.loading ||
-      _player.processingState == ProcessingState.buffering;
+      phase == PlaybackPhase.loading || phase == PlaybackPhase.buffering;
   @override
   Stream<int?> get currentIndex => _player.currentIndexStream;
   @override
@@ -93,9 +92,8 @@ class AudioPlayerService
   /// Maps player index → _chapters index (skipped chapters have no audio).
   List<int> _playableMap = const [];
 
-  /// Persistent source for segment-mode appending.
-  ConcatenatingAudioSource? _segmentSource;
-  ConcatenatingAudioSource? _chapterSource;
+  Future<void> _segmentUpdates = Future<void>.value();
+  int _segmentGeneration = 0;
   List<Uri> _chapterQueueURLs = const [];
   int _seekGeneration = 0;
   final Map<int, _GrowingChapterEntry> _growingChapters = {};
@@ -119,6 +117,7 @@ class AudioPlayerService
 
   @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
+    _playbackState.beginRequest(_player.playerState);
     // ignore: avoid_print
     print('AudioPlayer setQueue chapters=${chapters.length} base=$_baseUrl');
     final base = _baseUrl ?? '';
@@ -151,7 +150,8 @@ class AudioPlayerService
       }
     }
     final keepsExistingQueue =
-        _chapterSource != null &&
+        !_isSegmentMode &&
+        _chapterQueueURLs.isNotEmpty &&
         urls.length >= _chapterQueueURLs.length &&
         _chapterQueueURLs.asMap().entries.every(
           (entry) => urls[entry.key] == entry.value,
@@ -161,6 +161,7 @@ class AudioPlayerService
     // ignore: avoid_print
     print('AudioPlayer resolvedSources=${urls.length} urls=$urls');
     if (children.isEmpty) {
+      _playbackState.fail();
       throw StateError('No playable audio sources were produced by Rust');
     }
 
@@ -170,17 +171,22 @@ class AudioPlayerService
         index < children.length;
         index++
       ) {
-        await _chapterSource!.add(children[index]);
+        await _player.addAudioSource(children[index]);
       }
       _chapterQueueURLs = urls;
       return;
     }
 
     _isSegmentMode = false;
-    _segmentSource = null;
-    _chapterSource = ConcatenatingAudioSource(children: children);
+    _segmentGeneration++;
+    await _segmentUpdates;
     _chapterQueueURLs = urls;
-    await _player.setAudioSource(_chapterSource!, preload: false);
+    try {
+      await _player.setAudioSources(children, preload: false);
+    } catch (_) {
+      _playbackState.fail();
+      rethrow;
+    }
     _recordQueuedAudio();
   }
 
@@ -190,13 +196,13 @@ class AudioPlayerService
 
   @override
   void enqueueSegment(Uri uri, {String? sentenceId, int chapterIndex = 0}) {
-    if (chapterIndex != _segmentChapterIndex) {
+    final replacesChapter = chapterIndex != _segmentChapterIndex;
+    if (replacesChapter) {
+      _segmentGeneration++;
       _segmentChapterIndex = chapterIndex;
       _segmentSentenceIds.clear();
-      _segmentSource = ConcatenatingAudioSource(children: []);
-      _chapterSource = null;
+
       _chapterQueueURLs = const [];
-      unawaited(_player.setAudioSource(_segmentSource!, preload: false));
     }
     if (sentenceId != null) {
       _segmentSentenceIds.add(sentenceId);
@@ -206,7 +212,21 @@ class AudioPlayerService
       }
     }
 
-    _segmentSource?.add(AudioSource.uri(uri));
+    final generation = _segmentGeneration;
+    _segmentUpdates = _segmentUpdates
+        .then((_) async {
+          if (generation != _segmentGeneration) return;
+          if (replacesChapter) {
+            await _player.setAudioSources([
+              AudioSource.uri(uri),
+            ], preload: false);
+          } else {
+            await _player.addAudioSource(AudioSource.uri(uri));
+          }
+        })
+        .catchError((Object error) {
+          if (generation == _segmentGeneration) _playbackState.fail();
+        });
     _recordQueuedAudio();
 
     if (!_isSegmentMode) {
@@ -240,7 +260,8 @@ class AudioPlayerService
   }
 
   @override
-  Future<void> play() {
+  Future<void> play() async {
+    await _segmentUpdates;
     // ignore: avoid_print
     print(
       'AudioPlayer play requested sourceCount=${_chapterQueueURLs.length} segment=$_isSegmentMode',
@@ -248,7 +269,17 @@ class AudioPlayerService
     if (!hasQueuedAudio) {
       // ignore: avoid_print
       print('AudioPlayer play ignored: no queued audio');
-      return Future<void>.value();
+      return;
+    }
+    final restart = phase == PlaybackPhase.completed;
+    if (restart || phase == PlaybackPhase.failed) {
+      if (restart) {
+        // Reopen the decoder: some desktop backends retain completed after seek.
+        await _player.stop();
+        await _player.seek(Duration.zero);
+      } else {
+        await _player.pause();
+      }
     }
     _playbackJourneyId ??= latencyObservations.begin(
       LatencyJourneyKind.progressivePlayback,
@@ -257,7 +288,13 @@ class AudioPlayerService
     _recordQueuedAudio();
     _listenForPlayableAudio();
     _listenForAudibleOutput();
-    return _player.play();
+    _playbackState.beginRequest(_player.playerState);
+    try {
+      await _player.play();
+    } catch (_) {
+      _playbackState.fail();
+      rethrow;
+    }
   }
 
   @override
@@ -304,16 +341,6 @@ class AudioPlayerService
     if (id != null) {
       latencyObservations.record(id, LatencyTransition.audioQueued);
     }
-  }
-
-  void _logPlayerState(PlayerState state) {
-    // Device diagnostics are intentionally limited to playback metadata.
-    // ignore: avoid_print
-    print(
-      'AudioPlayer state=${state.processingState.name} '
-      'playing=${state.playing} index=${_player.currentIndex} '
-      'duration=${_player.duration}',
-    );
   }
 
   /// `ready` means the platform player can begin rendering the queued media.
@@ -379,8 +406,8 @@ class AudioPlayerService
 
   @override
   void togglePlayPause() {
-    if (_player.playing) {
-      _player.pause();
+    if (isPlaying || isLoading) {
+      unawaited(pause());
     } else {
       unawaited(play());
     }
@@ -416,7 +443,7 @@ class AudioPlayerService
     _isSegmentMode = false;
     _segmentChapterIndex = -1;
     _segmentSentenceIds.clear();
-    _segmentSource = null;
+    _segmentGeneration++;
     _activeSentenceId = null;
     _sentenceController.add(null);
   }
@@ -424,6 +451,8 @@ class AudioPlayerService
   @override
   Future<void> dispose() async {
     _seekGeneration++;
+    _segmentGeneration++;
+    await _segmentUpdates;
     for (final entry in _growingChapters.values) {
       entry.source.fail(StateError('Audio player disposed'));
     }
@@ -434,6 +463,7 @@ class AudioPlayerService
     await _audibilitySub?.cancel();
     await _sentenceController.close();
     await _sleepController.close();
+    await _playbackState.dispose();
     await _player.dispose();
   }
 

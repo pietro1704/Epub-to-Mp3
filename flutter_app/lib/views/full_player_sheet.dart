@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/material.dart';
+import 'seek_interval_icon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';

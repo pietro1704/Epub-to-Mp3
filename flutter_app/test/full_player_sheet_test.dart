@@ -14,7 +14,7 @@ Future<SharedPreferences> _mockPrefs() async {
 
 Widget _wrap(
   SharedPreferences prefs,
-  AudioPlayerService player, {
+  AudioPlayerInterface player, {
   String? bookTitle,
   String? author,
   String? chapterLabel,
@@ -40,7 +40,7 @@ void main() {
   group('FullPlayerSheet', () {
     testWidgets('renders with placeholder when no cover art', (t) async {
       final prefs = await _mockPrefs();
-      final player = AudioPlayerService(backendBase: 'http://localhost:8000');
+      final player = FakeAudioPlayerService();
       await t.pumpWidget(
         _wrap(
           prefs,
@@ -54,7 +54,7 @@ void main() {
       expect(find.text('Test Author'), findsOneWidget);
       expect(find.text('Chapter 1'), findsOneWidget);
       expect(find.byIcon(Icons.headphones), findsOneWidget);
-      expect(find.byIcon(Icons.forward_10), findsOneWidget);
+      expect(find.byKey(const ValueKey('seek.forward.15')), findsOneWidget);
       expect(find.text('1.0x'), findsOneWidget);
       expect(find.text('Sleep'), findsOneWidget);
       player.dispose();
@@ -62,7 +62,7 @@ void main() {
 
     testWidgets('keeps book identity and close control visible', (t) async {
       final prefs = await _mockPrefs();
-      final player = AudioPlayerService(backendBase: 'http://localhost:8000');
+      final player = FakeAudioPlayerService();
       await t.pumpWidget(
         _wrap(prefs, player, bookTitle: 'Test Book', author: 'Test Author'),
       );
@@ -79,7 +79,7 @@ void main() {
 
     testWidgets('renders scrubber with time labels', (t) async {
       final prefs = await _mockPrefs();
-      final player = AudioPlayerService(backendBase: 'http://localhost:8000');
+      final player = FakeAudioPlayerService();
       await t.pumpWidget(_wrap(prefs, player));
       expect(find.text('0:00'), findsAtLeast(1));
       expect(find.byType(Slider), findsOneWidget);
@@ -88,7 +88,7 @@ void main() {
 
     testWidgets('shows play button when not playing', (t) async {
       final prefs = await _mockPrefs();
-      final player = AudioPlayerService(backendBase: 'http://localhost:8000');
+      final player = FakeAudioPlayerService();
       await t.pumpWidget(_wrap(prefs, player));
       expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
       player.dispose();
@@ -96,7 +96,7 @@ void main() {
 
     testWidgets('shows download button when chapters queued', (t) async {
       final prefs = await _mockPrefs();
-      final player = AudioPlayerService(backendBase: 'http://localhost:8000');
+      final player = FakeAudioPlayerService();
       await player.setQueue([
         const ChapterProgress(
           index: 0,
@@ -113,7 +113,7 @@ void main() {
 
     testWidgets('hides download button when no chapters', (t) async {
       final prefs = await _mockPrefs();
-      final player = AudioPlayerService(backendBase: 'http://localhost:8000');
+      final player = FakeAudioPlayerService();
       await t.pumpWidget(_wrap(prefs, player));
       expect(find.text('Save'), findsNothing);
       player.dispose();
