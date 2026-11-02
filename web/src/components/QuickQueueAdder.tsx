@@ -95,7 +95,11 @@ export default function QuickQueueAdder({
   };
 
   const phaseLabel =
-    phase === "success" ? t.queue.phaseSuccess : t.queue.phaseActive;
+    phase === "success"
+      ? t.queue.phaseSuccess
+      : phase === "polling" || phase === "submitting"
+        ? t.queue.phaseActive
+        : t.status.phases[phase];
 
   return (
     <div className="queue-adder">
