@@ -5,6 +5,25 @@ metadata, conversion and model capabilities. `RustConversionCoordinator` owns
 client orchestration; the shared Rust core owns conversion and artifacts.
 There is no HTTP/Python fallback. Dylibs and XCFrameworks are not checked in.
 
+## Hosted device-app validation archive
+
+When local Interface Builder compilation requires an unavailable iOS platform,
+dispatch `converter-ffi-ios-prebuilt.yml` with `build_app_only=true` on the
+reviewed source branch. This separate mode builds an unsigned Debug device archive
+on the hosted Xcode 16.4 toolchain. It does not use signing secrets, publish a
+release, upload to TestFlight, install models or launch any device/Simulator.
+Normal runtime production remains master-only and is skipped in this mode.
+
+The `ios-device-validation-app-v1` artifact contains a zipped `.xcarchive` and a
+receipt recording its SHA-256, exact checkout, source inputs, workflow run and
+toolchain. Packaging rejects source changes during the build and checks the
+device architecture/platform, minimum OS, embedded Piper ABI and phonemizer data.
+Before local signing, authenticate the producer run/head and recheck the receipt
+with `scripts/package_ios_validation_archive.rb verify ROOT PACKAGE` against that
+exact checkout. An archive is build evidence; signing, installation and actual
+iPhone playback/reader acceptance remain separate steps. Never install an
+unsigned bundle or describe this validation archive as a release.
+
 Build and verify physical-iOS artifacts through `converter-ffi:ios-device` and
 `converter-ffi:ios-device:verify`. Device runs use `docs/device-benchmark.md`;
 `apple:foundation:ffi:test` tests the real host Rust dylib with native XCTest.
