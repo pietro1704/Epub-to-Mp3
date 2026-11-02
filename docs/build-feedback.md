@@ -1,8 +1,9 @@
-# Incremental Apple packaging
+# Incremental build feedback
 
-The CLI development workflow retains the existing compiler settings and resource
-guards. Debug uses incremental Swift compilation, `-Onone` and one compiler job.
-Release optimization, toolchain routing and Simulator quarantine are unchanged.
+The Apple CLI development workflow retains the existing compiler settings and
+resource guards. Debug uses incremental Swift compilation, `-Onone` and one
+compiler job. Release optimization, toolchain routing and Simulator quarantine
+are unchanged.
 
 ## Avoiding repeated packaging work
 
@@ -41,3 +42,17 @@ The root `mise.toml` selects Android SDK `11.0` only on Linux. Mac project
 commands skip that tool request; existing SDK installations are retained.
 The executable task-wiring regression checks mise's actual tool selection on
 the current platform without installing tools.
+
+## Incremental TypeScript checks
+
+TypeScript keeps separate compiler metadata for the complete source check and
+the production build under `web/node_modules/.cache/typescript/`. Production
+builds keep their existing test-file exclusions. Dependency cleanup may remove
+this reproducible metadata; the compiler recreates it on the next check.
+
+`npm run test -- --maxWorkers=2 src/test/TypeScriptIncrementalCache.test.ts`
+from `web` exercises the installed compiler with copies of the actual project
+configurations. It verifies separate cache identities, reuse on unchanged input,
+same-length source edits, recovery from type errors and interrupted metadata
+publication. This establishes compiler-cache behavior; app startup remains a
+separate measurement.
