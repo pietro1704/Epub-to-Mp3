@@ -2,21 +2,21 @@
 
 ## Current reconciliation — 2026-11-02
 
-Integrated through #1047; see the [delivery table and ordered TODO](../../RESUME_CONSOLIDATION.md).
+Integrated through #1065; see the [delivery table and ordered TODO](../../RESUME_CONSOLIDATION.md).
 
 | Retained responsibility | Current disposition |
 | --- | --- |
 | Main WIP `7cb696d9d0`: Web | Native speech state/voice, queue phases and obsolete product copy integrated in #1045–#1047 |
-| Main WIP: Flutter playback/reader | Pending independent Arch integration and runtime tests |
+| Main WIP: Flutter playback/reader | Reconciled through #1064–#1065 on Arch; 559 compatibility cases plus a real-decoder lifecycle case, then 54 focused reader cases on the combined base. Whole-app/device acceptance remains separate |
 | Main WIP: Mac player accessibility | Integrated in PR #1061 with isolated AppKit regressions and visible Mac acceptance |
 | `ff91fa703b`: callback diagnostics | Integrated by repaired existing PR #1037, including Foundation package wiring |
 | `6318856d3a`: model/catalog/download | Already integrated via #969 and later improvements; old UI superseded |
 | `6318856d3a`: detached-descendant process cleanup | Separate unvalidated safety proposal; not adopted |
 | `3911c6ec26`: packaging/cache | #1038 plus justified #1041–#1044 integrated; Release/LTO unmeasured, XcodeGen cache rejected, old combined wrapper unapplied |
 | Dirty generated-speech silence | Integrated in #1040; final app/audio acceptance pending |
-| Dirty PDF parser/probe | Text-layer Rust ingestion, source dispatch, outline/page labels and MP3 conversion integrated in current source; focused macOS PDFKit/Faber/Luciana acceptance passed. Private UI probe remains historical; Mac cover-preview inversion is a separate follow-up |
+| Dirty PDF parser/probe | Text-layer Rust ingestion and conversion integrated in #1049; focused macOS PDFKit/Faber/Luciana acceptance passed. Cover orientation/lazy repair integrated in #1060. Private UI probe remains historical; iPhone acceptance is deferred |
 | `5a48f78370`: protected-pauses | Weights/license retained; no connected compaction implementation to port |
-| Startup timing proposal | Implemented off by default; native flag/window/decode acceptance; inclusive scopes are not first-frame or speedup evidence |
+| Startup timing proposal | Integrated in #1062, off by default; native flag/window/decode acceptance; inclusive scopes are not first-frame or speedup evidence |
 | Historical reports/backlogs | 84/84 Markdown hashes verified; original bytes retained, no promotion to current acceptance |
 
 File-level details remain local in `resumed-inventory.json` and `resume-triage.md`
@@ -24,6 +24,11 @@ under `.reports/consolidation-20261101/`. No old snapshot was applied wholesale.
 No local Flutter/Arch runtime or final combined-app acceptance was performed during
 the earlier resumption. The subsequent PDF task has focused native macOS and
 audible fixture acceptance, recorded in the validation results.
+The later Flutter continuation ran on an isolated Arch checkout. Its shared
+`master` and clean working checkout reached `425558e4`; the original dirty
+checkout remains intact. The scoped cache audit found no disposable compiler
+intermediates and removed no data. Git confirms both Flutter merge identities;
+CI status was not polled during this continuation.
 
 ## Historical pre-cleanup inventory — 2026-11-01
 

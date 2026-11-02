@@ -229,3 +229,42 @@ Evidence: `.reports/startup-timing-20261102/`, including `default-final.xcresult
 `enabled.xcresult` and `trace-validation.json`. These observations do not measure
 cold launch, first rendered frame, asynchronous completion or a startup speedup.
 The iPhone/combined-app journey remains separate; Simulator was not exercised.
+
+## 2026-11-02 — Flutter/Linux reconciliation and Arch audit
+
+- Playback: **559 unit/widget cases pass, 8 intentional opt-in/platform skips**;
+  static analysis and repository preflight pass. An independent opt-in Linux
+  libmpv test passes playback, pause/resume, completion, restart, invalid source
+  replacement and recovery with a new chapter identity. It uses a temporary
+  authored PCM tone, installs no model and makes no TTS-quality claim.
+- Disabling backend registration reproduces `MissingPluginException`. The
+  seek-only restart fails after completion; reopening the decoder fixes it.
+  Error handling uses the compatible `just_audio` 0.10 playlist/error API.
+  Segment cancellation/replacement and progressive-source identity are covered.
+- Reader: **54 focused cases pass**, repeated after rebasing onto integrated
+  playback. The original Material regression needed **24,208px** of vertical
+  scrolling for one estimated page and fails before the fix. Rendered-line
+  pagination fits every tested page through chapter end, including enlarged
+  typography, reflow, RTL and accented/emoji source ranges.
+- Final source cleanup removes the unused character-budget implementation and
+  its five implementation-specific tests. Its `ReaderPage` value moves into the
+  active viewport module; the same 54 reader cases and static analysis pass
+  after removal. No runtime behavior or source-coordinate contract changes.
+- Additional regressions fail before the impossible-viewport scrolling fallback
+  and before preserving its source anchor when returning to pagination. Final
+  chapter/anchor/fit checks pass after retiring a replaced chapter's anchor.
+- Git confirms #1064 as `6b807b4f482a4a55ee46c9538ef7f35940c3c74c` and #1065 as
+  `425558e4fc807213f2541f1d10ba1a8a34cb40f8`; both merge trees match their validated
+  feature trees. CI status was not monitored, per the continuation request.
+- The clean isolated Arch checkout and shared local master ref reached #1065.
+  The dirty original checkout's status SHA-256 stayed unchanged. The inspected
+  linked worktrees contained no superseded compiler caches: **0 paths/0 bytes
+  removed**. Existing sources, models, virtual environments and evidence remain.
+
+Evidence: `.reports/flutter-reconciliation-20261102/arch-evidence.tar.gz` on Mac;
+the corresponding Arch report contains `flutter-playback/`, `flutter-reader/`
+and `arch-cleanup/`. Only the two newly created, verified-integrated feature
+branches were removed. No Flutter build/test ran on Mac, no Android action ran,
+and no Simulator was launched. Windows and whole-app audible acceptance are
+not established by these focused Linux checks. Pietro deferred all physical
+iPhone testing; its PDF open/convert/listen journey remains pending.

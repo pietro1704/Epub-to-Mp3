@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/app_settings.dart';
 
 import '../models/ebook_fulltext.dart';
-import '../services/paginator.dart';
 import '../services/viewport_paginator.dart';
 
 import '../state/providers.dart';

@@ -1,7 +1,7 @@
 # EpubToMp3 consolidation: resume plan
 
-Status reconciled on 2026-11-02 through PR #1047, with PDF implementation and
-focused macOS acceptance recorded below. This user-requested plan and
+Status reconciled on 2026-11-02 through PR #1065, with scoped native and
+Flutter/Linux verification recorded below. This user-requested plan and
 its supporting documents are published technical status, not execution authority.
 Follow the current request, AGENTS.md and execution policy before continuing.
 
@@ -16,9 +16,10 @@ after the source/platform-matched prebuilt questions.
 
 Filesystem consolidation is complete. The reconciled Rust, host/build and Web
 changes below are integrated. Text-layer PDF narration is now implemented and has focused macOS acceptance.
-Flutter and final combined-app/iPhone acceptance remain pending; accessibility
-is integrated through PR #1061. Optional setup timing is implemented
-and disabled by default; this list is not fully done.
+Flutter playback and viewport pagination are integrated through #1064–#1065;
+accessibility is integrated through #1061. Optional setup timing is integrated
+through #1062 and disabled by default. Final combined-app/iPhone acceptance
+remains pending; Pietro deferred physical-iPhone testing until after implementation.
 
 - Preserve the unrelated `ios/EpubToMp3/mise.toml` Codex tool entry.
 - Keep models, books, complete packages, source snapshots and evidence intact.
@@ -28,8 +29,9 @@ and disabled by default; this list is not fully done.
   task subsequently authorized a local Piper-enabled FFI build; its current native
   source/product identity and focused test results are retained locally.
 - Simulator remains quarantined. Required SE1/iOS 15.5 acceptance is blocked.
-- Android/Flutter Linux belong on Arch. Arch remains deferred; its earlier intended
-  pull/cleanup scope does not authorize new runtime, device or audio work.
+- Android/Flutter Linux belong on Arch. Flutter/Linux reconciliation and a safe
+  checkout/cache audit were subsequently authorized and performed there.
+  Android remains paused; no model installation or Android device action occurred.
 - Source builds outside the already authorized runtime scope retain the project's
   prebuilt-availability question. Do not install models automatically.
 
@@ -50,6 +52,18 @@ assert comprehensive post-merge CI or final visible/audible app acceptance.
 | [#1045](https://github.com/pietro1704/Epub-to-Mp3/pull/1045) | Actual native-speech state/voice in the Web player, owner isolation and localized failure handling | `1ff2a8dc3dc84361253b5b9c5064c9e2a0b56b3a` |
 | [#1046](https://github.com/pietro1704/Epub-to-Mp3/pull/1046) | Correct terminal queue phase labels and replacement-book regressions | `bfcedd85977712efcc435a69bac9700b180f2c19` |
 | [#1047](https://github.com/pietro1704/Epub-to-Mp3/pull/1047) | Remove obsolete Python/Edge product copy in English and Portuguese | `cbcb6cbbcbcd4bfdd733ef172095232b7801e62e` |
+
+Later source/merge identities were verified through Git. CI was not monitored
+during the Flutter continuation, as requested; no new CI-status claim is made.
+
+| PR | Change | Merge commit |
+| --- | --- | --- |
+| [#1060](https://github.com/pietro1704/Epub-to-Mp3/pull/1060) | Upright PDF covers and lazy legacy-cover repair | `82701d8de7ee22e1b32de1c9bf15d28c042048fd` |
+| [#1061](https://github.com/pietro1704/Epub-to-Mp3/pull/1061) | Persistent Mac player accessibility | `e56f1f3882f4990842d5203f9ae348cad73c6aad` |
+| [#1062](https://github.com/pietro1704/Epub-to-Mp3/pull/1062) | Optional synchronous startup diagnostics | `9c78f210ba679ca56393328ecbf33126416e9a3b` |
+| [#1063](https://github.com/pietro1704/Epub-to-Mp3/pull/1063) | Hosted unsigned iPhone validation archive | `c8b73325d2c377dc8eafcbf3e0b1a228146c7086` |
+| [#1064](https://github.com/pietro1704/Epub-to-Mp3/pull/1064) | Desktop decoder and truthful playback lifecycle | `6b807b4f482a4a55ee46c9538ef7f35940c3c74c` |
+| [#1065](https://github.com/pietro1704/Epub-to-Mp3/pull/1065) | Complete-line viewport pagination and source-anchor retention | `425558e4fc807213f2541f1d10ba1a8a34cb40f8` |
 
 ## Ordered TODO status
 
@@ -82,14 +96,20 @@ assert comprehensive post-merge CI or final visible/audible app acceptance.
   justified host/cache changes after #1038. Release incremental/LTO changes are
   unmeasured and not adopted. XcodeGen caching remains rejected. The old combined
   runtime wrapper and broader process-supervision proposal remain unapplied.
-- [ ] **10. Flutter playback.** Retained `7cb696d9d0` still needs transport/backend,
-  cancellation/replacement and actual Linux audio validation on authorized Arch.
-- [ ] **11. Flutter reader.** Pagination/position/navigation need a separate Arch
-  integration and runtime regression. No Flutter code was ported on this Mac.
+- [x] **10. Flutter playback implementation.** #1064 reconciles the retained desktop
+  backend/transport work. On Arch, 559 unit/widget cases pass with 8 intentional
+  skips, plus an opt-in real-decoder lifecycle/replacement/recovery case.
+  Whole-app conversion/audible acceptance remains separate from this decoder check.
+- [x] **11. Flutter reader implementation.** #1065 adds rendered-line pagination,
+  raw-anchor retention and scrolling fallback. All 54 focused reader cases pass
+  again on the integrated #1064 base. See the
+  [viewport contract](flutter_app/VIEWPORT-PAGINATION.md).
+  The unused character-budget paginator and its private tests are retired;
+  `ReaderPage` now belongs to the active viewport paginator module.
 - [x] **12. Web reconciliation.** #1045–#1047 integrate native playback presentation,
   queue phase handling and current product copy. Native speech stays listening-only;
   Piper remains required for MP3 export. Audible browser acceptance is pending.
-- [ ] **13. Native diagnostics and accessibility.** Optional `-measureStartup`
+- [x] **13. Native diagnostics and accessibility implementation.** Optional `-measureStartup`
   setup timing is implemented and disabled by default; see the
   [timing contract](docs/native-startup-timing.md). Deterministic native tests and
   visible Mac setup acceptance cover the process flag, library decoder and shipping
@@ -105,9 +125,12 @@ assert comprehensive post-merge CI or final visible/audible app acceptance.
   actual macOS/iPhone flows and audible silence behavior. Inspect source identity,
   provider/voice, cancellation and retained outputs. A green XCTest/build is not
   the visible journey. Simulator quarantine keeps required SE1 acceptance blocked.
-- [ ] **15. Later Arch update/cleanup.** Preserve unique edits, models and evidence
-  before pull/cleanup. Do not use indiscriminate `git clean -fdx` or infer runtime
-  execution authority from earlier setup/pull permissions.
+- [x] **15. Arch update/cache audit.** The isolated working checkout and the shared
+  local `master` ref reached `425558e4`; the dirty original checkout remains on
+  its own branch with unchanged status hash. No superseded compiler caches were
+  found in the inspected linked worktrees, so zero files/bytes were removed.
+  Unique work, models, virtual environments and evidence were retained. Only the
+  two newly created, tree-verified integrated feature branches were removed.
 
 ## Recovery and evidence
 
