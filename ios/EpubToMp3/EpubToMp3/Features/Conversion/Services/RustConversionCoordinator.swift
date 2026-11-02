@@ -127,6 +127,10 @@ final class RustConversionCoordinator {
                     RustConversionWorkQueues.shared.enqueue(for: playbackControl == nil ? .manual : .listening) { [options] in
                         do {
                             guard !effectiveControl.isCancellationRequested else { throw CancellationError() }
+                            let callbacks = ConversionCallbackBoundary(jobID: jobID, chapterMap: readerChapterMap,
+                                cancelled: { effectiveControl.isCancellationRequested },
+                                diagnostic: { line in try? self.appendLogLine(line, to: logURL) })
+                            defer { callbacks.finish() }
                             let data = try invocation.adapter.convertBook(
                                 at: bookURL,
                                 outputDirectory: outputDirectory,
@@ -136,33 +140,31 @@ final class RustConversionCoordinator {
                                 options: options,
                                 playbackControl: effectiveControl,
                                 onProgress: { data in
-                                    guard let event = try? JSONDecoder().decode(
-                                            ConversionProgressEvent.self,
-                                            from: try readerChapterMap?.event(data) ?? data
-                                          ) else {
+                                    guard let event = callbacks.progress(data) else {
                                         return
                                     }
                                     Task { @MainActor in
+                                        guard !effectiveControl.isCancellationRequested else { return }
                                         if let recoveryBookID {
                                             try? await recoveryStore.progress(
                                                 bookID: recoveryBookID, jobID: jobID, total: event.chaptersTotal)
                                         }
+                                        guard !effectiveControl.isCancellationRequested else { return }
                                         onProgress?(event)
                                     }
                                 },
                                 onChapterCompleted: { data in
-                                    guard let event = try? JSONDecoder().decode(
-                                            ChapterCompletionEvent.self,
-                                            from: try readerChapterMap?.event(data) ?? data
-                                          ) else {
+                                    guard let event = callbacks.chapter(data) else {
                                         return
                                     }
                                     Task { @MainActor in
+                                        guard !effectiveControl.isCancellationRequested else { return }
                                         if let recoveryBookID {
                                             try? await recoveryStore.progress(
                                                 bookID: recoveryBookID, jobID: jobID, total: event.chaptersTotal,
                                                 completed: event.chapterIndex)
                                         }
+                                        guard !effectiveControl.isCancellationRequested else { return }
                                         onChapterCompleted?(event)
                                     }
                                 },

@@ -64,6 +64,7 @@ final class FaberNativeInferenceTests: XCTestCase {
         options.ttsPreferences = TtsPreferences(primary: .selected(.piper), secondary: nil, allowOnlineFallback: false)
         let chunks = FaberInferenceEvidence()
         var providers: [RustConversionCoordinator.ConversionProgressEvent] = []
+        var completed: [RustConversionCoordinator.ChapterCompletionEvent] = []
         let started = ProcessInfo.processInfo.systemUptime
         let result = try await RustConversionCoordinator(
             adapter: adapter,
@@ -71,6 +72,7 @@ final class FaberNativeInferenceTests: XCTestCase {
         ).convert(
             bookURL: book, chapterStart: 0, chapterEnd: 1, options: options, playbackControl: control,
             onProgress: { event in if event.modelId != nil { providers.append(event) } },
+            onChapterCompleted: { completed.append($0) },
             onAudioChunk: { chapter, index, bytes in chunks.capture(chapter: chapter, index: index, bytes: bytes); return true }
         )
         defer { try? FileManager.default.removeItem(at: result.outputDirectory) }
@@ -90,6 +92,10 @@ final class FaberNativeInferenceTests: XCTestCase {
         let firstPeak = try assertNonSilentFullyDecodedAudio(firstURL)
         XCTAssertFalse(providers.isEmpty, "The real Rust worker must report the actual Faber model.")
         XCTAssertTrue(providers.allSatisfy { $0.engine == "piper" && $0.modelId == "pt_BR-faber-medium" && $0.fallbackUsed == false })
+        XCTAssertEqual(completed.map(\.chapterIndex), [0, 1])
+        XCTAssertTrue(completed.allSatisfy { $0.jobId == result.jobID })
+        let conversionLog = try String(contentsOf: result.outputDirectory.appendingPathComponent("conversion.log"))
+        XCTAssertFalse(conversionLog.contains("conversion_callback"), "Valid native events must not be dropped.")
         let snapshot = try result.snapshot()
         XCTAssertEqual(snapshot.state, "finished")
         XCTAssertEqual(snapshot.engine, "piper")
