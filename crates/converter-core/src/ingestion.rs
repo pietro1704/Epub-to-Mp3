@@ -51,6 +51,7 @@ pub enum IngestionError {
     InvalidInput { message: String },
     ExtractionFailed { message: String },
     NoReadableText,
+    Cancelled,
 }
 
 impl std::fmt::Display for IngestionError {
@@ -65,6 +66,7 @@ impl std::fmt::Display for IngestionError {
             Self::InvalidInput { message } | Self::ExtractionFailed { message } => {
                 f.write_str(message)
             }
+            Self::Cancelled => f.write_str("PDF extraction cancelled"),
             Self::NoReadableText => f.write_str("no readable text could be extracted"),
         }
     }
@@ -74,11 +76,9 @@ impl std::error::Error for IngestionError {}
 
 /// Adapter boundary for the supported portion of PDF ingestion.
 ///
-/// The PDF parser itself is deliberately not guessed here. The Python
-/// implementation uses `pypdf` plus optional Vision OCR. Rust callers must
-/// provide a selected PDF dependency/implementation before extraction is
-/// enabled, and must preserve one chapter per page, page labels, metadata, and
-/// the no-readable-text error.
+/// The native Rust implementation uses `pdf-extract` for selectable text,
+/// source outlines and page-label fallback. OCR remains unsupported here;
+/// image-only documents must report the no-readable-text error.
 pub trait PdfIngestionAdapter {
     fn ingest_pdf(&self, path: &Path) -> Result<IngestedBook, IngestionError>;
 }
@@ -183,3 +183,10 @@ mod tests {
         );
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+mod pdf_outline;
+#[cfg(not(target_arch = "wasm32"))]
+mod pdf_page_labels;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod pdf_text;

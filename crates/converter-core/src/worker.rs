@@ -107,6 +107,8 @@ fn no_fallback(value: &bool) -> bool {
 
 #[derive(Debug, Error)]
 pub enum WorkerError {
+    #[error(transparent)]
+    BookInput(crate::book_input::BookInputError),
     #[error("job error: {0}")]
     Job(#[from] JobError),
     #[error("EPUB error: {0}")]
@@ -130,6 +132,18 @@ pub enum WorkerError {
     #[error("unsupported input: {0}")]
     Unsupported(String),
 }
+impl From<crate::book_input::BookInputError> for WorkerError {
+    fn from(error: crate::book_input::BookInputError) -> Self {
+        use crate::book_input::BookInputError;
+        match error {
+            BookInputError::Epub(source) => Self::Epub(source),
+            BookInputError::Io(source) => Self::Io(source),
+            BookInputError::Pdf(crate::ingestion::IngestionError::Cancelled) => Self::Cancelled,
+            other => Self::BookInput(other),
+        }
+    }
+}
+
 pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 pub type ChapterCompletionSink = Arc<dyn Fn(ChapterCompletionEvent) + Send + Sync>;
 pub type StreamingChunkSink = Arc<dyn Fn(usize, usize, &[u8]) -> bool + Send + Sync>;

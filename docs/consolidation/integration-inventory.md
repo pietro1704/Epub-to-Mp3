@@ -14,14 +14,16 @@ Integrated through #1047; see the [delivery table and ordered TODO](../../RESUME
 | `6318856d3a`: detached-descendant process cleanup | Separate unvalidated safety proposal; not adopted |
 | `3911c6ec26`: packaging/cache | #1038 plus justified #1041–#1044 integrated; Release/LTO unmeasured, XcodeGen cache rejected, old combined wrapper unapplied |
 | Dirty generated-speech silence | Integrated in #1040; final app/audio acceptance pending |
-| Dirty PDF parser/probe | Disconnected parser with missing page-label module/new dependency; private UI probe is historical only |
+| Dirty PDF parser/probe | Text-layer Rust ingestion, source dispatch, outline/page labels and MP3 conversion integrated in current source; focused macOS PDFKit/Faber/Luciana acceptance passed. Private UI probe remains historical; Mac cover-preview inversion is a separate follow-up |
 | `5a48f78370`: protected-pauses | Weights/license retained; no connected compaction implementation to port |
 | Startup timing proposal | Reviewed, unapplied; opt-in setup spans are not first-frame or performance evidence |
 | Historical reports/backlogs | 84/84 Markdown hashes verified; original bytes retained, no promotion to current acceptance |
 
 File-level details remain local in `resumed-inventory.json` and `resume-triage.md`
 under `.reports/consolidation-20261101/`. No old snapshot was applied wholesale.
-No local Flutter/Arch runtime, final native app or audible acceptance was performed.
+No local Flutter/Arch runtime or final combined-app acceptance was performed during
+the earlier resumption. The subsequent PDF task has focused native macOS and
+audible fixture acceptance, recorded in the validation results.
 
 ## Historical pre-cleanup inventory — 2026-11-01
 

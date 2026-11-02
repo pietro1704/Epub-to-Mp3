@@ -601,6 +601,7 @@ schemes:
     test:
       config: Debug
       environmentVariables:
+        EPUB_PDF_GUI_ACCEPTANCE: "$(EPUB_PDF_GUI_ACCEPTANCE)"
         EPUB2MP3_PIPER_TEST_MODEL_ROOT: "$(EPUB2MP3_PIPER_TEST_MODEL_ROOT)"
       testPlans:
         - path: EpubToMp3-Unit.xctestplan

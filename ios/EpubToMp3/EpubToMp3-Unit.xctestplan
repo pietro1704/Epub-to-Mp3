@@ -12,6 +12,10 @@
     "codeCoverage" : false,
     "environmentVariableEntries" : [
       {
+        "key" : "EPUB_PDF_GUI_ACCEPTANCE",
+        "value" : "$(EPUB_PDF_GUI_ACCEPTANCE)"
+      },
+      {
         "key" : "EPUB2MP3_PIPER_TEST_MODEL_ROOT",
         "value" : "$(EPUB2MP3_PIPER_TEST_MODEL_ROOT)"
       }

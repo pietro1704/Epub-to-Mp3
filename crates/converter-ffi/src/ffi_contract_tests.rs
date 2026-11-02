@@ -14,3 +14,6 @@ include!("ffi_tests/session_catalog_contract_tests.rs");
 include!("ffi_tests/model_install_operation_contract_tests.rs");
 include!("ffi_tests/listening_contract_tests.rs");
 include!("ffi_tests/installed_piper_session_tests.rs");
+
+#[path = "ffi_tests/pdf_contract_tests.rs"]
+mod pdf_contract_tests;
