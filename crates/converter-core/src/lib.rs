@@ -37,6 +37,7 @@ pub mod piper;
 pub mod platform_tts;
 pub mod pronunciation;
 pub mod speech_model_library;
+mod speech_silence;
 pub mod structure;
 pub mod text;
 pub mod toc;

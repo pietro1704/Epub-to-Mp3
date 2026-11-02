@@ -42,3 +42,35 @@ No historical test result is being presented as a test of the consolidated sourc
   results above have not been rerun against those combined sources.
 
 See [storage cleanup](storage-cleanup.md) for local evidence and recovery paths.
+
+## 2026-11-02 — final shared-core silence regression
+
+Baseline: `c1240e0e37`; scoped generated-speech implementation on
+`fix/generated-speech-silence-20261102`. Local compilation was explicitly
+authorized after the user confirmed no matching verified prebuilt was available.
+
+- PASS: storage preflight and the safe `clean:build` path before compilation;
+  no guard weakening, model installation, Simulator or device action.
+- RED: restoring the previous unprocessed synthesis-sink behavior makes the
+  actual MP3 duration regression fail (exit 101). The candidate source was
+  restored byte-for-byte before the final run. Evidence:
+  `.reports/consolidation-20261101/resume-silence-red.log`.
+- GREEN: guarded `cargo test --locked -p converter-core --lib --jobs 1`:
+  **318 passed, 0 failed, 1 ignored**, execution 20.79 seconds. The ignored
+  case is the existing manual JSON-cache benchmark. Coverage includes PCM/WAV
+  compaction, unchanged MP3, quiet samples, exact thresholds, idempotence,
+  structural pauses, cancellation, replacement and persistent cache identity.
+  Evidence: `resume-core-green.log` and `resume-core-identity.json` in the same
+  local evidence directory. The first dependency/core compilation took 7m35s;
+  this is build time, not an app startup or synthesis benchmark.
+- PASS: workspace Rust formatting, final whitespace check and repository
+  preflight (19 host workflow steps). The existing PCM tests were extracted
+  unchanged into `pcm/tests.rs`; all scoped source/test files are below 500 lines.
+- PASS: 84 indexed historical Markdown files still match their retained SHA-256
+  records. This verifies file integrity, not current app behavior.
+- PENDING: final FFI/app rebuild and audible/native acceptance, explicitly
+  deferred by the user until the implementation list is finished. The required
+  SE1/iOS 15.5 acceptance remains prohibited by Simulator quarantine.
+
+The unrelated nested mise edit is excluded from this delivery. No broader VAD
+or noise-removal behavior is claimed.
