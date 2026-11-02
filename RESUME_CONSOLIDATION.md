@@ -1,189 +1,124 @@
 # EpubToMp3 consolidation: resume plan
 
-Snapshot verified on 2026-11-01 on the Mac. The user explicitly requested this
-plan and its supporting consolidation documents on GitHub. It is not a new
-source of execution authority. Revalidate the checkout and follow the
-current user request and applicable AGENTS.md before acting.
+Status reconciled on 2026-11-02 through PR #1047. This user-requested plan and
+its supporting documents are published technical status, not execution authority.
+Follow the current request, AGENTS.md and execution policy before continuing.
 
-## User objective and current limits
+## Objective and current limits
 
-Keep only the canonical `~/Developer/epubtomp3` directory on the Mac. Integrate
-valuable work from the removed copies, retain organized Markdown test evidence,
-finish silence processing, and improve CLI build feedback. Later, update and
-clean the Arch checkout. Filesystem cleanup is finished; functional integration
-is not finished.
+Keep the canonical `~/Developer/epubtomp3` checkout, preserve valuable work from
+removed copies, integrate useful changes in atomic PRs, and improve build feedback.
+The user requested sequential TODO execution and deferred final visible/audible
+app validation until the implementation round is finished. Local compilation of
+the shared Rust silence change was authorized after the prebuilt question.
 
-The user runs the app through `mise`. Native recompilation remains deferred
-until the user asks for it. Do not start a build, download a runtime/model, boot
-Simulator, or change the Arch host just to resume this plan. Earlier permissions
-must be checked against the user's later no-compilation instruction. Simulator
-remains quarantined. Arch was explicitly deferred; the intended later step is
-Git pull/cleanup. Resolve any need for additional Arch runtime execution before
-expanding that scope.
+Filesystem consolidation is complete. The reconciled Rust, host/build and Web
+changes below are integrated. PDF narration, Flutter, native accessibility/startup
+proposals and final app acceptance remain pending; this list is not fully done.
 
-## Verified current state
+- Preserve the unrelated `ios/EpubToMp3/mise.toml` Codex tool entry.
+- Keep models, books, complete packages, source snapshots and evidence intact.
+- Use the native guard, storage preflight/safe cleanup and one compiler job.
+- Revalidate source/platform/architecture/recipe identity before binary reuse.
+  None of the five inspected retained Intel FFI receipts matches current inputs;
+  the five inspected trusted producer runs predate the silence integration.
+- Simulator remains quarantined. Required SE1/iOS 15.5 acceptance is blocked.
+- Android/Flutter Linux belong on Arch. Arch remains deferred; its earlier intended
+  pull/cleanup scope does not authorize new runtime, device or audio work.
+- Source builds outside the already authorized runtime scope retain the project's
+  prebuilt-availability question. Do not install models automatically.
 
-- Canonical root: `/Users/pips/Developer/epubtomp3`.
-- Session working directory: `ios/EpubToMp3` inside that root.
-- Only one EPUB directory remains under `~/Developer`, and only one Git worktree
-  is registered. Thirteen extra directories were removed after preservation.
-- Net disk recovery: 7.737 GiB. Final storage preflight passed with about
-  80.50 GiB free and 0.96 GiB of project build caches. Recheck before any build.
-- Retained-file audit checked 140,992 regular files and 73 resolving symlinks.
-  Models, complete native packages/receipts, dirty source files, test result
-  bundles and screenshots remain inside the canonical project.
-- Local `mise.local.toml` sets `auto_install = false`, is excluded from Git,
-  and was checked with `mise settings get auto_install`.
-- No new native build, model download or app/device validation was performed
-  during this cleanup. Arch was not changed.
+## Integrated deliveries
 
-### Delivered packaging change
+Each PR below merged after its required exact-head CI gate passed. This does not
+assert comprehensive post-merge CI or final visible/audible app acceptance.
 
-- PR: https://github.com/pietro1704/Epub-to-Mp3/pull/1038 — **MERGED**.
-- Feature commit: `8f75ed55637c26c8342ba7b5439df1aae75d66e4`.
-- Merge commit: `95e499d322c4422529ccbbf65ea357ce01086e68`.
-- Approved changes: skip redundant verified ad-hoc ONNX copy/sign operations,
-  skip unchanged eSpeak resource copies, and suppress Xcode environment dumps
-  in four script phases. Compiler settings and safety guards were not weakened.
-- Original packaging scripts failed both repeated-work regressions. Corrected
-  suite: **22 tests / 148 assertions / zero failures, errors or skips**, including
-  actual macOS signature/copy tools and XcodeGen descriptor comparison.
-- Repository preflight passed. Required PR CI passed before automatic merge.
-  This does not assert comprehensive post-merge CI or visible-app acceptance.
-- Public technical documentation: [build feedback](docs/build-feedback.md).
+| PR | Change | Merge commit |
+| --- | --- | --- |
+| [#1038](https://github.com/pietro1704/Epub-to-Mp3/pull/1038) | Incremental ONNX/eSpeak packaging and quieter Xcode scripts; delivered before this resumption | `95e499d322c4422529ccbbf65ea357ce01086e68` |
+| [#1040](https://github.com/pietro1704/Epub-to-Mp3/pull/1040) | Conservative generated-speech silence compaction | `e802167d31f7b8c6d205b0e5a583d903f5c8e5c8` |
+| [#1037](https://github.com/pietro1704/Epub-to-Mp3/pull/1037) | Callback boundary diagnostics and Foundation package/test wiring | `011c8de06196736b6086b866715a480ef0eb35f0` |
+| [#1041](https://github.com/pietro1704/Epub-to-Mp3/pull/1041) | Android SDK selection restricted to Linux | `8d03b6f29a6312f40585bd6876a4feaa34d53849` |
+| [#1042](https://github.com/pietro1704/Epub-to-Mp3/pull/1042) | Nonempty PID readiness in supervisor fixtures | `f45e321faa957dab928699d4c4263f5b08e5e9e0` |
+| [#1043](https://github.com/pietro1704/Epub-to-Mp3/pull/1043) | Separate incremental TypeScript check/build metadata | `d363367950af9d99f6c42be5caf3bd7308ed9e6d` |
+| [#1044](https://github.com/pietro1704/Epub-to-Mp3/pull/1044) | Hermetic build-capacity fixtures with low-space refusal preserved | `2350d17b704a1a151a3fdccd9f4317757296de30` |
+| [#1045](https://github.com/pietro1704/Epub-to-Mp3/pull/1045) | Actual native-speech state/voice in the Web player, owner isolation and localized failure handling | `1ff2a8dc3dc84361253b5b9c5064c9e2a0b56b3a` |
+| [#1046](https://github.com/pietro1704/Epub-to-Mp3/pull/1046) | Correct terminal queue phase labels and replacement-book regressions | `bfcedd85977712efcc435a69bac9700b180f2c19` |
+| [#1047](https://github.com/pietro1704/Epub-to-Mp3/pull/1047) | Remove obsolete Python/Edge product copy in English and Portuguese | `cbcb6cbbcbcd4bfdd733ef172095232b7801e62e` |
 
-### Git and dirty-work warning
+## Ordered TODO status
 
-At the pre-publication snapshot, HEAD was on local branch
-`perf/consolidate-incremental-packaging-20261101` at `8f75ed5563`. Its remote
-branch was deleted after merge; `[gone]` was expected. Local `master` and
-`origin/master` pointed to `95e499d322`. Publication starts on a documentation
-branch from that master; recheck current refs. Uncommitted implementation includes:
+- [x] **1. Classify retained work.** File-level inventory distinguishes integrated,
+  superseded and pending responsibilities. Never apply an old WIP snapshot whole.
+- [x] **2. Reconcile historical test documentation.** All 84 indexed Markdown
+  SHA-256 records match. Historical backlog snapshots remain historical; they do
+  not replace the current TODO or prove current runtime acceptance.
+- [x] **3. Settle the silence contract.** Runs of digital zero lasting at least
+  600 ms retain 300 ms. Every nonzero sample and separate structural pause is
+  preserved. No VAD/noise-removal scope or model installation was added.
+- [x] **4. Deliver shared-core silence processing.** #1040; duration regression
+  reproduced before the fix, then 318 core tests passed with one manual benchmark
+  ignored. Final embedded app/audio acceptance remains in item 14.
+- [x] **5. Reconcile callback diagnostics.** Existing PR #1037 was repaired and
+  integrated, including stale identity and bounded diagnostic coverage.
+- [ ] **6. Integrate PDF narration.** Investigation completed: native reading uses
+  PDFKit, but `EmbeddedBookSession` still parses EPUB. The retained parser is
+  disconnected, references missing `pdf_page_labels` and adds `pdf-extract 0.12.1`.
+  Define chapter/label fidelity and known-input/error cases before selecting the
+  dependency. The private-book/absolute-coordinate UI probe is historical only.
+- [x] **7. Reconcile model catalog/selection.** The relevant `6318856d3a` work
+  already landed via #969 (`2ead9a9f76`) and later catalog/FFI/UI improvements.
+- [x] **8. Reconcile model download/installation.** Resume, cancellation, crash
+  recovery and integrity behavior already exists; do not restore superseded UI.
+  No model was installed locally during this resumption.
+- [x] **9. Review remaining build/cache proposals.** #1041–#1044 complete the
+  justified host/cache changes after #1038. Release incremental/LTO changes are
+  unmeasured and not adopted. XcodeGen caching remains rejected. The old combined
+  runtime wrapper and broader process-supervision proposal remain unapplied.
+- [ ] **10. Flutter playback.** Retained `7cb696d9d0` still needs transport/backend,
+  cancellation/replacement and actual Linux audio validation on authorized Arch.
+- [ ] **11. Flutter reader.** Pagination/position/navigation need a separate Arch
+  integration and runtime regression. No Flutter code was ported on this Mac.
+- [x] **12. Web reconciliation.** #1045–#1047 integrate native playback presentation,
+  queue phase handling and current product copy. Native speech stays listening-only;
+  Piper remains required for MP3 export. Audible browser acceptance is pending.
+- [ ] **13. Optional native proposals.** Keep `-measureStartup` unapplied until an
+  isolated tested implementation is ready. It must remain off by default; setup
+  completion is not first-frame timing, and nested spans must not be summed.
+  The missing persistent-player accessibility child change also remains pending,
+  with an isolated XCTest needed; the retained test requires current API and
+  library/defaults isolation before reuse. Neither proposal is a measured speedup.
+- [ ] **14. Final native builds and real-app acceptance.** Deferred by user request.
+  Revalidate/build the necessary FFI/app targets under the guard, then exercise
+  actual macOS/iPhone flows and audible silence behavior. Inspect source identity,
+  provider/voice, cancellation and retained outputs. A green XCTest/build is not
+  the visible journey. Simulator quarantine keeps required SE1 acceptance blocked.
+- [ ] **15. Later Arch update/cleanup.** Preserve unique edits, models and evidence
+  before pull/cleanup. Do not use indiscriminate `git clean -fdx` or infer runtime
+  execution authority from earlier setup/pull permissions.
 
-- Modified: `crates/converter-core/src/lib.rs`, `src/pcm.rs`, `src/tts_session.rs`.
-- New: `crates/converter-core/src/speech_silence.rs`, `src/pcm/tests.rs`,
-  `src/tts_session/speech_silence_tests.rs`.
-- Modified unrelated edit: `ios/EpubToMp3/mise.toml` adds a nested Codex tool entry.
-  Preserve it; do not silently include it in another change.
-- Consolidation documentation was initially untracked; this documentation-only
-  delivery publishes it and this plan. The Rust/mise changes remain outside it.
+## Recovery and evidence
 
-The silence-processing work predates the cleanup and remains uncommitted. Do not
-reset, clean, overwrite or drop these files when moving to a fresh feature branch
-from current master. Preserve and reapply owned changes with an explicit scope;
-do not recreate the removed sibling worktrees as a shortcut.
-
-## Recovery and evidence map
-
-Read [the consolidation index](docs/consolidation/README.md),
+Read the [consolidation index](docs/consolidation/README.md),
 [inventory](docs/consolidation/integration-inventory.md),
 [validation results](docs/consolidation/validation-results.md),
-[silence contract](docs/consolidation/silence-processing.md), and
+[silence contract](docs/consolidation/silence-processing.md) and
 [storage cleanup](docs/consolidation/storage-cleanup.md).
 
-Private evidence root: `.reports/consolidation-20261101/`. Cleanup-specific
-evidence is in its `storage/` subdirectory:
+Raw evidence remains local in `.reports/consolidation-20261101/`; source snapshots,
+patches, models, complete packages and original reports remain under `storage/`.
+`resumed-inventory.json` and `resume-triage.md` record the file classification.
+`native-final-package-audit.json` records the current retained-receipt identity
+audit without installing or accepting an old binary. Historical report integrity
+is recorded separately from runtime verification. Keep `TODO_APP.md` local.
 
-- `plan.json`, `preserved.json`, `removed.json`, `final-audit.json`: source
-  identities, retained paths/hashes, disposal classifications and removal audit.
-- `retained/<old-directory>/committed-source.tar`: original committed source.
-- `retained/<old-directory>/working-tree.patch`: original dirty tracked changes.
-- `retained/<old-directory>/files/`: dirty/untracked code, models, runtime outputs,
-  reports, screenshots, test results and proposals. Git branches were preserved.
-- `canonical-artifacts.json`: native-package/model reconciliation without
-  conflicting overwrites. Canonical packages are under `target/native-prebuilt`.
-- `packaging-red.log`, `packaging-green-focused.log`, `packaging-green.log`:
-  actual packaging regression evidence.
+Only the canonical checkout remains. Remove a completed local branch only after
+checking its exact tree against the known integrated merge and verifying that
+merge is an ancestor of master. Preserve all branches with unique work.
 
-Host preflight evidence: `.reports/host-workflow/20261101T165922-84706/`.
-Startup timing is an **unapplied proposal**, retained under
-`storage/retained/epubtomp3-audit-delivery/files/.reports/startup-timing-proposal/`.
-Historical logs are not tests of the final combined app. Retained binaries must
-pass source/platform/architecture/recipe identity checks before reuse.
+## Next continuation
 
-## Atomic delivery rules
-
-For each implementation slice: inspect current architecture and source deltas,
-create a scoped branch from current master while preserving existing edits,
-add meaningful runtime regression coverage, run the relevant checks, inspect the
-final diff, then commit/push/open the PR. Merge only after the required exact-head
-CI passes. Finish that PR before beginning the next delivery. Keep unvalidated
-implementation local. This plan and its supporting documents are explicitly
-authorized for GitHub publication. Keep credentials, private notes and raw
-evidence local; reference their paths and sanitized results only.
-
-Native compilation-dependent validation remains pending until the user requests
-the build round. Read-only inventory and patch preparation can continue, but
-preparation is not delivery. Honor the current prebuilt-binary question and
-storage/toolchain rules when that build round is authorized.
-
-## Ordered atomic plan
-
-- [ ] **1. Classify retained work.** For each changed responsibility, identify
-  already-integrated, superseded and still-needed behavior. Record exact files,
-  dependencies and acceptance. Do not merge whole old snapshots: newer master
-  overlaps substantially with them. Main WIP `7cb696d9d0` includes Flutter/Web
-  work; model WIP is `6318856d3a`; old build-cache WIP is `3911c6ec26`.
-- [ ] **2. Reconcile test documentation.** Index preserved results, distinguish
-  historical checks from current verification, and reconcile reader-note/backlog
-  updates with master. Keep private/session details local; publish only suitable
-  technical documentation through a scoped delivery.
-- [ ] **3. Settle the silence contract.** Current uncommitted code compacts runs
-  of digital zero of at least 600 ms to 300 ms, preserving nonzero samples and
-  separately inserted structural pauses. It is not VAD/noise removal. Clarify
-  broader silence-detection expectations before changing that scope. The old
-  protected-pauses WIP `5a48f78370` contains Silero weights/license, not a connected
-  application implementation; no new model installation is authorized.
-- [ ] **4. Deliver Rust silence processing.** Review existing implementation and
-  regressions; verify speech preservation, structural pauses, WAV/MP3 limits,
-  cancellation, session replacement and cache identity. Prior logs report a
-  315-pass core run and a focused 6-pass run, but a final rerun/rebuild was pending.
-  Do not present those historical runs as current combined-app acceptance.
-- [ ] **5. Reconcile callback diagnostics.** Compare retained commit `ff91fa703b`
-  with master. Deliver only the missing behavior, testing valid/invalid callbacks
-  and stale session identity. Its original worktree also had unrelated dirty work.
-- [ ] **6. Resolve PDF investigation.** Inspect retained `ingestion/pdf_text.rs`,
-  Cargo/Swift package edits and `MacPatristicaOpeningTests.swift`; determine what
-  remains necessary. A retained source file is not evidence of a connected or
-  verified feature. Any required fix gets its own known-input/failure regression.
-- [ ] **7. Reconcile model catalog and selection.** Compare `6318856d3a` with
-  current catalog/model-library code. Preserve identifiers, explicit selection and
-  bounded fallback; test available, missing and incompatible models.
-- [ ] **8. Reconcile model download/installation.** Deliver only missing resume,
-  cancellation, partial-file and integrity behavior. Verify existing models and
-  unrelated transfers survive failures. Do not install real models automatically.
-- [ ] **9. Review remaining build/cache proposals.** Compare `3911c6ec26` with
-  current tooling. Adopt only justified improvements that preserve guards and
-  reject stale binaries. Do not redo PR #1038 or enable the rejected XcodeGen
-  cache. Respect platform ownership for Flutter/Gradle changes.
-- [ ] **10. Integrate necessary Flutter playback changes.** Separate playback
-  state/transport/backend changes from reader geometry; verify replacement,
-  cancellation and actual Linux audio behavior on Arch when authorized.
-- [ ] **11. Integrate necessary Flutter reader changes.** Independently verify
-  pagination, reading position and navigation. Native Apple reader changes, if
-  discovered, require their own reader skill/contract and acceptance limitations.
-- [ ] **12. Integrate necessary Web changes.** Reconcile native speech fallback,
-  playback presentation and queue behavior; run focused success/failure tests.
-  Preserve listening-only native fallback and Piper-only MP3 export policy.
-- [ ] **13. Deliver optional startup measurement.** Review the preserved
-  `-measureStartup` proposal. Keep it off by default and preserve startup flow.
-  Clearly distinguish setup completion from a displayed first frame; do not
-  invent performance gains or add overlapping durations.
-- [ ] **14. Authorized final builds and real-app acceptance.** Revalidate retained
-  packages and source identity, run storage preflight/safe cleanup, then build only
-  what is necessary under the native guard. Exercise affected actual app flows,
-  including audible silence behavior and startup measurements. Simulator remains
-  prohibited; required SE1/iOS15.5 acceptance stays blocked until separately
-  reauthorized. App build/launch alone does not prove all runtime behavior.
-- [ ] **15. Later Arch update/cleanup.** Inspect remote status and preserve its
-  unique edits/models/evidence first. Pull delivered changes and review the exact
-  cleanup targets. Never run an indiscriminate `git clean -fdx`. Clarify any
-  runtime testing beyond the user's stated pull/cleanup-only intention.
-
-## First action for the next agent
-
-Read current AGENTS.md and execution/delivery policies, then inspect Git status,
-worktrees and the retained inventory. Resume at step 1; do not repeat the physical
-cleanup or the merged packaging work. Ask only about a material unresolved scope
-or authorization decision. Update checkboxes and actual evidence as work passes,
-leaving unavailable validation explicitly pending.
+Inspect current status and policies, preserve the nested mise overlay, and choose
+one pending runtime slice with its required authorization/acceptance. Do not repeat
+filesystem cleanup, model reconciliation or merged deliveries. Finish one scoped
+PR and its required CI/merge before starting the next implementation item.
