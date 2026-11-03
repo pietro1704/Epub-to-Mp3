@@ -4,7 +4,7 @@ import SwiftUI
 import WidgetKit
 
 // Conversion Live Activity (iOS 16.2+).
-// `ConversionActivityAttributes` lives in `EpubToMp3/Models/` and is a source of
+// `ConversionActivityAttributes` lives in Shared/Integrations and is a source of
 // both the main app and the widget extension targets.
 
 // MARK: - Widget
@@ -16,6 +16,7 @@ struct ConversionLiveActivityWidget: Widget {
             // Lock screen / banner expanded view
             LockScreenLiveActivityView(context: context)
                 .activityBackgroundTint(Color(.systemBackground))
+                .widgetURL(WidgetDeepLinks.open(bookId: context.attributes.bookId))
         } dynamicIsland: { context in
             DynamicIsland {
                 // Expanded regions
@@ -31,13 +32,15 @@ struct ConversionLiveActivityWidget: Widget {
                         .monospacedDigit()
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    Text(context.attributes.bookTitle)
+                    Text(context.state.bookTitle ?? context.attributes.bookTitle)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 4) {
+                        Text(LocalizedStringKey(context.state.statusLocalizationKey))
+                            .font(.caption2)
                         if let chapterName = context.state.currentChapterName, !chapterName.isEmpty {
                             Text(chapterName)
                                 .font(.caption2)
@@ -70,6 +73,7 @@ struct ConversionLiveActivityWidget: Widget {
                         .rotationEffect(.degrees(-90))
                 }
             }
+            .widgetURL(WidgetDeepLinks.open(bookId: context.attributes.bookId))
         }
     }
 }
@@ -93,7 +97,7 @@ private struct LockScreenLiveActivityView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(context.attributes.bookTitle)
+                Text(context.state.bookTitle ?? context.attributes.bookTitle)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .lineLimit(1)
@@ -116,7 +120,7 @@ private struct LockScreenLiveActivityView: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .monospacedDigit()
-                Text("Converting")
+                Text(LocalizedStringKey(context.state.statusLocalizationKey))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

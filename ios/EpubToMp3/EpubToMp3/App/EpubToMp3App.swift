@@ -125,6 +125,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        ConversionLiveActivitySession.dismissOrphans()
         _ = SpeechModelLibraryClient.shared
         Task { await SpeechModelLibraryClient.shared.reconnectPendingTransfers() }
         library.installUITestFixtureIfRequested()

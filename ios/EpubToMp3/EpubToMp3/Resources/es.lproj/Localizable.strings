@@ -761,3 +761,11 @@
 "error.bookNoText" = "No se pudo extraer texto legible de este libro.";
 "error.textPreparing" = "El texto todavía se está preparando. Inténtalo de nuevo en un momento.";
 "convert.partial" = "Conversión parcial";
+
+// Conversion Live Activity states.
+"liveActivity.preparing" = "Preparando conversión";
+"liveActivity.converting" = "Convirtiendo";
+"liveActivity.cancelling" = "Cancelando conversión";
+"liveActivity.completed" = "Conversión completada";
+"liveActivity.cancelled" = "Conversión cancelada";
+"liveActivity.failed" = "Error en la conversión";

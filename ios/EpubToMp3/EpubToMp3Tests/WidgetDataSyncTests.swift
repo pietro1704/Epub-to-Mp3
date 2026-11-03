@@ -109,19 +109,25 @@ final class WidgetDataSyncTests: XCTestCase {
         )
     }
 
-    func test_conversionProgress_fraction_isCorrect() {
-        // Mirrors ConversionActivityAttributes.ContentState.progressFraction logic.
-        let done = 7
-        let total = 20
-        let fraction = Double(done) / Double(total)
-        XCTAssertEqual(fraction, 0.35, accuracy: 0.001)
+    func testConversionActivityUsesRealSharedProgressAndClampsBounds() {
+        XCTAssertEqual(ConversionActivityProgress(chaptersDone: 7, chaptersTotal: 20).progressFraction, 0.35, accuracy: 0.001)
+        XCTAssertEqual(ConversionActivityProgress(chaptersDone: 0, chaptersTotal: 0).progressFraction, 0)
+        XCTAssertEqual(ConversionActivityProgress(chaptersDone: 8, chaptersTotal: 2).progressFraction, 1)
+        XCTAssertEqual(ConversionActivityProgress(chaptersDone: 0, chaptersTotal: 4, progressPercent: 12.5).progressFraction, 0.125, accuracy: 0.001)
+        XCTAssertEqual(ConversionActivityProgress(chaptersDone: 1, chaptersTotal: 4, phase: .completed).progressFraction, 1)
     }
 
-    func test_conversionProgress_fraction_zero_when_total_is_zero() {
-        let done = 0
-        let total = 0
-        let fraction: Double = total > 0 ? Double(done) / Double(total) : 0
-        XCTAssertEqual(fraction, 0.0)
+    func testConversionActivityReadsLegacyPayloadAndLocalizesTerminalStates() throws {
+        let legacy = Data(#"{"chaptersDone":2,"chaptersTotal":8,"currentChapterName":null}"#.utf8)
+        let progress = try JSONDecoder().decode(ConversionActivityProgress.self, from: legacy)
+        XCTAssertEqual(progress.progressFraction, 0.25, accuracy: 0.001)
+        XCTAssertEqual(progress.statusLocalizationKey, "liveActivity.converting")
+        for phase in [ConversionActivityPhase.cancelled, .failed, .completed] {
+            let state = ConversionActivityProgress(chaptersDone: 2, chaptersTotal: 8, phase: phase)
+            XCTAssertTrue(phase.isTerminal)
+            XCTAssertEqual(state.statusLocalizationKey, "liveActivity." + phase.rawValue)
+            XCTAssertEqual(state.statusLabel, "2 / 8")
+        }
     }
 
     // MARK: - Library key

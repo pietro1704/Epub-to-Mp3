@@ -23,6 +23,7 @@ actor RustConversionOutputStore {
     struct Lease: Sendable {
         let id: UUID
         let jobID: String
+        let bookID: String
         let outputDirectory: URL
     }
 
@@ -83,7 +84,7 @@ actor RustConversionOutputStore {
         }
         let identity = Ownership(version: 1, bookID: bookID, jobID: jobID)
         try JSONEncoder().encode(identity).write(to: directory.appendingPathComponent(Self.ownerFilename), options: .atomic)
-        let lease = Lease(id: UUID(), jobID: jobID, outputDirectory: directory)
+        let lease = Lease(id: UUID(), jobID: jobID, bookID: bookID, outputDirectory: directory)
         writers[jobID] = Writer(lease: lease, bookID: bookID, cancel: cancel)
         return lease
     }

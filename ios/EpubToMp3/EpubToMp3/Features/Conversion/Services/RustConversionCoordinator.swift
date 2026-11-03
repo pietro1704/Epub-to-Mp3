@@ -111,8 +111,10 @@ final class RustConversionCoordinator {
             throw error
         }
 
+        let activity = ConversionLiveActivitySession(jobID: jobID)
         do {
             try Task.checkCancellation()
+            await activity.start(title: bookURL.deletingPathExtension().lastPathComponent, bookID: lease.bookID)
             if let readerChapterMap {
                 // Persist before Rust can publish artifacts, while this job
                 // still owns its output lease. Interrupted jobs retain the axis.
@@ -150,6 +152,8 @@ final class RustConversionCoordinator {
                                                 bookID: recoveryBookID, jobID: jobID, total: event.chaptersTotal)
                                         }
                                         guard !effectiveControl.isCancellationRequested else { return }
+                                        await activity.progress(event)
+                                        guard !effectiveControl.isCancellationRequested else { return }
                                         onProgress?(event)
                                     }
                                 },
@@ -165,6 +169,8 @@ final class RustConversionCoordinator {
                                                 completed: event.chapterIndex)
                                         }
                                         guard !effectiveControl.isCancellationRequested else { return }
+                                        await activity.chapter(event)
+                                        guard !effectiveControl.isCancellationRequested else { return }
                                         onChapterCompleted?(event)
                                     }
                                 },
@@ -176,10 +182,13 @@ final class RustConversionCoordinator {
                         }
                     }
                 }
-            }, onCancel: { effectiveControl.cancel() })
+            }, onCancel: {
+                effectiveControl.cancel()
+                Task { await activity.setPhase(.cancelling) }
+            })
             try Task.checkCancellation()
             let result = Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
-            _ = try result.snapshot()
+            let finalSnapshot = try result.snapshot()
             if let requestedChapterPositions {
                 try result.validateSelectedChapters(requestedChapterPositions)
             }
@@ -187,9 +196,11 @@ final class RustConversionCoordinator {
             if let recoveryBookID {
                 try await recoveryStore.finish(bookID: recoveryBookID, jobID: jobID, succeeded: true)
             }
+            await activity.setPhase(.completed, total: finalSnapshot.chaptersTotal, completed: finalSnapshot.chaptersCompleted)
             await outputStore.finish(lease)
             return result
         } catch {
+            await activity.setPhase(error is CancellationError || Task.isCancelled || effectiveControl.isCancellationRequested ? .cancelled : .failed)
             if let recoveryBookID {
                 try? await recoveryStore.finish(bookID: recoveryBookID, jobID: jobID, succeeded: false)
             }

@@ -760,3 +760,11 @@
 "error.bookNoText" = "No readable text could be extracted from this book.";
 "error.textPreparing" = "The text is still being prepared. Please try again shortly.";
 "convert.partial" = "Partially converted";
+
+// Conversion Live Activity states.
+"liveActivity.preparing" = "Preparing conversion";
+"liveActivity.converting" = "Converting";
+"liveActivity.cancelling" = "Cancelling conversion";
+"liveActivity.completed" = "Conversion completed";
+"liveActivity.cancelled" = "Conversion cancelled";
+"liveActivity.failed" = "Conversion failed";

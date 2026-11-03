@@ -1,8 +1,5 @@
 import Foundation
 import WidgetKit
-#if canImport(ActivityKit)
-import ActivityKit
-#endif
 
 /// Writes enriched metadata to the shared App Group UserDefaults so
 /// WidgetKit extensions can render Now Playing, Continue Reading, and
@@ -254,90 +251,6 @@ enum WidgetDataSync {
         // Reload home-screen widgets so the conversion state is visible.
         WidgetCenter.shared.reloadAllTimelines()
 
-        // Update the running Live Activity if one exists.
-        #if canImport(ActivityKit) && os(iOS)
-        if #available(iOS 16.2, *) {
-            let state = ConversionActivityAttributes.ContentState(
-                chaptersDone: chaptersDone,
-                chaptersTotal: chaptersTotal,
-                currentChapterName: currentChapterName
-            )
-            let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(300))
-            Task {
-                for activity in Activity<ConversionActivityAttributes>.activities {
-                    await activity.update(content)
-                }
-            }
-        }
-        #endif
-    }
-
-    // MARK: - Live Activity management
-
-    /// Start a Live Activity for a new conversion job. Safe to call on iOS < 16.2 —
-    /// the guard exits silently.
-    @discardableResult
-    static func startConversionActivity(
-        bookTitle: String,
-        bookId: String,
-        chaptersTotal: Int
-    ) -> String? {
-        #if canImport(ActivityKit) && os(iOS)
-        guard #available(iOS 16.2, *) else { return nil }
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return nil }
-
-        let attributes = ConversionActivityAttributes(
-            bookTitle: bookTitle,
-            bookId: bookId
-        )
-        let initialState = ConversionActivityAttributes.ContentState(
-            chaptersDone: 0,
-            chaptersTotal: chaptersTotal,
-            currentChapterName: nil
-        )
-        let content = ActivityContent(
-            state: initialState,
-            staleDate: Date().addingTimeInterval(3600) // 1h — jobs rarely exceed this
-        )
-
-        do {
-            let activity = try Activity.request(
-                attributes: attributes,
-                content: content,
-                pushType: nil
-            )
-            return activity.id
-        } catch {
-            return nil
-        }
-        #else
-        return nil
-        #endif
-    }
-
-    /// End all conversion Live Activities for the given `bookId`.
-    /// Pass `failed: true` to show a failure state before dismissal.
-    /// Must be called explicitly when a job reaches done/failed/cancelled —
-    /// never rely on `staleDate` for cleanup.
-    static func endConversionActivity(bookId: String, failed: Bool = false) {
-        #if canImport(ActivityKit) && os(iOS)
-        guard #available(iOS 16.2, *) else { return }
-        let finalState = ConversionActivityAttributes.ContentState(
-            chaptersDone: 0,
-            chaptersTotal: 0,
-            currentChapterName: failed ? "Conversion failed" : "Done"
-        )
-        let content = ActivityContent(
-            state: finalState,
-            staleDate: Date().addingTimeInterval(5)
-        )
-        Task {
-            for activity in Activity<ConversionActivityAttributes>.activities
-            where activity.attributes.bookId == bookId {
-                await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(4)))
-            }
-        }
-        #endif
     }
 
     // MARK: - Reload helpers
