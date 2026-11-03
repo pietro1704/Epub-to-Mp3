@@ -66,14 +66,14 @@ extension LocalAudioArtifactStore {
 
         var errorDescription: String? {
             switch self {
-            case .unknownBook(let bookID):
-                return "No local audio manifest exists for \(bookID)."
-            case .unknownChapter(let bookID, let chapterIndex):
-                return "No local audio chapter \(chapterIndex) exists for \(bookID)."
-            case .missingAudioFile(let url):
-                return "The local audio file is missing at \(url.path)."
-            case .invalidAudioFile(let url):
-                return "The local audio file is empty at \(url.path)."
+            case .unknownBook:
+                return L10n.string("error.localAudioMissing")
+            case .unknownChapter:
+                return L10n.string("error.localAudioMissing")
+            case .missingAudioFile:
+                return L10n.string("error.localAudioMissing")
+            case .invalidAudioFile:
+                return L10n.string("error.localAudioInvalid")
             }
         }
     }

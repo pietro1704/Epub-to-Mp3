@@ -414,7 +414,7 @@
 "convert.openResult" = "Ver resultado";
 "convert.resultTitle" = "Resultado da conversão";
 "convert.startConversion" = "Iniciar conversão";
-"convert.error.engineWarmingUp" = "O motor de áudio ainda está aquecendo. Tente novamente em instantes ou defina uma URL de backend remoto nos Ajustes.";
+"convert.error.engineWarmingUp" = "O motor de áudio ainda está iniciando. Tente novamente em instantes.";
 "convert.error.pickFileFirst" = "Escolha um EPUB ou PDF primeiro.";
 
 /* === LibrarySidebar === */
@@ -676,7 +676,7 @@
 "settings.skipBackward" = "Voltar";
 "settings.seconds" = "%d segundos";
 
-"conversion.systemVoiceFallback" = "Usando a voz do aparelho neste trecho. Edge será tentado novamente no próximo.";
+"conversion.systemVoiceFallback" = "Usando uma voz instalada no aparelho temporariamente. A voz principal será tentada novamente automaticamente.";
 
 "settings.secondaryVoice" = "Voz secundária";
 "settings.noSecondary" = "Nenhuma";
@@ -721,3 +721,50 @@
 
 "settings.automaticSystemFallback" = "Voz do sistema como alternativa automática";
 "settings.automaticSystemFallbackDescription" = "Se as vozes selecionadas falharem, tente uma voz instalada do sistema. Desative para usar apenas as vozes selecionadas.";
+
+// Speech compatibility recovery and converter diagnostics.
+"error.converterUnavailable" = "O conversor de voz está indisponível. Reinstale o app ou tente novamente.";
+"error.converterIncompatible" = "O conversor de voz é incompatível com este app. Atualize o app.";
+"error.modelLanguage" = "Este modelo não suporta o idioma deste livro. Escolha um modelo compatível.";
+"error.voiceLanguage" = "Não há voz compatível disponível para este idioma.";
+"error.unsupportedEngine" = "O mecanismo de voz selecionado não é compatível.";
+"error.conversionFailed" = "Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.";
+"tts.recovery.title" = "Escolher um modelo compatível";
+"tts.recovery.message" = "O modelo atual não suporta %@. Modelo sugerido: %@. A troca vale somente para esta conversão.";
+"tts.recovery.use" = "Usar %@";
+"tts.recovery.choose" = "Escolher outro modelo";
+"tts.recovery.none" = "Nenhum modelo instalado e pronto suporta %@. Você pode instalar um modelo compatível nos Ajustes ou cancelar e continuar lendo.";
+"settings.modelInstall.alreadyActive" = "Já há uma instalação em andamento para este modelo.";
+"error.pdfOpen" = "Não foi possível abrir %@. O PDF pode estar danificado.";
+"error.pdfEncrypted" = "%@ está protegido por senha. Remova a senha antes de importar.";
+"error.pdfNoText" = "%@ não tem texto selecionável. PDFs digitalizados precisam de reconhecimento de texto antes da conversão.";
+"error.invalidServer" = "O endereço do servidor é inválido. Confira os Ajustes.";
+"error.http" = "O servidor retornou o erro %d. Tente novamente.";
+"error.response" = "Não foi possível ler a resposta. Tente novamente.";
+"error.network" = "Não foi possível conectar. Verifique a conexão e tente novamente.";
+
+// Conversion states and actionable warnings.
+"convert.failed" = "Falha na conversão";
+"convert.paused" = "Conversão pausada";
+"convert.stateUnknown" = "Estado indisponível";
+"error.timeout" = "A operação excedeu o limite de %d segundos. Tente novamente.";
+"error.speechTimeout" = "A voz demorou demais para responder. Tente novamente.";
+"error.exportNoAudio" = "Não há áudio concluído disponível para exportar.";
+"error.exportTooLarge" = "%@ é grande demais para exportar como ZIP padrão.";
+"error.localAudioMissing" = "O áudio local não está disponível. Converta este capítulo novamente.";
+"error.localAudioInvalid" = "O áudio salvo está vazio ou danificado. Converta este capítulo novamente.";
+"error.epubInvalid" = "%@ não é um pacote EPUB válido.";
+"error.epubTooLarge" = "%@ é grande demais para empacotar como EPUB.";
+"error.readerOffline" = "O texto ainda não está disponível offline.";
+"error.bookUnavailable" = "Este livro não está mais disponível.";
+"error.bookNoText" = "Não foi possível extrair texto legível deste livro.";
+"error.textPreparing" = "O texto ainda está sendo preparado. Tente novamente em instantes.";
+"convert.partial" = "Conversão parcial";
+
+// Conversion Live Activity states.
+"liveActivity.preparing" = "Preparando conversão";
+"liveActivity.converting" = "Convertendo";
+"liveActivity.cancelling" = "Cancelando conversão";
+"liveActivity.completed" = "Conversão concluída";
+"liveActivity.cancelled" = "Conversão cancelada";
+"liveActivity.failed" = "Falha na conversão";

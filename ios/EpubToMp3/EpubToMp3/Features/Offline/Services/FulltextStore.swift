@@ -36,15 +36,15 @@ final class FulltextStore: @unchecked Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .offlineUnavailable: return "Reader text not available offline yet."
-            case .gone: return "This book is no longer available on the backend."
-            case .emptyParse: return "We couldn't extract any chapter text from this book."
-            case .transientExhausted(let detail):
-                return "Backend is still extracting text. Try again shortly. (\(detail))"
-            case .http(let status, let body):
-                return "Server responded with HTTP \(status). \(body.prefix(200))"
-            case .decoding(let msg): return "Failed to decode reader payload: \(msg)"
-            case .transport(let msg): return "Network error: \(msg)"
+            case .offlineUnavailable: return L10n.string("error.readerOffline")
+            case .gone: return L10n.string("error.bookUnavailable")
+            case .emptyParse: return L10n.string("error.bookNoText")
+            case .transientExhausted:
+                return L10n.string("error.textPreparing")
+            case .http(let status, _):
+                return L10n.string("error.http", status)
+            case .decoding: return L10n.string("error.response")
+            case .transport: return L10n.string("error.network")
             }
         }
     }

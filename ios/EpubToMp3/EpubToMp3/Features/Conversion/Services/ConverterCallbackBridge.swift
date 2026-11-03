@@ -13,7 +13,8 @@ enum ConverterCallbackBridge {
             return true
         } catch {
             if let errorBuffer, errorLength > 0 {
-                let bytes = Array(error.localizedDescription.utf8.prefix(Int(errorLength) - 1))
+                let diagnostic = (error as? PlatformSpeechSynthesizer.Failure)?.message ?? error.localizedDescription
+                let bytes = Array(diagnostic.utf8.prefix(Int(errorLength) - 1))
                 for (index, byte) in bytes.enumerated() { errorBuffer[index] = CChar(bitPattern: byte) }
                 errorBuffer[bytes.count] = 0
             }

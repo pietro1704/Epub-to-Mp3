@@ -21,9 +21,9 @@ struct SessionRowModel: Equatable {
         SessionRowModel(
             id: session.id,
             title: session.bookTitle,
-            outcomeText: session.outcome.map { $0.capitalized },
+            outcomeText: session.outcome.map { ConversionStatusPresentation.label($0) },
             outcomeState: outcomeState(for: session.outcome),
-            engineText: (session.engine?.isEmpty == false) ? session.engine : nil,
+            engineText: session.engine.flatMap { AudioEnginePreference(rawValue: $0)?.displayName ?? ($0.isEmpty ? nil : $0) },
             chaptersText: session.chaptersConverted.map { L10n.string("jobs.chaptersAbbrev", $0) },
             timestampText: String(session.timestamp.prefix(19))
         )

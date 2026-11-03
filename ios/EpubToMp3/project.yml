@@ -521,6 +521,12 @@ targets:
       # Shared with the main app target. Same Codable shape on both ends —
       # ActivityKit serialises by name + Codable, not nominal cross-module.
       - path: EpubToMp3/Shared/Integrations/ConversionActivityAttributes.swift
+      - path: EpubToMp3/Resources/en.lproj
+        buildPhase: resources
+      - path: EpubToMp3/Resources/pt-BR.lproj
+        buildPhase: resources
+      - path: EpubToMp3/Resources/es.lproj
+        buildPhase: resources
       - path: EpubToMp3/Shared/Integrations/WidgetSharedLibrary.swift
       - path: EpubToMp3/Shared/Integrations/WidgetCoverThumbnail.swift
       - path: EpubToMp3/Shared/Integrations/WidgetPlaybackCommand.swift

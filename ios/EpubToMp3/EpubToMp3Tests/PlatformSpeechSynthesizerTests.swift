@@ -156,7 +156,7 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
                 try PlatformSpeechSynthesizer().synthesizeWAV(text: "Hello", language: "en-US",
                                                             output: url, cancelled: { true })
                 return false
-            } catch { return error.localizedDescription.contains("cancelled") }
+            } catch { return ((error as? PlatformSpeechSynthesizer.Failure)?.message ?? error.localizedDescription).contains("cancelled") }
         }.value
         XCTAssertTrue(failed)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
@@ -169,7 +169,7 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
                 try PlatformSpeechSynthesizer().synthesizeWAV(text: "Hello", language: "zz-ZZ",
                                                             output: url, cancelled: { false }, timeout: 5)
                 return false
-            } catch { return error.localizedDescription.contains("No installed system voice") }
+            } catch { return ((error as? PlatformSpeechSynthesizer.Failure)?.message ?? error.localizedDescription).contains("No installed system voice") }
         }.value
         XCTAssertTrue(failed)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
@@ -188,7 +188,7 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
                 try provider.synthesizeWAV(text: "Hello", language: "en-US", output: url,
                                            cancelled: { cancellation.check { queued.fulfill() } }, timeout: 2)
                 return false
-            } catch { return error.localizedDescription.contains("cancelled while queued") }
+            } catch { return ((error as? PlatformSpeechSynthesizer.Failure)?.message ?? error.localizedDescription).contains("cancelled while queued") }
         }
         await fulfillment(of: [queued], timeout: 2)
         cancellation.cancel()
@@ -206,13 +206,13 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
                                            cancelled: { false }, timeout: -1)
                 return false
             } catch {
-                guard error.localizedDescription.contains("timed out") else { return false }
+                guard ((error as? PlatformSpeechSynthesizer.Failure)?.message ?? error.localizedDescription).contains("timed out") else { return false }
             }
             do {
                 try provider.synthesizeWAV(text: "Hello", language: "zz-ZZ", output: url,
                                            cancelled: { false }, timeout: 5)
                 return false
-            } catch { return error.localizedDescription.contains("No installed system voice") }
+            } catch { return ((error as? PlatformSpeechSynthesizer.Failure)?.message ?? error.localizedDescription).contains("No installed system voice") }
         }.value
         XCTAssertTrue(result)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
@@ -239,7 +239,7 @@ final class PlatformSpeechSynthesizerOptInTests: XCTestCase {
                     language: "pt-BR", output: url, cancelled: { Date() >= deadline }
                 )
                 return false
-            } catch { return error.localizedDescription.contains("cancelled") }
+            } catch { return ((error as? PlatformSpeechSynthesizer.Failure)?.message ?? error.localizedDescription).contains("cancelled") }
         }.value
         XCTAssertTrue(result)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))

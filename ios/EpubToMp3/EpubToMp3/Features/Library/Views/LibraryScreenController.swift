@@ -13,6 +13,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private var sortMode: LibraryGridModel.SortMode = .lastOpened
     private var selectedTag: String?
     private var searchQuery = ""
+    private var downloadRequestID: UUID?
     private let gridController = LibraryGridController(metrics: .init())
     private var emptyStateScrollView: UIScrollView?
     private let emptyStateLabel = UILabel()
@@ -114,10 +115,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             guard let self else { return }
             // Matches the macOS flow: tapping a book opens the reader
             // directly, no intermediate Read/Listen/Download menu.
-            // `MainReaderScreenController` already surfaces itself via
-            // `IOSRootContainerController` whenever `currentlyReadingBookID`
-            // changes (see BookDetailScreenController.tapRead, the mechanism
-            // this reuses instead of pushing Book Detail).
+            // The root presents the active reader when its book identity changes.
             self.library.update(Self.touchLastOpened(book))
             ReaderSessionState.setCurrentlyReading(bookID: book.id)
         }
@@ -125,13 +123,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             self?.presentRemoveAlert(for: book)
         }
         gridController.onDownload = { [weak self] book in
-            guard let self else { return }
-            let detail = BookDetailScreenController(
-                book: book, library: library, settings: settings,
-                player: player, playerPresentation: playerPresentation
-            )
-            self.navigationController?.pushViewController(detail, animated: true)
-            detail.downloadWholeBook()
+            Task { await self?.downloadWholeBook(book) }
         }
         gridController.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(gridController.view)
@@ -142,6 +134,28 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             gridController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         gridController.didMove(toParent: self)
+    }
+
+    func downloadWholeBook(_ book: BookEntity) async {
+        let requestID = UUID()
+        downloadRequestID = requestID
+        do {
+            let file = try await library.openBookFileAsync(id: book.id)
+            guard downloadRequestID == requestID,
+                  let navigationController,
+                  navigationController.topViewController === self else { return }
+            let conversion = ConvertScreenController(
+                settings: settings, library: library, player: player,
+                playbackClock: player.playbackClock,
+                preselectedFileURL: file, preselectedBookID: book.id
+            )
+            navigationController.pushViewController(conversion, animated: true)
+            conversion.startWholeBookConversion()
+        } catch {
+            guard downloadRequestID == requestID else { return }
+            presentMessage(title: L10n.string("convert.title"),
+                           message: AppErrorReporter.message(error, context: "Library download"))
+        }
     }
 
     private func configureEmptyState() {

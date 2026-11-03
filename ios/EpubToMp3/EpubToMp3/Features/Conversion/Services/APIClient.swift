@@ -10,13 +10,13 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL:
-            return "Backend URL is not valid. Check Settings."
-        case .http(let status, let body):
-            return "Server responded with HTTP \(status). \(body.prefix(200))"
-        case .decoding(let err):
-            return "Failed to decode response: \(err.localizedDescription)"
-        case .transport(let err):
-            return "Network error: \(err.localizedDescription)"
+            return L10n.string("error.invalidServer")
+        case .http(let status, _):
+            return L10n.string("error.http", status)
+        case .decoding:
+            return L10n.string("error.response")
+        case .transport:
+            return L10n.string("error.network")
         }
     }
 }

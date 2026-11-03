@@ -45,8 +45,8 @@ final class PdfEmbeddedConversionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: source) }
         try Data("Not a PDF".utf8).write(to: source)
         XCTAssertThrowsError(try metadata(source)) { error in
-            XCTAssertTrue(error.localizedDescription.contains("PDF"))
-            XCTAssertFalse(error.localizedDescription.contains("EOCD"))
+            XCTAssertTrue(((error as? EmbeddedConverterError)?.diagnosticDescription ?? error.localizedDescription).contains("PDF"))
+            XCTAssertFalse(((error as? EmbeddedConverterError)?.diagnosticDescription ?? error.localizedDescription).contains("EOCD"))
         }
     }
 

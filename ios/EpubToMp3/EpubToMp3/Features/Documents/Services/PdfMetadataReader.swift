@@ -27,9 +27,9 @@ enum PdfMetadataReader {
         var errorDescription: String? {
             switch self {
             case .openFailed(let name):
-                return "PDFKit could not open \(name). The file may be malformed or corrupt."
+                return L10n.string("error.pdfOpen", name)
             case .encrypted(let name):
-                return "\(name) is password-protected. Remove the password (Preview → File → Export) before importing."
+                return L10n.string("error.pdfEncrypted", name)
             }
         }
     }

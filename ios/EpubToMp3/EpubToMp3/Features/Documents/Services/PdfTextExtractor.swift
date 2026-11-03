@@ -31,11 +31,11 @@ enum PdfTextExtractor {
         var errorDescription: String? {
             switch self {
             case .openFailed(let name):
-                return "PDFKit could not open \(name)."
+                return L10n.string("error.pdfOpen", name)
             case .encrypted(let name):
-                return "\(name) is password-protected."
+                return L10n.string("error.pdfEncrypted", name)
             case .noTextRecovered(let name):
-                return "\(name) appears to be a scanned image PDF — no selectable text is available locally."
+                return L10n.string("error.pdfNoText", name)
             }
         }
     }
