@@ -148,15 +148,16 @@ decision has been justified by the inventory alone. Any later move proposal must
 name every exact old/new path, implicit packaging consumer, validation and rollback
 before changing references.
 
-## Open organization findings
+## Organization findings
 
-These are bounded follow-up scopes, not completed fixes. IDs remain stable across
-the audit. All observations below are static; no native behavior was exercised.
+IDs remain stable across the audit. Observations describe the inventory baseline;
+dispositions distinguish integrated documentation from open follow-up scopes.
+All observations below are static; no native behavior was exercised.
 
-| ID / class / priority | Evidence and affected consumers | Next acceptance |
+| ID / class / priority | Evidence and affected consumers | Disposition / next acceptance |
 | --- | --- | --- |
-| ORG-001 / navigation improvement / P3 | Root README has a partial structure list; no ownership index connected product, tool, generated/vendor and historical families | This map plus its README link; verify content, local destinations/anchors, full diff and independent review |
-| ORG-002 / confirmed documentation drift / P3 | README's iOS table names absent `InstantReaderView`/`PlayerReaderView` and places `ConversionActivityAttributes` in `Models/`; current source and `project.yml` select `Shared/Integrations/ConversionActivityAttributes.swift` | Correct the table against current reader/type consumers; check links and source facts; no native behavior change |
+| ORG-001 / navigation improvement / P3 | Root README had a partial structure list; no ownership index connected product, tool, generated/vendor and historical families | Integrated in [#1073](https://github.com/pietro1704/Epub-to-Mp3/pull/1073), merge `e58dea2a0f9f99cf5f07c07fabeccfe07ac2412f`; content/link checks, independent review and exact-head PR gate passed |
+| ORG-002 / confirmed documentation drift / P3 | README's iOS table named absent `InstantReaderView`/`PlayerReaderView` and placed `ConversionActivityAttributes` in `Models/`; current source and `project.yml` select `Shared/Integrations/ConversionActivityAttributes.swift` | Table now links current UIKit controllers, chrome guidance and shared attributes; the unsupported page-turn auto-hide claim is removed. Requires documentation checks/review and its own PR gate; no native behavior change or runtime acceptance claimed |
 | ORG-003 / confirmed documentation drift / P3 | Consolidation index claims a single worktree and leaves Flutter/optional proposals/PDF cover pending; `RESUME_CONSOLIDATION.md` reconciles deliveries through #1065 | Reconcile dated scope/results and preserve blocked acceptance; do not replace history with unexecuted success |
 | ORG-004 / removal candidates, unproven / P3 | Tracked `libtest.rlib` (5,614 bytes) and `log.txt` (1,276 bytes); provenance, implicit consumers and reproducibility unresolved | Trace packaging/history/consumers; present exact removal, impact and recovery for user confirmation before deletion |
 | ORG-005 / provenance investigation / P3 | Vendored patch/license/refresh boundaries above remain only partially documented | Establish exact upstream/local ownership and immutable refresh inputs before proposing a dependency change |

@@ -79,9 +79,9 @@ that cleanup.
 
 | Feature | Detail |
 |---|---|
-| **Immersive reader** | Tap the centre of any page to toggle chrome (nav bar + status bar). Auto-hides on page turn. Shared between `InstantReaderView` (local EPUB) and `PlayerReaderView` (server-streamed). |
+| **Immersive reader** | Tap the reader centre to toggle chrome. The UIKit reader uses [MainReaderScreenController](ios/EpubToMp3/EpubToMp3/Features/Reader/Views/MainReaderScreenController.swift) to host [BookOpenScreenController](ios/EpubToMp3/EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift); see [chrome transitions](ios/EpubToMp3/docs/reader-chrome-animation.md). |
 | **No-autoplay policy** | Audio never starts without an explicit user gesture — lock-screen controls, widget Play button, or in-app Play only. |
-| **Live Activity** | Conversion progress displayed on Dynamic Island and lock-screen banner via `ConversionLiveActivityWidget`. Attributes model is `ConversionActivityAttributes` in `EpubToMp3/Models/`. |
+| **Live Activity** | Conversion progress on the lock screen and, on supported devices, Dynamic Island via `ConversionLiveActivityWidget` (iOS 16.2+). Shared attributes are defined in [ConversionActivityAttributes.swift](ios/EpubToMp3/EpubToMp3/Shared/Integrations/ConversionActivityAttributes.swift). |
 | **Widgets** | Home-screen: `NowPlayingWidget` (medium/large). Lock-screen: `NowPlayingLockScreenWidget`. Conversion progress: `ConversionLiveActivityWidget` (Live Activity). |
 | **Shared types** | `ConversionActivityAttributes.swift` is compiled into both the main app target and `EpubToMp3Widget` — ActivityKit serialises by name + Codable, so the type must be identical on both sides. |
 | **App Group** | `group.com.pietrocode.epubtomp3` — shared `UserDefaults` suite for widget ↔ app state sync (`WidgetDataSync`). |
