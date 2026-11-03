@@ -318,6 +318,9 @@ do not define the native app, Rust CLI or browser defaults.
 
 ## Project Structure
 
+See the [repository map](docs/repository-map.md) for subsystem ownership,
+canonical documentation, generated/vendor boundaries and historical records.
+
 ```
 Epub-to-Mp3/
 ├── CONTEXT.md               # Product contract and domain vocabulary
