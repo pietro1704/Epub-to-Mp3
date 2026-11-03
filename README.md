@@ -129,7 +129,7 @@ relevant implementation before relying on a surface-specific behavior.
 ```bash
 git clone https://github.com/pietro1704/Epub-to-Mp3.git
 cd Epub-to-Mp3
-mise run convert           # Print native CLI usage; the task builds/packages it when needed
+mise run convert           # Build/package the native CLI, then print usage
 ```
 
 Select the build/run task for the intended platform in `mise.toml`; avoid setting
@@ -137,6 +137,8 @@ up every toolchain for a single client. Native Apple and packaged Rust conversio
 do not require a Python runtime. Install a voice model explicitly through the
 client or the CLI model command before requesting that voice. On this Mac, use
 the guarded tasks and keep Android work on Arch.
+The `convert` task invokes the build and packaging path even for usage output;
+inspect its prerequisites before running it as a help command.
 
 ### Legacy Python compatibility setup
 
@@ -157,15 +159,12 @@ mise run convert -- convert book.epub
 mise run convert -- convert book.epub --engine edge
 mise run convert -- convert book.epub --engine piper
 
-# Single chapter or range
-mise run convert -- convert book.epub --chapter 3
-mise run convert -- convert book.epub --chapter 5.1,5.2,5.3
+# One zero-based position, or repeated literal chapter IDs
+mise run convert -- convert book.epub --chapter position:2
+mise run convert -- convert book.epub --chapter 5.1 --chapter 5.2 --chapter 5.3
 
 # Preview chapter structure without synthesis
 mise run convert -- convert book.epub --show-structure
-
-# Force re-parse (ignore cache)
-mise run convert -- convert book.epub --clear-cache
 
 # Batch: multiple files or folder
 mise run convert -- convert book1.epub book2.epub --batch ~/epub-folder/
@@ -174,19 +173,27 @@ mise run convert -- convert book1.epub book2.epub --batch ~/epub-folder/
 
 The Python CLI remains in `python_app/` as the migration oracle until
 differential coverage and the final cutover validation are complete.
-PDF conversion is not implemented by the embedded Rust CLI; it reports an
-unsupported-format error instead of attempting to parse a PDF as EPUB. Native
-reader format support is a separate capability. Unsupported legacy CLI flags
-are rejected explicitly; `--verify` verifies the output after conversion.
+The native CLI explicitly rejects PDF conversion and structure inspection. The
+shared embedded core supports text-layer PDF through a separate client boundary;
+see the [PDF contract](docs/pdf-conversion.md). Reader format support is also a
+separate capability. Unsupported legacy CLI flags are rejected explicitly;
+`--verify` verifies the output after conversion.
 
-### Shell Autocomplete (Optional)
+Chapter selections are literal values; use repeated `--chapter` options rather
+than a comma-separated list. `position:N` explicitly selects a zero-based
+position. Inspect the source structure before selecting chapter IDs.
 
-```bash
-# Zsh (macOS default) — add to ~/.zshrc
-echo "source $(pwd)/shell-completion.zsh" >> ~/.zshrc && source ~/.zshrc
-```
+Cache clearing is destructive: with a book conversion, `--clear-cache` removes
+`<cache_dir>/<source_hash>` and any `<output_dir>/<input_file_stem>` directory
+without an additional prompt. The worker's job-ID output directories are a
+separate layout. Inspect the targets and preserve required audio before an
+intentionally authorized clear.
 
-Tab-completes `.epub`/`.pdf` file paths and `--engine` values.
+### Legacy Python autocomplete
+
+[shell-completion.zsh](shell-completion.zsh) describes the Python compatibility
+CLI and includes Python-only options. Its registrations also cover `convert`;
+inspect aliases before sourcing it for an explicitly selected legacy workflow.
 
 ---
 

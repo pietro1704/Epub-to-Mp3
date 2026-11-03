@@ -1,25 +1,34 @@
 # Rust ingestion adapters
 
-Phase 2 Task 2.3 adds explicit adapter boundaries for PDF and MOBI-family
-sources without selecting a Rust parsing dependency prematurely.
+Boundary notes reconciled on 2026-11-03. These notes distinguish the shared core's
+implemented text-layer PDF parser from deferred MOBI-family support. Client
+capability is explicit.
 
 ## PDF
 
-The current Python behavior is `pypdf` text-layer extraction, one chapter per
-page, metadata title/author fallback to the filename, whitespace normalization,
-and an error when a non-empty PDF has no readable text. Scanned-page recovery
-uses the separate Vision/OCR path and is not silently emulated here. A future
-`PdfIngestionAdapter` implementation must preserve those semantics and may set
-`source_format` to `pdf_scan_ocr` only when the OCR/cache contract is ported.
+`PdfTextIngestion` in `crates/converter-core/src/ingestion/pdf_text.rs` uses
+`pdf-extract 0.12.1`. Shared metadata/conversion dispatch lives in `book_input.rs`.
+The [native PDF contract](pdf-conversion.md) defines source fidelity, outline
+grouping, page-label fallback, resource limits, cancellation and explicit failures.
+Outlines can group pages into chapters; one chapter per page is the fallback,
+not the general chapter contract. OCR is not installed or applied implicitly.
+
+The Rust CLI deliberately rejects both PDF conversion and structure inspection;
+core support does not imply every adapter exposes the format. Apple PDF reading
+uses PDFKit, independently of the Rust narration parser.
+
+Legacy Python `pypdf` extraction and its separate Vision/OCR integration remain
+compatibility references. They do not define the implemented native PDF parser
+or authorize adding an OCR dependency.
 
 ## MOBI / AZW / AZW3
 
-The current server/CLI behavior calls KindleUnpack through the `mobi` package,
+Legacy Python server/CLI behavior calls KindleUnpack through the `mobi` package,
 then parses extracted EPUB or HTML. DRM is checked before extraction by the
 caller. The Rust workspace currently has no selected KindleUnpack-compatible
 crate, so the default adapter returns an explicit unsupported-format error for
 all three extensions rather than treating them as EPUB or inventing a parser.
 
 The public Rust traits and typed errors live in
-`crates/converter-core/src/ingestion.rs`. Dependency selection and concrete
-parsers are intentionally deferred to the next migration decision.
+`crates/converter-core/src/ingestion.rs`. A concrete MOBI-family parser and its
+dependency selection remain deferred; this does not describe the active PDF path.
