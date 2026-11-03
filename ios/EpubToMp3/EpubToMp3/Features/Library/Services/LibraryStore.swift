@@ -24,6 +24,8 @@ final class LibraryStore: ObservableObject {
 
     @Published private(set) var books: [BookEntity] = []
     @Published private(set) var loadError: String?
+    /// A missing index is a valid empty library; decode failure leaves membership unknown.
+    private(set) var hasLoadedSuccessfully = false
 
     private let defaultsKey: String
     private let defaults: UserDefaults
@@ -84,12 +86,13 @@ final class LibraryStore: ObservableObject {
     private func apply(_ outcome: LibraryIndexCodec.DecodeOutcome) {
         switch outcome {
         case .success(let (books, needsPersist)):
+            hasLoadedSuccessfully = true
             self.books = books
             if needsPersist { persist() }
         case .failure(let error):
             self.loadError = error
         case .empty:
-            break
+            hasLoadedSuccessfully = true
         }
     }
 
@@ -107,6 +110,7 @@ final class LibraryStore: ObservableObject {
     ///    refresh its bookmark + filename and skip the rest.
     @discardableResult
     func importBook(from url: URL) throws -> BookEntity {
+        try requireLoadedCatalog()
         // Compatibility for synchronous, non-batch callers. Batch UI imports use
         // importBooks(from:) so waiting for this serial worker never blocks UI.
         let prepared = try LibraryImportExecutor.performSync {
@@ -124,6 +128,9 @@ final class LibraryStore: ObservableObject {
     /// Only value snapshots cross the worker boundary, never this mutable store.
     @MainActor
     func importBooks(from urls: [URL]) async -> [ImportOutcome] {
+        guard hasLoadedSuccessfully else {
+            return urls.map { ImportOutcome(url: $0, book: nil, error: unavailableCatalogError.localizedDescription) }
+        }
         let baseline = books.reduce(into: [String: BookEntity]()) { $0[$1.id] = $1 }
         let removals = removalGenerations
         let resources = ImportResources(fileManager: fileManager, defaults: nil)
@@ -233,6 +240,7 @@ final class LibraryStore: ObservableObject {
     /// Remove a book from the library. Does NOT delete the underlying
     /// file (the user may want it back).
     func remove(id: String) {
+        guard hasLoadedSuccessfully else { return }
         removalGenerations[id, default: 0] += 1
         ReaderProgressStore.evict(bookId: id)
         books.removeAll { $0.id == id }
@@ -264,6 +272,7 @@ final class LibraryStore: ObservableObject {
             )
         ]
         loadError = nil
+        hasLoadedSuccessfully = true
     }
 
     /// Resolve the bookmark to a file URL the caller can read. Marks
@@ -420,18 +429,30 @@ final class LibraryStore: ObservableObject {
     // MARK: - Persistence
 
     private func persist() {
+        guard hasLoadedSuccessfully else { return }
         indexPersistence.enqueue(books)
+    }
+
+    private var unavailableCatalogError: NSError {
+        NSError(domain: "LibraryStore", code: 8, userInfo: [NSLocalizedDescriptionKey:
+            "The saved library could not be loaded. Its original data has been preserved."])
+    }
+
+    private func requireLoadedCatalog() throws {
+        guard hasLoadedSuccessfully else { throw unavailableCatalogError }
     }
 
     /// Flushes submissions preceding this call without blocking the main actor.
     /// UserDefaults acceptance is not an fsync or power-loss durability guarantee.
     func flushPersistence() async throws {
+        try requireLoadedCatalog()
         try await indexPersistence.flush()
     }
 
     /// For synchronous compatibility callers/tests or a termination hook only.
     /// Interactive mutation paths must never wait on this barrier.
     func flushPersistenceSync() throws {
+        try requireLoadedCatalog()
         try indexPersistence.flushSync()
     }
 
