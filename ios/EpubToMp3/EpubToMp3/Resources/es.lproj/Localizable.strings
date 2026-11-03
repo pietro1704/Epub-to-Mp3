@@ -381,7 +381,7 @@
 
 /* === ConvertView === */
 "convert.title" = "Convertir";
-"conversion.log" = "Registro da conversão";
+"conversion.log" = "Registro de conversión";
 "convert.file" = "Archivo";
 "convert.selected" = "Seleccionado";
 "convert.noFilePicked" = "Ningún archivo seleccionado.";
@@ -414,7 +414,7 @@
 "convert.openResult" = "Ver resultado";
 "convert.resultTitle" = "Resultado de la conversión";
 "convert.startConversion" = "Iniciar conversión";
-"convert.error.engineWarmingUp" = "El motor de audio aún se está iniciando. Inténtalo de nuevo en un momento o configura una URL de backend remoto en Ajustes.";
+"convert.error.engineWarmingUp" = "El motor de audio aún se está iniciando. Inténtalo de nuevo en un momento.";
 "convert.error.pickFileFirst" = "Elige primero un EPUB o PDF.";
 
 /* === LibrarySidebar === */
@@ -677,7 +677,7 @@
 "settings.skipBackward" = "Retroceder";
 "settings.seconds" = "%d segundos";
 
-"conversion.systemVoiceFallback" = "Se usa temporalmente la voz del dispositivo en este segmento. Se volverá a intentar Edge en el siguiente.";
+"conversion.systemVoiceFallback" = "Se usa temporalmente una voz instalada en el dispositivo. Se volverá a intentar la voz principal automáticamente.";
 
 "settings.secondaryVoice" = "Voz secundaria";
 "settings.noSecondary" = "Ninguna";
@@ -743,3 +743,21 @@
 "error.http" = "El servidor devolvió el error %d. Inténtalo de nuevo.";
 "error.response" = "No se pudo leer la respuesta. Inténtalo de nuevo.";
 "error.network" = "No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.";
+
+// Conversion states and actionable warnings.
+"convert.failed" = "Error en la conversión";
+"convert.paused" = "Conversión en pausa";
+"convert.stateUnknown" = "Estado no disponible";
+"error.timeout" = "La operación superó el límite de %d segundos. Inténtalo de nuevo.";
+"error.speechTimeout" = "La voz tardó demasiado en responder. Inténtalo de nuevo.";
+"error.exportNoAudio" = "No hay audio completado disponible para exportar.";
+"error.exportTooLarge" = "%@ es demasiado grande para exportar como ZIP estándar.";
+"error.localAudioMissing" = "El audio local no está disponible. Convierte este capítulo de nuevo.";
+"error.localAudioInvalid" = "El audio guardado está vacío o dañado. Convierte este capítulo de nuevo.";
+"error.epubInvalid" = "%@ no es un paquete EPUB válido.";
+"error.epubTooLarge" = "%@ es demasiado grande para empaquetarlo como EPUB.";
+"error.readerOffline" = "El texto aún no está disponible sin conexión.";
+"error.bookUnavailable" = "Este libro ya no está disponible.";
+"error.bookNoText" = "No se pudo extraer texto legible de este libro.";
+"error.textPreparing" = "El texto todavía se está preparando. Inténtalo de nuevo en un momento.";
+"convert.partial" = "Conversión parcial";

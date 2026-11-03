@@ -414,7 +414,7 @@
 "convert.openResult" = "Ver resultado";
 "convert.resultTitle" = "Resultado da conversão";
 "convert.startConversion" = "Iniciar conversão";
-"convert.error.engineWarmingUp" = "O motor de áudio ainda está aquecendo. Tente novamente em instantes ou defina uma URL de backend remoto nos Ajustes.";
+"convert.error.engineWarmingUp" = "O motor de áudio ainda está iniciando. Tente novamente em instantes.";
 "convert.error.pickFileFirst" = "Escolha um EPUB ou PDF primeiro.";
 
 /* === LibrarySidebar === */
@@ -676,7 +676,7 @@
 "settings.skipBackward" = "Voltar";
 "settings.seconds" = "%d segundos";
 
-"conversion.systemVoiceFallback" = "Usando a voz do aparelho neste trecho. Edge será tentado novamente no próximo.";
+"conversion.systemVoiceFallback" = "Usando uma voz instalada no aparelho temporariamente. A voz principal será tentada novamente automaticamente.";
 
 "settings.secondaryVoice" = "Voz secundária";
 "settings.noSecondary" = "Nenhuma";
@@ -742,3 +742,21 @@
 "error.http" = "O servidor retornou o erro %d. Tente novamente.";
 "error.response" = "Não foi possível ler a resposta. Tente novamente.";
 "error.network" = "Não foi possível conectar. Verifique a conexão e tente novamente.";
+
+// Conversion states and actionable warnings.
+"convert.failed" = "Falha na conversão";
+"convert.paused" = "Conversão pausada";
+"convert.stateUnknown" = "Estado indisponível";
+"error.timeout" = "A operação excedeu o limite de %d segundos. Tente novamente.";
+"error.speechTimeout" = "A voz demorou demais para responder. Tente novamente.";
+"error.exportNoAudio" = "Não há áudio concluído disponível para exportar.";
+"error.exportTooLarge" = "%@ é grande demais para exportar como ZIP padrão.";
+"error.localAudioMissing" = "O áudio local não está disponível. Converta este capítulo novamente.";
+"error.localAudioInvalid" = "O áudio salvo está vazio ou danificado. Converta este capítulo novamente.";
+"error.epubInvalid" = "%@ não é um pacote EPUB válido.";
+"error.epubTooLarge" = "%@ é grande demais para empacotar como EPUB.";
+"error.readerOffline" = "O texto ainda não está disponível offline.";
+"error.bookUnavailable" = "Este livro não está mais disponível.";
+"error.bookNoText" = "Não foi possível extrair texto legível deste livro.";
+"error.textPreparing" = "O texto ainda está sendo preparado. Tente novamente em instantes.";
+"convert.partial" = "Conversão parcial";

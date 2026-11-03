@@ -291,16 +291,16 @@ final class JobDetailScreenController: UITableViewController {
         }
         var rows = [
             (L10n.string("jobDetail.id"), jobId),
-            (L10n.string("jobDetail.state"), viewModel.snapshot?.state ?? "—"),
+            (L10n.string("jobDetail.state"), ConversionStatusPresentation.label(viewModel.snapshot?.state)),
             (L10n.string("jobDetail.eventsReceived"), "\(viewModel.receivedCount)"),
         ]
         if let title = viewModel.snapshot?.bookTitle {
             rows.insert((L10n.string("jobDetail.book"), title), at: 2)
         }
         if let engine = viewModel.snapshot?.engine {
-            rows.append((L10n.string("settings.audioEngineChoice"), engine))
+            rows.append((L10n.string("settings.audioEngineChoice"), AudioEnginePreference(rawValue: engine)?.displayName ?? engine))
         }
-        if let voice = viewModel.snapshot?.voice {
+        if let voice = viewModel.snapshot?.activeVoiceDisplayName {
             rows.append((L10n.string("convert.voiceOptional"), voice))
         }
         if let pct = viewModel.snapshot?.progressPercent {
@@ -311,7 +311,7 @@ final class JobDetailScreenController: UITableViewController {
         }
         rows.append((
             L10n.string("jobDetail.streaming"),
-            viewModel.isStreaming ? L10n.string("jobDetail.live") : String(localized: "jobDetail.idle")
+            viewModel.isStreaming ? L10n.string("jobDetail.live") : L10n.string("jobDetail.idle")
         ))
         return rows
     }

@@ -26,6 +26,14 @@ final class ManualConversionGate {
 
 @MainActor
 final class ManualConversionSessionTests: XCTestCase {
+    func testWireStatesUseLocalizedPresentationIncludingUnknownAndCancellation() {
+        XCTAssertEqual(ConversionStatusPresentation.label("running"), L10n.string("convert.converting"))
+        XCTAssertEqual(ConversionStatusPresentation.label("completed"), L10n.string("convert.completed"))
+        XCTAssertEqual(ConversionStatusPresentation.label("cancelled"), L10n.string("convert.cancelled"))
+        XCTAssertEqual(ConversionStatusPresentation.label("failed"), L10n.string("convert.failed"))
+        XCTAssertEqual(ConversionStatusPresentation.label("future-wire-state"), L10n.string("convert.stateUnknown"))
+    }
+
     private let file = URL(fileURLWithPath: "/fixture-only/manual.epub")
 
     private func result(_ jobID: String) -> RustConversionCoordinator.Result {

@@ -24,7 +24,7 @@ extension ConversionOptionsInteropTests {
                                               options: ConversionOptions(engine: "coqui"))
             XCTFail("Unsupported provider unexpectedly accepted")
         } catch {
-            XCTAssertTrue(error.localizedDescription.contains("unsupported conversion engine"))
+            XCTAssertTrue(((error as? EmbeddedConverterError)?.diagnosticDescription ?? error.localizedDescription).contains("unsupported conversion engine"))
         }
         XCTAssertEqual(manager.supportLookups, 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
@@ -48,7 +48,7 @@ extension ConversionOptionsInteropTests {
                                                   options: options)
                 XCTFail("Unready or incompatible model configuration was accepted")
             } catch {
-                XCTAssertTrue(error.localizedDescription.lowercased().contains("piper"), "Unexpected preflight error: \(error)")
+                XCTAssertTrue(((error as? EmbeddedConverterError)?.diagnosticDescription ?? error.localizedDescription).lowercased().contains("piper"), "Unexpected preflight error: \(error)")
             }
         }
         XCTAssertEqual(manager.supportLookups, 0)
@@ -72,7 +72,7 @@ extension ConversionOptionsInteropTests {
             chapterStart: 0, chapterEnd: 0, options: options
         )) { error in
             XCTAssertTrue(
-                error.localizedDescription.lowercased().contains("piper model"),
+                ((error as? EmbeddedConverterError)?.diagnosticDescription ?? error.localizedDescription).lowercased().contains("piper model"),
                 "Unexpected missing-model result: \(error)"
             )
         }
@@ -106,7 +106,7 @@ extension ConversionOptionsInteropTests {
         ] {
             XCTAssertThrowsError(try adapter.convertBook(at: bookURL, outputDirectory: blocked, jobID: "blocked-output",
                                                        chapterStart: 0, chapterEnd: 0, options: options)) {
-                XCTAssertTrue($0.localizedDescription.contains(expected), "Unexpected boundary error: \($0)")
+                XCTAssertTrue((($0 as? EmbeddedConverterError)?.diagnosticDescription ?? $0.localizedDescription).contains(expected), "Unexpected boundary error: \($0)")
             }
         }
         for options: ConversionOptions? in [
@@ -119,7 +119,7 @@ extension ConversionOptionsInteropTests {
         ] {
             XCTAssertThrowsError(try adapter.convertBook(at: bookURL, outputDirectory: blocked, jobID: "blocked-output",
                                                        chapterStart: 0, chapterEnd: 0, options: options)) {
-                XCTAssertTrue($0.localizedDescription.contains("create output directory"), "Valid options did not reach the output boundary: \($0)")
+                XCTAssertTrue((($0 as? EmbeddedConverterError)?.diagnosticDescription ?? $0.localizedDescription).contains("create output directory"), "Valid options did not reach the output boundary: \($0)")
             }
         }
         XCTAssertEqual(try Data(contentsOf: blocked), original)

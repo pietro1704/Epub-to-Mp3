@@ -79,7 +79,12 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
     struct Failure: Error, LocalizedError {
         let message: String
         init(_ message: String) { self.message = message }
-        var errorDescription: String? { message }
+        var errorDescription: String? {
+            if message.contains("cancelled") { return L10n.string("convert.cancelled") }
+            if message.contains("timed out") { return L10n.string("error.speechTimeout") }
+            if message.contains("No installed system voice") { return L10n.string("error.voiceLanguage") }
+            return L10n.string("error.conversionFailed")
+        }
     }
 
     private final class Request: @unchecked Sendable {

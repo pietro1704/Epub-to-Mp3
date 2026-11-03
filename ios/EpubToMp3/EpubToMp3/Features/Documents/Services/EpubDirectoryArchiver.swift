@@ -12,9 +12,9 @@ enum EpubDirectoryArchiver {
         var errorDescription: String? {
             switch self {
             case let .invalidPackage(url):
-                return "\(url.lastPathComponent) is not a valid expanded EPUB package."
+                return L10n.string("error.epubInvalid", url.lastPathComponent)
             case let .archiveTooLarge(url):
-                return "\(url.lastPathComponent) is too large to package as an EPUB."
+                return L10n.string("error.epubTooLarge", url.lastPathComponent)
             }
         }
     }

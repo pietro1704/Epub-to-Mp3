@@ -72,9 +72,9 @@ enum LocalAudiobookArchiveExporter {
         var errorDescription: String? {
             switch self {
             case .noAudio:
-                return "No completed audio is available to export."
+                return L10n.string("error.exportNoAudio")
             case .fileTooLarge(let url):
-                return "The export file is too large for a standard ZIP: \(url.lastPathComponent)."
+                return L10n.string("error.exportTooLarge", url.lastPathComponent)
             }
         }
     }

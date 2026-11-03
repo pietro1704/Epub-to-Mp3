@@ -47,14 +47,14 @@ final class SessionRowModelTests: XCTestCase {
         XCTAssertEqual(SessionRowModel.make(from: session(outcome: "weird")).outcomeState, .unknown)
     }
 
-    func testOutcomeTextCapitalized() {
-        XCTAssertEqual(SessionRowModel.make(from: session(outcome: "success")).outcomeText, "Success")
+    func testOutcomeTextIsLocalized() {
+        XCTAssertEqual(SessionRowModel.make(from: session(outcome: "success")).outcomeText, L10n.string("convert.completed"))
         XCTAssertNil(SessionRowModel.make(from: session(outcome: nil)).outcomeText)
     }
 
     func testEngineTextOmittedWhenEmpty() {
         XCTAssertNil(SessionRowModel.make(from: session(engine: "")).engineText)
-        XCTAssertEqual(SessionRowModel.make(from: session(engine: "edge")).engineText, "edge")
+        XCTAssertEqual(SessionRowModel.make(from: session(engine: "edge")).engineText, "Edge")
     }
 
     func testTimestampTruncatedTo19Chars() {
@@ -65,7 +65,7 @@ final class SessionRowModelTests: XCTestCase {
 
     func testDetailTextJoinsNonNilFieldsWithSeparator() {
         let row = SessionRowModel.make(from: session(engine: "edge", chapters: 24))
-        XCTAssertTrue(row.detailText.contains("edge"))
+        XCTAssertTrue(row.detailText.contains("Edge"))
         XCTAssertTrue(row.detailText.contains("·"))
         XCTAssertTrue(row.detailText.hasSuffix("2026-05-08T10:23:45"))
     }

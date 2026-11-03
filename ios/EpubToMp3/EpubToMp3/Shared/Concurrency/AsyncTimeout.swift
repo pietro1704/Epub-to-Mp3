@@ -41,8 +41,7 @@ struct TimeoutError: Error, LocalizedError, Equatable {
     }
 
     var errorDescription: String? {
-        let base = label.map { "\($0) timed out" } ?? "Operation timed out"
-        return "\(base) after \(Int(seconds))s"
+        L10n.string("error.timeout", Int(max(0, min(seconds.isFinite ? seconds : 0, Double(Int32.max)))))
     }
 }
 

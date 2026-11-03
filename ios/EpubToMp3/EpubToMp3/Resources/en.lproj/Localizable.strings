@@ -417,7 +417,7 @@
 "convert.openResult" = "View result";
 "convert.resultTitle" = "Conversion result";
 "convert.startConversion" = "Start conversion";
-"convert.error.engineWarmingUp" = "The audio engine is still warming up. Try again in a moment, or set a remote backend URL in Settings.";
+"convert.error.engineWarmingUp" = "The audio engine is still starting. Please try again in a moment.";
 "convert.error.pickFileFirst" = "Pick an EPUB or PDF first.";
 
 /* === LibrarySidebar === */
@@ -676,7 +676,7 @@
 "settings.skipBackward" = "Skip backward";
 "settings.seconds" = "%d seconds";
 
-"conversion.systemVoiceFallback" = "Using the device voice temporarily for this segment. Edge will be retried next.";
+"conversion.systemVoiceFallback" = "Using an installed device voice temporarily. The primary voice will be retried automatically.";
 
 "settings.secondaryVoice" = "Secondary voice";
 "settings.noSecondary" = "None";
@@ -742,3 +742,21 @@
 "error.http" = "The server returned error %d. Please try again.";
 "error.response" = "The response could not be read. Please try again.";
 "error.network" = "Could not connect. Check your connection and try again.";
+
+// Conversion states and actionable warnings.
+"convert.failed" = "Conversion failed";
+"convert.paused" = "Conversion paused";
+"convert.stateUnknown" = "Status unavailable";
+"error.timeout" = "The operation timed out after %d seconds. Please try again.";
+"error.speechTimeout" = "The voice took too long to respond. Please try again.";
+"error.exportNoAudio" = "No completed audio is available to export.";
+"error.exportTooLarge" = "%@ is too large to export as a standard ZIP.";
+"error.localAudioMissing" = "Local audio is unavailable. Convert this chapter again.";
+"error.localAudioInvalid" = "The saved audio is empty or damaged. Convert this chapter again.";
+"error.epubInvalid" = "%@ is not a valid EPUB package.";
+"error.epubTooLarge" = "%@ is too large to package as an EPUB.";
+"error.readerOffline" = "The text is not available offline yet.";
+"error.bookUnavailable" = "This book is no longer available.";
+"error.bookNoText" = "No readable text could be extracted from this book.";
+"error.textPreparing" = "The text is still being prepared. Please try again shortly.";
+"convert.partial" = "Partially converted";
