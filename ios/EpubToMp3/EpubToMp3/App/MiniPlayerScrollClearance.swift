@@ -9,8 +9,7 @@ final class MiniPlayerScrollClearance {
     private var applying = false
 
     func update(_ controller: UIViewController, occlusion: CGRect?) {
-        guard controller.isViewLoaded, !applying else { return }
-        let view = controller.view!
+        guard let view = controller.viewIfLoaded, !applying else { return }
         let original = max(0, controller.additionalSafeAreaInsets.bottom - contribution)
         let contentBottom = view.bounds.maxY - view.safeAreaInsets.bottom + contribution
         let overlap: CGFloat
@@ -18,9 +17,9 @@ final class MiniPlayerScrollClearance {
             overlap = max(0, contentBottom - occlusion.minY)
         } else { overlap = 0 }
         let next = original + overlap
+        contribution = overlap
         guard abs(controller.additionalSafeAreaInsets.bottom - next) > 0.5 else { return }
         applying = true
-        contribution = overlap
         controller.additionalSafeAreaInsets.bottom = next
         applying = false
     }
