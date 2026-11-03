@@ -1,7 +1,15 @@
 # Phase 6: coverage, evidence and delivery reconciliation
 
-Status: closure plan; no claim of completed code audit or runtime acceptance.
+Status: checkpoint and TODO captured; final closure/acceptance remains pending.
 Return to the [audit overview](../2026-11-03-complete-code-audit.md).
+
+- [x] Record published source commits and point-in-time delivery identities.
+- [x] Separate implemented/static-reviewed work from native/Web suites not run.
+- [x] Preserve #1072's draft checkpoint and all unrelated files/evidence.
+- [x] Save [execution checkpoint](execution-checkpoint.md) and [remaining TODO](TODO.md).
+- [ ] Reconcile all remaining source-file coverage and findings across six phases.
+- [ ] Execute the final runtime matrix, resolve failures and confirm integration.
+- [ ] Record blocked platform/device checks without substituting another runtime.
 
 ## Outcome and prerequisites
 
@@ -14,7 +22,8 @@ Apply [coding standards](../../../CODING_STANDARDS.md),
 [delivery workflow](../../agent-workflow.md),
 [execution policy](../../agents/execution-policy.md) and
 [platform ownership](../../agents/mac-arch-collaboration.md).
-The current planning/publication request does not itself start these deliveries.
+The original planning request did not itself authorize these deliveries; the
+later execution instruction and current checkpoint define the active scope.
 
 ## Step 1: define finding and coverage records
 

@@ -2,9 +2,34 @@
 
 Date: 2026-11-03
 
-Status: planning only. The user explicitly requested this plan as a versioned
-Markdown document. Saving and publishing it does not start the audit, authorize
-removals, or establish runtime acceptance.
+Status: implementation started; paused for the user's requested session handoff.
+See the [execution checkpoint](2026-11-03-code-audit/execution-checkpoint.md) and
+[remaining TODO](2026-11-03-code-audit/TODO.md) before resuming. Checkmarks below
+distinguish delivered source work from unexecuted runtime acceptance.
+
+## Execution checklist — 2026-11-03
+
+- [x] Revalidate master and preserve draft #1072's unrelated, unvalidated scope.
+- [x] Publish the tracked inventory/navigation map (ORG-001, #1073, integrated).
+- [x] Correct native README references (ORG-002, #1074, integrated).
+- [x] Reconcile consolidation history (ORG-003, #1077, integrated).
+- [x] Correct CLI/ingestion documentation and bilingual wiki (ORG-006, #1078, integrated).
+- [x] Correct Crass and execute its regression/Rails checks (#1075, integrated).
+- [x] Publish Minimatch/Zod corrections and new regressions (#1076; merge and runtime checks pending).
+- [x] Perform bounded Swift source reviews and publish four initial corrections
+  with native regressions (#1079–#1082; merge and native execution pending).
+- [x] Save this checkpoint, reviewed findings and next-session TODO.
+- [ ] Finish phase 1 ownership/provenance follow-ups and final reconciliation.
+- [ ] Finish phase 2 Swift review, remaining corrections and native acceptance.
+- [ ] Execute phase 3 Xcode/mise audit.
+- [ ] Execute phase 4 shared Rust audit.
+- [ ] Execute phase 5 Flutter audit on its owning platforms.
+- [ ] Execute phase 6 final runtime campaign and evidence/delivery reconciliation.
+
+The user's latest sequence is implementation first and runtime suites at the end,
+without CI monitoring. Existing server protections and automatic merge remain;
+no protection bypass is authorized by this checklist. Source checks and written
+tests are not executed acceptance. No automatic local continuation is scheduled.
 
 ## Objective and sequence
 
@@ -25,22 +50,23 @@ Diagnosis, proposed execution and observed acceptance remain separate.
 
 | Order | Playbook | Current status |
 | --- | --- | --- |
-| 1 | [Organization and documentation](2026-11-03-code-audit/01-organization.md) | Planned; inventory and proposal come first |
-| 2 | [Native Swift](2026-11-03-code-audit/02-swift.md) | Planned; required reader Simulator acceptance remains blocked |
+| 1 | [Organization and documentation](2026-11-03-code-audit/01-organization.md) | Inventory and identified documentation corrections integrated; ownership/provenance follow-ups retained |
+| 2 | [Native Swift](2026-11-03-code-audit/02-swift.md) | Partial static review; four corrections published; native tests deferred and required Simulator acceptance blocked |
 | 3 | [Xcode and mise](2026-11-03-code-audit/03-xcode-mise.md) | Planned; no performance baseline measured |
 | 4 | [Shared Rust](2026-11-03-code-audit/04-rust.md) | Planned; dependency and client acceptance gates apply |
 | 5 | [Flutter](2026-11-03-code-audit/05-flutter.md) | Planned; Arch/Windows evidence and Android resumption are separate |
-| 6 | [Coverage and delivery](2026-11-03-code-audit/06-coverage-delivery.md) | Planned; use its finding ledger throughout all phases |
+| 6 | [Coverage and delivery](2026-11-03-code-audit/06-coverage-delivery.md) | Checkpoint/TODO recorded; full coverage and final runtime reconciliation pending |
 
 Each playbook identifies inspected source facts, investigation steps, execution
 slices, verification routes, approval points and exit criteria. Revalidate them
 against the execution commit. Source inspection for planning is not a complete
 audit and does not establish that a suspected defect affects users.
 
-Start with phase 1's first executable slice. Complete one coherent change and its
-required acceptance/delivery before the next. If a required dependency is blocked,
-report it and obtain the relevant sequencing decision; do not silently substitute
-another runtime or treat blocked work as complete.
+Resume from the first unchecked item in the checkpoint/TODO, not from the original
+inventory. Keep changes coherent and branches current; independent implementation
+slices may progress while protected automatic integration completes, as requested
+by the later execution instruction. Dependent work still needs its source base.
+Preserve blocked acceptance rather than substituting another runtime.
 
 ## 1. Organization and documentation
 
@@ -169,5 +195,6 @@ product delivery; keep the combined PR in draft until that scope is resolved.
 - [macOS validation](../agents/macos-validation.md)
 - [Mac/Arch ownership](../agents/mac-arch-collaboration.md)
 
-The first execution task is the inventory and concrete organization proposal,
-starting with documentation. No audit phase is marked completed by this plan.
+The initial inventory and navigation proposal were integrated as ORG-001.
+Resume from the first unchecked checkpoint/TODO item. The complete six-phase
+audit and final runtime acceptance are not marked completed by this plan.

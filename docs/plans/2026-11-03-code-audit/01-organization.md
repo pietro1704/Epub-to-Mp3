@@ -1,7 +1,16 @@
 # Phase 1: files, folders and documentation
 
-Status: execution plan, not an executed reorganization.
+Status: initial inventory/documentation slices integrated; follow-ups remain.
 Return to the [audit overview](../2026-11-03-complete-code-audit.md).
+
+- [x] Inventory 5,256 baseline tracked paths and generated/vendor boundaries (#1073).
+- [x] Publish a minimal navigation proposal preserving existing product roots (#1073).
+- [x] Correct native references, consolidation history and CLI/ingestion facts (#1074, #1077, #1078).
+- [x] Preserve all candidate removals and historical/user artifacts; no structural move applied.
+- [ ] Resolve ORG-004 artifact provenance and ORG-005 vendored patch ownership.
+- [ ] Reconcile final-tree coverage and remaining content/link acceptance in phase 6.
+
+See [checkpoint](execution-checkpoint.md) and [TODO](TODO.md) for exact identities.
 
 ## Outcome and entry conditions
 

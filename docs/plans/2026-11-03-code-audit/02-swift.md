@@ -1,8 +1,20 @@
 # Phase 2 — Native Swift audit
 
-Status: planned; source and test entry points were inspected to prepare this
-playbook. No complete Swift audit, native build, test run or device journey is
+Status: partial static review and four initial source corrections published.
+No complete Swift audit, native compilation, test execution or device journey is
 claimed. Follow the [master plan](../2026-11-03-complete-code-audit.md).
+
+- [x] Inspect bounded startup/library, conversion/playback/offline and settings/extension seams.
+- [x] Publish failed-catalog data protection with native regressions (#1080).
+- [x] Publish retained playback coverage/offset preservation with regressions (#1081).
+- [x] Publish dot-segment audio-path containment with regressions (#1079).
+- [x] Publish shared-catalog App Intents correction with regressions (#1082).
+- [ ] Confirm integration and execute those native suites in the final campaign.
+- [ ] Finish unreviewed files, remaining findings and actual reader/GUI acceptance.
+
+The [checkpoint](execution-checkpoint.md) records coverage limits; the
+[TODO](TODO.md) lists the next concrete scopes. New native tests are written but
+unexecuted under the user's later final-only validation instruction.
 
 ## Scope, prerequisites and observed structure
 
