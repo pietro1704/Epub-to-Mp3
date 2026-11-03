@@ -18,8 +18,29 @@ performance and build quality. Work in this order, one bounded change at a time:
 5. Audit Flutter.
 6. Reconcile coverage, evidence, delivery and remaining work.
 
-Each phase will have a separate step-by-step playbook after this initial plan is
-published. Diagnosis, proposed execution and observed acceptance remain separate.
+The initial overview was published before the detailed playbooks were prepared.
+Diagnosis, proposed execution and observed acceptance remain separate.
+
+## Detailed playbooks and execution status
+
+| Order | Playbook | Current status |
+| --- | --- | --- |
+| 1 | [Organization and documentation](2026-11-03-code-audit/01-organization.md) | Planned; inventory and proposal come first |
+| 2 | [Native Swift](2026-11-03-code-audit/02-swift.md) | Planned; required reader Simulator acceptance remains blocked |
+| 3 | [Xcode and mise](2026-11-03-code-audit/03-xcode-mise.md) | Planned; no performance baseline measured |
+| 4 | [Shared Rust](2026-11-03-code-audit/04-rust.md) | Planned; dependency and client acceptance gates apply |
+| 5 | [Flutter](2026-11-03-code-audit/05-flutter.md) | Planned; Arch/Windows evidence and Android resumption are separate |
+| 6 | [Coverage and delivery](2026-11-03-code-audit/06-coverage-delivery.md) | Planned; use its finding ledger throughout all phases |
+
+Each playbook identifies inspected source facts, investigation steps, execution
+slices, verification routes, approval points and exit criteria. Revalidate them
+against the execution commit. Source inspection for planning is not a complete
+audit and does not establish that a suspected defect affects users.
+
+Start with phase 1's first executable slice. Complete one coherent change and its
+required acceptance/delivery before the next. If a required dependency is blocked,
+report it and obtain the relevant sequencing decision; do not silently substitute
+another runtime or treat blocked work as complete.
 
 ## 1. Organization and documentation
 
