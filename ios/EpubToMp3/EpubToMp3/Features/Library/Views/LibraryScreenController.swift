@@ -15,6 +15,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private var searchQuery = ""
     private var downloadRequestID: UUID?
     private let gridController = LibraryGridController(metrics: .init())
+    private var gridViewport: LibraryGridViewport?
     private var emptyStateScrollView: UIScrollView?
     private let emptyStateLabel = UILabel()
     private let addButton = UIButton(type: .system)
@@ -64,6 +65,11 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         reloadGrid(animated: true)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        gridViewport?.updateForShell(self)
     }
 
     func refreshFromStores() {
@@ -131,8 +137,8 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             gridController.view.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             gridController.view.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             gridController.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            gridController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        gridViewport = LibraryGridViewport(grid: gridController.view, container: view)
         gridController.didMove(toParent: self)
     }
 
