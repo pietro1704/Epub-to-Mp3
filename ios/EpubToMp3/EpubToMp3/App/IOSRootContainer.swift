@@ -23,6 +23,7 @@ final class IOSRootContainerController: UIViewController {
     private var miniPlayerMaximumHeight: NSLayoutConstraint!
     private let readerPresentationCoordinator = ReaderRootPresentationCoordinator()
     private var isCommittingInitialReaderPresentation = false
+    private var reservesShellMiniPlayer = false
     private lazy var miniPlayerPresentation = IOSMiniPlayerPresentation(view: miniPlayerController.view)
 
     override var prefersStatusBarHidden: Bool {
@@ -190,6 +191,15 @@ final class IOSRootContainerController: UIViewController {
         refreshOverlayState()
         isCommittingInitialReaderPresentation = false
         readerOpenStageProfiler?.recordStartupStage("root_view_did_load_completed")
+    }
+
+    /// Only shell scroll content reserves overlay space; reader geometry has its own owner.
+    func shellMiniPlayerFrame(in target: UIView) -> CGRect? {
+        guard reservesShellMiniPlayer else { return nil }
+        if shellController.usesSystemBottomAccessory {
+            return shellController.systemMiniPlayerFrame(in: target)
+        }
+        return miniPlayerController.view.convert(miniPlayerController.view.bounds, to: target)
     }
 
     private func setImmersiveReaderMode(_ isHidden: Bool) {
@@ -361,6 +371,7 @@ final class IOSRootContainerController: UIViewController {
         let miniShouldBeVisible = readerActive
             ? readerPresentationCoordinator.state.showsMiniPlayer(bookHasPlayback: showMini)
             : showMini
+        reservesShellMiniPlayer = !readerActive && miniShouldBeVisible
         if shellController.supportsSystemBottomAccessory, !readerActive {
             shellController.setSystemMiniPlayerVisible(miniShouldBeVisible, animated: true)
             miniPlayerPresentation.hideImmediately()
@@ -371,6 +382,9 @@ final class IOSRootContainerController: UIViewController {
                 animated: !isCommittingInitialReaderPresentation
             )
         }
+        let visibleShellContent = (shellController.selectedViewController as? UINavigationController)?.visibleViewController
+            ?? shellController.selectedViewController
+        visibleShellContent?.viewIfLoaded?.setNeedsLayout()
         if playerPresentation.showingFullPlayer {
             ensureFullPlayerController()
         }

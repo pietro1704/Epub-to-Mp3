@@ -122,6 +122,12 @@ final class IOSAppShellController: UITabBarController {
 #endif
     }
 
+    func systemMiniPlayerFrame(in target: UIView) -> CGRect? {
+        guard usesSystemBottomAccessory, let miniPlayerAccessoryView,
+              miniPlayerAccessoryView.window != nil, !miniPlayerAccessoryView.isHidden else { return nil }
+        return miniPlayerAccessoryView.convert(miniPlayerAccessoryView.bounds, to: target)
+    }
+
     func setSystemMiniPlayerVisible(_ visible: Bool, animated: Bool) {
         setMiniPlayerAccessoryContent(
             miniPlayerAccessoryView,

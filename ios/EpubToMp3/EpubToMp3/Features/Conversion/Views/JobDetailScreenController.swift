@@ -20,6 +20,7 @@ final class JobDetailScreenController: UITableViewController {
         case logs
     }
 
+    private let miniPlayerClearance = MiniPlayerScrollClearance()
     private let jobId: String
     private var settings: AppSettings
     private var library: LibraryStore
@@ -63,6 +64,16 @@ final class JobDetailScreenController: UITableViewController {
     private var client: (any JobStreamingClient)? {
         if let streamingClient { return streamingClient }
         return settings.resolvedBaseURL.map(APIClient.init(baseURL:))
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        miniPlayerClearance.updateForShell(self)
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        view.setNeedsLayout()
     }
 
     override func viewDidLoad() {

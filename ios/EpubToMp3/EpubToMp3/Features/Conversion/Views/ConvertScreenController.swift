@@ -14,6 +14,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         case action
     }
 
+    private let miniPlayerClearance = MiniPlayerScrollClearance()
     private let settings: AppSettings
     private let library: LibraryStore
     private let player: AudioPlayer
@@ -58,6 +59,16 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         fatalError("init(coder:) has not been implemented")
     }
 
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        miniPlayerClearance.updateForShell(self)
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        view.setNeedsLayout()
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()

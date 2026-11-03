@@ -45,6 +45,22 @@ final class MiniPlayerSurfaceOwnershipTests: XCTestCase {
         }
     }
 
+    func testConversionClearanceIsRemovedWithPlayerAndPreservesOtherInsets() {
+        let controller = UITableViewController(style: .insetGrouped)
+        controller.loadViewIfNeeded()
+        controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        controller.additionalSafeAreaInsets.bottom = 12
+        let clearance = MiniPlayerScrollClearance()
+        let originalBottom = controller.view.bounds.maxY - controller.view.safeAreaInsets.bottom
+        let player = CGRect(x: 0, y: originalBottom - 60, width: 390, height: 60)
+        clearance.update(controller, occlusion: player)
+        XCTAssertEqual(controller.additionalSafeAreaInsets.bottom, 72, accuracy: 0.5)
+        clearance.update(controller, occlusion: nil)
+        XCTAssertEqual(controller.additionalSafeAreaInsets.bottom, 12, accuracy: 0.5)
+        clearance.update(controller, occlusion: CGRect(x: 600, y: 784, width: 100, height: 60))
+        XCTAssertEqual(controller.additionalSafeAreaInsets.bottom, 12, accuracy: 0.5)
+    }
+
     private func find(_ identifier: String, in view: UIView) -> UIView? {
         if view.accessibilityIdentifier == identifier { return view }
         return view.subviews.lazy.compactMap { self.find(identifier, in: $0) }.first
