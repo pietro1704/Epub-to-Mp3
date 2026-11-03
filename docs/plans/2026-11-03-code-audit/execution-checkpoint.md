@@ -16,9 +16,11 @@ below is not a live status feed.
 - Keep protected automatic merge and exact-head PR gates. Do not monitor CI,
   disable protections, or infer a merge from PR creation.
 - No new local execution is scheduled. Resume only after a new user request/event.
-- Preserve draft #1072: its preexisting CLAUDE rule, nested mise entry and physical
-  PDF journey remain unvalidated preservation material. This documentation update
-  does not make that PR ready or validate those three files.
+- The user subsequently explicitly authorized making #1072 ready and merging
+  it, superseding the earlier draft hold. Its preexisting CLAUDE rule, nested
+  mise entry and physical PDF journey are included in that authorization;
+  their runtime validation remains pending. Preserve protected automatic merge.
+- Merge administration does not resume the paused six-phase implementation.
 
 ## Delivered and published slices
 
@@ -31,7 +33,7 @@ separately recorded. Ready PRs use the existing automatic-merge workflow.
 | ORG-001 repository inventory/map | [#1073](https://github.com/pietro1704/Epub-to-Mp3/pull/1073) | `5937b7dfb0206809eed815f949e0b594295a2071` | Integrated: `e58dea2a0f9f99cf5f07c07fabeccfe07ac2412f` |
 | ORG-002 native README references | [#1074](https://github.com/pietro1704/Epub-to-Mp3/pull/1074) | `95761109ae521bcc44fd14a9e22d68956c41d690` | Integrated: `7eaa70918892685e5fdf4cc2a1ffb1a9bec86437` |
 | SEC-001 Crass 1.0.8 and actual sanitizer regression | [#1075](https://github.com/pietro1704/Epub-to-Mp3/pull/1075) | `4f717d35ffce62ff8225fffa6b6978cd65cd1a01` | Integrated: `a2bf0c7ed62f2528d5b0fea843ec7ecfb19b2f75` |
-| SEC-002 Minimatch/Rimraf/Glob and Zod | [#1076](https://github.com/pietro1704/Epub-to-Mp3/pull/1076) | `9ef6b90e352b0595fdf7a1218b9fe8b311744369` | Published, OPEN; rebased without changing the five Web files |
+| SEC-002 Minimatch/Rimraf/Glob and Zod | [#1076](https://github.com/pietro1704/Epub-to-Mp3/pull/1076) | `9ef6b90e352b0595fdf7a1218b9fe8b311744369` | Integrated: `dc12d4da6769c63bdffe4b4971624f26395988ca`; runtime acceptance pending |
 | ORG-003 consolidation index | [#1077](https://github.com/pietro1704/Epub-to-Mp3/pull/1077) | `bf09c1417064f28d104da07bc5bb70074cdf3693` | Integrated: `0d570a758d400b3652b59ab86b258e593c912ea2` |
 | ORG-006 ingestion and CLI examples | [#1078](https://github.com/pietro1704/Epub-to-Mp3/pull/1078) | `776e9152d71dfbc94416994e4c2696976dc51874` | Integrated: `5f57172bdd46ffc6bab3d4eeebac80a679834deb` |
 | SWIFT-003 dot-segment audio paths | [#1079](https://github.com/pietro1704/Epub-to-Mp3/pull/1079) | `187d777286fa8e3a97a6aeb45645aed5986e18f3` | Published, OPEN |

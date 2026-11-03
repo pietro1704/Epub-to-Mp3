@@ -8,11 +8,13 @@ deferred to the final campaign; existing protected automatic merge stays active.
 ## Resume delivery and preserve the checkpoint
 
 - [ ] Inspect current worktrees and local changes; preserve all evidence and user data.
-- [ ] Make one delivery query for #1076 and #1079–#1082; record actual merge SHAs.
+- [x] Confirm #1076 integrated as `dc12d4da6769c63bdffe4b4971624f26395988ca`.
+- [ ] Revalidate delivery for #1072 and #1079–#1082; record actual merge SHAs.
 - [ ] Fetch/verify master ancestry and safely refresh owned branches if required.
   Use exact expected-tip force leases; never bypass a failed lease or PR gate.
-- [ ] Keep #1072 in draft. Its physical PDF test, nested mise entry and CLAUDE
-  reader rule remain separate unvalidated preservation scope.
+- [x] Record explicit user authorization to make #1072 ready and merge its
+  preserved physical PDF test, nested mise entry and CLAUDE reader rule.
+- [ ] Confirm protected integration of #1072; runtime validation remains pending.
 - [ ] Resume Swift from the first unfinished source item below, not from phase 1's inventory.
 
 ## Phase 1 — remaining ownership and final reconciliation

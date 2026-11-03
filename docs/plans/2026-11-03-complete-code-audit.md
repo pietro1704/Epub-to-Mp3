@@ -9,13 +9,14 @@ distinguish delivered source work from unexecuted runtime acceptance.
 
 ## Execution checklist — 2026-11-03
 
-- [x] Revalidate master and preserve draft #1072's unrelated, unvalidated scope.
+- [x] Revalidate master and preserve #1072's preexisting, unvalidated scope.
+- [x] Record the user's subsequent authorization to make #1072 ready and merge it through protected automatic delivery.
 - [x] Publish the tracked inventory/navigation map (ORG-001, #1073, integrated).
 - [x] Correct native README references (ORG-002, #1074, integrated).
 - [x] Reconcile consolidation history (ORG-003, #1077, integrated).
 - [x] Correct CLI/ingestion documentation and bilingual wiki (ORG-006, #1078, integrated).
 - [x] Correct Crass and execute its regression/Rails checks (#1075, integrated).
-- [x] Publish Minimatch/Zod corrections and new regressions (#1076; merge and runtime checks pending).
+- [x] Publish Minimatch/Zod corrections and new regressions (#1076, integrated; runtime checks pending).
 - [x] Perform bounded Swift source reviews and publish four initial corrections
   with native regressions (#1079–#1082; merge and native execution pending).
 - [x] Save this checkpoint, reviewed findings and next-session TODO.
@@ -181,8 +182,10 @@ followed by detailed phase planning and another commit/push.
 The first checkpoint also preserves the previously uncommitted `CLAUDE.md`
 reader-opening rule, `ios/EpubToMp3/mise.toml` entry and
 `PhysicalPDFJourneyTests.swift`. The native PDF test has not been executed in
-this planning task. Its publication is a preservation checkpoint, not validated
-product delivery; keep the combined PR in draft until that scope is resolved.
+this planning task. The user subsequently explicitly authorized making #1072
+ready and merging the combined preservation scope. The earlier draft hold is
+superseded; runtime acceptance remains pending. Use protected automatic merge
+and retain the final validation TODOs.
 
 ## Canonical references
 

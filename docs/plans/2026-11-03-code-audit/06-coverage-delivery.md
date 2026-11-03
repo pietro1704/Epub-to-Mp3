@@ -5,7 +5,8 @@ Return to the [audit overview](../2026-11-03-complete-code-audit.md).
 
 - [x] Record published source commits and point-in-time delivery identities.
 - [x] Separate implemented/static-reviewed work from native/Web suites not run.
-- [x] Preserve #1072's draft checkpoint and all unrelated files/evidence.
+- [x] Preserve #1072's checkpoint and all unrelated files/evidence; record the
+  user's subsequent authorization to lift its draft hold and merge it.
 - [x] Save [execution checkpoint](execution-checkpoint.md) and [remaining TODO](TODO.md).
 - [ ] Reconcile all remaining source-file coverage and findings across six phases.
 - [ ] Execute the final runtime matrix, resolve failures and confirm integration.
