@@ -63,6 +63,9 @@ struct LocalAudioArtifactFiles {
         let normalized = raw.unicodeScalars.map { allowed.contains($0) ? String($0) : "-" }.joined()
         let collapsed = normalized.replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
         let safe = collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        // Normal components have no edge hyphens, so these escaped dot segments
+        // cannot alias the root, its parent, or a normal sanitized book name.
+        if safe == "." || safe == ".." { return "-\(safe)-" }
         return safe.isEmpty ? "book" : safe
     }
 
