@@ -13,7 +13,8 @@
     "lint": "eslint --max-warnings=0 .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "NODE_OPTIONS='--max-old-space-size=4096' vitest run",
+    "test": "npm run test:dependency-security && NODE_OPTIONS='--max-old-space-size=4096' vitest run",
+    "test:dependency-security": "node --test scripts/minimatch.node-tests.mjs scripts/zod.node-tests.mjs",
     "test:watch": "vitest",
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android",
@@ -37,7 +38,16 @@
     "undici": "^7.30.1",
     "@babel/core": "^7.29.6",
     "uuid": "11.1.1",
-    "brace-expansion": "5.0.12"
+    "brace-expansion": "5.0.12",
+    "eslint": {
+      "minimatch": "11.0.4"
+    },
+    "@eslint/config-array": {
+      "minimatch": "11.0.4"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.4"
+    }
   },
   "devDependencies": {
     "@capacitor/cli": "^8",
