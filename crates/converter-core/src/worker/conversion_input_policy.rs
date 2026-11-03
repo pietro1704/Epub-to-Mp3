@@ -12,7 +12,7 @@ pub(super) fn chapter_selection_matches(value: &str, chapter_index: &str, positi
 }
 
 pub(super) fn detect_language(text: &str) -> Option<&'static str> {
-    let lower = text.to_ascii_lowercase();
+    let lower = text.to_lowercase();
     let markers = [
         ("pt-BR", [" que ", " não ", " uma ", " para ", " você "]),
         ("it-IT", [" che ", " non ", " una ", " per ", " della "]),
@@ -21,10 +21,52 @@ pub(super) fn detect_language(text: &str) -> Option<&'static str> {
     ];
     markers
         .into_iter()
-        .max_by_key(|(_, words)| words.iter().filter(|word| lower.contains(**word)).count())
-        .and_then(|(language, words)| {
-            (words.iter().filter(|word| lower.contains(**word)).count() >= 2).then_some(language)
+        .map(|(language, words)| {
+            let common_words = words.iter().filter(|word| lower.contains(**word)).count();
+            // Portuguese nasal vowels distinguish its contractions from Spanish
+            // negation. Shared words alone must not outweigh that source evidence.
+            let portuguese_hint =
+                usize::from(language == "pt-BR" && (lower.contains('ã') || lower.contains('õ')))
+                    * 2;
+            (language, common_words + portuguese_hint)
         })
+        .max_by_key(|(_, score)| *score)
+        .and_then(|(language, score)| (score >= 2).then_some(language))
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::detect_language;
+
+    #[test]
+    fn portuguese_pdf_contractions_do_not_become_spanish_negation() {
+        let text =
+            "Parte 1 - PDF para áudio\nOlá. Este PDF verifica a conversão para áudio no iPhone.";
+        assert_eq!(detect_language(text), Some("pt-BR"));
+        assert_eq!(detect_language(&text.to_uppercase()), Some("pt-BR"));
+    }
+
+    #[test]
+    fn other_languages_and_unknown_text_keep_their_identity() {
+        assert_eq!(
+            detect_language("Un texto para los lectores que no escuchan."),
+            Some("es-ES")
+        );
+        assert_eq!(
+            detect_language("The reader and this book work with audio."),
+            Some("en-US")
+        );
+        assert_eq!(
+            detect_language("The reader and this book mention João with audio."),
+            Some("en-US")
+        );
+        assert_eq!(
+            detect_language("Una pagina per chi non ascolta della musica."),
+            Some("it-IT")
+        );
+        assert_eq!(detect_language("12345"), None);
+        assert_eq!(detect_language("PDF audio"), None);
+    }
 }
 
 pub(super) fn default_edge_voice(language: Option<&str>) -> &'static str {
