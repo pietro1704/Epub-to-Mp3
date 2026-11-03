@@ -27,6 +27,27 @@ inspect it before use, since local Python execution remains deferred to CI.
 Dependency installation, model downloads and service startup require appropriate
 scope; they are not implicit in a documentation or source inspection.
 
+## Dependency security
+
+The scoped Minimatch 11 overrides address
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+for ESLint, config-array and typescript-estree, whose releases still request
+Minimatch 10. Do not replace these with a global override: Glob 13 relies on
+matching internals removed in Minimatch 11. The locked Rimraf 6.1.4 update uses
+Glob 14, which supports the new matcher. These development tools retain the
+Web toolchain's existing Node requirements.
+
+The locked Zod update addresses
+[GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)
+within eslint-plugin-react-hooks' accepted range. Its collection bounds must
+reject oversized input before element parsing and refinement work.
+
+`npm run test:dependency-security` exercises matching, bounded globstar-parent
+expansion, Glob/Rimraf scope in disposable fixtures and Zod's size gate. The normal
+`npm test` includes it. Revisit the overrides when the upstream consumers accept
+the fixed major version, and run these regressions plus lint/types/Web checks
+before claiming executed compatibility.
+
 ## Capabilities and providers
 
 The browser adapter inspects EPUB and uses Rust `ConversionSession` for segment
