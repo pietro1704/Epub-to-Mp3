@@ -9,12 +9,16 @@ Para conversão autorizada com pré-requisitos existentes:
 
 ```sh
 mise run convert -- livro.epub
-mise run convert -- livro.epub --chapter 3
+mise run convert -- livro.epub --chapter position:2
 mise run convert -- livro.epub --show-structure
 ```
 
 Os exemplos seguem o código atual da tarefa/parser; não são evidência de execução.
-O help atual da CLI rejeita ingestão de PDF. Consulte parser/help para batch,
+A CLI rejeita conversão e inspeção de estrutura de PDF. O
+[contrato PDF](../../pdf-conversion.md) separado do core embutido não amplia o
+suporte da CLI. Use flags `--chapter` repetidas para vários IDs literais;
+`position:N` seleciona explicitamente uma posição baseada em zero.
+Consulte parser/help para batch,
 saída, verificação e preferências, sem copiar flags Python ou presumir suporte a
 todos os formatos desejados pelo produto.
 
