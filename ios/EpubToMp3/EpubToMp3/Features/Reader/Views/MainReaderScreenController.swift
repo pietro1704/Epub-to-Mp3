@@ -27,9 +27,11 @@ final class MainReaderScreenController: UIViewController {
         },
         reportFailure: { [weak self] error in
             guard let self else { return }
-            ReaderListeningAlerts.present(error, from: self, library: { [weak self] in self?.library })
+            self.reportListeningFailure(error)
         }
     )
+    private var listeningRequestID = UUID()
+    private var retryWithModel: ((TtsRecoveryAlert.Choice) -> Void)?
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
     var onReaderLoadingChanged: ((Bool) -> Void)?
@@ -386,7 +388,23 @@ final class MainReaderScreenController: UIViewController {
         startListening(presentsFullPlayer: false)
     }
 
-    private func startListening(presentsFullPlayer: Bool, requestedChapter: Int? = nil, requestedRatio: Double? = nil) {
+    private func reportListeningFailure(_ error: Error) {
+        guard TtsLanguageMismatch.decode(error) != nil else {
+            ReaderListeningAlerts.present(error, from: self, library: { [weak self] in self?.library })
+            return
+        }
+        let bookID = currentBook?.id
+        let requestID = listeningRequestID
+        Task { [weak self] in
+            let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: { [weak self] in
+                guard let self else { return false }
+                return self.currentBook?.id == bookID && self.listeningRequestID == requestID && self.viewIfLoaded?.window != nil
+            })
+            if let choice { self?.retryWithModel?(choice) }
+        }
+    }
+
+    private func startListening(presentsFullPlayer: Bool, requestedChapter: Int? = nil, requestedRatio: Double? = nil, recovery: TtsRecoveryAlert.Choice? = nil) {
         guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
@@ -405,8 +423,16 @@ final class MainReaderScreenController: UIViewController {
             ?? LocalFulltextCache.inMemoryPayload(bookId: book.id)?.chapters.map {
                 (index: $0.zeroBasedEpubIndex, title: $0.displayTitle)
             } ?? []
+        listeningRequestID = UUID()
+        let requestID = listeningRequestID
+        retryWithModel = { [weak self] choice in
+            guard let self, self.currentBook?.id == book.id, self.listeningRequestID == requestID else { return }
+            self.startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: priority, requestedRatio: pageRatio, recovery: choice)
+        }
+        var options = settings.conversionOptions
+        if let recovery { options = options.recovering(with: recovery.candidate, language: recovery.language) }
         listeningSession.start(book: book, priority: priority, pageRatio: pageRatio,
-                               catalog: catalog, conversionOptions: settings.conversionOptions,
+                               catalog: catalog, conversionOptions: options,
                                presentsFullPlayer: presentsFullPlayer,
                                chapterEstimates: readerController?.playbackChapterEstimates
                                    ?? ChapterPlaybackTimeline.estimates(for:

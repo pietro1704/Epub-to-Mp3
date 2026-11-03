@@ -24,4 +24,27 @@ final class AppErrorReporterTests: XCTestCase {
         let diagnostic = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         XCTAssertEqual(diagnostic, "[App][Error] Conversion: Voz indisponível\n[App][Error] Conversion: Provider timeout\n")
     }
+    func testEmbeddedDiagnosticIsRetainedWhileAlertUsesLocalizedMessage() throws {
+        let pipe = Pipe()
+        let error = EmbeddedConverterError.conversionFailed("private runtime diagnostic")
+        let text = AppErrorReporter.message(error, context: "Conversion", destination: pipe.fileHandleForWriting)
+        try pipe.fileHandleForWriting.close()
+        let diagnostic = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        XCTAssertEqual(text, L10n.string("error.conversionFailed"))
+        XCTAssertFalse(text.contains("private runtime diagnostic"))
+        XCTAssertTrue(diagnostic.contains("private runtime diagnostic"))
+    }
+
+    func testMismatchEnvelopePreservesLanguageAndModelWithoutParsingEnglish() throws {
+        let payload = "[[tts_language_mismatch_v1]]{\"language\":\"en-US\",\"model_id\":\"pt_BR-faber-medium\"}[[/tts_language_mismatch_v1]]"
+        let error = EmbeddedConverterError.conversionFailed("wrapped system speech error: " + payload)
+        let mismatch = try XCTUnwrap(TtsLanguageMismatch.decode(error))
+        XCTAssertEqual(mismatch.language, "en-US")
+        XCTAssertEqual(mismatch.modelID, "pt_BR-faber-medium")
+        XCTAssertEqual(error.errorDescription, L10n.string("error.modelLanguage"))
+        XCTAssertNil(TtsLanguageMismatch.decode(EmbeddedConverterError.conversionFailed("unrelated failure")))
+        XCTAssertNil(TtsLanguageMismatch.decode(EmbeddedConverterError.conversionFailed("[[tts_language_mismatch_v1]]{}[[/tts_language_mismatch_v1]]")))
+        XCTAssertNil(TtsLanguageMismatch.decode(CancellationError()))
+    }
+
 }

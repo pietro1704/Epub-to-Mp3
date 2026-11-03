@@ -722,3 +722,24 @@
 
 "settings.automaticSystemFallback" = "Voz del sistema como alternativa automática";
 "settings.automaticSystemFallbackDescription" = "Si fallan las voces seleccionadas, intenta una voz instalada del sistema. Desactiva para usar solo las voces seleccionadas.";
+
+// Speech compatibility recovery and converter diagnostics.
+"error.converterUnavailable" = "El conversor de voz no está disponible. Reinstala la app o inténtalo de nuevo.";
+"error.converterIncompatible" = "El conversor de voz es incompatible con esta app. Actualiza la app.";
+"error.modelLanguage" = "Este modelo no admite el idioma de este libro. Elige un modelo compatible.";
+"error.voiceLanguage" = "No hay ninguna voz compatible disponible para este idioma.";
+"error.unsupportedEngine" = "El motor de voz seleccionado no es compatible.";
+"error.conversionFailed" = "No se pudo convertir el libro en audio. Inténtalo de nuevo. Los detalles técnicos están en los registros.";
+"tts.recovery.title" = "Elegir un modelo compatible";
+"tts.recovery.message" = "El modelo actual no admite %@. Modelo sugerido: %@. El cambio solo se aplica a esta conversión.";
+"tts.recovery.use" = "Usar %@";
+"tts.recovery.choose" = "Elegir otro modelo";
+"tts.recovery.none" = "Ningún modelo instalado y listo admite %@. Puedes instalar un modelo compatible en Ajustes o cancelar y seguir leyendo.";
+"settings.modelInstall.alreadyActive" = "Ya hay una instalación en curso para este modelo.";
+"error.pdfOpen" = "No se pudo abrir %@. El PDF puede estar dañado.";
+"error.pdfEncrypted" = "%@ está protegido con contraseña. Elimina la contraseña antes de importar.";
+"error.pdfNoText" = "%@ no tiene texto seleccionable. Los PDF escaneados necesitan reconocimiento de texto antes de la conversión.";
+"error.invalidServer" = "La dirección del servidor no es válida. Revisa Ajustes.";
+"error.http" = "El servidor devolvió el error %d. Inténtalo de nuevo.";
+"error.response" = "No se pudo leer la respuesta. Inténtalo de nuevo.";
+"error.network" = "No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.";

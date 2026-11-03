@@ -47,7 +47,7 @@ impl SessionSelection {
         descriptor: &ProviderDescriptor,
         language: &str,
     ) -> Result<(), TtsFailure> {
-        let invalid = |message| TtsFailure::new(FailureKind::InvalidSelection, message);
+        let invalid = |message: &str| TtsFailure::new(FailureKind::InvalidSelection, message);
         if self.provider == "piper" {
             crate::model_catalog::validate_piper_quality(
                 self.model_id.as_deref().unwrap_or_default(),
@@ -106,7 +106,12 @@ impl SessionSelection {
                 .unwrap_or(language)
                 .to_ascii_lowercase();
             if !language.is_empty() && !model.languages.iter().any(|value| *value == code) {
-                return Err(invalid("Model does not support this language"));
+                // Preserve a versioned machine-readable envelope through legacy string ABIs.
+                // Clients localize presentation and offer a per-job selection, never a download.
+                let context = serde_json::json!({ "language": language, "model_id": id });
+                return Err(invalid(&format!(
+                    "Model does not support this language [[tts_language_mismatch_v1]]{context}[[/tts_language_mismatch_v1]]"
+                )));
             }
             if let Some(revision) = &self.model_revision {
                 if crate::model_catalog::model_revision(model).as_ref() != Some(revision) {

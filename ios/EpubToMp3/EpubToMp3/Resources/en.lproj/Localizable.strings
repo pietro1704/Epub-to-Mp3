@@ -721,3 +721,24 @@
 
 "settings.automaticSystemFallback" = "Automatic system voice fallback";
 "settings.automaticSystemFallbackDescription" = "If selected voices fail, try an installed system voice. Turn off to use only your selected voices.";
+
+// Speech compatibility recovery and converter diagnostics.
+"error.converterUnavailable" = "The speech converter is unavailable. Please reinstall the app or try again.";
+"error.converterIncompatible" = "The speech converter is incompatible with this app. Please update the app.";
+"error.modelLanguage" = "This model does not support the language of this book. Choose a compatible model.";
+"error.voiceLanguage" = "No compatible voice is available for this language.";
+"error.unsupportedEngine" = "The selected speech engine is not supported.";
+"error.conversionFailed" = "The book could not be converted to audio. Please try again. Technical details are available in the logs.";
+"tts.recovery.title" = "Choose a compatible model";
+"tts.recovery.message" = "The current model does not support %@. Suggested model: %@. This change applies only to this conversion.";
+"tts.recovery.use" = "Use %@";
+"tts.recovery.choose" = "Choose another model";
+"tts.recovery.none" = "No installed, ready model supports %@. You can install a compatible model in Settings or cancel and keep reading.";
+"settings.modelInstall.alreadyActive" = "An installation is already in progress for this model.";
+"error.pdfOpen" = "Could not open %@. The PDF may be damaged.";
+"error.pdfEncrypted" = "%@ is password-protected. Remove the password before importing.";
+"error.pdfNoText" = "%@ has no selectable text. Scanned PDFs need text recognition before conversion.";
+"error.invalidServer" = "The server address is invalid. Check Settings.";
+"error.http" = "The server returned error %d. Please try again.";
+"error.response" = "The response could not be read. Please try again.";
+"error.network" = "Could not connect. Check your connection and try again.";

@@ -24,7 +24,7 @@ final class MacReaderPlaybackSession {
         self.conversionExecutor = conversionExecutor
     }
 
-    func start(owner: AnyObject) {
+    func start(owner: AnyObject, optionsOverride: ConversionOptions? = nil) {
         playerPresentation.dismissFullPlayer()
         let defaults = UserDefaults.standard
         guard let bookID = defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
@@ -36,7 +36,7 @@ final class MacReaderPlaybackSession {
         localPlaybackGeneration = jobID
         localPlaybackBookID = bookID
         isStartingLocalPlayback = true
-        let conversionOptions = settings.conversionOptions
+        let conversionOptions = optionsOverride ?? settings.conversionOptions
         Task { [weak self, owner] in
             guard let self else { return }
             defer { withExtendedLifetime(owner) {} }
@@ -161,6 +161,16 @@ final class MacReaderPlaybackSession {
                         lastActivityAt: Date().timeIntervalSince1970,
                     chapterIndexBase: 0
                     ))
+                }
+                if TtsLanguageMismatch.decode(error) != nil {
+                    let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: { [weak self] in
+                        self?.localPlaybackGeneration == jobID
+                            && defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID
+                    })
+                    if let choice {
+                        self.start(owner: owner, optionsOverride: conversionOptions.recovering(with: choice.candidate, language: choice.language))
+                    }
+                    return
                 }
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")

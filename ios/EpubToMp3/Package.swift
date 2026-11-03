@@ -61,6 +61,8 @@ let production = [
     "Features/Conversion/Services/ConverterPlaybackControl.swift",
     "Features/Conversion/Services/ReaderConversionChapterMap.swift",
     "Features/Conversion/Services/TtsCatalog.swift",
+    "Features/Conversion/Services/TtsLanguageRecovery.swift",
+    "Shared/Diagnostics/AppErrorReporter.swift",
     "Features/Reader/Models/EbookFulltext.swift",
     "Features/Documents/Services/EpubArchivePath.swift",
     "Features/Conversion/Services/ConversionCallbackReceipt.swift",

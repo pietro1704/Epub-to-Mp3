@@ -22,13 +22,12 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     private let preselectedBookID: String?
     private let viewModel: ConvertViewModel
     private var submissionObserver: AnyCancellable?
+    private var startedWholeBookConversion = false
 
     private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
-    /// `preselectedFileURL` lets Book Detail's "Listen" action jump straight
-    /// to the "file selected" state without forcing the user back through
-    /// the document picker for a book already in the library — the default
-    /// `nil` preserves the standalone Convert tab's picker-first flow.
+    /// Library downloads reuse the existing conversion form with the source
+    /// already selected. The standalone Convert tab keeps its document picker.
     init(
         settings: AppSettings,
         library: LibraryStore,
@@ -396,8 +395,18 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
+        viewModel.recoverySelection = nil
+        viewModel.recoveryLanguage = nil
         viewModel.selectedFile = url
         reloadData()
+    }
+
+    func startWholeBookConversion() {
+        guard !startedWholeBookConversion else { return }
+        startedWholeBookConversion = true
+        loadViewIfNeeded()
+        viewModel.chapters = ""
+        submit()
     }
 
     private func submit() {
@@ -413,6 +422,20 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
                 self.library.recordConversion(jobId: jobId, for: bookID)
             }
             self.reloadData()
+            if let failure = self.viewModel.session.failure, TtsLanguageMismatch.decode(failure) != nil {
+                let file = self.viewModel.selectedFile
+                let requestID = self.viewModel.session.requestID
+                let choice = await TtsRecoveryAlert.choose(for: failure, isCurrent: { [weak self] in
+                    guard let self else { return false }
+                    return self.navigationController?.topViewController === self
+                        && self.viewModel.selectedFile == file && self.viewModel.session.requestID == requestID && !self.viewModel.isSubmitting
+                })
+                if let choice {
+                    self.viewModel.recoverySelection = choice.candidate
+                    self.viewModel.recoveryLanguage = choice.language
+                    self.submit()
+                }
+            }
         }
     }
 

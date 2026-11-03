@@ -30,6 +30,8 @@ final class ConvertViewModel {
     var forceReprocess = false
     var maxPerformance = false
     var modelsRoot: String?
+    var recoverySelection: TtsRecoveryCandidate?
+    var recoveryLanguage: String?
 
     var manualPrimary: TtsSelection {
         let trimmedVoice = voice.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -99,6 +101,11 @@ final class ConvertViewModel {
                     secondary: allowSecondary ? distinctManualSecondary : nil,
                     allowOnlineFallback: allowSecondary && distinctManualSecondary != nil && (inheritedPreferences?.allowOnlineFallback ?? false),
                     policyVersion: allowSecondary ? inheritedPreferences?.policyVersion : nil)
+            }
+            if let recoverySelection, let recoveryLanguage {
+                options = options.recovering(with: recoverySelection, language: recoveryLanguage)
+                self.recoverySelection = nil
+                self.recoveryLanguage = nil
             }
             await session.run(file: file, start: chapterRange.start, end: chapterRange.end, options: options)
         } catch {

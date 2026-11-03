@@ -193,7 +193,7 @@ final class RustConversionCoordinator {
             if let recoveryBookID {
                 try? await recoveryStore.finish(bookID: recoveryBookID, jobID: jobID, succeeded: false)
             }
-            try? appendLogLine("[Rust] conversion failed: \(error.localizedDescription)", to: logURL)
+            try? appendLogLine("[Rust] conversion failed: \((error as? EmbeddedConverterError)?.diagnosticDescription ?? error.localizedDescription)", to: logURL)
             await outputStore.finish(lease)
             throw error
         }

@@ -11,6 +11,8 @@ final class ManualConversionSession: ObservableObject {
     @Published private(set) var progress: RustConversionCoordinator.ConversionProgressEvent?
     @Published private(set) var result: RustConversionCoordinator.Result?
     @Published private(set) var errorMessage: String?
+    private(set) var failure: Error?
+    private(set) var requestID = UUID()
 
     private let executor: RustConversionCoordinator.Executor
     private var task: Task<RustConversionCoordinator.Result, Error>?
@@ -26,6 +28,8 @@ final class ManualConversionSession: ObservableObject {
 
     func reportValidationFailure(_ message: String) {
         guard !isRunning else { return }
+        requestID = UUID()
+        failure = nil
         result = nil
         progress = nil
         errorMessage = message
@@ -36,6 +40,8 @@ final class ManualConversionSession: ObservableObject {
         guard !isRunning else { return }
         let jobID = UUID().uuidString
         activeJobID = jobID
+        requestID = UUID()
+        failure = nil
         result = nil
         progress = nil
         errorMessage = nil
@@ -70,7 +76,8 @@ final class ManualConversionSession: ObservableObject {
             if pending.isCancelled || error is CancellationError {
                 phase = .cancelled
             } else {
-                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                failure = error
+                errorMessage = AppErrorReporter.message(error, context: "Manual conversion")
                 phase = .failed
             }
         }

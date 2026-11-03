@@ -11,10 +11,10 @@ enum SpeechModelInstallationError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case let .duplicate(modelID):
-            return "A model installation is already active for \(modelID)"
+        case .duplicate:
+            return L10n.string("settings.modelInstall.alreadyActive")
         case let .failure(failure):
-            return failure.message
+            return SpeechModelLibraryViewState.installFailureMessage(failure)
         case .incompatible:
             return L10n.string("settings.modelInstall.incompatible")
         case .notInstallable:
@@ -23,8 +23,8 @@ enum SpeechModelInstallationError: LocalizedError, Equatable {
             return L10n.string("settings.modelInstall.termsRequired")
         case .unknownModel:
             return L10n.string("settings.modelInstall.unknownModel")
-        case let .transport(message):
-            return message
+        case .transport:
+            return L10n.string("settings.modelInstall.downloadFailed")
         }
     }
 }
@@ -278,9 +278,8 @@ struct SpeechModelLibraryViewState: Sendable {
         return L10n.string(key, displayName(for: entry))
     }
 
-    func installStatus(for event: SpeechModelInstallEvent) -> String {
-        if let failure = event.failure {
-            switch failure.kind {
+    static func installFailureMessage(_ failure: SpeechModelInstallEvent.Failure) -> String {
+        switch failure.kind {
             case "insufficient_space":
                 guard let required = failure.requiredBytes,
                       let available = failure.availableBytes else {
@@ -300,7 +299,12 @@ struct SpeechModelLibraryViewState: Sendable {
                 return L10n.string("settings.modelInstall.cancelled")
             default:
                 return L10n.string("settings.modelInstall.failed")
-            }
+        }
+    }
+
+    func installStatus(for event: SpeechModelInstallEvent) -> String {
+        if let failure = event.failure {
+            return Self.installFailureMessage(failure)
         }
         switch event.stage {
         case .preflight: return L10n.string("settings.modelInstall.preparing")

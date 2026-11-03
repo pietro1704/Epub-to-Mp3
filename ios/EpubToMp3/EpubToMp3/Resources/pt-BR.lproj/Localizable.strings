@@ -721,3 +721,24 @@
 
 "settings.automaticSystemFallback" = "Voz do sistema como alternativa automática";
 "settings.automaticSystemFallbackDescription" = "Se as vozes selecionadas falharem, tente uma voz instalada do sistema. Desative para usar apenas as vozes selecionadas.";
+
+// Speech compatibility recovery and converter diagnostics.
+"error.converterUnavailable" = "O conversor de voz está indisponível. Reinstale o app ou tente novamente.";
+"error.converterIncompatible" = "O conversor de voz é incompatível com este app. Atualize o app.";
+"error.modelLanguage" = "Este modelo não suporta o idioma deste livro. Escolha um modelo compatível.";
+"error.voiceLanguage" = "Não há voz compatível disponível para este idioma.";
+"error.unsupportedEngine" = "O mecanismo de voz selecionado não é compatível.";
+"error.conversionFailed" = "Não foi possível converter o livro em áudio. Tente novamente. Os detalhes técnicos estão nos logs.";
+"tts.recovery.title" = "Escolher um modelo compatível";
+"tts.recovery.message" = "O modelo atual não suporta %@. Modelo sugerido: %@. A troca vale somente para esta conversão.";
+"tts.recovery.use" = "Usar %@";
+"tts.recovery.choose" = "Escolher outro modelo";
+"tts.recovery.none" = "Nenhum modelo instalado e pronto suporta %@. Você pode instalar um modelo compatível nos Ajustes ou cancelar e continuar lendo.";
+"settings.modelInstall.alreadyActive" = "Já há uma instalação em andamento para este modelo.";
+"error.pdfOpen" = "Não foi possível abrir %@. O PDF pode estar danificado.";
+"error.pdfEncrypted" = "%@ está protegido por senha. Remova a senha antes de importar.";
+"error.pdfNoText" = "%@ não tem texto selecionável. PDFs digitalizados precisam de reconhecimento de texto antes da conversão.";
+"error.invalidServer" = "O endereço do servidor é inválido. Confira os Ajustes.";
+"error.http" = "O servidor retornou o erro %d. Tente novamente.";
+"error.response" = "Não foi possível ler a resposta. Tente novamente.";
+"error.network" = "Não foi possível conectar. Verifique a conexão e tente novamente.";

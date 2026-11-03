@@ -7,7 +7,7 @@ enum AppErrorReporter {
                         destination: FileHandle = .standardError) -> String {
         let failure = error as NSError
         let message = error.localizedDescription
-        write(message, context: "\(context) [\(failure.domain):\(failure.code)]", destination: destination)
+        write((error as? EmbeddedConverterError)?.diagnosticDescription ?? message, context: "\(context) [\(failure.domain):\(failure.code)]", destination: destination)
         return message
     }
 

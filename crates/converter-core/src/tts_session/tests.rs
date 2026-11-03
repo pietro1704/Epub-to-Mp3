@@ -399,3 +399,26 @@ fn legacy_and_versioned_wrappers_cannot_select_the_same_secondary_voice() {
     preferences.secondary = Some(secondary);
     assert!(preferences.validate(None).unwrap_err().contains("differ"));
 }
+
+#[test]
+fn incompatible_model_exposes_language_and_identity_for_interactive_recovery() {
+    let requested = SessionSelection::from_legacy(&TtsSelection::default()).unwrap();
+    let descriptor = builtin_descriptors()
+        .into_iter()
+        .find(|d| d.provider == "piper" && d.runtime == "piper")
+        .unwrap();
+    let error = requested.validate(&descriptor, "en-US").unwrap_err();
+    assert_eq!(error.kind, FailureKind::InvalidSelection);
+    let payload = error
+        .message
+        .split("[[tts_language_mismatch_v1]]")
+        .nth(1)
+        .unwrap()
+        .split("[[/tts_language_mismatch_v1]]")
+        .next()
+        .unwrap();
+    let details: serde_json::Value = serde_json::from_str(payload).unwrap();
+    assert_eq!(details["language"], "en-US");
+    assert_eq!(details["model_id"], requested.model_id.as_deref().unwrap());
+    assert!(requested.validate(&descriptor, "pt-BR").is_ok());
+}

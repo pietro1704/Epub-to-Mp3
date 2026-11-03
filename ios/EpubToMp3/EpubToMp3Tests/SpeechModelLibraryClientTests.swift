@@ -360,6 +360,16 @@ final class SpeechModelLibraryClientTests: XCTestCase {
     }
     #endif
 
+    func testRecoveryExcludesMissingUnreadyIncompatibleAndFailingModel() throws {
+        let ready = try SpeechModelSnapshot.decode(snapshotJSON())
+        XCTAssertEqual(TtsRecoveryCandidate.available(in: ready, excluding: "other").first?.selection.modelID, "pt_BR-faber-medium")
+        XCTAssertTrue(TtsRecoveryCandidate.available(in: ready, excluding: "pt_BR-faber-medium").isEmpty)
+        for (installation, readiness, selectable) in [("missing", "ready", true), ("installed", "unavailable", true), ("installed", "ready", false)] {
+            let snapshot = try SpeechModelSnapshot.decode(snapshotJSON(installationState: installation, readinessState: readiness, selectable: selectable))
+            XCTAssertTrue(TtsRecoveryCandidate.available(in: snapshot, excluding: "other").isEmpty)
+        }
+    }
+
     private func snapshotJSON(
         schemaVersion: Int = 3,
         modelName: String = "Faber",

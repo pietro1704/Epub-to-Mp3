@@ -31,6 +31,27 @@ final class ConvertViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testCompatibleRecoveryAppliesOnlyToRetryWithoutChangingSavedPreferences() async throws {
+        var captured: ConversionOptions?
+        let result = manualResult()
+        let model = ConvertViewModel(converter: { _, _, _, options in captured = options; return result })
+        let preferences = TtsPreferences(primary: .selected(.piper), secondary: nil, allowOnlineFallback: false)
+        let candidate = TtsRecoveryCandidate(name: "English", selection: TtsSelection(engine: "piper", modelID: "en_US-ljspeech-high", voice: nil))
+        model.selectedFile = URL(fileURLWithPath: "/fixture.pdf")
+        model.inheritedPreferences = preferences
+        model.recoverySelection = candidate
+        model.recoveryLanguage = "en-US"
+        await model.submit()
+        XCTAssertEqual(captured?.ttsPreferences?.primary, candidate.selection)
+        XCTAssertEqual(captured?.language, "en-US")
+        XCTAssertEqual(model.inheritedPreferences, preferences)
+        XCTAssertNil(model.recoverySelection)
+        await model.submit()
+        XCTAssertEqual(captured?.ttsPreferences, preferences)
+        XCTAssertNil(captured?.language)
+    }
+
+    @MainActor
     func testDefaultExecutorRejectsUnsupportedProviderBeforeOpeningBook() async {
         let model = ConvertViewModel()
         model.selectedFile = URL(fileURLWithPath: "/must-not-open-unsupported-provider.epub")
