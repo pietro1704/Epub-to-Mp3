@@ -32,16 +32,23 @@ private struct IntentBookEntry: Decodable {
     }
 }
 
-private enum LibraryLoader {
+private struct LibraryLoader {
     private static let defaultsKey = "library.books.v1"
+    private let defaults: UserDefaults
 
-    static func loadBooks() -> [IntentBookEntry] {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey) else { return [] }
+    init(sharedDefaults: UserDefaults?, standardDefaults: UserDefaults) {
+        // Match LibraryStore's persistence domain. An empty shared library must
+        // not revive stale books from the standard defaults domain.
+        defaults = sharedDefaults ?? standardDefaults
+    }
+
+    private func loadBooks() -> [IntentBookEntry] {
+        guard let data = defaults.data(forKey: Self.defaultsKey) else { return [] }
         return (try? JSONDecoder().decode([IntentBookEntry].self, from: data)) ?? []
     }
 
     /// Book most recently opened by the user, or nil if the library is empty.
-    static func mostRecentBook() -> IntentBookEntry? {
+    func mostRecentBook() -> IntentBookEntry? {
         loadBooks()
             .filter { $0.lastOpenedAt != nil }
             .max(by: { ($0.lastOpenedAt ?? .distantPast) < ($1.lastOpenedAt ?? .distantPast) })
@@ -50,7 +57,7 @@ private enum LibraryLoader {
     /// Fuzzy title search: returns the book whose title best matches `query`.
     /// Matches are case- and diacritic-insensitive; partial substring wins over
     /// nothing. Returns nil when the library is empty.
-    static func findBook(matching query: String) -> IntentBookEntry? {
+    func findBook(matching query: String) -> IntentBookEntry? {
         let books = loadBooks()
         guard !books.isEmpty else { return nil }
         let q = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
@@ -67,7 +74,7 @@ private enum LibraryLoader {
             return sub.min(by: { $0.title.count < $1.title.count })
         }
         // Fall back: pick the entry whose title shares the most characters.
-        return books.max(by: { similarity($0.title, q) < similarity($1.title, q) })
+        return books.max(by: { Self.similarity($0.title, q) < Self.similarity($1.title, q) })
     }
 
     /// Simple overlap coefficient for fuzzy matching fallback.
@@ -92,10 +99,16 @@ struct ResumeReadingIntent: AppIntent {
     static let openAppWhenRun: Bool = true
 
     func perform() async throws -> some IntentResult {
-        guard let book = LibraryLoader.mostRecentBook() else {
+        try await perform(sharedDefaults: UserDefaults(suiteName: LibraryStore.appGroupID),
+                          standardDefaults: .standard)
+    }
+
+    func perform(sharedDefaults: UserDefaults?, standardDefaults: UserDefaults) async throws -> some IntentResult {
+        let library = LibraryLoader(sharedDefaults: sharedDefaults, standardDefaults: standardDefaults)
+        guard let book = library.mostRecentBook() else {
             throw IntentFailure.noLibrary
         }
-        UserDefaults.standard.set(book.id, forKey: "intent.pendingBookId")
+        standardDefaults.set(book.id, forKey: "intent.pendingBookId")
         return .result()
     }
 }
@@ -114,10 +127,16 @@ struct OpenBookIntent: AppIntent {
     var bookTitle: String
 
     func perform() async throws -> some IntentResult {
-        guard let book = LibraryLoader.findBook(matching: bookTitle) else {
+        try await perform(sharedDefaults: UserDefaults(suiteName: LibraryStore.appGroupID),
+                          standardDefaults: .standard)
+    }
+
+    func perform(sharedDefaults: UserDefaults?, standardDefaults: UserDefaults) async throws -> some IntentResult {
+        let library = LibraryLoader(sharedDefaults: sharedDefaults, standardDefaults: standardDefaults)
+        guard let book = library.findBook(matching: bookTitle) else {
             throw IntentFailure.bookNotFound(bookTitle)
         }
-        UserDefaults.standard.set(book.id, forKey: "intent.pendingBookId")
+        standardDefaults.set(book.id, forKey: "intent.pendingBookId")
         return .result()
     }
 }
