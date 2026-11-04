@@ -194,8 +194,11 @@ enum LocalFulltextCache {
 
     /// Drop any durable payload whose `bookId` is no longer in the library.
     @discardableResult
-    static func pruneOrphans(validBookIds: Set<String>) -> Int {
-        guard let dir = directory else { return 0 }
+    static func pruneOrphans(
+        validBookIds: Set<String>, directory overrideDirectory: URL? = nil,
+        defaults: UserDefaults = .standard
+    ) -> Int {
+        guard let dir = overrideDirectory ?? directory else { return 0 }
         let entries = (try? FileManager.default.contentsOfDirectory(
             at: dir,
             includingPropertiesForKeys: nil,
@@ -211,8 +214,8 @@ enum LocalFulltextCache {
             }
             memoryCache.removeObject(forKey: bookId as NSString)
         }
-        let existing = UserDefaults.standard.stringArray(forKey: recentBookIDsKey) ?? []
-        UserDefaults.standard.set(existing.filter { sanitizedBookID($0).map(validIDs.contains) ?? false }, forKey: recentBookIDsKey)
+        let existing = defaults.stringArray(forKey: recentBookIDsKey) ?? []
+        defaults.set(existing.filter { sanitizedBookID($0).map(validIDs.contains) ?? false }, forKey: recentBookIDsKey)
         return removed
     }
 

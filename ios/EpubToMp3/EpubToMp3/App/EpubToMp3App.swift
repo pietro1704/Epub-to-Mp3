@@ -262,8 +262,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
             AppStartupTiming.shared.measure(.widgetReloadRequest) { WidgetDataSync.reloadAll() }
             setIdleTimerDisabled(true)
             guard !Self.isRunningUnderXCTest() else { return }
-            pruneOrphanBookmarks()
-            pruneOrphanFulltextCache()
+            Self.pruneLibraryOrphans(library: library, bookmarkStore: bookmarkStore)
         }
     }
 
@@ -341,15 +340,20 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         ReaderSessionState.setCurrentlyReading(bookID: bookID)
     }
 
-    private func pruneOrphanBookmarks() {
+    /// A failed catalog is unknown membership, never an empty library. The
+    /// explicit stores/pruner also let native tests use isolated persisted data.
+    static func pruneLibraryOrphans(
+        library: LibraryStore,
+        bookmarkStore: BookmarkStore,
+        pruneFulltext: (Set<String>) -> Int = { LocalFulltextCache.pruneOrphans(validBookIds: $0) }
+    ) {
+        guard library.hasLoadedSuccessfully else { return }
+        let validBookIDs = Set(library.books.map(\.id))
         AppStartupTiming.shared.measure(.bookmarksPrune) {
-            _ = bookmarkStore.pruneOrphans(validBookIds: Set(library.books.map(\.id)))
+            _ = bookmarkStore.pruneOrphans(validBookIds: validBookIDs)
         }
-    }
-
-    private func pruneOrphanFulltextCache() {
         AppStartupTiming.shared.measure(.fulltextPrune) {
-            _ = LocalFulltextCache.pruneOrphans(validBookIds: Set(library.books.map(\.id)))
+            _ = pruneFulltext(validBookIDs)
         }
     }
 
