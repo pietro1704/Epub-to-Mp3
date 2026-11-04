@@ -139,7 +139,7 @@ enum AudiobookDownloadStorage {
                 chapters[offset] = .init(index: source.index, name: source.name, status: source.status,
                     downloadUrl: retained.downloadUrl, chars: source.chars, charsProcessed: source.charsProcessed,
                     progressRatio: source.progressRatio, durationSeconds: source.durationSeconds,
-                    startedAt: source.startedAt, completedAt: source.completedAt)
+                    startedAt: source.startedAt, completedAt: source.completedAt, textOffset: source.textOffset)
             } else {
                 chapters.append(retained)
             }
@@ -152,7 +152,8 @@ enum AudiobookDownloadStorage {
             engine: conversion.engine, voice: conversion.voice, language: conversion.language,
             progressPercent: conversion.progressPercent, chaptersTotal: conversion.chaptersTotal,
             chaptersCompleted: chapters.count, chapterProgress: chapters, outputs: conversion.outputs,
-            logUrl: conversion.logUrl, error: conversion.error, lastActivityAt: conversion.lastActivityAt)
+            logUrl: conversion.logUrl, error: conversion.error, lastActivityAt: conversion.lastActivityAt,
+            chapterIndexBase: conversion.chapterIndexBase, sourceChaptersTotal: conversion.sourceChaptersTotal)
     }
 
     static func reusableDownloadedEntry(
