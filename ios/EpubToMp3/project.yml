@@ -364,6 +364,8 @@ targets:
         type: folder
         buildPhase: resources
       - path: EpubToMp3Tests/ConverterFFIAdapterTests.swift
+      # Exercise the extension's actual provider materialization in native XCTest.
+      - path: EpubToMp3ShareExtension/ShareViewController.swift
     dependencies:
       - target: EpubToMp3
     settings:

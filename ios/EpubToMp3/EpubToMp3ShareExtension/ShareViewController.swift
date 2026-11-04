@@ -116,9 +116,18 @@ final class ShareViewController: UIViewController {
     /// `temporaryDirectory` (`NSTemporaryDirectory()`).
     static func loadFileURL(
         from provider: NSItemProvider,
-        typeIdentifier: String
+        typeIdentifier: String,
+        fileManager: FileManager = .default,
+        temporaryDirectory: URL? = nil
     ) async throws -> URL {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
+        try Task.checkCancellation()
+        guard acceptedTypeIdentifiers.contains(typeIdentifier) else {
+            throw NSError(domain: "ShareViewController", code: 101,
+                          userInfo: [NSLocalizedDescriptionKey: "Unsupported attachment type (\(typeIdentifier))."])
+        }
+        let ext = typeIdentifier == UTType.pdf.identifier ? "pdf" : "epub"
+        let directory = temporaryDirectory ?? fileManager.temporaryDirectory
+        let materialized = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
             provider.loadItem(
                 forTypeIdentifier: typeIdentifier,
                 options: nil
@@ -131,7 +140,8 @@ final class ShareViewController: UIViewController {
                     // The host gave us a disk URL but it may be in
                     // the host's sandbox — copy into our tmp first.
                     do {
-                        let copy = try Self.copyToTemp(source: url)
+                        let copy = try Self.copyToTemp(source: url, fileExtension: ext,
+                                                      directory: directory, fileManager: fileManager)
                         cont.resume(returning: copy)
                     } catch {
                         cont.resume(throwing: error)
@@ -139,12 +149,12 @@ final class ShareViewController: UIViewController {
                     return
                 }
                 if let data = coercedItem as? Data {
+                    let tmp = Self.tempURL(extension: ext, directory: directory)
                     do {
-                        let ext = typeIdentifier == UTType.pdf.identifier ? "pdf" : "epub"
-                        let tmp = Self.tempURL(extension: ext)
-                        try data.write(to: tmp)
+                        try data.write(to: tmp, options: .atomic)
                         cont.resume(returning: tmp)
                     } catch {
+                        try? fileManager.removeItem(at: tmp)
                         cont.resume(throwing: error)
                     }
                     return
@@ -157,24 +167,38 @@ final class ShareViewController: UIViewController {
                 ))
             }
         }
+        do {
+            try Task.checkCancellation()
+            return materialized
+        } catch {
+            try? fileManager.removeItem(at: materialized)
+            throw error
+        }
     }
 
-    private nonisolated static func copyToTemp(source: URL) throws -> URL {
-        let ext = source.pathExtension.isEmpty ? "epub" : source.pathExtension
-        let dest = tempURL(extension: ext, suggested: source.lastPathComponent)
-        try FileManager.default.copyItem(at: source, to: dest)
-        return dest
+    private nonisolated static func copyToTemp(
+        source: URL, fileExtension: String, directory: URL, fileManager: FileManager
+    ) throws -> URL {
+        let dest = tempURL(extension: fileExtension, suggested: source.lastPathComponent, directory: directory)
+        do {
+            try fileManager.copyItem(at: source, to: dest)
+            return dest
+        } catch {
+            try? fileManager.removeItem(at: dest)
+            throw error
+        }
     }
 
-    private nonisolated static func tempURL(extension ext: String, suggested: String? = nil) -> URL {
-        let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    private nonisolated static func tempURL(extension ext: String, suggested: String? = nil, directory: URL) -> URL {
         let name: String
         if let suggested, !suggested.isEmpty {
-            name = "\(UUID().uuidString)-\(suggested)"
+            // The accepted type owns the suffix; provider URLs may have none,
+            // a generic .bin suffix, or a suffix belonging to another format.
+            name = "\(UUID().uuidString)-\((suggested as NSString).deletingPathExtension)"
         } else {
-            name = "\(UUID().uuidString).\(ext)"
+            name = UUID().uuidString
         }
-        return tmp.appendingPathComponent(name)
+        return directory.appendingPathComponent(name).appendingPathExtension(ext)
     }
 
     // MARK: - UI
