@@ -57,9 +57,11 @@ enum WidgetDataSync {
         durationSeconds: Double = 0,
         chapterRemainingSeconds: Double = 0,
         bookRemainingSeconds: Double = 0,
-        totalChapters: Int? = nil
+        totalChapters: Int? = nil,
+        defaults: UserDefaults? = UserDefaults(suiteName: appGroupID),
+        reloadWidgets: () -> Void = WidgetDataSync.reloadNowPlayingWidgets
     ) {
-        guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
+        guard let defaults else { return }
 
         if let bookId, !bookId.isEmpty {
             defaults.set(bookId, forKey: Keys.nowPlayingBookId)
@@ -71,7 +73,11 @@ enum WidgetDataSync {
             defaults.set(durationSeconds, forKey: Keys.nowPlayingDurationSeconds)
             defaults.set(chapterRemainingSeconds, forKey: Keys.nowPlayingChapterRemainingSeconds)
             defaults.set(bookRemainingSeconds, forKey: Keys.nowPlayingBookRemainingSeconds)
-            if let totalChapters { defaults.set(totalChapters, forKey: Keys.nowPlayingTotalChapters) }
+            if let totalChapters {
+                defaults.set(totalChapters, forKey: Keys.nowPlayingTotalChapters)
+            } else {
+                defaults.removeObject(forKey: Keys.nowPlayingTotalChapters)
+            }
         } else {
             defaults.removeObject(forKey: Keys.nowPlayingBookId)
             defaults.removeObject(forKey: Keys.nowPlayingChapterName)
@@ -85,7 +91,7 @@ enum WidgetDataSync {
             defaults.removeObject(forKey: Keys.nowPlayingTotalChapters)
         }
 
-        reloadNowPlayingWidgets()
+        reloadWidgets()
     }
 
     /// Update only the isPlaying flag without touching other fields.
@@ -111,14 +117,19 @@ enum WidgetDataSync {
         durationSeconds: Double,
         chapterRemainingSeconds: Double,
         bookRemainingSeconds: Double,
-        totalChapters: Int?
+        totalChapters: Int?,
+        defaults: UserDefaults? = UserDefaults(suiteName: appGroupID)
     ) {
-        guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
+        guard let defaults else { return }
         defaults.set(positionSeconds, forKey: Keys.nowPlayingPositionSeconds)
         defaults.set(durationSeconds, forKey: Keys.nowPlayingDurationSeconds)
         defaults.set(chapterRemainingSeconds, forKey: Keys.nowPlayingChapterRemainingSeconds)
         defaults.set(bookRemainingSeconds, forKey: Keys.nowPlayingBookRemainingSeconds)
-        if let totalChapters { defaults.set(totalChapters, forKey: Keys.nowPlayingTotalChapters) }
+        if let totalChapters {
+            defaults.set(totalChapters, forKey: Keys.nowPlayingTotalChapters)
+        } else {
+            defaults.removeObject(forKey: Keys.nowPlayingTotalChapters)
+        }
     }
 
     // MARK: - Continue Reading
