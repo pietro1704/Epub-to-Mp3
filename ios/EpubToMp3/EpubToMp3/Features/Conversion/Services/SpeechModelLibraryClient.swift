@@ -14,6 +14,7 @@ actor SpeechModelLibraryClient {
     private let availableCapacity: @Sendable (URL) throws -> UInt64
     private let snapshotOverride: (() throws -> SpeechModelSnapshot)?
     private let installOverride: ((String, String) throws -> URL)?
+    private let asyncInstallOverride: (@Sendable (String, String) async throws -> URL)?
     private let removeOverride: ((String, String) throws -> Void)?
     private var active: [String: ActiveInstall] = [:]
     private var installIntents: Set<String> = []
@@ -45,6 +46,7 @@ actor SpeechModelLibraryClient {
         self.availableCapacity = availableCapacity
         self.snapshotOverride = nil
         self.installOverride = nil
+        self.asyncInstallOverride = nil
         self.removeOverride = nil
         self.initialSnapshot = nil
     }
@@ -53,6 +55,7 @@ actor SpeechModelLibraryClient {
         initialSnapshot: SpeechModelSnapshot,
         loadSnapshot: (() throws -> SpeechModelSnapshot)? = nil,
         install: ((String, String) throws -> URL)? = nil,
+        installAsync: (@Sendable (String, String) async throws -> URL)? = nil,
         remove: ((String, String) throws -> Void)? = nil,
         target: SpeechModelLibraryTarget = .current(),
         languageDefaults: UserDefaults? = nil
@@ -65,6 +68,7 @@ actor SpeechModelLibraryClient {
         self.availableCapacity = { try SpeechModelLibraryClient.volumeCapacity($0) }
         self.snapshotOverride = loadSnapshot ?? { initialSnapshot }
         self.installOverride = install
+        self.asyncInstallOverride = installAsync
         self.removeOverride = remove
         self.initialSnapshot = initialSnapshot
     }
@@ -111,6 +115,8 @@ actor SpeechModelLibraryClient {
         }
     }
 
+    func installObserverCount(modelID: String) -> Int { observers[modelID]?.count ?? 0 }
+
     func watchInstall(modelID: String) -> AsyncStream<SpeechModelInstallEvent> {
         observeTransferIfNeeded()
         let last = lastEvents[modelID]
@@ -141,6 +147,7 @@ actor SpeechModelLibraryClient {
                 throw SpeechModelInstallationError.termsAcceptanceRequired(modelID)
             }
         }
+        if let asyncInstallOverride { return try await asyncInstallOverride(modelID, target.modelsRoot.path) }
         if let installOverride { return try installOverride(modelID, target.modelsRoot.path) }
         observeTransferIfNeeded()
         guard active[modelID] == nil, !installIntents.contains(modelID) else {
