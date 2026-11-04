@@ -94,7 +94,13 @@ actor BookConversionRecoveryStore {
         let files = try FileManager.default.contentsOfDirectory(at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         return Set(files.compactMap { file -> Int? in
-                guard let ordinal = Int(file.lastPathComponent.prefix(4)), ordinal > 0 else { return nil }
+                let filename = file.lastPathComponent
+                guard let separator = filename.firstIndex(of: "-") else { return nil }
+                let ordinalPrefix = filename[..<separator]
+                // Rust pads to at least four digits; larger ordinals keep every digit.
+                guard ordinalPrefix.count >= 4,
+                      ordinalPrefix.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
+                      let ordinal = Int(ordinalPrefix), ordinal > 0 else { return nil }
                 guard file.pathExtension == "mp3", let attributes = try? file.resourceValues(
                     forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
                     attributes.isRegularFile == true, attributes.isSymbolicLink != true,
