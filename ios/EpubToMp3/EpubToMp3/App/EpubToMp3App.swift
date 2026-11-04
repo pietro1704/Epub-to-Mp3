@@ -22,6 +22,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let playerPresentation = PlayerPresentation()
     let bookmarkStore = BookmarkStore()
 
+    private let sessionDefaults: UserDefaults
+    private var incomingBookRequestID = UUID()
     private var libraryImportTask: Task<Void, Never>?
 #if os(iOS)
     private var libraryPersistenceWindow: UIBackgroundTaskIdentifier = .invalid
@@ -35,6 +37,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     override init() {
         library = AppStartupTiming.shared.measure(.libraryStoreCreation) { LibraryStore() }
+        sessionDefaults = .standard
         super.init()
 #if os(iOS)
         library.installUITestFixtureIfRequested()
@@ -44,9 +47,10 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         ApplicationWidgetIntents.registerObserver()
     }
 
-    /// An injected library bypasses launch fixtures and their real-storage writes.
-    init(library: LibraryStore) {
+    /// Injected storage bypasses launch fixtures and isolates incoming navigation.
+    init(library: LibraryStore, sessionDefaults: UserDefaults = .standard) {
         self.library = library
+        self.sessionDefaults = sessionDefaults
         super.init()
     }
 
@@ -294,24 +298,36 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 #endif
     }
 
-    func handleIncomingURL(_ url: URL) {
+    /// Returns the file import task so callers can await or cancel that request.
+    @discardableResult
+    func handleIncomingURL(_ url: URL) -> Task<Void, Never>? {
         if url.isFileURL {
-            Task { [weak self] in
-                guard let self else { return }
-                if let book = try? await self.library.importBookAsync(from: url) {
-                    UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
-                }
+            let request = UUID()
+            incomingBookRequestID = request
+            // Capture before scheduling: another selection may happen before
+            // the import task starts as well as while its file copy is running.
+            let originalSelection = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            return Task { [weak self] in
+                guard let self, !Task.isCancelled else { return }
+                guard let book = try? await library.importBookAsync(from: url),
+                      !Task.isCancelled, incomingBookRequestID == request,
+                      sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection,
+                      library.books.contains(where: { $0.id == book.id }) else { return }
+                // A superseded request still imports durably; only navigation
+                // depends on the reader and incoming request remaining current.
+                ReaderSessionState.setCurrentlyReading(bookID: book.id, defaults: sessionDefaults)
             }
-            return
         }
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let bookID = components.queryItems?.first(where: { $0.name == "bookId" })?.value,
-              library.books.contains(where: { $0.id == bookID }) else { return }
-        UserDefaults.standard.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+              library.books.contains(where: { $0.id == bookID }) else { return nil }
+        incomingBookRequestID = UUID()
+        ReaderSessionState.setCurrentlyReading(bookID: bookID, defaults: sessionDefaults)
         if components.host == "player" {
             PlaybackBindingStore.setCurrentlyPlaying(bookID: bookID, chapterIndex: 0)
             playerPresentation.showFullPlayer()
         }
+        return nil
     }
 
     private func drainPendingIntent() {
