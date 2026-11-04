@@ -73,13 +73,14 @@ final class MacSpeechModelLibraryPanel: NSStackView {
 
     func reload() {
         reloadTask?.cancel()
+        let client = speechModels
         reloadTask = Task { [weak self] in
-            guard let self else { return }
+            guard !Task.isCancelled else { return }
             do {
-                let snapshot = try await speechModels.snapshot()
+                let snapshot = try await client.snapshot()
                 guard !Task.isCancelled else { return }
-                adopt(snapshot)
-                observeInstalls(in: snapshot.entries)
+                self?.adopt(snapshot)
+                self?.observeInstalls(in: snapshot.entries)
             } catch {
                 // Keep the last valid snapshot and persisted selections.
             }
@@ -292,22 +293,27 @@ final class MacSpeechModelLibraryPanel: NSStackView {
         return fields.joined(separator: "\n")
     }
 
-    private func install(
+    /// Starts the confirmed installation independently of the presenting screen's lifetime.
+    @discardableResult
+    func install(
         _ entry: SpeechModelSnapshot.Entry,
         acceptedTermsFingerprint: String?
-    ) {
-        Task { [weak self] in
-            guard let self else { return }
+    ) -> Task<Void, Never> {
+        let client = speechModels
+        let title = state.installTitle(for: entry)
+        return Task { [weak self] in
             do {
-                _ = try await speechModels.install(
+                _ = try await client.install(
                     modelID: entry.identity.modelID,
                     acceptedTermsFingerprint: acceptedTermsFingerprint
                 )
-                adopt(try await speechModels.snapshot())
+                guard self != nil else { return }
+                let snapshot = try await client.snapshot()
+                self?.adopt(snapshot)
             } catch is CancellationError {
                 // The operation event already renders cancellation.
             } catch {
-                presentFailure(title: state.installTitle(for: entry), error: error)
+                self?.presentFailure(title: title, error: error)
             }
         }
     }
@@ -370,20 +376,22 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     private func observeInstalls(in entries: [SpeechModelSnapshot.Entry]) {
         installTasks.values.forEach { $0.cancel() }
         installTasks.removeAll()
+        let client = speechModels
         for entry in entries where entry.distribution.installable {
             let modelID = entry.identity.modelID
             installTasks[modelID] = Task { [weak self] in
-                guard let self else { return }
-                let events = await speechModels.watchInstall(modelID: modelID)
+                guard !Task.isCancelled else { return }
+                let events = await client.watchInstall(modelID: modelID)
                 for await event in events {
                     guard !Task.isCancelled else { return }
-                    installEvents[modelID] = event
+                    self?.installEvents[modelID] = event
                     if event.stage == .completed,
-                       let snapshot = try? await speechModels.snapshot() {
-                        installEvents.removeValue(forKey: modelID)
-                        adopt(snapshot)
+                       let snapshot = try? await client.snapshot() {
+                        guard !Task.isCancelled else { return }
+                        self?.installEvents.removeValue(forKey: modelID)
+                        self?.adopt(snapshot)
                     } else {
-                        updateInstallRow(modelID: modelID)
+                        self?.updateInstallRow(modelID: modelID)
                     }
                 }
             }

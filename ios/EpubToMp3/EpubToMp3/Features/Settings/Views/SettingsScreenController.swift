@@ -289,31 +289,35 @@ final class SettingsScreenController: UITableViewController {
         }
     }
 
-    private func install(
+    /// Starts the confirmed installation independently of the presenting screen's lifetime.
+    @discardableResult
+    func install(
         _ entry: SpeechModelSnapshot.Entry,
         title: String,
         acceptedTermsFingerprint: String?
-    ) {
-        Task { [weak self] in
-            guard let self else { return }
+    ) -> Task<Void, Never> {
+        let client = speechModels
+        return Task { [weak self] in
             do {
-                _ = try await speechModels.install(
+                _ = try await client.install(
                     modelID: entry.identity.modelID,
                     acceptedTermsFingerprint: acceptedTermsFingerprint
                 )
-                if let snapshot = try? await speechModels.snapshot() {
-                    speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-                    observeInstalls(in: snapshot.entries)
+                guard self != nil else { return }
+                if let snapshot = try? await client.snapshot() {
+                    self?.speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                    self?.observeInstalls(in: snapshot.entries)
                 }
             } catch is CancellationError {
                 // Cancellation is already rendered by the operation event.
             } catch {
+                guard let self else { return }
                 let failure = UIAlertController(title: title,
                     message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
                 failure.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
                 present(failure, animated: true)
             }
-            tableView.reloadData()
+            self?.tableView.reloadData()
         }
     }
 
@@ -348,14 +352,15 @@ final class SettingsScreenController: UITableViewController {
 
     private func reloadSpeechModels() {
         speechModelsTask?.cancel()
+        let client = speechModels
         speechModelsTask = Task { [weak self] in
-            guard let self else { return }
+            guard !Task.isCancelled else { return }
             do {
-                let snapshot = try await speechModels.snapshot()
+                let snapshot = try await client.snapshot()
                 guard !Task.isCancelled else { return }
-                speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-                observeInstalls(in: snapshot.entries)
-                tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
+                self?.speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                self?.observeInstalls(in: snapshot.entries)
+                self?.tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
             } catch {
                 // Fail closed: keep existing selections and the last valid presentation.
             }
@@ -365,20 +370,22 @@ final class SettingsScreenController: UITableViewController {
     private func observeInstalls(in entries: [SpeechModelSnapshot.Entry]) {
         speechModelInstallTasks.values.forEach { $0.cancel() }
         speechModelInstallTasks.removeAll()
+        let client = speechModels
         for entry in entries where entry.distribution.installable {
             let modelID = entry.identity.modelID
             speechModelInstallTasks[modelID] = Task { [weak self] in
-                guard let self else { return }
-                let events = await speechModels.watchInstall(modelID: modelID)
+                guard !Task.isCancelled else { return }
+                let events = await client.watchInstall(modelID: modelID)
                 for await event in events {
                     guard !Task.isCancelled else { return }
-                    speechModelInstallEvents[modelID] = event
+                    self?.speechModelInstallEvents[modelID] = event
                     if event.stage == .completed,
-                       let snapshot = try? await speechModels.snapshot() {
-                        speechModelInstallEvents.removeValue(forKey: modelID)
-                        speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+                       let snapshot = try? await client.snapshot() {
+                        guard !Task.isCancelled else { return }
+                        self?.speechModelInstallEvents.removeValue(forKey: modelID)
+                        self?.speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
                     }
-                    tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
+                    self?.tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
                 }
             }
         }
