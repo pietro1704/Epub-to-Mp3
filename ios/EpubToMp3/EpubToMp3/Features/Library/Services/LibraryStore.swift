@@ -28,6 +28,7 @@ final class LibraryStore: ObservableObject {
     private let defaultsKey: String
     private let defaults: UserDefaults
     private let fileManager: FileManager
+    private let importBookmarkCreator: @Sendable (URL) throws -> Data
 
     /// App Group suite identifier — must match the entitlement and the
     /// widget provider's `appGroupID` constant.
@@ -39,6 +40,7 @@ final class LibraryStore: ObservableObject {
         fileManager: FileManager = .default,
         importDirectory: URL? = nil,
         indexEncoder: @escaping @Sendable ([BookEntity]) throws -> Data = { try JSONEncoder().encode($0) },
+        importBookmarkCreator: @escaping @Sendable (URL) throws -> Data = { try LibraryBookmarkAccess.makeBookmark(for: $0) },
         startupTiming: AppStartupTiming = .shared
     ) {
         // Prefer the App Group suite so the WidgetKit extension can
@@ -56,6 +58,7 @@ final class LibraryStore: ObservableObject {
         self.defaults = resolvedDefaults
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
+        self.importBookmarkCreator = importBookmarkCreator
         self.importDirectory = importDirectory
         self.startupTiming = startupTiming
         self.indexPersistence = LibraryIndexPersistence(defaults: resolvedDefaults, key: defaultsKey,
@@ -110,7 +113,8 @@ final class LibraryStore: ObservableObject {
         // Compatibility for synchronous, non-batch callers. Batch UI imports use
         // importBooks(from:) so waiting for this serial worker never blocks UI.
         let prepared = try LibraryImportExecutor.performSync {
-            try LibraryImportPreparation.prepare(from: url, fileManager: fileManager, importDirectory: importDirectory)
+            try LibraryImportPreparation.prepare(from: url, fileManager: fileManager, importDirectory: importDirectory,
+                                                 bookmarkCreator: importBookmarkCreator)
         }
         let baseline = books.first(where: { $0.id == prepared.book.id })
         let book = Self.mergeImport(prepared, baseline: baseline, into: &books)
@@ -128,12 +132,14 @@ final class LibraryStore: ObservableObject {
         let removals = removalGenerations
         let resources = ImportResources(fileManager: fileManager, defaults: nil)
         let directory = importDirectory
+        let bookmarkCreator = importBookmarkCreator
         var prepared: [(URL, Result<PreparedLibraryImport, Error>)] = []
         for url in urls {
             do {
                 try Task.checkCancellation()
                 let value = try await LibraryImportExecutor.perform {
-                    try LibraryImportPreparation.prepare(from: url, fileManager: resources.fileManager, importDirectory: directory)
+                    try LibraryImportPreparation.prepare(from: url, fileManager: resources.fileManager,
+                                                         importDirectory: directory, bookmarkCreator: bookmarkCreator)
                 }
                 prepared.append((url, .success(value)))
             } catch {
