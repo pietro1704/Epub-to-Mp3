@@ -8,7 +8,8 @@ struct PreparedLibraryImport: Sendable {
 
 enum LibraryImportPreparation {
     static func prepare(
-        from url: URL, fileManager: FileManager, importDirectory: URL?
+        from url: URL, fileManager: FileManager, importDirectory: URL?,
+        bookmarkCreator: @Sendable (URL) throws -> Data = { try LibraryBookmarkAccess.makeBookmark(for: $0) }
     ) throws -> PreparedLibraryImport {
         guard url.isFileURL, !url.path.isEmpty else {
             throw NSError(
@@ -92,20 +93,24 @@ enum LibraryImportPreparation {
         // picker/inbox handoff URL that may be moved or deleted later.
         let bookmark: Data
         do {
-            bookmark = try LibraryBookmarkAccess.makeBookmark(for: libraryURL)
+            bookmark = try bookmarkCreator(libraryURL)
+            // The catalog decoder drops empty bookmarks. Never publish an
+            // import that would disappear after reload or authorize inbox cleanup.
+            guard !bookmark.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
         } catch {
             #if os(macOS)
+            let message = "Cannot remember access to \(url.lastPathComponent). The system refused to create a security-scoped bookmark — try moving the file to ~/Documents and re-import."
+            #else
+            let message = "Cannot remember access to \(url.lastPathComponent). The system refused to create a book bookmark — try importing the file again."
+            #endif
             throw NSError(
                 domain: "LibraryStore",
                 code: 3,
                 userInfo: [
-                    NSLocalizedDescriptionKey:
-                        "Cannot remember access to \(url.lastPathComponent). The system refused to create a security-scoped bookmark — try moving the file to ~/Documents and re-import."
+                    NSLocalizedDescriptionKey: message,
+                    NSUnderlyingErrorKey: error
                 ]
             )
-            #else
-            bookmark = Data()
-            #endif
         }
 
         // Route to the right metadata reader. PDFKit handles `.pdf`; every
