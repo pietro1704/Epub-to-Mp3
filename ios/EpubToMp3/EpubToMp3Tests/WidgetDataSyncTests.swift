@@ -47,27 +47,146 @@ final class WidgetDataSyncTests: XCTestCase {
     // MARK: - Now Playing round-trip
 
     func test_updateNowPlaying_writesAllKeys() {
-        // Write directly using the same key names the extension reads.
-        defaults.set("book-42", forKey: "currentlyPlayingBookId")
-        defaults.set("The Psychohistorians", forKey: "widget.nowPlayingChapterName")
-        defaults.set(0.45, forKey: "widget.nowPlayingProgress")
-        defaults.set(true, forKey: "widget.nowPlayingIsPlaying")
+        var reloads = 0
+        WidgetDataSync.updateNowPlaying(bookId: "book-42", chapterName: "The Psychohistorians",
+            author: "Isaac Asimov", progress: 0.45, isPlaying: true, positionSeconds: 30,
+            durationSeconds: 60, chapterRemainingSeconds: 30, bookRemainingSeconds: 120,
+            totalChapters: 18, defaults: defaults, reloadWidgets: {
+                XCTAssertEqual(self.defaults.object(forKey: "widget.nowPlayingTotalChapters") as? Int, 18)
+                reloads += 1
+            })
 
         XCTAssertEqual(defaults.string(forKey: "currentlyPlayingBookId"), "book-42")
         XCTAssertEqual(defaults.string(forKey: "widget.nowPlayingChapterName"), "The Psychohistorians")
+        XCTAssertEqual(defaults.string(forKey: "widget.nowPlayingAuthor"), "Isaac Asimov")
         XCTAssertEqual(defaults.double(forKey: "widget.nowPlayingProgress"), 0.45, accuracy: 0.001)
         XCTAssertTrue(defaults.bool(forKey: "widget.nowPlayingIsPlaying"))
+        XCTAssertEqual(defaults.double(forKey: "widget.nowPlayingPositionSeconds"), 30)
+        XCTAssertEqual(defaults.double(forKey: "widget.nowPlayingDurationSeconds"), 60)
+        XCTAssertEqual(defaults.double(forKey: "widget.nowPlayingChapterRemainingSeconds"), 30)
+        XCTAssertEqual(defaults.double(forKey: "widget.nowPlayingBookRemainingSeconds"), 120)
+        XCTAssertEqual(reloads, 1)
     }
 
     func test_clearNowPlaying_removesKeys() {
-        defaults.set("book-42", forKey: "currentlyPlayingBookId")
-        defaults.set(0.5, forKey: "widget.nowPlayingProgress")
+        defaults.set("keep", forKey: "unrelated")
+        defaults.set(37, forKey: "widget.lastReadTotalChapters")
+        let absentIDs: [String?] = [nil, ""]
+        for absent in absentIDs {
+            WidgetDataSync.updateNowPlaying(bookId: "book-42", chapterName: "Chapter", author: "Author",
+                progress: 0.5, isPlaying: true, positionSeconds: 10, durationSeconds: 20,
+                chapterRemainingSeconds: 10, bookRemainingSeconds: 60, totalChapters: 18,
+                defaults: defaults, reloadWidgets: {})
+            var reloads = 0
 
-        defaults.removeObject(forKey: "currentlyPlayingBookId")
-        defaults.removeObject(forKey: "widget.nowPlayingProgress")
+            WidgetDataSync.updateNowPlaying(bookId: absent, totalChapters: 999, defaults: defaults, reloadWidgets: {
+                XCTAssertNil(self.defaults.object(forKey: "widget.nowPlayingTotalChapters"))
+                reloads += 1
+            })
 
-        XCTAssertNil(defaults.string(forKey: "currentlyPlayingBookId"))
-        XCTAssertEqual(defaults.double(forKey: "widget.nowPlayingProgress"), 0.0) // default
+            for key in ["currentlyPlayingBookId", "widget.nowPlayingChapterName", "widget.nowPlayingAuthor",
+                        "widget.nowPlayingProgress", "widget.nowPlayingIsPlaying", "widget.nowPlayingPositionSeconds",
+                        "widget.nowPlayingDurationSeconds", "widget.nowPlayingChapterRemainingSeconds",
+                        "widget.nowPlayingBookRemainingSeconds", "widget.nowPlayingTotalChapters"] {
+                XCTAssertNil(defaults.object(forKey: key), "Clearing must remove the complete Now Playing payload")
+            }
+            XCTAssertNil(NowPlayingProvider().loadNowPlaying(defaults: defaults).bookId)
+            XCTAssertEqual(reloads, 1)
+        }
+        XCTAssertEqual(defaults.string(forKey: "unrelated"), "keep")
+        XCTAssertEqual(defaults.integer(forKey: "widget.lastReadTotalChapters"), 37)
+    }
+
+    func testNowPlayingReplacementDoesNotBorrowPreviousBooksChapterTotal() throws {
+        try seedNowPlayingBooks()
+        WidgetDataSync.updateNowPlaying(bookId: "book-a", totalChapters: 20, defaults: defaults, reloadWidgets: {})
+        XCTAssertEqual(NowPlayingProvider().loadNowPlaying(defaults: defaults).totalChapters, 20)
+        var reloads = 0
+
+        WidgetDataSync.updateNowPlaying(bookId: "book-b", chapterName: "New chapter", totalChapters: nil,
+                                       defaults: defaults, reloadWidgets: {
+            XCTAssertEqual(self.defaults.string(forKey: "currentlyPlayingBookId"), "book-b")
+            XCTAssertNil(self.defaults.object(forKey: "widget.nowPlayingTotalChapters"))
+            reloads += 1
+        })
+
+        let entry = NowPlayingProvider().loadNowPlaying(defaults: defaults)
+        XCTAssertEqual(entry.bookId, "book-b")
+        XCTAssertEqual(entry.title, "Second book")
+        XCTAssertEqual(entry.chapterName, "New chapter")
+        XCTAssertNil(entry.totalChapters)
+        XCTAssertEqual(reloads, 1)
+    }
+
+    func testSameBookUnknownChapterTotalReplacesPreviouslyKnownValue() throws {
+        try seedNowPlayingBooks()
+        WidgetDataSync.updateNowPlaying(bookId: "book-a", totalChapters: 20, defaults: defaults, reloadWidgets: {})
+
+        WidgetDataSync.updateNowPlaying(bookId: "book-a", chapterName: "Current chapter", author: "Current author",
+                                       isPlaying: true, totalChapters: nil, defaults: defaults, reloadWidgets: {})
+
+        let entry = NowPlayingProvider().loadNowPlaying(defaults: defaults)
+        XCTAssertEqual(entry.bookId, "book-a")
+        XCTAssertEqual(entry.author, "Current author")
+        XCTAssertTrue(entry.isPlaying)
+        XCTAssertNil(entry.totalChapters)
+        XCTAssertNil(defaults.object(forKey: "widget.nowPlayingTotalChapters"))
+    }
+
+    func testKnownChapterTotalsContinueToUpdateIncludingExplicitZero() throws {
+        try seedNowPlayingBooks()
+        for total in [12, 30, 0] {
+            WidgetDataSync.updateNowPlaying(bookId: "book-a", totalChapters: total,
+                                           defaults: defaults, reloadWidgets: {})
+
+            XCTAssertEqual(defaults.object(forKey: "widget.nowPlayingTotalChapters") as? Int, total)
+            XCTAssertEqual(NowPlayingProvider().loadNowPlaying(defaults: defaults).totalChapters, total)
+        }
+    }
+
+    func testTimingPublicationClearsUnknownTotalAndRetainsCurrentBookMetadata() throws {
+        try seedNowPlayingBooks()
+        defaults.set(37, forKey: "widget.lastReadTotalChapters")
+        WidgetDataSync.updateNowPlaying(bookId: "book-a", chapterName: "Current chapter", author: "Current author",
+                                       isPlaying: true, totalChapters: 20, defaults: defaults, reloadWidgets: {})
+        let totals: [Int?] = [nil, 15, nil]
+        for total in totals {
+            WidgetDataSync.updateNowPlayingTiming(positionSeconds: 40, durationSeconds: 100,
+                chapterRemainingSeconds: 60, bookRemainingSeconds: 200, totalChapters: total, defaults: defaults)
+
+            let entry = NowPlayingProvider().loadNowPlaying(defaults: defaults)
+            XCTAssertEqual(entry.bookId, "book-a")
+            XCTAssertEqual(entry.chapterName, "Current chapter")
+            XCTAssertEqual(entry.author, "Current author")
+            XCTAssertTrue(entry.isPlaying)
+            XCTAssertEqual(entry.totalChapters, total)
+            XCTAssertEqual(defaults.object(forKey: "widget.nowPlayingTotalChapters") as? Int, total)
+            XCTAssertEqual(defaults.double(forKey: "widget.nowPlayingPositionSeconds"), 40)
+            XCTAssertEqual(defaults.double(forKey: "widget.nowPlayingDurationSeconds"), 100)
+            XCTAssertEqual(entry.chapterRemainingSeconds, 60)
+            XCTAssertEqual(entry.bookRemainingSeconds, 200)
+        }
+        XCTAssertEqual(defaults.integer(forKey: "widget.lastReadTotalChapters"), 37)
+    }
+
+    func testUnavailableDefaultsDoesNotPublishReloadOrMutateOtherStorage() throws {
+        try seedNowPlayingBooks()
+        WidgetDataSync.updateNowPlaying(bookId: "book-a", totalChapters: 20, defaults: defaults, reloadWidgets: {})
+        var reloads = 0
+
+        WidgetDataSync.updateNowPlaying(bookId: "book-b", totalChapters: nil, defaults: nil, reloadWidgets: { reloads += 1 })
+        WidgetDataSync.updateNowPlayingTiming(positionSeconds: 99, durationSeconds: 99,
+            chapterRemainingSeconds: 99, bookRemainingSeconds: 99, totalChapters: nil, defaults: nil)
+
+        let entry = NowPlayingProvider().loadNowPlaying(defaults: defaults)
+        XCTAssertEqual(entry.bookId, "book-a")
+        XCTAssertEqual(entry.totalChapters, 20)
+        XCTAssertEqual(reloads, 0)
+    }
+
+    private func seedNowPlayingBooks() throws {
+        let books = [["id": "book-a", "title": "First book"], ["id": "book-b", "title": "Second book"]]
+        defaults.set(try JSONSerialization.data(withJSONObject: books), forKey: "library.books.v1")
     }
 
     // MARK: - isPlaying round-trip
