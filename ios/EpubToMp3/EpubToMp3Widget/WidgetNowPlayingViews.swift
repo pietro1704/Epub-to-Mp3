@@ -23,7 +23,7 @@ private struct NowPlayingSmallView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     if entry.title.isEmpty {
-                        Text("No audiobook playing")
+                        Text(L10n.string("widget.noAudiobookPlaying"))
                             .font(.caption2)
                             .foregroundStyle(.white.opacity(0.6))
                     } else {
@@ -31,7 +31,7 @@ private struct NowPlayingSmallView: View {
                             Image(systemName: entry.isPlaying ? "waveform" : "pause.fill")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.white.opacity(0.7))
-                            Text("Now Playing")
+                            Text(L10n.string("widget.nowPlaying"))
                                 .font(.system(size: 9, weight: .medium))
                                 .textCase(.uppercase)
                                 .foregroundStyle(.white.opacity(0.7))
@@ -46,14 +46,14 @@ private struct NowPlayingSmallView: View {
                         if let chapter = entry.chapterName, !chapter.isEmpty {
                             Text(
                                 entry.totalChapters.flatMap { total in
-                                    entry.chapterIndex.map { "\(chapter) · Cap. \($0 + 1) de \(total)" }
+                                    entry.chapterIndex.map { "\(chapter) · \(L10n.string("player.chapterOf", $0 + 1, total))" }
                                 } ?? chapter
                             )
                                 .font(.caption2)
                                 .foregroundStyle(.white.opacity(0.75))
                                 .lineLimit(1)
                         }
-                        Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                        Text(L10n.string("widget.remainingTimes", formatWidgetTime(entry.chapterRemainingSeconds), formatWidgetTime(entry.bookRemainingSeconds)))
                             .font(.system(size: 9, design: .rounded))
                             .foregroundStyle(.white.opacity(0.7))
                     }
@@ -82,7 +82,7 @@ private struct NowPlayingMediumView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Label(
-                    entry.isPlaying ? "Now Playing" : "Paused",
+                    L10n.string(entry.isPlaying ? "widget.nowPlaying" : "widget.paused"),
                     systemImage: entry.isPlaying ? "waveform" : "pause.fill"
                 )
                 .font(.caption2)
@@ -92,7 +92,7 @@ private struct NowPlayingMediumView: View {
                 Spacer(minLength: 0)
 
                 if entry.title.isEmpty {
-                    Text("Open a book to start listening")
+                    Text(L10n.string("widget.openBookToListen"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
@@ -117,14 +117,14 @@ private struct NowPlayingMediumView: View {
                             .lineLimit(1)
                             .padding(.top, 1)
                     } else if let idx = entry.chapterIndex {
-                        Text("Chapter \(idx + 1)")
+                        Text(L10n.string("player.chapter", idx + 1))
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .padding(.top, 1)
                     }
                 }
 
-                Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                Text(L10n.string("widget.remainingTimes", formatWidgetTime(entry.chapterRemainingSeconds), formatWidgetTime(entry.bookRemainingSeconds)))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
 
@@ -180,8 +180,8 @@ struct NowPlayingWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
                 .widgetURL(WidgetDeepLinks.player(bookId: entry.bookId))
         }
-        .configurationDisplayName("Now Playing")
-        .description("See what audiobook is playing and control playback.")
+        .configurationDisplayName("widget.nowPlaying")
+        .description("widget.playbackDescription")
         .supportedFamilies([.systemSmall, .systemMedium])
         .contentMarginsDisabled()
     }

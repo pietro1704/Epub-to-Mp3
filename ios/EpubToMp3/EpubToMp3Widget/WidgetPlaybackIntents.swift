@@ -19,8 +19,8 @@ import AppIntents
 /// a scene-phase transition.
 @available(iOS 16.0, *)
 struct TogglePlayPauseIntent: AppIntent {
-    static let title: LocalizedStringResource = "Play / Pause"
-    static var description: IntentDescription { IntentDescription("Toggles audio playback.") }
+    static let title: LocalizedStringResource = "widget.playPauseIntent"
+    static var description: IntentDescription { IntentDescription("widget.playPauseIntentDescription") }
     static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
@@ -32,8 +32,8 @@ struct TogglePlayPauseIntent: AppIntent {
 /// Skip forward 30 seconds.
 @available(iOS 16.0, *)
 struct SkipForward30Intent: AppIntent {
-    static let title: LocalizedStringResource = "Skip Forward 30s"
-    static var description: IntentDescription { IntentDescription("Skips forward 30 seconds in the audiobook.") }
+    static let title: LocalizedStringResource = "widget.skipForwardIntent"
+    static var description: IntentDescription { IntentDescription("widget.skipForwardIntentDescription") }
     static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {

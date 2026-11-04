@@ -218,9 +218,8 @@ enum WidgetDataSync {
         reloadContinueReadingWidgets()
     }
 
-    /// The widget extension bundles no `Localizable.strings` of its own, so
-    /// any user-visible label must be localized here, in the host app
-    /// process, and shipped pre-rendered through the App Group payload.
+    /// Preserve the host language in the shared payload. The extension also
+    /// localizes chapter labels when reading older payloads without a label.
     static func localizedChapterLabel(chapterIndex: Int, totalChapters: Int?) -> String {
         if let total = totalChapters, total > 0 {
             return L10n.string("player.chapterOf", chapterIndex + 1, total)

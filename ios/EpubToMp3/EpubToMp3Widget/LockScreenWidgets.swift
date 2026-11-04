@@ -183,7 +183,7 @@ private struct RectangularView: View {
 
     var body: some View {
         if entry.title.isEmpty {
-            Label("Nothing playing", systemImage: "headphones")
+            Label(L10n.string("widget.nothingPlaying"), systemImage: "headphones")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         } else {
@@ -201,7 +201,7 @@ private struct RectangularView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("\(formatLockWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatLockWidgetTime(entry.bookRemainingSeconds))")
+                Text(L10n.string("widget.remainingTimes", formatLockWidgetTime(entry.chapterRemainingSeconds), formatLockWidgetTime(entry.bookRemainingSeconds)))
                     .font(.caption2)
                     .lineLimit(1)
                     .foregroundStyle(.secondary)
@@ -233,9 +233,9 @@ private struct InlineView: View {
 
     var body: some View {
         if entry.title.isEmpty {
-            Label("No audiobook", systemImage: "headphones")
+            Label(L10n.string("widget.noAudiobook"), systemImage: "headphones")
         } else {
-            Label("\(entry.title) · \(formatLockWidgetTime(entry.chapterRemainingSeconds)) restantes", systemImage: entry.isPlaying ? "waveform" : "pause")
+            Label(L10n.string("widget.titleRemaining", entry.title, formatLockWidgetTime(entry.chapterRemainingSeconds)), systemImage: entry.isPlaying ? "waveform" : "pause")
                 .lineLimit(1)
         }
     }
@@ -252,8 +252,8 @@ struct NowPlayingLockScreenWidget: Widget {
             NowPlayingLockScreenView(entry: entry)
                 .widgetURL(deepLinkPlayer(bookId: entry.bookId))
         }
-        .configurationDisplayName("Now Playing")
-        .description("Glanceable now-playing info on your lock screen.")
+        .configurationDisplayName("widget.nowPlaying")
+        .description("widget.lockScreenDescription")
         .supportedFamilies([
             .accessoryCircular,
             .accessoryRectangular,

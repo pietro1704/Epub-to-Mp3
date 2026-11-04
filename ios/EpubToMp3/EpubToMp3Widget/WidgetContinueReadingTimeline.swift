@@ -9,8 +9,7 @@ struct ContinueReadingEntry: TimelineEntry {
     let totalChapters: Int?
     let coverData: Data?
     let bookId: String?
-    // Pre-localized in the host app (the extension bundles no
-    // Localizable.strings); nil only for stale pre-update payloads.
+    // Prefer the label provided by the host; localize older payloads here.
     var localizedChapterLabel: String? = nil
     var chapterRemainingSeconds: Double = 0
     var bookRemainingSeconds: Double = 0
@@ -27,9 +26,9 @@ struct ContinueReadingEntry: TimelineEntry {
         }
         guard let idx = chapterIndex else { return nil }
         if let total = totalChapters, total > 0 {
-            return "Chapter \(idx + 1) of \(total)"
+            return L10n.string("player.chapterOf", idx + 1, total)
         }
-        return "Chapter \(idx + 1)"
+        return L10n.string("player.chapter", idx + 1)
     }
 
     static var placeholder: ContinueReadingEntry {

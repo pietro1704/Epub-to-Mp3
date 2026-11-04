@@ -37,17 +37,17 @@ private struct LibraryMediumView: View {
                 Image(systemName: "books.vertical")
                     .font(.title2)
                     .foregroundStyle(.secondary)
-                Text("Your library is empty")
+                Text(L10n.string("widget.libraryEmpty"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("Import an EPUB to get started")
+                Text(L10n.string("widget.importEpubToStart"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Library", systemImage: "books.vertical")
+                Label(L10n.string("nav.library"), systemImage: "books.vertical")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
@@ -84,17 +84,17 @@ private struct LibraryLargeView: View {
                 Image(systemName: "books.vertical")
                     .font(.largeTitle)
                     .foregroundStyle(.secondary)
-                Text("Your library is empty")
+                Text(L10n.string("widget.libraryEmpty"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text("Import an EPUB to get started")
+                Text(L10n.string("widget.importEpubToStart"))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Library", systemImage: "books.vertical")
+                Label(L10n.string("nav.library"), systemImage: "books.vertical")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -132,8 +132,8 @@ struct LibraryWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
                 .widgetURL(URL(string: "epubtomp3://library")!)
         }
-        .configurationDisplayName("Library")
-        .description("Quick access to your recent audiobooks.")
+        .configurationDisplayName("nav.library")
+        .description("widget.libraryDescription")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }

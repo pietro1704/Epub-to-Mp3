@@ -18,8 +18,8 @@ struct EpubToMp3Widget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
                 .widgetURL(WidgetDeepLinks.player(bookId: entry.bookId))
         }
-        .configurationDisplayName("Now Playing")
-        .description("Control playback or jump back into your audiobook.")
+        .configurationDisplayName("widget.nowPlaying")
+        .description("widget.playbackDescription")
         .supportedFamilies([.systemSmall, .systemMedium])
         .contentMarginsDisabled()
     }

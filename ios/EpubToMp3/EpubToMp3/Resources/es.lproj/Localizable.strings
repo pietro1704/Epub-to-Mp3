@@ -769,3 +769,21 @@
 "liveActivity.completed" = "Conversión completada";
 "liveActivity.cancelled" = "Conversión cancelada";
 "liveActivity.failed" = "Error en la conversión";
+
+/* Widget configuration, playback intents, and Share Extension */
+"widget.playbackDescription" = "Controla la reproducción o vuelve a tu audiolibro.";
+"widget.continueReadingDescription" = "Vuelve al libro que estabas leyendo.";
+"widget.libraryDescription" = "Acceso rápido a tus audiolibros recientes.";
+"widget.lockScreenDescription" = "Consulta la reproducción actual en la pantalla bloqueada.";
+"widget.remainingTimes" = "%1$@ restantes · libro %2$@";
+"widget.titleRemaining" = "%1$@ · %2$@ restantes";
+"widget.playPauseIntent" = "Reproducir / Pausar";
+"widget.playPauseIntentDescription" = "Alterna la reproducción del audio.";
+"widget.skipForwardIntent" = "Avanzar 30s";
+"widget.skipForwardIntentDescription" = "Avanza 30 segundos en el audiolibro.";
+"share.importing" = "Importando a EpubToMp3…";
+"share.importedOne" = "%d libro importado a EpubToMp3";
+"share.importedMany" = "%d libros importados a EpubToMp3";
+"share.importFailed" = "Error al importar: %@";
+"share.nothingToImport" = "Nada que importar (ningún EPUB o PDF adjunto)";
+"share.unsupportedAttachment" = "Contenido del adjunto no compatible (%@).";

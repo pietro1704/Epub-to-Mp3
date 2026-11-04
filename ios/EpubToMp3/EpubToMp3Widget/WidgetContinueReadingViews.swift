@@ -23,11 +23,11 @@ private struct ContinueReadingSmallView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     if entry.title.isEmpty {
-                        Text("No book in progress")
+                        Text(L10n.string("widget.noBookInProgress"))
                             .font(.caption2)
                             .foregroundStyle(.white.opacity(0.6))
                     } else {
-                        Text("Continue")
+                        Text(L10n.string("widget.continue"))
                             .font(.system(size: 9, weight: .medium))
                             .textCase(.uppercase)
                             .foregroundStyle(.white.opacity(0.7))
@@ -45,7 +45,7 @@ private struct ContinueReadingSmallView: View {
                                 .foregroundStyle(.white.opacity(0.7))
                         }
                         if entry.chapterRemainingSeconds > 0 || entry.bookRemainingSeconds > 0 {
-                            Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                            Text(L10n.string("widget.remainingTimes", formatWidgetTime(entry.chapterRemainingSeconds), formatWidgetTime(entry.bookRemainingSeconds)))
                                 .font(.system(size: 9, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.7))
                         }
@@ -73,7 +73,7 @@ private struct ContinueReadingMediumView: View {
             .frame(maxWidth: .infinity)
 
             VStack(alignment: .leading, spacing: 4) {
-                Label("Continue Reading", systemImage: "book.fill")
+                Label(L10n.string("widget.continueReading"), systemImage: "book.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -81,7 +81,7 @@ private struct ContinueReadingMediumView: View {
                 Spacer(minLength: 0)
 
                 if entry.title.isEmpty {
-                    Text("Open a book to start reading")
+                    Text(L10n.string("widget.openBookToRead"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
@@ -124,11 +124,11 @@ private struct ContinueReadingMediumView: View {
                         }
                         .frame(height: 4)
 
-                        Text("\(pct)% complete")
+                        Text(L10n.string("widget.percentComplete", pct))
                             .font(.system(size: 10, design: .rounded))
                             .foregroundStyle(.tertiary)
                         if entry.chapterRemainingSeconds > 0 || entry.bookRemainingSeconds > 0 {
-                            Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                            Text(L10n.string("widget.remainingTimes", formatWidgetTime(entry.chapterRemainingSeconds), formatWidgetTime(entry.bookRemainingSeconds)))
                                 .font(.system(size: 10, design: .rounded))
                                 .foregroundStyle(.tertiary)
                         }
@@ -154,8 +154,8 @@ struct ContinueReadingWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
                 .widgetURL(WidgetDeepLinks.open(bookId: entry.bookId))
         }
-        .configurationDisplayName("Continue Reading")
-        .description("Jump back into the book you were reading.")
+        .configurationDisplayName("widget.continueReading")
+        .description("widget.continueReadingDescription")
         .supportedFamilies([.systemSmall, .systemMedium])
         .contentMarginsDisabled()
     }
