@@ -275,7 +275,11 @@ final class LibraryStore: ObservableObject {
     /// guard, `URL(resolvingBookmarkData: Data())` raises
     /// `fatalError` inside libswiftCore — which is exactly what was
     /// crashing the native UI preview.
-    func openBookFile(id: String) throws -> URL {
+    func openBookFile(
+        id: String,
+        startSecurityScope: (URL) -> Bool = { $0.startAccessingSecurityScopedResource() },
+        stopSecurityScope: (URL) -> Void = { $0.stopAccessingSecurityScopedResource() }
+    ) throws -> URL {
         guard let i = books.firstIndex(where: { $0.id == id }) else {
             throw NSError(domain: "LibraryStore", code: 404,
                           userInfo: [NSLocalizedDescriptionKey: "Book not found in library"])
@@ -299,10 +303,12 @@ final class LibraryStore: ObservableObject {
             // Migrate books imported by older builds. Keep the security scope
             // alive only for the copy operation, then use the internal copy
             // for every subsequent open.
-            let started = url.startAccessingSecurityScopedResource()
-            defer { if started { url.stopAccessingSecurityScopedResource() } }
+            // Migration changes the returned URL, not the resource whose access we own.
+            let sourceURL = url
+            let started = startSecurityScope(sourceURL)
+            defer { if started { stopSecurityScope(sourceURL) } }
             let durableURL = try LibraryImportFiles.persistImportedFileForLibrary(
-                originalURL: url,
+                originalURL: sourceURL,
                 id: books[i].id,
                 fileType: books[i].fileType,
                 fileManager: fileManager,
