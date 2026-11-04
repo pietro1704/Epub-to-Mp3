@@ -479,6 +479,14 @@ targets:
         excludes:
           - "Info.plist"
           - "ShareExtension.entitlements"
+      - path: EpubToMp3/Shared/Localization/L10n.swift
+      - path: EpubToMp3/Shared/Localization/ShareImportPresentation.swift
+      - path: EpubToMp3/Resources/en.lproj
+        buildPhase: resources
+      - path: EpubToMp3/Resources/pt-BR.lproj
+        buildPhase: resources
+      - path: EpubToMp3/Resources/es.lproj
+        buildPhase: resources
       # Foundation-only inbox contract shared with the main app target.
       - path: EpubToMp3/Shared/Integrations/SharedContainerInbox.swift
     dependencies: []
@@ -518,6 +526,7 @@ targets:
         excludes:
           - "Resources/EpubToMp3Widget.entitlements"
           - "Info.plist"
+      - path: EpubToMp3/Shared/Localization/L10n.swift
       # Shared with the main app target. Same Codable shape on both ends —
       # ActivityKit serialises by name + Codable, not nominal cross-module.
       - path: EpubToMp3/Shared/Integrations/ConversionActivityAttributes.swift

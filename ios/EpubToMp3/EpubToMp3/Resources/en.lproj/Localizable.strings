@@ -768,3 +768,21 @@
 "liveActivity.completed" = "Conversion completed";
 "liveActivity.cancelled" = "Conversion cancelled";
 "liveActivity.failed" = "Conversion failed";
+
+/* Widget configuration, playback intents, and Share Extension */
+"widget.playbackDescription" = "Control playback or jump back into your audiobook.";
+"widget.continueReadingDescription" = "Jump back into the book you were reading.";
+"widget.libraryDescription" = "Quick access to your recent audiobooks.";
+"widget.lockScreenDescription" = "Glanceable now-playing info on your lock screen.";
+"widget.remainingTimes" = "%1$@ remaining · book %2$@";
+"widget.titleRemaining" = "%1$@ · %2$@ remaining";
+"widget.playPauseIntent" = "Play / Pause";
+"widget.playPauseIntentDescription" = "Toggles audio playback.";
+"widget.skipForwardIntent" = "Skip Forward 30s";
+"widget.skipForwardIntentDescription" = "Skips forward 30 seconds in the audiobook.";
+"share.importing" = "Importing to EpubToMp3…";
+"share.importedOne" = "%d book imported to EpubToMp3";
+"share.importedMany" = "%d books imported to EpubToMp3";
+"share.importFailed" = "Import failed: %@";
+"share.nothingToImport" = "Nothing to import (no EPUB or PDF attached)";
+"share.unsupportedAttachment" = "Unsupported attachment payload (%@).";

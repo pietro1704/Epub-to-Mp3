@@ -38,7 +38,7 @@ final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        installConfirmationUI(message: "Importing to EpubToMp3…")
+        installConfirmationUI(message: L10n.string("share.importing"))
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -82,16 +82,7 @@ final class ShareViewController: UIViewController {
         // Show the result for ~0.8 s so the user sees confirmation.
         // The host app stays frozen behind us; longer than this and
         // it starts to feel sluggish.
-        let summary: String
-        if imported > 0 {
-            summary = imported == 1
-                ? "1 book imported to EpubToMp3"
-                : "\(imported) books imported to EpubToMp3"
-        } else if let err = firstError {
-            summary = "Import failed: \(err)"
-        } else {
-            summary = "Nothing to import (no EPUB or PDF attached)"
-        }
+        let summary = ShareImportPresentation.summary(imported: imported, firstError: firstError)
         installConfirmationUI(message: summary)
         try? await Task.sleep(nanoseconds: 800_000_000)
         completeRequest()
@@ -153,7 +144,7 @@ final class ShareViewController: UIViewController {
                     domain: "ShareViewController",
                     code: 100,
                     userInfo: [NSLocalizedDescriptionKey:
-                        "Unsupported attachment payload (\(type(of: coercedItem)))."]
+                        L10n.string("share.unsupportedAttachment", String(describing: type(of: coercedItem)))]
                 ))
             }
         }
