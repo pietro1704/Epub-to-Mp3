@@ -131,8 +131,13 @@ validated merging. Administrative bypass requires explicit approval for that PR.
 Release, website/Hugging Face publication and issue closure retain their own
 authorization boundaries.
 
-CI monitoring is opt-in. Do not poll unrelated CI or infer monitoring permission
-from PR creation. Report pending/unobserved results precisely. After an authorized
-merge, verify the merge SHA, fast-forward local `master`, and delete only branches
-confirmed integrated, preserving concurrent work and private overlays. When the
-requested final state is master-only, verify local and remote branch inventories.
+Never wait for GitHub CI or watch/poll runs and pull requests. Inspect relevant
+existing PR state and CI only in response to a new message from Pietro; after
+that bounded inspection, defer further status queries until his next message.
+A push, PR creation, elapsed time, local task completion or CI notification does
+not authorize another query. Keep protected automatic merge active and report
+pending/unobserved results precisely. When a user-triggered inspection confirms
+an authorized merge, verify its SHA and ancestry, fast-forward local `master`,
+and delete only branches confirmed integrated, preserving concurrent work and
+private overlays. When the requested final state is master-only, verify local
+and remote branch inventories during that user-triggered inspection.
