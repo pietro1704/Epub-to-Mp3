@@ -139,7 +139,7 @@ run = "ruby scripts/simulator_safe_run.rb"
 
 [tasks."ios:simulator:safety:test"]
 description = "Verify Simulator resource refusal, deadlines, ownership and watchdog cleanup without booting"
-run = "ruby scripts/run_host_checks.rb --suite scripts/test_simulator_resources.rb --suite scripts/test_simulator_session.rb --suite scripts/test_simulator_backend.rb --suite scripts/test_simulator_cli.rb"
+run = "ruby scripts/run_host_checks.rb --suite scripts/test_simulator_resources.rb --suite scripts/test_simulator_session.rb --suite scripts/test_simulator_backend.rb --suite scripts/test_simulator_cli.rb --suite scripts/test_onnxruntime_simulator_jobs.rb"
 
 [tasks."native:build:preflight:test"]
 description = "Host regressions for native build crash-prevention preflight; no Simulator or build"
