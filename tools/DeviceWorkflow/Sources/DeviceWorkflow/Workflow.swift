@@ -240,8 +240,13 @@ public final class Workflow {
         let test = try command(testCommand, "testWall", timeout: TimeInterval(options.timeout + 120), check: false)
         report["status"] = "collecting"
         // Collect evidence even when xcodebuild fails, preserving native conversion diagnostics.
-        if benchmark { try collect(resultBundle) }
-        let summaryResult = try? command(["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", resultBundle.path], "testSummary", check: false)
+        let queryBundle = directory.appendingPathComponent("tests-query-copy.xcresult")
+        try FileManager.default.copyItem(at: resultBundle, to: queryBundle)
+        report["originalResultBundle"] = resultBundle.path
+        report["queryResultBundle"] = queryBundle.path
+        if benchmark { try collect(queryBundle) }
+        let summaryResult = try? command(xcresultCommand(queryBundle,
+            ["get", "test-results", "summary"]), "testSummary", check: false)
         let summary = summaryResult.flatMap { try? JSONSerialization.jsonObject(with: Data($0.output.utf8)) as? [String: Any] }
         if let summary { report["testSummary"] = summary }
         if benchmark, let native = report["nativeEvidence"] as? [String: Any], native["status"] as? String != "passed" {
@@ -334,12 +339,17 @@ public final class Workflow {
         if evidence?["runID"] as? String != runID { evidence = nil }
         if evidence == nil {
             let attachments = directory.appendingPathComponent("attachments")
-            _ = try? command(["xcrun", "xcresulttool", "export", "attachments", "--path", resultBundle.path, "--output-path", attachments.path], "attachmentExport", check: false)
+            _ = try? command(xcresultCommand(resultBundle, ["export", "attachments"], extra: ["--output-path", attachments.path]), "attachmentExport", check: false)
             evidence = Evidence.attachment(attachments, runID: runID)
             if let evidence { try DurableJSON.write(evidence, to: native) }
         }
         if let evidence { report["nativeEvidence"] = evidence }
         try checkpoint()
+    }
+
+    private func xcresultCommand(_ bundle: URL, _ operation: [String], extra: [String] = []) -> [String] {
+        ["mise", "exec", "--", "ruby", root.appendingPathComponent("scripts/xcresult_job.rb").path,
+         bundle.path, "--", "xcrun", "xcresulttool"] + operation + ["--path", bundle.path] + extra
     }
 
     private func cleanupStagedInputs() throws {
