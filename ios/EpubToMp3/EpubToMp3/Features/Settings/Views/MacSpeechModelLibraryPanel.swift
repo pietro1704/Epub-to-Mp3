@@ -147,7 +147,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
         if let event = installEvents[entry.identity.modelID] {
             labelLines.append(state.installStatus(for: event))
         }
-        labelLines.append(state.details(
+        labelLines.append(state.rowSummary(
             for: entry,
             configuredSelections: settings.configuredNarrationSelections
         ))
@@ -216,8 +216,14 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     private func perform(_ action: SpeechModelProductAction, for entry: SpeechModelSnapshot.Entry) {
         switch action {
         case .preview:
-            guard let selection = state.selection(for: entry) else { return }
-            audition.present(selection: selection, language: entry.languageEvidence.exactTags.first?.tag ?? state.studyLanguage, on: window)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let choice = try await speechModels.auditionChoice(for: entry)
+                    guard window?.isVisible == true else { return }
+                    audition.present(selection: choice.selection, language: choice.language, on: window)
+                } catch { presentFailure(title: L10n.string("voiceAudition.title"), error: error) }
+            }
         case .install: confirmInstall(entry)
         case .cancelInstall:
             Task { await speechModels.cancelInstall(modelID: entry.identity.modelID) }

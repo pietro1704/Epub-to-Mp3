@@ -261,8 +261,18 @@ final class SettingsScreenController: UITableViewController {
     private func perform(_ action: SpeechModelProductAction, for entry: SpeechModelSnapshot.Entry) {
         switch action {
         case .preview:
-            guard let selection = speechModelState.selection(for: entry) else { return }
-            audition.present(selection: selection, language: entry.languageEvidence.exactTags.first?.tag ?? speechModelState.studyLanguage, on: self)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let choice = try await speechModels.auditionChoice(for: entry)
+                    guard viewIfLoaded?.window != nil else { return }
+                    audition.present(selection: choice.selection, language: choice.language, on: self)
+                } catch {
+                    guard viewIfLoaded?.window != nil else { return }
+                    SettingsAlertPresentation.info(on: self, title: L10n.string("voiceAudition.title"),
+                        message: AppErrorReporter.message(error, context: #function))
+                }
+            }
         case .install: confirmInstall(entry)
         case .cancelInstall:
             Task { await speechModels.cancelInstall(modelID: entry.identity.modelID) }

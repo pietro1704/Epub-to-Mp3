@@ -29,7 +29,8 @@ struct PreparedChapterRendererStyle: Equatable, Sendable {
 }
 
 private struct PreparedChapterRendererSignature: Encodable {
-    let version = 4
+    // Earlier archives predate native hyphenation/word wrapping for justified text.
+    let version = 5
     let chapter: EbookFulltext.Chapter
     let boldOverride: Bool
     let customColors: [Double]

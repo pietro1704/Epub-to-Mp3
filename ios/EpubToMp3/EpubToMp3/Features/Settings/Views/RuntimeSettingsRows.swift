@@ -151,7 +151,7 @@ enum RuntimeSettingsRows {
                             + L10n.string("settings.modelInstall.cancel")
                     }
                 } else {
-                    content.secondaryText = speechModels.details(
+                    content.secondaryText = speechModels.rowSummary(
                         for: entry,
                         configuredSelections: settings.configuredNarrationSelections
                     )

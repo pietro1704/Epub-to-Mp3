@@ -205,6 +205,17 @@ struct SpeechModelLibraryViewState: Sendable {
         return fields.joined(separator: " · ")
     }
 
+    func rowSummary(for entry: SpeechModelSnapshot.Entry, configuredSelections: [TtsSelection]) -> String {
+        let installedForOtherLanguage = entry.installation.state == .installed
+            && entry.compatibility.reasons == ["unsupported_language"]
+        var fields = [installedForOtherLanguage ? L10n.string("settings.modelState.installed") : status(for: entry)]
+        if isConfigured(entry, selections: configuredSelections) { fields.append(L10n.string("settings.modelState.configured")) }
+        if installedForOtherLanguage {
+            fields.append(L10n.string("settings.modelCompatibility.otherLanguage"))
+        } else if !entry.compatibility.compatible { fields.append(compatibilityStatus(for: entry)) }
+        return fields.joined(separator: " · ")
+    }
+
     func isConfigured(
         _ entry: SpeechModelSnapshot.Entry,
         selections: [TtsSelection]
@@ -249,7 +260,11 @@ struct SpeechModelLibraryViewState: Sendable {
         }
         let configured = isConfigured(entry, selections: configuredSelections)
         var available: [SpeechModelProductAction] = []
-        if entry.selection.selectable, entry.identity.provider == "piper" { available.append(.preview) }
+        if entry.identity.provider == "piper", entry.installation.state == .installed,
+           !entry.languageEvidence.exactTags.isEmpty,
+           entry.compatibility.compatible || entry.compatibility.reasons == ["unsupported_language"] {
+            available.append(.preview)
+        }
         if entry.distribution.installable, entry.compatibility.compatible,
            entry.installation.state != .installed {
             available.append(.install)

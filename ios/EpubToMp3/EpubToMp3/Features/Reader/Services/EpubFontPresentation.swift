@@ -99,10 +99,11 @@ enum EpubFontPresentation {
                 attr.addAttribute(.kern, value: NSNumber(value: letterSpacing), range: range)
             }
 
-            // Publisher paragraphs remain untouched until a reader control
-            // explicitly overrides alignment or line spacing. The viewport
-            // module owns non-clipping layout, including oversized fragments.
-            guard settings.readerOverrideTextAlignment || settings.readerOverrideLineSpacing else { return }
+            // Preserve publisher alignment and spacing unless explicitly
+            // overridden. Justified text also needs native word breaking;
+            // the viewport owns clipping protection and oversized fragments.
+            let publisherJustifies = (attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment == .justified
+            guard settings.readerOverrideTextAlignment || settings.readerOverrideLineSpacing || publisherJustifies else { return }
             let mutable: NSMutableParagraphStyle = {
                 if let original = attrs[.paragraphStyle] as? NSParagraphStyle,
                    let copy = original.mutableCopy() as? NSMutableParagraphStyle {
@@ -129,6 +130,14 @@ enum EpubFontPresentation {
                 } else {
                     mutable.alignment = settings.readerTextAlignment == .justified ? .justified : .left
                 }
+            }
+            if mutable.alignment == .justified {
+                // Allow native word breaking before justification distributes
+                // excessive whitespace in narrow columns. Preserve heading,
+                // indentation, explicit spacing and publisher alignment.
+                mutable.hyphenationFactor = 1
+                mutable.lineBreakStrategy = .standard
+                mutable.lineBreakMode = .byWordWrapping
             }
             attr.addAttribute(.paragraphStyle, value: mutable, range: range)
         }

@@ -790,3 +790,4 @@
 
 "readerSettings.audioTracking" = "Seguir la lectura";
 "readerSettings.audioTrackingDescription" = "Resaltar la frase y la palabra mientras se reproduce el audio.";
+"settings.modelCompatibility.otherLanguage" = "Para otro idioma: puedes escuchar una muestra de esta voz instalada.";

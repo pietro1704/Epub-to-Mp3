@@ -789,3 +789,4 @@
 
 "readerSettings.audioTracking" = "Acompanhar leitura";
 "readerSettings.audioTrackingDescription" = "Destacar a frase e a palavra enquanto o áudio estiver tocando.";
+"settings.modelCompatibility.otherLanguage" = "Para outro idioma — você ainda pode ouvir esta voz instalada.";
