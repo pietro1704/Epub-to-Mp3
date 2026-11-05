@@ -145,6 +145,7 @@ final class FullPlayerContent {
 
         PlayerTransportPresentation.configureTransportButton(previousChapterButton, actionTarget: actionTarget, image: "backward.end.fill", action: actions.previousChapterTapped)
         previousChapterButton.accessibilityIdentifier = "fullPlayer.previousChapter"
+        previousChapterButton.accessibilityLabel = L10n.string("player.previousChapter")
         PlayerTransportPresentation.configureTransportButton(skipBackButton, actionTarget: actionTarget, image: "gobackward.15", action: actions.skipBackTapped, pointSize: 28)
         skipBackButton.accessibilityIdentifier = "fullPlayer.skipBack"
         PlayerTransportPresentation.configureTransportButton(playPauseButton, actionTarget: actionTarget, image: "play.fill", action: actions.playPauseTapped, pointSize: 64)
@@ -158,6 +159,7 @@ final class FullPlayerContent {
         skipForwardButton.accessibilityIdentifier = "fullPlayer.skipForward"
         PlayerTransportPresentation.configureTransportButton(nextChapterButton, actionTarget: actionTarget, image: "forward.end.fill", action: actions.nextChapterTapped)
         nextChapterButton.accessibilityIdentifier = "fullPlayer.nextChapter"
+        nextChapterButton.accessibilityLabel = L10n.string("player.nextChapter")
 
         let transport = UIStackView(arrangedSubviews: [
             previousChapterButton, skipBackButton, playPauseButton, skipForwardButton, nextChapterButton
@@ -185,7 +187,8 @@ final class FullPlayerContent {
 
         PlayerTransportPresentation.configureSecondaryButton(tocButton, actionTarget: actionTarget, image: "list.bullet", title: nil, action: actions.tocTapped)
         PlayerTransportPresentation.configureSecondaryButton(sleepButton, actionTarget: actionTarget, image: "moon.zzz", title: nil, action: nil)
-        tocButton.accessibilityLabel = L10n.string("reader.toc")
+        tocButton.accessibilityIdentifier = "fullPlayer.tableOfContents"
+        tocButton.accessibilityLabel = L10n.string("player.toc")
         sleepButton.showsMenuAsPrimaryAction = true
 
         airPlayView.translatesAutoresizingMaskIntoConstraints = false
