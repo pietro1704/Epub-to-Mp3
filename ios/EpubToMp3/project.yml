@@ -372,6 +372,8 @@ targets:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.tests
+        # Compile the extension source against its shared types in the test host.
+        OTHER_SWIFT_FLAGS: "$(inherited) -DAPP_SHARE_HOST_TESTS"
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/EpubToMp3"
         # The host owns NSApplication. The test bundle must not inherit the

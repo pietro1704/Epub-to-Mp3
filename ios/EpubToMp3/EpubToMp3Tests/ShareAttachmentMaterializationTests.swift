@@ -39,7 +39,7 @@ private final class HeldShareAttachment: @unchecked Sendable {
     private let lock = NSLock()
     private let source: URL
     private let entered: XCTestExpectation
-    private var completion: NSItemProviderCompletionHandler?
+    private var completion: NSItemProvider.CompletionHandler?
     private var released = false
 
     init(source: URL, entered: XCTestExpectation) { self.source = source; self.entered = entered }
@@ -50,7 +50,7 @@ private final class HeldShareAttachment: @unchecked Sendable {
         return provider
     }
 
-    private func capture(_ callback: NSItemProviderCompletionHandler?) {
+    private func capture(_ callback: NSItemProvider.CompletionHandler?) {
         lock.lock()
         let alreadyReleased = released
         if !alreadyReleased { completion = callback }
@@ -177,7 +177,7 @@ final class ShareAttachmentMaterializationTests: XCTestCase {
         let provider = NSItemProvider()
         provider.registerItem(forTypeIdentifier: UTType.epub.identifier) { completion, _, _ in
             requested.fulfill()
-            let callback: NSItemProviderCompletionHandler? = completion
+            let callback: NSItemProvider.CompletionHandler? = completion
             callback?(nil, CocoaError(.fileReadNoPermission))
         }
 
