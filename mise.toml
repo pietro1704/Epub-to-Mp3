@@ -663,8 +663,8 @@ LIMIT="${1:-30}"
 description = "Harvest conversion + CI logs, surface anomalies (slow chapters, fallbacks, language mismatches)"
 run = "python scripts/analyze_logs.py"
 
-[tasks."hooks-test"]
-description = "Validate repository and Claude Code hook scripts"
+[tasks."hooks:check"]
+description = "Check hook syntax, executability and reader pairing (focused)"
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -680,12 +680,11 @@ for script in "$HOOKS_DIR"/*.sh .githooks/* scripts/reader-change-check.sh; do
         ((fail++)) || true
         continue
     fi
-    if bash -n "$script" 2>/tmp/hook_syntax_err; then
+    if bash -n "$script"; then
         echo "✅ $name: OK"
         ((ok++)) || true
     else
         echo "❌ $name: syntax error"
-        cat /tmp/hook_syntax_err
         ((fail++)) || true
     fi
 done
@@ -693,6 +692,14 @@ done
 echo ""
 echo "Result: $ok OK, $fail failed"
 [[ $fail -eq 0 ]]
+"""
+
+[tasks."hooks-test"]
+description = "Validate hooks and the complete host workflow gate"
+run = """
+#!/bin/bash
+set -euo pipefail
+mise run hooks:check
 mise run host:workflow:test
 """
 

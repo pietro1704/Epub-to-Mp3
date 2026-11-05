@@ -6,17 +6,14 @@ require "tmpdir"
 require "fileutils"
 require "open3"
 require "rbconfig"
+require_relative "mise_task_bodies"
 
 # Execute mise's actual shell bodies in an isolated fake toolchain. No compiler,
 # Apple service, Python runtime, Simulator, app, or device is invoked.
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
   COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check sidecar:build piper:build-runtime web:wasm-build].freeze
-  TASKS = (%w[ios:run ios:test ios:device:test ios:build ios:device:build ios:simulator:test ios:simulator:run ios:simulator:resume ios:simulator:smoke:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS).to_h do |name|
-    output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: ROOT)
-    raise "Cannot read mise task #{name}: #{error}" unless status.success?
-    [name, JSON.parse(output).fetch("run").join("\n")]
-  end
+  TASKS = MiseTaskBodies.load(ROOT, %w[ios:run ios:test ios:device:test ios:build ios:device:build ios:simulator:test ios:simulator:run ios:simulator:resume ios:simulator:smoke:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS)
 
   def setup
     @dir = File.realpath(Dir.mktmpdir("native-task-wiring-"))
