@@ -4,7 +4,7 @@ fastapi!=0.136.3,>=0.162.0
 uvicorn[standard]>=0.54.0
 python-multipart>=0.0.33
 pydantic>=2.14.2,<3.0.0
-ebooklib>=0.20
+ebooklib>=0.21
 pypdf>=6.21.4
 beautifulsoup4>=4.15.0
 langdetect>=1.0.9,<2.0.0
