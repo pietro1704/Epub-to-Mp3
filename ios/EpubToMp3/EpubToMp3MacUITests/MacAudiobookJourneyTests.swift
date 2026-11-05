@@ -53,6 +53,11 @@ final class MacAudiobookJourneyTests: XCTestCase {
             "Library/Application Support/EpubToMp3/TTSModels/pt_BR-faber-medium/model.onnx").path))
         app.buttons["Settings"].firstMatch.click()
         let language = app.popUpButtons["settings.speechModels.language"]
+        if !language.exists {
+            let disclosure = app.buttons["settings.speechModels.disclosure"]
+            XCTAssertTrue(disclosure.waitForExistence(timeout: 10))
+            disclosure.click()
+        }
         XCTAssertTrue(language.waitForExistence(timeout: 15))
         language.click()
         app.menuItems.matching(NSPredicate(format: "title == %@", "Portuguese (Brazil)")).firstMatch.click()
@@ -207,6 +212,10 @@ final class MacAudiobookJourneyTests: XCTestCase {
         app.dialogs.buttons["Cancel"].firstMatch.click()
         let pronunciation = app.buttons["bookDetail.pronunciation"]
         pronunciation.click()
+        // Each run owns its baseline even after an interrupted prior journey.
+        paste("Tolkien = Tólkien", into: app.textViews.firstMatch)
+        app.dialogs.buttons["Save"].firstMatch.click()
+        pronunciation.click()
         XCTAssertEqual(app.textViews.firstMatch.value as? String, "Tolkien = Tólkien")
         paste("Tolkien = discarded", into: app.textViews.firstMatch)
         app.dialogs.buttons["Cancel"].firstMatch.click()
@@ -251,6 +260,7 @@ final class MacAudiobookJourneyTests: XCTestCase {
         let changedAudio = completedAudio(in: changed).sorted { $0.lastPathComponent < $1.lastPathComponent }
         XCTAssertEqual(changedAudio.count, 2)
         XCTAssertNotEqual(try Data(contentsOf: changedAudio[0]), try Data(contentsOf: replayAudio[0]))
+        app.activate()
         pronunciation.click()
         paste("Tolkien = Tólkien", into: app.textViews.firstMatch)
         app.dialogs.buttons["Save"].firstMatch.click()
@@ -269,8 +279,9 @@ final class MacAudiobookJourneyTests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.book.convert.")).firstMatch.click()
         app.dialogs.buttons["Cancel"].firstMatch.click()
         app.windows.buttons.matching(NSPredicate(format: "title IN %@", ["Listen", "Resume audio"])).firstMatch.click()
-        let pause = app.windows.buttons["Pause"].firstMatch
+        let pause = app.buttons["fullPlayer.playPause"]
         XCTAssertTrue(pause.waitForExistence(timeout: 20))
+        XCTAssertEqual(pause.label, "Pause")
         let remaining = app.staticTexts["fullPlayer.elapsed"]
         XCTAssertTrue(remaining.waitForExistence(timeout: 15))
         let initialTime = try XCTUnwrap(remaining.value as? String)
@@ -285,8 +296,10 @@ final class MacAudiobookJourneyTests: XCTestCase {
         add(evidence)
         XCTAssertNotEqual(remaining.value as? String, initialTime)
         attach(app, name: "11-real-book-audio-playing")
+        app.activate()
         pause.click()
-        XCTAssertTrue(app.windows.buttons["Play"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "Play"), object: pause)], timeout: 5), .completed)
         Thread.sleep(forTimeInterval: 0.3)
         let pausedTime = remaining.value as? String
         Thread.sleep(forTimeInterval: 1.2)
