@@ -157,20 +157,20 @@ final class AudioPlayerUXTests: XCTestCase {
     @MainActor
     func testAvailableRatesContainsExpectedValues() {
         let player = makePlayer()
-        let expected: [Float] = [0.75, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
+        let expected: [Float] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
         XCTAssertEqual(player.availableRates, expected)
     }
 
     // MARK: - cycleRate
 
-    /// The initial internal 1x rate enters the requested menu on first cycle.
+    /// Normal speed participates in the same ordered menu cycle.
     @MainActor
     func testCycleRateAdvancesThroughAllCases() {
         let player = makePlayer()
         // Default rate is 1.0.
         XCTAssertEqual(player.rate, .x100)
 
-        let expected: [PlaybackRate] = [.x075, .x125, .x150, .x175, .x200, .x250, .x300, .x075]
+        let expected: [PlaybackRate] = [.x125, .x150, .x175, .x200, .x250, .x300, .x075, .x100]
         for expectedRate in expected {
             player.cycleRate()
             XCTAssertEqual(player.rate, expectedRate,
@@ -194,7 +194,7 @@ final class AudioPlayerUXTests: XCTestCase {
     @MainActor
     func testShortLabelForCommonRates() {
         XCTAssertEqual(PlaybackRate.primaryRates.map(\.shortLabel),
-                       ["0.75x", "1.25x", "1.5x", "1.75x", "2x", "2.5x", "3x"])
+                       ["0.75x", "1x", "1.25x", "1.5x", "1.75x", "2x", "2.5x", "3x"])
         XCTAssertEqual(PlaybackRate.x100.shortLabel, "1x")
         XCTAssertEqual(PlaybackRate.x130.shortLabel, "1.3x")
         XCTAssertEqual(PlaybackRate.x080.shortLabel, "0.8x")

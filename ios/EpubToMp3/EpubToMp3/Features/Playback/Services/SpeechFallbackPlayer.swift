@@ -85,6 +85,14 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
     /// user explicitly stops playback. Drives UI controls so callers
     /// know which subsystem to drive — without this flag every play /
     /// pause tap would race the MP3 queue against the synthesizer.
+    struct SpokenWord: Equatable {
+        let text: String
+        let range: NSRange
+        let chapterIndex: Int?
+    }
+    @Published private(set) var spokenWord: SpokenWord?
+    private var activeUtterance: AVSpeechUtterance?
+    private var activeChapterIndex: Int?
     @Published private(set) var state: State = .idle
 
     // Deferred to first use: AVSpeechSynthesizer init loads the TTS
@@ -128,7 +136,7 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
     /// Speak `text` aloud using the best-matching voice for
     /// `languageCode` (BCP-47, e.g. "pt-BR"). Empty text is a no-op.
     /// Unknown language tags fall back to the system default voice.
-    func speak(text: String, languageCode: String? = nil) {
+    func speak(text: String, languageCode: String? = nil, chapterIndex: Int? = nil) {
         guard !text.isEmpty else { return }
         try? sessionConfigurator.configureForSpeech()
         let utterance = AVSpeechUtterance(string: text)
@@ -138,12 +146,16 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
         // No `else` voice assignment — leaving voice nil lets
         // AVSpeechSynthesizer pick the system default for the user's
         // locale, which is the safe fallback behaviour.
+        spokenWord = nil
+        activeChapterIndex = chapterIndex
+        activeUtterance = utterance
         synthesizer.speak(utterance)
         state = .speaking
     }
 
     func pause() {
         guard state == .speaking else { return }
+        spokenWord = nil
         synthesizer.pauseSpeaking(at: .immediate)
         state = .paused
     }
@@ -155,6 +167,8 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
     }
 
     func stop() {
+        activeUtterance = nil
+        spokenWord = nil
         synthesizer.stopSpeaking(at: .immediate)
         state = .idle
     }
@@ -163,12 +177,35 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
 // MARK: - AVSpeechSynthesizerDelegate
 
 extension SpeechFallbackPlayer: AVSpeechSynthesizerDelegate {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer,
+        willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
+        let identity = ObjectIdentifier(utterance)
+        let text = utterance.speechString
+        Task { @MainActor [weak self] in
+            guard let self, self.activeUtterance.map(ObjectIdentifier.init) == identity, self.state == .speaking,
+                  self._synthesizer?.isSpeaking == true, self._synthesizer?.isPaused == false else { return }
+            self.spokenWord = .init(text: text, range: characterRange, chapterIndex: self.activeChapterIndex)
+        }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didPause utterance: AVSpeechUtterance) {
+        let identity = ObjectIdentifier(utterance)
+        Task { @MainActor [weak self] in
+            guard let self, self.activeUtterance.map(ObjectIdentifier.init) == identity else { return }
+            self.spokenWord = nil
+        }
+    }
+
     nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didFinish utterance: AVSpeechUtterance
     ) {
+        let identity = ObjectIdentifier(utterance)
         Task { @MainActor [weak self] in
-            self?.state = .idle
+            guard let self, self.activeUtterance.map(ObjectIdentifier.init) == identity else { return }
+            self.spokenWord = nil
+            self.activeUtterance = nil
+            self.state = .idle
         }
     }
 
@@ -176,8 +213,12 @@ extension SpeechFallbackPlayer: AVSpeechSynthesizerDelegate {
         _ synthesizer: AVSpeechSynthesizer,
         didCancel utterance: AVSpeechUtterance
     ) {
+        let identity = ObjectIdentifier(utterance)
         Task { @MainActor [weak self] in
-            self?.state = .idle
+            guard let self, self.activeUtterance.map(ObjectIdentifier.init) == identity else { return }
+            self.spokenWord = nil
+            self.activeUtterance = nil
+            self.state = .idle
         }
     }
 }

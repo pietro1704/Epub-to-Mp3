@@ -60,6 +60,7 @@ final class AppSettings: ObservableObject {
         self.readerFontFamily = reader.readerFontFamily
         self.readerTheme = reader.readerTheme
         self.readerAutoScroll = reader.readerAutoScroll
+        self.readerAudioTrackingEnabled = reader.readerAudioTrackingEnabled
         self.readerShowPageNumbers = reader.readerShowPageNumbers
         self.readerTextAlignment = reader.readerTextAlignment
         self.readerLayout = reader.readerLayout
@@ -231,6 +232,10 @@ final class AppSettings: ObservableObject {
 
     @Published var readerAutoScroll: Bool = true {
         didSet { defaults.set(readerAutoScroll, forKey: "readerAutoScroll") }
+    }
+
+    @Published var readerAudioTrackingEnabled: Bool = true {
+        didSet { defaults.set(readerAudioTrackingEnabled, forKey: "readerAudioTrackingEnabled") }
     }
 
     /// Whether the "n / total" page indicator renders at the bottom of

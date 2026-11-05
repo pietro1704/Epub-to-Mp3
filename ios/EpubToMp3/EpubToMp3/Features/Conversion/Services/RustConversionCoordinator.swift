@@ -111,7 +111,7 @@ final class RustConversionCoordinator {
             throw error
         }
 
-        let activity = ConversionLiveActivitySession(jobID: jobID)
+        let activity = ConversionLiveActivitySession(jobID: jobID, isManualConversion: playbackControl == nil)
         do {
             try Task.checkCancellation()
             await activity.start(title: bookURL.deletingPathExtension().lastPathComponent, bookID: lease.bookID)

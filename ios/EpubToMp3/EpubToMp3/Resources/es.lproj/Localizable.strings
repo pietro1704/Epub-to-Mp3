@@ -787,3 +787,6 @@
 "share.importFailed" = "Error al importar: %@";
 "share.nothingToImport" = "Nada que importar (ningún EPUB o PDF adjunto)";
 "share.unsupportedAttachment" = "Contenido del adjunto no compatible (%@).";
+
+"readerSettings.audioTracking" = "Seguir la lectura";
+"readerSettings.audioTrackingDescription" = "Resaltar la frase y la palabra mientras se reproduce el audio.";

@@ -786,3 +786,6 @@
 "share.importFailed" = "Import failed: %@";
 "share.nothingToImport" = "Nothing to import (no EPUB or PDF attached)";
 "share.unsupportedAttachment" = "Unsupported attachment payload (%@).";
+
+"readerSettings.audioTracking" = "Follow spoken text";
+"readerSettings.audioTrackingDescription" = "Highlight the current sentence and word while audio is playing.";

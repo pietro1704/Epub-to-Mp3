@@ -69,6 +69,7 @@ extension ReaderModesUITests {
 
         let next = app.buttons["reader.scrollChapter.next"].firstMatch
         XCTAssertTrue(next.waitForExistence(timeout: 5), "Native LOTR must expose the next-chapter control.")
+        XCTAssertTrue(next.isHittable, "Chapter navigation must target the visible reader, not a restored reader underneath it.")
         next.tap()
         XCTAssertTrue(
             waitUntil(timeout: 5) { chapter(app)?.index == before.index + 1 },

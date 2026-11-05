@@ -19,7 +19,7 @@ enum SettingsSection: Int, CaseIterable {
         case .playback:
             return 2
         case .reader:
-            return 7
+            return 8
         case .storage:
             return 8
         case .advanced:

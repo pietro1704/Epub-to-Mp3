@@ -6,6 +6,7 @@ struct ReaderLayoutPreferences {
     var readerFontFamily: ReaderFontFamily = .serif
     var readerTheme: ReaderTheme = .light
     var readerAutoScroll: Bool = true
+    var readerAudioTrackingEnabled: Bool = true
     var readerShowPageNumbers: Bool = true
     var readerTextAlignment: ReaderTextAlignment = .justified
     var readerLayout: ReaderLayout = .paginated
@@ -32,6 +33,7 @@ struct ReaderLayoutPreferences {
             rawValue: defaults.string(forKey: "readerTheme") ?? ""
         ) ?? .auto
         readerAutoScroll = defaults.object(forKey: "readerAutoScroll") as? Bool ?? true
+        readerAudioTrackingEnabled = defaults.object(forKey: "readerAudioTrackingEnabled") as? Bool ?? true
         readerShowPageNumbers = defaults.object(forKey: "readerShowPageNumbers") as? Bool ?? true
         readerTextAlignment = ReaderTextAlignment(
             rawValue: defaults.string(forKey: "readerTextAlignment") ?? ""

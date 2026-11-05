@@ -27,6 +27,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         onPDFPageReady: { [weak self] in self?.recordFirstPDFPage(wasNormalized: $0) }
     )
 
+    private lazy var audioHighlight = ReaderAudioHighlightPresentation(
+        document: document, player: player, textView: composition.textView, settings: settings)
+
     private func configureNativeReader() {
         composition.configure(isPaginatedMode: isPaginatedMode, textDelegate: annotations,
             scrollDelegate: interaction, gestureDelegate: interaction)
@@ -195,6 +198,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         configureNativeReader()
         settingsPresentation.applyReaderColors()
         settingsPresentation.observe()
+        audioHighlight.observe()
         loadBook()
         observeOpenStage("reader_view_did_load_completed")
     }
@@ -206,7 +210,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     override func willMove(toParent parent: UIViewController?) {
-        if parent == nil, isViewLoaded { annotations.cancelSearch() }
+        if parent == nil, isViewLoaded {
+            annotations.cancelSearch()
+            audioHighlight.stop()
+        }
+        if parent != nil, isViewLoaded { audioHighlight.observe() }
         super.willMove(toParent: parent)
     }
 
@@ -249,7 +257,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         textPresentation.layoutCommittedViewport()
     }
     private func showChapter(_ index: Int, preparedRendering: NSAttributedString? = nil) {
+        audioHighlight.clear()
         textPresentation.showChapter(index, preparedRendering: preparedRendering)
+        audioHighlight.refresh()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
