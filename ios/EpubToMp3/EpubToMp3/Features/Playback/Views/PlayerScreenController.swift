@@ -84,7 +84,7 @@ final class PlayerScreenController: UIViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         chapterLabel.font = .preferredFont(forTextStyle: .subheadline)
-        chapterLabel.textColor = .secondaryLabel
+        chapterLabel.textColor = .label
         chapterLabel.numberOfLines = 0
         chapterLabel.textAlignment = .center
         chapterLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -106,7 +106,7 @@ final class PlayerScreenController: UIViewController {
         [elapsedLabel, durationLabel].forEach {
             $0.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedDigitSystemFont(ofSize: 12, weight: .regular))
             $0.adjustsFontForContentSizeCategory = true
-            $0.textColor = .secondaryLabel
+            $0.textColor = .label
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
 

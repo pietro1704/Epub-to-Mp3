@@ -258,7 +258,7 @@ final class BookGridCell: UICollectionViewCell {
 
         author.font = .preferredFont(forTextStyle: .caption1)
         author.adjustsFontForContentSizeCategory = true
-        author.textColor = .secondaryLabel
+        author.textColor = .label
         author.numberOfLines = 1
         author.setContentCompressionResistancePriority(.required, for: .vertical)
 
