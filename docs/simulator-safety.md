@@ -32,6 +32,13 @@ The route preserves the global Xcode selection and refuses simultaneous native
 jobs. It checks runtime, device, executable architecture/platform, bundle identity,
 minimum OS and app content identity before installation.
 
+Local compatibility check on macOS 15.8.2: CoreSimulator reports iOS 15.0 as
+unavailable with `The iOS 15.0 simulator runtime is not supported on hosts after
+macOS 14.99.0.` The current route consequently refuses this host/runtime pair.
+The generic Xcode support matrix and downloadable package availability do not
+override this runtime-level restriction. Selecting another runtime requires an
+explicit scoped update and validation; never patch its availability metadata.
+
 A 60-second admission baseline requires normal memory pressure, at least 40%
 reported free memory, at most 1 GiB swap, unchanged swapout count, at least 70%
 aggregate CPU idle, and 20 GiB free disk. The existing 12 GiB build-cache ceiling
