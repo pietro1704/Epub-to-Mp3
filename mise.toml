@@ -129,6 +129,18 @@ run = "ruby scripts/run_host_checks.rb --suite scripts/test_tts_book_benchmark.r
 description = "Verify ignore rules and index-only cleanup through real Git in temporary repositories"
 run = "ruby scripts/test_git_hygiene.rb"
 
+[tasks."ios:simulator:resources"]
+description = "Read-only 60-second Simulator resource admission report; never boots a device"
+run = "ruby scripts/simulator_preflight.rb"
+
+[tasks."ios:simulator:supervised"]
+description = "Explicitly acknowledged, bounded Intel iOS 15.0 SE launch with resource admission and cleanup"
+run = "ruby scripts/simulator_safe_run.rb"
+
+[tasks."ios:simulator:safety:test"]
+description = "Verify Simulator resource refusal, deadlines, ownership and watchdog cleanup without booting"
+run = "ruby scripts/run_host_checks.rb --suite scripts/test_simulator_resources.rb --suite scripts/test_simulator_session.rb --suite scripts/test_simulator_backend.rb --suite scripts/test_simulator_cli.rb"
+
 [tasks."native:build:preflight:test"]
 description = "Host regressions for native build crash-prevention preflight; no Simulator or build"
 run = "ruby scripts/test_native_build_preflight.rb"

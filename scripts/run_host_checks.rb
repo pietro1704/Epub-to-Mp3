@@ -6,7 +6,8 @@ require "rbconfig"
 require_relative "run_steps"
 
 module HostChecks
-  SUITES = %w[test_mise_task_bodies.rb test_hook_task_routing.rb test_run_steps.rb test_scoped_git_index.rb test_native_build_preflight.rb test_mac_build_budget.rb test_xcode_build_paths.rb
+  SUITES = %w[test_simulator_cli.rb test_simulator_backend.rb test_simulator_resources.rb test_simulator_session.rb
+              test_mise_task_bodies.rb test_hook_task_routing.rb test_run_steps.rb test_scoped_git_index.rb test_native_build_preflight.rb test_mac_build_budget.rb test_xcode_build_paths.rb
               test_claude_hook_observations.rb test_native_job.rb test_native_task_wiring.rb test_native_hook_safety.rb test_native_entrypoint_safety.rb test_update_instruction.rb
               test_git_hygiene.rb test_run_host_checks.rb test_xcresult_job.rb test_linux_app_launcher.rb check_app_icons.rb
               test_agent_collaboration.mjs test_install_agent_collaboration.mjs
