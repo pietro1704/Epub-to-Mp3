@@ -1,0 +1,77 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "automatic-gradient": "srgb:0.357,0.278,0.780,1.000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "automatic-gradient": "srgb:0.176,0.137,0.337,1.000"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Cushions",
+      "layers": [
+        {
+          "name": "Lavender cushions",
+          "image-name": "03-cushions.svg",
+          "glass": true
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.12
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.08
+      }
+    },
+    {
+      "name": "Open book",
+      "layers": [
+        {
+          "name": "Coral book and ivory pages",
+          "image-name": "02-open-book.svg",
+          "glass": false
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.18
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.1
+      }
+    },
+    {
+      "name": "Headphones",
+      "layers": [
+        {
+          "name": "Round headband",
+          "image-name": "01-headphones.svg",
+          "glass": true
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.2
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.1
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
