@@ -393,6 +393,7 @@ impl ConversionWorker {
 }
 
 mod chapter_audio_receipt;
+pub use chapter_audio_receipt::prepare_retained_audio;
 mod chapter_audio_recovery;
 mod chapter_execution;
 mod conversion_input_policy;

@@ -6,6 +6,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* Prepare a completed regular local MP3 for playback/export. Serial access is
+ * required; never pass actively growing streaming files. No synthesis/download. */
+bool converter_audio_prepare_v1(const char *path);
 /* Owned UTF-8 JSON; release with converter_string_free. Catalog presence does
  * not assert installation, runtime availability or inference readiness. */
 char *converter_tts_catalog_json_v2(void);

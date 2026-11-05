@@ -4,7 +4,10 @@ use super::{
     recover_chapter_audio_for_generation, sanitize, select_engine, ChapterAudioReceipt,
     ChapterCompletionEvent, ConversionRequest, ConversionWorker, ProgressEvent, WorkerError,
 };
-use crate::{audio::ChapterMetadata, cache, epub};
+use crate::{
+    audio::{self, ChapterMetadata},
+    cache, epub,
+};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -286,6 +289,7 @@ impl ConversionWorker {
                     return Err(WorkerError::PlaybackWindowChanged);
                 }
                 synthesis?;
+                audio::finalize_mp3(pending)?;
                 if self
                     .control
                     .as_ref()

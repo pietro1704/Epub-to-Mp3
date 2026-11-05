@@ -22,9 +22,19 @@ enum PlaybackArtifactLocation {
     static func resolve(forDownloadPath path: String?, jobId: String? = nil, chapterIndex: Int? = nil, backendBaseURL: URL?) -> URL? {
         if let jobId, let chapterIndex,
            let local = AudiobookDownloadStorage.localAudioURL(jobId: jobId, chapterIndex: chapterIndex) {
-            return local
+            return prepared(local)
         }
-        return Self.playbackURL(forDownloadPath: path, backendBaseURL: backendBaseURL)
+        return Self.playbackURL(forDownloadPath: path, backendBaseURL: backendBaseURL).flatMap(prepared)
+    }
+
+    private static func prepared(_ url: URL) -> URL? {
+        guard url.isFileURL else { return url }
+        do {
+            try ConverterFFIAdapter().prepareCompletedAudio(at: url)
+            return url
+        } catch {
+            return nil
+        }
     }
 
 }

@@ -24,7 +24,7 @@ grep -q "dynamically linked shared library" <<<"$FILE_INFO" || { echo "converter
 SYMBOLS=$(nm -arch "$EXPECTED_ARCH" -gU "$ARTIFACT")
 for SYMBOL in converter_session_open converter_session_metadata_json converter_session_free \
   converter_string_free converter_last_error converter_tts_models_json \
-  converter_tts_default_engine converter_session_convert_json; do
+  converter_tts_default_engine converter_session_convert_json converter_audio_prepare_v1; do
   grep -q "_$SYMBOL$" <<<"$SYMBOLS" || {
     echo "converter-ffi iOS verification error: missing exported symbol $SYMBOL" >&2; exit 2;
   }

@@ -98,6 +98,36 @@ pub(super) fn refresh_chapter_audio_receipt(output: &Path) -> Result<(), WorkerE
     Ok(())
 }
 
+/// Repair retained audio only after validating its existing receipt. Copies in
+/// the offline library may have no receipt; source jobs retain their identity.
+pub fn prepare_retained_audio(output: &Path) -> Result<(), WorkerError> {
+    // Export and queue mounting can request the same retained file concurrently.
+    // Serialize the audio/receipt pair across those in-process callers.
+    static PREPARATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = PREPARATION
+        .lock()
+        .map_err(|_| WorkerError::Unsupported("Audio preparation lock poisoned".into()))?;
+    if !audio::mp3_needs_finalization(output)? {
+        return Ok(());
+    }
+    let receipt_path = chapter_audio_receipt_path(output);
+    let receipt: Option<ChapterAudioReceipt> = if receipt_path.exists() {
+        let receipt: ChapterAudioReceipt = cache::read_json(&receipt_path)?;
+        if !chapter_audio_is_complete(output, &receipt.request_key) {
+            return Err(WorkerError::Audio(audio::AudioError::Validation(
+                "Retained audio receipt mismatch".into(),
+            )));
+        }
+        Some(receipt)
+    } else {
+        None
+    };
+    if audio::finalize_mp3(output)? && receipt.is_some() {
+        refresh_chapter_audio_receipt(output)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(super) fn ensure_chapter_audio(
     output: &Path,
@@ -127,6 +157,11 @@ pub(super) fn ensure_chapter_audio_with_control(
     synthesize: impl FnOnce(&Path) -> Result<(), WorkerError>,
 ) -> Result<(), WorkerError> {
     if !force && chapter_audio_is_complete(output, request_key) {
+        let _lease = control
+            .map(|control| control.lease_generation(generation, chapter))
+            .transpose()
+            .map_err(|_| WorkerError::Cancelled)?;
+        prepare_retained_audio(output)?;
         return Ok(());
     }
     let parent = output
