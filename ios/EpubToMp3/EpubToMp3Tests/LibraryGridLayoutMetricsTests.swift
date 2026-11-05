@@ -16,6 +16,13 @@ import AppKit
 @testable import EpubToMp3
 
 final class LibraryGridLayoutMetricsTests: XCTestCase {
+    func testAccessibilityTextUsesOneFullWidthColumn() {
+        let metrics = LibraryGridLayoutMetrics()
+        for width: CGFloat in [320, 390, 844] {
+            XCTAssertEqual(metrics.columnCount(forWidth: width, accessibilityText: true), 1)
+            XCTAssertEqual(metrics.tileWidth(forWidth: width, columns: 1), width - 40)
+        }
+    }
 
     func testPhoneTileReservesSpaceForCoverAndMetadata() {
         let metrics = LibraryGridLayoutMetrics()

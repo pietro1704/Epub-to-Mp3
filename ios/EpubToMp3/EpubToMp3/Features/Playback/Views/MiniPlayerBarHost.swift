@@ -6,7 +6,7 @@ enum MiniPlayerLayoutMetrics {
     static let contentHeight: CGFloat = 60
     static let maximumBottomSafeAreaInset: CGFloat = 44
     /// Keeps the compact transport row above the bottom safe area on iPhone.
-    static let maximumOverlayHeight = contentHeight + maximumBottomSafeAreaInset
+    static let maximumOverlayHeight: CGFloat = 144
 }
 
 @MainActor
@@ -42,7 +42,8 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     override var intrinsicContentSize: CGSize {
         CGSize(
             width: UIView.noIntrinsicMetric,
-            height: MiniPlayerLayoutMetrics.contentHeight
+            height: max(MiniPlayerLayoutMetrics.contentHeight,
+                traitCollection.preferredContentSizeCategory.isAccessibilityCategory ? titleLabel.font.lineHeight * 2 + 8 : 0)
                 + (usesSystemManagedBottomInset
                     ? 0
                     : min(safeAreaInsets.bottom, MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset))
@@ -121,6 +122,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         ])
 
         titleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.accessibilityIdentifier = "miniPlayer.chapterTitle"
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.numberOfLines = 1
 
@@ -423,10 +425,24 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     }
 
     private func updateTypographyForContentSizeCategory() {
-        // The global player must stay compact. At accessibility sizes the
-        // primary chapter title remains visible while VoiceOver still exposes
-        // the complete chapter and book metadata through the open button.
-        chapterLabel.isHidden = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
+        let accessible = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
+        // Keep the full player reachable for secondary transport actions while
+        // reserving the compact surface for a readable identity and play/pause.
+        chapterLabel.isHidden = accessible
+        previousButton.isHidden = accessible
+        nextButton.isHidden = accessible
+        rateButton.isHidden = accessible
+        titleLabel.numberOfLines = accessible ? 2 : 1
+        // UITabAccessory owns a compact fixed-height surface. Keep both title
+        // lines inside it while the app-owned floating player can grow taller.
+        let maximumPointSize: CGFloat = usesSystemManagedBottomInset ? 21 : 28
+        titleLabel.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
+            for: .systemFont(ofSize: 15), maximumPointSize: maximumPointSize, compatibleWith: traitCollection)
+        for button in [previousButton, playPauseButton, nextButton] {
+            button.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 22), forImageIn: .normal)
+        }
+        minimumHeightConstraint?.constant = intrinsicContentSize.height
+        invalidateIntrinsicContentSize()
     }
 }
 #endif

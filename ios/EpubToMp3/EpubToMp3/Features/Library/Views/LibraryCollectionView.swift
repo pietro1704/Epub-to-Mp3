@@ -3,14 +3,14 @@ import Foundation
 /// Pure layout metrics for the native library grid. Kept UIKit-free so it
 /// is unit-testable off-device.
 ///
-/// All clients keep two books per row, with responsive tile widths.
+/// Standard text uses two columns; accessibility text uses flexible full-width rows.
 struct LibraryGridLayoutMetrics: Equatable {
     var spacing: CGFloat = 20
     var sectionInset: CGFloat = 20
 
     /// Width changes tile size, never the requested column count.
-    func columnCount(forWidth availableWidth: CGFloat) -> Int {
-        2
+    func columnCount(forWidth availableWidth: CGFloat, accessibilityText: Bool = false) -> Int {
+        accessibilityText ? 1 : 2
     }
 
     /// Fill available space after both edge insets and the column gutter.
@@ -50,7 +50,8 @@ final class LibraryGridController: UICollectionViewController {
     private static func makeLayout(metrics: LibraryGridLayoutMetrics) -> UICollectionViewLayout {
         UICollectionViewCompositionalLayout { _, environment in
             let width = environment.container.effectiveContentSize.width
-            let columns = metrics.columnCount(forWidth: width)
+            let accessible = environment.traitCollection.preferredContentSizeCategory.isAccessibilityCategory
+            let columns = metrics.columnCount(forWidth: width, accessibilityText: accessible)
             let tileWidth = metrics.tileWidth(forWidth: width, columns: columns)
             // The cover uses a 3:2 portrait ratio. Reserve label space so
             // titles never fall outside an estimated collection item.
@@ -61,13 +62,13 @@ final class LibraryGridController: UICollectionViewController {
             let item = NSCollectionLayoutItem(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .absolute(tileWidth),
-                    heightDimension: .fractionalHeight(1.0)
+                    heightDimension: accessible ? .estimated(180) : .fractionalHeight(1.0)
                 )
             )
             let group = NSCollectionLayoutGroup.horizontal(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(1.0),
-                    heightDimension: .absolute(tileHeight)
+                    heightDimension: accessible ? .estimated(180) : .absolute(tileHeight)
                 ),
                 subitems: Array(repeating: item, count: columns)
             )
@@ -108,6 +109,13 @@ final class LibraryGridController: UICollectionViewController {
             collectionView.dequeueConfiguredReusableCell(
                 using: registration, for: indexPath, item: id
             )
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory {
+            collectionView.collectionViewLayout.invalidateLayout()
         }
     }
 
@@ -237,6 +245,9 @@ final class BookGridCell: UICollectionViewCell {
     private let cover = UIImageView()
     private let title = UILabel()
     private let author = UILabel()
+    private let labels = UIStackView()
+    private let stack = UIStackView()
+    private var coverWidth: NSLayoutConstraint?
     /// Generation token guarding against a stale async decode landing on a
     /// cell the collection view has since recycled for a different book.
     private var configurationToken = UUID()
@@ -262,7 +273,12 @@ final class BookGridCell: UICollectionViewCell {
         author.numberOfLines = 1
         author.setContentCompressionResistancePriority(.required, for: .vertical)
 
-        let stack = UIStackView(arrangedSubviews: [cover, title, author])
+        labels.axis = .vertical
+        labels.spacing = 4
+        labels.addArrangedSubview(title)
+        labels.addArrangedSubview(author)
+        stack.addArrangedSubview(cover)
+        stack.addArrangedSubview(labels)
         stack.axis = .vertical
         stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -274,6 +290,25 @@ final class BookGridCell: UICollectionViewCell {
             stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             cover.heightAnchor.constraint(equalTo: cover.widthAnchor, multiplier: 1.5)
         ])
+        coverWidth = cover.widthAnchor.constraint(equalToConstant: 64)
+        updateTextLayout()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateTextLayout()
+    }
+
+    private func updateTextLayout() {
+        let accessible = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
+        stack.axis = accessible ? .horizontal : .vertical
+        stack.alignment = accessible ? .top : .fill
+        stack.spacing = accessible ? 12 : 4
+        coverWidth?.isActive = accessible
+        title.font = .preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
+        author.font = .preferredFont(forTextStyle: .caption1, compatibleWith: traitCollection)
+        title.numberOfLines = accessible ? 0 : 2
+        author.numberOfLines = accessible ? 0 : 1
     }
 
     @available(*, unavailable)

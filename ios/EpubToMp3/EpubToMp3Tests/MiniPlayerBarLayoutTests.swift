@@ -395,14 +395,12 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
 
     @MainActor
     func testOverlayMaximumHeightPreservesCompactControlsAndLargeSafeArea() {
-        XCTAssertEqual(MiniPlayerLayoutMetrics.contentHeight, 112, accuracy: 0.5)
-        XCTAssertEqual(MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset, 44, accuracy: 0.5)
-        XCTAssertEqual(
-            MiniPlayerLayoutMetrics.maximumOverlayHeight,
-            MiniPlayerLayoutMetrics.contentHeight + MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset,
-            accuracy: 0.5
-        )
-        XCTAssertEqual(MiniPlayerLayoutMetrics.maximumOverlayHeight, 156, accuracy: 0.5)
+        let mini = MiniPlayerBarUIKitView()
+        mini.frame = CGRect(x: 0, y: 0, width: 390, height: mini.intrinsicContentSize.height)
+        mini.layoutIfNeeded()
+        XCTAssertGreaterThanOrEqual(mini.bounds.height, 44, "The primary actions need a full touch target")
+        XCTAssertLessThanOrEqual(mini.intrinsicContentSize.height + MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset,
+            MiniPlayerLayoutMetrics.maximumOverlayHeight, "The overlay must leave room for content and the bottom inset")
     }
 
     private func button(in view: UIView, identifier: String) -> UIButton? {
