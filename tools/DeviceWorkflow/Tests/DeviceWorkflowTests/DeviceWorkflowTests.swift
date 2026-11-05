@@ -118,6 +118,9 @@ final class DeviceWorkflowTests: XCTestCase {
                 XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--destination")! + 1],
                                "tmp/EpubToMp3/DeviceTestInputs/\(self.runID)")
             case "testWall":
+                let bundle = URL(fileURLWithPath: command.arguments[command.arguments.firstIndex(of: "-resultBundlePath")! + 1])
+                try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+                try Data("original result evidence".utf8).write(to: bundle.appendingPathComponent("fixture"))
                 XCTAssertTrue(command.arguments.contains("-only-testing:EpubToMp3Tests/ReaderViewportTransitionTests"))
                 if let index = command.arguments.firstIndex(of: "-xctestrun") {
                     let plist = try PropertyListSerialization.propertyList(
@@ -150,6 +153,13 @@ final class DeviceWorkflowTests: XCTestCase {
                 if failNative { evidence["status"] = "failed"; evidence["error"] = "ffprobe/ffmpeg: No such file (os error 2)" }
                 try DurableJSON.write(evidence, to: URL(fileURLWithPath: command.arguments[index + 1]).appendingPathComponent("native.json"))
             case "testSummary":
+                let bundle = URL(fileURLWithPath: command.arguments[command.arguments.firstIndex(of: "--path")! + 1])
+                XCTAssertEqual(bundle.lastPathComponent, "tests-query-copy.xcresult")
+                XCTAssertTrue(command.arguments.contains(self.root.appendingPathComponent("scripts/xcresult_job.rb").path))
+                let original = bundle.deletingLastPathComponent().appendingPathComponent("tests.xcresult/fixture")
+                XCTAssertEqual(try String(contentsOf: original), "original result evidence")
+                try Data("query-mutated evidence".utf8).write(to: bundle.appendingPathComponent("fixture"))
+                XCTAssertEqual(try String(contentsOf: original), "original result evidence")
                 let benchmark = (state["cases"] as? [[String: Any]])?.isEmpty == false
                 return CommandResult(output: "{\"result\":\"Passed\",\"passedTests\":\(benchmark ? 1 : 4),\"failedTests\":0,\"skippedTests\":0}")
             case "inputCleanup":
