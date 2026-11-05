@@ -17,6 +17,24 @@ private final class PartialShareCopyFileManager: FileManager, @unchecked Sendabl
     }
 }
 
+private final class RecordedShareCopyFileManager: FileManager, @unchecked Sendable {
+    private let lock = NSLock()
+    private var copiedURLs: [URL] = []
+
+    var copies: [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return copiedURLs
+    }
+
+    override func copyItem(at source: URL, to destination: URL) throws {
+        try super.copyItem(at: source, to: destination)
+        lock.lock()
+        copiedURLs.append(destination)
+        lock.unlock()
+    }
+}
+
 private final class HeldShareAttachment: @unchecked Sendable {
     private let lock = NSLock()
     private let source: URL
@@ -53,6 +71,22 @@ private final class HeldShareAttachment: @unchecked Sendable {
 
 @MainActor
 final class ShareAttachmentMaterializationTests: XCTestCase {
+    func testProviderCallbackRetainsTheInjectedFileManagerIdentity() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let source = try fixture.makeSource(filename: "Injected.bin", fileExtension: "epub")
+        let provider = NSItemProvider(item: source as NSURL, typeIdentifier: UTType.epub.identifier)
+        let fileManager = RecordedShareCopyFileManager()
+
+        let materialized = try await ShareViewController.loadFileURL(
+            from: provider, typeIdentifier: UTType.epub.identifier, fileManager: fileManager,
+            temporaryDirectory: fixture.temporaryDirectory)
+
+        XCTAssertEqual(fileManager.copies, [materialized])
+        XCTAssertEqual(try Data(contentsOf: materialized), try Data(contentsOf: source))
+        try await fixture.assertImport(materialized: materialized, source: source, fileExtension: "epub")
+    }
+
     func testURLAttachmentsUseAcceptedTypeAndReachDurableLibrary() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }

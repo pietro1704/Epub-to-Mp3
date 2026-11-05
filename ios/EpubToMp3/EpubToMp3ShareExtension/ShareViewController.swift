@@ -3,6 +3,34 @@ import UIKit
 import UniformTypeIdentifiers
 import MobileCoreServices
 
+// NSItemProvider invokes a Sendable callback. Keep the injected FileManager
+// behind serialized access for both that callback and post-await cancellation
+// cleanup instead of capturing the SDK's non-Sendable reference directly.
+private final class ShareAttachmentFileAccess: @unchecked Sendable {
+    private let fileManager: FileManager
+    private let lock = NSLock()
+
+    init(_ fileManager: FileManager) { self.fileManager = fileManager }
+
+    var temporaryDirectory: URL {
+        lock.lock()
+        defer { lock.unlock() }
+        return fileManager.temporaryDirectory
+    }
+
+    func copyItem(at source: URL, to destination: URL) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try fileManager.copyItem(at: source, to: destination)
+    }
+
+    func removeItem(at url: URL) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try fileManager.removeItem(at: url)
+    }
+}
+
 /// Share Extension entry point. Hosted inside the host app (Apple
 /// Books, Files, Safari, Mail, …) when the user picks `EpubToMp3`
 /// from the system Share Sheet.
@@ -117,7 +145,8 @@ final class ShareViewController: UIViewController {
                           userInfo: [NSLocalizedDescriptionKey: "Unsupported attachment type (\(typeIdentifier))."])
         }
         let ext = typeIdentifier == UTType.pdf.identifier ? "pdf" : "epub"
-        let directory = temporaryDirectory ?? fileManager.temporaryDirectory
+        let fileAccess = ShareAttachmentFileAccess(fileManager)
+        let directory = temporaryDirectory ?? fileAccess.temporaryDirectory
         let materialized = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
             provider.loadItem(
                 forTypeIdentifier: typeIdentifier,
@@ -132,7 +161,7 @@ final class ShareViewController: UIViewController {
                     // the host's sandbox — copy into our tmp first.
                     do {
                         let copy = try Self.copyToTemp(source: url, fileExtension: ext,
-                                                      directory: directory, fileManager: fileManager)
+                                                      directory: directory, fileAccess: fileAccess)
                         cont.resume(returning: copy)
                     } catch {
                         cont.resume(throwing: error)
@@ -145,7 +174,7 @@ final class ShareViewController: UIViewController {
                         try data.write(to: tmp, options: .atomic)
                         cont.resume(returning: tmp)
                     } catch {
-                        try? fileManager.removeItem(at: tmp)
+                        try? fileAccess.removeItem(at: tmp)
                         cont.resume(throwing: error)
                     }
                     return
@@ -162,20 +191,20 @@ final class ShareViewController: UIViewController {
             try Task.checkCancellation()
             return materialized
         } catch {
-            try? fileManager.removeItem(at: materialized)
+            try? fileAccess.removeItem(at: materialized)
             throw error
         }
     }
 
     private nonisolated static func copyToTemp(
-        source: URL, fileExtension: String, directory: URL, fileManager: FileManager
+        source: URL, fileExtension: String, directory: URL, fileAccess: ShareAttachmentFileAccess
     ) throws -> URL {
         let dest = tempURL(extension: fileExtension, suggested: source.lastPathComponent, directory: directory)
         do {
-            try fileManager.copyItem(at: source, to: dest)
+            try fileAccess.copyItem(at: source, to: dest)
             return dest
         } catch {
-            try? fileManager.removeItem(at: dest)
+            try? fileAccess.removeItem(at: dest)
             throw error
         }
     }
