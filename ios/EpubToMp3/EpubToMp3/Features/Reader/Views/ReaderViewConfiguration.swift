@@ -63,7 +63,7 @@ enum ReaderTextViewFactory {
     /// those accesses do not force UIKit to switch a TextKit 2 view at runtime.
     static func make() -> UITextView {
         let storage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
+        let layoutManager = ReaderPlaybackLayoutManager()
         let textContainer = NSTextContainer(size: .zero)
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(textContainer)

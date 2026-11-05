@@ -345,12 +345,13 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         renderedRate = player.rate
         rateButton.setTitle(player.rate.shortLabel, for: .normal)
         rateButton.showsMenuAsPrimaryAction = true
-        rateButton.menu = UIMenu(children: PlaybackRate.primaryRates.map { rate in
+        rateButton.menu = UIMenu(options: .singleSelection, children: PlaybackRate.menuRates(selected: player.rate).map { rate in
             UIAction(
                 title: rate.shortLabel,
                 state: rate == player.rate ? .on : .off
-            ) { [weak player] _ in
+            ) { [weak self, weak player] _ in
                 player?.setRate(rate)
+                if let player { self?.rebuildRateMenu(player: player) }
             }
         })
     }

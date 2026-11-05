@@ -80,7 +80,7 @@ final class ReaderModesHarness {
             // The native regression must exercise the staged EPUB itself.
             // `-uiTestFixture` intentionally replaces reader content with a
             // synthetic payload, so it must not be present on this path.
-            app.launchArguments += ["-uiTestResetReaderPosition", "-developmentSeedBook", "-uiTestPlaybackFixture"]
+            app.launchArguments += ["-uiTestResetActiveReader", "-uiTestResetReaderPosition", "-developmentSeedBook", "-uiTestPlaybackFixture"]
         }
         app.launchArguments += ["-uiTestReaderLayout", configuration.layout]
         if configuration.chromeToggleEnabled {

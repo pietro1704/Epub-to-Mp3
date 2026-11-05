@@ -14,6 +14,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         case theme
         case font
         case layout
+        case audioTracking
     }
 
     private let settings: AppSettings
@@ -71,6 +72,8 @@ final class ReaderSettingsScreenController: UITableViewController {
             return 2
         case .layout:
             return settings.readerLayout == .paginated ? 6 : 4
+        case .audioTracking:
+            return 1
         }
     }
 
@@ -80,6 +83,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         case .theme: return L10n.string("readerSettings.theme")
         case .font: return L10n.string("readerSettings.font")
         case .layout: return L10n.string("readerSettings.layout")
+        case .audioTracking: return L10n.string("settings.playback")
         }
     }
 
@@ -91,6 +95,7 @@ final class ReaderSettingsScreenController: UITableViewController {
             .filter { $0 is CompactSlider }
             .forEach { $0.removeFromSuperview() }
         cell.accessibilityIdentifier = nil
+        cell.accessoryView = nil
         var content = cell.defaultContentConfiguration()
         var installSlider: (() -> Void)?
         cell.accessoryType = .none
@@ -105,6 +110,7 @@ final class ReaderSettingsScreenController: UITableViewController {
             cell.accessoryType = settings.readerTheme == theme ? .checkmark : .none
         case .font:
             if indexPath.row == 0 {
+                cell.accessibilityIdentifier = "reader.settings.fontFamily"
                 content.text = L10n.string("readerSettings.family")
                 content.secondaryText = ReaderFontCatalog.title(for: settings.selectedReaderFontFamily)
                 cell.accessoryType = .disclosureIndicator
@@ -116,6 +122,22 @@ final class ReaderSettingsScreenController: UITableViewController {
                 }
                 cell.accessoryType = .none
             }
+        case .audioTracking:
+            content.text = L10n.string("readerSettings.audioTracking")
+            content.secondaryText = L10n.string("readerSettings.audioTrackingDescription")
+            content.textProperties.numberOfLines = 0
+            content.secondaryTextProperties.numberOfLines = 0
+            cell.accessibilityIdentifier = "reader.settings.audioTracking.row"
+            let toggle = UISwitch()
+            toggle.isOn = settings.readerAudioTrackingEnabled
+            toggle.accessibilityIdentifier = "reader.settings.audioTracking"
+            toggle.accessibilityLabel = content.text
+            toggle.addAction(UIAction { [weak self, weak toggle] _ in
+                guard let self, let toggle else { return }
+                self.settings.readerAudioTrackingEnabled = toggle.isOn
+                self.onChange?()
+            }, for: .valueChanged)
+            cell.accessoryView = toggle
         case .layout:
             layoutCellContent(&content, row: indexPath.row)
             cell.accessibilityIdentifier = layoutAccessibilityIdentifier(for: indexPath.row)
@@ -198,6 +220,9 @@ final class ReaderSettingsScreenController: UITableViewController {
             handleFontSelection(row: indexPath.row)
         case .layout:
             handleLayoutSelection(row: indexPath.row)
+        case .audioTracking:
+            settings.readerAudioTrackingEnabled.toggle()
+            refresh()
         }
     }
 

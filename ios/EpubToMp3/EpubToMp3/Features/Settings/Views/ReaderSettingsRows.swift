@@ -10,6 +10,8 @@ struct ReaderSettingsRows {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
         cell.accessoryType = .disclosureIndicator
+        cell.accessoryView = nil
+        cell.accessibilityIdentifier = nil
         switch indexPath.row {
         case 0:
             content.text = L10n.string("settings.fontSize")
@@ -35,10 +37,27 @@ struct ReaderSettingsRows {
             content.text = L10n.string("settings.margin")
             content.secondaryText = "\(Int(settings.readerMargin)) pt"
             content.image = UIImage(systemName: "rectangle.compress.vertical")
-        default:
+        case 6:
             content.text = L10n.string("settings.autoScroll")
             content.secondaryText = nil
             content.image = UIImage(systemName: "arrow.down.to.line")
+        default:
+            content.text = L10n.string("readerSettings.audioTracking")
+            content.secondaryText = L10n.string("readerSettings.audioTrackingDescription")
+            content.textProperties.numberOfLines = 0
+            content.secondaryTextProperties.numberOfLines = 0
+            content.image = UIImage(systemName: "text.word.spacing")
+            cell.accessoryType = .none
+            cell.accessibilityIdentifier = "settings.reader.audioTracking.row"
+            let toggle = UISwitch()
+            toggle.isOn = settings.readerAudioTrackingEnabled
+            toggle.accessibilityIdentifier = "settings.reader.audioTracking"
+            toggle.accessibilityLabel = content.text
+            toggle.addAction(UIAction { [weak settings = self.settings, weak toggle] _ in
+                guard let toggle else { return }
+                settings?.readerAudioTrackingEnabled = toggle.isOn
+            }, for: .valueChanged)
+            cell.accessoryView = toggle
         }
         cell.contentConfiguration = content
         cell.accessibilityLabel = content.text

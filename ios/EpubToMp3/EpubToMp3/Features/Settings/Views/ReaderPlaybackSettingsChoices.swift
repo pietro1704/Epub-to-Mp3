@@ -89,8 +89,10 @@ final class ReaderPlaybackSettingsChoices {
             ) { [weak self] value in
                 self?.settings.readerMargin = value
             }
-        default:
+        case 6:
             settings.readerAutoScroll.toggle()
+        default:
+            settings.readerAudioTrackingEnabled.toggle()
         }
         controller?.tableView.reloadSections(IndexSet(integer: readerSection), with: .none)
     }

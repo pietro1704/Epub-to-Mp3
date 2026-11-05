@@ -7,9 +7,9 @@ struct ConversionLiveActivitySession: Sendable {
     private let chapterAction: @Sendable (RustConversionCoordinator.ChapterCompletionEvent) async -> Void
     private let phaseAction: @Sendable (ConversionActivityPhase, Int?, Int?) async -> Void
 
-    init(jobID: String) {
+    init(jobID: String, isManualConversion: Bool) {
         #if !APP_FOUNDATION_HOST_TESTS && canImport(ActivityKit) && os(iOS)
-        if #available(iOS 16.2, *) {
+        if #available(iOS 16.2, *), isManualConversion {
             let storage = ConversionActivityStorage(jobID: jobID)
             startAction = { await storage.start(title: $0, bookID: $1) }
             progressAction = { await storage.progress($0) }

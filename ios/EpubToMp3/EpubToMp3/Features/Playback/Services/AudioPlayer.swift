@@ -143,8 +143,14 @@ final class AudioPlayer: ObservableObject {
     var hasPendingAutoplay: Bool { pendingAutoPlay }
     var pendingPlaybackResumePosition: TimeInterval? { pendingSegmentResumePosition }
     func playbackSnapshotChanged(_ value: JobSnapshot?) { snapshot = value }
-    func playbackPlayingChanged(_ value: Bool) { isPlaying = value }
-    func playbackSeekingChanged(_ value: Bool) { isSeeking = value }
+    func playbackPlayingChanged(_ value: Bool) {
+        if !value { playbackClock.audioOutput.clear() }
+        isPlaying = value
+    }
+    func playbackSeekingChanged(_ value: Bool) {
+        if value { playbackClock.audioOutput.clear() }
+        isSeeking = value
+    }
     func playbackPauseOwnershipChanged(_ value: Bool) { hasPausedPlaybackToResume = value }
     func playbackSpeechChanged(_ value: Bool) { isUsingSpeechFallback = value }
     func playbackRateChanged(_ value: PlaybackRate) { rate = value }
@@ -250,6 +256,8 @@ final class AudioPlayer: ObservableObject {
             snapshot: snapshot, isPlaying: isPlaying, hasPausedPlaybackToResume: hasPausedPlaybackToResume,
             isSegmentMode: isSegmentMode, hasPlayer: player != nil, currentChapterIndex: currentChapterIndex)
     }
+
+    var speechOutput: SpeechFallbackPlayer { services.speech }
 
     func setSentenceTiming(_ map: [String: Int], forChapterIndex chapterIndex: Int) {
         services.reader.setTiming(map, forChapterIndex: chapterIndex)

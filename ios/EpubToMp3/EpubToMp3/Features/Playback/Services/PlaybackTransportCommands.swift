@@ -176,9 +176,9 @@ final class PlaybackTransportCommands {
     /// snapshot keep it; calling `play(snapshot:)` later cleanly
     /// switches back to MP3 and stops the synthesizer in the same turn
     /// so the user never hears both transports.
-    func playFallbackSpeech(text: String, languageCode: String? = nil) {
+    func playFallbackSpeech(text: String, languageCode: String? = nil, chapterIndex: Int? = nil) {
         guard !text.isEmpty else { return }
-        speechFallback.speak(text: text, languageCode: languageCode)
+        speechFallback.speak(text: text, languageCode: languageCode, chapterIndex: chapterIndex)
         isUsingSpeechFallback = true
         isPlaying = true
     }
@@ -190,13 +190,14 @@ final class PlaybackTransportCommands {
             actions.play(snapshot, offset, true)
             return .startedAudio
         case .speech(let text):
-            playFallbackSpeech(text: text, languageCode: languageCode)
+            playFallbackSpeech(text: text, languageCode: languageCode, chapterIndex: chapterIndex)
             return .startedSpeechFallback
         case .unavailable: return .noOp
         }
     }
 
     func navigateChapter(_ direction: PlaybackChapterQueue.ChapterNavigationDirection) {
+        clock.audioOutput.clear()
         // Keep a waiting page seek and its Pause intent until the first file.
         if player == nil, pendingSeek.chapter != nil { return }
         if !isSegmentMode {
@@ -242,6 +243,7 @@ final class PlaybackTransportCommands {
     /// Relative chapter navigation must resolve its target segment through the
     /// same seek path as the progress slider, including pending audio and intent.
     func skip(by deltaSeconds: TimeInterval) {
+        clock.audioOutput.clear()
         guard deltaSeconds.isFinite else { return }
         if isSegmentMode {
             seeking.seek(to: max(0, positionSeconds + deltaSeconds))
@@ -282,6 +284,7 @@ final class PlaybackTransportCommands {
     }
 
     func rewindToCurrentChapterStart() {
+        clock.audioOutput.clear()
         seeking.cancel()
         guard player != nil else { return }
         guard queueSession.rewind(chapter: segments.chapterIndex, segmentMode: isSegmentMode,

@@ -295,7 +295,7 @@ final class IOSRootContainerController: UIViewController {
         NSLayoutConstraint.activate([
             controller.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             controller.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            controller.view.topAnchor.constraint(equalTo: view.topAnchor),
+            controller.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             controller.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         view.layoutIfNeeded()

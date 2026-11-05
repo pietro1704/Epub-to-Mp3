@@ -9,6 +9,7 @@ import Foundation
 /// quarter second while audio is playing.
 @MainActor
 final class PlaybackClock: ObservableObject {
+    let audioOutput = PlaybackAudioOutput()
     struct Snapshot: Equatable {
         let positionSeconds: TimeInterval
         let durationSeconds: TimeInterval
@@ -44,6 +45,7 @@ final class PlaybackClock: ObservableObject {
     }
 
     func reset() {
+        audioOutput.clear()
         guard snapshot != .zero else { return }
         snapshot = .zero
     }

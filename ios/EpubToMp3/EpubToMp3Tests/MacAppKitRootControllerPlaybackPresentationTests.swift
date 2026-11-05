@@ -62,11 +62,21 @@ extension MacAppKitRootControllerTests {
         RunLoop.main.add(timer, forMode: .common)
         button.performClick(nil)
         let menu = try XCTUnwrap(button.menu)
-        XCTAssertEqual(menu.items.map(\.title), ["0.75x", "1.25x", "1.5x", "1.75x", "2.5x", "3x"])
+        XCTAssertEqual(menu.items.map(\.title), ["0.75x", "1x", "1.25x", "1.5x", "1.75x", "2x", "2.5x", "3x"])
         for (index, expected) in PlaybackRate.primaryRates.enumerated() {
             menu.performActionForItem(at: index)
             XCTAssertEqual(player.rate, expected)
         }
+        player.setRate(.x080)
+        let legacyTimer = Timer(timeInterval: 0.3, repeats: false) { _ in
+            MainActor.assumeIsolated { button.menu?.cancelTracking() }
+        }
+        RunLoop.main.add(legacyTimer, forMode: .common)
+        button.performClick(nil)
+        let selectedMenu = try XCTUnwrap(button.menu)
+        XCTAssertEqual(selectedMenu.items.filter { $0.state == .on }.map(\.title), ["0.8x"])
+        XCTAssertEqual(selectedMenu.items.filter { $0.title == "1x" }.count, 1)
+        XCTAssertFalse(player.isPlaying, "Selecting a speed must not grant autoplay")
     }
 
     @MainActor

@@ -158,7 +158,7 @@ final class MacPlayerBarViewController: NSViewController {
     @objc private func nextChapter() { player.nextChapter(); refresh() }
     @objc private func showRateMenu() {
         let menu = NSMenu()
-        PlaybackRate.primaryRates.forEach { rate in
+        PlaybackRate.menuRates(selected: player.rate).forEach { rate in
             let item = NSMenuItem(title: rate.shortLabel, action: #selector(selectRate(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = rate.rawValue

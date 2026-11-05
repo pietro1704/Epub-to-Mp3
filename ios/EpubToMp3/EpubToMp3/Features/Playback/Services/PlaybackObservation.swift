@@ -150,6 +150,17 @@ final class PlaybackObservation {
         self.recordAudibleAudioIfNeeded(renderedSeconds: rawTime)
         queueSession.updateClock(rawTime: rawTime, seeking: isSeeking, segmentMode: isSegmentMode,
             segments: segments, snapshot: { self.snapshot })
+        let item = player.currentItem
+        if let chapter = PlaybackResumeStore.sourceChapterIndex(snapshot: snapshot,
+            playbackChapters: chapterSession.chapters, queueOffset: currentChapterIndex,
+            segmentMode: isSegmentMode, segmentChapterIndex: segments.chapterIndex) {
+            playbackClock.audioOutput.sample(item: item.map(ObjectIdentifier.init), seconds: rawTime,
+                isOutputting: isPlaying && !isSeeking && player.timeControlStatus == .playing
+                    && !player.isMuted && player.volume > 0 && item?.status == .readyToPlay,
+                position: .init(chapterIndex: chapter, seconds: positionSeconds, duration: durationSeconds,
+                    sentenceID: queueSession.activeSentenceId, itemSeconds: rawTime,
+                    itemDuration: item?.duration.seconds ?? 0))
+        } else { playbackClock.audioOutput.clear() }
         // Item C — fire a queued proportional seek the first
         // tick after AVPlayer publishes duration. Without this
         // a play tap during "From the current page" right after

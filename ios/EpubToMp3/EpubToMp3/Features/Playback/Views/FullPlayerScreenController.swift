@@ -210,7 +210,7 @@ final class FullPlayerScreenController: UIViewController {
         var config = content.rateButton.configuration ?? UIButton.Configuration.plain()
         config.title = player.rate.shortLabel
         content.rateButton.configuration = config
-        content.rateButton.menu = UIMenu(children: PlaybackRate.primaryRates.map { rate in
+        content.rateButton.menu = UIMenu(options: .singleSelection, children: PlaybackRate.menuRates(selected: player.rate).map { rate in
             UIAction(title: rate.shortLabel, state: rate == player.rate ? .on : .off) { [weak self] _ in
                 self?.player.setRate(rate)
                 self?.render()

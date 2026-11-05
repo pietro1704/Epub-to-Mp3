@@ -36,6 +36,7 @@ final class PlaybackQueueSession: ObservableObject {
     nonisolated(unsafe) private var timeObserverToken: Any?
     nonisolated(unsafe) private var endObserver: NSObjectProtocol?
     nonisolated(unsafe) private var currentItemObserver: NSKeyValueObservation?
+    nonisolated(unsafe) private var outputObserver: NSKeyValueObservation?
     private var itemObservationCancellables = Set<AnyCancellable>()
     /// AVQueuePlayer removes a finished item before it posts the end
     /// notification. Keep the identities registered at insertion time so the
@@ -47,6 +48,7 @@ final class PlaybackQueueSession: ObservableObject {
         // addPeriodicTimeObserver must be detached before the player is freed.
         if let token = timeObserverToken { player?.removeTimeObserver(token) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        outputObserver?.invalidate()
         currentItemObserver?.invalidate()
         // Failed/test items must not keep AVFoundation workers alive after ARC.
         let queuedPlayer = player
@@ -64,10 +66,12 @@ final class PlaybackQueueSession: ObservableObject {
     func clearOwnership() { ownedPlayerItemIDs.removeAll() }
 
     func teardown() {
+        clock.audioOutput.clear()
         if let token = timeObserverToken { player?.removeTimeObserver(token) }
         timeObserverToken = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        outputObserver?.invalidate()
         currentItemObserver?.invalidate()
         currentItemObserver = nil
         itemObservationCancellables.removeAll()
@@ -81,6 +85,12 @@ final class PlaybackQueueSession: ObservableObject {
                  itemChanged: @escaping @MainActor @Sendable () -> Void,
                  duration: @escaping @MainActor @Sendable (TimeInterval) -> Void) {
         guard let player else { return }
+        outputObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.player === player else { return }
+                if player.timeControlStatus != .playing { self.clock.audioOutput.clear() }
+            }
+        }
         if let item = player.currentItem { bindDuration(to: item, in: player, changed: duration) }
         let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] value in
@@ -106,6 +116,7 @@ final class PlaybackQueueSession: ObservableObject {
                 guard let self, self.player === player else { return }
                 if let item = player.currentItem { self.bindDuration(to: item, in: player, changed: duration) }
                 else { self.itemObservationCancellables.removeAll() }
+                self.clock.audioOutput.clear()
                 itemChanged()
             }
         }
