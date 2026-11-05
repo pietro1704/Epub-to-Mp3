@@ -1,0 +1,16 @@
+{
+  "inputs": {
+    "ios/EpubToMp3/EpubToMp3/AppIcon.icon/Assets/01-headphones.svg": "37a0c58ca320b1b1712b8ca6a950267a1561e92e8c56e18ecfa832301ef379db",
+    "ios/EpubToMp3/EpubToMp3/AppIcon.icon/Assets/02-open-book.svg": "0220caa12c847237f7ddadbbf65c7443d413a93a13ab20a9393f0db17d75ded7",
+    "ios/EpubToMp3/EpubToMp3/AppIcon.icon/Assets/03-cushions.svg": "fd3697515fc5435b7a5c5e5ecd2c8eb324b9a1a25c817d3ebb141853741674da",
+    "ios/EpubToMp3/EpubToMp3/AppIcon.icon/icon.json": "05a32ecca14d88b05de607c3f50e200b3d73c37abcc39003dd3397eda1460a7c"
+  },
+  "tool_version": {
+    "bundle-version": "76",
+    "short-bundle-version": "1.2"
+  },
+  "renders": {
+    "app-icon.png": "14334296c0f291b8f9cb2ffa5aaffa08cf65cf4b87a5399b68dfc3cea01c24de",
+    "app-icon-macos.png": "14334296c0f291b8f9cb2ffa5aaffa08cf65cf4b87a5399b68dfc3cea01c24de"
+  }
+}
