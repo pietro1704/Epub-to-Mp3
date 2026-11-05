@@ -134,7 +134,7 @@ jobs:
       # Identifiers & Profiles. Each target needs a profile for its own explicit
       # App ID and App Group entitlement.
       - name: Download host-app provisioning profile
-        uses: apple-actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
+        uses: apple-actions/download-provisioning-profiles@233aa54e59082c0e8a8cf8b0b02c72dea2422ef9 # v7
         with:
           bundle-id: com.pietrocode.epubtomp3
           profile-type: IOS_APP_STORE
@@ -143,7 +143,7 @@ jobs:
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
 
       - name: Download share-extension provisioning profile
-        uses: apple-actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
+        uses: apple-actions/download-provisioning-profiles@233aa54e59082c0e8a8cf8b0b02c72dea2422ef9 # v7
         with:
           bundle-id: com.pietrocode.epubtomp3.share
           profile-type: IOS_APP_STORE
@@ -152,7 +152,7 @@ jobs:
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
 
       - name: Download widget provisioning profile
-        uses: apple-actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
+        uses: apple-actions/download-provisioning-profiles@233aa54e59082c0e8a8cf8b0b02c72dea2422ef9 # v7
         with:
           bundle-id: com.pietrocode.epubtomp3.widget
           profile-type: IOS_APP_STORE
@@ -161,7 +161,7 @@ jobs:
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
 
       - name: Import distribution certificate
-        uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7
+        uses: apple-actions/import-codesign-certs@288b8ec97b82c66b6f2a6baaf7acc8dfbcbe331c # v7
         with:
           p12-file-base64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
           p12-password: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
@@ -221,7 +221,7 @@ jobs:
 
       - name: Upload to TestFlight
         if: inputs.upload_to_testflight
-        uses: apple-actions/upload-testflight-build@155ea93be9ee6d5186c71f660a612f5eddb14510 # v5
+        uses: apple-actions/upload-testflight-build@665328adbecbc3ad929d3da710696d928b8a7ba9 # v5
         with:
           app-path: ${{ env.EXPORT_PATH }}/EpubToMp3.ipa
           issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
