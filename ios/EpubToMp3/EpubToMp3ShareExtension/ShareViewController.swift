@@ -2,6 +2,9 @@
 import UIKit
 import UniformTypeIdentifiers
 import MobileCoreServices
+#if APP_SHARE_HOST_TESTS
+@testable import EpubToMp3
+#endif
 
 // NSItemProvider invokes a Sendable callback. Keep the injected FileManager
 // behind serialized access for both that callback and post-await cancellation
