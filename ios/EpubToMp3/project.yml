@@ -428,6 +428,10 @@ targets:
         SWIFT_VERSION: "5.0"
         SWIFT_STRICT_CONCURRENCY: minimal
         SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+      configs:
+        Debug:
+          # Ad-hoc local XCTest bundles have no team for library validation.
+          ENABLE_HARDENED_RUNTIME: NO
 
   EpubToMp3DeviceAudiobookUITests:
     type: bundle.ui-testing
