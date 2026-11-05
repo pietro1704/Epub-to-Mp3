@@ -41,9 +41,22 @@ module MacValidate
     digests = files.sort.to_h { |path| [path.delete_prefix(root + '/'), Digest::SHA256.file(path).hexdigest] }
     { 'sources' => digests, 'root' => File.realpath(root), 'configuration' => configuration,
       'destination' => 'platform=macOS', 'scheme' => 'EpubToMp3Mac', 'jobs' => 1,
+      'signing_policy' => (configuration == 'Debug' ? 'ad-hoc-no-entitlements' : 'project'),
       'developer' => ENV['DEVELOPER_DIR'] || capture('xcode-select', '-p'), 'xcode' => capture('xcodebuild', '-version'),
       'architecture' => capture('uname', '-m'),
       'flags' => %w[DEVELOPER_DIR TOOLCHAINS SDKROOT ARCHS OTHER_SWIFT_FLAGS OTHER_CFLAGS OTHER_LDFLAGS SWIFT_VERSION SWIFT_ACTIVE_COMPILATION_CONDITIONS MACOSX_DEPLOYMENT_TARGET].to_h { |name| [name, ENV[name]] } }
+  end
+
+  def self.build_command(derived, configuration)
+    arguments = ['xcodebuild', '-project', 'EpubToMp3.xcodeproj', '-scheme', 'EpubToMp3Mac',
+                 '-configuration', configuration, '-destination', 'platform=macOS',
+                 '-derivedDataPath', derived, '-jobs', '1']
+    # The project permits unsigned Debug iteration, while GUI validation requires
+    # a sealed bundle. Sign this explicit validation build locally with no team.
+    if configuration == 'Debug'
+      arguments += %w[CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_ENTITLEMENTS=]
+    end
+    arguments + ['build']
   end
 
   def self.product_hashes(app)
@@ -150,9 +163,7 @@ if $PROGRAM_NAME == __FILE__
       NativeJob.build_entrypoint(__FILE__, ['_build', *ARGV])
       Dir.chdir(File.join(root, 'ios/EpubToMp3')) do
         MacValidate.run!('xcodegen', 'generate')
-        MacValidate.run!('xcodebuild', '-project', 'EpubToMp3.xcodeproj', '-scheme', 'EpubToMp3Mac',
-          '-configuration', configuration, '-destination', 'platform=macOS', '-derivedDataPath', derived,
-          '-jobs', '1', 'build')
+        MacValidate.run!(*MacValidate.build_command(derived, configuration))
       end
       exit 0
     end

@@ -65,6 +65,36 @@ class MacValidateTest < Minitest::Test
     end
   end
 
+  def test_debug_build_produces_a_signed_receipt_that_can_launch
+    File.write(File.join(@bin, 'xcodegen'), "#!/bin/sh\nexit 0\n")
+    File.chmod(0o755, File.join(@bin, 'xcodegen'))
+    signature = File.join(@app, 'Contents', 'debug-signature-fixture')
+    @environment['MAC_VALIDATE_TEST_SIGNATURE'] = signature
+    File.write(File.join(@bin, 'xcodebuild'), <<~SH)
+      #!/bin/sh
+      echo xcodebuild "$@" >> "$MAC_VALIDATE_TEST_TRACE"
+      if [ "$1" = -version ]; then echo Xcode-fixture; exit 0; fi
+      allowed=0; identity=0; required=0; entitlements=0
+      for argument in "$@"; do
+        case "$argument" in
+          CODE_SIGNING_ALLOWED=YES) allowed=1 ;;
+          CODE_SIGN_IDENTITY=-) identity=1 ;;
+          CODE_SIGNING_REQUIRED=YES) required=1 ;;
+          CODE_SIGN_ENTITLEMENTS=) entitlements=1 ;;
+        esac
+      done
+      [ "$allowed$identity$required$entitlements" = 1111 ] || exit 65
+      echo signed > "$MAC_VALIDATE_TEST_SIGNATURE"
+    SH
+    File.write(File.join(@bin, 'codesign'), "#!/bin/sh\ntest -f \"$MAC_VALIDATE_TEST_SIGNATURE\"\n")
+    _out, error, status = invoke('build')
+    assert status.success?, error
+    assert File.file?(File.join(@derived, 'mac-validation-Debug.json'))
+    _out, error, status = invoke('gui')
+    assert status.success?, error
+    assert_includes File.read(@trace), "open #{@app}"
+  end
+
   def test_inspection_of_legacy_product_is_read_only_and_does_not_build
     out, error, status = invoke('inspect')
     assert status.success?, error

@@ -32,6 +32,11 @@ instruction edits alone do not invalidate that identity. Manual Xcode validation
 may use Xcode's own build/run path within the execution policy; receipt refusal
 is not evidence that an existing app is defective.
 
+Explicit Debug validation builds use local ad-hoc signing with no entitlements,
+so GUI signature checks do not require a provisioning profile. This local build
+does not validate sandbox or app-group capabilities. Release builds retain the
+project signing configuration; the receipt records the selected signing policy.
+
 For signing or linking regressions, start with `package` and real platform
 tools. Preserve the failing output and compare with the corrected script before
 expanding to compilation or UI. The Faber macOS workflow repeats this check after
