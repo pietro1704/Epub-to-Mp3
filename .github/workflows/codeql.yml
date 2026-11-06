@@ -34,13 +34,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           languages: ${{ matrix.language }}
           build-mode: none
 
       - name: Analyze
-        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           category: /language:${{ matrix.language }}
 
@@ -59,7 +59,7 @@ jobs:
           java-version: "21"
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           languages: java-kotlin
           build-mode: manual
@@ -97,7 +97,7 @@ jobs:
         run: mise run flutter:build-apk-debug
 
       - name: Analyze
-        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           category: /language:java-kotlin
 
@@ -166,7 +166,7 @@ jobs:
         run: mise exec -- ruby scripts/test_codeql_swift_build.rb
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           languages: swift
           build-mode: manual
@@ -235,7 +235,7 @@ jobs:
 
       - name: Analyze
         id: swift-analysis
-        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           category: ${{ format('/language:swift/coverage:{0}/platform:{1}', matrix.coverage, matrix.platform) }}
           matrix: ${{ toJson(matrix) }}
