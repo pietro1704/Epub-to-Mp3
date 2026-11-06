@@ -106,15 +106,16 @@ final class FullPlayerContent {
         authorLabel.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
             for: .systemFont(ofSize: 15), maximumPointSize: 24, compatibleWith: traits)
         authorLabel.numberOfLines = 1
-        authorLabel.textColor = .secondaryLabel
+        authorLabel.textColor = .label
         authorLabel.textAlignment = .center
         authorLabel.accessibilityIdentifier = "fullPlayer.bookAuthor"
 
         chapterLabel.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(
             for: .systemFont(ofSize: 13), maximumPointSize: 20, compatibleWith: traits)
-        chapterLabel.textColor = .tertiaryLabel
+        chapterLabel.textColor = .label
         chapterLabel.numberOfLines = 2
         chapterLabel.textAlignment = .center
+        chapterLabel.accessibilityIdentifier = "fullPlayer.chapterAndVoice"
 
         [titleLabel, authorLabel, chapterLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
 
@@ -136,7 +137,7 @@ final class FullPlayerContent {
         [elapsedLabel, remainingLabel].forEach {
             $0.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedDigitSystemFont(ofSize: 12, weight: .regular), maximumPointSize: 20, compatibleWith: traits)
             $0.adjustsFontForContentSizeCategory = true
-            $0.textColor = .secondaryLabel
+            $0.textColor = .label
         }
         slider.accessibilityIdentifier = "fullPlayer.progress"
         slider.accessibilityLabel = L10n.string("player.playbackPosition")

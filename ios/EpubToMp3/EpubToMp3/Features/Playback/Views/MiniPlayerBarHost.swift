@@ -127,7 +127,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         chapterLabel.font = .preferredFont(forTextStyle: .caption2)
         chapterLabel.adjustsFontForContentSizeCategory = true
         chapterLabel.numberOfLines = 1
-        chapterLabel.textColor = .secondaryLabel
+        chapterLabel.textColor = .label
 
         let labels = UIStackView(arrangedSubviews: [titleLabel, chapterLabel])
         labels.axis = .vertical
