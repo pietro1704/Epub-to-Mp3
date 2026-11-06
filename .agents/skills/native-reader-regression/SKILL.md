@@ -44,10 +44,10 @@ Use native XCTest/UI automation and the pagination probe. Assert all of these:
 
 Add the narrowest permanent native test that is red on the reported behavior.
 Read `docs/agents/execution-policy.md` before selecting any execution path and
-use the affected runtime's guarded tasks. Ordinary reader-task consent does
-not lift the current Intel Simulator quarantine. Keep required SE1/iOS 15.5
-acceptance pending while that gate remains closed; another device does not
-replace it. A newly authorized safety review must precede any re-enablement.
+use the affected runtime's guarded tasks. Required SE1/iOS 15.2 acceptance uses
+only the reviewed, explicitly task-authorized supervisor on Xcode 26.3 defined
+in the execution policy. Another device does not replace that acceptance;
+generic Intel Simulator launchers remain quarantined.
 For scoped macOS verification, follow `docs/agents/macos-validation.md`.
 
 ## Hand off visible evidence

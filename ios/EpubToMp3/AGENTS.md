@@ -19,12 +19,11 @@ Read this file, [`../../CONTEXT.md`](../../CONTEXT.md), and relevant files in
 ## Reader changes
 
 Follow [execution policy](../../docs/agents/execution-policy.md) for current
-native safety and acceptance. Simulator execution is quarantined; the required
-SE1/iOS 15.5 check stays blocked until explicitly reauthorized and reviewed.
-This reader contract does not authorize launching the Simulator.
+native safety and acceptance. Authorized Simulator work uses only the reviewed
+supervisor described there; this reader contract does not authorize a boot.
 
 Reader acceptance requires the native macOS app and iPhone SE (1st generation)
-Simulator on iOS 15.5 with Xcode 16.4 (`/Applications/Xcode-16.4.0.app`). A physical
+Simulator on iOS 15.2 with Xcode 26.3 (`/Applications/Xcode-26.3.0.app`). A physical
 iPhone or another runtime cannot substitute for that required target. Verify
 available targets without booting a device; record unavailable or prohibited
 runtime acceptance as pending. XCTest supplements the actual visible app journey.
