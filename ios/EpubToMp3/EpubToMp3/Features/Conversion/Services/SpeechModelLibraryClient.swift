@@ -81,6 +81,19 @@ actor SpeechModelLibraryClient {
         return snapshot
     }
 
+    /// Capture an installed voice in its own language without changing the
+    /// study language, configured selections or cached presentation snapshot.
+    func auditionChoice(for entry: SpeechModelSnapshot.Entry) throws -> (selection: TtsSelection, language: String) {
+        let request = try SpeechModelAudition(entry: entry)
+        let snapshot: SpeechModelSnapshot
+        if let snapshotOverride { snapshot = try snapshotOverride() }
+        else {
+            guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+            snapshot = try adapter.speechModelSnapshot(target: target.selectingLanguage(request.language), probeRuntime: true)
+        }
+        return try request.resolve(snapshot)
+    }
+
     /// A recovery query never changes the user's study language or saved selections.
     func recoveryCandidates(for mismatch: TtsLanguageMismatch) throws -> [TtsRecoveryCandidate] {
         let snapshot: SpeechModelSnapshot
@@ -479,11 +492,4 @@ actor SpeechModelLibraryClient {
         observers[modelID]?.removeValue(forKey: identifier)
     }
 
-    nonisolated static func volumeCapacity(_ root: URL) throws -> UInt64 {
-        let values = try root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-        guard let capacity = values.volumeAvailableCapacityForImportantUsage, capacity >= 0 else {
-            throw SpeechModelInstallationError.transport("Available storage could not be determined")
-        }
-        return UInt64(capacity)
-    }
 }

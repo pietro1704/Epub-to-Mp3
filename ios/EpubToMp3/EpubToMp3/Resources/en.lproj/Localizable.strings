@@ -789,3 +789,4 @@
 
 "readerSettings.audioTracking" = "Follow spoken text";
 "readerSettings.audioTrackingDescription" = "Highlight the current sentence and word while audio is playing.";
+"settings.modelCompatibility.otherLanguage" = "For another language — you can still preview this installed voice.";
