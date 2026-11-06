@@ -25,7 +25,7 @@ pandas>=3.1.0,<4.0.0
 piper-tts>=1.8.0
 
 # Ebook Processing
-ebooklib>=0.20
+ebooklib>=0.21
 beautifulsoup4>=4.15.0
 pypdf>=6.21.4  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
 lxml>=6.1.3
