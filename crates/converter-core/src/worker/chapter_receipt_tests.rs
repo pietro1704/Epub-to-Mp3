@@ -257,3 +257,23 @@ fn worker_rejects_empty_audio_instead_of_completing_the_job() {
     assert!(!output.join("manifest.json").exists());
     assert_eq!(fs::metadata(audio).unwrap().len(), 0);
 }
+#[test]
+fn retained_assembly_repair_preserves_identity_and_rejects_tampering() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("chapter.mp3");
+    let segment = include_bytes!("../../../../tests/fixtures/audio/mono-24000-48k-info.mp3");
+    ensure_chapter_audio(&path, "captured-voice", |pending| {
+        fs::write(pending, [segment.as_slice(), segment.as_slice()].concat())?;
+        Ok(())
+    }).unwrap();
+    let original = fs::read(&path).unwrap();
+    prepare_retained_audio(&path).unwrap();
+    assert_ne!(fs::read(&path).unwrap(), original);
+    assert!(chapter_audio_is_complete(&path, "captured-voice"));
+    assert!(!chapter_audio_is_complete(&path, "different-voice"));
+    let receipt = fs::read(chapter_audio_receipt_path(&path)).unwrap();
+    fs::write(&path, &original).unwrap();
+    assert!(prepare_retained_audio(&path).is_err());
+    assert_eq!(fs::read(&path).unwrap(), original);
+    assert_eq!(fs::read(chapter_audio_receipt_path(&path)).unwrap(), receipt);
+}

@@ -89,6 +89,10 @@ pub(super) struct MpegFrameCount {
 }
 
 impl MpegFrameCount {
+    pub(super) fn declares_extent(&self, length: u64) -> bool {
+        self.expected_bytes == Some(length) && self.expected_frames.is_some_and(|count| count > 0)
+    }
+
     fn finish(&self, start: u64, end: u64) -> Result<MpegSegment, AudioError> {
         let audio_frames = self.frames.saturating_sub(u64::from(self.metadata));
         if audio_frames == 0 {

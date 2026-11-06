@@ -25,7 +25,9 @@ pub fn legacy_cache_identity(filename: &str, size: u64, mtime: f64) -> String {
 pub fn sha256_file(path: impl AsRef<Path>) -> io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 1024 * 1024];
+    // Apple callers can enter on a small Swift task stack. Keep the I/O
+    // buffer on the heap instead of reserving a megabyte in this frame.
+    let mut buffer = vec![0u8; 64 * 1024];
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
@@ -45,7 +47,7 @@ pub fn sha256_bytes(value: &[u8]) -> String {
 pub fn sha1_file(path: impl AsRef<Path>) -> io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha1::new();
-    let mut buffer = [0u8; 1024 * 1024];
+    let mut buffer = vec![0u8; 64 * 1024];
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
@@ -58,4 +60,35 @@ pub fn sha1_file(path: impl AsRef<Path>) -> io::Result<String> {
 
 pub fn normalized_text_hash(value: &str) -> String {
     hash_text(&value.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_integrity_fits_a_small_native_caller_stack() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("retained-audio");
+        let payload = b"bounded native integrity".repeat(20_000);
+        std::fs::write(&path, &payload).unwrap();
+        let expected = (sha256_bytes(&payload), hex::encode(Sha1::digest(&payload)));
+        let hashes = std::thread::Builder::new()
+            .name("small-native-integrity-stack".into())
+            .stack_size(128 * 1024)
+            .spawn(move || {
+                let hashes = (sha256_file(&path).unwrap(), sha1_file(&path).unwrap());
+                assert_eq!(
+                    sha256_file(path.with_extension("missing"))
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::NotFound
+                );
+                hashes
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(hashes, expected);
+    }
 }

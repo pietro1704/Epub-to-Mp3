@@ -8,6 +8,7 @@ struct EmbeddedBook { let metadataJSON: Data }
 final class ConverterFFIAdapter: EmbeddedConverter {
     private var setPlatformTts: ConverterSetPlatformTts?
     private var auditionVoice: ConverterVoiceAudition?
+    private var prepareAudio: (@convention(c) (UnsafePointer<CChar>?) -> Bool)?
     private var handle: UnsafeMutableRawPointer?
     private let close: (UnsafeMutableRawPointer?) -> Void
     private let metadata: (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
@@ -76,6 +77,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; return
         }
         handle = library
+        prepareAudio = symbol("converter_audio_prepare_v1", as: (@convention(c) (UnsafePointer<CChar>?) -> Bool).self)
         close = { value in dispose(value) }
         metadata = { value in meta(value) }
         freeString = free
@@ -141,6 +143,30 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             defer { if let error { freeString(error) } }
             throw EmbeddedConverterError.conversionFailed(error.map { String(cString: $0) } ?? "Voice audition failed")
         }
+    }
+
+    /// Completed files only; progressive segments keep their independent headers.
+    func prepareCompletedAudio(at url: URL) throws {
+        guard url.isFileURL, url.pathExtension.lowercased() == "mp3" else { return }
+        guard let prepareAudio else { throw EmbeddedConverterError.artifactInvalid("Audio preparation ABI is unavailable") }
+        let originalBackupPolicy = try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+        #if os(iOS)
+        let protection = try FileManager.default.attributesOfItem(atPath: url.path)[.protectionKey]
+        #endif
+        guard url.path.withCString({ prepareAudio($0) }) else {
+            let error = lastError()
+            defer { if let error { freeString(error) } }
+            throw EmbeddedConverterError.conversionFailed(error.map { String(cString: $0) } ?? "Audio preparation failed")
+        }
+        if let originalBackupPolicy {
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = originalBackupPolicy
+            var mutableURL = url
+            try mutableURL.setResourceValues(values)
+        }
+        #if os(iOS)
+        if let protection { try FileManager.default.setAttributes([.protectionKey: protection], ofItemAtPath: url.path) }
+        #endif
     }
 
     func makePlaybackControl() throws -> ConverterPlaybackControl {

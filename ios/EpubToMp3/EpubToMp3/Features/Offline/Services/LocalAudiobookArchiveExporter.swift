@@ -86,9 +86,12 @@ enum LocalAudiobookArchiveExporter {
         chapters: [Chapter],
         destinationDirectory: URL
     ) throws -> URL {
-        let completed = chapters
+        let completed = try chapters
             .sorted { $0.index < $1.index }
             .compactMap { chapter -> (Chapter, Data)? in
+                guard chapter.availability == .available else { return nil }
+                guard FileManager.default.fileExists(atPath: chapter.fileURL.path) else { return nil }
+                try ConverterFFIAdapter().prepareCompletedAudio(at: chapter.fileURL)
                 guard chapter.availability == .available,
                       let data = try? Data(contentsOf: chapter.fileURL, options: .mappedIfSafe),
                       !data.isEmpty else {
