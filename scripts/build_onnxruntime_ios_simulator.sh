@@ -23,7 +23,7 @@ if [[ ! -f "$runtime" || ! -f "$protobuf" ]]; then
       --osx_arch x86_64 \
       --apple_deploy_target 15.0 \
       --build_shared_lib \
-      --parallel \
+      --parallel 1 \
       --skip_tests \
       --skip_submodule_sync \
       --compile_no_warning_as_error \

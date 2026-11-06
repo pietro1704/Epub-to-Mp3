@@ -15,7 +15,7 @@ when changed interpretation/authorization requires it.
 
 | Surface | Editing and verification owner | Required evidence |
 | --- | --- | --- |
-| Native Swift/UIKit/AppKit, Apple FFI packaging | Mac | Native macOS and the required SE1/iOS15.5 checks; existing Intel resource guard |
+| Native Swift/UIKit/AppKit, Apple FFI packaging | Mac | Native macOS and required SE1/iOS15.2 checks through the reviewed Intel supervisor |
 | Flutter Linux | Arch | Focused Flutter tests and actual Linux app behavior for affected UI/runtime paths |
 | Flutter Android | Arch | Focused Flutter/Android tests and affected behavior on the physical Samsung |
 | Shared Rust and FFI contracts | One named editing owner per task | Owning Rust regression and affected client-platform verification |
@@ -135,7 +135,7 @@ no automatic polling service or CI monitoring is installed.
 The setup permissions, versions, branch states, message IDs and evidence below
 are preserved as the October 15 record. The protocol above remains the current
 reference; any new task uses [execution policy](execution-policy.md) for platform/safety authorization,
-including the Android pause and Intel Simulator quarantine.
+including the Android pause and the reviewed exception to Intel Simulator quarantine.
 
 | ID | Owner | Acceptance | Status |
 | --- | --- | --- | --- |

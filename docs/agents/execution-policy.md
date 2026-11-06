@@ -48,10 +48,11 @@ persistent device-specific choice. Reuse the verified iOS Rust package when its
 source/build inputs match; selecting the app toolchain does not authorize a
 dependency rebuild, runtime download or Simulator execution.
 
-Other development and legacy acceptance retain Xcode 16.4 because this project
-supports iOS 15.5. On this Mac its developer directory is
-`/Applications/Xcode-16.4.0.app/Contents/Developer`; managed tasks select it
-through `DEVELOPER_DIR` and `scripts/xcode_build_paths.rb`.
+Required reader Simulator acceptance uses iPhone SE (1st generation), iOS 15.2
+and Xcode 26.3, as explicitly selected by Pietro on 2026-11-05. Keep only the
+iOS 15.2 and 26.2 runtimes. macOS builds may retain Xcode 16.4 through
+`DEVELOPER_DIR` and `scripts/xcode_build_paths.rb`; preserve that installed
+toolchain without changing the global selection.
 
 The system Command Line Tools selection uses Xcode 26.3 for terminal and
 Homebrew compatibility. Preserve that selection. `DEVELOPER_DIR` overrides it
@@ -70,15 +71,16 @@ flags. `mise run clean:build` removes only superseded project DerivedData under
 the shared lease; preserve usable artifacts and all user/evidence data. Changes
 to enforcement require `mise run build:storage:test`.
 
-Intel Simulator execution is quarantined after recurrent `SimMetalHost` /
-`IGGuC.cpp:2913` kernel panics. `native_job.rb simulator` refuses before launch,
-including inherited leases. Direct `simctl boot`, alternate launchers and
-existing artifacts cannot bypass the gate. Re-enabling requires an explicit new
-user safety decision and specialist review of the supervised resource/cleanup
-harness. Compiling for Simulator does not authorize booting it. Required
-SE1/iOS 15.5 acceptance remains blocked; a physical device or another runtime
-cannot replace it. The native build guard verifies devices are shut down and
-Simulator/SimMetalHost have exited before compiling.
+Generic Intel Simulator execution remains quarantined after recurrent
+`SimMetalHost` / `IGGuC.cpp:2913` kernel panics. `native_job.rb simulator` refuses
+before launch, including inherited leases. The reviewed exception is the
+task-authorized `ios:simulator:supervised` route for SE1/iOS 15.2 on Xcode 26.3;
+follow [Simulator safety](../simulator-safety.md) for explicit invocation,
+resource admission, deadlines and verified shutdown. Direct boot and alternate
+launchers remain outside this exception. Compiling for Simulator does not
+authorize booting it. A physical device or another runtime cannot replace the
+required SE1/iOS 15.2 acceptance. The native build guard verifies all devices
+are shut down and Simulator/SimMetalHost have exited before compiling.
 
 Any new host kernel panic is a stop event: stop agent-started local/native and
 resource-intensive work, preserve the report and execution evidence, and avoid
@@ -100,8 +102,8 @@ unrelated app campaign. If the user explicitly chooses manual Xcode validation,
 report that handoff as pending until their result is received.
 
 Run one native app target at a time. Stop the previous app before switching;
-keep Simulator quarantined. Close the app when active validation ends and verify
-shutdown, except when the user requests its window remain open for review;
+use the reviewed route for authorized Simulator work. Close the app when active
+validation ends and verify shutdown, except when the user requests its window remain open for review;
 close it after that review ends. Audible checks show the app and identify any
 deliberate non-Edge fixture audio before playback. Model downloads, service
 changes and new benchmarks require their own task scope.

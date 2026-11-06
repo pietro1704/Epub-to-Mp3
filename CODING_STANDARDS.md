@@ -80,8 +80,9 @@ native performance evidence.
 
 Use the exact native destinations required by the task and native reader contract.
 Apply [execution policy](docs/agents/execution-policy.md), including Simulator
-quarantine and guarded single-job Mac compilation. A physical device does not
-replace required SE1/iOS 15.5 verification. A reviewer must preserve blocked
+quarantine, its reviewed supervisor exception and guarded single-job Mac
+compilation. A physical device does not replace required SE1/iOS 15.2
+verification. A reviewer must preserve blocked
 acceptance rather than accepting an alternate runtime as equivalent.
 
 On resume, read the saved state and report, then check the recorded live PID once.
