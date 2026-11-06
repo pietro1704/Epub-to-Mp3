@@ -5,8 +5,9 @@ require_relative "simulator_resources"
 require_relative "mac_build_budget"
 
 class SimulatorBackend
-  DEVELOPER = "/Applications/Xcode-16.4.0.app/Contents/Developer"
-  RUNTIME = "com.apple.CoreSimulator.SimRuntime.iOS-15-0"
+  attr_reader :app_pid
+  DEVELOPER = "/Applications/Xcode-26.3.0.app/Contents/Developer"
+  RUNTIME = "com.apple.CoreSimulator.SimRuntime.iOS-15-2"
 
   def initialize(device:, app:, directory:)
     raise SimulatorResources::Refusal, "Invalid device UUID" unless device.match?(/\A[0-9A-Fa-f-]{36}\z/)
@@ -44,31 +45,37 @@ class SimulatorBackend
   end
 
   def recheck_state
-    rows = devices.values.flatten
-    raise SimulatorResources::Refusal, "A simulator is not shut down" unless rows.all? { |row| row.fetch("state") == "Shutdown" }
-    owned = devices.fetch(RUNTIME).find { |row| row["udid"] == @device }
-    raise SimulatorResources::Refusal, "Device identity changed" unless owned && owned["isAvailable"] == true
-    unless owned["deviceTypeIdentifier"] == "com.apple.CoreSimulator.SimDeviceType.iPhone-SE"
-      raise SimulatorResources::Refusal, "First-generation iPhone SE required"
-    end
+    recheck_idle
     if @app_fingerprint && app_fingerprint != @app_fingerprint
       raise SimulatorResources::Refusal, "Application changed after inspection"
     end
-    raise SimulatorResources::Refusal, "Simulator or SimMetalHost already running" unless simulator_processes.empty?
-    heavy = processes.select { |_, path| %w[xcodebuild cargo rustc swift-frontend converter-cli].include?(File.basename(path)) }
-    raise SimulatorResources::Refusal, "Other native workload is running" unless heavy.empty?
     capture(RbConfig.ruby, File.join(__dir__, "mac_build_budget.rb"), "check", seconds: 8)
     nil
   end
 
-  def inspect_identity
-    raise SimulatorResources::Refusal, "Intel macOS required" unless RUBY_PLATFORM.match?(/x86_64.*darwin/)
+  def recheck_idle
+    groups = devices
+    rows = groups.values.flatten
+    raise SimulatorResources::Refusal, "A simulator is not shut down" unless rows.all? { |row| row.fetch("state") == "Shutdown" }
+    owned = groups.fetch(RUNTIME).find { |row| row["udid"] == @device }
+    raise SimulatorResources::Refusal, "Device identity changed" unless owned && owned["isAvailable"] == true
+    unless owned["deviceTypeIdentifier"] == "com.apple.CoreSimulator.SimDeviceType.iPhone-SE"
+      raise SimulatorResources::Refusal, "First-generation iPhone SE required"
+    end
+    raise SimulatorResources::Refusal, "Simulator or SimMetalHost already running" unless simulator_processes.empty?
+    heavy = processes.select { |_, path| %w[xcodebuild cargo rustc swift-frontend converter-cli].include?(File.basename(path)) }
+    raise SimulatorResources::Refusal, "Other native workload is running" unless heavy.empty?
+    nil
+  end
+
+  def inspect_identity(host: RUBY_PLATFORM)
+    raise SimulatorResources::Refusal, "Intel macOS required" unless host.match?(/x86_64.*darwin/)
     versions = capture("/usr/bin/xcodebuild", "-version")
-    raise SimulatorResources::Refusal, "Xcode 16.4 required" unless versions.lines.first&.strip == "Xcode 16.4"
+    raise SimulatorResources::Refusal, "Xcode 26.3 required" unless versions.lines.first&.strip == "Xcode 26.3"
     runtimes = JSON.parse(capture("/usr/bin/xcrun", "simctl", "list", "runtimes", "-j")).fetch("runtimes")
     runtime = runtimes.find { |row| row["identifier"] == RUNTIME }
     unless runtime && runtime["isAvailable"] == true && runtime.fetch("supportedArchitectures", []).include?("x86_64")
-      raise SimulatorResources::Refusal, "Available Intel iOS 15.0 runtime required"
+      raise SimulatorResources::Refusal, "Available Intel iOS 15.2 runtime required"
     end
     recheck
     info = File.join(@app, "Info.plist")
@@ -82,7 +89,7 @@ class SimulatorBackend
     platform = capture("/usr/bin/xcrun", "vtool", "-arch", "x86_64", "-show-build", binary)
     raise SimulatorResources::Refusal, "App is not an iOS Simulator binary" unless platform.match?(/platform\s+IOSSIMULATOR/)
     minimum = capture("/usr/bin/plutil", "-extract", "MinimumOSVersion", "raw", "-o", "-", info).strip
-    raise SimulatorResources::Refusal, "App minimum exceeds iOS 15.0" unless minimum.match?(/\A\d+(?:\.\d+){0,2}\z/) && (minimum.split('.').map(&:to_i) <=> [15, 0, 0]) <= 0
+    raise SimulatorResources::Refusal, "App minimum exceeds iOS 15.2" unless minimum.match?(/\A\d+(?:\.\d+){0,2}\z/) && (minimum.split('.').map(&:to_i) <=> [15, 2, 0]) <= 0
     @app_fingerprint = app_fingerprint
     { "device" => @device, "runtime" => runtime, "xcode" => versions.strip,
       "app" => @app, "bundle" => @bundle, "executable_sha256" => Digest::SHA256.file(binary).hexdigest }
@@ -119,6 +126,7 @@ class SimulatorBackend
 
   def start(stage)
     raise SimulatorResources::Refusal, "Previous command still active" if @pid
+    @stage = stage
     argv = case stage
            when :boot then ["/usr/bin/xcrun", "simctl", "boot", @device]
            when :ready then ["/usr/bin/xcrun", "simctl", "bootstatus", @device, "-b"]
@@ -146,7 +154,21 @@ class SimulatorBackend
     return nil unless result
     @pid = nil
     @log.close
+    if @stage == :launch && result.last.success?
+      match = File.read(File.join(@directory, 'launch.log')).match(/#{Regexp.escape(@bundle)}:\s*(\d+)/)
+      raise SimulatorResources::Refusal, "Missing launched app PID" unless match
+      @app_pid = Integer(match[1])
+      check_app
+    end
     result.last.exitstatus || 75
+  end
+
+  def check_app
+    return unless @app_pid
+    executable = capture('/bin/ps', '-p', @app_pid.to_s, '-o', 'comm=').strip
+    unless executable.include?(@device) && executable.end_with?('/EpubToMp3.app/EpubToMp3')
+      raise SimulatorResources::Refusal, 'Launched app process exited or changed identity'
+    end
   end
 
   def cleanup
@@ -176,11 +198,13 @@ class SimulatorBackend
       Process.kill("TERM", -@ui_pid) rescue Errno::ESRCH
     end
     termination_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    clean_since = nil
     loop do
       if @ui_pid && Process.clock_gettime(Process::CLOCK_MONOTONIC) - termination_started >= 2
         Process.kill("KILL", -@ui_pid) rescue Errno::ESRCH
       end
-      owned = devices.fetch(RUNTIME).find { |row| row["udid"] == @device }
+      groups = devices
+      owned = groups.fetch(RUNTIME).find { |row| row["udid"] == @device }
       raise SimulatorResources::Refusal, "Device disappeared during cleanup" unless owned
       if @ui_pid
         result = Process.waitpid2(@ui_pid, Process::WNOHANG)
@@ -188,7 +212,10 @@ class SimulatorBackend
       end
       residual = simulator_processes
       raise SimulatorResources::Refusal, "Shutdown deadline exceeded" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-      return "verified_shutdown" if owned["state"] == "Shutdown" && @ui_pid.nil? && residual.empty?
+      clean = groups.values.flatten.all? { |row| row['state'] == 'Shutdown' } && @ui_pid.nil? && residual.empty?
+      clean_since = nil unless clean
+      clean_since ||= Process.clock_gettime(Process::CLOCK_MONOTONIC) if clean
+      return "verified_shutdown" if clean_since && Process.clock_gettime(Process::CLOCK_MONOTONIC) - clean_since >= 5
       raise SimulatorResources::Refusal, "Shutdown deadline exceeded" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
       sleep 0.25
     end

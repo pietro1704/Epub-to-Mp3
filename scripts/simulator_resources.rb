@@ -42,7 +42,7 @@ module SimulatorResources
   end
 
   def self.snapshot(root:, capture: method(:capture))
-    Timeout.timeout(4) { collect(root: root, capture: capture) }
+    Timeout.timeout(12) { collect(root: root, capture: capture) }
   rescue Timeout::Error
     raise Refusal, "Resource snapshot deadline exceeded"
   end
@@ -56,7 +56,7 @@ module SimulatorResources
     swapouts = number(vm, /Swapouts:\s*(\d+)/, "swapouts")
     page_size = number(vm, /page size of (\d+) bytes/, "page size")
     compressed = number(vm, /Pages occupied by compressor:\s*(\d+)/, "compression") * page_size
-    cpu = capture.call("/usr/bin/top", "-l", "2", "-s", "1", "-n", "0")
+    cpu = capture.call("/usr/bin/top", "-l", "2", "-s", "1", "-n", "0", seconds: 8)
     idle = number(cpu.lines.grep(/CPU usage:/).last.to_s, /([\d.]+)% idle/, "CPU idle")
     disk = capture.call("/bin/df", "-Pk", root).lines.last.to_s.split
     raise Refusal, "Invalid free disk telemetry" unless disk[3]&.match?(/\A\d+\z/)
@@ -80,12 +80,19 @@ module SimulatorResources
     raise Refusal, error.message
   end
 
-  def self.admission(sample, initial)
+  def self.admission(sample, initial, stable_existing_swap: false, previous: initial)
     validate(sample)
     validate(initial)
     return "Memory pressure is not normal" unless sample["pressure"] == 1
-    return "Reported free memory below 40%" if sample["free_percent"] < 40
-    return "Swap exceeds 1 GiB" if sample["swap_mib"] > 1024
+    minimum_free = stable_existing_swap ? 50 : 40
+    return "Reported free memory below #{minimum_free}%" if sample["free_percent"] < minimum_free
+    return "Swap exceeds 1 GiB" if !stable_existing_swap && sample["swap_mib"] > 1024
+    if stable_existing_swap
+      validate(previous)
+      if sample["swap_mib"] > initial["swap_mib"] || sample["swap_mib"] > previous["swap_mib"]
+        return "Swap allocation grew during baseline"
+      end
+    end
     return "Swapouts increased during baseline" if sample["swapouts"] != initial["swapouts"]
     return "CPU idle below 70%" if sample["cpu_idle"] < 70
     return "Free disk below 20 GiB" if sample["free_bytes"] < 20 * 1024**3
@@ -93,10 +100,11 @@ module SimulatorResources
   end
 
   class Monitor
-    def initialize(initial)
+    def initialize(initial, observation_only: false)
       SimulatorResources.validate(initial)
       @initial = initial
       @since = {}
+      @observation_only = observation_only
     end
 
     def check(sample, now)
@@ -109,6 +117,7 @@ module SimulatorResources
         "Swap grew by 256 MiB" => [sample["swap_mib"] - @initial["swap_mib"] >= 256, 10],
         "CPU idle below 10%" => [sample["cpu_idle"] < 10, 30]
       }
+      conditions.select! { |reason, _| reason == "Memory pressure warning" } if @observation_only
       conditions.each do |reason, (active, duration)|
         @since.delete(reason) unless active
         next unless active

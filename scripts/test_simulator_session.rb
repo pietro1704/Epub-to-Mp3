@@ -15,6 +15,7 @@ class SimulatorSessionTest < Minitest::Test
       { "fixture" => true }
     end
     def recheck; end
+    def recheck_idle; end
     def start(stage)
       @calls << stage
     end
@@ -59,6 +60,24 @@ class SimulatorSessionTest < Minitest::Test
     assert_equal [:boot, :ready, :ui, :install, :launch, :cleanup], @backend.calls
     assert_equal "verified_shutdown", report["cleanup"]
     assert_equal @sample, report["final_resources"]
+  end
+
+  def test_selected_test_runs_under_watchdog_and_requires_cleanup
+    @backend.define_singleton_method(:test_session?) { true }
+    supervisor, report = run_session(observe_resources: true)
+    assert supervisor.successful?
+    assert_equal [:boot, :ready, :ui, :install, :launch, :test, :cleanup], @backend.calls
+    assert_equal 'test_command_completed', report['result']
+    assert_equal 'verified_shutdown', report['cleanup']
+  end
+
+  def test_selected_test_failure_preserves_failure_and_cleans_up
+    @backend.define_singleton_method(:test_session?) { true }
+    @backend.define_singleton_method(:poll) { @calls.last == :test ? 65 : 0 }
+    supervisor, report = run_session(observe_resources: true)
+    refute supervisor.successful?
+    assert_match(/test failed \(65\)/, report['error'])
+    assert_equal :cleanup, @backend.calls.last
   end
 
   def test_admission_failure_never_boots_or_shuts_down_unowned_device
@@ -110,6 +129,36 @@ class SimulatorSessionTest < Minitest::Test
     supervisor, report = run_session
     refute supervisor.successful?
     assert_equal "cleanup_failed", report["result"]
+  end
+
+  def test_explicit_observation_retains_cleanup_and_records_phase_and_limits
+    @sample.merge!('swap_mib' => 3000, 'cpu_idle' => 20, 'free_percent' => 30)
+    supervisor, report = run_session(observe_resources: true)
+    assert supervisor.successful?
+    assert_equal 'explicit_resource_observation', report['admission_policy']
+    assert_equal 'verified_shutdown', report['cleanup']
+    assert_equal 0, report['limits']['app_seconds']
+    assert report['samples'].all? { |row| row.key?('phase') }
+  end
+
+  def test_default_refuses_existing_swap_but_explicit_mode_records_its_policy
+    @sample["swap_mib"] = 2300
+    _, report = run_session
+    assert_empty @backend.calls
+    assert_match(/1 GiB/, report["error"])
+    assert_equal "strict_1gib_swap", report["admission_policy"]
+    File.delete(@report)
+    supervisor, report = run_session(stable_existing_swap: true)
+    assert supervisor.successful?
+    assert_equal "explicit_stable_existing_swap", report["admission_policy"]
+  end
+
+  def test_swap_regrowth_at_final_preboot_sample_blocks_even_below_initial_swap
+    values = [2300, 2100, 2200]
+    sampler = -> { @sample.merge("swap_mib" => values.shift || 2200) }
+    _, report = run_session(stable_existing_swap: true, sampler: sampler)
+    assert_empty @backend.calls
+    assert_match(/grew/, report["error"])
   end
 
   def test_prepare_refusal_prevents_install_and_cleans_up

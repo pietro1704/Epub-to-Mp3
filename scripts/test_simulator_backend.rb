@@ -57,11 +57,41 @@ class SimulatorBackendTest < Minitest::Test
     assert_raises(SimulatorResources::Refusal) { @backend.app_fingerprint }
   end
 
+  def test_identity_accepts_15_2_but_rejects_wrong_or_unavailable_runtime
+    File.write(File.join(@dir, "Info.plist"), "fixture")
+    @backend.instance_variable_set(:@fixture_runtime, {
+      "identifier" => "com.apple.CoreSimulator.SimRuntime.iOS-15-2", "isAvailable" => true,
+      "supportedArchitectures" => ["x86_64"]
+    })
+    @backend.define_singleton_method(:capture) do |*argv, **|
+      case
+      when argv == ["/usr/bin/xcodebuild", "-version"] then "Xcode 26.3\nBuild version 17C503\n"
+      when argv.include?("runtimes") then JSON.generate("runtimes" => [@fixture_runtime])
+      when argv.include?("CFBundleIdentifier") then "com.pietrocode.epubtomp3"
+      when argv.include?("CFBundleExecutable") then "executable"
+      when argv.include?("MinimumOSVersion") then "15.0"
+      when argv.include?("-archs") then "x86_64"
+      when argv.include?("vtool") then "platform IOSSIMULATOR"
+      else ""
+      end
+    end
+    identity = @backend.inspect_identity(host: "x86_64-darwin")
+    assert_equal "com.apple.CoreSimulator.SimRuntime.iOS-15-2", identity["runtime"]["identifier"]
+    @backend.instance_variable_get(:@fixture_runtime)["isAvailable"] = false
+    assert_raises(SimulatorResources::Refusal) { @backend.inspect_identity(host: "x86_64-darwin") }
+    @backend.instance_variable_get(:@fixture_runtime).merge!(
+      "isAvailable" => true, "identifier" => "com.apple.CoreSimulator.SimRuntime.iOS-15-0"
+    )
+    assert_raises(SimulatorResources::Refusal) { @backend.inspect_identity(host: "x86_64-darwin") }
+  end
+
   def test_cleanup_terminates_only_its_unreaped_ui_child
     owned = Process.spawn(RbConfig.ruby, "-e", "sleep 30", pgroup: true)
     unrelated = Process.spawn(RbConfig.ruby, "-e", "sleep 30", pgroup: true)
     @backend.instance_variable_set(:@ui_pid, owned)
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     assert_equal "verified_shutdown", @backend.cleanup
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :>=, 5
     assert_raises(Errno::ECHILD) { Process.waitpid(owned, Process::WNOHANG) }
     assert_nil Process.waitpid(unrelated, Process::WNOHANG), "unrelated process was terminated"
   ensure

@@ -32,11 +32,37 @@ class SimulatorCliTest < Minitest::Test
       assert_equal 75, SimulatorSafeRun.main(arguments.dup, backend_class: Backend, launcher: launcher)
       assert_equal "fixture", received[:backend].identity[:device]
       assert_equal "app", received[:backend].identity[:app]
+      assert_equal false, received[:stable_existing_swap]
       assert_equal 0o700, File.stat(destination).mode & 0o777
       assert_equal File.join(File.realpath(destination), "report.json"), received[:report]
       received = nil
       capture_io { assert_equal 75, SimulatorSafeRun.main(arguments.dup, backend_class: Backend, launcher: launcher) }
       assert_nil received, "existing report directory must never run again"
+    end
+  end
+
+  def test_existing_swap_exception_is_forwarded_only_by_explicit_flag
+    Dir.mktmpdir do |dir|
+      arguments = ["--device", "fixture", "--app", "app", "--report-directory", File.join(dir, "report"),
+                   "--acknowledge-intel-panic-risk", "--allow-stable-existing-swap"]
+      received = nil
+      launcher = ->(**options) { received = options; 75 }
+      assert_equal 75, SimulatorSafeRun.main(arguments, backend_class: Backend, launcher: launcher)
+      assert_equal true, received[:stable_existing_swap]
+    end
+  end
+
+  def test_observation_has_short_bounded_timing_and_cannot_mix_policies
+    Dir.mktmpdir do |dir|
+      args = ['--device', 'fixture', '--app', 'app', '--report-directory', File.join(dir, 'report'),
+              '--acknowledge-intel-panic-risk', '--observe-resources']
+      received = nil
+      launcher = ->(**opts) { received = opts; 75 }
+      assert_equal 75, SimulatorSafeRun.main(args.dup, backend_class: Backend, launcher: launcher)
+      assert_equal true, received[:observe_resources]
+      assert_equal 5, received[:baseline_seconds]
+      assert_equal 180, received[:session_seconds]
+      capture_io { assert_equal 75, SimulatorSafeRun.main(args + ['--allow-stable-existing-swap'], backend_class: Backend, launcher: launcher) }
     end
   end
 end

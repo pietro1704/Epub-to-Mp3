@@ -25,6 +25,27 @@ class SimulatorResourcesTest < Minitest::Test
     end
   end
 
+  def test_existing_swap_exception_is_explicit_and_requires_more_free_memory
+    historical = sample.merge("swap_mib" => 2300)
+    assert_match(/1 GiB/, SimulatorResources.admission(historical, historical))
+    assert_nil SimulatorResources.admission(historical, historical, stable_existing_swap: true)
+    assert_match(/50%/, SimulatorResources.admission(historical.merge("free_percent" => 49), historical,
+                                                    stable_existing_swap: true))
+  end
+
+  def test_existing_swap_exception_rejects_regrowth_after_an_earlier_decrease
+    initial = sample.merge("swap_mib" => 2300)
+    previous = sample.merge("swap_mib" => 2100)
+    assert_match(/grew/, SimulatorResources.admission(sample.merge("swap_mib" => 2200), initial,
+                                                     previous: previous, stable_existing_swap: true))
+  end
+
+  def test_existing_swap_exception_still_rejects_any_new_swapouts
+    historical = sample.merge("swap_mib" => 2300)
+    assert_match(/Swapouts/, SimulatorResources.admission(historical.merge("swapouts" => 51), historical,
+                                                         stable_existing_swap: true))
+  end
+
   def test_runtime_durations_and_recovery_reset
     monitor = SimulatorResources::Monitor.new(sample)
     low = sample.merge("cpu_idle" => 5)
@@ -50,6 +71,15 @@ class SimulatorResourcesTest < Minitest::Test
     assert_raises(SimulatorResources::Refusal) do
       SimulatorResources.capture(RbConfig.ruby, "-e", "sleep 30", seconds: 0.05)
     end
+  end
+
+  def test_observation_records_numeric_load_but_preserves_os_and_disk_aborts
+    monitor = SimulatorResources::Monitor.new(sample, observation_only: true)
+    assert_nil monitor.check(sample.merge('cpu_idle' => 0, 'free_percent' => 10, 'swap_mib' => 3000), 0)
+    assert_match(/Critical/, monitor.check(sample.merge('pressure' => 4), 1))
+    assert_match(/disk/, monitor.check(sample.merge('free_bytes' => 0), 2))
+    assert_nil monitor.check(sample.merge('pressure' => 2), 3)
+    assert_match(/warning/, monitor.check(sample.merge('pressure' => 2), 13))
   end
 
 def test_timeout_includes_descendant_held_output_after_leader_exit

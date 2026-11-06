@@ -4,7 +4,7 @@ The legacy `native_job.rb simulator` route remains quarantined. Only an explicit
 risk-acknowledged session uses `mise run ios:simulator:supervised`. Monitoring does
 not prevent the Intel GPU-driver kernel panics previously observed on this host.
 
-The dedicated route requires installed Xcode 16.4, an available x86_64 iOS 15.0
+The dedicated route requires installed Xcode 26.3, an available x86_64 iOS 15.2
 runtime, a shut-down first-generation iPhone SE UDID, and an existing compatible
 EpubToMp3 simulator app. It never downloads runtimes, creates devices, compiles,
 closes unrelated apps, or automatically retries. Installation and dependency
@@ -34,32 +34,72 @@ minimum OS and app content identity before installation.
 
 Local compatibility check on macOS 15.8.2: CoreSimulator reports iOS 15.0 as
 unavailable with `The iOS 15.0 simulator runtime is not supported on hosts after
-macOS 14.99.0.` The current route consequently refuses this host/runtime pair.
+macOS 14.99.0.` The installed framework's `updatedMaxHostVersions` table applies
+this override specifically to `iOS-15-0`; it does not list 15.2, 15.4 or 15.5.
+The official download index lists 15.2 as the next-smallest available 15.x runtime.
+Historical project evidence also records successful SE1/iOS 15.5 execution.
 The generic Xcode support matrix and downloadable package availability do not
-override this runtime-level restriction. Selecting another runtime requires an
+override this runtime-level restriction. The dedicated route now pins 15.2 and
+still requires that CoreSimulator reports it available. Selecting another runtime requires an
 explicit scoped update and validation; never patch its availability metadata.
 
-A 60-second admission baseline requires normal memory pressure, at least 40%
-reported free memory, at most 1 GiB swap, unchanged swapout count, at least 70%
-aggregate CPU idle, and 20 GiB free disk. The existing 12 GiB build-cache ceiling
-is checked before boot. The memory percentage is the `memory_pressure -Q` metric,
-not literal unused RAM. Missing telemetry refuses execution.
+Pietro selected SE1/iOS 15.2 as the required reader target on 2026-11-05.
+Keep only the iOS 15.2 and 26.2 runtimes; historical iOS 15.5 evidence does not
+change that current requirement.
 
-During boot and the 15-second launch smoke, resources are sampled every five
-seconds, with a four-second collection deadline. Critical pressure or low disk
-aborts immediately. Warning pressure, reported free memory below 25%, or swap
-growth of 256 MiB abort after ten seconds; CPU idle below 10% aborts after thirty.
-Boot has a 120-second budget and the whole session a ten-minute budget.
+Admission policies are explicit:
 
-A detached watchdog owns the native lease, subprocesses and cleanup. The foreground
-sends heartbeats; cancellation, foreground death, stale heartbeat, failed commands,
-resource refusal and timeouts all lead to cleanup after any boot attempt. Cleanup
-shuts down only the explicit device and terminates only the unreaped Simulator UI
-child it owns. It verifies Shutdown and absence of Simulator/SimMetalHost processes
-within thirty seconds. Failure is retained in the report and is never success.
+| Policy | Baseline | Admission | Session limit |
+| --- | --- | --- | --- |
+| Default | 60 seconds | Normal pressure, reported free memory at least 40%, swap at most 1 GiB, unchanged swapouts, CPU idle at least 70% | 600 seconds |
+| `--allow-stable-existing-swap` | 60 seconds | Normal pressure, reported free memory at least 50%, no swap allocation growth or new swapouts, CPU idle at least 70% | 600 seconds |
+| `--observe-resources` | 5 seconds | Normal pressure; CPU, memory percentage and existing swap are measured for the authorized observation | 180 seconds |
 
-The smoke proves only that install/launch commands completed and cleanup was
-verified. It is not reader, playback, GPU stability or iOS 15.5 acceptance.
+All policies require at least 20 GiB free disk, valid identity and telemetry,
+the exclusive native lease and the existing 12 GiB build-cache ceiling before
+boot. Reported free memory is the `memory_pressure -Q` metric, not literal
+unused RAM. Observation and stable-swap flags are mutually exclusive.
+
+Sampling targets a five-second cadence. A full snapshot has a 12-second deadline,
+including an eight-second limit for `top`; under load that cadence is not
+guaranteed. Critical OS memory pressure or low disk aborts immediately. Warning
+pressure sustained for ten seconds also aborts. Default/stable policies additionally
+abort after ten seconds below 25% reported free memory or 256 MiB swap growth,
+or thirty seconds below 10% CPU idle. Observation records these numeric load
+changes instead of treating them as established thresholds. Missing telemetry,
+foreground cancellation/death or lost heartbeats still aborts. Boot is limited
+to 120 seconds; the launch observation lasts 15 seconds.
+
+For an already-built XCTest artifact, observation mode additionally accepts
+`--test-run /absolute/Products/name.xctestrun` and either one fully qualified
+`--test-selector Target/Class/testMethod` or `--test-manifest /absolute/preset.json`.
+The manifest must equal one of the closed presets in `SimulatorTestBackend`:
+eleven native playback/transport methods or the two embedded PDF/system-MP3
+methods. Partial, mixed, duplicate and wildcard selections are rejected. The
+runner uses `test-without-building`, one explicit destination, no parallel tests
+and a tracked process group. The test command has at most 120 seconds within
+the unchanged 180-second observation session. Test-run/manifest identities are
+recorded and rechecked. `--seed-book` stages an existing EPUB with a bounded,
+exclusive copy, preserving a different existing file and rejecting symlinks.
+
+A detached watchdog owns the native lease, telemetry, subprocesses and cleanup.
+After any boot attempt, cleanup shuts down only the explicit device, cancels its
+owned command group and terminates its unreaped Simulator UI child. It requires
+all devices to be Shutdown and no Simulator/SimMetalHost processes for five
+consecutive seconds within the thirty-second cleanup limit. It never stops an
+unrelated device or shared CoreSimulator service. A cleanup failure is a failure.
+
+Capture screenshots during the supervised journey or extract them from a copy
+of the completed xcresult. A screenshot command after cleanup can recreate
+rendering XPC processes even for an already-shutdown device; do not issue it.
+
+`launch_smoke_passed` proves app survival and cleanup, not reading or inference.
+`test_command_completed` proves command completion only. After verified cleanup,
+query an isolated xcresult copy through `scripts/xcresult_job.rb` and require
+the exact selected test count, every test passed, zero failures and zero skips
+before declaring functional acceptance. Preserve original failures and identify
+passing evidence spread across multiple runs. None of these checks establishes
+a GPU-driver fix or long-term stability.
 
 Host regressions (no Simulator or compilation):
 
