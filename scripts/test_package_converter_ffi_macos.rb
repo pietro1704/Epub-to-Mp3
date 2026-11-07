@@ -161,7 +161,7 @@ class PackageConverterFfiMacOSTest < Minitest::Test
     assert_includes workflow, "test \"$(xcodebuild -version | head -n 1)\" = 'Xcode 16.4'"
     assert_includes workflow, "test \"$(xcrun --sdk macosx --show-sdk-version)\" = '15.5'"
     assert_equal 2, workflow.scan(/^\s+run: ruby scripts\/native_job\.rb build -- cargo build /).length
-    assert_includes workflow, 'ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94'
+    assert_includes workflow, 'ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199'
     assert_includes workflow, 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
     assert_includes workflow, 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
     assert_includes workflow, 'name: converter-ffi-macos-intel-x86_64-v1'

@@ -26,14 +26,20 @@ for (const consumer of consumers) {
     }
   });
 
-  test(`${consumer} bounds globstar parent expansion`, () => {
+  test(`${consumer} rejects globstar parent expansion above its budget`, () => {
     // GHSA-g3hv-75wg-m249: optimization must honor the expansion budget too.
     const budget = 4;
-    const matcher = new Minimatch('**/../a/**/../b/**/../c/**/../d/*.ts', {
+    assert.throws(
+      () => new Minimatch('**/../a/**/../b/**/../c/**/../d/*.ts', {
+        optimizationLevel: 2,
+        braceExpandMax: budget,
+      }),
+      { name: 'RangeError', message: /too many patterns/ },
+    );
+    assert.equal(minimatch('a/book.ts', '**/a/*.ts', {
       optimizationLevel: 2,
       braceExpandMax: budget,
-    });
-    assert.ok(matcher.globParts.length <= budget);
+    }), true);
   });
 }
 

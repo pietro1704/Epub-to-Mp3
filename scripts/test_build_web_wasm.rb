@@ -99,7 +99,7 @@ class BuildWebWasmTest < Minitest::Test
   def test_tool_pin_matches_the_locked_schema
     lock = File.read(File.join(ROOT, "Cargo.lock"))
     version = lock.match(/name = "wasm-bindgen"\nversion = "([^"]+)"/)[1]
-    pin = File.read(File.join(ROOT, "mise.toml")).match(/^"cargo:wasm-bindgen-cli" = "([^"]+)"/)[1]
+    pin = File.read(File.join(ROOT, "mise.toml")).match(/^"github:wasm-bindgen\/wasm-bindgen" = "([^"]+)"/)[1]
     assert_equal version, pin
   end
 end

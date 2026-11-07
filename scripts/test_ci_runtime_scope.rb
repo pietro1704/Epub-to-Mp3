@@ -460,7 +460,7 @@ end
     release = YAML.load_file(File.join(root, '.github/workflows/release-desktop.yml'))
     jobs = [codeql.fetch('jobs').fetch('java-kotlin'), release.fetch('jobs').fetch('android'),
             release.fetch('jobs').fetch('flutter-desktop')]
-    assert_match(/^flutter = "3\.41\.9"$/, File.read(File.join(root, 'mise.toml')))
+    assert_match(/^flutter = \{ version = "3\.41\.9", os = \["linux", "windows"\] \}$/, File.read(File.join(root, 'mise.toml')))
     jobs.each do |job|
       steps = job.fetch('steps')
       # The old pinned Flutter composite still expanded actions/cache@v5 before

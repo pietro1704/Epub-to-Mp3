@@ -1,9 +1,9 @@
 # Stage 1: Build React frontend
-FROM node:26-slim AS frontend-builder
+FROM node:26.13.0-slim AS frontend-builder
 
 WORKDIR /app/web
 COPY web/package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install --global npm@12.2.2 && npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 

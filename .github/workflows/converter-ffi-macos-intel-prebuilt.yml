@@ -29,16 +29,16 @@ jobs:
           test "$GITHUB_REF" = refs/heads/master || { echo '::error::This producer only runs from master.'; exit 1; }
 
       - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Select official Ruby 4.0.7
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: '4.0.7'
 
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
-          version: 2026.9.14
+          version: 2026.11.3
           install: false
 
       - name: Verify fixed Intel build environment
@@ -60,7 +60,7 @@ jobs:
         run: ruby scripts/intel_rust_cache_identity.rb --direct
 
       - name: Restore and retain compatible Intel Rust artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -97,7 +97,7 @@ jobs:
             --run-attempt "$GITHUB_RUN_ATTEMPT"
 
       - name: Upload verified Intel macOS package
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: converter-ffi-macos-intel-x86_64-v1
           path: ${{ runner.temp }}/converter-ffi-macos-intel-x86_64/

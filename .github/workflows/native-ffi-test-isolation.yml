@@ -19,7 +19,7 @@ jobs:
       MISE_ENABLE_TOOLS: python,rust,ruby
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Require the hosted Xcode toolchain
@@ -32,9 +32,9 @@ jobs:
           test -d "$DEVELOPER_DIR"
           xcodebuild -version | tee "$RUNNER_TEMP/ffi-isolation-xcode.txt"
           grep -Fx 'Xcode 16.4' "$RUNNER_TEMP/ffi-isolation-xcode.txt"
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
-          version: 2026.9.14
+          version: 2026.11.3
           install: false
       - name: Install scoped project tools
         env:
@@ -76,7 +76,7 @@ jobs:
           ' .reports/ffi-test-isolation/summary.json
       - name: Retain focused XCTest evidence
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-ffi-test-isolation
           path: .reports/ffi-test-isolation
