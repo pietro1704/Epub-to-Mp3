@@ -6,8 +6,8 @@ part of 'session_record.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-_$SessionRecordImpl _$$SessionRecordImplFromJson(Map<String, dynamic> json) =>
-    _$SessionRecordImpl(
+_SessionRecord _$SessionRecordFromJson(Map<String, dynamic> json) =>
+    _SessionRecord(
       timestamp: json['timestamp'] as String,
       bookTitle: json['book_title'] as String,
       engine: json['engine'] as String?,
@@ -17,7 +17,7 @@ _$SessionRecordImpl _$$SessionRecordImplFromJson(Map<String, dynamic> json) =>
       mode: json['mode'] as String?,
     );
 
-Map<String, dynamic> _$$SessionRecordImplToJson(_$SessionRecordImpl instance) =>
+Map<String, dynamic> _$SessionRecordToJson(_SessionRecord instance) =>
     <String, dynamic>{
       'timestamp': instance.timestamp,
       'book_title': instance.bookTitle,
@@ -28,15 +28,13 @@ Map<String, dynamic> _$$SessionRecordImplToJson(_$SessionRecordImpl instance) =>
       'mode': instance.mode,
     };
 
-_$SessionsResponseImpl _$$SessionsResponseImplFromJson(
-  Map<String, dynamic> json,
-) => _$SessionsResponseImpl(
-  sessions: (json['sessions'] as List<dynamic>)
-      .map((e) => SessionRecord.fromJson(e as Map<String, dynamic>))
-      .toList(),
-  count: (json['count'] as num).toInt(),
-);
+_SessionsResponse _$SessionsResponseFromJson(Map<String, dynamic> json) =>
+    _SessionsResponse(
+      sessions: (json['sessions'] as List<dynamic>)
+          .map((e) => SessionRecord.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      count: (json['count'] as num).toInt(),
+    );
 
-Map<String, dynamic> _$$SessionsResponseImplToJson(
-  _$SessionsResponseImpl instance,
-) => <String, dynamic>{'sessions': instance.sessions, 'count': instance.count};
+Map<String, dynamic> _$SessionsResponseToJson(_SessionsResponse instance) =>
+    <String, dynamic>{'sessions': instance.sessions, 'count': instance.count};

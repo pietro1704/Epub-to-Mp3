@@ -7,7 +7,7 @@ part 'session_record.g.dart';
 /// `GET /api/sessions` response model.
 /// Wire format is snake_case here (legacy log entries).
 @freezed
-class SessionRecord with _$SessionRecord {
+abstract class SessionRecord with _$SessionRecord {
   const SessionRecord._();
   const factory SessionRecord({
     required String timestamp,
@@ -26,7 +26,7 @@ class SessionRecord with _$SessionRecord {
 }
 
 @freezed
-class SessionsResponse with _$SessionsResponse {
+abstract class SessionsResponse with _$SessionsResponse {
   const factory SessionsResponse({
     required List<SessionRecord> sessions,
     required int count,

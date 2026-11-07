@@ -21,7 +21,7 @@ enum HighlightColor {
 }
 
 @unfreezed
-class Bookmark with _$Bookmark {
+abstract class Bookmark with _$Bookmark {
   Bookmark._();
 
   factory Bookmark({

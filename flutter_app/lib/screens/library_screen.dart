@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/book_entity.dart';
@@ -34,14 +35,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _searchQuery = '';
 
   Future<void> _pickAndImport(BuildContext context, LibraryStore store) async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['epub', 'pdf'],
-      allowMultiple: true,
     );
-    if (result == null || result.files.isEmpty) return;
+    if (result.isEmpty) return;
 
-    for (final file in result.files) {
+    for (final file in result) {
       final path = file.path;
       if (path == null) continue;
       try {

@@ -150,8 +150,8 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     final t = AppLocalizations.of(context)!;
     final store = ref.read(bookmarkStoreProvider);
     final snapshot =
-        ref.read(jobStreamProvider(widget.jobId)).valueOrNull ??
-        ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
+        ref.read(jobStreamProvider(widget.jobId)).value ??
+        ref.read(jobSnapshotProvider(widget.jobId)).value;
     final chapters = snapshot?.playableChapters ?? [];
     final chTitle = _currentChapterIndex < chapters.length
         ? chapters[_currentChapterIndex].displayTitle
@@ -210,8 +210,8 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
             // tries EPUB first, then falls back, returning the
             // playable-axis position the audio queue should land on.
             final snap =
-                ref.read(jobStreamProvider(widget.jobId)).valueOrNull ??
-                ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
+                ref.read(jobStreamProvider(widget.jobId)).value ??
+                ref.read(jobSnapshotProvider(widget.jobId)).value;
             final router = BookmarkAxisRouter(
               playableChapters: snap?.playableChapters ?? const [],
             );
@@ -264,7 +264,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     // provides live updates; the FutureProvider gives us the first load.
     final initialJob = ref.watch(jobSnapshotProvider(widget.jobId));
     final streamJob = ref.watch(jobStreamProvider(widget.jobId));
-    final job = streamJob.valueOrNull != null ? streamJob : initialJob;
+    final job = streamJob.value != null ? streamJob : initialJob;
 
     final fulltext = ref.watch(fulltextProvider(widget.jobId));
     final settings = ref.watch(settingsProvider);
@@ -273,7 +273,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
       custom: settings.readerCustomColors,
     );
 
-    final snapshot = job.valueOrNull;
+    final snapshot = job.value;
     final hasZip = snapshot?.outputs?.any((o) => o.isZip) ?? false;
 
     // Re-prime the sentence-sync engine whenever the EPUB text or the
@@ -282,7 +282,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     // syncEngineProvider (not ref.read) is what catches a settings
     // change that rebuilds the engine — the coordinator then rebinds
     // and reloads instead of writing into a disposed stream.
-    final ft = fulltext.valueOrNull;
+    final ft = fulltext.value;
     if (ft != null) {
       final engine = ref.watch(syncEngineProvider(widget.jobId));
       _sentenceSync ??= SentenceSyncCoordinator(engine);
@@ -366,7 +366,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
             )
           : null,
       drawer: TocDrawer(
-        fulltext: fulltext.valueOrNull,
+        fulltext: fulltext.value,
         snapshot: snapshot,
         currentIndex: TocNavigationCoordinator.highlightEpubIndex(
           currentPlayableIndex: _currentChapterIndex,
@@ -409,7 +409,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
           ),
           if (_searchVisible)
             ReaderSearchOverlay(
-              chapters: fulltext.valueOrNull?.chapters ?? const [],
+              chapters: fulltext.value?.chapters ?? const [],
               onJumpToChapter: (epubIdx) {
                 // Search overlay emits FulltextChapter.index (EPUB axis).
                 // Translate to the playable axis the rest of the screen
@@ -480,7 +480,7 @@ class _Reader extends ConsumerWidget {
           spans: chapter.splitSentences(),
           currentSentenceId: ref
               .watch(currentSentenceProvider(jobId))
-              .valueOrNull,
+              .value,
           onCenterTap: onCenterTap,
         );
       },

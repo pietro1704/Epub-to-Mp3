@@ -32,7 +32,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     final spans = widget.chapter.splitSentences();
     final activeId = ref
         .watch(currentSentenceProvider(widget.jobId))
-        .valueOrNull;
+        .value;
     final bg = ReaderThemeColors.background(
       settings.readerTheme,
       custom: settings.readerCustomColors,

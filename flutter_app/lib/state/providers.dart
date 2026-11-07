@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
@@ -294,12 +295,7 @@ final currentlyReadingBookIdProvider =
 
 /// The book whose audio is actively playing/paused. Ephemeral (not persisted).
 final StateProvider<String?> currentlyPlayingBookIdProvider =
-    StateProvider<String?>((ref) {
-      ref.listen<String?>(currentlyReadingBookIdProvider, (_, next) {
-        ref.read(currentlyPlayingBookIdProvider.notifier).state = next;
-      });
-      return ref.read(currentlyReadingBookIdProvider);
-    });
+    StateProvider<String?>((ref) => ref.watch(currentlyReadingBookIdProvider));
 
 /// Starts local conversion when the persistent player is pressed before the
 /// book has any playable audio queued.

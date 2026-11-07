@@ -65,8 +65,8 @@ class BackgroundAudioMetadataMapper {
 class BackgroundAudioHandler extends BaseAudioHandler {
   BackgroundAudioHandler(
     this.player, {
-    WidgetPlaybackSnapshotStore? snapshotStore,
-  }) : _snapshotStore = snapshotStore {
+    this._snapshotStore,
+  }) {
     _subscriptions.add(player.phases.listen((_) => _publishState()));
     _subscriptions.add(player.position.listen((_) => _publishState()));
     _subscriptions.add(player.currentIndex.listen((_) => _publishState()));

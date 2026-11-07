@@ -14,9 +14,9 @@ import '../models/bookmark.dart';
 
 class BookmarkStore extends ChangeNotifier {
   BookmarkStore({
-    required SharedPreferences prefs,
+    required this._prefs,
     this.storageKey = 'bookmarks.v1',
-  }) : _prefs = prefs {
+  }) {
     _load();
   }
 

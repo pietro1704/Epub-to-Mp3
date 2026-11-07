@@ -994,10 +994,16 @@ abstract class AppLocalizations {
   /// **'None'**
   String get ttsNoSecondary;
 
-  /// Installed system speech used when the primary provider is unavailable.
+  /// No description provided for @ttsSystemOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'System voice · Offline fallback'**
   String get ttsSystemOffline;
 
-  /// Explicit adoption of the app's current recommended voice policy.
+  /// No description provided for @ttsUseRecommendedDefaults.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Faber with system voice fallback'**
   String get ttsUseRecommendedDefaults;
 
   /// No description provided for @ttsAllowOnlineSecondary.

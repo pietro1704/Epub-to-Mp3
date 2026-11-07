@@ -11,9 +11,8 @@ abstract interface class ConversionLogSource {
 }
 
 class EmbeddedConversionLogSource implements ConversionLogSource {
-  EmbeddedConversionLogSource({DesktopTtsModelAdapter? desktop, MethodChannel? channel})
-      : _desktop = desktop,
-        _channel = channel ?? const MethodChannel('epub_to_mp3/embedded_converter');
+  EmbeddedConversionLogSource({this._desktop, MethodChannel? channel})
+      : _channel = channel ?? const MethodChannel('epub_to_mp3/embedded_converter');
 
   final DesktopTtsModelAdapter? _desktop;
   final MethodChannel _channel;

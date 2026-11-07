@@ -7,7 +7,7 @@ part 'job_snapshot.g.dart';
 
 /// Mirrors the backend job status. Wire format is camelCase.
 @freezed
-class ChapterProgress with _$ChapterProgress {
+abstract class ChapterProgress with _$ChapterProgress {
   const ChapterProgress._();
   const factory ChapterProgress({
     required int index,
@@ -37,7 +37,7 @@ class ChapterProgress with _$ChapterProgress {
 }
 
 @freezed
-class OutputAsset with _$OutputAsset {
+abstract class OutputAsset with _$OutputAsset {
   const OutputAsset._();
   const factory OutputAsset({
     required String name,
@@ -53,7 +53,7 @@ class OutputAsset with _$OutputAsset {
 }
 
 @freezed
-class JobSnapshot with _$JobSnapshot {
+abstract class JobSnapshot with _$JobSnapshot {
   const JobSnapshot._();
   const factory JobSnapshot({
     required String jobId,
