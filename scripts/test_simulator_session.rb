@@ -47,9 +47,11 @@ class SimulatorSessionTest < Minitest::Test
   end
 
   def run_session(**options)
+    # Non-timeout cases must tolerate CI scheduling and report writes.
+    # Timeout cases select their short deadline explicitly.
     supervisor = SimulatorSession::Supervisor.new(backend: @backend, sampler: -> { @sample },
       report: @report, heartbeat: @reader, lease_path: File.join(@dir, "lock"),
-      baseline_seconds: 0, interval: 0.01, journey_seconds: 0, session_seconds: 1, boot_seconds: 0.02, **options)
+      baseline_seconds: 0, interval: 0.01, journey_seconds: 0, session_seconds: 1, boot_seconds: 1, **options)
     supervisor.run
     [supervisor, JSON.parse(File.read(@report))]
   end
@@ -105,7 +107,7 @@ class SimulatorSessionTest < Minitest::Test
     File.delete(@report)
     @backend = Backend.new
     @backend.pending = true
-    _, report = run_session
+    _, report = run_session(boot_seconds: 0.02)
     assert_match(/deadline/, report["error"])
     assert_equal [:boot, :cleanup], @backend.calls
   end
