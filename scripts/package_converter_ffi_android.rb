@@ -83,7 +83,7 @@ if (apk_index = ARGV.index('--apk'))
   native_names = ['libconverter_ffi.so', *dependencies.keys].map { |name| "lib/arm64-v8a/#{name}" }
   missing = [*native_names, *asset_names] - entries
   abort "APK omits native TTS inputs: #{missing.join(', ')}" unless missing.empty?
-  abort 'APK advertises an unsupported native ABI' if entries.any? { |entry| entry.start_with?('lib/') && !entry.start_with?('lib/arm64-v8a/') }
+  AndroidJniExports.verify_apk_abis!(entries)
   inspected_assets = %w[phontab phondata phonindex lang/roa/pt]
   Dir.mktmpdir('android-apk-tts-') do |directory|
     selected = [*native_names, *inspected_assets.map { |name| "assets/espeak-ng-data/#{name}" }]
