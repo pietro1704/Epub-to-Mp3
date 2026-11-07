@@ -1,13 +1,13 @@
 plugins {
     id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // AGP provides built-in Kotlin; apply Flutter after the Android plugin.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-    testImplementation(kotlin("test"))
+    // Built-in Kotlin needs the JVM test backend explicitly selected.
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.4.0")
 }
 
 android {
@@ -28,10 +28,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
-
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.pietrocode.epubtomp3.flutter_app"
@@ -42,7 +38,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -50,14 +48,6 @@ android {
             // Keep device verification separate when the installed app has another signer.
             if (providers.environmentVariable("EPUB2MP3_ANDROID_VERIFICATION").orNull == "1") {
                 applicationIdSuffix = ".verification"
-            }
-        }
-        // Flutter supplies ABI filters per build type, overriding defaultConfig.
-        // Match the packaged Rust runtime for every APK entry point.
-        all {
-            ndk {
-                abiFilters.clear()
-                abiFilters += listOf("arm64-v8a")
             }
         }
         release {
@@ -69,6 +59,12 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 

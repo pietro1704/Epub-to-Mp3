@@ -177,6 +177,43 @@ class NativeFaberEntrypointsTest < Minitest::Test
     File.open(@lock, 'a+') { |file| assert file.flock(File::LOCK_EX | File::LOCK_NB) }
   end
 
+  def stub_android_packager
+    File.write(File.join(@scripts, 'package_converter_ffi_android.rb'), <<~RUBY)
+      require 'json'
+      require_relative 'native_job'
+      NativeJob.lease(NativeJob::LOCK_PATH)
+      File.open(ENV.fetch('FIXTURE_EVENTS'), 'a') do |file|
+        file.puts(JSON.generate({ argv: ['packager', *ARGV], cwd: Dir.pwd }))
+      end
+    RUBY
+  end
+
+  def test_android_build_regenerates_plugin_registration_for_each_build_mode
+    stub_android_packager
+    %w[debug release].each do |mode|
+      File.unlink(@events) if File.exist?(@events)
+      output, error, status = Open3.capture3(@environment.merge('FIXTURE_CHILD_EXIT' => '0'),
+        RbConfig.ruby, File.join(@scripts, 'build_flutter_android.rb'), mode, chdir: @directory)
+      assert status.success?, "#{output}#{error}"
+      events = File.readlines(@events).map { |line| JSON.parse(line).fetch('argv') }
+      assert_equal 3, events.length
+      assert_equal %w[packager --audit], events.first
+      # Flutter must refresh platform tooling with the actual build mode;
+      # a separate pub get plus --no-pub retains debug-only plugin registration.
+      assert_equal ['flutter', 'build', 'apk', "--#{mode}", '--target-platform', 'android-arm64'], events[1]
+      assert_equal ['packager', '--audit', '--apk', File.join(@directory, 'flutter_app/build/app/outputs/flutter-apk', "app-#{mode}.apk")], events.last
+    end
+  end
+
+  def test_failed_android_build_preserves_status_and_skips_final_apk_audit
+    stub_android_packager
+    output, error, status = invoke('build_flutter_android.rb')
+    assert_equal 23, status.exitstatus, "#{output}#{error}"
+    events = File.readlines(@events).map { |line| JSON.parse(line).fetch('argv') }
+    assert_equal 2, events.length
+    assert_equal %w[flutter build apk --debug --target-platform android-arm64], events.last
+  end
+
   def test_actual_native_task_bodies_refuse_before_preparation
     %w[converter-ffi:build native-tts:rust:test tts:web:verify converter-ffi:ios-device native-tts:android:test onnxruntime:host].each do |name|
       metadata, error, status = Open3.capture3('mise', 'tasks', 'info', name, '--json', chdir: ROOT)

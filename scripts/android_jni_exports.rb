@@ -24,4 +24,14 @@ module AndroidJniExports
 
     true
   end
+
+  def self.verify_apk_abis!(entries)
+    unexpected = entries.filter_map do |entry|
+      match = entry.match(%r{\Alib/([^/]+)/})
+      match[1] if match && match[1] != 'arm64-v8a'
+    end.uniq.sort
+    raise "APK advertises an unsupported native ABI: #{unexpected.join(', ')}" unless unexpected.empty?
+
+    true
+  end
 end

@@ -31,6 +31,17 @@ class AndroidJniExportsTest < Minitest::Test
     end
   end
 
+  def test_apk_abi_audit_accepts_arm64_and_reports_each_incompatible_plugin_payload
+    entries = %w[lib/ lib/arm64-v8a/libconverter_ffi.so lib/arm64-v8a/libflutter.so assets/espeak-ng-data/phontab]
+    assert AndroidJniExports.verify_apk_abis!(entries)
+    incompatible = %w[lib/armeabi-v7a/libdartjni.so lib/x86_64/libdatastore_shared_counter.so lib/x86_64/libdartjni.so]
+    error = assert_raises(RuntimeError) { AndroidJniExports.verify_apk_abis!(entries + incompatible) }
+    assert_equal 'APK advertises an unsupported native ABI: armeabi-v7a, x86_64', error.message
+    incompatible.each do |entry|
+      assert_raises(RuntimeError) { AndroidJniExports.verify_apk_abis!(entries + [entry]) }
+    end
+  end
+
   def test_abi_audit_runs_where_android_artifact_is_actually_built
     root = File.expand_path('..', __dir__)
     ffi = YAML.load_file(File.join(root, '.github/workflows/converter-ffi.yml'))

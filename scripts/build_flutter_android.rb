@@ -14,8 +14,9 @@ Dir.chdir(File.join(root, 'flutter_app')) do
   if ARGV.include?('--clean')
     exit($?.exitstatus || 1) unless system('mise', 'exec', '--', 'flutter', 'clean', **NativeJob.child_options)
   end
-  exit($?.exitstatus || 1) unless system('mise', 'exec', '--', 'flutter', 'pub', 'get', **NativeJob.child_options)
-  command = ['mise', 'exec', '--', 'flutter', 'build', 'apk', "--#{mode}", '--target-platform', 'android-arm64', '--no-pub']
+  # Flutter regenerates native plugin registration for the selected build mode.
+  # --no-pub also skips that step, leaving dev-only plugins in release registrants.
+  command = ['mise', 'exec', '--', 'flutter', 'build', 'apk', "--#{mode}", '--target-platform', 'android-arm64']
   command << "--build-number=#{ENV['FLUTTER_BUILD_NUMBER']}" if ENV['FLUTTER_BUILD_NUMBER']
   exit($?.exitstatus || 1) unless system(*command, **NativeJob.child_options)
 end

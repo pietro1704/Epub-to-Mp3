@@ -144,6 +144,18 @@ acceptance is implied by the configuration checks.
   or Dart execution was needed on Mac. Local host preflight passed all 28 suites.
   Android toolchain migration and actual Linux application acceptance remain
   separate Arch checks; these results cover analysis and unit/widget behavior.
+- The Android build graph uses Gradle 9.3.1 with its official distribution
+  checksum, AGP 9.1.1 and Kotlin 2.4.0 with AGP's built-in Kotlin support.
+  These follow Flutter 3.47.9's
+  tested template versions and the compatible AGP patch series. Newer upstream
+  Gradle 9.9.0, AGP 9.5.1 and Kotlin 2.4.21 exceed that SDK's known/tested
+  compatibility bounds. Keep the legacy AGP DSL required by Flutter, remove the
+  app's external Kotlin plugin and enable built-in Kotlin as its migration guide
+  requires. Disable Flutter's default ABI expansion and specify ARM64 in
+  `defaultConfig`; build-type filters alone admit transitive x86/ARM32 libraries.
+  Select `kotlin-test-junit` explicitly for JVM test annotations. Let `flutter
+  build` regenerate platform tooling for each build mode: `--no-pub` also skips
+  that step and retains debug-only plugin registration in Release builds.
 - Preserve Xcode 26.3 for iPhone 16e and Xcode 16.4 for the existing Mac/legacy
   routes. No Xcode selection, Simulator runtime or physical-device action is
   part of this Web/host update.
@@ -173,6 +185,10 @@ after their replacement passes its gates and cross-project/process use is checke
   [pub.dev API](https://pub.dev/help/api)
 - [Android SDK repository](https://dl.google.com/android/repository/repository2-1.xml)
   and [Gradle releases](https://services.gradle.org/versions/current)
+- [Flutter 3.47.9 Android toolchain bounds](https://github.com/flutter/flutter/blob/3.47.9/packages/flutter_tools/lib/src/android/gradle_utils.dart),
+  [ABI configuration](https://github.com/flutter/flutter/blob/3.47.9/packages/flutter_tools/gradle/src/main/kotlin/FlutterPlugin.kt),
+  [built-in Kotlin migration](https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers),
+  [AGP releases](https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/maven-metadata.xml)
 
 This audit copies version metadata and links only, not third-party implementation
 code. Upstream projects and their distributed binaries retain their own licenses.
