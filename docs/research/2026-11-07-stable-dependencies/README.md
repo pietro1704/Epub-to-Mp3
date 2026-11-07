@@ -49,6 +49,26 @@ Flutter is scoped to Linux and Windows. Java and Android SDK remain Linux-only.
 The Apple project inherits the root Codex pin. No Flutter/Android installation
 is needed for these Mac host/Web commands.
 
+## Ruby dependency delivery
+
+| Surface | Before | Selected |
+| --- | --- | --- |
+| Rails gateway | 8.1.4 | 8.1.4.1 |
+| Minitest | 6.0.6 | 6.1.0 |
+| Client Prism | 1.9.0 | 2.1.0, including published Intel platform gems |
+| Bundler lockfile version | 4.0.20 | 4.0.24 |
+
+Both lockfiles retain checksums and their supported platforms. The client's
+declared Ruby minimum is corrected to 3.2, required by Minitest 6 and Bundler 4;
+verification uses the retained Ruby 4.0.7. The Rails dependency graph retains
+Prism 1.9.0 because `rubocop-ast` 1.50.0 requires `prism ~> 1.7`.
+
+Client tests passed on Mac and Arch (two cases each); Rails request and sanitizer
+tests passed on Arch (six cases, 15 assertions). Arch used an isolated frozen
+bundle and all three manifest/lockfile hashes matched the delivery inputs.
+Local host preflight passed all 28 suites. No Ruby tool or native gem was compiled
+on Mac for this delivery; gateway dependency installation and tests ran on Arch.
+
 ## Compatibility holds and follow-up gates
 
 - TypeScript 7.0.2 was evaluated. Both installed TypeScript ESLint packages

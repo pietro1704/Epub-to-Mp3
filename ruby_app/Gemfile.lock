@@ -2,22 +2,34 @@ GEM
   remote: https://rubygems.org/
   specs:
     drb (2.2.3)
-    minitest (6.0.6)
+    minitest (6.1.0)
       drb (~> 2.0)
-      prism (~> 1.5)
-    prism (1.9.0)
+      prism (>= 1.5, < 3)
+    prism (2.1.0)
+    prism (2.1.0-x86_64-darwin)
+    prism (2.1.0-x86_64-linux-gnu)
     webrick (1.9.2)
 
 PLATFORMS
   ruby
+  x86_64-darwin
   x86_64-linux
 
 DEPENDENCIES
   minitest
   webrick
 
+CHECKSUMS
+  bundler (4.0.24) sha256=16ca64e20816a0cf151a948fb141d788602996d2b4d73577b74388fe84fa98bc
+  drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
+  minitest (6.1.0) sha256=ff373595aa8888631e8a5463986a76b3845346ae6d7fa46e139c1633d418076e
+  prism (2.1.0) sha256=1c0a7c6dea0e93183390fb123f007564dbe663198e2f86ad87204151147601f3
+  prism (2.1.0-x86_64-darwin) sha256=6c645d8e6afc742956c7518220ce5106367727c4d9980ac9ab386d55004ddab4
+  prism (2.1.0-x86_64-linux-gnu) sha256=b2b647afce09551e650b8bb3e2fc91d7d73d392a09534ca307ec0d619c33bfd4
+  webrick (1.9.2) sha256=beb4a15fc474defed24a3bda4ffd88a490d517c9e4e6118c3edce59e45864131
+
 RUBY VERSION
-  ruby 2.6.10p210
+  ruby 4.0.7
 
 BUNDLED WITH
-  4.0.20
+  4.0.24
