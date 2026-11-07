@@ -115,7 +115,7 @@ jobs:
         if: needs.changes.outputs.contracts == 'true'
         uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
-          ruby-version: "4.0"
+          ruby-version: "4.0.7"
           bundler-cache: false
 
       - name: Install host test dependency
@@ -189,7 +189,7 @@ jobs:
 
       - name: Install lightweight legacy validation dependencies
         if: inputs.full_validation != true
-        run: mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.6.9
+        run: mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.17.4
       - name: Resolve and verify the current pandas requirement
         if: inputs.full_validation != true
         run: |
@@ -208,7 +208,7 @@ jobs:
         run: timeout --signal=TERM --kill-after=10s 60s mise exec -- python -m pytest -v --tb=short --maxfail=1 -o faulthandler_timeout=10 python_app/tests/test_stream_http_observation.py
       - name: Verify current documentation and publication contracts
         if: inputs.full_validation != true
-        run: mise exec -- python -m pytest --noconftest -q python_app/tests/test_engine_documentation_contract.py python_app/tests/test_sync_hf_workflow.py
+        run: mise exec -- python -m pytest --noconftest -q python_app/tests/test_engine_documentation_contract.py python_app/tests/test_sync_hf_workflow.py python_app/tests/test_mise_python_environment.py
 
       - name: Cache pip
         if: inputs.full_validation == true
@@ -223,8 +223,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .venv
-          key: python-venv-${{ runner.os }}-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
-          restore-keys: python-venv-${{ runner.os }}-
+          key: python-venv-${{ runner.os }}-3.14.10-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
+          restore-keys: python-venv-${{ runner.os }}-3.14.10-
 
       - name: Install system dependencies
         if: inputs.full_validation == true
@@ -236,8 +236,9 @@ jobs:
           PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: |
-          mise exec -- python -m venv .venv
-          .venv/bin/python -m pip install -r requirements.txt -r python_app/requirements.txt ruff
+          "$(mise where python)/bin/python" -m venv .venv
+          test "$(mise exec -- python --version)" = 'Python 3.14.10'
+          .venv/bin/python -m pip install -r requirements.txt -r python_app/requirements.txt ruff==0.17.4
           bash scripts/install_piper_binary.sh
 
       - name: Bootstrap iOS embedded Python vendor
@@ -288,6 +289,33 @@ jobs:
           mise exec -- python scripts/external_worker_pool.py web/public/sample.epub \
             --workers 1 \
             --forward-args "--engine piper --model $PIPER_MODEL_DIR/pt_BR-faber-medium.onnx --fallback-engine none --chapter 1 --no-parallel --force-reprocess --output-dir $RUNNER_TEMP/legacy-piper-pool-smoke --stage-pipeline"
+
+      - name: Set up the explicit optional Coqui interpreter
+        if: inputs.full_validation == true
+        id: coqui-python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11.18'
+
+      - name: Verify optional Coqui numerical ABI and dependency resolution
+        if: inputs.full_validation == true
+        env:
+          COQUI_PYTHON: ${{ steps.coqui-python.outputs.python-path }}
+        run: |
+          "$COQUI_PYTHON" -m venv "$RUNNER_TEMP/coqui-compatibility"
+          coqui_python="$RUNNER_TEMP/coqui-compatibility/bin/python"
+          "$coqui_python" -m pip install --only-binary=:all: 'numpy>=1.26.4,<2' 'pandas>=1.5.3,<2' numba==0.68.1 llvmlite==0.50.0
+          "$coqui_python" -c 'import numpy, pandas, numba, llvmlite; print(numpy.__version__, pandas.__version__, numba.__version__, llvmlite.__version__)'
+          mkdir -p .reports/python-compatibility
+          "$coqui_python" -m pip install --dry-run --report .reports/python-compatibility/coqui-resolution.json -r requirements-coqui.txt
+
+      - name: Retain optional Python compatibility evidence
+        if: always() && inputs.full_validation == true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-compatibility-${{ github.sha }}
+          path: .reports/python-compatibility/
+          if-no-files-found: warn
 
   rust:
     if: needs.changes.outputs.rust == 'true'

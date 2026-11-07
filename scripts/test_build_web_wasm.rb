@@ -27,9 +27,9 @@ class BuildWebWasmTest < Minitest::Test
         exit "${FIXTURE_VERSION_STATUS:-0}"
       fi
       echo "$*" >> "$FIXTURE_EVENTS"
-      if [[ "$*" == 'rustup which --toolchain stable rustc' ]]; then
+      if [[ "$*" == 'rustup which rustc' ]]; then
         echo /fixture/rustc
-      elif [[ "$1" == rustup ]]; then
+      elif [[ "$1" == cargo ]]; then
         exit "${FIXTURE_BUILD_STATUS:-0}"
       elif [[ "$1" == wasm-bindgen ]]; then
         for suffix in js d.ts _bg.wasm; do

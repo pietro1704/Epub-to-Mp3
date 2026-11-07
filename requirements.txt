@@ -8,7 +8,7 @@
 # pulled a typosquat package onto users following the official
 # install instructions. Exclude that exact version and floor at the
 # last clean release (0.136.1).
-fastapi!=0.136.3,>=0.162.0
+fastapi!=0.136.3,>=0.162.1
 uvicorn[standard]>=0.54.0
 python-multipart>=0.0.33
 
@@ -19,7 +19,7 @@ edge-tts>=7.3.1
 # torch and torchaudio are NOT listed here: they are optional GPU-monitoring
 # dependencies and are not required for the default Edge-TTS + Piper workflow.
 soundfile>=0.14.0
-pandas>=3.1.0,<4.0.0
+pandas>=3.1.1,<4.0.0
 
 # Offline fallback (fast, small)
 piper-tts>=1.8.0
@@ -27,7 +27,7 @@ piper-tts>=1.8.0
 # Ebook Processing
 ebooklib>=0.21
 beautifulsoup4>=4.15.0
-pypdf>=6.21.4  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
+pypdf>=7.0.0  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
 lxml>=6.1.3
 mobi>=0.4.1  # MOBI/AZW3 unpacking — server/CLI only, never embedded on-device
 rarfile>=4.5  # CBR visual reading — server/CLI only, requires a RAR backend
@@ -36,14 +36,14 @@ rarfile>=4.5  # CBR visual reading — server/CLI only, requires a RAR backend
 langdetect>=1.0.9
 
 # Audio Processing
-static-ffmpeg
+static-ffmpeg>=3.0
 mutagen>=1.48.1
 
 # Audio Verification (speech-to-text)
 faster-whisper>=1.2.1
 
 # Data/Validation
-pydantic>=2.14.2
+pydantic>=2.14.3
 numpy>=2.5.4,<3.0.0
 
 # HTTP/Async
@@ -52,7 +52,7 @@ aiofiles>=25.1.0
 httpx>=0.28.1
 
 # Progress
-tqdm
+tqdm>=4.70.1
 
 # System monitoring
 psutil>=7.2.2
@@ -65,15 +65,15 @@ flask>=3.1.3        # CVE-2026-27205 (via TTS)
 # installed; this avoids pulling the vulnerable optional model-artifact APIs.
 pygments>=2.21.0    # CVE-2026-4539 (via rich/pytest)
 requests>=2.34.2    # CVE-2026-25645 (via huggingface-hub, transformers)
-filelock>=4.2.6    # CVE-2026-22701 (via huggingface-hub, torch)
+filelock>=4.2.9    # CVE-2026-22701 (via huggingface-hub, torch)
 jaraco-context>=6.1.2  # CVE-2026-23949 (via keyring)
 setuptools>=84.2.1  # PYSEC-2022-43012, PYSEC-2025-49, CVE-2024-6345
-virtualenv>=21.15.2 # CVE-2026-22702 (via pre-commit)
+virtualenv>=21.15.6 # CVE-2026-22702 (via pre-commit)
 
 # Additional security pins surfaced by `mise run audit` (OSV)
-python-dotenv>=1.2.3  # CVE-2026-28684
+python-dotenv>=1.2.4  # CVE-2026-28684
 python-multipart>=0.0.33  # CVE-2026-40347 (already pinned via direct dep above; redundant safeguard)
 
 # Testing (dev only)
 pytest>=9.2.0  # CVE-2025-71176
-pytest-asyncio
+pytest-asyncio>=1.4.1.post1

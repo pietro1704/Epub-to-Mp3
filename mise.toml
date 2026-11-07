@@ -1,5 +1,5 @@
 [tools]
-python = "3.12.10"
+python = "3.14.10"
 # Latest stable Node accepted by Vite, ESLint, Vitest and jsdom.
 node = "26.13.0"
 npm = "12.2.2"
@@ -7,8 +7,8 @@ npm = "12.2.2"
 # Update from the repository root with: mise use --pin npm:@openai/codex@latest
 # Do not use Codex's global npm/pnpm updater for this mise-owned installation.
 "npm:@openai/codex" = "0.167.0"
-# Runtimes required by native conversion and CocoaPods.
-rust = "stable"
+# Match the published compiler, target libraries and build receipts.
+rust = "1.99.1"
 ruby = "4.0.7"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "aqua:orhun/git-cliff" = "2.14.2"
@@ -26,6 +26,13 @@ cocoapods = "1.16.2"
 java = { version = "21.0.2", os = ["linux"] }
 android-sdk = { version = "11.0", os = ["linux"] }
 ninja = "1.13.2"
+
+[settings]
+# Provision project tools only from published binaries.
+all_compile = false
+node.compile = false
+python.compile = false
+ruby.compile = false
 
 [env]
 # Development uses Xcode 16 without changing the system selection used by Homebrew.
@@ -240,10 +247,10 @@ env -u SDKROOT -u IPHONEOS_DEPLOYMENT_TARGET -u CARGO_BUILD_TARGET \
   CC="$HOST_CLANG" CXX="$HOST_CLANGXX" CFLAGS="-isysroot $MACOS_SDK" CXXFLAGS="-isysroot $MACOS_SDK" \
   CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" \
   CC_aarch64_apple_darwin="$HOST_CLANG" CFLAGS_aarch64_apple_darwin="-isysroot $MACOS_SDK" \
-  RUSTC="$(mise exec -- rustup which --toolchain stable rustc)" \
+  RUSTC="$(mise exec -- rustup which rustc)" \
   mise exec -- cargo build -p espeak-rs-sys --features compile-espeak-intonations \
   --target-dir "$MISE_PROJECT_ROOT/target/espeak-data" --jobs 1 || exit $?
-MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path) && HOST_CLANG=$(xcrun --sdk macosx --find clang) && SDK=$(xcrun --sdk iphoneos --show-sdk-path) && CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)") && CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh" && IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_darwin="$HOST_CLANG" CFLAGS_aarch64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" RUSTC=$(mise exec -- rustup which --toolchain stable rustc) BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" PATH="$CLANG_DIR:$PATH" mise exec -- cargo --config 'target.aarch64-apple-ios.linker="clang"' --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" build -p converter-ffi --release --features piper-runtime --target aarch64-apple-ios --jobs 1
+MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path) && HOST_CLANG=$(xcrun --sdk macosx --find clang) && SDK=$(xcrun --sdk iphoneos --show-sdk-path) && CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)") && CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh" && IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_darwin="$HOST_CLANG" CFLAGS_aarch64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" RUSTC=$(mise exec -- rustup which rustc) BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" PATH="$CLANG_DIR:$PATH" mise exec -- cargo --config 'target.aarch64-apple-ios.linker="clang"' --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" build -p converter-ffi --release --features piper-runtime --target aarch64-apple-ios --jobs 1
 NATIVE_BUILD
 '''
 
@@ -291,7 +298,7 @@ default: fputs("Unsupported Rust build profile.\n", stderr); exit(2)
 }
 let compiler = Process()
 compiler.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-compiler.arguments = ["mise", "exec", "--", "rustup", "which", "--toolchain", "stable", "rustc"]
+compiler.arguments = ["mise", "exec", "--", "rustup", "which", "rustc"]
 let compilerPipe = Pipe(); compiler.standardOutput = compilerPipe
 try compiler.run()
 let compilerPath = String(data: compilerPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

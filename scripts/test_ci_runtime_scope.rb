@@ -270,7 +270,7 @@ class CiRuntimeScopeTest < Minitest::Test
       assert_equal 'inputs.full_validation == true', python_steps.find { |step| step['name'] == name }.fetch('if'), name
     end
     lite = python_steps.find { |step| step['name'] == 'Install lightweight legacy validation dependencies' }
-    assert_equal "mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.6.9", lite.fetch('run')
+    assert_equal "mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.17.4", lite.fetch('run')
     web = @workflow.fetch('jobs').fetch('web')
     %w[Install\ Rust\ WASM\ target Build\ direct\ Rust\ WASM\ adapter].each do |name|
       assert_equal "needs.changes.outputs.wasm == 'true'", web.fetch('steps').find { |step| step['name'] == name }.fetch('if')

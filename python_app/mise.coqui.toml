@@ -1,0 +1,6 @@
+[tools]
+# TTS 0.22 requires Python below 3.12; use the latest published 3.11 binary.
+python = "3.11.18"
+
+[env]
+_.python.venv = { path = ".venv-coqui", create = true }
