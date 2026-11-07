@@ -101,7 +101,7 @@ export class BrowserJobExecution {
           try {
             job.session.provider_failed();
           } catch (policyError) {
-            throw new Error(`${String(primaryError)}; ${String(policyError)}`);
+            throw new Error(`${String(primaryError)}; ${String(policyError)}`, { cause: policyError });
           }
           const fallback = JSON.parse(job.session.next_segment()) as BrowserSegment;
           try {

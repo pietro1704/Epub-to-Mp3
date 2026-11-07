@@ -1,29 +1,29 @@
 [tools]
 python = "3.12.10"
-# Node LTS for frontend (Vite 8.x requires >=20.19.0)
-node = "lts"
-npm = "latest"
+# Latest stable Node accepted by Vite, ESLint, Vitest and jsdom.
+node = "26.13.0"
+npm = "12.2.2"
 # Project-managed Codex CLI; invoke through mise independently of app installs.
-# Update from the repository root with: mise use --fuzzy npm:@openai/codex@latest
+# Update from the repository root with: mise use --pin npm:@openai/codex@latest
 # Do not use Codex's global npm/pnpm updater for this mise-owned installation.
-"npm:@openai/codex" = "latest"
-# Runtimes required by the cargo:git-cliff and cocoapods backends below.
+"npm:@openai/codex" = "0.167.0"
+# Runtimes required by native conversion and CocoaPods.
 rust = "stable"
 ruby = "4.0.7"
 # Changelog generator (conventional commits → CHANGELOG.md)
-"cargo:git-cliff" = "latest"
+"aqua:orhun/git-cliff" = "2.14.2"
 # WASM CLI schema must match wasm-bindgen in Cargo.lock; update both together.
-"cargo:wasm-bindgen-cli" = "0.2.129"
+"github:wasm-bindgen/wasm-bindgen" = "0.2.129"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
-flutter = "3.41.9"
+flutter = { version = "3.41.9", os = ["linux", "windows"] }
 # CocoaPods is used by the Capacitor iOS build (web/ → web/ios/App/),
 # NOT by Flutter — Flutter does not target iOS/macOS in this repo.
 cocoapods = "1.16.2"
 # Java + Android SDK for the Flutter Android target. android-sdk plugin
 # requires JAVA_HOME to be set; mise handles that when java is in [tools].
-java = "21.0.2"
+java = { version = "21.0.2", os = ["linux"] }
 android-sdk = { version = "11.0", os = ["linux"] }
-ninja = "latest"
+ninja = "1.13.2"
 
 [env]
 # Development uses Xcode 16 without changing the system selection used by Homebrew.

@@ -17,7 +17,7 @@ class MinitestBootstrapTest < Minitest::Test
       File.write(File.join(root, 'bin/minitest'), "#!/usr/bin/env ruby\nputs 'fixture'\n")
       spec = Gem::Specification.new do |gem|
         gem.name = 'minitest'
-        gem.version = '6.0.6'
+        gem.version = '6.1.0'
         gem.summary = 'Offline bootstrap fixture'
         gem.authors = ['Fixture']
         gem.files = ['bin/minitest']

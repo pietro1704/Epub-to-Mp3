@@ -65,10 +65,10 @@ jobs:
     env:
       MISE_ENABLE_TOOLS: python,rust,ruby
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
-          version: 2026.9.14
+          version: 2026.11.3
           install: false
       - run: mise install
       - name: Test Apple runtime packaging with owned process fixtures
@@ -85,7 +85,7 @@ jobs:
           done
       - name: Retain JNI test artifacts
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: faber-jni-contracts
           path: .reports/tts-preferences
@@ -100,7 +100,7 @@ jobs:
       MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
       ANDROID_VERIFICATION_MODE: full
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Enable and require hosted Linux KVM access
@@ -115,9 +115,9 @@ jobs:
             echo '::error::Hosted Android inference requires readable/writable /dev/kvm.'
             exit 1
           fi
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
-          version: 2026.9.14
+          version: 2026.11.3
           install: false
       - name: Install host build prerequisites
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config
@@ -177,7 +177,7 @@ jobs:
           mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --debug --target-platform android-arm64 --target integration_test/android_piper_inference_test.dart --dart-define="ANDROID_JOB_IDENTITY_ONLY=$identity_only"
           mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- ruby ../scripts/package_converter_ffi_android.rb --audit --apk "$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
       - name: Run actual Piper inference in the packaged ARM64 app
-        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
           target: google_apis
@@ -193,7 +193,7 @@ jobs:
           script: bash scripts/verify_android_piper_inference.sh "$ANDROID_VERIFICATION_MODE"
       - name: Retain APK, native identity and Android test results
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: faber-android-package
           path: |
@@ -257,7 +257,7 @@ jobs:
           '
       - name: Retain the physical-device fixture APK and build identity
         if: success() && steps.device-fixture-apk.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: faber-android-device-fixture
           path: .reports/android-device-fixture
@@ -265,7 +265,7 @@ jobs:
 
       - name: Retain the normal Android UI APK and build identity
         if: success() && steps.main-ui-apk.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: faber-android-ui
           path: .reports/android-ui
@@ -284,20 +284,20 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
       EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Require the canonical hosted Xcode 16.4 toolchain
         run: |
           test "$(uname -m)" = "$EXPECTED_ARCH"
           test -d "$DEVELOPER_DIR"
           xcodebuild -version | tee "$RUNNER_TEMP/faber-xcode-version.txt"
           grep -Fx 'Xcode 16.4' "$RUNNER_TEMP/faber-xcode-version.txt"
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
-          version: 2026.9.14
+          version: 2026.11.3
           install: false
       - name: Install official prebuilt Ruby for Intel
         if: matrix.arch == 'x86_64'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: '4.0.7'
           bundler-cache: false
@@ -350,7 +350,7 @@ jobs:
       - name: Restore Intel Rust build cache
         if: matrix.arch == 'x86_64' && !inputs.intel_prebuilt
         id: rust-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -383,7 +383,7 @@ jobs:
           cat .reports/tts-preferences/native-architectures.log
       - name: Save Intel Rust build cache
         if: success() && matrix.arch == 'x86_64' && !inputs.intel_prebuilt && steps.rust-cache.outputs.cache-hit != 'true' && steps.ffi-build.outcome == 'success' && steps.ffi-architecture.outcome == 'success'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -518,7 +518,7 @@ jobs:
           rm -f -- "$RUNNER_TEMP/faber-models/pt_BR-faber-medium.onnx" "$RUNNER_TEMP/faber-models/pt_BR-faber-medium.onnx.json"
       - name: Retain macOS XCTest evidence
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.macos_only == true && 'apple-app-gate' || 'faber-macos-prefs' }}-${{ matrix.arch }}
           path: .reports/tts-preferences

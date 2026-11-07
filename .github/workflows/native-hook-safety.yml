@@ -17,15 +17,15 @@ jobs:
       CARGO_BUILD_JOBS: '1'
       CMAKE_BUILD_PARALLEL_LEVEL: '1'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
-          version: 2026.9.14
+          version: 2026.11.3
           install: false
       - run: mise install python ruby rust
-      - run: mise exec -- gem install minitest --version 6.0.6 --no-document --bindir "$RUNNER_TEMP/minitest-bin"
+      - run: mise exec -- gem install minitest --version 6.1.0 --no-document --bindir "$RUNNER_TEMP/minitest-bin"
       - name: Verify real Mac filesystem, storage and native fixture contracts
         run: |
           mise exec -- ruby scripts/test_mac_build_budget.rb

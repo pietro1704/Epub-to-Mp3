@@ -1,0 +1,179 @@
+ecosystem	dependency	declared	latest_stable	disposition	primary_source
+crate	axum	0.8	0.8.9	shared runtime follow-up	https://crates.io/api/v1/crates/axum
+crate	bzip2	0.4	0.6.1	shared runtime follow-up	https://crates.io/api/v1/crates/bzip2
+crate	criterion	0.5	0.8.2	shared runtime follow-up	https://crates.io/api/v1/crates/criterion
+crate	edge-tts-rust	0.1.3	0.1.7	shared runtime follow-up	https://crates.io/api/v1/crates/edge-tts-rust
+crate	espeak-rs	0.2.0	0.2.0	shared runtime follow-up	https://crates.io/api/v1/crates/espeak-rs
+crate	futures-util	0.3	0.3.34	shared runtime follow-up	https://crates.io/api/v1/crates/futures-util
+crate	getrandom	0.3	0.4.3	shared runtime follow-up	https://crates.io/api/v1/crates/getrandom
+crate	hex	0.4	0.4.3	shared runtime follow-up	https://crates.io/api/v1/crates/hex
+crate	http	1	1.5.0	shared runtime follow-up	https://crates.io/api/v1/crates/http
+crate	id3	1.17	1.17.2	shared runtime follow-up	https://crates.io/api/v1/crates/id3
+crate	image	0.25	0.25.10	shared runtime follow-up	https://crates.io/api/v1/crates/image
+crate	jni	0.21	0.22.4	shared runtime follow-up	https://crates.io/api/v1/crates/jni
+crate	js-sys	0.3	0.3.107	shared runtime follow-up	https://crates.io/api/v1/crates/js-sys
+crate	misaki-rs	0.6	0.8.0	shared runtime follow-up	https://crates.io/api/v1/crates/misaki-rs
+crate	ort	=2.0.0-rc.11	no stable release	shared runtime follow-up	https://crates.io/api/v1/crates/ort
+crate	pdf-extract	0.12.1	0.12.1	shared runtime follow-up	https://crates.io/api/v1/crates/pdf-extract
+crate	percent-encoding	2	2.3.2	shared runtime follow-up	https://crates.io/api/v1/crates/percent-encoding
+crate	piper-rs	0.2.0	0.2.0	shared runtime follow-up	https://crates.io/api/v1/crates/piper-rs
+crate	quick-xml	0.41	0.42.0	shared runtime follow-up	https://crates.io/api/v1/crates/quick-xml
+crate	rand	0.9	0.10.3	shared runtime follow-up	https://crates.io/api/v1/crates/rand
+crate	rayon	1	1.12.0	shared runtime follow-up	https://crates.io/api/v1/crates/rayon
+crate	reqwest	0.12	0.13.5	shared runtime follow-up	https://crates.io/api/v1/crates/reqwest
+crate	rustls	0.23	0.23.46	shared runtime follow-up	https://crates.io/api/v1/crates/rustls
+crate	rustls-native-certs	0.8	0.8.5	shared runtime follow-up	https://crates.io/api/v1/crates/rustls-native-certs
+crate	rusty_mp3	1.0.0	1.0.5	shared runtime follow-up	https://crates.io/api/v1/crates/rusty_mp3
+crate	serde	1	1.0.229	shared runtime follow-up	https://crates.io/api/v1/crates/serde
+crate	serde_json	1	1.0.154	shared runtime follow-up	https://crates.io/api/v1/crates/serde_json
+crate	sha1	0.10	0.10.7	shared runtime follow-up	https://crates.io/api/v1/crates/sha1
+crate	sha2	0.10	0.11.1	shared runtime follow-up	https://crates.io/api/v1/crates/sha2
+crate	sherpa-onnx-sys	1.13.8	2.0.1	shared runtime follow-up	https://crates.io/api/v1/crates/sherpa-onnx-sys
+crate	symphonia	0.5.5	0.6.1	shared runtime follow-up	https://crates.io/api/v1/crates/symphonia
+crate	tar	0.4	0.4.46	shared runtime follow-up	https://crates.io/api/v1/crates/tar
+crate	tempfile	3	3.27.0	shared runtime follow-up	https://crates.io/api/v1/crates/tempfile
+crate	thiserror	2	2.0.21	shared runtime follow-up	https://crates.io/api/v1/crates/thiserror
+crate	time	0.3	0.3.55	shared runtime follow-up	https://crates.io/api/v1/crates/time
+crate	tokio	1	1.54.1	shared runtime follow-up	https://crates.io/api/v1/crates/tokio
+crate	tokio-tungstenite	0.26	0.30.0	shared runtime follow-up	https://crates.io/api/v1/crates/tokio-tungstenite
+crate	tower-http	0.6	0.7.1	shared runtime follow-up	https://crates.io/api/v1/crates/tower-http
+crate	tract-onnx	0.23.8	0.23.10	shared runtime follow-up	https://crates.io/api/v1/crates/tract-onnx
+crate	unicode-segmentation	1.13.3	1.13.3	shared runtime follow-up	https://crates.io/api/v1/crates/unicode-segmentation
+crate	url	2	2.5.8	shared runtime follow-up	https://crates.io/api/v1/crates/url
+crate	wasm-bindgen	0.2	0.2.130	shared runtime follow-up	https://crates.io/api/v1/crates/wasm-bindgen
+crate	webpki-roots	1	1.0.11	shared runtime follow-up	https://crates.io/api/v1/crates/webpki-roots
+crate	zip	9	9.4.1	shared runtime follow-up	https://crates.io/api/v1/crates/zip
+crate	zip	9.0.5	9.4.1	shared runtime follow-up	https://crates.io/api/v1/crates/zip
+gem	bootsnap		1.26.1	native/legacy follow-up	https://rubygems.org/api/v1/gems/bootsnap.json
+gem	brakeman		8.1.0	native/legacy follow-up	https://rubygems.org/api/v1/gems/brakeman.json
+gem	bundler-audit		0.9.3	native/legacy follow-up	https://rubygems.org/api/v1/gems/bundler-audit.json
+gem	debug		1.11.1	native/legacy follow-up	https://rubygems.org/api/v1/gems/debug.json
+gem	kamal		2.12.0	native/legacy follow-up	https://rubygems.org/api/v1/gems/kamal.json
+gem	minitest		6.1.0	CI runner updated; gateway follow-up	https://rubygems.org/api/v1/gems/minitest.json
+gem	puma	>= 5.0	8.0.2	native/legacy follow-up	https://rubygems.org/api/v1/gems/puma.json
+gem	rails	~> 8.1.4	8.1.4.1	native/legacy follow-up	https://rubygems.org/api/v1/gems/rails.json
+gem	rubocop-rails-omakase		1.1.0	native/legacy follow-up	https://rubygems.org/api/v1/gems/rubocop-rails-omakase.json
+gem	solid_cable		4.1.0	native/legacy follow-up	https://rubygems.org/api/v1/gems/solid_cable.json
+gem	solid_cache		1.0.10	native/legacy follow-up	https://rubygems.org/api/v1/gems/solid_cache.json
+gem	solid_queue		1.7.2	native/legacy follow-up	https://rubygems.org/api/v1/gems/solid_queue.json
+gem	sqlite3	>= 2.1	2.10.2	native/legacy follow-up	https://rubygems.org/api/v1/gems/sqlite3.json
+gem	thruster		0.1.27	native/legacy follow-up	https://rubygems.org/api/v1/gems/thruster.json
+gem	tzinfo-data		1.2026.6	native/legacy follow-up	https://rubygems.org/api/v1/gems/tzinfo-data.json
+gem	webrick		1.9.2	native/legacy follow-up	https://rubygems.org/api/v1/gems/webrick.json
+npm	@capacitor/android	^8	8.6.0	latest stable Web graph	https://registry.npmjs.org/@capacitor%2fandroid/latest
+npm	@capacitor/cli	^8	8.6.0	latest stable Web graph	https://registry.npmjs.org/@capacitor%2fcli/latest
+npm	@capacitor/core	^8	8.6.0	latest stable Web graph	https://registry.npmjs.org/@capacitor%2fcore/latest
+npm	@capacitor/ios	^8	8.6.0	latest stable Web graph	https://registry.npmjs.org/@capacitor%2fios/latest
+npm	@diffusionstudio/piper-wasm	1.0.0	1.0.0	latest stable Web graph	https://registry.npmjs.org/@diffusionstudio%2fpiper-wasm/latest
+npm	@eslint/js	^9.39.4	10.0.1	latest stable Web graph	https://registry.npmjs.org/@eslint%2fjs/latest
+npm	@mintplex-labs/piper-tts-web	1.0.5	1.0.5	latest stable Web graph	https://registry.npmjs.org/@mintplex-labs%2fpiper-tts-web/latest
+npm	@playwright/test	1.64.1	1.65.0	latest stable Web graph	https://registry.npmjs.org/@playwright%2ftest/latest
+npm	@testing-library/jest-dom	^7.0.1	7.0.1	latest stable Web graph	https://registry.npmjs.org/@testing-library%2fjest-dom/latest
+npm	@testing-library/react	^16.3.3	16.3.3	latest stable Web graph	https://registry.npmjs.org/@testing-library%2freact/latest
+npm	@testing-library/user-event	^14.6.8	14.6.8	latest stable Web graph	https://registry.npmjs.org/@testing-library%2fuser-event/latest
+npm	@types/react	^19.3.0	19.3.0	latest stable Web graph	https://registry.npmjs.org/@types%2freact/latest
+npm	@types/react-dom	^19.3.0	19.3.0	latest stable Web graph	https://registry.npmjs.org/@types%2freact-dom/latest
+npm	@typescript-eslint/eslint-plugin	^8.72.1	8.72.1	latest stable Web graph	https://registry.npmjs.org/@typescript-eslint%2feslint-plugin/latest
+npm	@typescript-eslint/parser	^8.72.1	8.72.1	latest stable Web graph	https://registry.npmjs.org/@typescript-eslint%2fparser/latest
+npm	@vitejs/plugin-react	^6.2.1	6.2.1	latest stable Web graph	https://registry.npmjs.org/@vitejs%2fplugin-react/latest
+npm	baseline-browser-mapping	^2.11.35	2.11.35	latest stable Web graph	https://registry.npmjs.org/baseline-browser-mapping/latest
+npm	clsx	^2.1.0	2.1.1	latest stable Web graph	https://registry.npmjs.org/clsx/latest
+npm	eslint	^10.14.0	10.14.0	latest stable Web graph	https://registry.npmjs.org/eslint/latest
+npm	eslint-config-prettier	^10.1.8	10.1.8	latest stable Web graph	https://registry.npmjs.org/eslint-config-prettier/latest
+npm	eslint-plugin-react-hooks	^7.1.1	7.1.1	latest stable Web graph	https://registry.npmjs.org/eslint-plugin-react-hooks/latest
+npm	globals	^17.14.0	17.14.0	latest stable Web graph	https://registry.npmjs.org/globals/latest
+npm	jsdom	^30.1.3	31.0.0	latest stable Web graph	https://registry.npmjs.org/jsdom/latest
+npm	onnxruntime-web	1.31.1	1.31.1	latest stable Web graph	https://registry.npmjs.org/onnxruntime-web/latest
+npm	prettier	^3.9.10	3.9.10	latest stable Web graph	https://registry.npmjs.org/prettier/latest
+npm	react	^19.3.1	19.3.1	latest stable Web graph	https://registry.npmjs.org/react/latest
+npm	react-dom	^19.3.1	19.3.1	latest stable Web graph	https://registry.npmjs.org/react-dom/latest
+npm	terser	^5.51.2	5.51.2	latest stable Web graph	https://registry.npmjs.org/terser/latest
+npm	typescript	^6.0.3	7.0.2	hold: ESLint parser peer <6.1	https://registry.npmjs.org/typescript/latest
+npm	vite	^8.3.5	8.3.6	latest stable Web graph	https://registry.npmjs.org/vite/latest
+npm	vitest	^5.1.0	5.1.0	latest stable Web graph	https://registry.npmjs.org/vitest/latest
+pub	archive	4.0.4	4.6.0	Arch migration follow-up	https://pub.dev/api/packages/archive
+pub	audio_service	0.18.18	0.18.19	Arch migration follow-up	https://pub.dev/api/packages/audio_service
+pub	build_runner	2.4.13	2.17.1	Arch migration follow-up	https://pub.dev/api/packages/build_runner
+pub	convert	3.1.2	3.1.2	Arch migration follow-up	https://pub.dev/api/packages/convert
+pub	crypto	3.0.7	3.0.8	Arch migration follow-up	https://pub.dev/api/packages/crypto
+pub	dio	5.7.0	5.11.1	Arch migration follow-up	https://pub.dev/api/packages/dio
+pub	ffi	2.1.3	2.2.0	Arch migration follow-up	https://pub.dev/api/packages/ffi
+pub	file_picker	8.1.6	13.3.2	Arch migration follow-up	https://pub.dev/api/packages/file_picker
+pub	flutter_html	3.0.0-beta.2	3.0.0	Arch migration follow-up	https://pub.dev/api/packages/flutter_html
+pub	flutter_lints	6.0.0	6.0.0	Arch migration follow-up	https://pub.dev/api/packages/flutter_lints
+pub	flutter_riverpod	2.6.1	3.5.0	Arch migration follow-up	https://pub.dev/api/packages/flutter_riverpod
+pub	freezed	2.5.7	4.0.3	Arch migration follow-up	https://pub.dev/api/packages/freezed
+pub	freezed_annotation	2.4.4	3.1.0	Arch migration follow-up	https://pub.dev/api/packages/freezed_annotation
+pub	intl	0.20.1	0.20.3	Arch migration follow-up	https://pub.dev/api/packages/intl
+pub	json_annotation	4.9.0	4.12.0	Arch migration follow-up	https://pub.dev/api/packages/json_annotation
+pub	json_serializable	6.9.0	6.15.2	Arch migration follow-up	https://pub.dev/api/packages/json_serializable
+pub	just_audio	0.10.6	0.10.6	Arch migration follow-up	https://pub.dev/api/packages/just_audio
+pub	just_audio_media_kit	2.1.0	2.1.0	Arch migration follow-up	https://pub.dev/api/packages/just_audio_media_kit
+pub	media_kit_libs_linux	1.2.1	1.2.1	Arch migration follow-up	https://pub.dev/api/packages/media_kit_libs_linux
+pub	media_kit_libs_windows_audio	1.0.1	1.0.9	Arch migration follow-up	https://pub.dev/api/packages/media_kit_libs_windows_audio
+pub	path_provider	2.1.5	2.1.6	Arch migration follow-up	https://pub.dev/api/packages/path_provider
+pub	pdfrx	2.1.0	2.12.0	Arch migration follow-up	https://pub.dev/api/packages/pdfrx
+pub	shared_preferences	2.3.3	2.5.6	Arch migration follow-up	https://pub.dev/api/packages/shared_preferences
+pub	uuid	4.5.1	4.6.0	Arch migration follow-up	https://pub.dev/api/packages/uuid
+pub	web_socket_channel	3.0.3	3.0.3	Arch migration follow-up	https://pub.dev/api/packages/web_socket_channel
+pub	xml	6.5.0	7.1.0	Arch migration follow-up	https://pub.dev/api/packages/xml
+pypi	TTS	>=0.22.0,<0.23.0	0.22.0	legacy CI follow-up	https://pypi.org/pypi/TTS/json
+pypi	aiofiles	>=25.1.0	25.1.0	legacy CI follow-up	https://pypi.org/pypi/aiofiles/json
+pypi	aiohttp	>=3.14.5	3.14.5	legacy CI follow-up	https://pypi.org/pypi/aiohttp/json
+pypi	aiohttp	>=3.14.5,<4.0.0	3.14.5	legacy CI follow-up	https://pypi.org/pypi/aiohttp/json
+pypi	argcomplete	>=3.7.2	3.7.2	legacy CI follow-up	https://pypi.org/pypi/argcomplete/json
+pypi	beautifulsoup4	>=4.15.0	4.15.0	legacy CI follow-up	https://pypi.org/pypi/beautifulsoup4/json
+pypi	certifi	>=2026.10.23	2026.10.23	legacy CI follow-up	https://pypi.org/pypi/certifi/json
+pypi	ebooklib	>=0.21	0.21	legacy CI follow-up	https://pypi.org/pypi/ebooklib/json
+pypi	edge-tts	>=7.3.1	7.3.1	legacy CI follow-up	https://pypi.org/pypi/edge-tts/json
+pypi	fastapi	!=0.136.3,>=0.162.0	0.162.1	legacy CI follow-up	https://pypi.org/pypi/fastapi/json
+pypi	faster-whisper	>=1.2.1	1.2.1	legacy CI follow-up	https://pypi.org/pypi/faster-whisper/json
+pypi	filelock	>=4.2.6	4.2.9	legacy CI follow-up	https://pypi.org/pypi/filelock/json
+pypi	flask	>=3.1.3	3.1.3	legacy CI follow-up	https://pypi.org/pypi/flask/json
+pypi	fsspec	<=2026.9.0,>=2026.9.0	2026.9.0	legacy CI follow-up	https://pypi.org/pypi/fsspec/json
+pypi	httpx	>=0.28.1	0.28.1	legacy CI follow-up	https://pypi.org/pypi/httpx/json
+pypi	huggingface_hub	>=2.4.0	2.4.0	legacy CI follow-up	https://pypi.org/pypi/huggingface_hub/json
+pypi	jaraco-context	>=6.1.2	6.1.2	legacy CI follow-up	https://pypi.org/pypi/jaraco-context/json
+pypi	langdetect	>=1.0.9	1.0.9	legacy CI follow-up	https://pypi.org/pypi/langdetect/json
+pypi	langdetect	>=1.0.9,<2.0.0	1.0.9	legacy CI follow-up	https://pypi.org/pypi/langdetect/json
+pypi	llvmlite	==0.50.0	0.50.0	legacy CI follow-up	https://pypi.org/pypi/llvmlite/json
+pypi	lxml	>=6.1.3	6.1.3	legacy CI follow-up	https://pypi.org/pypi/lxml/json
+pypi	mobi	>=0.4.1	0.4.1	legacy CI follow-up	https://pypi.org/pypi/mobi/json
+pypi	mutagen		1.48.1	legacy CI follow-up	https://pypi.org/pypi/mutagen/json
+pypi	mutagen	>=1.48.1	1.48.1	legacy CI follow-up	https://pypi.org/pypi/mutagen/json
+pypi	numba	==0.68.1	0.68.1	legacy CI follow-up	https://pypi.org/pypi/numba/json
+pypi	numpy	>=2.5.4,<3.0.0	2.5.4	legacy CI follow-up	https://pypi.org/pypi/numpy/json
+pypi	packaging	>=26.3,<27.0	26.3	legacy CI follow-up	https://pypi.org/pypi/packaging/json
+pypi	pandas	>=3.1.0,<4.0.0	3.1.1	legacy CI follow-up	https://pypi.org/pypi/pandas/json
+pypi	pillow	>=13.0.0	13.0.0	legacy CI follow-up	https://pypi.org/pypi/pillow/json
+pypi	pip-audit		2.10.1	legacy CI follow-up	https://pypi.org/pypi/pip-audit/json
+pypi	piper-tts	>=1.8.0	1.8.0	legacy CI follow-up	https://pypi.org/pypi/piper-tts/json
+pypi	psutil		7.2.2	legacy CI follow-up	https://pypi.org/pypi/psutil/json
+pypi	psutil	>=7.2.2	7.2.2	legacy CI follow-up	https://pypi.org/pypi/psutil/json
+pypi	pydantic	>=2.14.2	2.14.3	legacy CI follow-up	https://pypi.org/pypi/pydantic/json
+pypi	pydantic	>=2.14.2,<3.0.0	2.14.3	legacy CI follow-up	https://pypi.org/pypi/pydantic/json
+pypi	pygments	>=2.21.0	2.21.0	legacy CI follow-up	https://pypi.org/pypi/pygments/json
+pypi	pyinstaller	>=6.22.3	6.22.3	legacy CI follow-up	https://pypi.org/pypi/pyinstaller/json
+pypi	pypdf	>=6.21.4	7.0.0	legacy CI follow-up	https://pypi.org/pypi/pypdf/json
+pypi	pytest		9.2.0	legacy CI follow-up	https://pypi.org/pypi/pytest/json
+pypi	pytest	>=9.2.0	9.2.0	legacy CI follow-up	https://pypi.org/pypi/pytest/json
+pypi	pytest-asyncio		1.4.1.post1	legacy CI follow-up	https://pypi.org/pypi/pytest-asyncio/json
+pypi	python-dotenv	>=1.2.3	1.2.4	legacy CI follow-up	https://pypi.org/pypi/python-dotenv/json
+pypi	python-multipart	>=0.0.33	0.0.33	legacy CI follow-up	https://pypi.org/pypi/python-multipart/json
+pypi	rarfile	>=4.5	4.5	legacy CI follow-up	https://pypi.org/pypi/rarfile/json
+pypi	requests	>=2.34.2	2.34.2	legacy CI follow-up	https://pypi.org/pypi/requests/json
+pypi	requests	>=2.34.2,<3.0.0	2.34.2	legacy CI follow-up	https://pypi.org/pypi/requests/json
+pypi	setuptools	>=84.2.1	84.2.1	legacy CI follow-up	https://pypi.org/pypi/setuptools/json
+pypi	soundfile	>=0.14.0	0.14.0	legacy CI follow-up	https://pypi.org/pypi/soundfile/json
+pypi	static-ffmpeg		3.0	legacy CI follow-up	https://pypi.org/pypi/static-ffmpeg/json
+pypi	tqdm		4.70.1	legacy CI follow-up	https://pypi.org/pypi/tqdm/json
+pypi	transformers	>=5.22.1	5.22.2	legacy CI follow-up	https://pypi.org/pypi/transformers/json
+pypi	uvicorn	>=0.54.0	0.54.0	legacy CI follow-up	https://pypi.org/pypi/uvicorn/json
+pypi	virtualenv	>=21.15.2	21.15.6	legacy CI follow-up	https://pypi.org/pypi/virtualenv/json
+pypi	werkzeug	>=3.1.9	3.1.9	legacy CI follow-up	https://pypi.org/pypi/werkzeug/json
+tool	@openai/codex		0.167.0	pinned host tool	https://registry.npmjs.org/@openai%2fcodex/latest
+tool	npm		12.2.2	pinned host tool	https://registry.npmjs.org/npm/latest
+npm-override	undici	^7.30.1	8.12.4	updated: jsdom 31 requires ^8.12.3	https://registry.npmjs.org/undici/latest
+npm-override	@babel/core	^7.29.6	8.1.0	hold: React Hooks ESLint requires ^7.24.4	https://registry.npmjs.org/@babel%2fcore/latest
+npm-override	uuid	11.1.1	14.0.3	removed: no dependency consumes it	https://registry.npmjs.org/uuid/latest
+npm-override	minimatch	11.0.4	11.0.5	updated in all three consumers	https://registry.npmjs.org/minimatch/latest

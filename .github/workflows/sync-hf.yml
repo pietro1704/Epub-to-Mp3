@@ -32,7 +32,7 @@ jobs:
     outputs:
       sha: ${{ steps.validated.outputs.sha }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           persist-credentials: false
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout trusted publication policy
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           path: publication-policy
@@ -56,7 +56,7 @@ jobs:
       - name: Snapshot trusted publication helper
         run: cp publication-policy/scripts/validated_merge.mjs "$RUNNER_TEMP/validated_merge.mjs"
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           # Avoid LFS fetch (budget exceeded)
@@ -65,11 +65,11 @@ jobs:
           # The job only syncs the exact trusted revision after successful post-merge validation.
           ref: ${{ needs.gate.outputs.sha }}
 
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         env:
           MISE_ENABLE_TOOLS: ruby
         with:
-          version: 2026.9.14
+          version: 2026.11.3
           install: false
 
       - name: Install managed Ruby
