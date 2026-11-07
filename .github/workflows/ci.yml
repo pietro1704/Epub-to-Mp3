@@ -349,7 +349,9 @@ jobs:
           print("Rust CI tools: python, rust")
           '
       - name: Install Rust toolchain
-        run: mise install
+        run: |
+          mise install
+          mise exec -- rustup component add rustfmt
       - name: Test vendored source cache refresh
         run: |
           mise exec -- rustc --edition=2021 --test native/vendor/espeak-rs-sys/source_copy.rs -o "$RUNNER_TEMP/espeak-source-copy-tests"

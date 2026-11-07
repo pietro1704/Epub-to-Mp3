@@ -23,7 +23,10 @@ jobs:
         with:
           version: 2026.11.3
           install: false
-      - run: mise install
+      - name: Install Rust and its prebuilt formatter
+        run: |
+          mise install
+          mise exec -- rustup component add rustfmt
       - name: Install explicit native speech and decoder fixtures
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends espeak-ng ffmpeg
       - name: Reuse native fallback compilation
