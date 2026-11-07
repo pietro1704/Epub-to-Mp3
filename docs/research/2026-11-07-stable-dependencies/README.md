@@ -69,6 +69,42 @@ bundle and all three manifest/lockfile hashes matched the delivery inputs.
 Local host preflight passed all 28 suites. No Ruby tool or native gem was compiled
 on Mac for this delivery; gateway dependency installation and tests ran on Arch.
 
+## Host runtime and legacy Python selection
+
+| Surface | Before | Selected |
+| --- | --- | --- |
+| Main Python | 3.12.10 | 3.14.10 |
+| Optional Coqui Python | Moving 3.11 alias | 3.11.18, explicit `coqui` environment |
+| Rust | Moving `stable` alias | 1.99.1, matching the existing Docker compiler |
+| Legacy pypdf | 6.21.4 | 7.0.0 |
+| FastAPI | 0.162.0 | 0.162.1 |
+| pandas | 3.1.0 | 3.1.1 |
+| Pydantic | 2.14.2 | 2.14.3 |
+| CI Ruff | 0.6.9 | 0.17.4, matching the hook |
+
+The root and `python_app/` default use Python 3.14.10. NumPy 2.5 requires Python
+3.12 or newer, so the old unconditional child-directory Python 3.11 override is
+removed. `python_app/mise.coqui.toml` selects Python 3.11.18 and `.venv-coqui`
+only with `mise -E coqui`. TTS 0.22 requires Python below 3.12 and pandas below 2;
+that isolated dependency graph retains NumPy 1.26.4's ABI (`numpy <2`).
+Numba 0.68.1 and llvmlite 0.50.0 already support this interpreter and remain pinned.
+Install its optional libraries from `python_app/` with
+`mise -E coqui exec -- python -m pip install -r ../requirements-coqui.txt`.
+Model installation remains an explicit separate action.
+
+Published Intel install-only binaries for both Python versions were confirmed in
+python-build-standalone release `20261026`. mise tool compilation is explicitly
+disabled. Rust compiler queries and target builders now honor the project pin,
+and fixed CI Python/Ruby/Rust versions match the selected toolchains.
+
+Existing virtualenvs can retain their old interpreter after a tool pin changes.
+The isolated local host environment was recreated and verified as Python 3.14.10;
+its old environment was retained as a backup. CI cache keys include the Python
+version, creation uses the selected base interpreter, and runtime tests compare
+the actual interpreter with the manifest. Optional Coqui numerical imports and
+dependency-resolution dry runs belong to full CI; no inference/model-download
+acceptance is implied by the configuration checks.
+
 ## Compatibility holds and follow-up gates
 
 - TypeScript 7.0.2 was evaluated. Both installed TypeScript ESLint packages
@@ -94,9 +130,9 @@ on Mac for this delivery; gateway dependency installation and tests ran on Arch.
   this delivery. Its isolated installation attempt was stopped after implicit
   native extension compilation was discovered; it is not acceptance evidence.
 - Python 3.15.2 is latest, but ONNX Runtime 1.31.1 publishes wheels only through
-  CPython 3.14. The prepared main-environment candidate is 3.14.10. The optional
-  Coqui `TTS` package requires Python below 3.12, so its separate candidate is
-  3.11.18. Legacy Python resolution and tests belong in CI.
+  CPython 3.14. The selected main environment is 3.14.10; optional Coqui `TTS`
+  requires Python below 3.12 and uses the explicit 3.11.18 environment.
+  Legacy Python resolution and tests belong in CI.
 - Flutter 3.47.9 / Dart 3.13.7 were validated on Arch in an isolated checkout:
   560 tests passed, eight opt-in tests skipped, and final analysis found no
   issues. Riverpod 3, Freezed 4, file_picker 13 and XML 7 required API and

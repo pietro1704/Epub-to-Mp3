@@ -24,12 +24,12 @@ target = 'aarch64-linux-android'
 build_root = File.join(root, 'target', 'piper-android')
 # mise may put a standalone rustc before rustup's proxies. Match cargo and rustc
 # explicitly so cross-target standard libraries come from the same toolchain.
-sysroot = IO.popen(['mise', 'exec', '--', 'rustup', 'run', 'stable', 'rustc', '--print', 'sysroot'], &:read).strip
-abort 'Could not resolve the stable Rust compiler' unless $?.success? && File.executable?(File.join(sysroot, 'bin', 'rustc'))
+sysroot = IO.popen(['mise', 'exec', '--', 'rustc', '--print', 'sysroot'], &:read).strip
+abort 'Could not resolve the project Rust compiler' unless $?.success? && File.executable?(File.join(sysroot, 'bin', 'rustc'))
 # Host tools create architecture-independent phonemizer data; never run target ELF tools on the Mac.
 data_env = %w[SDKROOT CC CXX AR CFLAGS CXXFLAGS CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_MAKE_PROGRAM ORT_LIB_LOCATION ORT_IOS_LINK BINDGEN_EXTRA_CLANG_ARGS CARGO_ENCODED_RUSTFLAGS].to_h { |key| [key, nil] }
 data_env['RUSTC'] = File.join(sysroot, 'bin', 'rustc')
-exit($?.exitstatus || 1) unless system(data_env, 'mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'espeak-rs-sys', '--features', 'compile-espeak-intonations', '--target-dir', 'target/espeak-data', '--jobs', '1', **NativeJob.child_options)
+exit($?.exitstatus || 1) unless system(data_env, 'mise', 'exec', '--', 'cargo', 'build', '-p', 'espeak-rs-sys', '--features', 'compile-espeak-intonations', '--target-dir', 'target/espeak-data', '--jobs', '1', **NativeJob.child_options)
 environment = data_env.merge(
   'ANDROID_NDK_HOME' => ndk, 'ANDROID_NDK_ROOT' => ndk,
   'PATH' => "#{File.join(toolchain, 'bin')}:#{ENV.fetch('PATH')}",
@@ -44,13 +44,12 @@ environment = data_env.merge(
   'CC' => nil, 'TARGET_CC' => nil,
   'HOST_CC' => host == 'darwin-x86_64' ? '/usr/bin/clang' : 'cc',
   'HOST_CXX' => host == 'darwin-x86_64' ? '/usr/bin/clang++' : 'c++',
-  'RUSTUP_TOOLCHAIN' => 'stable',
   'ORT_LIB_LOCATION' => ort_directory,
   'ORT_PREFER_DYNAMIC_LINK' => '1',
   'ORT_SKIP_DOWNLOAD' => '1',
   'CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS' => '-C link-arg=-Wl,-z,defs'
 )
-command = ['mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'converter-ffi', '--features', 'android-jni,piper-runtime', '--release', '--target', target, '--target-dir', build_root, '--jobs', '1']
+command = ['mise', 'exec', '--', 'cargo', 'build', '-p', 'converter-ffi', '--features', 'android-jni,piper-runtime', '--release', '--target', target, '--target-dir', build_root, '--jobs', '1']
 exit($?.exitstatus || 1) unless system(environment, *command, **NativeJob.child_options)
 library = File.join(build_root, target, 'release', 'libconverter_ffi.so')
 abort 'Cargo did not produce the Android converter library' unless File.file?(library)

@@ -39,7 +39,7 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
       if ARGV.first == 'ruby'
         ARGV.shift
         exec #{RbConfig.ruby.inspect}, *ARGV
-      elsif ARGV == ['rustup', 'which', '--toolchain', 'stable', 'rustc']
+      elsif ARGV == ['rustup', 'which', 'rustc']
         puts File.join(ENV.fetch('FIXTURE_BIN'), 'rustc')
         exit
       end

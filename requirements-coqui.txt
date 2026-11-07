@@ -1,7 +1,10 @@
 # Coqui XTTS engine — optional, install only if you need GPU-accelerated TTS
-# Install: pip install -r requirements-coqui.txt
+# Install from python_app/: mise -E coqui exec -- python -m pip install -r ../requirements-coqui.txt
 # Requires: CUDA GPU recommended; CPU works but is very slow
+# Keep this separate from the current host/legacy compatibility bundle.
 
 TTS>=0.22.0,<0.23.0
+# TTS requires pandas <2; those wheels use the NumPy 1.x ABI.
+numpy>=1.26.4,<2
 numba==0.68.1
 llvmlite==0.50.0

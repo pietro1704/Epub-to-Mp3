@@ -18,12 +18,12 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.14.10'
       - name: Install explicit test dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
-          python -m pip install 'edge-tts>=7.2.8' pytest pytest-asyncio
+          python -m pip install 'edge-tts>=7.3.1' pytest pytest-asyncio
       - name: Run actual Edge audio integration without swallowing provider errors
         env:
           RUN_LIVE_EDGE_AUDIO_TESTS: '1'
