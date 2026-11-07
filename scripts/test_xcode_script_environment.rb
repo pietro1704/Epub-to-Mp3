@@ -16,7 +16,8 @@ class XcodeScriptEnvironmentTest < Minitest::Test
 
     Dir.mktmpdir('xcode script environment ') do |fixture|
       paths, status = Open3.capture2('git', '-C', ROOT, 'ls-files', '-z',
-                                    '--cached', '--others', '--exclude-standard', '--', 'ios/EpubToMp3')
+                                    '--cached', '--others', '--exclude-standard', '--',
+                                    'ios/EpubToMp3', 'tests/fixtures/audio')
       assert status.success?
       paths.split("\0").uniq.each do |relative|
         source = File.join(ROOT, relative)

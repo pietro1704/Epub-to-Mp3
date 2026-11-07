@@ -15,6 +15,7 @@ not evidence that its migration passed.
 | npm | `latest`, observed 12.0.2 | 12.2.2 |
 | Project Codex CLI | `latest`, observed 0.167.0 | 0.167.0, pinned |
 | git-cliff | `latest`, observed 2.13.1, Cargo installation | 2.14.2, prebuilt Aqua installation |
+| Git LFS | Missing local CI transport prerequisite | 3.8.1, prebuilt Aqua installation |
 | wasm-bindgen CLI | 0.2.129, Cargo installation | 0.2.129, official prebuilt GitHub installation |
 | Ninja | `latest`, observed 1.13.2 | 1.13.2, pinned |
 | Vite | 8.3.5 | 8.3.6 |

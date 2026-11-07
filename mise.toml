@@ -12,6 +12,8 @@ rust = "stable"
 ruby = "4.0.7"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "aqua:orhun/git-cliff" = "2.14.2"
+# Git LFS is required by the offline host/CI transport contracts.
+"aqua:git-lfs/git-lfs" = "3.8.1"
 # WASM CLI schema must match wasm-bindgen in Cargo.lock; update both together.
 "github:wasm-bindgen/wasm-bindgen" = "0.2.129"
 # Flutter SDK for the cross-platform companion app under flutter_app/.

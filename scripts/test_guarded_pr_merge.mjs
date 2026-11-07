@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { evaluate, guardedMerge } from './guarded_pr_merge.mjs';
 const repo = 'pietro1704/Epub-to-Mp3';
 const head = 'a'.repeat(40);
@@ -64,7 +64,7 @@ process.stdout.write(JSON.stringify(response));
       const script = block[1].replace(/^          /gm, '');
       const result = spawnSync('bash', ['-c', script], {
         cwd: directory, encoding: 'utf8', timeout: 15000, maxBuffer: 65536,
-        env: { PATH: `${directory}:${process.env.PATH}`, REPO: repo,
+        env: { PATH: `${directory}:${dirname(process.execPath)}:${process.env.PATH}`, REPO: repo,
           GITHUB_TOKEN: 'fake-token-only', PR_PROTECTION_READ_TOKEN: protectionToken,
           GITHUB_RUN_ID: '90', HOME: directory },
       });
