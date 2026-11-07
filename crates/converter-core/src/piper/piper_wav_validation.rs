@@ -57,9 +57,14 @@ fn encode_piper_mp3(
         .map_err(|error| PiperError::Io(error.to_string()))?;
     let staged = staging.path().join("speech.mp3");
     fs::write(&staged, encoded).map_err(|error| PiperError::Io(error.to_string()))?;
-    let file = fs::File::open(&staged).map_err(|error| PiperError::Io(error.to_string()))?;
+    // Windows requires write access for sync_all; the staged bytes stay intact.
+    let file = fs::File::options()
+        .write(true)
+        .open(&staged)
+        .map_err(|error| PiperError::Io(error.to_string()))?;
     file.sync_all()
         .map_err(|error| PiperError::Io(error.to_string()))?;
+    drop(file);
     if cancelled() {
         return Err(PiperError::Cancelled);
     }
