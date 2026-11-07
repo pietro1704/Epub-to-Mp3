@@ -5,7 +5,7 @@ import Foundation
 enum EpubAnchorFragment {
     static func html(identifier: String, in html: String) -> String? {
         guard !identifier.isEmpty, html.utf8.count <= 2 * 1024 * 1024 else { return nil }
-        var source = html.replacingOccurrences(of: #"(?is)<\?xml.*?\?>|<!DOCTYPE[^>]*>|<script\b[^>]*>.*?</script\s*>"#,
+        var source = html.replacingOccurrences(of: #"(?is)<\?xml.*?\?>|<!DOCTYPE[^>]*>"#,
             with: "", options: .regularExpression)
         let entities = ["nbsp": "&#160;", "mdash": "&#8212;", "ndash": "&#8211;", "hellip": "&#8230;",
                         "lsquo": "&#8216;", "rsquo": "&#8217;", "ldquo": "&#8220;", "rdquo": "&#8221;"]
@@ -67,7 +67,12 @@ enum EpubAnchorFragment {
             guard stack.count < 128 else { parser.abortParsing(); return }
             let node = Node(name: elementName, attributes: attributeDict)
             node.parent = stack.last
-            if let parent = stack.last { parent.contents.append(.element(node)) } else { root = node }
+            if let parent = stack.last {
+                // Parse script subtrees for well-formedness and depth limits, but never retain
+                // them in a preview or allow their descendants to become anchor targets.
+                let localName = elementName.split(separator: ":").last?.lowercased()
+                if localName != "script" { parent.contents.append(.element(node)) }
+            } else { root = node }
             stack.append(node)
         }
         func parser(_ parser: XMLParser, foundCharacters string: String) { stack.last?.contents.append(.text(string)) }

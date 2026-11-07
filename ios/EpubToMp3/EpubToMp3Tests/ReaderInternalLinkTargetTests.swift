@@ -49,6 +49,36 @@ final class ReaderInternalLinkTargetTests: XCTestCase {
         XCTAssertTrue(result?.contains("café.") == true)
     }
 
+    func testScriptElementsAreExcludedFromSelectedNote() throws {
+        let html = "<div id='n'><p>Before.</p><script>hidden()</script><SCRIPT>alsoHidden()</SCRIPT><script src='https://example.invalid/payload.js'/><p>After.</p></div>"
+        let result = try XCTUnwrap(EpubAnchorFragment.html(identifier: "n", in: html))
+        XCTAssertEqual(result, "<div id=\"n\"><p>Before.</p><p>After.</p></div>")
+        XCTAssertNil(EpubAnchorFragment.html(identifier: "s", in: "<script id='s'>Hidden.</script>"))
+    }
+
+    func testClosingTagTextInsideScriptCDATAKeepsTheSurroundingNote() throws {
+        let html = "<div id='n'><p>Before.</p><script><![CDATA[const closingTag = \"</script>\";]]></script><p>After.</p></div>"
+        let result = try XCTUnwrap(EpubAnchorFragment.html(identifier: "n", in: html))
+        XCTAssertEqual(result, "<div id=\"n\"><p>Before.</p><p>After.</p></div>")
+    }
+
+    func testNamespacedScriptsAndTheirDescendantsCannotBecomeAnchorTargets() throws {
+        let html = "<div xmlns:x='http://www.w3.org/1999/xhtml' id='n'><x:script id='s'><span id='child'>Hidden.</span></x:script><p>Note.</p></div>"
+        let result = try XCTUnwrap(EpubAnchorFragment.html(identifier: "n", in: html))
+        XCTAssertTrue(result.contains("<p>Note.</p>"))
+        XCTAssertFalse(result.contains("Hidden."))
+        for identifier in ["s", "child"] {
+            XCTAssertNil(EpubAnchorFragment.html(identifier: identifier, in: html))
+        }
+    }
+
+    func testMalformedScriptEndTagsFailClosed() {
+        for closingTag in ["</script foo='bar'>", "</script\t\n bar>", "</SCRIPT ignored>"] {
+            let html = "<div id='n'><p>Note.</p><script>alert(1)\(closingTag)</div>"
+            XCTAssertNil(EpubAnchorFragment.html(identifier: "n", in: html), closingTag)
+        }
+    }
+
     func testSameDocumentFragmentRetainsSourcePositionAndIdentifier() throws {
         let current = chapter("Text/Main.xhtml", html: "<p id='nota 1'>Ação.</p>", index: 9)
         let result = try XCTUnwrap(ReaderLinkResolver.internalTarget(for: try link("#nota%201"), currentChapter: current, chapters: [current]))
