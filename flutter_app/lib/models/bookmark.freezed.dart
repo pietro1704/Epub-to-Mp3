@@ -1,6 +1,6 @@
-// coverage:ignore-file
 // GENERATED CODE - DO NOT MODIFY BY HAND
-// ignore_for_file: type=lint
+// coverage:ignore-file
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'bookmark.dart';
@@ -9,150 +9,53 @@ part of 'bookmark.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 T _$identity<T>(T value) => value;
-
-final _privateConstructorUsedError = UnsupportedError(
-  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
-);
-
-Bookmark _$BookmarkFromJson(Map<String, dynamic> json) {
-  return _Bookmark.fromJson(json);
-}
 
 /// @nodoc
 mixin _$Bookmark {
-  String get id => throw _privateConstructorUsedError;
-  set id(String value) => throw _privateConstructorUsedError;
-  String get bookId => throw _privateConstructorUsedError;
-  set bookId(String value) => throw _privateConstructorUsedError;
-  int get chapterIndex => throw _privateConstructorUsedError;
-  set chapterIndex(int value) => throw _privateConstructorUsedError;
-  String get chapterTitle => throw _privateConstructorUsedError;
-  set chapterTitle(String value) => throw _privateConstructorUsedError;
-  int get startChar => throw _privateConstructorUsedError;
-  set startChar(int value) => throw _privateConstructorUsedError;
-  int get endChar => throw _privateConstructorUsedError;
-  set endChar(int value) => throw _privateConstructorUsedError;
-  String get selectedText => throw _privateConstructorUsedError;
-  set selectedText(String value) => throw _privateConstructorUsedError;
-  String? get note => throw _privateConstructorUsedError;
-  set note(String? value) => throw _privateConstructorUsedError;
-  HighlightColor get color => throw _privateConstructorUsedError;
-  set color(HighlightColor value) => throw _privateConstructorUsedError;
-  DateTime get createdAt => throw _privateConstructorUsedError;
-  set createdAt(DateTime value) => throw _privateConstructorUsedError;
-
-  /// Serializes this Bookmark to a JSON map.
-  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  String get id;
+  set id(String value);
+  String get bookId;
+  set bookId(String value);
+  int get chapterIndex;
+  set chapterIndex(int value);
+  String get chapterTitle;
+  set chapterTitle(String value);
+  int get startChar;
+  set startChar(int value);
+  int get endChar;
+  set endChar(int value);
+  String get selectedText;
+  set selectedText(String value);
+  String? get note;
+  set note(String? value);
+  HighlightColor get color;
+  set color(HighlightColor value);
+  DateTime get createdAt;
+  set createdAt(DateTime value);
 
   /// Create a copy of Bookmark
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
-  $BookmarkCopyWith<Bookmark> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class $BookmarkCopyWith<$Res> {
-  factory $BookmarkCopyWith(Bookmark value, $Res Function(Bookmark) then) =
-      _$BookmarkCopyWithImpl<$Res, Bookmark>;
-  @useResult
-  $Res call({
-    String id,
-    String bookId,
-    int chapterIndex,
-    String chapterTitle,
-    int startChar,
-    int endChar,
-    String selectedText,
-    String? note,
-    HighlightColor color,
-    DateTime createdAt,
-  });
-}
-
-/// @nodoc
-class _$BookmarkCopyWithImpl<$Res, $Val extends Bookmark>
-    implements $BookmarkCopyWith<$Res> {
-  _$BookmarkCopyWithImpl(this._value, this._then);
-
-  // ignore: unused_field
-  final $Val _value;
-  // ignore: unused_field
-  final $Res Function($Val) _then;
-
-  /// Create a copy of Bookmark
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
+  $BookmarkCopyWith<Bookmark> get copyWith =>
+      _$BookmarkCopyWithImpl<Bookmark>(this as Bookmark, _$identity);
+
+  /// Serializes this Bookmark to a JSON map.
+  Map<String, dynamic> toJson();
+
   @override
-  $Res call({
-    Object? id = null,
-    Object? bookId = null,
-    Object? chapterIndex = null,
-    Object? chapterTitle = null,
-    Object? startChar = null,
-    Object? endChar = null,
-    Object? selectedText = null,
-    Object? note = freezed,
-    Object? color = null,
-    Object? createdAt = null,
-  }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookId: null == bookId
-                ? _value.bookId
-                : bookId // ignore: cast_nullable_to_non_nullable
-                      as String,
-            chapterIndex: null == chapterIndex
-                ? _value.chapterIndex
-                : chapterIndex // ignore: cast_nullable_to_non_nullable
-                      as int,
-            chapterTitle: null == chapterTitle
-                ? _value.chapterTitle
-                : chapterTitle // ignore: cast_nullable_to_non_nullable
-                      as String,
-            startChar: null == startChar
-                ? _value.startChar
-                : startChar // ignore: cast_nullable_to_non_nullable
-                      as int,
-            endChar: null == endChar
-                ? _value.endChar
-                : endChar // ignore: cast_nullable_to_non_nullable
-                      as int,
-            selectedText: null == selectedText
-                ? _value.selectedText
-                : selectedText // ignore: cast_nullable_to_non_nullable
-                      as String,
-            note: freezed == note
-                ? _value.note
-                : note // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            color: null == color
-                ? _value.color
-                : color // ignore: cast_nullable_to_non_nullable
-                      as HighlightColor,
-            createdAt: null == createdAt
-                ? _value.createdAt
-                : createdAt // ignore: cast_nullable_to_non_nullable
-                      as DateTime,
-          )
-          as $Val,
-    );
+  String toString() {
+    final _this = this as Bookmark;
+    return 'Bookmark(id: ${_this.id}, bookId: ${_this.bookId}, chapterIndex: ${_this.chapterIndex}, chapterTitle: ${_this.chapterTitle}, startChar: ${_this.startChar}, endChar: ${_this.endChar}, selectedText: ${_this.selectedText}, note: ${_this.note}, color: ${_this.color}, createdAt: ${_this.createdAt})';
   }
 }
 
 /// @nodoc
-abstract class _$$BookmarkImplCopyWith<$Res>
-    implements $BookmarkCopyWith<$Res> {
-  factory _$$BookmarkImplCopyWith(
-    _$BookmarkImpl value,
-    $Res Function(_$BookmarkImpl) then,
-  ) = __$$BookmarkImplCopyWithImpl<$Res>;
-  @override
+abstract mixin class $BookmarkCopyWith<$Res> {
+  factory $BookmarkCopyWith(Bookmark value, $Res Function(Bookmark) _then) =
+      _$BookmarkCopyWithImpl;
   @useResult
   $Res call({
     String id,
@@ -169,13 +72,11 @@ abstract class _$$BookmarkImplCopyWith<$Res>
 }
 
 /// @nodoc
-class __$$BookmarkImplCopyWithImpl<$Res>
-    extends _$BookmarkCopyWithImpl<$Res, _$BookmarkImpl>
-    implements _$$BookmarkImplCopyWith<$Res> {
-  __$$BookmarkImplCopyWithImpl(
-    _$BookmarkImpl _value,
-    $Res Function(_$BookmarkImpl) _then,
-  ) : super(_value, _then);
+class _$BookmarkCopyWithImpl<$Res> implements $BookmarkCopyWith<$Res> {
+  _$BookmarkCopyWithImpl(this._self, this._then);
+
+  final Bookmark _self;
+  final $Res Function(Bookmark) _then;
 
   /// Create a copy of Bookmark
   /// with the given fields replaced by the non-null parameter values.
@@ -194,45 +95,45 @@ class __$$BookmarkImplCopyWithImpl<$Res>
     Object? createdAt = null,
   }) {
     return _then(
-      _$BookmarkImpl(
+      Bookmark(
         id: null == id
-            ? _value.id
+            ? _self.id
             : id // ignore: cast_nullable_to_non_nullable
                   as String,
         bookId: null == bookId
-            ? _value.bookId
+            ? _self.bookId
             : bookId // ignore: cast_nullable_to_non_nullable
                   as String,
         chapterIndex: null == chapterIndex
-            ? _value.chapterIndex
+            ? _self.chapterIndex
             : chapterIndex // ignore: cast_nullable_to_non_nullable
                   as int,
         chapterTitle: null == chapterTitle
-            ? _value.chapterTitle
+            ? _self.chapterTitle
             : chapterTitle // ignore: cast_nullable_to_non_nullable
                   as String,
         startChar: null == startChar
-            ? _value.startChar
+            ? _self.startChar
             : startChar // ignore: cast_nullable_to_non_nullable
                   as int,
         endChar: null == endChar
-            ? _value.endChar
+            ? _self.endChar
             : endChar // ignore: cast_nullable_to_non_nullable
                   as int,
         selectedText: null == selectedText
-            ? _value.selectedText
+            ? _self.selectedText
             : selectedText // ignore: cast_nullable_to_non_nullable
                   as String,
         note: freezed == note
-            ? _value.note
+            ? _self.note
             : note // ignore: cast_nullable_to_non_nullable
                   as String?,
         color: null == color
-            ? _value.color
+            ? _self.color
             : color // ignore: cast_nullable_to_non_nullable
                   as HighlightColor,
         createdAt: null == createdAt
-            ? _value.createdAt
+            ? _self.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
                   as DateTime,
       ),
@@ -240,10 +141,236 @@ class __$$BookmarkImplCopyWithImpl<$Res>
   }
 }
 
+/// Adds pattern-matching-related methods to [Bookmark].
+extension BookmarkPatterns on Bookmark {
+  /// A variant of `map` that fallback to returning `orElse`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>(
+    TResult Function(_Bookmark value)? $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _Bookmark() when $default != null:
+        return $default(_that);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// Callbacks receives the raw object, upcasted.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case final Subclass2 value:
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>(
+    TResult Function(_Bookmark value) $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _Bookmark():
+        return $default(_that);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `map` that fallback to returning `null`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>(
+    TResult? Function(_Bookmark value)? $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _Bookmark() when $default != null:
+        return $default(_that);
+      case _:
+        return null;
+    }
+  }
+
+  /// A variant of `when` that fallback to an `orElse` callback.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>(
+    TResult Function(
+      String id,
+      String bookId,
+      int chapterIndex,
+      String chapterTitle,
+      int startChar,
+      int endChar,
+      String selectedText,
+      String? note,
+      HighlightColor color,
+      DateTime createdAt,
+    )?
+    $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _Bookmark() when $default != null:
+        return $default(
+          _that.id,
+          _that.bookId,
+          _that.chapterIndex,
+          _that.chapterTitle,
+          _that.startChar,
+          _that.endChar,
+          _that.selectedText,
+          _that.note,
+          _that.color,
+          _that.createdAt,
+        );
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// As opposed to `map`, this offers destructuring.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case Subclass2(:final field2):
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>(
+    TResult Function(
+      String id,
+      String bookId,
+      int chapterIndex,
+      String chapterTitle,
+      int startChar,
+      int endChar,
+      String selectedText,
+      String? note,
+      HighlightColor color,
+      DateTime createdAt,
+    )
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _Bookmark():
+        return $default(
+          _that.id,
+          _that.bookId,
+          _that.chapterIndex,
+          _that.chapterTitle,
+          _that.startChar,
+          _that.endChar,
+          _that.selectedText,
+          _that.note,
+          _that.color,
+          _that.createdAt,
+        );
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `when` that fallback to returning `null`
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>(
+    TResult? Function(
+      String id,
+      String bookId,
+      int chapterIndex,
+      String chapterTitle,
+      int startChar,
+      int endChar,
+      String selectedText,
+      String? note,
+      HighlightColor color,
+      DateTime createdAt,
+    )?
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _Bookmark() when $default != null:
+        return $default(
+          _that.id,
+          _that.bookId,
+          _that.chapterIndex,
+          _that.chapterTitle,
+          _that.startChar,
+          _that.endChar,
+          _that.selectedText,
+          _that.note,
+          _that.color,
+          _that.createdAt,
+        );
+      case _:
+        return null;
+    }
+  }
+}
+
 /// @nodoc
 @JsonSerializable()
-class _$BookmarkImpl extends _Bookmark {
-  _$BookmarkImpl({
+class _Bookmark extends Bookmark {
+  _Bookmark({
     required this.id,
     required this.bookId,
     required this.chapterIndex,
@@ -255,9 +382,8 @@ class _$BookmarkImpl extends _Bookmark {
     this.color = HighlightColor.yellow,
     required this.createdAt,
   }) : super._();
-
-  factory _$BookmarkImpl.fromJson(Map<String, dynamic> json) =>
-      _$$BookmarkImplFromJson(json);
+  factory _Bookmark.fromJson(Map<String, dynamic> json) =>
+      _$BookmarkFromJson(json);
 
   @override
   String id;
@@ -284,78 +410,112 @@ class _$BookmarkImpl extends _Bookmark {
   @override
   DateTime createdAt;
 
+  /// Create a copy of Bookmark
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  _$BookmarkCopyWith<_Bookmark> get copyWith =>
+      __$BookmarkCopyWithImpl<_Bookmark>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$BookmarkToJson(this);
+  }
+
   @override
   String toString() {
     return 'Bookmark(id: $id, bookId: $bookId, chapterIndex: $chapterIndex, chapterTitle: $chapterTitle, startChar: $startChar, endChar: $endChar, selectedText: $selectedText, note: $note, color: $color, createdAt: $createdAt)';
   }
-
-  /// Create a copy of Bookmark
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  @override
-  @pragma('vm:prefer-inline')
-  _$$BookmarkImplCopyWith<_$BookmarkImpl> get copyWith =>
-      __$$BookmarkImplCopyWithImpl<_$BookmarkImpl>(this, _$identity);
-
-  @override
-  Map<String, dynamic> toJson() {
-    return _$$BookmarkImplToJson(this);
-  }
 }
 
-abstract class _Bookmark extends Bookmark {
-  factory _Bookmark({
-    required String id,
-    required String bookId,
-    required int chapterIndex,
-    required String chapterTitle,
+/// @nodoc
+abstract mixin class _$BookmarkCopyWith<$Res>
+    implements $BookmarkCopyWith<$Res> {
+  factory _$BookmarkCopyWith(_Bookmark value, $Res Function(_Bookmark) _then) =
+      __$BookmarkCopyWithImpl;
+  @override
+  @useResult
+  $Res call({
+    String id,
+    String bookId,
+    int chapterIndex,
+    String chapterTitle,
     int startChar,
     int endChar,
     String selectedText,
     String? note,
     HighlightColor color,
-    required DateTime createdAt,
-  }) = _$BookmarkImpl;
-  _Bookmark._() : super._();
+    DateTime createdAt,
+  });
+}
 
-  factory _Bookmark.fromJson(Map<String, dynamic> json) =
-      _$BookmarkImpl.fromJson;
+/// @nodoc
+class __$BookmarkCopyWithImpl<$Res> implements _$BookmarkCopyWith<$Res> {
+  __$BookmarkCopyWithImpl(this._self, this._then);
 
-  @override
-  String get id;
-  set id(String value);
-  @override
-  String get bookId;
-  set bookId(String value);
-  @override
-  int get chapterIndex;
-  set chapterIndex(int value);
-  @override
-  String get chapterTitle;
-  set chapterTitle(String value);
-  @override
-  int get startChar;
-  set startChar(int value);
-  @override
-  int get endChar;
-  set endChar(int value);
-  @override
-  String get selectedText;
-  set selectedText(String value);
-  @override
-  String? get note;
-  set note(String? value);
-  @override
-  HighlightColor get color;
-  set color(HighlightColor value);
-  @override
-  DateTime get createdAt;
-  set createdAt(DateTime value);
+  final _Bookmark _self;
+  final $Res Function(_Bookmark) _then;
 
   /// Create a copy of Bookmark
   /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  _$$BookmarkImplCopyWith<_$BookmarkImpl> get copyWith =>
-      throw _privateConstructorUsedError;
+  @pragma('vm:prefer-inline')
+  $Res call({
+    Object? id = null,
+    Object? bookId = null,
+    Object? chapterIndex = null,
+    Object? chapterTitle = null,
+    Object? startChar = null,
+    Object? endChar = null,
+    Object? selectedText = null,
+    Object? note = freezed,
+    Object? color = null,
+    Object? createdAt = null,
+  }) {
+    return _then(
+      _Bookmark(
+        id: null == id
+            ? _self.id
+            : id // ignore: cast_nullable_to_non_nullable
+                  as String,
+        bookId: null == bookId
+            ? _self.bookId
+            : bookId // ignore: cast_nullable_to_non_nullable
+                  as String,
+        chapterIndex: null == chapterIndex
+            ? _self.chapterIndex
+            : chapterIndex // ignore: cast_nullable_to_non_nullable
+                  as int,
+        chapterTitle: null == chapterTitle
+            ? _self.chapterTitle
+            : chapterTitle // ignore: cast_nullable_to_non_nullable
+                  as String,
+        startChar: null == startChar
+            ? _self.startChar
+            : startChar // ignore: cast_nullable_to_non_nullable
+                  as int,
+        endChar: null == endChar
+            ? _self.endChar
+            : endChar // ignore: cast_nullable_to_non_nullable
+                  as int,
+        selectedText: null == selectedText
+            ? _self.selectedText
+            : selectedText // ignore: cast_nullable_to_non_nullable
+                  as String,
+        note: freezed == note
+            ? _self.note
+            : note // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        color: null == color
+            ? _self.color
+            : color // ignore: cast_nullable_to_non_nullable
+                  as HighlightColor,
+        createdAt: null == createdAt
+            ? _self.createdAt
+            : createdAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime,
+      ),
+    );
+  }
 }

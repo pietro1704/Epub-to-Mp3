@@ -42,11 +42,10 @@ class LibraryStoreException implements Exception {
 
 class LibraryStore extends ChangeNotifier {
   LibraryStore({
-    required SharedPreferences prefs,
+    required this._prefs,
     this.defaultsKey = 'library.books.v1',
     EpubMetadataReader? metadataReader,
-  })  : _prefs = prefs,
-        _readMetadata = metadataReader ?? _defaultMetadata {
+  })  : _readMetadata = metadataReader ?? _defaultMetadata {
     _load();
   }
 

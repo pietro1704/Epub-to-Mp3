@@ -10,12 +10,10 @@ import 'resume_store.dart';
 /// the foreground, so a rebuilt queue can resume after a process restart.
 class PlaybackResumePersistence with WidgetsBindingObserver {
   PlaybackResumePersistence({
-    required AudioPlayerInterface player,
+    required this._player,
     required SharedPreferences preferences,
-    required String? Function() bookId,
-  }) : _player = player,
-       _bookId = bookId,
-       _store = ResumeStore(preferences) {
+    required this._bookId,
+  }) : _store = ResumeStore(preferences) {
     WidgetsBinding.instance.addObserver(this);
     _positionSubscription = _player.position.listen((_) {
       unawaited(save());

@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -493,7 +494,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ttsSystemOffline => 'System voice · Offline fallback';
 
   @override
-  String get ttsUseRecommendedDefaults => 'Use Faber with system voice fallback';
+  String get ttsUseRecommendedDefaults =>
+      'Use Faber with system voice fallback';
 
   @override
   String get ttsAllowOnlineSecondary => 'Allow online secondary';

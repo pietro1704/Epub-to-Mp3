@@ -153,12 +153,12 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       }
       return;
     }
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['epub', 'pdf'],
     );
-    if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
+    if (result == null) return;
+    final path = result.path;
     if (!mounted) return;
     if (path == null || path.isEmpty) {
       setState(

@@ -6,7 +6,7 @@ part 'ebook_fulltext.g.dart';
 /// Sentence span — produced by `splitSentences()` or projected from a backend
 /// segment table. Used by SyncEngine for highlight + ReaderView for rendering.
 @freezed
-class SentenceSpan with _$SentenceSpan {
+abstract class SentenceSpan with _$SentenceSpan {
   const factory SentenceSpan({
     required String id,
     required String text,
@@ -16,7 +16,7 @@ class SentenceSpan with _$SentenceSpan {
 }
 
 @freezed
-class FulltextSegment with _$FulltextSegment {
+abstract class FulltextSegment with _$FulltextSegment {
   const factory FulltextSegment({
     String? id,
     required String text,
@@ -31,7 +31,7 @@ class FulltextSegment with _$FulltextSegment {
 int _flexInt(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
 
 @freezed
-class FulltextChapter with _$FulltextChapter {
+abstract class FulltextChapter with _$FulltextChapter {
   const FulltextChapter._();
   const factory FulltextChapter({
     @JsonKey(fromJson: _flexInt) required int index,
@@ -157,7 +157,7 @@ class FulltextChapter with _$FulltextChapter {
 }
 
 @freezed
-class EbookFulltext with _$EbookFulltext {
+abstract class EbookFulltext with _$EbookFulltext {
   const factory EbookFulltext({
     required String jobId,
     String? bookTitle,

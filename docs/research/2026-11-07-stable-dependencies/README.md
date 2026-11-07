@@ -77,9 +77,17 @@ is needed for these Mac host/Web commands.
   CPython 3.14. The prepared main-environment candidate is 3.14.10. The optional
   Coqui `TTS` package requires Python below 3.12, so its separate candidate is
   3.11.18. Legacy Python resolution and tests belong in CI.
-- Flutter 3.47.9 and newer Dart packages are being validated on Arch in an
-  isolated checkout. Dart code generation and native builds are not Mac tasks.
-  Android toolchain migration remains a separate Arch acceptance boundary.
+- Flutter 3.47.9 / Dart 3.13.7 were validated on Arch in an isolated checkout:
+  560 tests passed, eight opt-in tests skipped, and final analysis found no
+  issues. Riverpod 3, Freezed 4, file_picker 13 and XML 7 required API and
+  generated-model adaptations. The typography sheet retains a Material ancestor
+  for the updated slider widgets. Generated sources use the generator's formatter.
+  `flutter_html` 3.0.0 imports an internal `html` function removed in 0.15.7;
+  retain `html` 0.15.6 until that renderer supports the public API.
+  The 31-file generated/source package was hash-matched on Mac; no Flutter SDK
+  or Dart execution was needed on Mac. Local host preflight passed all 28 suites.
+  Android toolchain migration and actual Linux application acceptance remain
+  separate Arch checks; these results cover analysis and unit/widget behavior.
 - Preserve Xcode 26.3 for iPhone 16e and Xcode 16.4 for the existing Mac/legacy
   routes. No Xcode selection, Simulator runtime or physical-device action is
   part of this Web/host update.

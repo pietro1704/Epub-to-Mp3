@@ -1,6 +1,6 @@
-// coverage:ignore-file
 // GENERATED CODE - DO NOT MODIFY BY HAND
-// ignore_for_file: type=lint
+// coverage:ignore-file
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'ebook_fulltext.dart';
@@ -9,100 +9,75 @@ part of 'ebook_fulltext.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 T _$identity<T>(T value) => value;
-
-final _privateConstructorUsedError = UnsupportedError(
-  'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
-);
 
 /// @nodoc
 mixin _$SentenceSpan {
-  String get id => throw _privateConstructorUsedError;
-  String get text => throw _privateConstructorUsedError;
-  int get startChar => throw _privateConstructorUsedError;
-  int get endChar => throw _privateConstructorUsedError;
+  String get id;
+  String get text;
+  int get startChar;
+  int get endChar;
 
   /// Create a copy of SentenceSpan
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
-  $SentenceSpanCopyWith<SentenceSpan> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class $SentenceSpanCopyWith<$Res> {
-  factory $SentenceSpanCopyWith(
-    SentenceSpan value,
-    $Res Function(SentenceSpan) then,
-  ) = _$SentenceSpanCopyWithImpl<$Res, SentenceSpan>;
-  @useResult
-  $Res call({String id, String text, int startChar, int endChar});
-}
-
-/// @nodoc
-class _$SentenceSpanCopyWithImpl<$Res, $Val extends SentenceSpan>
-    implements $SentenceSpanCopyWith<$Res> {
-  _$SentenceSpanCopyWithImpl(this._value, this._then);
-
-  // ignore: unused_field
-  final $Val _value;
-  // ignore: unused_field
-  final $Res Function($Val) _then;
-
-  /// Create a copy of SentenceSpan
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
+  $SentenceSpanCopyWith<SentenceSpan> get copyWith =>
+      _$SentenceSpanCopyWithImpl<SentenceSpan>(
+        this as SentenceSpan,
+        _$identity,
+      );
+
   @override
-  $Res call({
-    Object? id = null,
-    Object? text = null,
-    Object? startChar = null,
-    Object? endChar = null,
-  }) {
-    return _then(
-      _value.copyWith(
-            id: null == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as String,
-            text: null == text
-                ? _value.text
-                : text // ignore: cast_nullable_to_non_nullable
-                      as String,
-            startChar: null == startChar
-                ? _value.startChar
-                : startChar // ignore: cast_nullable_to_non_nullable
-                      as int,
-            endChar: null == endChar
-                ? _value.endChar
-                : endChar // ignore: cast_nullable_to_non_nullable
-                      as int,
-          )
-          as $Val,
+  bool operator ==(Object other) {
+    final _this = this as SentenceSpan;
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is SentenceSpan &&
+            (identical(other.id, _this.id) || other.id == _this.id) &&
+            (identical(other.text, _this.text) || other.text == _this.text) &&
+            (identical(other.startChar, _this.startChar) ||
+                other.startChar == _this.startChar) &&
+            (identical(other.endChar, _this.endChar) ||
+                other.endChar == _this.endChar));
+  }
+
+  @override
+  int get hashCode {
+    final _this = this as SentenceSpan;
+    return Object.hash(
+      runtimeType,
+      _this.id,
+      _this.text,
+      _this.startChar,
+      _this.endChar,
     );
+  }
+
+  @override
+  String toString() {
+    final _this = this as SentenceSpan;
+    return 'SentenceSpan(id: ${_this.id}, text: ${_this.text}, startChar: ${_this.startChar}, endChar: ${_this.endChar})';
   }
 }
 
 /// @nodoc
-abstract class _$$SentenceSpanImplCopyWith<$Res>
-    implements $SentenceSpanCopyWith<$Res> {
-  factory _$$SentenceSpanImplCopyWith(
-    _$SentenceSpanImpl value,
-    $Res Function(_$SentenceSpanImpl) then,
-  ) = __$$SentenceSpanImplCopyWithImpl<$Res>;
-  @override
+abstract mixin class $SentenceSpanCopyWith<$Res> {
+  factory $SentenceSpanCopyWith(
+    SentenceSpan value,
+    $Res Function(SentenceSpan) _then,
+  ) = _$SentenceSpanCopyWithImpl;
   @useResult
   $Res call({String id, String text, int startChar, int endChar});
 }
 
 /// @nodoc
-class __$$SentenceSpanImplCopyWithImpl<$Res>
-    extends _$SentenceSpanCopyWithImpl<$Res, _$SentenceSpanImpl>
-    implements _$$SentenceSpanImplCopyWith<$Res> {
-  __$$SentenceSpanImplCopyWithImpl(
-    _$SentenceSpanImpl _value,
-    $Res Function(_$SentenceSpanImpl) _then,
-  ) : super(_value, _then);
+class _$SentenceSpanCopyWithImpl<$Res> implements $SentenceSpanCopyWith<$Res> {
+  _$SentenceSpanCopyWithImpl(this._self, this._then);
+
+  final SentenceSpan _self;
+  final $Res Function(SentenceSpan) _then;
 
   /// Create a copy of SentenceSpan
   /// with the given fields replaced by the non-null parameter values.
@@ -115,21 +90,21 @@ class __$$SentenceSpanImplCopyWithImpl<$Res>
     Object? endChar = null,
   }) {
     return _then(
-      _$SentenceSpanImpl(
+      SentenceSpan(
         id: null == id
-            ? _value.id
+            ? _self.id
             : id // ignore: cast_nullable_to_non_nullable
                   as String,
         text: null == text
-            ? _value.text
+            ? _self.text
             : text // ignore: cast_nullable_to_non_nullable
                   as String,
         startChar: null == startChar
-            ? _value.startChar
+            ? _self.startChar
             : startChar // ignore: cast_nullable_to_non_nullable
                   as int,
         endChar: null == endChar
-            ? _value.endChar
+            ? _self.endChar
             : endChar // ignore: cast_nullable_to_non_nullable
                   as int,
       ),
@@ -137,10 +112,170 @@ class __$$SentenceSpanImplCopyWithImpl<$Res>
   }
 }
 
+/// Adds pattern-matching-related methods to [SentenceSpan].
+extension SentenceSpanPatterns on SentenceSpan {
+  /// A variant of `map` that fallback to returning `orElse`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>(
+    TResult Function(_SentenceSpan value)? $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _SentenceSpan() when $default != null:
+        return $default(_that);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// Callbacks receives the raw object, upcasted.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case final Subclass2 value:
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>(
+    TResult Function(_SentenceSpan value) $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _SentenceSpan():
+        return $default(_that);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `map` that fallback to returning `null`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>(
+    TResult? Function(_SentenceSpan value)? $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _SentenceSpan() when $default != null:
+        return $default(_that);
+      case _:
+        return null;
+    }
+  }
+
+  /// A variant of `when` that fallback to an `orElse` callback.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>(
+    TResult Function(String id, String text, int startChar, int endChar)?
+    $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _SentenceSpan() when $default != null:
+        return $default(_that.id, _that.text, _that.startChar, _that.endChar);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// As opposed to `map`, this offers destructuring.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case Subclass2(:final field2):
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>(
+    TResult Function(String id, String text, int startChar, int endChar)
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _SentenceSpan():
+        return $default(_that.id, _that.text, _that.startChar, _that.endChar);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `when` that fallback to returning `null`
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>(
+    TResult? Function(String id, String text, int startChar, int endChar)?
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _SentenceSpan() when $default != null:
+        return $default(_that.id, _that.text, _that.startChar, _that.endChar);
+      case _:
+        return null;
+    }
+  }
+}
+
 /// @nodoc
 
-class _$SentenceSpanImpl implements _SentenceSpan {
-  const _$SentenceSpanImpl({
+class _SentenceSpan implements SentenceSpan {
+  const _SentenceSpan({
     required this.id,
     required this.text,
     required this.startChar,
@@ -156,16 +291,19 @@ class _$SentenceSpanImpl implements _SentenceSpan {
   @override
   final int endChar;
 
+  /// Create a copy of SentenceSpan
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  String toString() {
-    return 'SentenceSpan(id: $id, text: $text, startChar: $startChar, endChar: $endChar)';
-  }
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  _$SentenceSpanCopyWith<_SentenceSpan> get copyWith =>
+      __$SentenceSpanCopyWithImpl<_SentenceSpan>(this, _$identity);
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$SentenceSpanImpl &&
+            other is _SentenceSpan &&
             (identical(other.id, id) || other.id == id) &&
             (identical(other.text, text) || other.text == text) &&
             (identical(other.startChar, startChar) ||
@@ -174,137 +312,140 @@ class _$SentenceSpanImpl implements _SentenceSpan {
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, id, text, startChar, endChar);
-
-  /// Create a copy of SentenceSpan
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  @override
-  @pragma('vm:prefer-inline')
-  _$$SentenceSpanImplCopyWith<_$SentenceSpanImpl> get copyWith =>
-      __$$SentenceSpanImplCopyWithImpl<_$SentenceSpanImpl>(this, _$identity);
-}
-
-abstract class _SentenceSpan implements SentenceSpan {
-  const factory _SentenceSpan({
-    required final String id,
-    required final String text,
-    required final int startChar,
-    required final int endChar,
-  }) = _$SentenceSpanImpl;
+  int get hashCode {
+    return Object.hash(runtimeType, id, text, startChar, endChar);
+  }
 
   @override
-  String get id;
-  @override
-  String get text;
-  @override
-  int get startChar;
-  @override
-  int get endChar;
-
-  /// Create a copy of SentenceSpan
-  /// with the given fields replaced by the non-null parameter values.
-  @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  _$$SentenceSpanImplCopyWith<_$SentenceSpanImpl> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-FulltextSegment _$FulltextSegmentFromJson(Map<String, dynamic> json) {
-  return _FulltextSegment.fromJson(json);
+  String toString() {
+    return 'SentenceSpan(id: $id, text: $text, startChar: $startChar, endChar: $endChar)';
+  }
 }
 
 /// @nodoc
-mixin _$FulltextSegment {
-  String? get id => throw _privateConstructorUsedError;
-  String get text => throw _privateConstructorUsedError;
-  int? get startMs => throw _privateConstructorUsedError;
-  int? get endMs => throw _privateConstructorUsedError;
-
-  /// Serializes this FulltextSegment to a JSON map.
-  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of FulltextSegment
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  $FulltextSegmentCopyWith<FulltextSegment> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class $FulltextSegmentCopyWith<$Res> {
-  factory $FulltextSegmentCopyWith(
-    FulltextSegment value,
-    $Res Function(FulltextSegment) then,
-  ) = _$FulltextSegmentCopyWithImpl<$Res, FulltextSegment>;
+abstract mixin class _$SentenceSpanCopyWith<$Res>
+    implements $SentenceSpanCopyWith<$Res> {
+  factory _$SentenceSpanCopyWith(
+    _SentenceSpan value,
+    $Res Function(_SentenceSpan) _then,
+  ) = __$SentenceSpanCopyWithImpl;
+  @override
   @useResult
-  $Res call({String? id, String text, int? startMs, int? endMs});
+  $Res call({String id, String text, int startChar, int endChar});
 }
 
 /// @nodoc
-class _$FulltextSegmentCopyWithImpl<$Res, $Val extends FulltextSegment>
-    implements $FulltextSegmentCopyWith<$Res> {
-  _$FulltextSegmentCopyWithImpl(this._value, this._then);
+class __$SentenceSpanCopyWithImpl<$Res>
+    implements _$SentenceSpanCopyWith<$Res> {
+  __$SentenceSpanCopyWithImpl(this._self, this._then);
 
-  // ignore: unused_field
-  final $Val _value;
-  // ignore: unused_field
-  final $Res Function($Val) _then;
+  final _SentenceSpan _self;
+  final $Res Function(_SentenceSpan) _then;
 
-  /// Create a copy of FulltextSegment
+  /// Create a copy of SentenceSpan
   /// with the given fields replaced by the non-null parameter values.
-  @pragma('vm:prefer-inline')
   @override
+  @pragma('vm:prefer-inline')
   $Res call({
-    Object? id = freezed,
+    Object? id = null,
     Object? text = null,
-    Object? startMs = freezed,
-    Object? endMs = freezed,
+    Object? startChar = null,
+    Object? endChar = null,
   }) {
     return _then(
-      _value.copyWith(
-            id: freezed == id
-                ? _value.id
-                : id // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            text: null == text
-                ? _value.text
-                : text // ignore: cast_nullable_to_non_nullable
-                      as String,
-            startMs: freezed == startMs
-                ? _value.startMs
-                : startMs // ignore: cast_nullable_to_non_nullable
-                      as int?,
-            endMs: freezed == endMs
-                ? _value.endMs
-                : endMs // ignore: cast_nullable_to_non_nullable
-                      as int?,
-          )
-          as $Val,
+      _SentenceSpan(
+        id: null == id
+            ? _self.id
+            : id // ignore: cast_nullable_to_non_nullable
+                  as String,
+        text: null == text
+            ? _self.text
+            : text // ignore: cast_nullable_to_non_nullable
+                  as String,
+        startChar: null == startChar
+            ? _self.startChar
+            : startChar // ignore: cast_nullable_to_non_nullable
+                  as int,
+        endChar: null == endChar
+            ? _self.endChar
+            : endChar // ignore: cast_nullable_to_non_nullable
+                  as int,
+      ),
     );
   }
 }
 
 /// @nodoc
-abstract class _$$FulltextSegmentImplCopyWith<$Res>
-    implements $FulltextSegmentCopyWith<$Res> {
-  factory _$$FulltextSegmentImplCopyWith(
-    _$FulltextSegmentImpl value,
-    $Res Function(_$FulltextSegmentImpl) then,
-  ) = __$$FulltextSegmentImplCopyWithImpl<$Res>;
+mixin _$FulltextSegment {
+  String? get id;
+  String get text;
+  int? get startMs;
+  int? get endMs;
+
+  /// Create a copy of FulltextSegment
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  $FulltextSegmentCopyWith<FulltextSegment> get copyWith =>
+      _$FulltextSegmentCopyWithImpl<FulltextSegment>(
+        this as FulltextSegment,
+        _$identity,
+      );
+
+  /// Serializes this FulltextSegment to a JSON map.
+  Map<String, dynamic> toJson();
+
   @override
+  bool operator ==(Object other) {
+    final _this = this as FulltextSegment;
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is FulltextSegment &&
+            (identical(other.id, _this.id) || other.id == _this.id) &&
+            (identical(other.text, _this.text) || other.text == _this.text) &&
+            (identical(other.startMs, _this.startMs) ||
+                other.startMs == _this.startMs) &&
+            (identical(other.endMs, _this.endMs) ||
+                other.endMs == _this.endMs));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode {
+    final _this = this as FulltextSegment;
+    return Object.hash(
+      runtimeType,
+      _this.id,
+      _this.text,
+      _this.startMs,
+      _this.endMs,
+    );
+  }
+
+  @override
+  String toString() {
+    final _this = this as FulltextSegment;
+    return 'FulltextSegment(id: ${_this.id}, text: ${_this.text}, startMs: ${_this.startMs}, endMs: ${_this.endMs})';
+  }
+}
+
+/// @nodoc
+abstract mixin class $FulltextSegmentCopyWith<$Res> {
+  factory $FulltextSegmentCopyWith(
+    FulltextSegment value,
+    $Res Function(FulltextSegment) _then,
+  ) = _$FulltextSegmentCopyWithImpl;
   @useResult
   $Res call({String? id, String text, int? startMs, int? endMs});
 }
 
 /// @nodoc
-class __$$FulltextSegmentImplCopyWithImpl<$Res>
-    extends _$FulltextSegmentCopyWithImpl<$Res, _$FulltextSegmentImpl>
-    implements _$$FulltextSegmentImplCopyWith<$Res> {
-  __$$FulltextSegmentImplCopyWithImpl(
-    _$FulltextSegmentImpl _value,
-    $Res Function(_$FulltextSegmentImpl) _then,
-  ) : super(_value, _then);
+class _$FulltextSegmentCopyWithImpl<$Res>
+    implements $FulltextSegmentCopyWith<$Res> {
+  _$FulltextSegmentCopyWithImpl(this._self, this._then);
+
+  final FulltextSegment _self;
+  final $Res Function(FulltextSegment) _then;
 
   /// Create a copy of FulltextSegment
   /// with the given fields replaced by the non-null parameter values.
@@ -317,21 +458,21 @@ class __$$FulltextSegmentImplCopyWithImpl<$Res>
     Object? endMs = freezed,
   }) {
     return _then(
-      _$FulltextSegmentImpl(
+      FulltextSegment(
         id: freezed == id
-            ? _value.id
+            ? _self.id
             : id // ignore: cast_nullable_to_non_nullable
                   as String?,
         text: null == text
-            ? _value.text
+            ? _self.text
             : text // ignore: cast_nullable_to_non_nullable
                   as String,
         startMs: freezed == startMs
-            ? _value.startMs
+            ? _self.startMs
             : startMs // ignore: cast_nullable_to_non_nullable
                   as int?,
         endMs: freezed == endMs
-            ? _value.endMs
+            ? _self.endMs
             : endMs // ignore: cast_nullable_to_non_nullable
                   as int?,
       ),
@@ -339,18 +480,177 @@ class __$$FulltextSegmentImplCopyWithImpl<$Res>
   }
 }
 
+/// Adds pattern-matching-related methods to [FulltextSegment].
+extension FulltextSegmentPatterns on FulltextSegment {
+  /// A variant of `map` that fallback to returning `orElse`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>(
+    TResult Function(_FulltextSegment value)? $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextSegment() when $default != null:
+        return $default(_that);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// Callbacks receives the raw object, upcasted.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case final Subclass2 value:
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>(
+    TResult Function(_FulltextSegment value) $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextSegment():
+        return $default(_that);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `map` that fallback to returning `null`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>(
+    TResult? Function(_FulltextSegment value)? $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextSegment() when $default != null:
+        return $default(_that);
+      case _:
+        return null;
+    }
+  }
+
+  /// A variant of `when` that fallback to an `orElse` callback.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>(
+    TResult Function(String? id, String text, int? startMs, int? endMs)?
+    $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextSegment() when $default != null:
+        return $default(_that.id, _that.text, _that.startMs, _that.endMs);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// As opposed to `map`, this offers destructuring.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case Subclass2(:final field2):
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>(
+    TResult Function(String? id, String text, int? startMs, int? endMs)
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextSegment():
+        return $default(_that.id, _that.text, _that.startMs, _that.endMs);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `when` that fallback to returning `null`
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>(
+    TResult? Function(String? id, String text, int? startMs, int? endMs)?
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextSegment() when $default != null:
+        return $default(_that.id, _that.text, _that.startMs, _that.endMs);
+      case _:
+        return null;
+    }
+  }
+}
+
 /// @nodoc
 @JsonSerializable()
-class _$FulltextSegmentImpl implements _FulltextSegment {
-  const _$FulltextSegmentImpl({
+class _FulltextSegment implements FulltextSegment {
+  const _FulltextSegment({
     this.id,
     required this.text,
     this.startMs,
     this.endMs,
   });
-
-  factory _$FulltextSegmentImpl.fromJson(Map<String, dynamic> json) =>
-      _$$FulltextSegmentImplFromJson(json);
+  factory _FulltextSegment.fromJson(Map<String, dynamic> json) =>
+      _$FulltextSegmentFromJson(json);
 
   @override
   final String? id;
@@ -361,16 +661,24 @@ class _$FulltextSegmentImpl implements _FulltextSegment {
   @override
   final int? endMs;
 
+  /// Create a copy of FulltextSegment
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  String toString() {
-    return 'FulltextSegment(id: $id, text: $text, startMs: $startMs, endMs: $endMs)';
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  _$FulltextSegmentCopyWith<_FulltextSegment> get copyWith =>
+      __$FulltextSegmentCopyWithImpl<_FulltextSegment>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$FulltextSegmentToJson(this);
   }
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$FulltextSegmentImpl &&
+            other is _FulltextSegment &&
             (identical(other.id, id) || other.id == id) &&
             (identical(other.text, text) || other.text == text) &&
             (identical(other.startMs, startMs) || other.startMs == startMs) &&
@@ -379,163 +687,142 @@ class _$FulltextSegmentImpl implements _FulltextSegment {
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(runtimeType, id, text, startMs, endMs);
-
-  /// Create a copy of FulltextSegment
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  @override
-  @pragma('vm:prefer-inline')
-  _$$FulltextSegmentImplCopyWith<_$FulltextSegmentImpl> get copyWith =>
-      __$$FulltextSegmentImplCopyWithImpl<_$FulltextSegmentImpl>(
-        this,
-        _$identity,
-      );
+  int get hashCode {
+    return Object.hash(runtimeType, id, text, startMs, endMs);
+  }
 
   @override
-  Map<String, dynamic> toJson() {
-    return _$$FulltextSegmentImplToJson(this);
+  String toString() {
+    return 'FulltextSegment(id: $id, text: $text, startMs: $startMs, endMs: $endMs)';
   }
 }
 
-abstract class _FulltextSegment implements FulltextSegment {
-  const factory _FulltextSegment({
-    final String? id,
-    required final String text,
-    final int? startMs,
-    final int? endMs,
-  }) = _$FulltextSegmentImpl;
+/// @nodoc
+abstract mixin class _$FulltextSegmentCopyWith<$Res>
+    implements $FulltextSegmentCopyWith<$Res> {
+  factory _$FulltextSegmentCopyWith(
+    _FulltextSegment value,
+    $Res Function(_FulltextSegment) _then,
+  ) = __$FulltextSegmentCopyWithImpl;
+  @override
+  @useResult
+  $Res call({String? id, String text, int? startMs, int? endMs});
+}
 
-  factory _FulltextSegment.fromJson(Map<String, dynamic> json) =
-      _$FulltextSegmentImpl.fromJson;
+/// @nodoc
+class __$FulltextSegmentCopyWithImpl<$Res>
+    implements _$FulltextSegmentCopyWith<$Res> {
+  __$FulltextSegmentCopyWithImpl(this._self, this._then);
 
-  @override
-  String? get id;
-  @override
-  String get text;
-  @override
-  int? get startMs;
-  @override
-  int? get endMs;
+  final _FulltextSegment _self;
+  final $Res Function(_FulltextSegment) _then;
 
   /// Create a copy of FulltextSegment
   /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  _$$FulltextSegmentImplCopyWith<_$FulltextSegmentImpl> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-FulltextChapter _$FulltextChapterFromJson(Map<String, dynamic> json) {
-  return _FulltextChapter.fromJson(json);
-}
-
-/// @nodoc
-mixin _$FulltextChapter {
-  @JsonKey(fromJson: _flexInt)
-  int get index => throw _privateConstructorUsedError;
-  String? get name => throw _privateConstructorUsedError;
-  String get text => throw _privateConstructorUsedError;
-  String? get html => throw _privateConstructorUsedError;
-  String? get css => throw _privateConstructorUsedError;
-  int? get charCount => throw _privateConstructorUsedError;
-  List<FulltextSegment>? get segments => throw _privateConstructorUsedError;
-
-  /// Serializes this FulltextChapter to a JSON map.
-  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of FulltextChapter
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  $FulltextChapterCopyWith<FulltextChapter> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class $FulltextChapterCopyWith<$Res> {
-  factory $FulltextChapterCopyWith(
-    FulltextChapter value,
-    $Res Function(FulltextChapter) then,
-  ) = _$FulltextChapterCopyWithImpl<$Res, FulltextChapter>;
-  @useResult
-  $Res call({
-    @JsonKey(fromJson: _flexInt) int index,
-    String? name,
-    String text,
-    String? html,
-    String? css,
-    int? charCount,
-    List<FulltextSegment>? segments,
-  });
-}
-
-/// @nodoc
-class _$FulltextChapterCopyWithImpl<$Res, $Val extends FulltextChapter>
-    implements $FulltextChapterCopyWith<$Res> {
-  _$FulltextChapterCopyWithImpl(this._value, this._then);
-
-  // ignore: unused_field
-  final $Val _value;
-  // ignore: unused_field
-  final $Res Function($Val) _then;
-
-  /// Create a copy of FulltextChapter
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
-  @override
   $Res call({
-    Object? index = null,
-    Object? name = freezed,
+    Object? id = freezed,
     Object? text = null,
-    Object? html = freezed,
-    Object? css = freezed,
-    Object? charCount = freezed,
-    Object? segments = freezed,
+    Object? startMs = freezed,
+    Object? endMs = freezed,
   }) {
     return _then(
-      _value.copyWith(
-            index: null == index
-                ? _value.index
-                : index // ignore: cast_nullable_to_non_nullable
-                      as int,
-            name: freezed == name
-                ? _value.name
-                : name // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            text: null == text
-                ? _value.text
-                : text // ignore: cast_nullable_to_non_nullable
-                      as String,
-            html: freezed == html
-                ? _value.html
-                : html // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            css: freezed == css
-                ? _value.css
-                : css // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            charCount: freezed == charCount
-                ? _value.charCount
-                : charCount // ignore: cast_nullable_to_non_nullable
-                      as int?,
-            segments: freezed == segments
-                ? _value.segments
-                : segments // ignore: cast_nullable_to_non_nullable
-                      as List<FulltextSegment>?,
-          )
-          as $Val,
+      _FulltextSegment(
+        id: freezed == id
+            ? _self.id
+            : id // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        text: null == text
+            ? _self.text
+            : text // ignore: cast_nullable_to_non_nullable
+                  as String,
+        startMs: freezed == startMs
+            ? _self.startMs
+            : startMs // ignore: cast_nullable_to_non_nullable
+                  as int?,
+        endMs: freezed == endMs
+            ? _self.endMs
+            : endMs // ignore: cast_nullable_to_non_nullable
+                  as int?,
+      ),
     );
   }
 }
 
 /// @nodoc
-abstract class _$$FulltextChapterImplCopyWith<$Res>
-    implements $FulltextChapterCopyWith<$Res> {
-  factory _$$FulltextChapterImplCopyWith(
-    _$FulltextChapterImpl value,
-    $Res Function(_$FulltextChapterImpl) then,
-  ) = __$$FulltextChapterImplCopyWithImpl<$Res>;
+mixin _$FulltextChapter {
+  @JsonKey(fromJson: _flexInt)
+  int get index;
+  String? get name;
+  String get text;
+  String? get html;
+  String? get css;
+  int? get charCount;
+  List<FulltextSegment>? get segments;
+
+  /// Create a copy of FulltextChapter
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  $FulltextChapterCopyWith<FulltextChapter> get copyWith =>
+      _$FulltextChapterCopyWithImpl<FulltextChapter>(
+        this as FulltextChapter,
+        _$identity,
+      );
+
+  /// Serializes this FulltextChapter to a JSON map.
+  Map<String, dynamic> toJson();
+
   @override
+  bool operator ==(Object other) {
+    final _this = this as FulltextChapter;
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is FulltextChapter &&
+            (identical(other.index, _this.index) ||
+                other.index == _this.index) &&
+            (identical(other.name, _this.name) || other.name == _this.name) &&
+            (identical(other.text, _this.text) || other.text == _this.text) &&
+            (identical(other.html, _this.html) || other.html == _this.html) &&
+            (identical(other.css, _this.css) || other.css == _this.css) &&
+            (identical(other.charCount, _this.charCount) ||
+                other.charCount == _this.charCount) &&
+            const DeepCollectionEquality().equals(
+              other.segments,
+              _this.segments,
+            ));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode {
+    final _this = this as FulltextChapter;
+    return Object.hash(
+      runtimeType,
+      _this.index,
+      _this.name,
+      _this.text,
+      _this.html,
+      _this.css,
+      _this.charCount,
+      const DeepCollectionEquality().hash(_this.segments),
+    );
+  }
+
+  @override
+  String toString() {
+    final _this = this as FulltextChapter;
+    return 'FulltextChapter(index: ${_this.index}, name: ${_this.name}, text: ${_this.text}, html: ${_this.html}, css: ${_this.css}, charCount: ${_this.charCount}, segments: ${_this.segments})';
+  }
+}
+
+/// @nodoc
+abstract mixin class $FulltextChapterCopyWith<$Res> {
+  factory $FulltextChapterCopyWith(
+    FulltextChapter value,
+    $Res Function(FulltextChapter) _then,
+  ) = _$FulltextChapterCopyWithImpl;
   @useResult
   $Res call({
     @JsonKey(fromJson: _flexInt) int index,
@@ -549,13 +836,12 @@ abstract class _$$FulltextChapterImplCopyWith<$Res>
 }
 
 /// @nodoc
-class __$$FulltextChapterImplCopyWithImpl<$Res>
-    extends _$FulltextChapterCopyWithImpl<$Res, _$FulltextChapterImpl>
-    implements _$$FulltextChapterImplCopyWith<$Res> {
-  __$$FulltextChapterImplCopyWithImpl(
-    _$FulltextChapterImpl _value,
-    $Res Function(_$FulltextChapterImpl) _then,
-  ) : super(_value, _then);
+class _$FulltextChapterCopyWithImpl<$Res>
+    implements $FulltextChapterCopyWith<$Res> {
+  _$FulltextChapterCopyWithImpl(this._self, this._then);
+
+  final FulltextChapter _self;
+  final $Res Function(FulltextChapter) _then;
 
   /// Create a copy of FulltextChapter
   /// with the given fields replaced by the non-null parameter values.
@@ -571,33 +857,33 @@ class __$$FulltextChapterImplCopyWithImpl<$Res>
     Object? segments = freezed,
   }) {
     return _then(
-      _$FulltextChapterImpl(
+      FulltextChapter(
         index: null == index
-            ? _value.index
+            ? _self.index
             : index // ignore: cast_nullable_to_non_nullable
                   as int,
         name: freezed == name
-            ? _value.name
+            ? _self.name
             : name // ignore: cast_nullable_to_non_nullable
                   as String?,
         text: null == text
-            ? _value.text
+            ? _self.text
             : text // ignore: cast_nullable_to_non_nullable
                   as String,
         html: freezed == html
-            ? _value.html
+            ? _self.html
             : html // ignore: cast_nullable_to_non_nullable
                   as String?,
         css: freezed == css
-            ? _value.css
+            ? _self.css
             : css // ignore: cast_nullable_to_non_nullable
                   as String?,
         charCount: freezed == charCount
-            ? _value.charCount
+            ? _self.charCount
             : charCount // ignore: cast_nullable_to_non_nullable
                   as int?,
         segments: freezed == segments
-            ? _value._segments
+            ? _self.segments
             : segments // ignore: cast_nullable_to_non_nullable
                   as List<FulltextSegment>?,
       ),
@@ -605,22 +891,229 @@ class __$$FulltextChapterImplCopyWithImpl<$Res>
   }
 }
 
+/// Adds pattern-matching-related methods to [FulltextChapter].
+extension FulltextChapterPatterns on FulltextChapter {
+  /// A variant of `map` that fallback to returning `orElse`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>(
+    TResult Function(_FulltextChapter value)? $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextChapter() when $default != null:
+        return $default(_that);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// Callbacks receives the raw object, upcasted.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case final Subclass2 value:
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>(
+    TResult Function(_FulltextChapter value) $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextChapter():
+        return $default(_that);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `map` that fallback to returning `null`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>(
+    TResult? Function(_FulltextChapter value)? $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextChapter() when $default != null:
+        return $default(_that);
+      case _:
+        return null;
+    }
+  }
+
+  /// A variant of `when` that fallback to an `orElse` callback.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>(
+    TResult Function(
+      @JsonKey(fromJson: _flexInt) int index,
+      String? name,
+      String text,
+      String? html,
+      String? css,
+      int? charCount,
+      List<FulltextSegment>? segments,
+    )?
+    $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextChapter() when $default != null:
+        return $default(
+          _that.index,
+          _that.name,
+          _that.text,
+          _that.html,
+          _that.css,
+          _that.charCount,
+          _that.segments,
+        );
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// As opposed to `map`, this offers destructuring.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case Subclass2(:final field2):
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>(
+    TResult Function(
+      @JsonKey(fromJson: _flexInt) int index,
+      String? name,
+      String text,
+      String? html,
+      String? css,
+      int? charCount,
+      List<FulltextSegment>? segments,
+    )
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextChapter():
+        return $default(
+          _that.index,
+          _that.name,
+          _that.text,
+          _that.html,
+          _that.css,
+          _that.charCount,
+          _that.segments,
+        );
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `when` that fallback to returning `null`
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>(
+    TResult? Function(
+      @JsonKey(fromJson: _flexInt) int index,
+      String? name,
+      String text,
+      String? html,
+      String? css,
+      int? charCount,
+      List<FulltextSegment>? segments,
+    )?
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _FulltextChapter() when $default != null:
+        return $default(
+          _that.index,
+          _that.name,
+          _that.text,
+          _that.html,
+          _that.css,
+          _that.charCount,
+          _that.segments,
+        );
+      case _:
+        return null;
+    }
+  }
+}
+
 /// @nodoc
 @JsonSerializable()
-class _$FulltextChapterImpl extends _FulltextChapter {
-  const _$FulltextChapterImpl({
+class _FulltextChapter extends FulltextChapter {
+  const _FulltextChapter({
     @JsonKey(fromJson: _flexInt) required this.index,
     this.name,
     required this.text,
     this.html,
     this.css,
     this.charCount,
-    final List<FulltextSegment>? segments,
+    List<FulltextSegment>? segments,
   }) : _segments = segments,
        super._();
-
-  factory _$FulltextChapterImpl.fromJson(Map<String, dynamic> json) =>
-      _$$FulltextChapterImplFromJson(json);
+  factory _FulltextChapter.fromJson(Map<String, dynamic> json) =>
+      _$FulltextChapterFromJson(json);
 
   @override
   @JsonKey(fromJson: _flexInt)
@@ -645,16 +1138,24 @@ class _$FulltextChapterImpl extends _FulltextChapter {
     return EqualUnmodifiableListView(value);
   }
 
+  /// Create a copy of FulltextChapter
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  String toString() {
-    return 'FulltextChapter(index: $index, name: $name, text: $text, html: $html, css: $css, charCount: $charCount, segments: $segments)';
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  _$FulltextChapterCopyWith<_FulltextChapter> get copyWith =>
+      __$FulltextChapterCopyWithImpl<_FulltextChapter>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$FulltextChapterToJson(this);
   }
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$FulltextChapterImpl &&
+            other is _FulltextChapter &&
             (identical(other.index, index) || other.index == index) &&
             (identical(other.name, name) || other.name == name) &&
             (identical(other.text, text) || other.text == text) &&
@@ -662,166 +1163,170 @@ class _$FulltextChapterImpl extends _FulltextChapter {
             (identical(other.css, css) || other.css == css) &&
             (identical(other.charCount, charCount) ||
                 other.charCount == charCount) &&
-            const DeepCollectionEquality().equals(other._segments, _segments));
+            const DeepCollectionEquality().equals(other.segments, _segments));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    index,
-    name,
-    text,
-    html,
-    css,
-    charCount,
-    const DeepCollectionEquality().hash(_segments),
-  );
-
-  /// Create a copy of FulltextChapter
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  @override
-  @pragma('vm:prefer-inline')
-  _$$FulltextChapterImplCopyWith<_$FulltextChapterImpl> get copyWith =>
-      __$$FulltextChapterImplCopyWithImpl<_$FulltextChapterImpl>(
-        this,
-        _$identity,
-      );
+  int get hashCode {
+    return Object.hash(
+      runtimeType,
+      index,
+      name,
+      text,
+      html,
+      css,
+      charCount,
+      const DeepCollectionEquality().hash(_segments),
+    );
+  }
 
   @override
-  Map<String, dynamic> toJson() {
-    return _$$FulltextChapterImplToJson(this);
+  String toString() {
+    return 'FulltextChapter(index: $index, name: $name, text: $text, html: $html, css: $css, charCount: $charCount, segments: $segments)';
   }
 }
 
-abstract class _FulltextChapter extends FulltextChapter {
-  const factory _FulltextChapter({
-    @JsonKey(fromJson: _flexInt) required final int index,
-    final String? name,
-    required final String text,
-    final String? html,
-    final String? css,
-    final int? charCount,
-    final List<FulltextSegment>? segments,
-  }) = _$FulltextChapterImpl;
-  const _FulltextChapter._() : super._();
-
-  factory _FulltextChapter.fromJson(Map<String, dynamic> json) =
-      _$FulltextChapterImpl.fromJson;
-
-  @override
-  @JsonKey(fromJson: _flexInt)
-  int get index;
-  @override
-  String? get name;
-  @override
-  String get text;
-  @override
-  String? get html;
-  @override
-  String? get css;
-  @override
-  int? get charCount;
-  @override
-  List<FulltextSegment>? get segments;
-
-  /// Create a copy of FulltextChapter
-  /// with the given fields replaced by the non-null parameter values.
-  @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  _$$FulltextChapterImplCopyWith<_$FulltextChapterImpl> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-EbookFulltext _$EbookFulltextFromJson(Map<String, dynamic> json) {
-  return _EbookFulltext.fromJson(json);
-}
-
 /// @nodoc
-mixin _$EbookFulltext {
-  String get jobId => throw _privateConstructorUsedError;
-  String? get bookTitle => throw _privateConstructorUsedError;
-  String? get bookAuthor => throw _privateConstructorUsedError;
-  List<FulltextChapter> get chapters => throw _privateConstructorUsedError;
-
-  /// Serializes this EbookFulltext to a JSON map.
-  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of EbookFulltext
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  $EbookFulltextCopyWith<EbookFulltext> get copyWith =>
-      throw _privateConstructorUsedError;
-}
-
-/// @nodoc
-abstract class $EbookFulltextCopyWith<$Res> {
-  factory $EbookFulltextCopyWith(
-    EbookFulltext value,
-    $Res Function(EbookFulltext) then,
-  ) = _$EbookFulltextCopyWithImpl<$Res, EbookFulltext>;
+abstract mixin class _$FulltextChapterCopyWith<$Res>
+    implements $FulltextChapterCopyWith<$Res> {
+  factory _$FulltextChapterCopyWith(
+    _FulltextChapter value,
+    $Res Function(_FulltextChapter) _then,
+  ) = __$FulltextChapterCopyWithImpl;
+  @override
   @useResult
   $Res call({
-    String jobId,
-    String? bookTitle,
-    String? bookAuthor,
-    List<FulltextChapter> chapters,
+    @JsonKey(fromJson: _flexInt) int index,
+    String? name,
+    String text,
+    String? html,
+    String? css,
+    int? charCount,
+    List<FulltextSegment>? segments,
   });
 }
 
 /// @nodoc
-class _$EbookFulltextCopyWithImpl<$Res, $Val extends EbookFulltext>
-    implements $EbookFulltextCopyWith<$Res> {
-  _$EbookFulltextCopyWithImpl(this._value, this._then);
+class __$FulltextChapterCopyWithImpl<$Res>
+    implements _$FulltextChapterCopyWith<$Res> {
+  __$FulltextChapterCopyWithImpl(this._self, this._then);
 
-  // ignore: unused_field
-  final $Val _value;
-  // ignore: unused_field
-  final $Res Function($Val) _then;
+  final _FulltextChapter _self;
+  final $Res Function(_FulltextChapter) _then;
 
-  /// Create a copy of EbookFulltext
+  /// Create a copy of FulltextChapter
   /// with the given fields replaced by the non-null parameter values.
-  @pragma('vm:prefer-inline')
   @override
+  @pragma('vm:prefer-inline')
   $Res call({
-    Object? jobId = null,
-    Object? bookTitle = freezed,
-    Object? bookAuthor = freezed,
-    Object? chapters = null,
+    Object? index = null,
+    Object? name = freezed,
+    Object? text = null,
+    Object? html = freezed,
+    Object? css = freezed,
+    Object? charCount = freezed,
+    Object? segments = freezed,
   }) {
     return _then(
-      _value.copyWith(
-            jobId: null == jobId
-                ? _value.jobId
-                : jobId // ignore: cast_nullable_to_non_nullable
-                      as String,
-            bookTitle: freezed == bookTitle
-                ? _value.bookTitle
-                : bookTitle // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            bookAuthor: freezed == bookAuthor
-                ? _value.bookAuthor
-                : bookAuthor // ignore: cast_nullable_to_non_nullable
-                      as String?,
-            chapters: null == chapters
-                ? _value.chapters
-                : chapters // ignore: cast_nullable_to_non_nullable
-                      as List<FulltextChapter>,
-          )
-          as $Val,
+      _FulltextChapter(
+        index: null == index
+            ? _self.index
+            : index // ignore: cast_nullable_to_non_nullable
+                  as int,
+        name: freezed == name
+            ? _self.name
+            : name // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        text: null == text
+            ? _self.text
+            : text // ignore: cast_nullable_to_non_nullable
+                  as String,
+        html: freezed == html
+            ? _self.html
+            : html // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        css: freezed == css
+            ? _self.css
+            : css // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        charCount: freezed == charCount
+            ? _self.charCount
+            : charCount // ignore: cast_nullable_to_non_nullable
+                  as int?,
+        segments: freezed == segments
+            ? _self._segments
+            : segments // ignore: cast_nullable_to_non_nullable
+                  as List<FulltextSegment>?,
+      ),
     );
   }
 }
 
 /// @nodoc
-abstract class _$$EbookFulltextImplCopyWith<$Res>
-    implements $EbookFulltextCopyWith<$Res> {
-  factory _$$EbookFulltextImplCopyWith(
-    _$EbookFulltextImpl value,
-    $Res Function(_$EbookFulltextImpl) then,
-  ) = __$$EbookFulltextImplCopyWithImpl<$Res>;
+mixin _$EbookFulltext {
+  String get jobId;
+  String? get bookTitle;
+  String? get bookAuthor;
+  List<FulltextChapter> get chapters;
+
+  /// Create a copy of EbookFulltext
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  $EbookFulltextCopyWith<EbookFulltext> get copyWith =>
+      _$EbookFulltextCopyWithImpl<EbookFulltext>(
+        this as EbookFulltext,
+        _$identity,
+      );
+
+  /// Serializes this EbookFulltext to a JSON map.
+  Map<String, dynamic> toJson();
+
   @override
+  bool operator ==(Object other) {
+    final _this = this as EbookFulltext;
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is EbookFulltext &&
+            (identical(other.jobId, _this.jobId) ||
+                other.jobId == _this.jobId) &&
+            (identical(other.bookTitle, _this.bookTitle) ||
+                other.bookTitle == _this.bookTitle) &&
+            (identical(other.bookAuthor, _this.bookAuthor) ||
+                other.bookAuthor == _this.bookAuthor) &&
+            const DeepCollectionEquality().equals(
+              other.chapters,
+              _this.chapters,
+            ));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode {
+    final _this = this as EbookFulltext;
+    return Object.hash(
+      runtimeType,
+      _this.jobId,
+      _this.bookTitle,
+      _this.bookAuthor,
+      const DeepCollectionEquality().hash(_this.chapters),
+    );
+  }
+
+  @override
+  String toString() {
+    final _this = this as EbookFulltext;
+    return 'EbookFulltext(jobId: ${_this.jobId}, bookTitle: ${_this.bookTitle}, bookAuthor: ${_this.bookAuthor}, chapters: ${_this.chapters})';
+  }
+}
+
+/// @nodoc
+abstract mixin class $EbookFulltextCopyWith<$Res> {
+  factory $EbookFulltextCopyWith(
+    EbookFulltext value,
+    $Res Function(EbookFulltext) _then,
+  ) = _$EbookFulltextCopyWithImpl;
   @useResult
   $Res call({
     String jobId,
@@ -832,13 +1337,12 @@ abstract class _$$EbookFulltextImplCopyWith<$Res>
 }
 
 /// @nodoc
-class __$$EbookFulltextImplCopyWithImpl<$Res>
-    extends _$EbookFulltextCopyWithImpl<$Res, _$EbookFulltextImpl>
-    implements _$$EbookFulltextImplCopyWith<$Res> {
-  __$$EbookFulltextImplCopyWithImpl(
-    _$EbookFulltextImpl _value,
-    $Res Function(_$EbookFulltextImpl) _then,
-  ) : super(_value, _then);
+class _$EbookFulltextCopyWithImpl<$Res>
+    implements $EbookFulltextCopyWith<$Res> {
+  _$EbookFulltextCopyWithImpl(this._self, this._then);
+
+  final EbookFulltext _self;
+  final $Res Function(EbookFulltext) _then;
 
   /// Create a copy of EbookFulltext
   /// with the given fields replaced by the non-null parameter values.
@@ -851,21 +1355,21 @@ class __$$EbookFulltextImplCopyWithImpl<$Res>
     Object? chapters = null,
   }) {
     return _then(
-      _$EbookFulltextImpl(
+      EbookFulltext(
         jobId: null == jobId
-            ? _value.jobId
+            ? _self.jobId
             : jobId // ignore: cast_nullable_to_non_nullable
                   as String,
         bookTitle: freezed == bookTitle
-            ? _value.bookTitle
+            ? _self.bookTitle
             : bookTitle // ignore: cast_nullable_to_non_nullable
                   as String?,
         bookAuthor: freezed == bookAuthor
-            ? _value.bookAuthor
+            ? _self.bookAuthor
             : bookAuthor // ignore: cast_nullable_to_non_nullable
                   as String?,
         chapters: null == chapters
-            ? _value._chapters
+            ? _self.chapters
             : chapters // ignore: cast_nullable_to_non_nullable
                   as List<FulltextChapter>,
       ),
@@ -873,18 +1377,207 @@ class __$$EbookFulltextImplCopyWithImpl<$Res>
   }
 }
 
+/// Adds pattern-matching-related methods to [EbookFulltext].
+extension EbookFulltextPatterns on EbookFulltext {
+  /// A variant of `map` that fallback to returning `orElse`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>(
+    TResult Function(_EbookFulltext value)? $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _EbookFulltext() when $default != null:
+        return $default(_that);
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// Callbacks receives the raw object, upcasted.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case final Subclass2 value:
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>(
+    TResult Function(_EbookFulltext value) $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _EbookFulltext():
+        return $default(_that);
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `map` that fallback to returning `null`.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case final Subclass value:
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>(
+    TResult? Function(_EbookFulltext value)? $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _EbookFulltext() when $default != null:
+        return $default(_that);
+      case _:
+        return null;
+    }
+  }
+
+  /// A variant of `when` that fallback to an `orElse` callback.
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return orElse();
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>(
+    TResult Function(
+      String jobId,
+      String? bookTitle,
+      String? bookAuthor,
+      List<FulltextChapter> chapters,
+    )?
+    $default, {
+    required TResult orElse(),
+  }) {
+    final _that = this;
+    switch (_that) {
+      case _EbookFulltext() when $default != null:
+        return $default(
+          _that.jobId,
+          _that.bookTitle,
+          _that.bookAuthor,
+          _that.chapters,
+        );
+      case _:
+        return orElse();
+    }
+  }
+
+  /// A `switch`-like method, using callbacks.
+  ///
+  /// As opposed to `map`, this offers destructuring.
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case Subclass2(:final field2):
+  ///     return ...;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>(
+    TResult Function(
+      String jobId,
+      String? bookTitle,
+      String? bookAuthor,
+      List<FulltextChapter> chapters,
+    )
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _EbookFulltext():
+        return $default(
+          _that.jobId,
+          _that.bookTitle,
+          _that.bookAuthor,
+          _that.chapters,
+        );
+      case _:
+        throw StateError('Unexpected subclass');
+    }
+  }
+
+  /// A variant of `when` that fallback to returning `null`
+  ///
+  /// It is equivalent to doing:
+  /// ```dart
+  /// switch (sealedClass) {
+  ///   case Subclass(:final field):
+  ///     return ...;
+  ///   case _:
+  ///     return null;
+  /// }
+  /// ```
+
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>(
+    TResult? Function(
+      String jobId,
+      String? bookTitle,
+      String? bookAuthor,
+      List<FulltextChapter> chapters,
+    )?
+    $default,
+  ) {
+    final _that = this;
+    switch (_that) {
+      case _EbookFulltext() when $default != null:
+        return $default(
+          _that.jobId,
+          _that.bookTitle,
+          _that.bookAuthor,
+          _that.chapters,
+        );
+      case _:
+        return null;
+    }
+  }
+}
+
 /// @nodoc
 @JsonSerializable()
-class _$EbookFulltextImpl implements _EbookFulltext {
-  const _$EbookFulltextImpl({
+class _EbookFulltext implements EbookFulltext {
+  const _EbookFulltext({
     required this.jobId,
     this.bookTitle,
     this.bookAuthor,
-    required final List<FulltextChapter> chapters,
+    required List<FulltextChapter> chapters,
   }) : _chapters = chapters;
-
-  factory _$EbookFulltextImpl.fromJson(Map<String, dynamic> json) =>
-      _$$EbookFulltextImplFromJson(json);
+  factory _EbookFulltext.fromJson(Map<String, dynamic> json) =>
+      _$EbookFulltextFromJson(json);
 
   @override
   final String jobId;
@@ -900,72 +1593,104 @@ class _$EbookFulltextImpl implements _EbookFulltext {
     return EqualUnmodifiableListView(_chapters);
   }
 
+  /// Create a copy of EbookFulltext
+  /// with the given fields replaced by the non-null parameter values.
   @override
-  String toString() {
-    return 'EbookFulltext(jobId: $jobId, bookTitle: $bookTitle, bookAuthor: $bookAuthor, chapters: $chapters)';
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @pragma('vm:prefer-inline')
+  _$EbookFulltextCopyWith<_EbookFulltext> get copyWith =>
+      __$EbookFulltextCopyWithImpl<_EbookFulltext>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$EbookFulltextToJson(this);
   }
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$EbookFulltextImpl &&
+            other is _EbookFulltext &&
             (identical(other.jobId, jobId) || other.jobId == jobId) &&
             (identical(other.bookTitle, bookTitle) ||
                 other.bookTitle == bookTitle) &&
             (identical(other.bookAuthor, bookAuthor) ||
                 other.bookAuthor == bookAuthor) &&
-            const DeepCollectionEquality().equals(other._chapters, _chapters));
+            const DeepCollectionEquality().equals(other.chapters, _chapters));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(
-    runtimeType,
-    jobId,
-    bookTitle,
-    bookAuthor,
-    const DeepCollectionEquality().hash(_chapters),
-  );
-
-  /// Create a copy of EbookFulltext
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  @override
-  @pragma('vm:prefer-inline')
-  _$$EbookFulltextImplCopyWith<_$EbookFulltextImpl> get copyWith =>
-      __$$EbookFulltextImplCopyWithImpl<_$EbookFulltextImpl>(this, _$identity);
+  int get hashCode {
+    return Object.hash(
+      runtimeType,
+      jobId,
+      bookTitle,
+      bookAuthor,
+      const DeepCollectionEquality().hash(_chapters),
+    );
+  }
 
   @override
-  Map<String, dynamic> toJson() {
-    return _$$EbookFulltextImplToJson(this);
+  String toString() {
+    return 'EbookFulltext(jobId: $jobId, bookTitle: $bookTitle, bookAuthor: $bookAuthor, chapters: $chapters)';
   }
 }
 
-abstract class _EbookFulltext implements EbookFulltext {
-  const factory _EbookFulltext({
-    required final String jobId,
-    final String? bookTitle,
-    final String? bookAuthor,
-    required final List<FulltextChapter> chapters,
-  }) = _$EbookFulltextImpl;
+/// @nodoc
+abstract mixin class _$EbookFulltextCopyWith<$Res>
+    implements $EbookFulltextCopyWith<$Res> {
+  factory _$EbookFulltextCopyWith(
+    _EbookFulltext value,
+    $Res Function(_EbookFulltext) _then,
+  ) = __$EbookFulltextCopyWithImpl;
+  @override
+  @useResult
+  $Res call({
+    String jobId,
+    String? bookTitle,
+    String? bookAuthor,
+    List<FulltextChapter> chapters,
+  });
+}
 
-  factory _EbookFulltext.fromJson(Map<String, dynamic> json) =
-      _$EbookFulltextImpl.fromJson;
+/// @nodoc
+class __$EbookFulltextCopyWithImpl<$Res>
+    implements _$EbookFulltextCopyWith<$Res> {
+  __$EbookFulltextCopyWithImpl(this._self, this._then);
 
-  @override
-  String get jobId;
-  @override
-  String? get bookTitle;
-  @override
-  String? get bookAuthor;
-  @override
-  List<FulltextChapter> get chapters;
+  final _EbookFulltext _self;
+  final $Res Function(_EbookFulltext) _then;
 
   /// Create a copy of EbookFulltext
   /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
-  _$$EbookFulltextImplCopyWith<_$EbookFulltextImpl> get copyWith =>
-      throw _privateConstructorUsedError;
+  @pragma('vm:prefer-inline')
+  $Res call({
+    Object? jobId = null,
+    Object? bookTitle = freezed,
+    Object? bookAuthor = freezed,
+    Object? chapters = null,
+  }) {
+    return _then(
+      _EbookFulltext(
+        jobId: null == jobId
+            ? _self.jobId
+            : jobId // ignore: cast_nullable_to_non_nullable
+                  as String,
+        bookTitle: freezed == bookTitle
+            ? _self.bookTitle
+            : bookTitle // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        bookAuthor: freezed == bookAuthor
+            ? _self.bookAuthor
+            : bookAuthor // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        chapters: null == chapters
+            ? _self._chapters
+            : chapters // ignore: cast_nullable_to_non_nullable
+                  as List<FulltextChapter>,
+      ),
+    );
+  }
 }
