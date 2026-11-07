@@ -16,4 +16,4 @@ curl http://127.0.0.1:9292/health
 curl http://127.0.0.1:9292/api/metadata
 ```
 
-The boundary is intentionally dependency-light and works on the existing Ruby 2.6 development machine. A future Rails API can reuse the client and keep Rails responsible for authentication, persistence, and jobs without duplicating conversion logic.
+The development bundle requires Ruby 3.2 or newer for Minitest 6 and Bundler 4; the project pins Ruby 4.0.7. The boundary remains dependency-light. The Rails gateway reuses the client and keeps Rails responsible for authentication, persistence, and jobs without duplicating conversion logic.
