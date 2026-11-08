@@ -15,6 +15,16 @@ final class DeviceSelectionTests: XCTestCase {
         XCTAssertFalse(options.skipBuild)
     }
 
+    func testPlaybackFeedbackSelectionIsAuditedAndCountsAllElevenTests() throws {
+        let filters = ["EpubToMp3Tests/NativePlaybackFeedbackTests", "EpubToMp3Tests/NativeTransportFeedbackTests"]
+        let options = try Options(arguments: ["test"], root: root,
+            environment: ["IOS_TESTS": filters.joined(separator: ",")])
+        XCTAssertEqual(options.testFilters, filters)
+        XCTAssertEqual(options.expectedTestCount, 11)
+        XCTAssertThrowsError(try Options(arguments: ["test"], root: root,
+            environment: ["IOS_TESTS": "EpubToMp3Tests/NativePlaybackFeedbackTests/testUnaudited"]))
+    }
+
     func testExactMethodSelectorRemainsLiteral() throws {
         let selector = "EpubToMp3Tests/ReaderViewportTransitionTests/testCancelInvalidatesOutstandingToken"
         let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": selector])

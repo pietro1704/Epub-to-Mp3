@@ -317,7 +317,10 @@ if ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] != "0" {
     try dataBuilder.run(); dataBuilder.waitUntilExit()
     guard dataBuilder.terminationStatus == 0 else { exit(dataBuilder.terminationStatus) }
 }
-if target == "x86_64-apple-ios" && ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] != "0" {
+// A caller may supply an authenticated, platform-verified ONNX library.
+// Keep source compilation as the fallback when no library was supplied.
+if target == "x86_64-apple-ios" && ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] != "0"
+    && (environment["ORT_LIB_LOCATION"] ?? "").isEmpty {
     let runtimeBuilder = Process()
     runtimeBuilder.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     runtimeBuilder.arguments = ["bash", root + "/scripts/build_onnxruntime_ios_simulator.sh"]

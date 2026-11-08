@@ -77,8 +77,23 @@ public struct Options {
         }
         // Keep exact method selectors aligned with the audited device test classes.
         // Partial method audits must never authorize a whole-class selector.
-        let allowedClasses: Set<String> = ["ReaderViewportTransitionTests", "ReaderProgressStoreTests"]
+        let allowedClasses: Set<String> = ["ReaderViewportTransitionTests", "ReaderProgressStoreTests", "NativePlaybackFeedbackTests", "NativeTransportFeedbackTests"]
         let allowedMethods: [String: Set<String>] = [
+            "NativePlaybackFeedbackTests": [
+                "testBothMenusIncludeNormalSpeedAndMarkExactlyTheActiveRateIncludingLegacyValues",
+                "testExpandedPanelStartsAtRootSafeAreaInBothOrientations",
+                "testOutputRequiresAdvancingCurrentItemAndClearsForWaitingSeekReplacementAndStaleTicks",
+                "testReaderHighlightPreservesAnnotationsAndOffsetAndRejectsAnotherChapterOrBook",
+                "testRepeatedWordsUseTheirOwnUTF16Range",
+                "testListeningActivitySessionCannotCreateOrEndAnActivity",
+                "testRepeatedSentencesAfterEmojiResolveInReadingOrder",
+                "testSpeechHighlightsRequireOutputCallbacksAndRejectPausedOrObsoleteUtterances",
+            ],
+            "NativeTransportFeedbackTests": [
+                "testFifteenSecondCommandsAndChapterBoundariesPreservePause",
+                "testExpandedSliderCommitsArbitraryPositionAndLatestSeekWins",
+                "testConfirmedOutputDisappearsImmediatelyOnPauseAndSeek",
+            ],
             "ReaderProgressiveListeningTests": [
                 "testMiniPlayerPreservesPageUntilCompleteChapterArrives",
                 "testMiniPlayerPageStartKeepsPauseWhileWaitingForChapter",
