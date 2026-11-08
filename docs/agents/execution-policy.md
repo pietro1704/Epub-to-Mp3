@@ -27,14 +27,14 @@ packages in linked worktrees and trusted producer artifacts on GitHub. Retain
 the complete authenticated package and receipt outside disposable download
 staging; revalidate source/build identity and payload on every reuse. Swift or
 documentation changes alone do not require rebuilding an unchanged Rust runtime.
-On this Mac, before compiling
-any dependency, runtime, library or tool, including Piper, ask Pietro whether a
-verified prebuilt binary matching the source, platform and architecture is
-available, and wait for his answer. Prefer compatible prebuilt binaries and
-immutable model artifacts; compile one locally only after Pietro confirms that
-no suitable artifact should be used. Final application targets such as
-EpubToMp3 may be compiled without this extra question when the task authorizes
-the app build. A narrow validation request ends after its visible app journey
+For dependencies, runtimes, libraries and tools, including Piper, first reuse
+verified local artifacts or find compatible binaries from trusted publishers.
+Verify source, platform and architecture. Pietro does not supply these binaries;
+do not ask him whether one exists or request confirmation to compile when no
+suitable artifact is available. Build through the guarded project tasks within
+the authorized scope, preserving resource guards and immutable model artifacts.
+Final application targets such as EpubToMp3 may also be built within that scope.
+A narrow validation request ends after its visible app journey
 and focused checks; expand only for a concrete failure or unresolved acceptance
 condition.
 
