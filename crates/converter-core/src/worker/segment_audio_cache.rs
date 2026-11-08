@@ -115,7 +115,7 @@ impl SegmentAudioCache {
             .tempdir_in(&self.root)?;
         let audio = staging.path().join("audio.mp3");
         fs::write(&audio, bytes)?;
-        fs::File::open(audio)?.sync_all()?;
+        fs::File::options().write(true).open(audio)?.sync_all()?;
         cache::atomic_write_json(
             staging.path().join("receipt.json"),
             &Receipt {

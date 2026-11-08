@@ -62,7 +62,7 @@ jobs:
       - name: Verify policy and subprocess supervision
         shell: pwsh
         run: |
-          foreach ($contract in @('tts_preferences', 'desktop_tts')) {
+          foreach ($contract in @('audio::audio_encoding::publication_tests', 'audio::mp3_assembly::tests', 'tts_preferences', 'desktop_tts')) {
             mise exec -- cargo test --locked -p converter-core --lib $contract
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }

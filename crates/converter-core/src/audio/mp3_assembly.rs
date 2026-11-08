@@ -178,6 +178,8 @@ pub fn finalize_mp3(path: &Path) -> Result<bool, AudioError> {
     pending
         .as_file()
         .set_permissions(input.metadata()?.permissions())?;
+    // Windows cannot replace the destination while this reader holds it open.
+    drop(input);
     pending.persist(path).map_err(|error| error.error)?;
     Ok(true)
 }

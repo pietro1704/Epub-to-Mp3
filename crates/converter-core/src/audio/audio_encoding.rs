@@ -34,8 +34,10 @@ fn atomic_replace(source: &Path, target: &Path) -> Result<(), AudioError> {
         std::process::id()
     ));
     fs::copy(source, &temp)?;
-    let file = File::open(&temp)?;
+    // Windows FlushFileBuffers requires a writable handle; do not truncate it.
+    let file = File::options().write(true).open(&temp)?;
     file.sync_all()?;
+    drop(file);
     fs::rename(temp, target)?;
     Ok(())
 }
@@ -73,11 +75,48 @@ pub fn wav_to_mp3(
         &encoded.to_string_lossy(),
     ]))?;
     validate_audio(&encoded, 100)?;
-    let file = File::open(&encoded)?;
+    let file = File::options().write(true).open(&encoded)?;
     file.sync_all()?;
     drop(file);
     fs::rename(encoded, output)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+
+    #[test]
+    fn atomic_audio_publication_syncs_bytes_before_replacing_the_target() {
+        for replace_existing in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let source = root.path().join("encoded audio.mp3");
+            let target = root.path().join("chapter %20#identity.mp3");
+            let encoded = b"complete encoded audio payload";
+            fs::write(&source, encoded).unwrap();
+            if replace_existing {
+                fs::write(&target, b"previous audio").unwrap();
+            }
+
+            atomic_replace(&source, &target).unwrap();
+
+            assert_eq!(fs::read(&target).unwrap(), encoded);
+            assert_eq!(fs::read(&source).unwrap(), encoded);
+            assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+        }
+    }
+
+    #[test]
+    fn failed_audio_publication_preserves_the_previous_target() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("previous audio.mp3");
+        fs::write(&target, b"previous audio").unwrap();
+
+        assert!(atomic_replace(&root.path().join("missing.mp3"), &target).is_err());
+
+        assert_eq!(fs::read(&target).unwrap(), b"previous audio");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
 }
 
 pub fn add_silence_padding(

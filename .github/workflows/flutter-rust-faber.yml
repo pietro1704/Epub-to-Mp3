@@ -136,6 +136,24 @@ jobs:
           "EPUB_DART_FABER_LIBRARY=$library" >> $env:GITHUB_ENV
           "PIPER_ESPEAKNG_DATA_DIRECTORY=$(Join-Path $package 'data')" >> $env:GITHUB_ENV
           $package >> $env:GITHUB_PATH
+      - name: Verify Windows audio publication and cancellation
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cache = 'flutter_app/build/windows/x64/CMakeCache.txt'
+          $targetEntry = Select-String -LiteralPath $cache -Pattern '^CONVERTER_CARGO_TARGET_DIR:PATH=(.+)$'
+          if (!$targetEntry -or $targetEntry.Count -ne 1) { throw 'Missing packaged Rust target cache identity' }
+          $target = $targetEntry.Matches[0].Groups[1].Value
+          if (!(Test-Path (Join-Path $target 'release'))) { throw 'Packaged Rust target cache is absent' }
+          foreach ($filter in @(
+            'audio::audio_encoding::publication_tests',
+            'audio::mp3_assembly::tests',
+            'piper::tests::mp3_destination_contains_decodable_audio_without_external_tools',
+            'piper::cancellation_tests',
+            'worker::segment_audio_cache::tests'
+          )) {
+            mise exec -- cargo test --locked --release -p converter-core --lib --target-dir $target --jobs 1 $filter -- --nocapture
+            if ($LASTEXITCODE -ne 0) { throw "Windows audio regression failed: $filter" }
+          }
       - name: Convert exactly two chapters through the packaged Windows DLL
         env:
           EPUB_DART_FABER_INTEGRATION: '1'
