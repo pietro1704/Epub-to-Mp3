@@ -78,10 +78,12 @@ extension ConversionOptionsInteropTests {
 #if os(iOS) && targetEnvironment(simulator)
     func testOptInPiperModelSynthesizesAndDecodesAudioOnSimulator() throws {
         guard ProcessInfo.processInfo.environment["APP_IOS_PIPER_INFERENCE"] == "1" else {
-            throw XCTSkip("Set APP_IOS_PIPER_INFERENCE=1 to download the local Piper voice and run ONNX inference.")
+            throw XCTSkip("Set APP_IOS_PIPER_INFERENCE=1 for explicit Piper inference; EPUB2MP3_PIPER_TEST_MODEL_ROOT reuses a retained offline voice.")
         }
         let adapter = try runtimeAdapter()
-        let root = FileManager.default.temporaryDirectory
+        let retainedRoot = ProcessInfo.processInfo.environment["EPUB2MP3_PIPER_TEST_MODEL_ROOT"]
+            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        let root = retainedRoot ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("piper-models-\(UUID().uuidString)", isDirectory: true)
         let espeakData = try XCTUnwrap(Bundle.main.resourceURL)
             .appendingPathComponent("espeak-ng-data", isDirectory: true)
@@ -91,13 +93,21 @@ extension ConversionOptionsInteropTests {
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("piper-output-\(UUID().uuidString)", isDirectory: true)
         defer {
-            try? FileManager.default.removeItem(at: root)
+            if retainedRoot == nil { try? FileManager.default.removeItem(at: root) }
             try? FileManager.default.removeItem(at: book)
             try? FileManager.default.removeItem(at: output)
         }
 
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        _ = try adapter.installTtsModelFromCatalog(modelID: "pt_BR-faber-medium", root: root.path)
+        if retainedRoot != nil {
+            for filename in ["model.onnx", "model.onnx.json", "metadata.json"] {
+                XCTAssertTrue(FileManager.default.isReadableFile(atPath: root
+                    .appendingPathComponent("pt_BR-faber-medium/\(filename)").path),
+                    "The retained voice must be complete; this path never downloads a missing file")
+            }
+        } else {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            _ = try adapter.installTtsModelFromCatalog(modelID: "pt_BR-faber-medium", root: root.path)
+        }
         let result = try adapter.convertBook(
             at: book,
             outputDirectory: output,
@@ -114,6 +124,10 @@ extension ConversionOptionsInteropTests {
         )
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: result) as? [String: Any])
         let manifest = try XCTUnwrap(payload["manifest"] as? [String: Any])
+        let usedSelections = try XCTUnwrap(manifest["usedSelections"] as? [[String: Any]])
+        XCTAssertFalse(usedSelections.isEmpty)
+        XCTAssertTrue(usedSelections.allSatisfy { $0["engine"] as? String == "piper" },
+                      "A system or online fallback must not count as Piper inference")
         let chapters = try XCTUnwrap(manifest["chapters"] as? [[String: Any]])
         let filename = try XCTUnwrap(chapters.first?["filename"] as? String)
         let audioURL = output.appendingPathComponent(output.lastPathComponent).appendingPathComponent(filename)
@@ -121,6 +135,15 @@ extension ConversionOptionsInteropTests {
 
         let player = try AVAudioPlayer(contentsOf: audioURL)
         XCTAssertGreaterThan(player.duration, 0)
+        let receipt = XCTAttachment(data: try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys]),
+                                    uniformTypeIdentifier: "public.json")
+        receipt.name = "piper-inference-provider-receipt"
+        receipt.lifetime = .keepAlways
+        add(receipt)
+        let sample = XCTAttachment(data: try Data(contentsOf: audioURL), uniformTypeIdentifier: "public.mp3")
+        sample.name = "piper-faber-real-output"
+        sample.lifetime = .keepAlways
+        add(sample)
     }
 #endif
 
