@@ -123,6 +123,9 @@ runs after merge and publishers require the integrated, validated SHA. A pending
 optional check does not expand the pre-merge gate. All ready PRs targeting
 `master`, from any author including forks, have standing user authorization for
 automatic merge after successful exact-head CI and its required `PR gate`.
+Enable squash auto-merge on every ready PR targeting `master` when opening it
+or marking it ready, regardless of author or task. Keep it enabled while the
+required checks run; any user request to hold a particular PR takes precedence.
 Keep repository auto-merge enabled and the `Merge eligible pull requests`
 workflow active. It uses the trusted master merge helper to verify the current
 head, up-to-date base and server protection before squash merging. Drafts,
