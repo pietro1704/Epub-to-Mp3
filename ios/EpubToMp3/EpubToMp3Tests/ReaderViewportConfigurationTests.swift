@@ -51,8 +51,8 @@ final class ReaderViewportConfigurationTests: XCTestCase {
     }
 
     @MainActor
-    func testImmersiveReaderKeepsTheSystemSafeAreaVisible() {
-        XCTAssertFalse(
+    func testStatusBarIsHiddenOnlyWhileReaderChromeIsHidden() {
+        XCTAssertTrue(
             IOSRootContainerController.shouldHideStatusBar(immersiveReaderMode: true)
         )
         XCTAssertFalse(

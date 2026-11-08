@@ -32,12 +32,10 @@ final class IOSRootContainerController: UIViewController {
 
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
 
-    static func shouldHideStatusBar(immersiveReaderMode _: Bool) -> Bool {
-        // Fullscreen reader mode hides app chrome, not system safe-area
-        // protection. Keeping the status bar visible gives the child reader
-        // a stable top safe area and prevents text from being clipped under
-        // the notch during chrome transitions.
-        false
+    static func shouldHideStatusBar(immersiveReaderMode: Bool) -> Bool {
+        // The reader still respects the physical safe area when the system
+        // status bar is hidden. Its viewport transition owns offset restoration.
+        immersiveReaderMode
     }
 
     init(
