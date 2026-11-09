@@ -55,7 +55,26 @@ impl TtsSession for ChunkRecordingSession {
         context.check()?;
         assert!(text.chars().count() <= 96);
         self.1.lock().unwrap().push(text.to_owned());
-        sink.write(&platform_tts::encode_wav(&test_system_wav()).unwrap())
+        let mut bytes = crate::speech_alignment::tag(&[crate::speech_alignment::Passage {
+            version: 1,
+            text: text.to_owned(),
+            audio_start: 0.0,
+            source_offset: None,
+            words: vec![crate::speech_alignment::Word {
+                location: 0,
+                length: text
+                    .split_whitespace()
+                    .next()
+                    .unwrap()
+                    .encode_utf16()
+                    .count(),
+                start: 0.0,
+                end: 0.05,
+            }],
+        }])
+        .unwrap();
+        bytes.extend(platform_tts::encode_wav(&test_system_wav()).unwrap());
+        sink.write(&bytes)
     }
 }
 fn chunk_preferences() -> TtsPreferences {
@@ -248,5 +267,44 @@ fn heading_pause_reaches_streamed_bytes_and_final_artifact_once() {
     assert!(
         (0.8..0.95).contains(&(first - body)),
         "title={first}, body={body}"
+    );
+}
+
+#[test]
+fn cached_equal_speech_is_bound_to_each_source_occurrence_after_reuse() {
+    let root = tempfile::tempdir().unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let worker = chunk_worker(root.path(), calls.clone());
+    *worker.source_identity.lock().unwrap() = Some("repeated-word-book".into());
+    let text = "Echo. Echo.";
+    let output = root.path().join("repeated.mp3");
+    worker
+        .synthesize_preferences_at_generation(
+            &preference_test_request(),
+            &chunk_preferences(),
+            text,
+            &output,
+            0,
+            Some("pt-BR"),
+            &std::sync::atomic::AtomicBool::new(false),
+            &Mutex::new(Vec::new()),
+            1,
+            None,
+            &[5, 11],
+            &[5, 11],
+        )
+        .unwrap();
+    assert_eq!(
+        *calls.lock().unwrap(),
+        ["Echo."],
+        "Equal speech must still use the content-addressed cache"
+    );
+    let passages = crate::speech_alignment::collect(&mut fs::File::open(output).unwrap()).unwrap();
+    assert_eq!(passages.len(), 2);
+    assert_eq!(passages[0].source_offset, Some(0));
+    assert_eq!(
+        passages[1].source_offset,
+        Some(6),
+        "Cached speech must not retain the first occurrence's offset"
     );
 }

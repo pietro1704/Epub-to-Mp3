@@ -23,6 +23,8 @@ final class ReaderAudioHighlightPresentation {
     private var loadedDuration: TimeInterval = 0
     private var resolvedText: String?
     private var resolvedSentences: [String: NSRange] = [:]
+    private var measuredPassage: SpeechAudioAlignment.Passage?
+    private var measuredWordRanges: [Int: NSRange] = [:]
 
     init(document: ReaderBookDocument, player: AudioPlayer, textView: UITextView, settings: AppSettings) {
         self.document = document
@@ -96,7 +98,8 @@ final class ReaderAudioHighlightPresentation {
         return .init(chapterIndex: position.chapterIndex,
             seconds: bounded(position.seconds, duration: position.duration), duration: position.duration,
             sentenceID: position.sentenceID,
-            itemSeconds: bounded(position.itemSeconds, duration: position.itemDuration), itemDuration: position.itemDuration)
+            itemSeconds: bounded(position.itemSeconds, duration: position.itemDuration), itemDuration: position.itemDuration,
+            alignment: position.alignment)
     }
 
     private func paintPosition(_ position: PlaybackAudioOutput.Position?) {
@@ -110,26 +113,35 @@ final class ReaderAudioHighlightPresentation {
             loadedChapter = chapter
             loadedDuration = position.duration
         }
-        let entry: SyncEngine.TimingEntry?
-        let elapsed: TimeInterval
-        let duration: TimeInterval
-        if let id = position.sentenceID {
-            entry = sync.timing.first { sync.readerSentenceID(forTimingID: $0.id) == sync.readerSentenceID(forTimingID: id) }
-            elapsed = position.itemSeconds
-            duration = position.itemDuration
-        } else {
-            entry = sync.timing.first { position.seconds * 1000 >= Double($0.startMs) && position.seconds * 1000 < Double($0.endMs) }
-            elapsed = position.seconds - Double(entry?.startMs ?? 0) / 1000
-            duration = Double((entry?.endMs ?? 0) - (entry?.startMs ?? 0)) / 1000
-        }
         if resolvedText != textView.text {
             resolvedText = textView.text
             resolvedSentences = Self.sentenceRanges(spans: sync.spans, in: textView.text as NSString)
+            measuredPassage = nil
+            measuredWordRanges.removeAll()
+        }
+        if let measured = position.alignment?.spokenWord(at: position.itemSeconds) {
+            if measuredPassage != measured.passage {
+                measuredPassage = measured.passage
+                measuredWordRanges = ReaderSpokenTextResolver.ranges(passage: measured.passage,
+                    chapterText: chapter.text, renderedText: textView.text)
+            }
+            if let word = measuredWordRanges[measured.word.location] {
+                let sentence = resolvedSentences.values.first { NSIntersectionRange($0, word).length > 0 }
+                paint(sentence: sentence, word: word)
+                return
+            }
+        }
+        let entry: SyncEngine.TimingEntry?
+        if let id = position.sentenceID {
+            entry = sync.timing.first { sync.readerSentenceID(forTimingID: $0.id) == sync.readerSentenceID(forTimingID: id) }
+        } else {
+            entry = sync.timing.first { position.seconds * 1000 >= Double($0.startMs) && position.seconds * 1000 < Double($0.endMs) }
         }
         guard let id = sync.readerSentenceID(forTimingID: entry?.id),
               let range = resolvedSentences[id] else { clear(); return }
-        paint(sentence: range, word: Self.wordRange(in: textView.text as NSString, sentence: range,
-                                                   elapsed: elapsed, duration: duration))
+        // Without measured alignment, a sentence estimate must never pretend
+        // to identify the word currently audible. Old audio remains playable.
+        paint(sentence: range, word: nil)
     }
 
     static func sentenceRanges(spans: [SentenceSpan], in text: NSString) -> [String: NSRange] {
@@ -142,22 +154,6 @@ final class ReaderAudioHighlightPresentation {
             cursor = NSMaxRange(range)
         }
         return result
-    }
-
-    /// Estimated word boundaries use distinct UTF-16 ranges, including repeated
-    /// words and emoji. No substring search can jump back to an earlier word.
-    static func wordRange(in text: NSString, sentence: NSRange, elapsed: TimeInterval, duration: TimeInterval) -> NSRange? {
-        guard duration.isFinite, duration > 0, elapsed.isFinite, elapsed >= 0, elapsed < duration else { return nil }
-        let words = (try? NSRegularExpression(pattern: "\\S+").matches(in: text as String, range: sentence)) ?? []
-        let total = words.reduce(0) { $0 + $1.range.length }
-        guard total > 0 else { return nil }
-        let target = elapsed / duration * Double(total)
-        var cursor = 0
-        for word in words {
-            cursor += word.range.length
-            if target < Double(cursor) { return word.range }
-        }
-        return nil
     }
 
     private func renderSpeech(_ output: SpeechFallbackPlayer.SpokenWord?) {

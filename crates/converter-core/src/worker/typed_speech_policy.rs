@@ -322,6 +322,28 @@ impl ConversionWorker {
             };
             let selection = attempt.selection().clone();
             let fallback_used = attempt.fallback_used();
+            // Source coordinates belong to this occurrence, never the reusable
+            // audio cache. Equal text elsewhere in a chapter has a new anchor.
+            let consumed_end = remainder
+                .first()
+                .map_or(segment.byte_range.end, |next| next.byte_range.start);
+            let spoken = text[segment.byte_range.start..consumed_end].trim();
+            let base = self
+                .control
+                .as_ref()
+                .and_then(|control| control.listening_plan())
+                .filter(|plan| plan.position.chapter_index == source_index)
+                .map_or(0, |plan| plan.position.text_offset);
+            let leading = segment
+                .source
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .count();
+            let bytes = crate::speech_alignment::bind_source(
+                bytes,
+                spoken,
+                base + segment.scalar_range.start + leading,
+            );
             if self
                 .control
                 .as_ref()

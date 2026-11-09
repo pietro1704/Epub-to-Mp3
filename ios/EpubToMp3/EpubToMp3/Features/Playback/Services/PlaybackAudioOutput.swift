@@ -12,6 +12,7 @@ final class PlaybackAudioOutput: ObservableObject {
         let sentenceID: String?
         let itemSeconds: TimeInterval
         let itemDuration: TimeInterval
+        var alignment: SpeechAudioAlignment? = nil
     }
     @Published private(set) var position: Position?
     private var previous: (item: ObjectIdentifier, seconds: TimeInterval)?

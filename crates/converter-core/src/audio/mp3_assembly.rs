@@ -95,6 +95,7 @@ pub fn finalize_mp3(path: &Path) -> Result<bool, AudioError> {
     if segments.len() == 1 {
         return Ok(false);
     }
+    let alignment = crate::speech_alignment::collect(&mut input)?;
     let mut frames = Vec::new();
     let mut format = None;
     let mut prototype = None;
@@ -164,7 +165,18 @@ pub fn finalize_mp3(path: &Path) -> Result<bool, AudioError> {
     }
     let mut pending = tempfile::NamedTempFile::new_in(path.parent().unwrap_or(Path::new(".")))?;
     input.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut (&mut input).take(segments[0].start), &mut pending)?;
+    if alignment.is_empty() {
+        std::io::copy(&mut (&mut input).take(segments[0].start), &mut pending)?;
+    } else {
+        if segments[0].start > 32 * 1024 * 1024 {
+            return Err(invalid_audio("Outer metadata exceeds its budget"));
+        }
+        let mut leading = vec![0; segments[0].start as usize];
+        input.read_exact(&mut leading)?;
+        pending.write_all(
+            &crate::speech_alignment::merge_tag(&alignment, &leading).map_err(invalid_audio)?,
+        )?;
+    }
     pending.write_all(&metadata)?;
     for (position, length) in frames {
         input.seek(SeekFrom::Start(position))?;

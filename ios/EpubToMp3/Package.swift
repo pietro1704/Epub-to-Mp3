@@ -19,6 +19,9 @@ let localizationResources = [
     "Resources/pt-BR.lproj/Localizable.strings",
 ]
 let production = [
+    "Features/Playback/Models/SpeechAudioAlignment.swift",
+    "Features/Playback/Services/PlaybackSpeechAlignment.swift",
+    "Features/Reader/Services/ReaderSpokenTextResolver.swift",
     "Features/Settings/Services/BookAudioRemoval.swift",
     "Features/Settings/Services/SpeechModelSettingsDisclosure.swift",
     "Features/Reader/Services/ReaderFontCatalog.swift",
@@ -86,6 +89,7 @@ let production = [
     "Features/Reader/Services/ReaderAnchorRange.swift",
 ]
 let tests = [
+    "SpeechAudioAlignmentTests.swift",
     "BookAudioRemovalTests.swift",
     "SpeechModelSettingsDisclosureTests.swift",
     "ReaderFontCatalogTests.swift",
