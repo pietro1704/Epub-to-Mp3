@@ -40,6 +40,7 @@ final class PlaybackObservation {
     private let nowPlayingPublication: NowPlayingPublication
     private let sleepTimer: SleepPlaybackTimer
     private let actions: Actions
+    private let speechAlignment = PlaybackSpeechAlignment()
     init(queue: PlaybackQueueSession, segments: PlaybackSegmentSession, chapters: PlaybackChapterSession,
          seeking: PlaybackSeekExecution, navigation: ChapterNavigationDecision, journeys: PlaybackJourneyRecorder,
          resume: PlaybackResumeStore, clock: PlaybackClock, broadcast: PlaybackBroadcast,
@@ -159,7 +160,7 @@ final class PlaybackObservation {
                     && !player.isMuted && player.volume > 0 && item?.status == .readyToPlay,
                 position: .init(chapterIndex: chapter, seconds: positionSeconds, duration: durationSeconds,
                     sentenceID: queueSession.activeSentenceId, itemSeconds: rawTime,
-                    itemDuration: item?.duration.seconds ?? 0))
+                    itemDuration: item?.duration.seconds ?? 0, alignment: speechAlignment.current(item)))
         } else { playbackClock.audioOutput.clear() }
         // Item C — fire a queued proportional seek the first
         // tick after AVPlayer publishes duration. Without this

@@ -261,6 +261,32 @@ final class PlatformSpeechSynthesizerOptInTests: XCTestCase {
         XCTAssertEqual(data[34], 16)
         XCTAssertEqual(data[35], 0)
     }
+
+    func testRealEnglishSpeechRetainsWordMarkersIncludingRepeatedWords() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await Task.detached {
+            try PlatformSpeechSynthesizer().synthesizeWAV(
+                text: "The traveller said hello, hello again.", language: "en-US", output: url, cancelled: { false }
+            )
+        }.value
+        let data = try Data(contentsOf: url)
+        let marker = try XCTUnwrap(data.range(of: Data("spch".utf8)), "Generated audio must retain real word timing")
+        let lengthStart = marker.upperBound
+        let length = data[lengthStart..<(lengthStart + 4)].enumerated().reduce(0) { $0 + (Int($1.element) << ($1.offset * 8)) }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data[(lengthStart + 4)..<(lengthStart + 4 + length)]) as? [String: Any])
+        let words = try XCTUnwrap(object["words"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(words.count, 6)
+        let text = "The traveller said hello, hello again." as NSString
+        let spoken = try words.map { word in
+            text.substring(with: NSRange(location: try XCTUnwrap(word["location"] as? Int),
+                                         length: try XCTUnwrap(word["length"] as? Int)))
+        }
+        XCTAssertEqual(spoken.filter { $0.trimmingCharacters(in: .punctuationCharacters).lowercased() == "hello" }.count, 2)
+        let starts = try words.map { try XCTUnwrap($0["start"] as? Double) }
+        XCTAssertEqual(starts, starts.sorted())
+        XCTAssertGreaterThan(try XCTUnwrap(starts.last), 0.5)
+    }
 }
 
 private final class SpeechCancellationProbe: @unchecked Sendable {

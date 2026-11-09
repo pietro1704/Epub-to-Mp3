@@ -96,6 +96,7 @@ fn encode_wav_mp3_at_rate(
     }
     let mut format = None;
     let mut pcm = None;
+    let mut alignment_json = None;
     let mut position = 12usize;
     while position + 8 <= riff_end {
         let length =
@@ -118,6 +119,7 @@ fn encode_wav_mp3_at_rate(
                 format = Some((channels, rate));
             }
             b"data" => pcm = Some(&data[start..end]),
+            b"spch" => alignment_json = Some(&data[start..end]),
             _ => {}
         }
         position = end.checked_add(length % 2).ok_or("Invalid WAV chunk")?;
@@ -127,11 +129,19 @@ fn encode_wav_mp3_at_rate(
         .filter(|pcm| !pcm.is_empty() && pcm.len() % 2 == 0)
         .ok_or("Missing or invalid WAV PCM")?;
     let sample_count = pcm.len() / 2;
+    // Optional display metadata cannot make a working system voice unavailable.
+    // Invalid markers are discarded while the PCM keeps its normal validation.
+    let mut alignment = alignment_json.and_then(|json| {
+        crate::speech_alignment::Passage::parse(json, sample_count as f64 / f64::from(rate)).ok()
+    });
     if target_rate.is_some() && sample_count > rate as usize * 120 {
         return Err("System speech PCM exceeds the segment duration limit".into());
     }
     let compacted;
     let pcm = if compact {
+        if let Some(alignment) = &mut alignment {
+            alignment.compact(pcm, rate);
+        }
         compacted = crate::speech_silence::compact(pcm, rate)?;
         compacted.as_slice()
     } else {
@@ -178,7 +188,13 @@ fn encode_wav_mp3_at_rate(
     encoder.finish();
     let encoded = collect_rusty_mp3_output(&mut encoder)?;
     validate_mp3(&encoded)?;
-    Ok(encoded)
+    if let Some(alignment) = alignment.filter(|value| !value.words.is_empty()) {
+        let mut tagged = crate::speech_alignment::tag(&[alignment])?;
+        tagged.extend(encoded);
+        Ok(tagged)
+    } else {
+        Ok(encoded)
+    }
 }
 
 pub fn validate_mp3(bytes: &[u8]) -> Result<(), String> {

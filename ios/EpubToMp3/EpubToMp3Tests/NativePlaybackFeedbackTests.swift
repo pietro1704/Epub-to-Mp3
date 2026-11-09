@@ -133,10 +133,12 @@ final class NativePlaybackFeedbackTests: XCTestCase {
         let paint = ReaderAudioHighlightPresentation(document: document, player: player, textView: textView, settings: settings)
         paint.observe()
         let item = NSObject()
-        func sample(_ seconds: Double, chapter: Int = 0) {
+        let measured = try XCTUnwrap(SpeechAudioAlignment(tag: SpeechAudioAlignmentTests.tag(
+            #"[{"version":1,"text":"Olá 👋 mundo mundo.","audioStart":0,"sourceOffset":0,"words":[{"location":13,"length":5,"start":1.5,"end":2.5}]}]"#)))
+        func sample(_ seconds: Double, chapter: Int = 0, hasMeasuredAlignment: Bool = true) {
             player.playbackClock.audioOutput.sample(item: ObjectIdentifier(item), seconds: seconds, isOutputting: true,
                 position: .init(chapterIndex: chapter, seconds: seconds, duration: 10, sentenceID: nil,
-                    itemSeconds: seconds, itemDuration: 10))
+                    itemSeconds: seconds, itemDuration: 10, alignment: hasMeasuredAlignment ? measured : nil))
         }
         func backgroundImage() -> Data? {
             manager.ensureLayout(for: textView.textContainer)
@@ -153,8 +155,27 @@ final class NativePlaybackFeedbackTests: XCTestCase {
         sample(2)
         XCTAssertNotEqual(backgroundImage(), backgroundBefore, "Confirmed output must paint a visible background")
         XCTAssertNotNil(manager.activeSentenceRange)
+        XCTAssertEqual(manager.activeWordRange, NSRange(location: 13, length: 5),
+                       "The measured second occurrence wins over proportional character estimates")
+        let renderedWord = UIGraphicsImageRenderer(size: textView.bounds.size).image { context in
+            UIColor.systemBackground.setFill()
+            context.fill(CGRect(origin: .zero, size: textView.bounds.size))
+            let glyphs = manager.glyphRange(for: textView.textContainer)
+            let origin = CGPoint(x: textView.textContainerInset.left, y: textView.textContainerInset.top)
+            manager.drawBackground(forGlyphRange: glyphs, at: origin)
+            manager.drawGlyphs(forGlyphRange: glyphs, at: origin)
+        }
+        let measuredImage = XCTAttachment(image: renderedWord)
+        measuredImage.name = "measured-repeated-word-native-textkit"
+        measuredImage.lifetime = .keepAlways
+        add(measuredImage)
         XCTAssertEqual(textView.attributedText, normalizedContent)
         XCTAssertEqual(textView.contentOffset, offset)
+        sample(2.1, hasMeasuredAlignment: false)
+        XCTAssertNotNil(manager.activeSentenceRange)
+        XCTAssertNil(manager.activeWordRange, "Legacy audio must not manufacture a current word from character length")
+        sample(2.2)
+        XCTAssertEqual(manager.activeWordRange, NSRange(location: 13, length: 5))
         settings.readerAudioTrackingEnabled = false
         XCTAssertNil(manager.activeWordRange, "Disabling tracking clears paint immediately without stopping audio")
         XCTAssertTrue(player.isPlaying)
@@ -187,13 +208,12 @@ final class NativePlaybackFeedbackTests: XCTestCase {
         let bounded = ReaderAudioHighlightPresentation.projected(confirmed, age: 10, rate: 4)
         XCTAssertLessThan(bounded.itemSeconds, confirmed.itemDuration,
                           "Interpolation must not invent the next sentence before confirmed output")
-        let text = "👋 eco eco" as NSString
-        let range = try XCTUnwrap(ReaderAudioHighlightPresentation.wordRange(in: text,
-            sentence: NSRange(location: 0, length: text.length), elapsed: 8, duration: 9))
-        XCTAssertEqual(range.location, 7)
-        XCTAssertEqual(text.substring(with: range), "eco")
-        XCTAssertNil(ReaderAudioHighlightPresentation.wordRange(in: text,
-            sentence: NSRange(location: 0, length: text.length), elapsed: 0, duration: .nan))
+        let text = "👋 eco eco"
+        let alignment = try XCTUnwrap(SpeechAudioAlignment(tag: SpeechAudioAlignmentTests.tag(
+            #"[{"version":1,"text":"👋 eco eco","audioStart":0,"sourceOffset":0,"words":[{"location":7,"length":3,"start":8,"end":9}]}]"#)))
+        let measured = try XCTUnwrap(alignment.spokenWord(at: 8.5))
+        XCTAssertEqual(ReaderSpokenTextResolver.word(measured.word, passage: measured.passage,
+            chapterText: text, renderedText: text), NSRange(location: 7, length: 3))
     }
 
     func testRepeatedSentencesAfterEmojiResolveInReadingOrder() {

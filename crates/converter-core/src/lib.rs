@@ -39,6 +39,7 @@ pub mod piper;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod platform_tts;
 pub mod pronunciation;
+mod speech_alignment;
 pub mod speech_model_library;
 mod speech_silence;
 pub mod structure;

@@ -53,6 +53,43 @@ extension ConversionOptionsInteropTests {
         XCTAssertTrue(path.hasSuffix(".mp3"))
     }
 
+    func testOptInEnglishSystemProviderPreservesMeasuredWordsThroughRustAndCoverPublication() async throws {
+        guard ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" else {
+            throw XCTSkip("Enable EPUB2MP3_NATIVE_TTS_TEST=1 for actual measured English speech through Rust.")
+        }
+        let source = try EpubFixture.createWithChapter(body: "The traveller said hello, hello again.")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("word-alignment-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = RustConversionOutputStore(root: root, notificationCenter: NotificationCenter())
+        var options = ConversionOptions(engine: "system", language: "en-US")
+        options.ttsPreferences = TtsPreferences(primary: .selected(.system), secondary: nil,
+            allowOnlineFallback: false, policyVersion: 2)
+        let result = try await RustConversionCoordinator(adapter: runtimeAdapter(), outputStore: store)
+            .convert(bookURL: source, options: options)
+        let chapter = try XCTUnwrap(result.snapshot().chapterProgress?.first)
+        let url = URL(fileURLWithPath: try XCTUnwrap(chapter.downloadUrl))
+        let audio = try AVAudioFile(forReading: url)
+        XCTAssertGreaterThan(audio.length, 0)
+        let alignment = try XCTUnwrap(SpeechAudioAlignment.read(from: url),
+            "The exact retained MP3 must carry the system voice's measured word boundaries")
+        let repeated = alignment.passages.flatMap { passage in
+            passage.words.filter {
+                (passage.text as NSString).substring(with: $0.range)
+                    .trimmingCharacters(in: .punctuationCharacters).lowercased() == "hello"
+            }.map { (passage, $0) }
+        }
+        XCTAssertEqual(repeated.count, 2)
+        XCTAssertTrue(alignment.passages.allSatisfy { $0.sourceOffset != nil })
+        let first = try XCTUnwrap(repeated.first)
+        let last = try XCTUnwrap(repeated.last)
+        XCTAssertLessThan(first.0.audioStart + first.1.start, last.0.audioStart + last.1.start)
+        let attachment = XCTAttachment(data: try Data(contentsOf: url), uniformTypeIdentifier: "public.mp3")
+        attachment.name = "measured-english-system-through-rust"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testOptInUnavailableEdgeVoiceFallsBackToSystemMP3() async throws {
         guard ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" else {
             throw XCTSkip("Enable EPUB2MP3_NATIVE_TTS_TEST=1 for actual Edge failure and system fallback.")

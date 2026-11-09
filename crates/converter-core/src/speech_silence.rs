@@ -3,6 +3,30 @@
 
 pub(crate) const PROFILE: &str = "digital-silence-v1-600ms-300ms";
 
+/// Removed intervals in original sample coordinates, shared with word timing.
+pub(crate) fn removed_ranges(pcm: &[u8], rate: u32) -> Vec<(usize, usize)> {
+    if pcm.iter().all(|byte| *byte == 0) {
+        return Vec::new();
+    }
+    let mut ranges = Vec::new();
+    let mut cursor = 0;
+    while cursor + 1 < pcm.len() {
+        if pcm[cursor..cursor + 2] != [0, 0] {
+            cursor += 2;
+            continue;
+        }
+        let start = cursor / 2;
+        while cursor + 1 < pcm.len() && pcm[cursor..cursor + 2] == [0, 0] {
+            cursor += 2;
+        }
+        let end = cursor / 2;
+        if end - start >= rate as usize * 600 / 1_000 {
+            ranges.push((start + rate as usize * 300 / 1_000, end));
+        }
+    }
+    ranges
+}
+
 pub(crate) fn compact(pcm: &[u8], rate: u32) -> Result<Vec<u8>, String> {
     if !(8_000..=96_000).contains(&rate) || pcm.is_empty() || pcm.len() % 2 != 0 {
         return Err("Expected bounded mono PCM16 for silence compaction".into());
@@ -15,26 +39,13 @@ pub(crate) fn compact(pcm: &[u8], rate: u32) -> Result<Vec<u8>, String> {
     if pcm.iter().all(|byte| *byte == 0) {
         return Ok(pcm.to_vec());
     }
-    let minimum = rate as usize * 600 / 1_000;
-    let retained = rate as usize * 300 / 1_000;
     let mut output = Vec::with_capacity(pcm.len());
     let mut cursor = 0;
-    while cursor < pcm.len() {
-        let start = cursor;
-        if pcm[cursor..cursor + 2] != [0, 0] {
-            output.extend_from_slice(&pcm[cursor..cursor + 2]);
-            cursor += 2;
-            continue;
-        }
-        while cursor < pcm.len() && pcm[cursor..cursor + 2] == [0, 0] {
-            cursor += 2;
-        }
-        let frames = (cursor - start) / 2;
-        // Keep 150 ms on either side of every removed interval. All edits are
-        // inside a zero plateau, so boundaries introduce no amplitude jump.
-        let keep = if frames >= minimum { retained } else { frames };
-        output.extend_from_slice(&pcm[start..start + keep * 2]);
+    for (start, end) in removed_ranges(pcm, rate) {
+        output.extend_from_slice(&pcm[cursor..start * 2]);
+        cursor = end * 2;
     }
+    output.extend_from_slice(&pcm[cursor..]);
     Ok(output)
 }
 

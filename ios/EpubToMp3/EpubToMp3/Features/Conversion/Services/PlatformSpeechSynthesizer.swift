@@ -87,13 +87,17 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
         }
     }
 
-    private final class Request: @unchecked Sendable {
+    private final class Request: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
         let done = DispatchSemaphore(value: 0)
         private let lock = NSLock()
         private var finished = false
         private var failure: Error?
         private var samples = Data()
         private var sampleRate: UInt32 = 0
+        private var sourceBytesPerFrame: UInt32 = 0
+        private var sourceText = ""
+        private var wordMarkers: [(range: NSRange, byteOffset: Int)] = []
+        private var delegateWordMarkers: [(range: NSRange, byteOffset: Int)] = []
         private var synthesizer: AVSpeechSynthesizer?
         private var selectedVoice: InstalledSpeechVoicePolicy.Voice?
 
@@ -120,14 +124,38 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
             lock.unlock()
             let synth = AVSpeechSynthesizer()
             synthesizer = synth
+            synth.delegate = self
             let utterance = AVSpeechUtterance(string: text)
             utterance.voice = voice
-            synth.write(utterance) { [self] buffer in consume(buffer) }
+            sourceText = text
+            if #available(iOS 16.0, macOS 13.0, *) {
+                synth.write(utterance, toBufferCallback: { [self] buffer in consume(buffer) },
+                    toMarkerCallback: { [self] markers in
+                        lock.lock(); defer { lock.unlock() }
+                        for marker in markers where marker.mark == .word && marker.byteSampleOffset >= 0 {
+                            if !wordMarkers.contains(where: { $0.range == marker.textRange && $0.byteOffset == marker.byteSampleOffset }) {
+                                wordMarkers.append((marker.textRange, marker.byteSampleOffset))
+                            }
+                        }
+                    })
+            } else {
+                synth.write(utterance) { [self] buffer in consume(buffer) }
+            }
         }
 
         func stop() {
             synthesizer?.stopSpeaking(at: .immediate)
             synthesizer = nil
+        }
+
+        @available(iOS 17.0, macOS 14.0, *)
+        func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeak marker: AVSpeechSynthesisMarker,
+                               utterance: AVSpeechUtterance) {
+            guard marker.mark == .word, marker.byteSampleOffset >= 0 else { return }
+            lock.lock(); defer { lock.unlock() }
+            if !delegateWordMarkers.contains(where: { $0.range == marker.textRange && $0.byteOffset == marker.byteSampleOffset }) {
+                delegateWordMarkers.append((marker.textRange, marker.byteSampleOffset))
+            }
         }
 
         func finish(error: Error? = nil) {
@@ -155,6 +183,7 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
                 return
             }
             let rate = UInt32(pcm.format.sampleRate)
+            sourceBytesPerFrame = pcm.format.streamDescription.pointee.mBytesPerFrame
             guard sampleRate == 0 || sampleRate == rate,
                   pcm.format.channelCount > 0,
                   pcm.floatChannelData != nil || pcm.int16ChannelData != nil || pcm.int32ChannelData != nil,
@@ -194,10 +223,30 @@ final class PlatformSpeechSynthesizer: @unchecked Sendable {
                 var little = value.littleEndian
                 withUnsafeBytes(of: &little) { result.append(contentsOf: $0) }
             }
-            append(UInt32(36 + samples.count)); result.append(Data("WAVEfmt ".utf8))
+            let duration = Double(samples.count / 2) / Double(sampleRate)
+            let measured = delegateWordMarkers.isEmpty ? wordMarkers : delegateWordMarkers
+            let sorted = measured.sorted { $0.byteOffset < $1.byteOffset }
+            let words: [[String: Any]] = sorted.enumerated().compactMap { index, marker in
+                guard sourceBytesPerFrame > 0, marker.range.location != NSNotFound,
+                      marker.range.length > 0, NSMaxRange(marker.range) <= (sourceText as NSString).length else { return nil }
+                let scale = Double(sourceBytesPerFrame) * Double(sampleRate)
+                let start = Double(marker.byteOffset) / scale
+                let end = index + 1 < sorted.count ? Double(sorted[index + 1].byteOffset) / scale : duration
+                guard start.isFinite, start >= 0, end > start, end <= duration + 0.05 else { return nil }
+                return ["location": marker.range.location, "length": marker.range.length,
+                        "start": start, "end": min(end, duration)]
+            }
+            let alignment = words.isEmpty ? Data() : try JSONSerialization.data(withJSONObject:
+                ["version": 1, "text": sourceText, "words": words])
+            let extra = alignment.isEmpty ? 0 : 8 + alignment.count + alignment.count % 2
+            append(UInt32(36 + samples.count + extra)); result.append(Data("WAVEfmt ".utf8))
             append(UInt32(16)); append(UInt16(1)); append(UInt16(1))
             append(sampleRate); append(sampleRate * 2); append(UInt16(2)); append(UInt16(16))
             result.append(Data("data".utf8)); append(UInt32(samples.count)); result.append(samples)
+            if !alignment.isEmpty {
+                result.append(Data("spch".utf8)); append(UInt32(alignment.count)); result.append(alignment)
+                if alignment.count % 2 != 0 { result.append(0) }
+            }
             return result
         }
     }
