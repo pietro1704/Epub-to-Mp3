@@ -19,6 +19,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_app/services/offline_cache_eviction.dart';
 
+part 'playback_settings.dart';
+
 /// Default backend URL for platforms where the host loopback is reachable.
 /// Android emulators use [androidEmulatorBackendUrl] because their
 /// `localhost` is the emulator itself. Physical Android devices must use an
@@ -143,12 +145,13 @@ class CustomReaderColors {
 /// migrated to the new key space on first construction via
 /// [migrateLegacyKeysIfNeeded]. Idempotent — sets a sentinel
 /// `_settingsMigratedV1` flag so the migration runs at most once.
-class MirrorAppSettings {
+class MirrorAppSettings with PlaybackSettings {
   MirrorAppSettings(this._prefs) {
     migrateLegacyKeysIfNeeded();
     migrateReaderLayoutDefaultIfNeeded();
   }
 
+  @override
   final SharedPreferences _prefs;
 
   TtsPreferences get ttsPreferences {

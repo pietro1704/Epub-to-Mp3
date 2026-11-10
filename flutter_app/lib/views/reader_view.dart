@@ -1,3 +1,4 @@
+import '../models/reader_listening_position.dart';
 import '../features/reader/rich_reader_surface.dart';
 
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ typedef ChapterStepCallback = bool Function();
 class ReaderView extends ConsumerStatefulWidget {
   final FulltextChapter chapter;
   final int initialSourceOffset;
+  final TextRange? measuredHighlight;
   final ValueChanged<int?>? onVisibleTextOffset;
   final List<SentenceSpan> spans;
   final String? currentSentenceId;
@@ -47,6 +49,7 @@ class ReaderView extends ConsumerStatefulWidget {
     super.key,
     required this.chapter,
     this.initialSourceOffset = 0,
+    this.measuredHighlight,
     this.onVisibleTextOffset,
     required this.spans,
     this.currentSentenceId,
@@ -214,6 +217,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
             constraints: BoxConstraints(maxWidth: settings.readerColumnWidth),
             child: RichReaderSurface(
               chapter: widget.chapter,
+              highlight: _richHighlight(),
               initialSourceOffset: widget.initialSourceOffset,
               settings: settings,
               background: bg,
@@ -366,6 +370,29 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
         const SizedBox(height: 12),
       ],
     );
+  }
+
+  TextRange? _richHighlight() {
+    if (widget.measuredHighlight != null) return widget.measuredHighlight;
+    final span = widget.spans
+        .where((span) => span.id == widget.currentSentenceId)
+        .firstOrNull;
+    if (span == null) return null;
+    try {
+      final start = ReaderListeningPosition.fromDisplayScalar(
+        0,
+        widget.chapter.text,
+        span.startChar,
+      ).textOffset;
+      final end = span.endChar.clamp(start, widget.chapter.text.runes.length);
+      return TextRange(
+        start: String.fromCharCodes(widget.chapter.text.runes.take(start))
+            .length,
+        end: String.fromCharCodes(widget.chapter.text.runes.take(end)).length,
+      );
+    } on FormatException {
+      return null;
+    }
   }
 
   String? _fontFamily(ReaderFontFamily family) {

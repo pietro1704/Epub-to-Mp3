@@ -333,8 +333,25 @@ final playbackResumePersistenceProvider = Provider<PlaybackResumePersistence>((
 /// Flutter app runs everything locally, so one player instance suffices.
 /// Typed as the interface so tests can substitute a [FakeAudioPlayerService].
 final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
-  final settings = ref.watch(settingsProvider);
+  final settings = ref.read(settingsProvider);
   final p = AudioPlayerService(backendBase: settings.backendURL);
+  p.seekForwardSeconds = settings.seekForwardSeconds;
+  p.seekBackwardSeconds = settings.seekBackwardSeconds;
+  ref.listen(
+    settingsProvider.select(
+      (settings) => (settings.seekForwardSeconds, settings.seekBackwardSeconds),
+    ),
+    (_, intervals) {
+      p.seekForwardSeconds = intervals.$1;
+      p.seekBackwardSeconds = intervals.$2;
+    },
+  );
+  ref.listen(settingsProvider.select((settings) => settings.audioRate), (
+    _,
+    rate,
+  ) {
+    p.setSpeed(rate);
+  });
   ref.onDispose(p.dispose);
   return p;
 });
