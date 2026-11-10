@@ -12,6 +12,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+
 import 'tts_preferences.dart';
 
 import 'package:flutter/foundation.dart';
@@ -298,13 +299,40 @@ class MirrorAppSettings {
     return v.clamp(0, 4);
   }
 
-  Future<void> setReaderFontSize(int v) =>
-      _prefs.setInt('readerFontSize', v.clamp(0, 4));
+  Future<void> setReaderFontSize(int v) async {
+    await _prefs.setBool('readerOverrideFontSize', true);
+    await _prefs.setInt('readerFontSize', v.clamp(0, 4));
+  }
+
+  bool get readerOverrideFontFamily =>
+      _prefs.getBool('readerOverrideFontFamily') ??
+      _prefs.containsKey('readerFontFamily');
+  bool get readerOverrideFontSize =>
+      _prefs.getBool('readerOverrideFontSize') ??
+      _prefs.containsKey('readerFontSize');
+  bool get readerOverrideLineSpacing =>
+      _prefs.getBool('readerOverrideLineSpacing') ??
+      _prefs.containsKey('readerLineSpacing');
+  bool get readerOverrideAlignment =>
+      _prefs.getBool('readerOverrideAlignment') ??
+      _prefs.containsKey('readerTextAlignment');
+  Future<void> resetReaderTypography() async {
+    for (final key in [
+      'readerOverrideFontFamily',
+      'readerOverrideFontSize',
+      'readerOverrideLineSpacing',
+      'readerOverrideAlignment',
+    ]) {
+      await _prefs.setBool(key, false);
+    }
+  }
 
   ReaderFontFamily get readerFontFamily =>
       ReaderFontFamilyX.fromRaw(_prefs.getString('readerFontFamily'));
-  Future<void> setReaderFontFamily(ReaderFontFamily v) =>
-      _prefs.setString('readerFontFamily', v.rawValue);
+  Future<void> setReaderFontFamily(ReaderFontFamily v) async {
+    await _prefs.setBool('readerOverrideFontFamily', true);
+    await _prefs.setString('readerFontFamily', v.rawValue);
+  }
 
   ReaderTheme get readerTheme =>
       ReaderThemeX.fromRaw(_prefs.getString('readerTheme'));
@@ -335,16 +363,20 @@ class MirrorAppSettings {
   /// paragraph, overriding the EPUB's own CSS alignment declaration.
   ReaderTextAlignment get readerTextAlignment =>
       ReaderTextAlignmentX.fromRaw(_prefs.getString('readerTextAlignment'));
-  Future<void> setReaderTextAlignment(ReaderTextAlignment v) =>
-      _prefs.setString('readerTextAlignment', v.rawValue);
+  Future<void> setReaderTextAlignment(ReaderTextAlignment v) async {
+    await _prefs.setBool('readerOverrideAlignment', true);
+    await _prefs.setString('readerTextAlignment', v.rawValue);
+  }
 
   double get readerLineSpacing {
     final v = _prefs.getDouble('readerLineSpacing') ?? 6;
     return v.clamp(0, 16);
   }
 
-  Future<void> setReaderLineSpacing(double v) =>
-      _prefs.setDouble('readerLineSpacing', v.clamp(0, 16));
+  Future<void> setReaderLineSpacing(double v) async {
+    await _prefs.setBool('readerOverrideLineSpacing', true);
+    await _prefs.setDouble('readerLineSpacing', v.clamp(0, 16));
+  }
 
   double get readerMargin {
     // Default 12 pt mirrors the iOS portrait-minimum chosen for the

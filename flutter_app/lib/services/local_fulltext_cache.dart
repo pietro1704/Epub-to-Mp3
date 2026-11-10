@@ -56,6 +56,7 @@ class LocalFulltextCache {
       final txt = await f.readAsString();
       await _touch(f);
       final map = jsonDecode(txt) as Map<String, dynamic>;
+      if (map['readerContentVersion'] != 1) return null;
       return EbookFulltext.fromJson(map);
     } catch (_) {
       return null;
@@ -68,7 +69,10 @@ class LocalFulltextCache {
       final f = await _fileFor(bookId);
       if (f == null) return;
       final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(jsonEncode(payload.toJson()), flush: true);
+      await tmp.writeAsString(
+        jsonEncode({...payload.toJson(), 'readerContentVersion': 1}),
+        flush: true,
+      );
       await tmp.rename(f.path);
       await _touch(f);
       await _reclaimRebuildableBytes(f.parent);
@@ -88,9 +92,8 @@ class LocalFulltextCache {
 
   Future<void> _touch(File file) async {
     try {
-      await File(
-        '${file.path}.last_access',
-      ).writeAsString(DateTime.now().toUtc().toIso8601String(), flush: true);
+      await File('${file.path}.last_access')
+          .writeAsString(DateTime.now().toUtc().toIso8601String(), flush: true);
     } catch (_) {}
   }
 
@@ -116,9 +119,8 @@ class LocalFulltextCache {
           ),
         );
       }
-      final plan = RebuildableCachePolicy(
-        maxBytes: maxBytes,
-      ).evictionPlan(entries);
+      final plan = RebuildableCachePolicy(maxBytes: maxBytes)
+          .evictionPlan(entries);
       for (final path in plan) {
         await File(path).delete();
         final marker = File('$path.last_access');
