@@ -51,7 +51,7 @@ class CiRuntimeScopeTest < Minitest::Test
   def test_documentation_changes_skip_runtimes_and_host_contracts_but_not_packaging
     result, status, err, contracts = scope(['docs/guide.md'])
     assert status.success?, err
-    assert_equal %w[rust web flutter python wasm apple].to_h { |name| [name, 'false'] }, result
+    assert_equal %w[rust web flutter android python wasm apple].to_h { |name| [name, 'false'] }, result
     assert_equal 'false', contracts
     guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
     refute guard.key?('if')
@@ -59,7 +59,7 @@ class CiRuntimeScopeTest < Minitest::Test
     boundary = guard.fetch('steps').find { |step| step['name'] == 'Check production packaging boundary' }
     refute boundary.key?('if')
     assert_equal 'bash scripts/guard_no_python_production.sh', boundary.fetch('run')
-    %w[rust web flutter python wasm apple contracts].each do |name|
+    %w[rust web flutter android python wasm apple contracts].each do |name|
       assert_equal "${{ steps.scope.outputs.#{name} }}", @workflow.fetch('jobs').fetch('changes').fetch('outputs').fetch(name)
     end
   end
@@ -103,7 +103,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[python-tests rust flutter web apple-foundation apple-app]
+    runtimes = %w[python-tests rust flutter android-jvm web apple-foundation apple-app]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -115,20 +115,20 @@ class CiRuntimeScopeTest < Minitest::Test
       'python_app/src/converter.py' => %w[python], 'crates/converter-server/src/main.rs' => %w[rust],
       'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
       'ios/EpubToMp3/Package.swift' => %w[apple],
-      'native/piper-runtime/src/lib.rs' => %w[rust apple flutter],
-      'crates/converter-ffi/include/converter_tts_session.h' => %w[rust apple flutter],
-      'crates/converter-ffi/src/lib.rs' => %w[rust apple flutter],
-      'Cargo.lock' => %w[rust apple flutter web wasm],
-      'Cargo.toml' => %w[rust apple flutter web wasm],
-      'rust-toolchain.toml' => %w[rust apple flutter web wasm],
-      'mise.toml' => %w[rust apple flutter web wasm python],
-      'mise.lock' => %w[rust apple flutter web wasm python],
-      '.github/workflows/ci.yml' => %w[rust apple flutter web wasm python],
-      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter web wasm python],
+      'native/piper-runtime/src/lib.rs' => %w[rust apple flutter android],
+      'crates/converter-ffi/include/converter_tts_session.h' => %w[rust apple flutter android],
+      'crates/converter-ffi/src/lib.rs' => %w[rust apple flutter android],
+      'Cargo.lock' => %w[rust apple flutter android web wasm],
+      'Cargo.toml' => %w[rust apple flutter android web wasm],
+      'rust-toolchain.toml' => %w[rust apple flutter android web wasm],
+      'mise.toml' => %w[rust apple flutter android web wasm python],
+      'mise.lock' => %w[rust apple flutter android web wasm python],
+      '.github/workflows/ci.yml' => %w[rust apple flutter android web wasm python],
+      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android web wasm python],
       '.github/workflows/browser-runtime.yml' => %w[web wasm],
-      '.github/workflows/faber-integration.yml' => %w[rust apple flutter web wasm],
-      '.github/workflows/converter-ffi.yml' => %w[rust apple flutter],
-      '.github/actions/rust-build-cache/action.yml' => %w[rust apple flutter web wasm],
+      '.github/workflows/faber-integration.yml' => %w[rust apple flutter android web wasm],
+      '.github/workflows/converter-ffi.yml' => %w[rust apple flutter android],
+      '.github/actions/rust-build-cache/action.yml' => %w[rust apple flutter android web wasm],
       'scripts/build_web_wasm.sh' => %w[web wasm],
       'Cargo.lock.notes.md' => [],
       'crates/converter-core/src/lib.rs' => %w[rust apple flutter web wasm],
@@ -201,9 +201,9 @@ class CiRuntimeScopeTest < Minitest::Test
   def gate(scopes, results = {}, integrated = false)
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
-    { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web',
+    { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web',
       'apple-foundation' => 'apple', 'apple-app' => 'apple' }.each do |job, name|
-      selected = scopes[name] == 'true' && !(job == 'apple-app' && integrated == true)
+      selected = scopes[name] == 'true' && !(%w[apple-app android-jvm].include?(job) && integrated == true)
       needs[job] = { 'result' => selected ? 'success' : 'skipped' }
     end
     results.each { |job, result| needs.fetch(job)['result'] = result }
@@ -212,7 +212,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_native_app_gate_rejects_failures_and_integrated_validation_avoids_duplicate_app_runs
-    scopes = %w[rust web flutter python wasm apple].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
+    scopes = %w[rust web flutter android python wasm apple].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'apple-app' => result).success? }
     assert gate(scopes, {}, true).success?
@@ -221,7 +221,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_gate_accepts_only_confirmed_scopes_and_matching_results
-    scopes = %w[rust web flutter python wasm apple].to_h { |name| [name, 'false'] }.merge('web' => 'true')
+    scopes = %w[rust web flutter android python wasm apple].to_h { |name| [name, 'false'] }.merge('web' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'web' => result).success? }
     refute gate(scopes, 'changes' => 'failure').success?
@@ -279,27 +279,6 @@ class CiRuntimeScopeTest < Minitest::Test
     refute_includes @workflow.fetch('jobs').fetch('flutter').fetch('steps').filter_map { |step| step['run'] }.join("\n"), 'cargo build'
   end
 
-  def test_flutter_sdk_is_saved_before_dependency_or_test_failures
-    steps = @workflow.fetch('jobs').fetch('flutter').fetch('steps')
-    restore = steps.find { |step| step['name'] == 'Cache Flutter SDK' }
-    save = steps.find { |step| step['name'] == 'Retain installed Flutter SDK' }
-    install = steps.find { |step| step['name'] == 'Install toolchain' }
-    refute_nil save, 'A later test failure must not discard an installed SDK cache'
-    assert_pinned_action 'actions/cache/restore', restore.fetch('uses')
-    assert_pinned_action 'actions/cache/save', save.fetch('uses')
-    assert_equal 'flutter-sdk-cache', restore.fetch('id')
-    assert_equal "steps.flutter-sdk-cache.outputs.cache-hit != 'true'", save.fetch('if')
-    assert_equal restore.fetch('with'), save.fetch('with')
-    assert_equal '~/.local/share/mise/installs/flutter', save.fetch('with').fetch('path')
-    assert_includes save.fetch('with').fetch('key'), "hashFiles('mise.toml', 'mise.lock')"
-    refute install.key?('continue-on-error')
-    assert_operator steps.index(restore), :<, steps.index(install)
-    assert_operator steps.index(install), :<, steps.index(save)
-    ['Install Flutter dependencies', 'Run Flutter tests', 'Run Flutter analyzer'].each do |name|
-      assert_operator steps.index(save), :<, steps.index(steps.find { |step| step['name'] == name })
-    end
-  end
-
 def test_reusable_jobs_cannot_share_the_callers_concurrency_group
   groups = %w[converter-ffi flutter-rust-faber].map do |name|
     workflow = YAML.load_file(File.expand_path("../.github/workflows/#{name}.yml", __dir__))
@@ -355,7 +334,7 @@ def test_full_client_suites_replace_duplicate_subset_runs
   web_steps = @workflow.fetch('jobs').fetch('web').fetch('steps')
   flutter_steps = @workflow.fetch('jobs').fetch('flutter').fetch('steps')
   assert_includes web_steps.filter_map { |step| step['run'] }, 'mise exec -- npm test -- --maxWorkers=2'
-  assert_includes flutter_steps.filter_map { |step| step['run'] }, 'mise exec -- flutter test'
+  assert flutter_steps.any? { |step| step['run'].to_s.include?('mise run flutter:test') }
   [web_steps, flutter_steps].each do |steps|
     refute steps.any? { |step| step['run'].to_s.include?('bash scripts/check_direct_runtime_boundary.sh') }
   end
@@ -477,7 +456,7 @@ end
     end
   end
 
-  def test_scoped_pr_execution_budget_is_ten_minutes_with_parallel_runtime_jobs
+  def test_scoped_pr_host_contract_budget_is_ten_minutes_with_parallel_runtime_jobs
     jobs = @workflow.fetch('jobs')
     assert_equal 2, jobs.fetch('changes').fetch('timeout-minutes')
     assert_equal 7, jobs.fetch('production-packaging-guard').fetch('timeout-minutes')
@@ -495,3 +474,5 @@ end
 end
 
 require_relative "ci_native_artifact_cases"
+
+require_relative "ci_flutter_android_cases"

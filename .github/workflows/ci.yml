@@ -37,6 +37,7 @@ jobs:
       rust: ${{ steps.scope.outputs.rust }}
       web: ${{ steps.scope.outputs.web }}
       flutter: ${{ steps.scope.outputs.flutter }}
+      android: ${{ steps.scope.outputs.android }}
       python: ${{ steps.scope.outputs.python }}
       wasm: ${{ steps.scope.outputs.wasm }}
       apple: ${{ steps.scope.outputs.apple }}
@@ -55,7 +56,7 @@ jobs:
         shell: ruby {0}
         run: |
           require 'open3'
-          scopes = %w[rust web flutter python wasm apple].to_h { |name| [name, false] }
+          scopes = %w[rust web flutter android python wasm apple].to_h { |name| [name, false] }
           contracts = true
           if ENV.fetch('FULL_VALIDATION') == 'true'
             scopes.transform_values! { true }
@@ -77,6 +78,7 @@ jobs:
               scopes['rust'] ||= orchestration || shared_build || native_abi || path.start_with?('crates/') || path.end_with?('.rs')
               scopes['web'] ||= wasm || path.start_with?('web/') || path.match?(/\Ascripts\/(?:build_web|check_direct_runtime)/)
               scopes['flutter'] ||= orchestration || shared_build || shared_core || native_abi || path.start_with?('flutter_app/') || path.match?(/\Ascripts\/(?:build_flutter|build_converter_ffi_android|package_converter_ffi_android|check_direct_runtime)/)
+              scopes['android'] ||= orchestration || shared_build || native_abi || path.start_with?('flutter_app/android/') || %w[flutter_app/pubspec.yaml flutter_app/pubspec.lock].include?(path) || path.match?(/\Ascripts\/(?:build_flutter_android|build_converter_ffi_android|package_converter_ffi_android|fetch_onnxruntime_android|android_jni_exports)/)
               scopes['python'] ||= orchestration || path.start_with?('python_app/', 'tests/') || path.match?(/\A(?:[^\/]+\.py|requirements[^\/]*\.txt|pyproject\.toml|pytest\.ini|setup\.cfg|(?:scripts|\.github\/scripts)\/.*\.py)\z/)
               scopes['wasm'] ||= wasm
               scopes['apple'] ||= orchestration || shared_build || shared_core || native_abi || path.start_with?('ios/EpubToMp3/')
@@ -532,18 +534,131 @@ jobs:
           path: ~/.local/share/mise/installs/flutter
           key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
 
+      - name: Cache Pub downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
+
       - name: Install Flutter dependencies
+        id: flutter-dependencies
         working-directory: flutter_app
         run: mise exec -- flutter pub get
 
+      - name: Run Flutter analyzer
+        id: flutter-analyze
+        run: |
+          set -o pipefail
+          mkdir -p .reports/flutter
+          mise run flutter:analyze 2>&1 | tee .reports/flutter/analyze.log
 
       - name: Run Flutter tests
-        working-directory: flutter_app
-        run: mise exec -- flutter test
+        if: ${{ !cancelled() && steps.flutter-dependencies.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          mkdir -p .reports/flutter
+          mise run flutter:test 2>&1 | tee .reports/flutter/tests.log
 
-      - name: Run Flutter analyzer
-        working-directory: flutter_app
-        run: mise exec -- flutter analyze
+      - name: Retain Flutter failure diagnostics
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flutter-diagnostics-${{ github.sha }}
+          path: .reports/flutter/
+          if-no-files-found: warn
+          retention-days: 7
+
+  android-jvm:
+    # The integrated Faber APK job already executes the same JVM suite.
+    if: needs.changes.outputs.android == 'true' && !(inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master')
+    name: Android JVM tests
+    needs: [changes]
+    timeout-minutes: ${{ inputs.full_validation == true && 30 || 12 }}
+    runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python,ruby,flutter,java
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install mise
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.11.3
+          install: false
+      - name: Cache Flutter SDK
+        id: flutter-sdk-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/mise/installs/flutter
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+      - name: Install scoped project tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Retain installed Flutter SDK
+        if: steps.flutter-sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/mise/installs/flutter
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+      - name: Cache Pub downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
+      - name: Cache Gradle dependency downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'flutter_app/android/**/*.gradle.kts', 'flutter_app/android/gradle.properties', 'flutter_app/android/gradle/wrapper/gradle-wrapper.properties', 'flutter_app/pubspec.lock') }}
+          restore-keys: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-
+      - name: Resolve Flutter plugins and hosted Android SDK
+        run: |
+          mise exec -- ruby -e 'File.write("flutter_app/android/local.properties", "sdk.dir=#{ENV.fetch("ANDROID_HOME")}\nflutter.sdk=#{ARGV.fetch(0)}\n")' "$(mise where flutter)"
+          cd flutter_app
+          mise exec -- flutter pub get
+      - name: Bootstrap the ignored wrapper from the pinned Flutter SDK
+        run: |
+          wrapper="$(mise where flutter)/bin/cache/artifacts/gradle_wrapper"
+          install -m 755 "$wrapper/gradlew" flutter_app/android/gradlew
+          install -m 644 "$wrapper/gradle/wrapper/gradle-wrapper.jar" flutter_app/android/gradle/wrapper/gradle-wrapper.jar
+      - name: Run Android JVM tests without packaging Flutter assets
+        working-directory: flutter_app/android
+        # Unit tests do not load Flutter assets or JNI. APK builds retain the
+        # complete embedded-input guard and audit in the Faber workflow.
+        run: mise exec -- ruby ../../scripts/native_build_command.rb -- mise exec -- ./gradlew :app:testDebugUnitTest -x :app:copyFlutterAssetsDebug --max-workers=1 --no-daemon --console=plain '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -XX:ReservedCodeCacheSize=256m'
+      - name: Require executed Android JVM cases
+        run: |
+          mise exec -- python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          reports = list(Path('flutter_app/build/app/test-results/testDebugUnitTest').glob('TEST-*.xml'))
+          if not reports:
+              raise SystemExit('Missing Android JVM test results')
+          counts = {name: 0 for name in ('tests', 'failures', 'errors', 'skipped')}
+          for report in reports:
+              suite = ET.parse(report).getroot()
+              for name in counts:
+                  counts[name] += int(suite.attrib[name])
+          if counts['tests'] <= 0 or any(counts[name] for name in ('failures', 'errors', 'skipped')):
+              raise SystemExit(f'Android JVM tests did not all execute successfully: {counts}')
+          print(f'ANDROID_JVM_TESTS {counts}')
+          PY
+      - name: Retain Android JVM test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-jvm-results-${{ github.sha }}
+          path: |
+            flutter_app/build/app/reports/tests/
+            flutter_app/build/app/test-results/
+          if-no-files-found: warn
+          retention-days: 7
 
   apple-app:
     name: Apple app tests
@@ -603,7 +718,7 @@ jobs:
 
   pr-gate:
     name: PR gate
-    needs: [changes, production-packaging-guard, python-tests, rust, flutter, web, apple-foundation, apple-app]
+    needs: [changes, production-packaging-guard, python-tests, rust, flutter, android-jvm, web, apple-foundation, apple-app]
     if: always()
     timeout-minutes: 1
     runs-on: ubuntu-24.04
@@ -623,11 +738,11 @@ jobs:
           wasm = scopes.fetch('wasm')
           abort 'Missing scope evidence: wasm' unless %w[true false].include?(wasm)
           abort 'WASM validation requires the Web job' if wasm == 'true' && scopes.fetch('web') != 'true'
-          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'web' => 'web', 'apple-foundation' => 'apple', 'apple-app' => 'apple' }.each do |job, scope|
+          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web', 'apple-foundation' => 'apple', 'apple-app' => 'apple' }.each do |job, scope|
             selected = scopes.fetch(scope)
             abort "Missing scope evidence: #{scope}" unless %w[true false].include?(selected)
             # Full post-merge validation already requires the complete Faber matrix.
-            required = selected == 'true' && !(job == 'apple-app' && integrated == 'true')
+            required = selected == 'true' && !(%w[apple-app android-jvm].include?(job) && integrated == 'true')
             expected = required ? 'success' : 'skipped'
             abort "Unexpected runtime result: #{job}" unless needs.fetch(job).fetch('result') == expected
           end

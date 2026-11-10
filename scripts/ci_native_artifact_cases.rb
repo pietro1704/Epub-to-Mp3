@@ -32,27 +32,6 @@ class CiRuntimeScopeTest
     assert_equal ['test'], project.fetch('schemes').fetch('EpubToMp3').fetch('build').fetch('targets').fetch('EpubToMp3Tests')
   end
 
-  def test_flutter_sdk_cache_keeps_scope_checks_installation_and_validation_on_hits_and_misses
-    steps = @workflow.fetch('jobs').fetch('flutter').fetch('steps')
-    cache = steps.find { |step| step['name'] == 'Cache Flutter SDK' }
-    refute_nil cache
-    assert_pinned_action('actions/cache/restore', cache.fetch('uses'))
-    assert_equal '~/.local/share/mise/installs/flutter', cache.fetch('with').fetch('path')
-    key = cache.fetch('with').fetch('key')
-    %w[runner.os runner.arch].each { |identity| assert_includes key, "${{ #{identity} }}" }
-    assert_includes key, "hashFiles('mise.toml', 'mise.lock')"
-    refute cache.fetch('with').key?('restore-keys')
-    names = steps.map { |step| step['name'] }
-    assert_operator names.index('Check Flutter toolchain scope'), :<, names.index('Cache Flutter SDK')
-    assert_operator names.index('Cache Flutter SDK'), :<, names.index('Install toolchain')
-    ['Install toolchain', 'Install Flutter dependencies', 'Run Flutter tests', 'Run Flutter analyzer'].each do |name|
-      step = steps.find { |entry| entry['name'] == name }
-      refute step.key?('if'), "#{name} must run after either a cache hit or miss"
-      refute step.key?('continue-on-error'), "#{name} failures must block validation"
-    end
-    assert_equal 'mise install', steps.find { |step| step['name'] == 'Install toolchain' }.fetch('run')
-  end
-
   def test_shared_player_result_requires_real_cases_without_failures_or_skips
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     steps = faber.fetch('jobs').fetch('macos-preferences').fetch('steps')
