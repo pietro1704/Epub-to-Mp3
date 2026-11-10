@@ -1,3 +1,6 @@
+import '../screens/bookmarks_list_screen.dart';
+import 'reader_search_overlay.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -14,6 +17,8 @@ import '../state/providers.dart';
 import 'reader_settings_sheet.dart';
 import 'reader_theme_colors.dart';
 import 'reader_view.dart';
+
+part 'instant_reader_tools.dart';
 
 typedef Chapter = FulltextChapter;
 
@@ -44,10 +49,14 @@ class InstantReaderView extends ConsumerStatefulWidget {
 class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   late int _currentChapterIndex;
   bool _chromeVisible = true;
+  int _visibleTextOffset = 0;
+  int? _requestedSourceOffset;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<String?>? _sentenceSub;
   SentenceSyncCoordinator? _sentenceSync;
   String? _liveSentenceId;
+
+  void _update(VoidCallback update) => setState(update);
 
   @override
   void initState() {
@@ -168,7 +177,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
   bool returnToPreviousChapter() {
     if (_currentChapterIndex <= 0) return false;
-    setState(() => _currentChapterIndex -= 1);
+    setState(() {
+      _currentChapterIndex -= 1;
+      _requestedSourceOffset = null;
+    });
     _savePosition();
     return true;
   }
@@ -188,7 +200,6 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
       builder: (_) => const ReaderSettingsSheet(),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -246,8 +257,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     return Column(
       children: [
         // Toolbar with settings button — hidden when chrome is off
-        AnimatedSize(
-          duration: const Duration(milliseconds: 250),
+        SizedBox(
           child: _chromeVisible
               ? Container(
                   color: bg,
@@ -256,6 +266,12 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                     bottom: false,
                     child: Row(
                       children: [
+                        BackButton(
+                          color: fg,
+                          onPressed: () =>
+                              ref.read(appDestinationProvider.notifier).state =
+                                  AppDestination.library,
+                        ),
                         Expanded(
                           child: Semantics(
                             header: true,
@@ -270,6 +286,38 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                                   ),
                             ),
                           ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.list, color: fg),
+                          tooltip: AppLocalizations.of(context)!
+                              .tableOfContents,
+                          onPressed: _showContents,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.search, color: fg),
+                          tooltip: AppLocalizations.of(context)!.searchInBook,
+                          onPressed: _showSearch,
+                        ),
+                        PopupMenuButton<String>(
+                          icon: Icon(Icons.bookmark_outline, color: fg),
+                          tooltip: AppLocalizations.of(context)!.bookmarksTitle,
+                          onSelected: (choice) => choice == 'add'
+                              ? _addBookmark()
+                              : _showBookmarks(),
+                          itemBuilder: (_) => [
+                            PopupMenuItem(
+                              value: 'add',
+                              child: Text(
+                                AppLocalizations.of(context)!.addBookmark,
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'list',
+                              child: Text(
+                                AppLocalizations.of(context)!.bookmarksTitle,
+                              ),
+                            ),
+                          ],
                         ),
                         IconButton(
                           icon: Icon(
@@ -292,7 +340,37 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
         Expanded(
           child: ReaderView(
-            onVisibleTextOffset: (offset) => widget.onVisibleTextOffset?.call(widget.fulltext.chapters.indexOf(chapter), offset),
+            key: ValueKey((_currentChapterIndex, _requestedSourceOffset)),
+            initialSourceOffset:
+                _requestedSourceOffset ??
+                (ref
+                            .read(sharedPrefsProvider)
+                            .getInt('readPos_sourceChapter_${widget.bookId}') ==
+                        _currentChapterIndex
+                    ? ref
+                              .read(sharedPrefsProvider)
+                              .getInt('readPos_offset_${widget.bookId}') ??
+                          0
+                    : 0),
+            onVisibleTextOffset: (offset) {
+              _visibleTextOffset = offset ?? _visibleTextOffset;
+              final book = widget.bookId;
+              if (book != null && offset != null) {
+                ref
+                    .read(sharedPrefsProvider)
+                    .setInt(
+                      'readPos_sourceChapter_$book',
+                      _currentChapterIndex,
+                    );
+                ref
+                    .read(sharedPrefsProvider)
+                    .setInt('readPos_offset_$book', offset);
+              }
+              widget.onVisibleTextOffset?.call(
+                widget.fulltext.chapters.indexOf(chapter),
+                offset,
+              );
+            },
             chapter: chapter,
             spans: spans,
             // Live sentence id (driven by SyncEngine + position stream
@@ -304,7 +382,6 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
             onAutoHideChrome: () => _setChromeVisible(false),
           ),
         ),
-
       ],
     );
   }

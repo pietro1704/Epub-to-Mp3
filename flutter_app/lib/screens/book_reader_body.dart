@@ -108,40 +108,6 @@ class _BookReaderBody extends ConsumerWidget {
             : null;
         final player = ref.read(globalAudioPlayerProvider);
         return Scaffold(
-          appBar: ref.watch(readerChromeVisibleProvider)
-              ? AppBar(
-                  leading: BackButton(
-                    onPressed: () =>
-                        ref.read(appDestinationProvider.notifier).state =
-                            AppDestination.library,
-                  ),
-                  title: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        bookTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (localJob?.usedSelections.isNotEmpty == true)
-                        Text(
-                          t.ttsActualVoices(
-                            localJob!.usedSelections
-                                .map((selection) => selection.displayName)
-                                .join(', '),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                    ],
-                  ),
-                  titleTextStyle: Theme.of(context).textTheme.titleMedium,
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                )
-              : null,
           body: Listener(
             behavior: HitTestBehavior.translucent,
             onPointerDown: (_) => resourcePolicy.recordReaderInteraction(),
@@ -159,11 +125,14 @@ class _BookReaderBody extends ConsumerWidget {
                     }
                     try {
                       onListeningPosition(
-                        ReaderListeningPosition.fromDisplayScalar(
-                          chapter,
-                          fulltext!.chapters[chapter].text,
-                          offset,
-                        ),
+                        fulltext!.chapters[chapter].html?.trim().isNotEmpty ==
+                                true
+                            ? ReaderListeningPosition(chapter, offset)
+                            : ReaderListeningPosition.fromDisplayScalar(
+                                chapter,
+                                fulltext!.chapters[chapter].text,
+                                offset,
+                              ),
                       );
                     } on FormatException {
                       onListeningPosition(null);

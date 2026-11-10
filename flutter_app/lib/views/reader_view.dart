@@ -1,3 +1,5 @@
+import '../features/reader/rich_reader_surface.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -23,6 +25,7 @@ typedef ChapterStepCallback = bool Function();
 
 class ReaderView extends ConsumerStatefulWidget {
   final FulltextChapter chapter;
+  final int initialSourceOffset;
   final ValueChanged<int?>? onVisibleTextOffset;
   final List<SentenceSpan> spans;
   final String? currentSentenceId;
@@ -43,6 +46,7 @@ class ReaderView extends ConsumerStatefulWidget {
   const ReaderView({
     super.key,
     required this.chapter,
+    this.initialSourceOffset = 0,
     this.onVisibleTextOffset,
     required this.spans,
     this.currentSentenceId,
@@ -73,6 +77,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     super.initState();
     _scrollController.addListener(_publishListeningAnchor);
     _committedChapterToken = widget.chapter.index;
+    _visibleSourceAnchor = widget.initialSourceOffset;
     _pageLayoutKey = null;
   }
 
@@ -202,6 +207,29 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       fontFamily: _fontFamily(settings.readerFontFamily),
     );
 
+    if (widget.chapter.html?.trim().isNotEmpty == true) {
+      return SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: settings.readerColumnWidth),
+            child: RichReaderSurface(
+              chapter: widget.chapter,
+              initialSourceOffset: widget.initialSourceOffset,
+              settings: settings,
+              background: bg,
+              foreground: fg,
+              bodyStyle: bodyStyle,
+              headingStyle: headingStyle,
+              onVisibleTextOffset: widget.onVisibleTextOffset,
+              onCenterTap: widget.onCenterTap,
+              onAutoHideChrome: widget.onAutoHideChrome,
+              onNextChapter: widget.onAdvanceChapter,
+              onPreviousChapter: widget.onPreviousChapter,
+            ),
+          ),
+        ),
+      );
+    }
     if (settings.readerLayout == ReaderLayout.scrolling) {
       return _scrollingLayout(
         context,
