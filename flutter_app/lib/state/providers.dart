@@ -1,3 +1,6 @@
+import '../app/app_destination.dart';
+export '../app/app_destination.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -224,7 +227,11 @@ final localConversionJobStoreProvider = Provider<LocalConversionJobStore>((
 final localConversionHistoryProvider = FutureProvider<LocalConversionHistory>((
   ref,
 ) {
-  ref.watch(rootTabIndexProvider.select((index) => index == 3));
+  ref.watch(
+    appDestinationProvider.select(
+      (destination) => destination == AppDestination.history,
+    ),
+  );
   return ref.watch(localConversionJobStoreProvider).loadHistory();
 });
 
@@ -361,7 +368,11 @@ final localFulltextCacheProvider = Provider<LocalFulltextCache>((ref) {
 
 /// Tab index controller for the root NavigationBar, so library can switch to
 /// the reader tab programmatically.
-final rootTabIndexProvider = StateProvider<int>((ref) => 0);
+final appDestinationProvider = StateProvider<AppDestination>(
+  (ref) => ref.read(currentlyReadingBookIdProvider) == null
+      ? AppDestination.library
+      : AppDestination.reader,
+);
 
 /// Reader chrome visibility shared with the root shell so the persistent
 /// mini-player and navigation bar follow the reader's immersive mode.

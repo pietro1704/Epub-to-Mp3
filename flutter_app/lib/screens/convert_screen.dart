@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import '../services/manual_conversion_output.dart';
 import '../services/platform_voice_notice.dart';
 import '../services/embedded_converter.dart';
@@ -364,7 +366,17 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     final jobId = _jobId;
     final t = AppLocalizations.of(context)!;
     return Scaffold(
-      appBar: AppBar(title: const Text('Convert')),
+      appBar: AppBar(
+        actions: [
+          IconButton(
+            tooltip: t.jobsTitle,
+            icon: const Icon(Icons.history),
+            onPressed: () => ref.read(appDestinationProvider.notifier).state =
+                AppDestination.history,
+          ),
+        ],
+        title: Text(t.convertTitle),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -393,11 +405,14 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             normalizeAudio: _normalizeAudio,
             usesEmbeddedConversion: _usesEmbeddedConversion,
             onEngineChanged: (value) => setState(() => _engine = value),
-            onAllowSecondaryChanged: (value) => setState(() => _allowSecondary = value),
+            onAllowSecondaryChanged: (value) =>
+                setState(() => _allowSecondary = value),
             onVoiceChanged: (value) => setState(() => _voice = value),
             onLanguageChanged: (value) => setState(() => _language = value),
-            onIncludeCoverChanged: (value) => setState(() => _includeCover = value),
-            onNormalizeAudioChanged: (value) => setState(() => _normalizeAudio = value),
+            onIncludeCoverChanged: (value) =>
+                setState(() => _includeCover = value),
+            onNormalizeAudioChanged: (value) =>
+                setState(() => _normalizeAudio = value),
           ),
           ManualConversionProgress(
             submitting: _submitting,

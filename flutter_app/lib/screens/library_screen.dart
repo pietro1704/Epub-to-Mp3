@@ -48,16 +48,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         await store.importBook(path);
       } on LibraryStoreException catch (e) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
       }
     }
   }
 
   void _openInReader(WidgetRef ref, BookEntity book) {
     ref.read(currentlyReadingBookIdProvider.notifier).set(book.id);
-    ref.read(rootTabIndexProvider.notifier).state = 0;
+    ref.read(appDestinationProvider.notifier).state = AppDestination.reader;
   }
 
   void _showBookActions(
@@ -79,7 +78,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 Navigator.pop(context);
                 ref.read(manualDownloadRequestProvider.notifier).state =
                     book.filePath;
-                ref.read(rootTabIndexProvider.notifier).state = 2;
+                ref.read(appDestinationProvider.notifier).state =
+                    AppDestination.conversion;
               },
             ),
             ListTile(
@@ -210,7 +210,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   searchQuery: _searchQuery,
                   selectedTag: _selectedTag,
                   allTags: allTags,
-                  onSearchChanged: (value) => setState(() => _searchQuery = value),
+                  onSearchChanged: (value) =>
+                      setState(() => _searchQuery = value),
                   onTagChanged: (value) => setState(() => _selectedTag = value),
                 ),
                 // Book grid
