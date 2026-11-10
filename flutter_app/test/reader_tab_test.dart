@@ -35,8 +35,9 @@ void main() {
       expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
     });
 
-    testWidgets('shows empty state when bookId set but book not in library',
-        (t) async {
+    testWidgets('shows empty state when bookId set but book not in library', (
+      t,
+    ) async {
       final prefs = await _mockPrefs({
         'currentlyReadingBookId': 'nonexistent-id',
       });
@@ -67,7 +68,7 @@ void main() {
       await t.tap(find.text('Browse Library'));
       await t.pump();
 
-      expect(container.read(rootTabIndexProvider), 1);
+      expect(container.read(appDestinationProvider), AppDestination.library);
       container.dispose();
     });
 

@@ -9,20 +9,39 @@ class VoiceSelectionSettings extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
     final preferences = settings.ttsPreferences;
-    final catalogSelections = ref.watch(_ttsCatalogSelections).asData?.value ?? const <TtsSelection>[];
+    final catalogSelections =
+        ref.watch(_ttsCatalogSelections).asData?.value ??
+        const <TtsSelection>[];
     Map<String, TtsSelection> uniqueOptions(Iterable<TtsSelection> candidates) {
       final result = <String, TtsSelection>{};
       for (final selection in candidates) {
-        if (!result.values.any((existing) => existing.representsSameRequest(selection))) {
+        if (!result.values.any(
+          (existing) => existing.representsSameRequest(selection),
+        )) {
           result[jsonEncode(selection.toJson())] = selection;
         }
       }
       return result;
     }
-    final primaryOptions = uniqueOptions([preferences.primary, ...catalogSelections,
-      TtsSelection.faber, TtsSelection.edge, TtsSelection.system]);
-    final secondaryOptions = uniqueOptions([?preferences.secondary, ...catalogSelections,
-      TtsSelection.faber, TtsSelection.edge, TtsSelection.system].where((selection) => !selection.representsSameRequest(preferences.primary)));
+
+    final primaryOptions = uniqueOptions([
+      preferences.primary,
+      ...catalogSelections,
+      TtsSelection.faber,
+      TtsSelection.edge,
+      TtsSelection.system,
+    ]);
+    final secondaryOptions = uniqueOptions(
+      [
+        ?preferences.secondary,
+        ...catalogSelections,
+        TtsSelection.faber,
+        TtsSelection.edge,
+        TtsSelection.system,
+      ].where(
+        (selection) => !selection.representsSameRequest(preferences.primary),
+      ),
+    );
     String selectionLabel(TtsSelection selection) {
       if (selection.representsSameRequest(TtsSelection.faber)) {
         return t.ttsFaberOffline;
@@ -43,6 +62,7 @@ class VoiceSelectionSettings extends ConsumerWidget {
           child: Column(
             children: [
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 key: ValueKey(
                   'primary-${jsonEncode(preferences.primary.toJson())}',
                 ),
@@ -63,15 +83,14 @@ class VoiceSelectionSettings extends ConsumerWidget {
                 },
               ),
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 key: ValueKey(
                   'secondary-${jsonEncode(preferences.primary.toJson())}-${jsonEncode(preferences.secondary?.toJson())}',
                 ),
                 initialValue: preferences.secondary == null
                     ? 'none'
                     : jsonEncode(preferences.secondary!.toJson()),
-                decoration: InputDecoration(
-                  labelText: t.ttsSecondaryNarration,
-                ),
+                decoration: InputDecoration(labelText: t.ttsSecondaryNarration),
                 items: [
                   DropdownMenuItem(
                     value: 'none',
@@ -121,9 +140,8 @@ class VoiceSelectionSettings extends ConsumerWidget {
         ),
         TextButton(
           key: const ValueKey('tts-use-recommended-defaults'),
-          onPressed: () => notifier.setTtsPreferences(
-            const TtsPreferences.appDefaults(),
-          ),
+          onPressed: () =>
+              notifier.setTtsPreferences(const TtsPreferences.appDefaults()),
           child: Text(t.ttsUseRecommendedDefaults),
         ),
       ],
