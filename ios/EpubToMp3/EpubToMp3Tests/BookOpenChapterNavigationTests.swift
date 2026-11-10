@@ -144,6 +144,8 @@ final class BookOpenChapterNavigationTests: XCTestCase {
         guard textView.text.hasPrefix("Second chapter.") else {
             return XCTFail("Forward page actions did not reach the second chapter.")
         }
+        XCTAssertEqual(ReaderProgressStore.read(bookId: identifier)?.chapterIndex, 1,
+                       "Crossing must save the destination, even before another page turn.")
         XCTAssertEqual(measuredLayout().canonicalPageOffsets.count, 1)
         XCTAssertEqual(scrollView.contentOffset.y, 0, accuracy: 0.5,
                        "Forward crossing must start at the next chapter's first page.")
@@ -156,6 +158,8 @@ final class BookOpenChapterNavigationTests: XCTestCase {
         XCTAssertGreaterThan(expectedOffset, 0)
         XCTAssertEqual(scrollView.contentOffset.y, expectedOffset, accuracy: 0.5,
                        "Back from page one must land on the previous chapter's final canonical page, not its beginning.")
+        XCTAssertEqual(ReaderProgressStore.read(bookId: identifier)?.chapterIndex, 0)
+        XCTAssertGreaterThan(ReaderProgressStore.read(bookId: identifier)?.offsetFraction ?? 0, 0)
         assertNoClippedFragments(finalLayout)
 
         // Returning repeatedly must reuse the newly measured destination,

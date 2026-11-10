@@ -62,6 +62,7 @@ final class ReaderPreparedPresentation {
               let restoration = restoration.slot.take() else { return }
         let snapshot = restoration.projection.snapshot
         guard let loadingID = document.activeLoadingID,
+              document.presentedProjectionLoadingID != loadingID,
               isCurrentLoad(loadingID, bookID: document.book.id),
               PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: fulltextURL) else {
             observeOpenStage("projection_snapshot_rejected")
@@ -188,22 +189,24 @@ final class ReaderPreparedPresentation {
         guard isCurrentLoad(loadingID, bookID: bookID),
               document.presentedProjectionLoadingID != loadingID,
               PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: fulltextURL) else { return }
+        // The async presenter and committed-layout path consume the same
+        // restoration. Hydration may release activePreparedChapter later.
+        restoration.slot.store(nil)
         observeOpenStage("projection_presentation_started")
         document.activePreparedChapter = snapshot
         document.selectedChapter = snapshot.chapterOrdinal
         document.presentedProjectionLoadingID = loadingID
+        document.pendingProjectionAnchor = (loadingID, progress)
+        document.pendingLoadingCompletionID = loadingID
         send(.showChapter(document.selectedChapter, preparedRendering))
         observeOpenStage("projection_chapter_mounted")
         send(.requestHostLayout)
         observeOpenStage("projection_layout_started")
         send(.layoutHostView)
-        observeOpenStage("projection_layout_completed")
-        guard viewportIsCommitted() else { return }
-        send(.restorePosition(progress))
-        send(.updatePageIndicator)
-        document.hasRestoredInitialPosition = true
-        document.pendingLoadingCompletionID = loadingID
-        observeOpenStage("projection_readiness_requested")
+        // A host can have bounds before the newly mounted text has measured
+        // geometry. Keep the saved anchor pending across that first layout.
+        finishPreparedProjectionLayoutIfNeeded()
+        send(.scheduleHostLayout(loadingID))
         send(.completeLoading)
     }
 

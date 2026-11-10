@@ -168,6 +168,7 @@ final class ReaderLoadingSession {
               document.pendingProjectionAnchor == nil,
               composition.scrollView.bounds.width > 1,
               composition.scrollView.bounds.height > 1,
+              textPresentation.hasMeasuredTextLayout,
               composition.textView.attributedText.length > 0 || !composition.comicPageImageView.isHidden else {
             return
         }
