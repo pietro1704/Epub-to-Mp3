@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
@@ -31,34 +32,44 @@ Future<void> _pump(
 
 void main() {
   group('SettingsScreen M3', () {
-    testWidgets('fresh speech defaults choose Faber and offline native fallback', (t) async {
-      await _pump(t);
-      final saved = AppSettings(await SharedPreferences.getInstance()).ttsPreferences;
-      expect(saved.primary.modelId, 'pt_BR-faber-medium');
-      expect(saved.secondary!.engine, 'system');
-      expect(saved.policyVersion, 2);
-      expect(saved.allowOnlineFallback, false);
-      expect(find.text('Faber medium · Offline'), findsOneWidget);
-      expect(find.text('System voice · Offline fallback'), findsOneWidget);
-    });
+    testWidgets(
+      'fresh speech defaults choose Faber and offline native fallback',
+      (t) async {
+        await _pump(t);
+        final saved = AppSettings(await SharedPreferences.getInstance())
+            .ttsPreferences;
+        expect(saved.primary.modelId, 'pt_BR-faber-medium');
+        expect(saved.secondary!.engine, 'system');
+        expect(saved.policyVersion, 2);
+        expect(saved.allowOnlineFallback, false);
+        expect(find.text('Faber medium · Offline'), findsOneWidget);
+        expect(find.text('System voice · Offline fallback'), findsOneWidget);
+      },
+    );
 
-    testWidgets('existing no-fallback policy adopts new defaults only on action', (t) async {
-      await _pump(t, prefsData: {
-        'ttsPreferences': jsonEncode(const TtsPreferences().toJson()),
-      });
-      final settings = AppSettings(await SharedPreferences.getInstance());
-      expect(settings.ttsPreferences.secondary, isNull);
-      await t.scrollUntilVisible(
-        find.byKey(const ValueKey('tts-use-recommended-defaults')),
-        150,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await t.tap(find.byKey(const ValueKey('tts-use-recommended-defaults')));
-      await t.pumpAndSettle();
-      expect(settings.ttsPreferences.primary.engine, 'piper');
-      expect(settings.ttsPreferences.secondary!.engine, 'system');
-      expect(settings.ttsPreferences.policyVersion, 2);
-    });
+    testWidgets(
+      'existing no-fallback policy adopts new defaults only on action',
+      (t) async {
+        await _pump(
+          t,
+          prefsData: {
+            'ttsPreferences': jsonEncode(const TtsPreferences().toJson()),
+          },
+        );
+        final settings = AppSettings(await SharedPreferences.getInstance());
+        expect(settings.ttsPreferences.secondary, isNull);
+        await t.scrollUntilVisible(
+          find.byKey(const ValueKey('tts-use-recommended-defaults')),
+          150,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await t.tap(find.byKey(const ValueKey('tts-use-recommended-defaults')));
+        await t.pumpAndSettle();
+        expect(settings.ttsPreferences.primary.engine, 'piper');
+        expect(settings.ttsPreferences.secondary!.engine, 'system');
+        expect(settings.ttsPreferences.policyVersion, 2);
+      },
+    );
 
     testWidgets(
       'valid same-engine voices remain distinct settings selections',
@@ -75,9 +86,8 @@ void main() {
         expect(t.takeException(), isNull);
         expect(find.text('Edge · pt-BR-FranciscaNeural'), findsOneWidget);
         expect(find.text('Edge · Online'), findsOneWidget);
-        final saved = AppSettings(
-          await SharedPreferences.getInstance(),
-        ).ttsPreferences;
+        final saved = AppSettings(await SharedPreferences.getInstance())
+            .ttsPreferences;
         expect(saved.primary.voice, 'pt-BR-FranciscaNeural');
         expect(saved.secondary!.voice, isNull);
         expect(saved.allowOnlineFallback, true);
@@ -102,9 +112,8 @@ void main() {
         await t.pumpAndSettle();
         await t.tap(find.text('Edge · Online').last);
         await t.pumpAndSettle();
-        final saved = AppSettings(
-          await SharedPreferences.getInstance(),
-        ).ttsPreferences;
+        final saved = AppSettings(await SharedPreferences.getInstance())
+            .ttsPreferences;
         expect(saved.primary.engine, 'edge');
         expect(saved.primary.voice, isNull);
         expect(saved.secondary!.voice, 'pt-BR-FranciscaNeural');
@@ -191,7 +200,7 @@ void main() {
       await _pump(t);
 
       expect(find.text('Audio engine'), findsOneWidget);
-      expect(find.text('Remote backend'), findsOneWidget);
+      expect(find.text('Remote backend'), findsNothing);
       await t.scrollUntilVisible(
         find.text('Reader'),
         200,

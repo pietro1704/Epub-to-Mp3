@@ -227,12 +227,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ),
               ],
             ),
-      floatingActionButton: store.books.isEmpty
-          ? null
-          : FloatingActionButton(
-              onPressed: () => _pickAndImport(context, store),
-              child: const Icon(Icons.add),
-            ),
     );
   }
 

@@ -1,3 +1,5 @@
+import '../design_system/player_adaptive_layout.dart';
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -5,7 +7,9 @@ import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/material.dart';
+
 import 'seek_interval_icon.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
@@ -63,22 +67,27 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
       final url = ch.downloadUrl;
       if (url == null || url.isEmpty) {
         completed++;
-        if (mounted) setState(() => _downloadStatus = '$completed/${chapters.length}');
+        if (mounted) {
+          setState(() => _downloadStatus = '$completed/${chapters.length}');
+        }
         continue;
       }
       if (url.startsWith('file:')) {
         try {
           final source = File.fromUri(Uri.parse(url));
           final dir = await getApplicationDocumentsDirectory();
-          final folder = Directory('${dir.path}/downloads/${widget.bookId ?? 'unknown'}')
-            ..createSync(recursive: true);
+          final folder = Directory(
+            '${dir.path}/downloads/${widget.bookId ?? 'unknown'}',
+          )..createSync(recursive: true);
           final target = File('${folder.path}/chapter_${ch.index}.mp3');
           if (await source.exists() && await source.length() > 0) {
             await source.copy(target.path);
           }
         } catch (_) {}
         completed++;
-        if (mounted) setState(() => _downloadStatus = '$completed/${chapters.length}');
+        if (mounted) {
+          setState(() => _downloadStatus = '$completed/${chapters.length}');
+        }
         continue;
       }
       final fullUrl = url.startsWith('http')
@@ -136,90 +145,89 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  const SizedBox(width: 48),
-                  Expanded(
-                    child: Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        margin: const EdgeInsets.only(top: 8, bottom: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[400],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+          child: PlayerAdaptiveLayout(
+            header: Row(
+              children: [
+                const SizedBox(width: 48),
+                Expanded(
+                  child: Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(top: 8, bottom: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[400],
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
                   ),
-                  IconButton(
-                    key: const ValueKey('fullPlayer.close'),
-                    tooltip:
-                        AppLocalizations.of(context)?.closePlayer ?? 'Close player',
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.close),
+                ),
+                IconButton(
+                  key: const ValueKey('fullPlayer.close'),
+                  tooltip:
+                      AppLocalizations.of(context)?.closePlayer ??
+                      'Close player',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            artwork: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(child: _coverHero(context)),
+                const SizedBox(height: 12),
+                if (widget.bookTitle != null)
+                  Text(
+                    widget.bookTitle!,
+                    style: Theme.of(context).textTheme.headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                if (widget.author != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.author!,
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: Theme.of(context).hintColor),
+                    maxLines: 1,
                   ),
                 ],
-              ),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(child: _coverHero(context)),
-                    const SizedBox(height: 12),
-                    if (widget.bookTitle != null)
-                      Text(
-                        widget.bookTitle!,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                // Real chapter name from player queue
+                StreamBuilder<int?>(
+                  stream: widget.player.currentIndex,
+                  builder: (context, snap) {
+                    final label = _currentChapterLabel();
+                    if (label.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        label,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).hintColor
+                              .withValues(alpha: 0.7),
+                        ),
                         textAlign: TextAlign.center,
                         maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    if (widget.author != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.author!,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).hintColor,
-                        ),
-                        maxLines: 1,
-                      ),
-                    ],
-                    // Real chapter name from player queue
-                    StreamBuilder<int?>(
-                      stream: widget.player.currentIndex,
-                      builder: (context, snap) {
-                        final label = _currentChapterLabel();
-                        if (label.isEmpty) return const SizedBox.shrink();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            label,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).hintColor.withValues(alpha: 0.7),
-                                ),
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                    );
+                  },
                 ),
-              ),
-              _scrubber(context),
-              const SizedBox(height: 8),
-              PlayerTransportControls(player: widget.player),
-              const SizedBox(height: 8),
-              _secondaryRow(context),
-              const SizedBox(height: 8),
-            ],
+              ],
+            ),
+            controls: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _scrubber(context),
+                const SizedBox(height: 8),
+                PlayerTransportControls(player: widget.player),
+                const SizedBox(height: 8),
+                _secondaryRow(context),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         ),
       ),
@@ -253,16 +261,14 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.15),
+              color: Theme.of(context).colorScheme.primary
+                  .withValues(alpha: 0.15),
             ),
             child: Icon(
               Icons.headphones,
               size: 80,
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.5),
+              color: Theme.of(context).colorScheme.primary
+                  .withValues(alpha: 0.5),
             ),
           ),
         ),
@@ -292,9 +298,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                     overlayRadius: 14,
                   ),
                   activeTrackColor: Theme.of(context).colorScheme.onSurface,
-                  inactiveTrackColor: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.2),
+                  inactiveTrackColor: Theme.of(context).colorScheme.onSurface
+                      .withValues(alpha: 0.2),
                   thumbColor: Theme.of(context).colorScheme.onSurface,
                 ),
                 child: Slider(
@@ -337,8 +342,10 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
     final hasChapters = widget.player.chapters.isNotEmpty;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 12,
+      runSpacing: 8,
       children: [
         // Speed picker
         Semantics(
@@ -423,9 +430,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
           if (icon != null) ...[Icon(icon, size: 16), const SizedBox(width: 4)],
           Text(
             label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.labelLarge
+                ?.copyWith(fontWeight: FontWeight.w600),
           ),
         ],
       ),

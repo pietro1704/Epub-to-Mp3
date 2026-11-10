@@ -39,6 +39,11 @@ class ReaderSettingsSheet extends ConsumerWidget {
                   ),
                 ),
 
+                ListTile(
+                  title: Text(t.originalTypography),
+                  trailing: const Icon(Icons.restore),
+                  onTap: notifier.resetReaderTypography,
+                ),
                 // Theme
                 Text(
                   t.themeLabel,
