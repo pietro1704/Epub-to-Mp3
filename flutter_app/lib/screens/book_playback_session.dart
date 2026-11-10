@@ -1,7 +1,6 @@
 part of 'book_open_screen.dart';
 
 mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
-
   // Local conversion state
   bool _isConverting = false;
   final List<ChapterProgress> _playableChapters = [];
@@ -27,7 +26,6 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   final _playbackStartup = ReaderPlaybackStartup();
   RustPlaybackConversionService? _activeConversionService;
 
-
   void _showConversionError(Object error) {
     if (!mounted) return;
     final detail = error.toString();
@@ -38,9 +36,8 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
             detail.contains('No TTS engine')
         ? '${l10n.conversionFailed}: ${l10n.settingsTitle}'
         : '${l10n.conversionFailed}: $detail';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _startConversion() async {
@@ -61,17 +58,20 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
           .read(resumeStoreProvider)
           .loadBookPosition(widget.bookId)
           ?.chapter;
-      final readerPosition = ref.read(embeddedConverterProvider) is PositionedChapterConverter
-          ? _readerListeningPosition : null;
+      final readerPosition =
+          ref.read(embeddedConverterProvider) is PositionedChapterConverter
+          ? _readerListeningPosition
+          : null;
       await _startLocalConversion(
         readerPosition: readerPosition,
-        playbackChapterIndex: readerPosition?.chapterIndex ?? (
-            _playableChapters.isEmpty || player.currentIndexValue == null
-            ? savedChapter ?? 0
-            : _sourceChapterIndexForPlayerIndex(
-                player,
-                player.currentIndexValue!,
-              )),
+        playbackChapterIndex:
+            readerPosition?.chapterIndex ??
+            (_playableChapters.isEmpty || player.currentIndexValue == null
+                ? savedChapter ?? 0
+                : _sourceChapterIndexForPlayerIndex(
+                    player,
+                    player.currentIndexValue!,
+                  )),
       );
       return;
     }
@@ -210,10 +210,19 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     } catch (_) {}
   }
 
-  Future<void> _startLocalConversion({required int playbackChapterIndex,
-    ReaderListeningPosition? readerPosition}) async {
+  Future<void> _startLocalConversion({
+    required int playbackChapterIndex,
+    ReaderListeningPosition? readerPosition,
+  }) async {
     final existing = _localPlaybackConversion;
-    if (existing != null && readerPosition == null) return existing;
+    if (existing != null && readerPosition == null) {
+      _playbackStartup.request(
+        _localConversionGeneration,
+        playbackChapterIndex,
+      );
+      _publishPlaybackWindow(playbackChapterIndex);
+      return existing;
+    }
     if (existing != null) {
       ++_localConversionGeneration;
       await _activeConversionService?.cancel();
@@ -254,7 +263,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
             generation,
             _playableChapters.map((chapter) => chapter.index).toList(),
             (queueIndex) async {
-              if (_readerStartGeneration != generation) await _restoreResumePosition(player);
+              if (_readerStartGeneration != generation) {
+                await _restoreResumePosition(player);
+              }
               if (!_isCurrentConversion(generation) ||
                   !_playbackStartup.accepts(generation)) {
                 return;
@@ -285,6 +296,23 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   }
 
   void _setCoverOnPlayer(AudioPlayerInterface player) {
+    player.currentBookId = widget.bookId;
+    player.sourceChapterIndices =
+        _fulltext?.chapters.map((chapter) => chapter.index).toList() ??
+        const [];
+    player.onRequestSourceChapter = (target) async {
+      if (!mounted || player.currentBookId != widget.bookId) return;
+      final queueIndex = _playableChapters
+          .where((chapter) => chapter.downloadUrl != null)
+          .toList()
+          .indexWhere((chapter) => chapter.index == target);
+      if (queueIndex >= 0) {
+        await player.seek(Duration.zero, index: queueIndex);
+      } else {
+        await player.pause();
+        if (mounted) await _startLocalConversion(playbackChapterIndex: target);
+      }
+    };
     final library = ref.read(libraryStoreProvider);
     final idx = library.books.indexWhere((b) => b.id == widget.bookId);
     if (idx < 0) return;
@@ -310,10 +338,17 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       final index = player.currentIndexValue;
       if (index == null || player.durationSeconds <= 0) return;
       final chapter = _sourceChapterIndexForPlayerIndex(player, index);
-      if (!_playableChapters.any((entry) => entry.index == chapter && entry.status == 'completed')) return;
-      _activeConversionService?.playbackFeedback(chapterIndex: chapter,
-        remainingSeconds: (player.durationSeconds - player.positionSeconds).clamp(0, double.infinity),
-        playbackRate: player.speed);
+      if (!_playableChapters.any(
+        (entry) => entry.index == chapter && entry.status == 'completed',
+      )) {
+        return;
+      }
+      _activeConversionService?.playbackFeedback(
+        chapterIndex: chapter,
+        remainingSeconds: (player.durationSeconds - player.positionSeconds)
+            .clamp(0, double.infinity),
+        playbackRate: player.speed,
+      );
     });
     _resumeSaveTimer?.cancel();
     _resumeSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -424,7 +459,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     if (!recreate) _playbackWindowChanges.close();
   }
 
-
-  Future<void> _runLocalPlaybackConversion({required int playbackChapterIndex, required int generation,
-    ReaderListeningPosition? readerPosition});
+  Future<void> _runLocalPlaybackConversion({
+    required int playbackChapterIndex,
+    required int generation,
+    ReaderListeningPosition? readerPosition,
+  });
 }

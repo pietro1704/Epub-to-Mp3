@@ -9,7 +9,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+
 import 'seek_interval_icon.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/audio_player_service.dart';
@@ -46,7 +48,12 @@ class MiniPlayerBar extends ConsumerWidget {
     PlaybackSnapshot playback,
   ) {
     final t = AppLocalizations.of(context);
-    final playingBookId = ref.watch(currentlyPlayingBookIdProvider);
+    final player = ref.watch(globalAudioPlayerProvider);
+    final readerBook = ref.watch(currentlyReadingBookIdProvider);
+    final playingBookId =
+        ref.watch(appDestinationProvider) == AppDestination.reader
+        ? readerBook
+        : player.currentBookId ?? ref.watch(currentlyPlayingBookIdProvider);
     if (playingBookId == null) return const SizedBox.shrink();
 
     final library = ref.watch(libraryStoreProvider);
@@ -56,20 +63,24 @@ class MiniPlayerBar extends ConsumerWidget {
     );
     if (book == null) return const SizedBox.shrink();
 
-    final player = ref.watch(globalAudioPlayerProvider);
     final backgroundHandler = ref.watch(backgroundAudioHandlerProvider);
     final cs = Theme.of(context).colorScheme;
     final Uint8List? coverArt = _decodeCover(book.coverBase64);
 
+    final differentBook =
+        player.currentBookId != null && player.currentBookId != playingBookId;
+    if (differentBook) playback = const PlaybackSnapshot.initial();
     return GestureDetector(
-      onTap: () => _showFullPlayer(
-        context,
-        player,
-        book.resolvedTitle,
-        book.author,
-        coverArt,
-        playingBookId,
-      ),
+      onTap: differentBook
+          ? null
+          : () => _showFullPlayer(
+              context,
+              player,
+              book.resolvedTitle,
+              book.author,
+              coverArt,
+              playingBookId,
+            ),
       child: Container(
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest,
@@ -113,7 +124,7 @@ class MiniPlayerBar extends ConsumerWidget {
                   stream: player.currentIndex,
                   initialData: player.currentIndexValue,
                   builder: (context, snapshot) {
-                    final playerIndex = snapshot.data;
+                    final playerIndex = differentBook ? null : snapshot.data;
                     final chapterIndex = playerIndex == null
                         ? null
                         : player.chapterIndexForPlayerIndex(playerIndex);
@@ -125,7 +136,7 @@ class MiniPlayerBar extends ConsumerWidget {
                         : null;
                     final chapterTitle =
                         chapter?.displayTitle ?? book.resolvedTitle;
-                    if (backgroundHandler != null) {
+                    if (backgroundHandler != null && !differentBook) {
                       unawaited(
                         backgroundHandler.setMetadata(
                           background_audio.BackgroundAudioMetadata(
@@ -167,11 +178,12 @@ class MiniPlayerBar extends ConsumerWidget {
 
               // Skip -15s
               IconButton(
-                icon: const SeekIntervalIcon(
+                icon: SeekIntervalIcon(
                   key: ValueKey('seek.backward.15'),
                   forward: false,
+                  seconds: player.seekBackwardSeconds,
                 ),
-                onPressed: () => player.skipBackward(seconds: 15),
+                onPressed: () => player.skipBackward(),
                 tooltip: t?.skipBack15 ?? 'Skip back 15 seconds',
               ),
 
@@ -209,6 +221,11 @@ class MiniPlayerBar extends ConsumerWidget {
                       size: 28,
                     ),
                     onPressed: () async {
+                      if (differentBook) {
+                        if (!await coordinator.selectBook(playingBookId)) {
+                          return;
+                        }
+                      }
                       if (player.chapters.isEmpty) {
                         coordinator.beginInitialAudioRequest();
                         try {
@@ -229,11 +246,12 @@ class MiniPlayerBar extends ConsumerWidget {
 
               // Skip +15s
               IconButton(
-                icon: const SeekIntervalIcon(
+                icon: SeekIntervalIcon(
                   key: ValueKey('seek.forward.15'),
                   forward: true,
+                  seconds: player.seekForwardSeconds,
                 ),
-                onPressed: () => player.skipForward(seconds: 15),
+                onPressed: () => player.skipForward(),
                 tooltip: t?.skipForward15 ?? 'Skip forward 15 seconds',
               ),
 
@@ -264,9 +282,8 @@ class MiniPlayerBar extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Text(
                       '${player.speed}x',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),

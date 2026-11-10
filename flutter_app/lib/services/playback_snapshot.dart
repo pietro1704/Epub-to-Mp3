@@ -82,6 +82,22 @@ class PlaybackCoordinator {
   PlaybackSnapshot _snapshot = const PlaybackSnapshot.initial();
   bool _disposed = false;
   bool _initialAudioPending = false;
+  int _bookSelectionGeneration = 0;
+
+  Future<bool> selectBook(String bookId) async {
+    final generation = ++_bookSelectionGeneration;
+    if (player.currentBookId == bookId) return true;
+    if (player.hasQueuedAudio) {
+      await player.pause();
+      if (_disposed || generation != _bookSelectionGeneration) return false;
+      player.clearSegmentState();
+      await player.setQueue(const []);
+      if (_disposed || generation != _bookSelectionGeneration) return false;
+    }
+    player.currentBookId = bookId;
+    _publish();
+    return true;
+  }
 
   PlaybackSnapshot get snapshot => _snapshot;
   Stream<PlaybackSnapshot> get stream => _controller.stream;

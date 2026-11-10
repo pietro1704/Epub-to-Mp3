@@ -70,6 +70,7 @@ internal class PlatformSpeechProvider(private val context: Context) {
         val file = File(path)
         file.parentFile?.mkdirs()
         val utterance = "native-${System.nanoTime()}"
+        val measuredRanges = java.util.Collections.synchronizedList(mutableListOf<SpeechRangeStart>())
         handler.post {
             try {
                 check(!closed) { "Native speech provider is closed" }
@@ -82,6 +83,9 @@ internal class PlatformSpeechProvider(private val context: Context) {
                 check(tts.setVoice(voices.first { it.name == selected }) == TextToSpeech.SUCCESS) { "Could not select offline speech voice" }
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) {}
+                    override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
+                        if (id == utterance) measuredRanges.add(SpeechRangeStart(start, end, frame))
+                    }
                     override fun onDone(id: String?) { if (id == utterance) finished.countDown() }
                     @Deprecated("Android legacy callback")
                     override fun onError(id: String?) { fail(id, "Android speech synthesis failed") }
@@ -102,6 +106,8 @@ internal class PlatformSpeechProvider(private val context: Context) {
             await(finished, cancelled, 120, "Speech synthesis")
             error.get()?.let { throw IllegalStateException(it) }
             check(file.isFile && file.length() > 44) { "Android speech produced no WAV audio" }
+            val ranges = synchronized(measuredRanges) { measuredRanges.toList() }
+            SpeechAlignmentWav.attach(file, text, ranges)
         } catch (failure: Exception) {
             // Drain the main-thread stop before another worker can acquire this provider.
             val stopped = CountDownLatch(1)
