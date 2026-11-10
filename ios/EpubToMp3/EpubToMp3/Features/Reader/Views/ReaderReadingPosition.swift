@@ -137,6 +137,10 @@ final class ReaderReadingPosition {
         let candidate: CGFloat
         if preservingViewportOffset, let viewportOffset = anchor.viewportOffset {
             candidate = viewportOffset
+        } else if anchor.offsetFraction == 0, anchor.characterOffset == 0 {
+            // The first page includes the text container's top inset. Restoring
+            // its first glyph to the viewport edge would move the page down.
+            candidate = 0
         } else if let characterOffset = anchor.characterOffset, composition.textView.attributedText.length > 0 {
             let safeOffset = min(characterOffset, composition.textView.attributedText.length - 1)
             let glyph = composition.textView.layoutManager.glyphIndexForCharacter(at: safeOffset)

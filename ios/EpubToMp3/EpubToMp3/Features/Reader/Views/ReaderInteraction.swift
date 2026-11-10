@@ -228,7 +228,9 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
         readingPosition.persistReadingProgress()
         document.selectedChapter = next
         textPresentation.showChapter(document.selectedChapter)
+        composition.view.layoutIfNeeded()
         scrollView.setContentOffset(.zero, animated: false)
+        readingPosition.persistReadingProgress()
     }
 
     func navigatePage(forward: Bool) {
@@ -246,7 +248,7 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
             readingPosition.persistReadingProgress(); document.selectedChapter += 1; textPresentation.showChapter(document.selectedChapter)
             composition.view.layoutIfNeeded()
             pageNavigation.setPageOffset(.zero, forward: true, outgoingPage: outgoingPage)
-            textPresentation.updatePageIndicator(); return
+            textPresentation.updatePageIndicator(); readingPosition.persistReadingProgress(); return
         }
         if !forward, current <= 1, document.selectedChapter > 0 {
             readingPosition.persistReadingProgress(); document.selectedChapter -= 1; textPresentation.showChapter(document.selectedChapter)
@@ -258,7 +260,7 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
                 textPresentation.uiTestPageNumber = previousTotal
             }
             pageNavigation.setPageOffset(CGPoint(x: 0, y: pageOffset(for: previousTotal)), forward: false, outgoingPage: outgoingPage)
-            textPresentation.updatePageIndicator(); return
+            textPresentation.updatePageIndicator(); readingPosition.persistReadingProgress(); return
         }
         if (forward && current >= estimatedTotal) || (!forward && current <= 1) {
             pageNavigation.settle()

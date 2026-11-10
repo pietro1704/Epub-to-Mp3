@@ -77,6 +77,88 @@ final class PreparedChapterReaderIntegrationTests: XCTestCase {
         await renderer.flush()
     }
 
+    func testConsumedProjectionCannotRemountAfterCatalogHydrationAndTOCNavigation() async throws {
+        try await verifyProjectionRestoration(delayedLayout: false)
+    }
+
+    func testProjectionRestoresPositionOnlyAfterTextLayoutIsMeasured() async throws {
+        try await verifyProjectionRestoration(delayedLayout: true)
+    }
+
+    private func verifyProjectionRestoration(delayedLayout: Bool) async throws {
+        let id = "ConsumedProjection-\(UUID().uuidString)"
+        let savedWarmBooks = UserDefaults.standard.object(forKey: "readerWarmBookIDs.v1")
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
+        let store = PreparedReaderChapterStore(directory: root)
+        let payload = EbookFulltext(jobId: id, bookTitle: "Projection identity", bookAuthor: nil,
+            chapters: (1...2).map { index in
+                .init(index: index, name: "Chapter \(index)", text: "Chapter \(index) readable text.",
+                      html: nil, css: nil, charCount: 24, segments: nil)
+            })
+        LocalFulltextCache.save(payload, bookId: id)
+        defer {
+            LocalFulltextCache.evict(bookId: id)
+            UserDefaults.standard.set(savedWarmBooks, forKey: "readerWarmBookIDs.v1")
+            defaults.removePersistentDomain(forName: id)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let source = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
+        try await store.write(bookID: id, chapterOrdinal: 0, fulltextURL: source)
+        let stored = await store.read(bookID: id, chapterOrdinal: 0, fulltextURL: source)
+        let snapshot = try XCTUnwrap(stored)
+        let document = ReaderBookDocument(book: BookEntity(id: id, title: "Projection identity",
+            bookmark: Data(), displayFilename: "projection.epub", addedAt: Date()))
+        let loadingID = UUID()
+        document.loadGenerationID = loadingID
+        document.activeLoadingID = loadingID
+        let settings = AppSettings(defaults: defaults)
+        let renderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(directory: root.appendingPathComponent("renderings")))
+        var mountedChapters: [Int] = []
+        var textIsLaidOut = !delayedLayout
+        var restoredPositions = 0
+        let presentation = ReaderPreparedPresentation(document: document, settings: settings,
+            renderer: renderer, store: store, stageObserver: nil,
+            viewportIsCommitted: { true }, textIsLaidOut: { textIsLaidOut }, send: { event in
+                if case let .showChapter(index, _) = event { mountedChapters.append(index) }
+                if case .restorePosition = event { restoredPositions += 1 }
+            })
+        let restoration = PreparedProjectionRestoration(
+            projection: PreparedProjectionRead(snapshot: snapshot,
+                progress: .init(chapterIndex: 0, offsetFraction: 0.5)),
+            style: renderer.styleSnapshot(settings: settings, fontDirectoryURL: nil), renderer: nil)
+        // The asynchronous presenter and committed-layout fast path share one
+        // result. Hydration releases activePreparedChapter after presentation.
+        presentation.restoration.slot.store(restoration)
+        presentation.presentPreparedProjection(snapshot, progress: restoration.projection.progress,
+            preparedRendering: nil, loadingID: loadingID, bookID: id, fulltextURL: source)
+        if delayedLayout {
+            XCTAssertEqual(restoredPositions, 0, "Unmeasured text cannot restore a saved position.")
+            XCTAssertFalse(document.hasRestoredInitialPosition)
+            XCTAssertNotNil(document.pendingProjectionAnchor)
+            presentation.finishPreparedProjectionLayoutIfNeeded()
+            XCTAssertEqual(restoredPositions, 0)
+            textIsLaidOut = true
+            presentation.finishPreparedProjectionLayoutIfNeeded()
+            XCTAssertEqual(restoredPositions, 1)
+            XCTAssertTrue(document.hasRestoredInitialPosition)
+        }
+        XCTAssertEqual(mountedChapters, [0])
+        XCTAssertTrue(presentation.attachHydratedCatalog(payload, loadingID: loadingID))
+        document.selectedChapter = 1 // The TOC has selected a different chapter.
+        presentation.presentPreparedProjectionDuringCommittedLayoutIfReady()
+        XCTAssertEqual(document.selectedChapter, 1, "A later page layout must retain the TOC destination.")
+        XCTAssertEqual(mountedChapters, [0], "An already-consumed open snapshot must never mount twice.")
+        XCTAssertNil(document.pendingProjectionAnchor)
+        // A late delivery to the fast-path slot must obey the same consumed
+        // loading identity, even after the async path cleared its first copy.
+        presentation.restoration.slot.store(restoration)
+        presentation.presentPreparedProjectionDuringCommittedLayoutIfReady()
+        XCTAssertEqual(document.selectedChapter, 1)
+        XCTAssertEqual(mountedChapters, [0])
+        XCTAssertNil(document.pendingProjectionAnchor)
+    }
+
     private func findTextView(_ view: UIView) -> UITextView? {
         if let text = view as? UITextView { return text }
         return view.subviews.lazy.compactMap { self.findTextView($0) }.first

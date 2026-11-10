@@ -45,9 +45,7 @@ final class ReaderContentsPresentation {
                 currentChapterIndex: player.currentChapterIndex,
                 readingChapterIndex: document.selectedChapter,
                 onJump: { [weak self] chapterIndex in
-                    self?.document.selectedChapter = chapterIndex
-                    self?.textPresentation.showChapter(chapterIndex)
-                    self?.composition.scrollView.setContentOffset(.zero, animated: false)
+                    self?.jumpToChapter(chapterIndex)
                 },
                 onDownload: { [weak self] chapterIndex in
                     guard let self else { return }
@@ -75,15 +73,22 @@ final class ReaderContentsPresentation {
             return
         }
         let sheet = ReaderContentsSheet(rows: tocRows, initialChapterIndex: document.selectedChapter) { [weak self] chapterIndex in
-            guard let self else { return }
-            self.readingPosition.persistReadingProgress()
-            self.document.selectedChapter = chapterIndex
-            self.textPresentation.showChapter(chapterIndex)
-            self.composition.scrollView.setContentOffset(.zero, animated: false)
+            self?.jumpToChapter(chapterIndex)
         }
         let nav = UINavigationController(rootViewController: sheet)
         configureTOCSheetPresentation(nav)
         present(nav)
+    }
+
+    private func jumpToChapter(_ chapterIndex: Int) {
+        guard document.fulltext?.chapters.indices.contains(chapterIndex) == true else { return }
+        readingPosition.persistReadingProgress()
+        document.selectedChapter = chapterIndex
+        textPresentation.showChapter(chapterIndex)
+        composition.view.layoutIfNeeded()
+        composition.scrollView.setContentOffset(.zero, animated: false)
+        textPresentation.updatePageIndicator()
+        readingPosition.persistReadingProgress()
     }
 
     /// Keeps the chapter index as a native large sheet: it reaches the top

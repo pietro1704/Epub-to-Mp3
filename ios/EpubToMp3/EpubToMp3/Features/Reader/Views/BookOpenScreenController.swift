@@ -53,8 +53,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             return composition.scrollView.bounds.width > 1 && composition.scrollView.bounds.height > 1
         },
         textIsLaidOut: { [weak self] in
-            guard let self else { return false }
-            return composition.textView.attributedText.length == 0 || composition.textViewport.facts.contentHeight > 0
+            self?.textPresentation.hasMeasuredTextLayout == true
         },
         send: { [weak self] event in self?.applyPreparedEvent(event) }
     )

@@ -35,6 +35,14 @@ final class ReaderTextPresentation {
     var isPaginatedMode: Bool {
         settings.readerLayout == .paginated && !forcesScrollingForOversizedFragment
     }
+
+    var hasMeasuredTextLayout: Bool {
+        if composition.contentSurface.isDisplayingComic { return true }
+        let height = composition.textViewport.facts.contentHeight
+        return composition.textView.attributedText.length > 0
+            && composition.textView.bounds.width > 1 && height > 0
+            && abs(composition.textView.bounds.height - height) <= 0.5
+    }
     private var isUITestFixture: Bool { ProcessInfo.processInfo.arguments.contains("-uiTestFixture") }
 
     init(document: ReaderBookDocument, composition: ReaderViewComposition, settings: AppSettings,
@@ -304,6 +312,9 @@ final class ReaderTextPresentation {
 
     func layoutCommittedViewport() {
         applyReaderMargins()
+        // The parent callback can precede UIScrollView's child layout. Apply
+        // the final text width before measuring page geometry.
+        composition.scrollView.layoutIfNeeded()
         preparedPresentation.presentPreparedProjectionDuringCommittedLayoutIfReady()
         fitInlineImagesToTextViewport()
         if isPaginatedMode {
@@ -332,9 +343,9 @@ final class ReaderTextPresentation {
                 }
             }
         }
-        if document.pendingProjectionAnchor != nil {
-            composition.scrollView.layoutIfNeeded()
-        }
+        // Measurement changes the text height constraint. Commit that height
+        // before restoring progress or publishing reader readiness.
+        composition.scrollView.layoutIfNeeded()
         readingPosition.restorePendingViewportAnchorIfNeeded()
         preparedPresentation.finishPreparedProjectionLayoutIfNeeded()
         completeLoading()
