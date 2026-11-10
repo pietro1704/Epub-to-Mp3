@@ -184,7 +184,8 @@ class MiniPlayerBar extends ConsumerWidget {
                   seconds: player.seekBackwardSeconds,
                 ),
                 onPressed: () => player.skipBackward(),
-                tooltip: t?.skipBack15 ?? 'Skip back 15 seconds',
+                tooltip:
+                    '${t?.seekBackwardInterval ?? 'Skip backward'} ${player.seekBackwardSeconds} s',
               ),
 
               // Play/pause or loading state. The coordinator snapshot is the
@@ -252,7 +253,8 @@ class MiniPlayerBar extends ConsumerWidget {
                   seconds: player.seekForwardSeconds,
                 ),
                 onPressed: () => player.skipForward(),
-                tooltip: t?.skipForward15 ?? 'Skip forward 15 seconds',
+                tooltip:
+                    '${t?.seekForwardInterval ?? 'Skip forward'} ${player.seekForwardSeconds} s',
               ),
 
               // Speed picker — compact label
@@ -334,6 +336,27 @@ class MiniPlayerBar extends ConsumerWidget {
     Uint8List? coverArt,
     String? bookId,
   ) {
+    final size = MediaQuery.sizeOf(context);
+    if (size.width >= 720) {
+      showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          constraints: const BoxConstraints(maxWidth: 1040),
+          child: SizedBox(
+            width: size.width * .9,
+            height: size.height * .85,
+            child: FullPlayerSheet(
+              player: player,
+              bookTitle: bookTitle,
+              author: author,
+              coverArt: coverArt,
+              bookId: bookId,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

@@ -79,6 +79,16 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     _emit();
   }
 
+  Future<void> resetReaderTypography() async {
+    await state.resetReaderTypography();
+    _emit();
+  }
+
+  Future<void> setSeekIntervals({int? forward, int? backward}) async {
+    await state.setSeekIntervals(forward: forward, backward: backward);
+    _emit();
+  }
+
   Future<void> setAudioRate(double v) async {
     await state.setAudioRate(v);
     _emit();

@@ -36,12 +36,32 @@ class PlaybackPreferences extends ConsumerWidget {
                   ),
                 ),
               ),
+              for (final forward in [false, true])
+                ListTile(
+                  title: Text(
+                    forward ? t.seekForwardInterval : t.seekBackwardInterval,
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: forward
+                        ? settings.seekForwardSeconds
+                        : settings.seekBackwardSeconds,
+                    items: PlaybackSettings.seekIntervals
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text('$value s'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => notifier.setSeekIntervals(
+                      forward: forward ? value : null,
+                      backward: forward ? null : value,
+                    ),
+                  ),
+                ),
               const Divider(height: 1, indent: 56),
               ListTile(
-                leading: Icon(
-                  Icons.timer_outlined,
-                  color: cs.onSurfaceVariant,
-                ),
+                leading: Icon(Icons.timer_outlined, color: cs.onSurfaceVariant),
                 title: Text(t.wpmLabel),
                 subtitle: Slider(
                   value: settings.wpm.toDouble(),
@@ -62,7 +82,6 @@ class PlaybackPreferences extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 20),
-
       ],
     );
   }
