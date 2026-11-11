@@ -1,3 +1,5 @@
+import '../features/reader/epub_reader_resources.dart';
+
 import 'dart:convert';
 import 'dart:async';
 import 'dart:ffi' as ffi;
@@ -21,7 +23,11 @@ part 'desktop_platform_speech.dart';
 
 /// Direct Linux/Windows adapter over converter-ffi; no HTTP or Python runtime.
 final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
-    implements CancellableEmbeddedConverter, StreamingChapterConverter, ListeningScheduleFactory, PositionedChapterConverter {
+    implements
+        CancellableEmbeddedConverter,
+        StreamingChapterConverter,
+        ListeningScheduleFactory,
+        PositionedChapterConverter {
   DesktopEmbeddedConverter({ffi.DynamicLibrary? library, String? libraryPath})
     : _libraryPath = libraryPath ?? _resolveLibraryPath(),
       _workerLibraryAvailable = library == null || libraryPath != null,
@@ -154,14 +160,25 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
     if (textOffset != null) {
       try {
         using((arena) {
-          final setPosition = _library.lookupFunction<_ControlJsonNative, _ControlJsonDart>(
-            'converter_job_control_set_listening_position_json_v2');
-          if (!setPosition(control, jsonEncode({'version':2, 'chapter_index':start,
-            'text_offset':textOffset}).toNativeUtf8(allocator:arena))) {
+          final setPosition = _library
+              .lookupFunction<_ControlJsonNative, _ControlJsonDart>(
+                'converter_job_control_set_listening_position_json_v2',
+              );
+          if (!setPosition(
+            control,
+            jsonEncode({
+              'version': 2,
+              'chapter_index': start,
+              'text_offset': textOffset,
+            }).toNativeUtf8(allocator: arena),
+          )) {
             throw StateError('Rust rejected the requested source text range');
           }
         });
-      } catch (_) { freeControl(control); rethrow; }
+      } catch (_) {
+        freeControl(control);
+        rethrow;
+      }
     }
     _controls[output] = control.address;
     final request = DesktopConversionRequest(
@@ -297,7 +314,9 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
       final raw = _readString(_metadata(session));
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       decoded['jobId'] = jobId;
-      return EbookFulltext.fromJson(decoded);
+      return EbookFulltext.fromJson(
+        EpubReaderResources.enrichSync(decoded, inputPath),
+      );
     });
   }
 
@@ -324,11 +343,21 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
   }
 
   @override
-  Future<ConvertedChapterAudio> convertPositionedChapter({required String inputPath,
-    required String outputPath, required int chapterIndex, required int textOffset,
-    String? optionsJson, Future<void> Function(GrowingChapterAudioSource)? onFirstAudio}) =>
-      _positionedChapter(inputPath: inputPath, outputPath: outputPath, chapterIndex: chapterIndex,
-        textOffset: textOffset, optionsJson: optionsJson, onFirstAudio: onFirstAudio);
+  Future<ConvertedChapterAudio> convertPositionedChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+    required int textOffset,
+    String? optionsJson,
+    Future<void> Function(GrowingChapterAudioSource)? onFirstAudio,
+  }) => _positionedChapter(
+    inputPath: inputPath,
+    outputPath: outputPath,
+    chapterIndex: chapterIndex,
+    textOffset: textOffset,
+    optionsJson: optionsJson,
+    onFirstAudio: onFirstAudio,
+  );
 
   @override
   Future<ConvertedChapterAudio> streamChapter({

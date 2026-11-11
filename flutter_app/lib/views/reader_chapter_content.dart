@@ -9,6 +9,8 @@ class ReaderHtmlChapterContent extends StatelessWidget {
   const ReaderHtmlChapterContent({
     super.key,
     required this.html,
+    this.css,
+    this.onLinkTap,
     required this.settings,
     required this.bg,
     required this.fg,
@@ -17,59 +19,59 @@ class ReaderHtmlChapterContent extends StatelessWidget {
   });
 
   final String html;
+  final String? css;
+  final ValueChanged<String?>? onLinkTap;
   final MirrorAppSettings settings;
   final Color bg, fg;
   final TextStyle bodyStyle, headingStyle;
 
-  /// HTML rendering path. Used when the chapter ships with a
-  /// pre-parsed HTML body (most EPUBs). Mirrors the iOS
-  /// `EpubHtmlRenderer` — applies user font / colour / alignment
-  /// overrides on top of the EPUB's own typography, and caps every
-  /// inherited font-size at `bodyFontSize * 1.5` so abusive heading
-  /// declarations cannot blow out the page.
-  ///
-  /// Active-sentence highlighting + tap-to-jump are NOT supported on
-  /// this path — the `Html` widget owns its own InlineSpan tree and
-  /// does not expose per-sentence anchors. Switch to the span-based
-  /// path (set `chapter.html` null) for sync-highlight playback.
+  /// Shared rich content for scrolling and measured pagination. Explicit
+  /// reader choices override source CSS; otherwise its typography survives.
   @override
   Widget build(BuildContext context) {
     final bodyFontSize = bodyStyle.fontSize ?? 18.0;
     final headingCap = cappedHeadingSize(bodyFontSize);
     final textAlign = flutterTextAlign(settings.readerTextAlignment);
     final bodyStyleHtml = Style(
-      fontSize: FontSize(bodyFontSize),
+      fontSize: settings.readerOverrideFontSize ? FontSize(bodyFontSize) : null,
       color: fg,
-      fontFamily: bodyStyle.fontFamily,
-      lineHeight: LineHeight(
-        (bodyStyle.height ?? (bodyFontSize > 0 ? 1.5 : 1.5)),
-      ),
-      textAlign: textAlign,
+      fontFamily: settings.readerOverrideFontFamily
+          ? bodyStyle.fontFamily
+          : null,
+      lineHeight: settings.readerOverrideLineSpacing
+          ? LineHeight(bodyStyle.height ?? 1.5)
+          : null,
+      textAlign: settings.readerOverrideAlignment ? textAlign : null,
       backgroundColor: bg,
     );
     final headingStyleHtml = Style(
-      fontSize: FontSize(headingCap),
+      fontSize: settings.readerOverrideFontSize ? FontSize(headingCap) : null,
       color: fg,
-      fontWeight: FontWeight.w600,
-      fontFamily: headingStyle.fontFamily,
+      fontFamily: settings.readerOverrideFontFamily
+          ? headingStyle.fontFamily
+          : null,
     );
+    final sourceStyles = css == null
+        ? <String, Style>{}
+        : Style.fromCss(css!, null);
     return Html(
-      data: html,
+      data: css == null ? html : '<style>$css</style>$html',
+      onLinkTap: (url, _, _) => onLinkTap?.call(url),
       style: {
-        'body': bodyStyleHtml,
-        'p': bodyStyleHtml,
-        'div': bodyStyleHtml,
-        'span': bodyStyleHtml,
-        'h1': headingStyleHtml,
-        'h2': headingStyleHtml,
-        'h3': headingStyleHtml,
-        'h4': headingStyleHtml,
-        'h5': headingStyleHtml,
-        'h6': headingStyleHtml,
+        ...sourceStyles,
+        'body': (sourceStyles['body'] ?? Style()).merge(bodyStyleHtml),
+        'p': (sourceStyles['p'] ?? Style()).merge(bodyStyleHtml),
+        'div': (sourceStyles['div'] ?? Style()).merge(bodyStyleHtml),
+        'span': (sourceStyles['span'] ?? Style()).merge(bodyStyleHtml),
+        'h1': (sourceStyles['h1'] ?? Style()).merge(headingStyleHtml),
+        'h2': (sourceStyles['h2'] ?? Style()).merge(headingStyleHtml),
+        'h3': (sourceStyles['h3'] ?? Style()).merge(headingStyleHtml),
+        'h4': (sourceStyles['h4'] ?? Style()).merge(headingStyleHtml),
+        'h5': (sourceStyles['h5'] ?? Style()).merge(headingStyleHtml),
+        'h6': (sourceStyles['h6'] ?? Style()).merge(headingStyleHtml),
       },
     );
   }
-
 }
 
 class ReaderSpanChapterContent extends StatelessWidget {
@@ -133,5 +135,4 @@ class ReaderSpanChapterContent extends StatelessWidget {
       ],
     );
   }
-
 }
