@@ -22,6 +22,13 @@ enum PlaybackPhase {
 }
 
 abstract class AudioPlayerInterface {
+  /// Identity of the exact audible media item, not a chapter-wide guess.
+  Uri? get currentAudioUri => null;
+  String? currentBookId;
+  int seekForwardSeconds = 15;
+  int seekBackwardSeconds = 15;
+  List<int> sourceChapterIndices = const [];
+  Future<void> Function(int sourceChapter)? onRequestSourceChapter;
   PlaybackPhase get phase => isLoading
       ? PlaybackPhase.loading
       : isPlaying
@@ -55,8 +62,8 @@ abstract class AudioPlayerInterface {
   Future<void> pause();
   Future<void> seek(Duration position, {int? index});
   Future<void> setSpeed(double speed);
-  void skipForward({int seconds});
-  void skipBackward({int seconds});
+  void skipForward({int? seconds});
+  void skipBackward({int? seconds});
   void nextChapter();
   void previousChapter();
   void togglePlayPause();

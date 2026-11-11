@@ -37,13 +37,14 @@ class PlayerTransportControls extends StatelessWidget {
                 label: t?.skipBack15 ?? 'Skip back 15 seconds',
                 button: true,
                 child: IconButton(
-                  icon: const SeekIntervalIcon(
+                  icon: SeekIntervalIcon(
                     key: ValueKey('seek.backward.15'),
                     forward: false,
+                    seconds: player.seekBackwardSeconds,
                     size: 32,
                   ),
                   iconSize: 32,
-                  onPressed: () => player.skipBackward(seconds: 15),
+                  onPressed: () => player.skipBackward(),
                   tooltip: t?.skipBack15 ?? 'Skip back 15 seconds',
                 ),
               ),
@@ -68,13 +69,14 @@ class PlayerTransportControls extends StatelessWidget {
                 label: t?.skipForward15 ?? 'Skip forward 15 seconds',
                 button: true,
                 child: IconButton(
-                  icon: const SeekIntervalIcon(
+                  icon: SeekIntervalIcon(
                     key: ValueKey('seek.forward.15'),
                     forward: true,
+                    seconds: player.seekForwardSeconds,
                     size: 32,
                   ),
                   iconSize: 32,
-                  onPressed: () => player.skipForward(seconds: 15),
+                  onPressed: () => player.skipForward(),
                   tooltip: t?.skipForward15 ?? 'Skip forward 15 seconds',
                 ),
               ),

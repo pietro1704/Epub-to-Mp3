@@ -1,3 +1,4 @@
+import '../features/playback/measured_playback_binding.dart';
 import '../screens/bookmarks_list_screen.dart';
 import 'reader_search_overlay.dart';
 
@@ -55,6 +56,37 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   StreamSubscription<String?>? _sentenceSub;
   SentenceSyncCoordinator? _sentenceSync;
   String? _liveSentenceId;
+  MeasuredPlaybackBinding? _measuredBinding;
+  StreamSubscription<TextRange?>? _measuredSubscription;
+  TextRange? _measuredRange;
+  Object? _measuredIdentity;
+
+  void _bindMeasuredPlayback(FulltextChapter chapter) {
+    final identity = (
+      widget.bookId,
+      chapter.index,
+      chapter.text,
+      widget.player,
+    );
+    if (identity == _measuredIdentity) return;
+    _measuredIdentity = identity;
+    _measuredBinding?.dispose();
+    _measuredSubscription?.cancel();
+    _measuredRange = null;
+    final player = widget.player;
+    if (player == null) return;
+    final binding = MeasuredPlaybackBinding(
+      player: player,
+      bookId: widget.bookId ?? '',
+      chapterIndex: chapter.index,
+      source: chapter.text,
+    );
+    _measuredBinding = binding;
+    _measuredSubscription = binding.changes.listen((range) {
+      if (mounted) setState(() => _measuredRange = range);
+    });
+    binding.update(player.positionSeconds);
+  }
 
   void _update(VoidCallback update) => setState(update);
 
@@ -107,6 +139,8 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
   @override
   void dispose() {
+    _measuredBinding?.dispose();
+    _measuredSubscription?.cancel();
     _positionSub?.cancel();
     _sentenceSub?.cancel();
     // Always restore the system chrome when leaving the reader so other
@@ -226,7 +260,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
       _sentenceSync!.loadIfChanged(
         fulltext: widget.fulltext,
         playableChapters: widget.player?.chapters ?? const [],
-        playableIndex: _currentChapterIndex,
+        playableIndex: widget.player?.currentIndexValue ?? -1,
       );
     }
     if (chapter == null) {
@@ -244,6 +278,17 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
         ),
       );
     }
+    final player = widget.player;
+    final queueIndex = player?.currentIndexValue == null
+        ? -1
+        : player!.chapterIndexForPlayerIndex(player.currentIndexValue!);
+    final ownsHighlight =
+        player != null &&
+        player.currentBookId == widget.bookId &&
+        queueIndex >= 0 &&
+        queueIndex < player.chapters.length &&
+        player.chapters[queueIndex].index == chapter.index;
+    _bindMeasuredPlayback(chapter);
     final spans = chapter.splitSentences();
     final bg = ReaderThemeColors.background(
       settings.readerTheme,
@@ -372,10 +417,13 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
               );
             },
             chapter: chapter,
+            measuredHighlight: _measuredRange,
             spans: spans,
             // Live sentence id (driven by SyncEngine + position stream
             // through slice 25) takes precedence over the static prop.
-            currentSentenceId: _liveSentenceId ?? widget.activeSentenceId,
+            currentSentenceId: ownsHighlight
+                ? _liveSentenceId ?? widget.activeSentenceId
+                : null,
             onAdvanceChapter: advanceToNextChapter,
             onPreviousChapter: returnToPreviousChapter,
             onCenterTap: () => _setChromeVisible(!_chromeVisible),
