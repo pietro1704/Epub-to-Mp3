@@ -105,16 +105,6 @@ export interface StatusText {
   coverPhaseSuccess: string;
   coverPhaseError: string;
   coverPhaseDefault: string;
-  cachedJobsTitle: string;
-  cachedJobsClose: string;
-  cachedJobsSingular: string;
-  cachedJobsPlural: (count: number) => string;
-  cachedJobsResume: string;
-  cachedJobsRemove: (fileName: string) => string;
-  cachedJobsJustNow: string;
-  cachedJobsDaysAgo: (days: number) => string;
-  cachedJobsHoursAgo: (hours: number) => string;
-  cachedJobsMinutesAgo: (minutes: number) => string;
 }
 
 export interface ResumableJobsText {

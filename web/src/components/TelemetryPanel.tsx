@@ -53,31 +53,6 @@ export const DEFAULT_TELEMETRY_LABELS_EN: TelemetryPanelLabels = {
   updatedAt: (iso) => `Updated ${new Date(iso).toLocaleTimeString()}`,
 };
 
-export const DEFAULT_TELEMETRY_LABELS_PT: TelemetryPanelLabels = {
-  title: "Telemetria",
-  description:
-    "Taxa de síntese TTS por engine, com base em amostras registradas.",
-  refresh: "Atualizar",
-  refreshing: "Atualizando…",
-  errorGeneric: "Falha ao carregar telemetria.",
-  emptyState:
-    "Sem amostras de telemetria ainda — rode uma conversão para popular.",
-  engineHeader: "Engine",
-  samplesHeader: "Amostras",
-  avgHeader: "Média c/s",
-  minHeader: "Mín c/s",
-  maxHeader: "Máx c/s",
-  rankedLabel: "Mais rápido → mais lento",
-  timelineTitle: "Capítulos recentes",
-  timelineEmpty: "Sem amostras recentes.",
-  timelineLatest: "Mais recentes primeiro",
-  byLanguageTitle: "Por idioma",
-  byLanguageEmpty: "Sem amostras com idioma registrado ainda.",
-  languageHeader: "Idioma",
-  totalSamples: (count) => `${count} amostras totais`,
-  updatedAt: (iso) => `Atualizado ${new Date(iso).toLocaleTimeString()}`,
-};
-
 export interface TelemetryPanelProps {
   labels?: TelemetryPanelLabels;
   autoRefreshMs?: number;

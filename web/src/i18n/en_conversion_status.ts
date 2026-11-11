@@ -133,16 +133,5 @@ export const en_conversion_status: Pick<Translations, 'status'> = {
     coverPhaseSuccess: 'Conversion completed',
     coverPhaseError: 'Conversion interrupted',
     coverPhaseDefault: 'Book selected',
-    cachedJobsTitle: 'Interrupted Conversions',
-    cachedJobsClose: 'Close notice',
-    cachedJobsSingular: 'We found 1 interrupted conversion. Do you want to resume it?',
-    cachedJobsPlural: (count: number) =>
-      `We found ${count} interrupted conversions. Do you want to resume one?`,
-    cachedJobsResume: 'Resume',
-    cachedJobsRemove: (fileName: string) => `Remove ${fileName}`,
-    cachedJobsJustNow: 'just now',
-    cachedJobsDaysAgo: (days: number) => `${days} day${days > 1 ? 's' : ''} ago`,
-    cachedJobsHoursAgo: (hours: number) => `${hours} hour${hours > 1 ? 's' : ''} ago`,
-    cachedJobsMinutesAgo: (minutes: number) => `${minutes} minute${minutes > 1 ? 's' : ''} ago`,
   },
 };
