@@ -236,17 +236,6 @@ final class APIClient: @unchecked Sendable {
 
     // MARK: Telemetry
 
-    struct TelemetrySnapshot: Decodable, Sendable {
-        struct EngineSample: Decodable, Sendable {
-            let engine: String
-            let charsPerSecond: Double?
-            let totalChars: Int?
-            let totalChapters: Int?
-        }
-        let recent: [EngineSample]?
-        let perEngine: [String: EngineSample]?
-    }
-
     /// Best-effort GET /api/telemetry — backend shape varies between
     /// versions, so we accept anything decodable and let the UI pick
     /// the bits it knows about.

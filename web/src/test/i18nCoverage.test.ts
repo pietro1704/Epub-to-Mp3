@@ -10,16 +10,6 @@ const NEW_STATUS_KEYS = [
   "coverPhaseSuccess",
   "coverPhaseError",
   "coverPhaseDefault",
-  "cachedJobsTitle",
-  "cachedJobsClose",
-  "cachedJobsSingular",
-  "cachedJobsPlural",
-  "cachedJobsResume",
-  "cachedJobsRemove",
-  "cachedJobsJustNow",
-  "cachedJobsDaysAgo",
-  "cachedJobsHoursAgo",
-  "cachedJobsMinutesAgo",
 ] as const;
 
 describe("i18n coverage for new status keys", () => {
@@ -38,32 +28,6 @@ describe("i18n coverage for new status keys", () => {
           }
         });
       }
-
-      it("cachedJobsPlural returns count in string", () => {
-        const fn = translations[locale].status.cachedJobsPlural;
-        const result = fn(3);
-        expect(result).toContain("3");
-      });
-
-      it("cachedJobsDaysAgo returns count in string", () => {
-        const fn = translations[locale].status.cachedJobsDaysAgo;
-        expect(fn(2)).toContain("2");
-      });
-
-      it("cachedJobsHoursAgo returns count in string", () => {
-        const fn = translations[locale].status.cachedJobsHoursAgo;
-        expect(fn(5)).toContain("5");
-      });
-
-      it("cachedJobsMinutesAgo returns count in string", () => {
-        const fn = translations[locale].status.cachedJobsMinutesAgo;
-        expect(fn(10)).toContain("10");
-      });
-
-      it("cachedJobsRemove includes file name", () => {
-        const fn = translations[locale].status.cachedJobsRemove;
-        expect(fn("book.epub")).toContain("book.epub");
-      });
     });
   }
 });

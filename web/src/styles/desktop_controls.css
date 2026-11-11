@@ -75,8 +75,7 @@
 /* Downloads and misc: tight */
 .app-shell--desktop .downloads-list__item,
 .app-shell--desktop .recent-jobs__card,
-.app-shell--desktop .resumable-job,
-.app-shell--desktop .cached-jobs-alert {
+.app-shell--desktop .resumable-job {
   border-radius: 6px !important;
   box-shadow: var(--_native-shadow) !important;
 }

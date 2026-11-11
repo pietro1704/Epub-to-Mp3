@@ -133,17 +133,5 @@ export const pt_conversion_status: Pick<Translations, 'status'> = {
     coverPhaseSuccess: 'Conversão concluída',
     coverPhaseError: 'Conversão interrompida',
     coverPhaseDefault: 'Livro selecionado',
-    cachedJobsTitle: 'Conversões Interrompidas',
-    cachedJobsClose: 'Fechar aviso',
-    cachedJobsSingular: 'Encontramos 1 conversão interrompida. Deseja retomá-la?',
-    cachedJobsPlural: (count: number) =>
-      `Encontramos ${count} conversões interrompidas. Deseja retomar alguma?`,
-    cachedJobsResume: 'Retomar',
-    cachedJobsRemove: (fileName: string) => `Remover ${fileName}`,
-    cachedJobsJustNow: 'agora mesmo',
-    cachedJobsDaysAgo: (days: number) => `${days} ${days === 1 ? 'dia' : 'dias'} atrás`,
-    cachedJobsHoursAgo: (hours: number) => `${hours} ${hours === 1 ? 'hora' : 'horas'} atrás`,
-    cachedJobsMinutesAgo: (minutes: number) =>
-      `${minutes} ${minutes === 1 ? 'minuto' : 'minutos'} atrás`,
   },
 };
