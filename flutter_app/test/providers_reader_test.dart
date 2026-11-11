@@ -33,8 +33,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
       );
-      final notifier =
-          container.read(currentlyReadingBookIdProvider.notifier);
+      final notifier = container.read(currentlyReadingBookIdProvider.notifier);
       notifier.set('new-book');
 
       expect(container.read(currentlyReadingBookIdProvider), 'new-book');
@@ -70,14 +69,14 @@ void main() {
     });
   });
 
-  group('rootTabIndexProvider', () {
+  group('appDestinationProvider', () {
     test('defaults to 0', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final container = ProviderContainer(
         overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
       );
-      expect(container.read(rootTabIndexProvider), 0);
+      expect(container.read(appDestinationProvider), AppDestination.library);
       container.dispose();
     });
 
@@ -87,8 +86,9 @@ void main() {
       final container = ProviderContainer(
         overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
       );
-      container.read(rootTabIndexProvider.notifier).state = 2;
-      expect(container.read(rootTabIndexProvider), 2);
+      container.read(appDestinationProvider.notifier).state =
+          AppDestination.conversion;
+      expect(container.read(appDestinationProvider), AppDestination.conversion);
       container.dispose();
     });
   });

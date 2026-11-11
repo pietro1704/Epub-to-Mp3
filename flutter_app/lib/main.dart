@@ -1,3 +1,5 @@
+import 'design_system/app_theme.dart';
+
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
@@ -54,9 +56,9 @@ Future<void> main() async {
     await prefs.setString('readerLayout', 'paginated');
   }
   final deepLinkStream = defaultTargetPlatform == TargetPlatform.android
-      ? const EventChannel(
-          'epub_to_mp3/deep_links',
-        ).receiveBroadcastStream().map((event) => Uri.parse(event as String))
+      ? const EventChannel('epub_to_mp3/deep_links')
+            .receiveBroadcastStream()
+            .map((event) => Uri.parse(event as String))
       : const Stream<Uri>.empty();
   final deepLinks = AppDeepLinkService(deepLinkStream);
   final audioStartup = AudioStartupState();
@@ -147,7 +149,7 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
           displayFilename: document.displayName,
         );
         ref.read(currentlyReadingBookIdProvider.notifier).set(book.id);
-        ref.read(rootTabIndexProvider.notifier).state = 0;
+        ref.read(appDestinationProvider.notifier).state = AppDestination.reader;
       },
     );
     _deepLinkSubscription = widget.deepLinks.links.listen(_routeDeepLink);
@@ -166,7 +168,7 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
 
   void _routeDeepLink(AppDeepLink link) {
     if (link.action == AppDeepLinkAction.jobs) {
-      ref.read(rootTabIndexProvider.notifier).state = 3;
+      ref.read(appDestinationProvider.notifier).state = AppDestination.history;
       return;
     }
     final bookId = link.bookId;
@@ -182,7 +184,7 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
     } else {
       ref.read(currentlyPlayingBookIdProvider.notifier).state = bookId;
     }
-    ref.read(rootTabIndexProvider.notifier).state = 0;
+    ref.read(appDestinationProvider.notifier).state = AppDestination.reader;
   }
 
   @override
@@ -200,17 +202,8 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
     });
     return MaterialApp(
       onGenerateTitle: (ctx) => AppLocalizations.of(ctx)!.appTitle,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.indigo,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.forBrightness(Brightness.light),
+      darkTheme: AppTheme.forBrightness(Brightness.dark),
       themeMode: ReaderThemeColors.themeMode(settings.readerTheme),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
