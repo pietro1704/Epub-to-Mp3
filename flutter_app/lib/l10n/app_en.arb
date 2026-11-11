@@ -202,5 +202,12 @@
   "ttsAllowJobSecondary": "Allow configured secondary for this conversion",
   "ttsActualVoices": "Used voice: {voices}",
   "@ttsActualVoices": {"placeholders": {"voices": {"type": "String"}}},
-  "ttsSecondaryUsedNotice": "Using the secondary voice. The primary voice will be retried periodically."
+  "ttsSecondaryUsedNotice": "Using the secondary voice. The primary voice will be retried periodically.",
+  "localAudioStorage": "Local audio downloads",
+  "localAudioStorageHint": "Downloaded and listened audio is kept until you remove it.",
+  "removeAudioTitle": "Remove downloaded audio?",
+  "removeAudioMessage": "The book, reading position and annotations will be kept.",
+  "originalTypography": "Original book typography",
+  "seekForwardInterval": "Skip forward",
+  "seekBackwardInterval": "Skip backward"
 }

@@ -1,5 +1,8 @@
+import '../design_system/adaptive_settings_layout.dart';
+import '../features/settings/local_audio_storage_screen.dart';
 import '../models/tts_preferences.dart';
 import '../models/tts_catalog.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -14,8 +17,11 @@ part 'voice_selection_settings.dart';
 part 'installed_narration_models.dart';
 part 'playback_preferences.dart';
 
-final _ttsCatalogSelections = FutureProvider<List<TtsSelection>>((ref) async =>
-  TtsCatalog.decode(await ref.read(embeddedConverterProvider).ttsModels()).selections());
+final _ttsCatalogSelections = FutureProvider<List<TtsSelection>>(
+  (ref) async =>
+      TtsCatalog.decode(await ref.read(embeddedConverterProvider).ttsModels())
+          .selections(),
+);
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -25,22 +31,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  late final TextEditingController _urlCtl;
-
-  @override
-  void initState() {
-    super.initState();
-    _urlCtl = TextEditingController(
-      text: ref.read(settingsProvider).backendURL,
-    );
-  }
-
-  @override
-  void dispose() {
-    _urlCtl.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
@@ -50,73 +40,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final tt = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: Text(t.settingsTitle)),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        children: [
+      body: AdaptiveSettingsLayout(
+        narration: [
           const VoiceSelectionSettings(),
           const InstalledNarrationModelsCard(),
           const SizedBox(height: 20),
-
-          // ── Remote Backend ──
-          _SectionHeader(t.remoteBackendSection),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.dns_outlined,
-                        size: 20,
-                        color: cs.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _urlCtl,
-                          decoration: InputDecoration(
-                            labelText: t.backendUrl,
-                            hintText: t.backendUrlHint,
-                            border: InputBorder.none,
-                          ),
-                          style: tt.bodyMedium,
-                          onSubmitted: notifier.setBackendUrl,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (settings.resolvedBaseURL == null)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 32, bottom: 4),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            size: 14,
-                            color: cs.error,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            t.backendUnavailable,
-                            style: tt.bodySmall?.copyWith(color: cs.error),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          _FooterText(t.backendUrlFooter),
-          const SizedBox(height: 20),
-
+        ],
+        preferences: [
           // ── Reader ──
           _SectionHeader(t.readerTitle),
           Card(
             child: Column(
               children: [
+                ListTile(
+                  title: Text(t.originalTypography),
+                  trailing: const Icon(Icons.restore),
+                  onTap: notifier.resetReaderTypography,
+                ),
+                const Divider(height: 1, indent: 56),
                 // Font size stepper
                 ListTile(
                   leading: Icon(Icons.format_size, color: cs.onSurfaceVariant),
@@ -334,6 +275,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 20),
 
           const PlaybackPreferences(),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.download_for_offline_outlined),
+              title: Text(t.localAudioStorage),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const LocalAudioStorageScreen(),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
 
           // ── About ──
           _SectionHeader(t.aboutSection),
@@ -349,14 +303,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
                 const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: Icon(Icons.open_in_new, color: cs.onSurfaceVariant),
-                  title: Text(t.projectOnGithub),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    // URL launch placeholder
-                  },
-                ),
               ],
             ),
           ),
@@ -399,9 +345,8 @@ class _FooterText extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
       ),
     );
   }

@@ -198,5 +198,12 @@
   "ttsAllowJobSecondary": "Permitir a voz secundária configurada nesta conversão",
   "ttsActualVoices": "Voz utilizada: {voices}",
   "@ttsActualVoices": {"placeholders": {"voices": {"type": "String"}}},
-  "ttsSecondaryUsedNotice": "Usando a voz secundária. A voz principal será tentada novamente periodicamente."
+  "ttsSecondaryUsedNotice": "Usando a voz secundária. A voz principal será tentada novamente periodicamente.",
+  "localAudioStorage": "Áudio baixado no dispositivo",
+  "localAudioStorageHint": "O áudio baixado e ouvido é mantido até você removê-lo.",
+  "removeAudioTitle": "Remover o áudio baixado?",
+  "removeAudioMessage": "O livro, a posição de leitura e as anotações serão mantidos.",
+  "originalTypography": "Tipografia original do livro",
+  "seekForwardInterval": "Avançar",
+  "seekBackwardInterval": "Retroceder"
 }

@@ -520,4 +520,27 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get ttsSecondaryUsedNotice =>
       'Usando a voz secundária. A voz principal será tentada novamente periodicamente.';
+
+  @override
+  String get localAudioStorage => 'Áudio baixado no dispositivo';
+
+  @override
+  String get localAudioStorageHint =>
+      'O áudio baixado e ouvido é mantido até você removê-lo.';
+
+  @override
+  String get removeAudioTitle => 'Remover o áudio baixado?';
+
+  @override
+  String get removeAudioMessage =>
+      'O livro, a posição de leitura e as anotações serão mantidos.';
+
+  @override
+  String get originalTypography => 'Tipografia original do livro';
+
+  @override
+  String get seekForwardInterval => 'Avançar';
+
+  @override
+  String get seekBackwardInterval => 'Retroceder';
 }
