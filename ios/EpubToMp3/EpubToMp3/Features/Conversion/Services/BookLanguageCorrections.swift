@@ -28,7 +28,20 @@ struct BookLanguageCorrections {
         var decisions = try decisions()
         var decision = decisions[bookID] ?? BookLanguageDecision()
         if let passage {
-            decision.passages.removeAll { $0.chapterIndex == passage.chapterIndex && $0.start < passage.end && passage.start < $0.end }
+            decision.passages = decision.passages.flatMap { previous -> [PassageLanguageCorrection] in
+                guard previous.chapterIndex == passage.chapterIndex,
+                      previous.start < passage.end, passage.start < previous.end else { return [previous] }
+                var retained: [PassageLanguageCorrection] = []
+                if previous.start < passage.start {
+                    retained.append(.init(chapterIndex: previous.chapterIndex,
+                        start: previous.start, end: passage.start, language: previous.language))
+                }
+                if previous.end > passage.end {
+                    retained.append(.init(chapterIndex: previous.chapterIndex,
+                        start: passage.end, end: previous.end, language: previous.language))
+                }
+                return retained
+            }
             if let language, !language.isEmpty {
                 decision.passages.append(PassageLanguageCorrection(chapterIndex: passage.chapterIndex,
                     start: passage.start, end: passage.end, language: language))

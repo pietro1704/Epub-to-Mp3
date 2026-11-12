@@ -96,12 +96,7 @@ actor SpeechModelLibraryClient {
 
     /// A recovery query never changes the user's study language or saved selections.
     func recoveryCandidates(for mismatch: TtsLanguageMismatch) throws -> [TtsRecoveryCandidate] {
-        let snapshot: SpeechModelSnapshot
-        if let snapshotOverride { snapshot = try snapshotOverride() }
-        else {
-            guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
-            snapshot = try adapter.speechModelSnapshot(target: target.selectingLanguage(mismatch.language), probeRuntime: true)
-        }
+        let snapshot = try languageSnapshot(mismatch.language)
         guard snapshot.target?.language == mismatch.language else {
             throw EmbeddedConverterError.artifactInvalid("Recovery catalogue language does not match the request")
         }

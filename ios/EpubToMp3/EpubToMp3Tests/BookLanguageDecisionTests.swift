@@ -2,6 +2,23 @@ import XCTest
 @testable import EpubToMp3
 
 final class BookLanguageDecisionTests: XCTestCase {
+    func testPartialCorrectionAndAutomaticResetPreserveTheSurroundingManualDecision() throws {
+        let suite = "PassageLanguage.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = BookLanguageCorrections(defaults: defaults)
+        let original = PassageLanguageCorrection(chapterIndex: 2, start: 0, end: 100, language: "pt-BR")
+        let selected = PassageLanguageCorrection(chapterIndex: 2, start: 20, end: 40, language: "en")
+        try store.set("pt-BR", bookID: "book", passage: original)
+        try store.set("en", bookID: "book", passage: selected)
+        XCTAssertEqual(try store.decision(bookID: "book").passages, [
+            .init(chapterIndex: 2, start: 0, end: 20, language: "pt-BR"),
+            .init(chapterIndex: 2, start: 40, end: 100, language: "pt-BR"), selected])
+        try store.set(nil, bookID: "book", passage: selected)
+        XCTAssertEqual(try store.decision(bookID: "book").passages.count, 2)
+        XCTAssertEqual(try store.decision(bookID: "book").passages.last?.end, 100)
+    }
+
     func testCorrectionsRemainScopedToContentIdentityAndManualChoicesWin() throws {
         let name = "BookLanguageDecisionTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
