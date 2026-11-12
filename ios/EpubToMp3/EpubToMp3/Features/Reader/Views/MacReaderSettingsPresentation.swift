@@ -38,27 +38,17 @@ final class MacReaderSettingsPresentation: NSObject {
         layout.target = self
         layout.action = #selector(layoutChanged(_:))
 
-        let smaller = NSButton(title: "A−", target: self, action: #selector(decreaseFont))
-        let larger = NSButton(title: "A+", target: self, action: #selector(increaseFont))
-        smaller.setAccessibilityLabel(L10n.string("readerSettings.decreaseFontSize"))
-        larger.setAccessibilityLabel(L10n.string("readerSettings.increaseFontSize"))
-        let sizeButtons = NSStackView(views: [smaller, larger])
-        sizeButtons.spacing = 8
-        let margin = NSPopUpButton()
-        margin.addItems(withTitles: ["16", "24", "32", "48", "64"])
-        margin.selectItem(withTitle: String(Int(settings.readerMargin)))
-        margin.setAccessibilityLabel(L10n.string("reader.margins"))
-        margin.setAccessibilityIdentifier("readerSettings.margin")
-        margin.target = self
-        margin.action = #selector(marginChanged(_:))
-
-        let kerning = NSPopUpButton()
-        kerning.addItems(withTitles: ["-1", "0", "0.5", "1", "2", "3"])
-        kerning.selectItem(withTitle: String(settings.readerLetterSpacing))
-        kerning.setAccessibilityLabel(L10n.string("reader.kerning"))
-        kerning.setAccessibilityIdentifier("readerSettings.kerning")
-        kerning.target = self
-        kerning.action = #selector(kerningChanged(_:))
+        let sizeControl = MacPointPresetControl(presets: PointPresetScale.font,
+            current: Double(settings.readerPointSize), title: L10n.string("settings.fontSize"),
+            identifier: "readerSettings.fontSize") { [weak settings] value in
+                settings?.readerFontSize = PointPresetScale.nearestIndex(to: value, in: PointPresetScale.font)
+            }
+        let margin = MacPointPresetControl(presets: PointPresetScale.macMargin,
+            current: settings.readerMargin, title: L10n.string("reader.margins"),
+            identifier: "readerSettings.margin") { [weak settings] in settings?.readerMargin = $0 }
+        let kerning = MacPointPresetControl(presets: PointPresetScale.macKerning,
+            current: settings.readerLetterSpacing, title: L10n.string("reader.kerning"),
+            identifier: "readerSettings.kerning") { [weak settings] in settings?.readerLetterSpacing = $0 }
 
         let columns = NSPopUpButton()
         columns.addItems(withTitles: ["1", "2", "3", "4"])
@@ -68,7 +58,7 @@ final class MacReaderSettingsPresentation: NSObject {
         columns.target = self
         columns.action = #selector(columnsChanged(_:))
 
-        let stack = NSStackView(views: [label("reader.font"), font, sizeButtons, label("reader.theme"), theme, label("reader.layout"), layout, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
+        let stack = NSStackView(views: [label("reader.font"), font, sizeControl, label("reader.theme"), theme, label("reader.layout"), layout, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -109,20 +99,10 @@ final class MacReaderSettingsPresentation: NSObject {
         settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
     }
 
-    @objc private func marginChanged(_ sender: NSPopUpButton) {
-        settings.readerMargin = Double(sender.titleOfSelectedItem ?? "24") ?? 24
-    }
-
-    @objc private func kerningChanged(_ sender: NSPopUpButton) {
-        settings.readerLetterSpacing = Double(sender.titleOfSelectedItem ?? "0") ?? 0
-    }
-
     @objc private func columnsChanged(_ sender: NSPopUpButton) {
         settings.readerColumns = Int(sender.titleOfSelectedItem ?? "1") ?? 1
     }
 
-    @objc private func decreaseFont() { settings.readerFontSize -= 1 }
-    @objc private func increaseFont() { settings.readerFontSize += 1 }
 
 }
 #endif

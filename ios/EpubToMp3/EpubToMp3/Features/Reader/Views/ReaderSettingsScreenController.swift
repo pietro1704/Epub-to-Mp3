@@ -87,102 +87,71 @@ final class ReaderSettingsScreenController: UITableViewController {
         }
     }
 
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
-        // Cells are reused across sections. Remove any slider installed by
-        // the previous row before configuring the current row.
-        cell.contentView.subviews
-            .filter { $0 is CompactSlider }
-            .forEach { $0.removeFromSuperview() }
-        cell.accessibilityIdentifier = nil
-        cell.accessoryView = nil
-        var content = cell.defaultContentConfiguration()
-        var installSlider: (() -> Void)?
-        cell.accessoryType = .none
-        guard let section = Section(rawValue: indexPath.section) else { return cell }
-
-        switch section {
-        case .theme:
-            let themes = ReaderTheme.allCases.filter { $0 != .custom }
-            let theme = themes[indexPath.row]
-            content.text = theme.displayName
-            content.image = Self.themePreviewImage(for: theme)
-            cell.accessoryType = settings.readerTheme == theme ? .checkmark : .none
-        case .font:
-            if indexPath.row == 0 {
-                cell.accessibilityIdentifier = "reader.settings.fontFamily"
-                content.text = L10n.string("readerSettings.family")
-                content.secondaryText = ReaderFontCatalog.title(for: settings.selectedReaderFontFamily)
-                cell.accessoryType = .disclosureIndicator
-            } else {
-                content.text = L10n.string("readerSettings.size")
-                content.secondaryText = "\(Int(settings.readerPointSize))pt"
-                installSlider = {
-                    self.configureSlider(in: cell, value: Float(self.settings.readerFontSize), min: 0, max: 4, step: 1, identifier: "reader.settings.fontSize")
-                }
-                cell.accessoryType = .none
-            }
-        case .audioTracking:
-            content.text = L10n.string("readerSettings.audioTracking")
-            content.secondaryText = L10n.string("readerSettings.audioTrackingDescription")
-            content.textProperties.numberOfLines = 0
-            content.secondaryTextProperties.numberOfLines = 0
-            cell.accessibilityIdentifier = "reader.settings.audioTracking.row"
-            let toggle = UISwitch()
-            toggle.isOn = settings.readerAudioTrackingEnabled
-            toggle.accessibilityIdentifier = "reader.settings.audioTracking"
-            toggle.accessibilityLabel = content.text
-            toggle.addAction(UIAction { [weak self, weak toggle] _ in
-                guard let self, let toggle else { return }
-                self.settings.readerAudioTrackingEnabled = toggle.isOn
-                self.onChange?()
-            }, for: .valueChanged)
-            cell.accessoryView = toggle
-        case .layout:
-            layoutCellContent(&content, row: indexPath.row)
-            cell.accessibilityIdentifier = layoutAccessibilityIdentifier(for: indexPath.row)
-            cell.accessoryType = .disclosureIndicator
-            if isSliderLayoutRow(indexPath.row) {
-                let value: Double
-                let range: (Double, Double)
-                if indexPath.row == (settings.readerLayout == .paginated ? 4 : 2) {
-                    value = settings.readerLineSpacing
-                    range = (0, 16)
-                } else {
-                    value = settings.readerMargin
-                    range = (
-                        ReaderLayoutMetrics.minimumHorizontalMargin,
-                        ReaderLayoutMetrics.maximumHorizontalMargin
-                    )
-                }
-                let lineSpacing = indexPath.row == (settings.readerLayout == .paginated ? 4 : 2)
-                installSlider = {
-                    self.configureSlider(in: cell, value: Float(value), min: Float(range.0), max: Float(range.1), step: lineSpacing ? 2 : 4, identifier: lineSpacing ? "reader.settings.lineSpacing" : "reader.settings.margin")
-                }
-                cell.accessoryType = .none
-            }
-            if isToggleLayoutRow(indexPath.row) {
-                cell.accessoryType = settings.readerShowPageNumbers ? .checkmark : .none
-            }
+override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    guard let section = Section(rawValue: indexPath.section) else { return UITableViewCell() }
+    if (section == .font && indexPath.row == 1)
+        || (section == .layout && isSliderLayoutRow(indexPath.row)) {
+        let font = section == .font
+        let spacing = !font && indexPath.row == (settings.readerLayout == .paginated ? 4 : 2)
+        let key = font ? "size" : (spacing ? "lineSpacing" : "margin")
+        let identifier = font ? "fontSize" : (spacing ? "lineSpacing" : "margin")
+        let presets = font ? PointPresetScale.font : (spacing ? PointPresetScale.lineSpacing : PointPresetScale.margin)
+        let current = font ? Double(settings.readerPointSize) : (spacing ? settings.readerLineSpacing : settings.readerMargin)
+        return PointPresetCell.make(in: tableView, title: L10n.string("readerSettings." + key),
+            identifier: "reader.settings." + identifier, presets: presets, current: current) { [weak self] value in
+            guard let self else { return }
+            if font { self.settings.readerFontSize = PointPresetScale.nearestIndex(to: value, in: PointPresetScale.font) }
+            else if spacing { self.settings.readerLineSpacing = value }
+            else { self.settings.readerMargin = value }
+            self.onChange?()
         }
-
-        if installSlider != nil {
-            // The content view sizes its text above the reserved slider row,
-            // including multiline labels at accessibility text sizes.
-            content.directionalLayoutMargins.bottom = CompactSlider.minimumTouchHeight + 16
-        }
-        cell.contentConfiguration = content
-        // Installing a content configuration can replace the content view's
-        // children. Attach the slider only after the text surface exists.
-        installSlider?()
-        cell.contentView.subviews.first(where: { $0 is CompactSlider })?.accessibilityLabel = content.text
-        cell.accessibilityLabel = content.text
-        cell.accessibilityValue = content.secondaryText ?? (section == .theme ? themeAccessibilityValue(indexPath.row) : nil)
-        cell.accessibilityHint = isToggleLayoutRow(indexPath.row)
-            ? L10n.string("readerSettings.toggleHint")
-            : L10n.string("readerSettings.chooseOptionHint")
-        return cell
     }
+    let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+    cell.accessibilityIdentifier = nil
+    cell.accessoryView = nil
+    cell.accessoryType = .none
+    var content = cell.defaultContentConfiguration()
+    switch section {
+    case .theme:
+        let themes = ReaderTheme.allCases.filter { $0 != .custom }
+        let theme = themes[indexPath.row]
+        content.text = theme.displayName
+        content.image = Self.themePreviewImage(for: theme)
+        cell.accessoryType = settings.readerTheme == theme ? .checkmark : .none
+    case .font:
+        cell.accessibilityIdentifier = "reader.settings.fontFamily"
+        content.text = L10n.string("readerSettings.family")
+        content.secondaryText = ReaderFontCatalog.title(for: settings.selectedReaderFontFamily)
+        cell.accessoryType = .disclosureIndicator
+    case .audioTracking:
+        content.text = L10n.string("readerSettings.audioTracking")
+        content.secondaryText = L10n.string("readerSettings.audioTrackingDescription")
+        content.textProperties.numberOfLines = 0
+        content.secondaryTextProperties.numberOfLines = 0
+        cell.accessibilityIdentifier = "reader.settings.audioTracking.row"
+        let toggle = UISwitch()
+        toggle.isOn = settings.readerAudioTrackingEnabled
+        toggle.accessibilityIdentifier = "reader.settings.audioTracking"
+        toggle.accessibilityLabel = content.text
+        toggle.addAction(UIAction { [weak self, weak toggle] _ in
+            guard let self, let toggle else { return }
+            self.settings.readerAudioTrackingEnabled = toggle.isOn
+            self.onChange?()
+        }, for: .valueChanged)
+        cell.accessoryView = toggle
+    case .layout:
+        layoutCellContent(&content, row: indexPath.row)
+        cell.accessibilityIdentifier = layoutAccessibilityIdentifier(for: indexPath.row)
+        cell.accessoryType = isToggleLayoutRow(indexPath.row)
+            ? (settings.readerShowPageNumbers ? .checkmark : .none) : .disclosureIndicator
+    }
+    cell.contentConfiguration = content
+    cell.accessibilityLabel = content.text
+    cell.accessibilityValue = content.secondaryText ?? (section == .theme ? themeAccessibilityValue(indexPath.row) : nil)
+    cell.accessibilityHint = isToggleLayoutRow(indexPath.row)
+        ? L10n.string("readerSettings.toggleHint") : L10n.string("readerSettings.chooseOptionHint")
+    return cell
+}
 
     private func themeAccessibilityValue(_ row: Int) -> String {
         let themes = ReaderTheme.allCases.filter { $0 != .custom }
@@ -289,85 +258,11 @@ final class ReaderSettingsScreenController: UITableViewController {
             || row == (settings.readerLayout == .paginated ? 5 : 3)
     }
 
-    private func configureSlider(in cell: UITableViewCell, value: Float, min: Float, max: Float, step: Float, identifier: String) {
-        cell.contentView.subviews
-            .filter { $0 is CompactSlider }
-            .forEach { $0.removeFromSuperview() }
-        let slider = CompactSlider()
-        slider.minimumValue = min
-        slider.maximumValue = max
-        slider.value = value
-        slider.isContinuous = true
-        slider.accessibilityStep = step
-        let tint = settings.readerTheme.previewColors.foreground
-        slider.minimumTrackTintColor = tint
-        slider.maximumTrackTintColor = tint.withAlphaComponent(0.3)
-        slider.thumbTintColor = tint
-        slider.accessibilityIdentifier = identifier
-        slider.addTarget(self, action: #selector(sliderChanged(_:)), for: .valueChanged)
-        slider.addTarget(
-            self,
-            action: #selector(sliderEditingDidEnd(_:)),
-            for: [.touchUpInside, .touchUpOutside, .touchCancel, .editingDidEnd]
-        )
-        slider.translatesAutoresizingMaskIntoConstraints = false
-        cell.contentView.addSubview(slider)
-        NSLayoutConstraint.activate([
-            slider.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
-            slider.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
-            slider.heightAnchor.constraint(equalToConstant: CompactSlider.minimumTouchHeight),
-            slider.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8)
-        ])
-        slider.accessibilityValue = "\(Int(value))"
-        slider.tag = Int(step * 1000)
-    }
-
-    @objc private func sliderChanged(_ slider: CompactSlider) {
-        let step = Float(max(1, slider.tag)) / 1000
-        let snapped = round(slider.value / Float(step)) * Float(step)
-        slider.setValue(snapped, animated: false)
-        slider.accessibilityValue = "\(Int(snapped))"
-        let didChange: Bool
-        switch slider.accessibilityIdentifier {
-        case "reader.settings.fontSize":
-            didChange = settings.readerFontSize != Int(snapped)
-            if didChange { settings.readerFontSize = Int(snapped) }
-        case "reader.settings.lineSpacing":
-            didChange = settings.readerLineSpacing != Double(snapped)
-            if didChange { settings.readerLineSpacing = Double(snapped) }
-        case "reader.settings.margin":
-            didChange = settings.readerMargin != Double(snapped)
-            if didChange { settings.readerMargin = Double(snapped) }
-        default:
-            didChange = false
-        }
-        guard didChange else { return }
-        // Reloading the table on every valueChanged destroys the slider that
-        // is currently being dragged. Notify the reader directly, then
-        // refresh the labels once the gesture ends.
-        onChange?()
-    }
-
-    @objc private func sliderEditingDidEnd(_ slider: CompactSlider) {
-        refresh()
-    }
-
-    private func handleFontSelection(row: Int) {
-        if row == 0 {
-            navigationController?.pushViewController(
-                ReaderFontChoiceController(settings: settings) { [weak self] in self?.refresh() }, animated: true)
-        } else {
-            let sizes = Array(0...4)
-            presentChoice(
-                title: L10n.string("readerSettings.size"),
-                options: sizes.map { "\((Int(ReaderFontScale.pointSize(for: $0))))pt" },
-                selectedIndex: settings.readerFontSize
-            ) { [weak self] index in
-                self?.settings.readerFontSize = index
-                self?.refresh()
-            }
-        }
-    }
+private func handleFontSelection(row: Int) {
+    guard row == 0 else { return }
+    navigationController?.pushViewController(
+        ReaderFontChoiceController(settings: settings) { [weak self] in self?.refresh() }, animated: true)
+}
 
     private func handleLayoutSelection(row: Int) {
         let paginated = settings.readerLayout == .paginated
@@ -399,7 +294,6 @@ final class ReaderSettingsScreenController: UITableViewController {
             return
         }
         let alignmentRow = paginated ? 3 : 1
-        let spacingRow = paginated ? 4 : 2
         if row == alignmentRow {
             presentChoice(
                 title: L10n.string("readerSettings.alignment"),
@@ -407,16 +301,6 @@ final class ReaderSettingsScreenController: UITableViewController {
                 selectedIndex: ReaderTextAlignment.allCases.firstIndex(of: settings.readerTextAlignment) ?? 0
             ) { [weak self] index in
                 self?.settings.readerTextAlignment = ReaderTextAlignment.allCases[index]
-                self?.refresh()
-            }
-        } else if row == spacingRow {
-            let values = Array(stride(from: 0, through: 16, by: 2))
-            presentChoice(
-                title: L10n.string("readerSettings.lineSpacing"),
-                options: values.map { String($0) },
-                selectedIndex: values.firstIndex(of: Int(settings.readerLineSpacing)) ?? 0
-            ) { [weak self] index in
-                self?.settings.readerLineSpacing = Double(values[index])
                 self?.refresh()
             }
         }

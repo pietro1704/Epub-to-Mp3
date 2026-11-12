@@ -39,15 +39,7 @@ final class ReaderPlaybackSettingsChoices {
 
     func handleReaderSelection(row: Int) {
         switch row {
-        case 0:
-            SettingsChoicePresentation.present(
-            controller: controller,
-                title: L10n.string("settings.fontSize"),
-                options: (0...4).map { (L10n.string("settings.fontStep", $0 + 1, 5), $0) },
-                currentValue: settings.readerFontSize
-            ) { [weak self] value in
-                self?.settings.readerFontSize = value
-            }
+        case 0: break // Point-valued rows are adjusted by their native preset slider.
         case 1:
             controller?.navigationController?.pushViewController(
                 ReaderFontChoiceController(settings: settings) { [weak self] in
@@ -71,24 +63,7 @@ final class ReaderPlaybackSettingsChoices {
             ) { [weak self] value in
                 self?.settings.readerLayout = value
             }
-        case 4:
-            SettingsChoicePresentation.present(
-            controller: controller,
-                title: L10n.string("settings.lineSpacing"),
-                options: stride(from: 0, through: 16, by: 2).map { ("\($0) pt", Double($0)) },
-                currentValue: settings.readerLineSpacing
-            ) { [weak self] value in
-                self?.settings.readerLineSpacing = value
-            }
-        case 5:
-            SettingsChoicePresentation.present(
-            controller: controller,
-                title: L10n.string("settings.margin"),
-                options: stride(from: 16, through: 80, by: 4).map { ("\($0) pt", Double($0)) },
-                currentValue: settings.readerMargin
-            ) { [weak self] value in
-                self?.settings.readerMargin = value
-            }
+        case 4, 5: break
         case 6:
             settings.readerAutoScroll.toggle()
         default:
