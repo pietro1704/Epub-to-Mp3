@@ -574,6 +574,9 @@
 "reader.footnotes.title" = "Notas al pie";
 "reader.footnotes.empty" = "No hay notas al pie en este capítulo.";
 "reader.search" = "Buscar";
+"reader.action.playFromHere" = "Reproducir desde aquí";
+"reader.action.removeHighlight" = "Eliminar resaltado";
+"reader.selection.more" = "Más";
 "reader.search.placeholder" = "Buscar en el libro";
 "reader.search.currentChapter" = "Busca en este capítulo mientras el resto del libro está disponible.";
 "reader.search.unavailable" = "La búsqueda no está disponible en esta vista del documento.";

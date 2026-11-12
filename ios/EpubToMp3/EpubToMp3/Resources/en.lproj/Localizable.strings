@@ -576,6 +576,9 @@
 "reader.footnotes.title" = "Footnotes";
 "reader.footnotes.empty" = "No footnotes in this chapter.";
 "reader.search" = "Search";
+"reader.action.playFromHere" = "Play from here";
+"reader.action.removeHighlight" = "Remove highlight";
+"reader.selection.more" = "More";
 "reader.search.placeholder" = "Search in book";
 "reader.search.currentChapter" = "Search this chapter while the rest of the book becomes available.";
 "reader.search.unavailable" = "Search isn't available in this document view.";
