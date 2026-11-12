@@ -113,10 +113,11 @@ impl TtsSelection {
                         && !lang.eq_ignore_ascii_case("pt_BR")
                 })
             {
-                return Err(
-                    "Faber medium supports Portuguese; choose a compatible voice for this book"
-                        .into(),
-                );
+                return Err(crate::language::mismatch_message(
+                    language.unwrap_or_default(),
+                    id,
+                    "Faber medium supports Portuguese; choose a compatible voice for this book",
+                ));
             }
         } else if self.model_id.is_some() {
             return Err("Only Piper selections accept a local model ID".into());

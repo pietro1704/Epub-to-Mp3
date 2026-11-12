@@ -219,7 +219,9 @@ final class BookDetailScreenController: UIViewController {
         navigationController?.popToRootViewController(animated: true)
     }
 
-    @objc private func tapListen() {
+    @objc private func tapListen() { startListening(options: settings.conversionOptions) }
+
+    private func startListening(options: ConversionOptions) {
         guard playbackGeneration == nil else { return }
         // Reader progress is an array position, whereas local audio artifacts
         // use the EPUB's canonical chapter index. Resolve it once so the
@@ -232,7 +234,7 @@ final class BookDetailScreenController: UIViewController {
         let bookID = book.id
         let jobID = UUID().uuidString
         playbackGeneration = jobID
-        let conversionOptions = settings.conversionOptions
+        let conversionOptions = options
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -242,6 +244,12 @@ final class BookDetailScreenController: UIViewController {
                                               jobID: jobID, conversionOptions: conversionOptions)
             } catch {
                 guard self.playbackGeneration == jobID else { return }
+                if await BookLanguageRecovery.handle(error, bookID: bookID, options: conversionOptions,
+                    isCurrent: { [weak self] in self?.playbackGeneration == jobID && self?.viewIfLoaded?.window != nil },
+                    retry: { self.playbackGeneration = nil; self.startListening(options: $0) }) {
+                    if self.playbackGeneration == jobID { self.playbackGeneration = nil }
+                    return
+                }
                 self.playbackGeneration = nil
                 self.presentListenError(error)
             }
@@ -420,6 +428,9 @@ final class BookDetailScreenController: UIViewController {
                     return
                 } catch {
                     guard self.manualConversionGeneration == jobID else { return }
+                    if await BookLanguageRecovery.handle(error, bookID: bookID, options: conversionOptions,
+                        isCurrent: { [weak self] in self?.manualConversionGeneration == jobID && self?.viewIfLoaded?.window != nil },
+                        retry: { self.manualConversionGeneration = nil; self.startManualConversion(options: $0) }) { return }
                     self.recoveryPanel.refresh(bookID: bookID)
                     let alert = UIAlertController(
                         title: L10n.string("bookDetail.download"),

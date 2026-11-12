@@ -147,6 +147,7 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
     let indices = hierarchy_indices(&toc);
     let levels = toc_levels(&toc);
     let mut chapters = Vec::new();
+    let mut markup_language = None;
     let mut orphan = indices
         .values()
         .filter_map(|v| v.parse::<u32>().ok())
@@ -159,6 +160,9 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
             .clone();
         let path = resolve_resource_path(opf_dir, &href);
         let html = read_entry(&mut archive, &path, &mut budget)?;
+        if markup_language.is_none() {
+            markup_language = crate::language::markup_language(&html);
+        }
         let (text, paragraph_ends, heading_ends) = html_to_text_projection(&html);
         if text.trim().is_empty() {
             continue;
@@ -188,7 +192,7 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
     Ok(Book {
         title,
         author,
-        language,
+        language: markup_language.or(language),
         chapters,
         toc,
         cover,

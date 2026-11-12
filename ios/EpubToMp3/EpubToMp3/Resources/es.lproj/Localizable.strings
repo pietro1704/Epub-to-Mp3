@@ -795,3 +795,13 @@
 "readerSettings.audioTracking" = "Seguir la lectura";
 "readerSettings.audioTrackingDescription" = "Resaltar la frase y la palabra mientras se reproduce el audio.";
 "settings.modelCompatibility.otherLanguage" = "Para otro idioma: puedes escuchar una muestra de esta voz instalada.";
+
+/* Book and passage language corrections */
+"language.chooseTitle" = "Idioma del libro";
+"language.inconclusive" = "No se pudo identificar el idioma después de analizar otros pasajes. Elige el idioma de este libro o pasaje.";
+"language.automatic" = "Detección automática";
+"language.passage" = "Idioma del pasaje";
+"language.downloadTitle" = "Voz para %@";
+"language.downloadMessage" = "Descarga %@ para los pasajes en este idioma. Se narrarán ambos idiomas; se conservará tu voz principal.";
+"language.choosePrompt" = "Elige un idioma";
+"language.correctionHelp" = "Esta elección se aplica a este libro o pasaje. Elige Detección automática para eliminar tu corrección.";

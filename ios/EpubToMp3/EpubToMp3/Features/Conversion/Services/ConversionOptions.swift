@@ -9,6 +9,7 @@ struct ConversionOptions: Codable, Sendable, Equatable {
     var engine: String?
     var voice: String?
     var language: String?
+    var languageOverrides: [PassageLanguageCorrection]? = nil
     var clearCache: Bool
     var forceReprocess: Bool
     var maxPerformance: Bool
@@ -63,6 +64,7 @@ struct ConversionOptions: Codable, Sendable, Equatable {
         case recoveryJobID = "recovery_job_id"
         case pronunciation
         case engine, voice, language
+        case languageOverrides = "language_overrides"
         case clearCache = "clear_cache"
         case forceReprocess = "force_reprocess"
         case maxPerformance = "max_performance"

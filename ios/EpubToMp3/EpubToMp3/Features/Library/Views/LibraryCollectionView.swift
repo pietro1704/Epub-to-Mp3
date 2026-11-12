@@ -38,6 +38,7 @@ final class LibraryGridController: UICollectionViewController {
     var onOpen: ((BookEntity) -> Void)?
     var onDownload: ((BookEntity) -> Void)?
     var onRemove: ((BookEntity) -> Void)?
+    var onChooseLanguage: ((BookEntity) -> Void)?
 
     /// id → book, so selection/context callbacks can hand back the entity.
     private var booksByID: [String: BookEntity] = [:]
@@ -184,7 +185,10 @@ final class LibraryGridController: UICollectionViewController {
             ) { [weak self] _ in
                 DispatchQueue.main.async { self?.onDownload?(book) }
             }
-            return UIMenu(children: [download, remove])
+            let language = UIAction(title: L10n.string("language.chooseTitle"), image: UIImage(systemName: "globe")) { [weak self] _ in
+                DispatchQueue.main.async { self?.onChooseLanguage?(book) }
+            }
+            return UIMenu(children: [download, language, remove])
         }
     }
 }

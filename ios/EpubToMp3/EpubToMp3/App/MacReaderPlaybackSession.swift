@@ -162,6 +162,17 @@ final class MacReaderPlaybackSession {
                     chapterIndexBase: 0
                     ))
                 }
+                if BookLanguageUncertain.decode(error) != nil {
+                    let recovered = await BookLanguagePicker.recover(error, bookID: bookID, isCurrent: { [weak self] in
+                        self?.localPlaybackGeneration == jobID
+                            && defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID
+                    })
+                    if recovered {
+                        self.start(owner: owner, optionsOverride: conversionOptions,
+                                   chapterOverride: Int(chapterStart), pageRatioOverride: pageRatio)
+                    }
+                    return
+                }
                 if TtsLanguageMismatch.decode(error) != nil {
                     let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: { [weak self] in
                         self?.localPlaybackGeneration == jobID

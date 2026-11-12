@@ -83,7 +83,8 @@ fn is_heading(name: &[u8]) -> bool {
     name.len() == 2 && name[0].eq_ignore_ascii_case(&b'h') && (b'1'..=b'6').contains(&name[1])
 }
 pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>, Vec<usize>) {
-    let mut reader = Reader::from_str(html);
+    let ordered = crate::parallel_columns::reading_order(html);
+    let mut reader = Reader::from_str(&ordered);
     let mut skip_depth = 0usize;
     let mut out = String::new();
     let mut paragraph_boundaries = Vec::new();

@@ -94,7 +94,13 @@ impl ConversionWorker {
             .collect::<Vec<_>>();
         let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
         let mp3 = output_dir.join(format!("{stem}.mp3"));
-        let language = detected_language;
+        let chapter_analysis = crate::language::analyze_book(
+            std::iter::once(chapter.text.as_str()),
+            book.language.as_deref(),
+            &|| self.cancel.is_cancelled(),
+        )
+        .map_err(|_| WorkerError::Cancelled)?;
+        let language = detected_language.or(chapter_analysis.confirmed.as_deref());
         let engine = request
             .tts_preferences
             .as_ref()
@@ -151,6 +157,22 @@ impl ConversionWorker {
             request.voice.as_deref(),
             language,
         )?;
+        // Detection policy and explicit passage corrections participate in cache
+        // identity, so old-language audio cannot survive a corrected request.
+        let base_request_key = if request.language.is_some() && self.language_overrides.is_empty() {
+            base_request_key
+        } else {
+            cache::sha256_bytes(
+                serde_json::to_vec(&(
+                    "book-language-routing-v1",
+                    &base_request_key,
+                    &chapter_analysis,
+                    &self.language_overrides,
+                ))
+                .expect("language request identity")
+                .as_slice(),
+            )
+        };
         let base_request_key = if request.tts_preferences.is_some() {
             super::heading_pauses::request_key(&base_request_key, &heading_ends)
         } else {

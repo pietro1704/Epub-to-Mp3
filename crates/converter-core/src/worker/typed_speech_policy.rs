@@ -91,9 +91,23 @@ impl ConversionWorker {
                 "Synthesis adapter has an empty text capacity".into(),
             ));
         }
+        let (source_offset, language_passages, forced_boundaries) = self.plan_language_passages(
+            request,
+            text,
+            paragraph_ends,
+            heading_ends,
+            source_index,
+            language,
+        );
         let mut segments = std::collections::VecDeque::from(
             self.pronunciation
-                .source_plan(text, 180.min(limit), limit, paragraph_ends, heading_ends)
+                .source_plan(
+                    text,
+                    180.min(limit),
+                    limit,
+                    paragraph_ends,
+                    &forced_boundaries,
+                )
                 .map_err(worker_from_failure)?,
         );
         let adapters: Vec<_> = builtin_descriptors()
@@ -117,6 +131,16 @@ impl ConversionWorker {
             .expect("source identity lock")
             .clone();
         while let Some(segment) = segments.pop_front() {
+            let language = Some(super::language_routing::language_for_segment(
+                &language_passages,
+                segment.scalar_range.clone(),
+                language,
+                source_index,
+                source_offset,
+            )?);
+            let routed_preferences =
+                crate::language::preferences_for_language(preferences, language);
+            let preferences = &routed_preferences;
             let cache_hit = std::cell::Cell::new(false);
             let segment_started = std::time::Instant::now();
             if self.cancel.is_cancelled() {
@@ -316,7 +340,13 @@ impl ConversionWorker {
                     Ok(audio) => break audio,
                     Err(failure) => {
                         fallback_cause = Some(failure.clone());
-                        attempt.failed(&failure).map_err(worker_from_failure)?;
+                        if let Err(terminal) = attempt.failed(&failure) {
+                            return Err(super::language_routing::recovery_failure(
+                                terminal,
+                                language,
+                                attempt.selection().model_id.as_deref(),
+                            ));
+                        }
                     }
                 }
             };
@@ -328,12 +358,7 @@ impl ConversionWorker {
                 .first()
                 .map_or(segment.byte_range.end, |next| next.byte_range.start);
             let spoken = text[segment.byte_range.start..consumed_end].trim();
-            let base = self
-                .control
-                .as_ref()
-                .and_then(|control| control.listening_plan())
-                .filter(|plan| plan.position.chapter_index == source_index)
-                .map_or(0, |plan| plan.position.text_offset);
+            let base = source_offset;
             let leading = segment
                 .source
                 .chars()

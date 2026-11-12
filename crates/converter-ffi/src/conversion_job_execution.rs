@@ -116,6 +116,7 @@ pub(super) unsafe fn convert_job_json(
     };
     let queued_audio = options.audio_chunks.clone();
     let pronunciation = options.pronunciation.clone();
+    let language_overrides = options.language_overrides.clone();
     let control = if let Some(predecessor) = options.recovery_job_id.as_deref() {
         let recovery_control = control.unwrap_or_default();
         if let Err(error) = recovery_control.set_recovery_job(predecessor) {
@@ -269,6 +270,10 @@ pub(super) unsafe fn convert_job_json(
         worker
     };
     let worker = match worker.with_pronunciation(pronunciation) {
+        Ok(worker) => worker,
+        Err(error) => return fail(error.to_string()),
+    };
+    let worker = match worker.with_language_overrides(language_overrides) {
         Ok(worker) => worker,
         Err(error) => return fail(error.to_string()),
     };

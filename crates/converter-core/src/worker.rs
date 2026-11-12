@@ -175,6 +175,7 @@ impl ExecutionOptions {
 }
 
 pub struct ConversionWorker {
+    language_overrides: Vec<crate::language::LanguageOverride>,
     source_identity: Mutex<Option<String>>,
     pronunciation: crate::pronunciation::PronunciationDictionary,
     render_progress: Mutex<render_progress::RenderProgress>,
@@ -219,6 +220,7 @@ impl ConversionWorker {
     pub fn new(config: AppConfig) -> Result<Self, WorkerError> {
         let jobs = ConversionJobStore::new(&config.paths.jobs_dir)?;
         Ok(Self {
+            language_overrides: Vec::new(),
             source_identity: Mutex::new(None),
             pronunciation: Default::default(),
             render_progress: Default::default(),
@@ -401,6 +403,7 @@ mod conversion_schedule;
 mod edge_synthesis_execution;
 mod heading_pauses;
 mod kokoro_model_identity;
+mod language_routing;
 mod native_tts_adapters;
 mod platform_speech_policy;
 mod playback_chunk_delivery;

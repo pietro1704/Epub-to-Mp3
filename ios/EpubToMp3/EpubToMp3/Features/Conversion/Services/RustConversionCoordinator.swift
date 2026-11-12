@@ -73,8 +73,9 @@ final class RustConversionCoordinator {
             try adapter.validateConversionSupport(options: requestedOptions)
         }
         var options = requestedOptions
+        let bookID = try await Task.detached { try BookContentIdentity.hash(of: bookURL) }.value
+        options = try BookLanguageCorrections().applying(to: options ?? ConversionOptions(), bookID: bookID)
         if options?.pronunciation == nil {
-            let bookID = try await Task.detached { try BookContentIdentity.hash(of: bookURL) }.value
             let dictionary = BookPronunciationStore().load(bookID: bookID)
             if !dictionary.rules.isEmpty {
                 var captured = options ?? ConversionOptions()

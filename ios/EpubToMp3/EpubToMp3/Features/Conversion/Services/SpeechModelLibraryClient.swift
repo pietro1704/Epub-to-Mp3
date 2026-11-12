@@ -108,6 +108,13 @@ actor SpeechModelLibraryClient {
         return TtsRecoveryCandidate.available(in: snapshot, excluding: mismatch.modelID)
     }
 
+    /// A language-specific query does not change study language or global selections.
+    func languageSnapshot(_ language: String) throws -> SpeechModelSnapshot {
+        if let snapshotOverride { return try snapshotOverride() }
+        guard let adapter else { throw EmbeddedConverterError.artifactUnavailable }
+        return try adapter.speechModelSnapshot(target: target.selectingLanguage(language), probeRuntime: true)
+    }
+
     func setStudyLanguage(_ language: String) throws -> SpeechModelSnapshot {
         let current = try snapshot(probeRuntime: false)
         guard SpeechModelLibraryViewState(snapshot: current).studyLanguages.contains(language) else {
@@ -143,8 +150,8 @@ actor SpeechModelLibraryClient {
         }
     }
 
-    func install(modelID: String, acceptedTermsFingerprint: String? = nil) async throws -> URL {
-        let current = try snapshot(probeRuntime: false)
+    func install(modelID: String, acceptedTermsFingerprint: String? = nil, language: String? = nil) async throws -> URL {
+        let current = try language.map { try languageSnapshot($0) } ?? snapshot(probeRuntime: false)
         guard let entry = current.entries.first(where: { $0.identity.modelID == modelID }) else {
             throw SpeechModelInstallationError.unknownModel(modelID)
         }

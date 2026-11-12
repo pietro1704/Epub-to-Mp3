@@ -4,7 +4,7 @@ import UIKit
 import AppKit
 #endif
 
-/// Recovery stays in alerts and never writes global preferences or installs models.
+/// Per-job recovery preserves global selections; installation needs an explicit confirmation.
 @MainActor
 enum TtsRecoveryAlert {
     struct Choice { let candidate: TtsRecoveryCandidate; let language: String }
@@ -16,8 +16,7 @@ enum TtsRecoveryAlert {
         catch { _ = AppErrorReporter.message(error, context: "Speech model recovery"); candidates = [] }
         guard !Task.isCancelled, isCurrent() else { return nil }
         guard let suggested = candidates.first else {
-            await inform(L10n.string("tts.recovery.none", mismatch.language), isCurrent: isCurrent)
-            return nil
+            return await TtsLanguageDownload.offer(for: mismatch, isCurrent: isCurrent)
         }
         let selected = await select(candidates, suggested: suggested, language: mismatch.language)
         guard !Task.isCancelled, isCurrent(), let selected else { return nil }
@@ -26,7 +25,7 @@ enum TtsRecoveryAlert {
 
     private static func select(_ candidates: [TtsRecoveryCandidate], suggested: TtsRecoveryCandidate?, language: String) async -> TtsRecoveryCandidate? {
         let title = L10n.string("tts.recovery.title")
-        let message = suggested.map { L10n.string("tts.recovery.message", language, $0.name) }
+        let message = suggested.map { L10n.string("tts.recovery.message", BookLanguagePicker.title(language), $0.name) }
             ?? L10n.string("tts.recovery.choose")
         #if os(iOS)
         guard let controller = presenter(), controller.presentedViewController == nil else { return nil }

@@ -28,9 +28,11 @@ pub mod ingestion;
 pub mod jobs;
 #[cfg(all(not(target_arch = "wasm32"), feature = "kokoro-sherpa-runtime"))]
 pub mod kokoro_sherpa;
+pub mod language;
 pub mod model_catalog;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod model_store;
+mod parallel_columns;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod paths;
 pub mod pcm;

@@ -30,7 +30,7 @@ struct TtsRecoveryCandidate: Equatable, Sendable {
             let identity = entry.identity
             let session = TtsSessionSelection(provider: identity.provider, runtime: runtime,
                 modelID: identity.modelID, modelRevision: revision, voice: nil)
-            return Self(name: entry.presentation.modelName,
+            return Self(name: identity.provider == "system" ? L10n.string("settings.systemTts") : entry.presentation.modelName,
                 selection: TtsSelection(engine: identity.provider, modelID: identity.modelID, voice: nil, session: session))
         }
     }
@@ -39,7 +39,15 @@ struct TtsRecoveryCandidate: Equatable, Sendable {
 extension ConversionOptions {
     func recovering(with candidate: TtsRecoveryCandidate, language: String) -> Self {
         var copy = self
-        copy.language = language
+        // A compatible second voice serves its own passages; it does not change
+        // the book's language or replace the configured primary voice.
+        if var preferences = copy.ttsPreferences {
+            if preferences.primary != candidate.selection { preferences.secondary = candidate.selection }
+            preferences.policyVersion = 3
+            preferences.allowOnlineFallback = false
+            copy.ttsPreferences = preferences
+            return copy
+        }
         copy.engine = candidate.selection.engine
         copy.modelID = candidate.selection.modelID
         copy.modelPath = nil

@@ -433,7 +433,19 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
                 self.library.recordConversion(jobId: jobId, for: bookID)
             }
             self.reloadData()
-            if let failure = self.viewModel.session.failure, TtsLanguageMismatch.decode(failure) != nil {
+            if let failure = self.viewModel.session.failure, BookLanguageUncertain.decode(failure) != nil,
+               let file = self.viewModel.selectedFile {
+                let requestID = self.viewModel.session.requestID
+                do {
+                    let bookID = try await Task.detached { try BookContentIdentity.hash(of: file) }.value
+                    let recovered = await BookLanguagePicker.recover(failure, bookID: bookID, isCurrent: { [weak self] in
+                        guard let self else { return false }
+                        return self.navigationController?.topViewController === self
+                            && self.viewModel.selectedFile == file && self.viewModel.session.requestID == requestID && !self.viewModel.isSubmitting
+                    })
+                    if recovered { self.submit() }
+                } catch { _ = AppErrorReporter.message(error, context: "Identify conversion source") }
+            } else if let failure = self.viewModel.session.failure, TtsLanguageMismatch.decode(failure) != nil {
                 let file = self.viewModel.selectedFile
                 let requestID = self.viewModel.session.requestID
                 let choice = await TtsRecoveryAlert.choose(for: failure, isCurrent: { [weak self] in

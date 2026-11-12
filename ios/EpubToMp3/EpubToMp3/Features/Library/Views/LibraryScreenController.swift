@@ -122,6 +122,13 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             self.library.update(Self.touchLastOpened(book))
             ReaderSessionState.setCurrentlyReading(bookID: book.id)
         }
+        gridController.onChooseLanguage = { [weak self] book in
+            Task { [weak self] in
+                await BookLanguagePicker.edit(bookID: book.id, isCurrent: { [weak self] in
+                    self?.library.books.contains(where: { $0.id == book.id }) == true
+                })
+            }
+        }
         gridController.onRemove = { [weak self] book in
             self?.presentRemoveAlert(for: book)
         }

@@ -794,3 +794,13 @@
 "readerSettings.audioTracking" = "Follow spoken text";
 "readerSettings.audioTrackingDescription" = "Highlight the current sentence and word while audio is playing.";
 "settings.modelCompatibility.otherLanguage" = "For another language — you can still preview this installed voice.";
+
+/* Book and passage language corrections */
+"language.chooseTitle" = "Book language";
+"language.inconclusive" = "The language could not be identified after analyzing additional passages. Choose the language for this book or passage.";
+"language.automatic" = "Automatic detection";
+"language.passage" = "Passage language";
+"language.downloadTitle" = "Voice for %@";
+"language.downloadMessage" = "Download %@ for the passages in this language. Both languages will be narrated; your primary voice will be kept.";
+"language.choosePrompt" = "Choose a language";
+"language.correctionHelp" = "This choice applies to this book or passage. Choose Automatic detection to remove your correction.";

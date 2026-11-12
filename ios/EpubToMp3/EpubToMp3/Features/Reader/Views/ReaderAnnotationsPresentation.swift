@@ -83,9 +83,32 @@ final class ReaderAnnotationsPresentation: NSObject, UITextViewDelegate {
         let note = UIAction(title: L10n.string("reader.action.addNote")) { [weak self] _ in
             self?.promptForNote(range: range, selectedText: selectedText)
         }
-        let bookmarkMenu = UIMenu(title: "", options: .displayInline, children: [highlight, note])
+        let bookmarkMenu = UIMenu(title: "", options: .displayInline, children: [highlight, note] + (selectionLanguageAction(range: range).map { [$0] } ?? []))
         return UIMenu(children: [bookmarkMenu] + suggestedActions)
     }
+
+private func selectionLanguageScope(range: NSRange) -> PassageLanguageCorrection? {
+    guard let source = document.activePreparedChapter?.chapter ?? document.fulltext?.chapters[safe: document.selectedChapter] else { return nil }
+    return ReaderLanguageSelection.passage(rendered: textView.text, range: range,
+        source: source.text, chapterIndex: source.zeroBasedEpubIndex)
+}
+
+private func selectionLanguageAction(range: NSRange) -> UIAction? {
+    guard let scope = selectionLanguageScope(range: range) else { return nil }
+    let bookID = document.book.id
+    let chapter = document.selectedChapter
+    return UIAction(title: L10n.string("language.passage"), image: UIImage(systemName: "globe")) { [weak self] _ in
+        self?.chooseSelectionLanguage(scope, bookID: bookID, chapter: chapter)
+    }
+}
+
+private func chooseSelectionLanguage(_ scope: PassageLanguageCorrection, bookID: String, chapter: Int) {
+    Task { [weak self] in
+        await BookLanguagePicker.edit(bookID: bookID, passage: scope, isCurrent: { [weak self] in
+            self?.document.book.id == bookID && self?.document.selectedChapter == chapter && self?.isCurrentBook() == true
+        })
+    }
+}
 
     private func promptForNote(range: NSRange, selectedText: String) {
         let alert = UIAlertController(
