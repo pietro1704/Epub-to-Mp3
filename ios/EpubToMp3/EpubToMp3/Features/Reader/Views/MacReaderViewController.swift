@@ -15,6 +15,7 @@ final class MacReaderViewController: NSViewController {
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
+    private let onPlaySelection: (Int, Double) -> Void
     private lazy var composition: MacReaderViewComposition = MacReaderViewComposition(
         view: view, target: self, settings: settings,
         actions: .init(close: #selector(closeReader), contents: #selector(showTOC(_:)),
@@ -46,6 +47,7 @@ final class MacReaderViewController: NSViewController {
         player: AudioPlayer,
         bookmarkStore: BookmarkStore,
         onClose: @escaping () -> Void,
+        onPlaySelection: @escaping (Int, Double) -> Void = { _, _ in },
         preparedRenderer: PreparedChapterRenderer? = nil,
         preparedChapterStore: PreparedReaderChapterStore = .shared,
         preparedFulltextReader: @escaping @Sendable (String) async -> EbookFulltext? = { id in
@@ -64,6 +66,7 @@ final class MacReaderViewController: NSViewController {
         self.player = player
         self.bookmarkStore = bookmarkStore
         self.onClose = onClose
+        self.onPlaySelection = onPlaySelection
         self.preparedRenderer = preparedRenderer ?? .shared
         self.preparedChapterStore = preparedChapterStore
         self.preparedFulltextReader = preparedFulltextReader
@@ -122,6 +125,7 @@ final class MacReaderViewController: NSViewController {
         super.viewDidLoad()
         observeOpenStage("reader_configure_started")
         configureReader()
+        annotations.onPlayFromHere = { [weak self] chapter, ratio in self?.onPlaySelection(chapter, ratio) }
         observeOpenStage("reader_configure_completed")
         textPresentation.observeAppearance()
         loadCurrentBook()

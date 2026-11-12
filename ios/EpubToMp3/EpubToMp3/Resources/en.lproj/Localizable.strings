@@ -223,6 +223,11 @@
 "player.divergence.fromWhereStopped" = "Continue where I left off";
 "player.divergence.fromBeginning" = "From the beginning";
 "common.cancel" = "Cancel";
+
+/* Native reader selection actions. */
+"reader.action.playFromHere" = "Play from here";
+"reader.action.removeHighlight" = "Remove highlight";
+"reader.selection.more" = "More";
 "common.back" = "Back";
 
 /* BookOpenView — error / empty / preparing states */

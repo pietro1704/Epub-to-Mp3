@@ -220,6 +220,11 @@
 "player.divergence.fromWhereStopped" = "Continuar de onde parei";
 "player.divergence.fromBeginning" = "Do início";
 "common.cancel" = "Cancelar";
+
+/* Native reader selection actions. */
+"reader.action.playFromHere" = "Tocar daqui";
+"reader.action.removeHighlight" = "Remover marcação";
+"reader.selection.more" = "Mais";
 "common.back" = "Voltar";
 
 /* BookOpenView — estados de erro / vazio / preparando */

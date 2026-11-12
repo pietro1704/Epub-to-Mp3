@@ -34,6 +34,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         composition.configure(isPaginatedMode: isPaginatedMode, textDelegate: annotations,
             scrollDelegate: interaction, gestureDelegate: interaction)
         textPresentation.applyReaderLayoutMode()
+        annotations.installLegacySelectionActions()
+        annotations.onPlayFromHere = { [weak self] _, ratio in
+            guard let self else { return }
+            self.onSelectionPlaybackRequested?(self.currentReaderChapterIndex, ratio)
+        }
     }
 
     private let preparedRenderer: PreparedChapterRenderer
@@ -98,6 +103,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// hide chrome like the "Ouvir" button until content is ready.
     var onLoadStateChanged: ((Bool) -> Void)?
     var onPlaybackChapterEstimates: (([Int: TimeInterval]) -> Void)?
+    var onSelectionPlaybackRequested: ((Int, Double) -> Void)?
 
     /// The host owns presentation state; it only needs this content fact
     /// while it synchronizes the initial loading cover into its final viewport.

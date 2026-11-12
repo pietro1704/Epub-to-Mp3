@@ -24,13 +24,14 @@ final class MacReaderPlaybackSession {
         self.conversionExecutor = conversionExecutor
     }
 
-    func start(owner: AnyObject, optionsOverride: ConversionOptions? = nil) {
+    func start(owner: AnyObject, optionsOverride: ConversionOptions? = nil,
+               chapterOverride: Int? = nil, pageRatioOverride: Double? = nil) {
         playerPresentation.dismissFullPlayer()
         let defaults = UserDefaults.standard
         guard let bookID = defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               let book = library.books.first(where: { $0.id == bookID }) else { return }
-        let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
-        let pageRatio = defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double
+        let chapterStart = Int32(exactly: chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
+        let pageRatio = pageRatioOverride ?? defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double
         cancel(stopPlayer: false)
         let jobID = UUID().uuidString
         localPlaybackGeneration = jobID
