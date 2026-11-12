@@ -135,30 +135,20 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         }
     }
 
-    private lazy var tocNavigationItem = ReaderViewComposition.makeNavigationItem(target: self,
-        symbol: "list.bullet.indent",
-        identifier: "reader.toc.toggle",
-        label: L10n.string("reader.toc"),
-        action: #selector(presentTOC)
-    )
-    private lazy var readerSettingsNavigationItem = ReaderViewComposition.makeNavigationItem(target: self,
-        symbol: "textformat.size",
-        identifier: "reader.settings.toggle",
-        label: L10n.string("reader.settings"),
-        action: #selector(presentReaderSettings)
-    )
-    private lazy var searchNavigationItem = ReaderViewComposition.makeNavigationItem(target: self,
-        symbol: "magnifyingglass",
-        identifier: "reader.search",
-        label: L10n.string("reader.search"),
-        action: #selector(promptSearch)
-    )
-
-    /// The host owns the iPhone navigation bar. Reader actions live there so
-    /// the reading surface never creates a second toolbar below it.
-    var navigationBarButtonItems: [UIBarButtonItem] {
-        [tocNavigationItem, readerSettingsNavigationItem, searchNavigationItem]
+var onListenRequested: (() -> Void)?
+private lazy var toolBar = ReaderToolBar(defaults: sessionDefaults) { [weak self] tool in
+    guard let self else { return }
+    switch tool {
+    case .appearance: self.presentReaderSettings()
+    case .contents: self.presentTOC()
+    case .search: self.promptSearch()
+    case .footnotes: self.showFootnotes()
+    case .listen: self.onListenRequested?()
     }
+}
+
+/// Stable native bar items let the direct-access tool update without replacing the host bar.
+var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
 
     private static let reimportTypes: [UTType] = SupportedImportTypes.all
 

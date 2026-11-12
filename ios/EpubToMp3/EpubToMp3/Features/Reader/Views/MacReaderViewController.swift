@@ -15,10 +15,12 @@ final class MacReaderViewController: NSViewController {
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
+    private let onListen: () -> Void
     private lazy var composition: MacReaderViewComposition = MacReaderViewComposition(
         view: view, target: self, settings: settings,
         actions: .init(close: #selector(closeReader), contents: #selector(showTOC(_:)),
             search: #selector(promptSearch), settings: #selector(showSettings(_:)),
+            footnotes: #selector(showFootnotes), listen: #selector(listenFromReader),
             retryLoading: #selector(retryLoadingBook)),
         cancelJourney: { [weak self] in self?.cancelActiveBookOpenJourney() },
         onLink: { [weak self] in self?.handleReaderLink($0, linkText: $1) ?? true },
@@ -46,6 +48,7 @@ final class MacReaderViewController: NSViewController {
         player: AudioPlayer,
         bookmarkStore: BookmarkStore,
         onClose: @escaping () -> Void,
+        onListen: @escaping () -> Void = {},
         preparedRenderer: PreparedChapterRenderer? = nil,
         preparedChapterStore: PreparedReaderChapterStore = .shared,
         preparedFulltextReader: @escaping @Sendable (String) async -> EbookFulltext? = { id in
@@ -64,6 +67,7 @@ final class MacReaderViewController: NSViewController {
         self.player = player
         self.bookmarkStore = bookmarkStore
         self.onClose = onClose
+        self.onListen = onListen
         self.preparedRenderer = preparedRenderer ?? .shared
         self.preparedChapterStore = preparedChapterStore
         self.preparedFulltextReader = preparedFulltextReader
@@ -214,6 +218,7 @@ final class MacReaderViewController: NSViewController {
     @objc private func showFootnotes() { annotations.showFootnotes() }
 
     @objc private func closeReader() { onClose() }
+    @objc private func listenFromReader() { onListen() }
 
     private lazy var textPresentation: MacReaderTextPresentation = MacReaderTextPresentation(
         document: document, composition: composition, settings: settings, renderer: preparedRenderer,
