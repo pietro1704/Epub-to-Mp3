@@ -7,6 +7,19 @@ struct ReaderSettingsRows {
     let settings: AppSettings
 
     func cell(for indexPath: IndexPath) -> UITableViewCell {
+        if [0, 4, 5].contains(indexPath.row) {
+            let font = indexPath.row == 0
+            let spacing = indexPath.row == 4
+            let key = font ? "fontSize" : (spacing ? "lineSpacing" : "margin")
+            let values = font ? PointPresetScale.font : (spacing ? PointPresetScale.lineSpacing : PointPresetScale.margin)
+            let current = font ? Double(settings.readerPointSize) : (spacing ? settings.readerLineSpacing : settings.readerMargin)
+            return PointPresetCell.make(in: tableView, title: L10n.string("settings." + key),
+                identifier: "settings.reader." + key, presets: values, current: current) { [weak settings] value in
+                if font { settings?.readerFontSize = PointPresetScale.nearestIndex(to: value, in: PointPresetScale.font) }
+                else if spacing { settings?.readerLineSpacing = value }
+                else { settings?.readerMargin = value }
+            }
+        }
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
         cell.accessoryType = .disclosureIndicator

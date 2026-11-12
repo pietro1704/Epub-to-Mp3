@@ -19,7 +19,7 @@ final class MacSettingsViewController: NSViewController {
         expandedOnOpen: voiceModelsOnly
     )
     private var isClearingDownloads = false
-    private let fontSizeStepper = NSStepper()
+    private let fontSizeSlider = NSSlider()
     private let fontSizeLabel = NSTextField(labelWithString: "")
     private let fontPopup = NSPopUpButton()
     private let themePopup = NSPopUpButton()
@@ -92,11 +92,13 @@ final class MacSettingsViewController: NSViewController {
     }
 
     private func configureControls() {
-        fontSizeStepper.minValue = 0
-        fontSizeStepper.maxValue = 4
-        fontSizeStepper.increment = 1
-        fontSizeStepper.target = self
-        fontSizeStepper.action = #selector(fontSizeChanged(_:))
+        fontSizeSlider.minValue = 0
+        fontSizeSlider.maxValue = 4
+        fontSizeSlider.numberOfTickMarks = 5
+        fontSizeSlider.allowsTickMarkValuesOnly = true
+        fontSizeSlider.isContinuous = true
+        fontSizeSlider.target = self
+        fontSizeSlider.action = #selector(fontSizeChanged(_:))
         ReaderFontCatalog.configure(fontPopup, selected: settings.selectedReaderFontFamily)
         fontPopup.target = self
         fontPopup.action = #selector(fontChanged(_:))
@@ -137,7 +139,7 @@ final class MacSettingsViewController: NSViewController {
         diagnosticsButton.action = #selector(toggleStreamingDiagnostics)
         diagnosticsButton.setAccessibilityIdentifier("settings.recordStreamingDiagnostics")
         diagnosticsLabel.setAccessibilityIdentifier("settings.streamingDiagnosticsStatus")
-        fontSizeStepper.setAccessibilityLabel(L10n.string("settings.fontSize"))
+        fontSizeSlider.setAccessibilityLabel(L10n.string("settings.fontSize"))
         fontPopup.setAccessibilityLabel(L10n.string("settings.font"))
         themePopup.setAccessibilityLabel(L10n.string("settings.theme"))
         layoutPopup.setAccessibilityLabel(L10n.string("settings.layout"))
@@ -162,7 +164,7 @@ final class MacSettingsViewController: NSViewController {
             row(L10n.string("settings.secondaryVoice"), secondaryEnginePopup),
             row(L10n.string("settings.onlineFallbackDescription"), onlineFallbackButton),
         ]
-        let sizeControl = NSStackView(views: [fontSizeStepper, fontSizeLabel])
+        let sizeControl = NSStackView(views: [fontSizeSlider, fontSizeLabel])
         sizeControl.spacing = 8
         sizeControl.alignment = .centerY
         let modelsButton = NSButton(title: L10n.string("settings.voiceModels"), target: self,
@@ -223,8 +225,8 @@ final class MacSettingsViewController: NSViewController {
     }
 
     private func refresh() {
-        fontSizeStepper.integerValue = settings.readerFontSize
-        fontSizeLabel.stringValue = L10n.string("settings.fontStep", settings.readerFontSize + 1, 5)
+        fontSizeSlider.integerValue = settings.readerFontSize
+        fontSizeLabel.stringValue = PointPresetScale.label(Double(settings.readerPointSize))
         ReaderFontCatalog.configure(fontPopup, selected: settings.selectedReaderFontFamily)
         selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0,
                    in: themePopup)
@@ -261,7 +263,7 @@ final class MacSettingsViewController: NSViewController {
             + ByteCountFormatter.string(fromByteCount: usage.budgetBytes, countStyle: .file)
     }
 
-    @objc private func fontSizeChanged(_ sender: NSStepper) {
+    @objc private func fontSizeChanged(_ sender: NSSlider) {
         settings.readerFontSize = sender.integerValue
         fontSizeLabel.stringValue = L10n.string("settings.fontStep", sender.integerValue + 1, 5)
     }
