@@ -3,14 +3,18 @@ import Foundation
 /// Pure layout metrics for the native library grid. Kept UIKit-free so it
 /// is unit-testable off-device.
 ///
-/// Standard text uses two columns; accessibility text uses flexible full-width rows.
+/// Requested density is restored after a temporary width/accessibility constraint.
 struct LibraryGridLayoutMetrics: Equatable {
     var spacing: CGFloat = 20
     var sectionInset: CGFloat = 20
+    var requestedColumns: Int = 2
+    var minimumTileWidth: CGFloat = 120
 
-    /// Width changes tile size, never the requested column count.
     func columnCount(forWidth availableWidth: CGFloat, accessibilityText: Bool = false) -> Int {
-        accessibilityText ? 1 : 2
+        guard !accessibilityText else { return 1 }
+        let usable = max(0, availableWidth - 2 * sectionInset)
+        let fitting = max(1, Int(floor((usable + spacing) / (minimumTileWidth + spacing))))
+        return min(max(1, requestedColumns), fitting)
     }
 
     /// Fill available space after both edge insets and the column gutter.
@@ -30,7 +34,7 @@ import ImageIO
 final class LibraryGridController: UICollectionViewController {
     private enum Section { case main }
 
-    private let metrics: LibraryGridLayoutMetrics
+    private var metrics: LibraryGridLayoutMetrics
     var onOpen: ((BookEntity) -> Void)?
     var onDownload: ((BookEntity) -> Void)?
     var onRemove: ((BookEntity) -> Void)?
@@ -42,6 +46,12 @@ final class LibraryGridController: UICollectionViewController {
     init(metrics: LibraryGridLayoutMetrics) {
         self.metrics = metrics
         super.init(collectionViewLayout: LibraryGridController.makeLayout(metrics: metrics))
+    }
+
+    func setRequestedColumns(_ count: Int) {
+        guard metrics.requestedColumns != count else { return }
+        metrics.requestedColumns = count
+        collectionView.setCollectionViewLayout(Self.makeLayout(metrics: metrics), animated: false)
     }
 
     @available(*, unavailable)

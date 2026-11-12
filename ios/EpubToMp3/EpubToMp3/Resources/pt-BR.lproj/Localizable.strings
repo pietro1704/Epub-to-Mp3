@@ -33,6 +33,9 @@
 "library.addBookAccessibility" = "Adicionar livro";
 "library.sortLibrary" = "Ordenar biblioteca";
 "library.sortBy" = "Ordenar por";
+"library.more" = "Mais opções da biblioteca";
+"library.columns" = "Colunas";
+"library.columnCount" = "%d";
 "library.lastOpened" = "Último aberto";
 "library.titleSort" = "Título";
 "library.dateAdded" = "Data de adição";

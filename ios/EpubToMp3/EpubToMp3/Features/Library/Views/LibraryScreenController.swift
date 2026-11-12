@@ -13,6 +13,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private var sortMode: LibraryGridModel.SortMode = .lastOpened
     private var selectedTag: String?
     private var searchQuery = ""
+    private let columns = LibraryColumnPreference()
     private var downloadRequestID: UUID?
     private let gridController = LibraryGridController(metrics: .init())
     private var gridViewport: LibraryGridViewport?
@@ -85,16 +86,10 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         searchController.searchBar.accessibilityIdentifier = "library.searchBar"
         searchController.searchBar.searchTextField.accessibilityIdentifier = "library.searchField"
         navigationItem.searchController = searchController
-        navigationItem.hidesSearchBarWhenScrolling = false
+        navigationItem.hidesSearchBarWhenScrolling = true
+        definesPresentationContext = true
 
-        // Keep the native UIKit search surface materialized in the deterministic
-        // UI-test fixture. Do not add a second search bar: it changes the
-        // production layout being exercised and can conceal Auto Layout defects.
-        if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
-            definesPresentationContext = true
-            searchController.isActive = true
-            searchController.searchBar.accessibilityValue = "visible"
-        }
+        searchController.searchBar.delegate = self
     }
 
     private func configureToolbar() {
@@ -106,16 +101,18 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
                 action: #selector(addTapped)
             ),
             UIBarButtonItem(
-                image: UIImage(systemName: "arrow.up.arrow.down.circle"),
+                image: UIImage(systemName: "ellipsis.circle"),
                 menu: makeFilterMenu()
             ),
         ]
         navigationItem.rightBarButtonItems?[0].accessibilityLabel = L10n.string("library.addBook")
         navigationItem.rightBarButtonItems?[0].accessibilityHint = L10n.string("library.addBookHint")
-        navigationItem.rightBarButtonItems?[1].accessibilityLabel = L10n.string("library.filterBooks")
+        navigationItem.rightBarButtonItems?[1].accessibilityLabel = L10n.string("library.more")
+        navigationItem.rightBarButtonItems?[1].accessibilityIdentifier = "library.more"
     }
 
     private func configureGrid() {
+        gridController.setRequestedColumns(columns.requestedColumns)
         addChild(gridController)
         gridController.onOpen = { [weak self] book in
             guard let self else { return }
@@ -226,6 +223,19 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     }
 
     private func makeFilterMenu() -> UIMenu {
+        let columnActions = LibraryColumnPreference.choices.map { count in
+            UIAction(title: L10n.string("library.columnCount", count),
+                     state: columns.requestedColumns == count ? .on : .off) { [weak self] _ in
+                guard let self else { return }
+                self.columns.requestedColumns = count
+                self.gridController.setRequestedColumns(count)
+                self.navigationItem.rightBarButtonItems?[1].menu = self.makeFilterMenu()
+            }
+        }
+        let search = UIAction(title: L10n.string("reader.search"), image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in
+            self?.navigationItem.searchController?.isActive = true
+            self?.navigationItem.searchController?.searchBar.becomeFirstResponder()
+        }
         let sortActions = LibraryGridModel.SortMode.allCases.map { mode in
             UIAction(
                 title: mode.label,
@@ -254,6 +264,8 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             }
         }
         return UIMenu(children: [
+            search,
+            UIMenu(title: L10n.string("library.columns"), children: columnActions),
             UIMenu(title: L10n.string("library.sortBy"), options: .displayInline, children: sortActions),
             UIMenu(title: L10n.string("library.tags"), options: .displayInline, children: tagActions),
         ])

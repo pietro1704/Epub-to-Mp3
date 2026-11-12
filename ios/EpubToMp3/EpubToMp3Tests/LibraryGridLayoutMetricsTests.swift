@@ -32,17 +32,41 @@ final class LibraryGridLayoutMetricsTests: XCTestCase {
         XCTAssertGreaterThan(height, 300)
     }
 
-    func testColumnCountStaysAtTwoAcrossSupportedWidths() {
+    func testDefaultDensityFitsWithoutExceedingTheRequestedCount() {
         let metrics = LibraryGridLayoutMetrics()
-        for width: CGFloat in [100, 320, 390, 768, 1024, 1440] {
+        for width: CGFloat in [320, 390, 768, 1024, 1440] {
             XCTAssertEqual(metrics.columnCount(forWidth: width), 2)
         }
+        XCTAssertEqual(metrics.columnCount(forWidth: 100), 1)
     }
 
-    func testUnavailableWidthDoesNotChangeColumnPolicy() {
+    func testUnavailableWidthUsesOneColumnWithoutInvalidArithmetic() {
         let metrics = LibraryGridLayoutMetrics()
-        XCTAssertEqual(metrics.columnCount(forWidth: 0), 2)
-        XCTAssertEqual(metrics.columnCount(forWidth: -100), 2)
+        XCTAssertEqual(metrics.columnCount(forWidth: 0), 1)
+        XCTAssertEqual(metrics.columnCount(forWidth: -100), 1)
+    }
+
+    func testRequestedColumnsReturnAfterNarrowingAndAccessibilityConstraints() {
+        let metrics = LibraryGridLayoutMetrics(requestedColumns: 6)
+        XCTAssertEqual(metrics.columnCount(forWidth: 1200), 6)
+        XCTAssertEqual(metrics.columnCount(forWidth: 320), 2)
+        XCTAssertEqual(metrics.columnCount(forWidth: 1200, accessibilityText: true), 1)
+        XCTAssertEqual(metrics.columnCount(forWidth: 1200), 6)
+        XCTAssertEqual(metrics.requestedColumns, 6)
+        let visible = metrics.columnCount(forWidth: 320)
+        XCTAssertGreaterThanOrEqual(metrics.tileWidth(forWidth: 320, columns: visible), 120)
+    }
+
+    func testColumnPreferenceSurvivesReopeningWithoutSavingTemporaryDensity() throws {
+        let suite = "LibraryColumns.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preference = LibraryColumnPreference(defaults: defaults)
+        XCTAssertEqual(preference.requestedColumns, 2)
+        preference.requestedColumns = 6
+        let metrics = LibraryGridLayoutMetrics(requestedColumns: preference.requestedColumns)
+        XCTAssertEqual(metrics.columnCount(forWidth: 320), 2)
+        XCTAssertEqual(LibraryColumnPreference(defaults: defaults).requestedColumns, 6)
     }
 
     func testTileWidthGrowsInsteadOfAddingColumns() {

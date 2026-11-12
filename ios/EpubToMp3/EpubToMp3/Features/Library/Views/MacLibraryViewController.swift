@@ -21,7 +21,9 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private var books: [BookEntity] = []
 
     private let searchField = NSSearchField()
-    private let sortButton = NSPopUpButton()
+    private let toolbar = NSStackView()
+    private let moreButton = NSButton()
+    private let columns = LibraryColumnPreference()
     private let collectionView = MacLibraryCollectionView()
     private let emptyLabel = NSTextField(wrappingLabelWithString: "")
     private let addButton = NSButton()
@@ -75,39 +77,35 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         searchField.delegate = self
         searchField.setAccessibilityLabel(L10n.string("library.searchPlaceholder"))
         searchField.setAccessibilityIdentifier("library.search")
-        searchField.translatesAutoresizingMaskIntoConstraints = false
-
-        sortButton.removeAllItems()
-        sortButton.addItems(withTitles: LibraryGridModel.SortMode.allCases.map(\.label))
-        sortButton.target = self
-        sortButton.action = #selector(sortChanged(_:))
-        sortButton.setAccessibilityLabel(L10n.string("library.sortLibrary"))
-        sortButton.setAccessibilityIdentifier("library.sort")
-        sortButton.translatesAutoresizingMaskIntoConstraints = false
-
+        searchField.isHidden = true
+        searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let search = NSButton(image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)!,
+                              target: self, action: #selector(revealSearch))
+        search.setAccessibilityLabel(L10n.string("reader.search"))
+        search.setAccessibilityIdentifier("library.revealSearch")
+        moreButton.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: nil)
+        moreButton.target = self
+        moreButton.action = #selector(showMore)
+        moreButton.setAccessibilityLabel(L10n.string("library.more"))
+        moreButton.setAccessibilityIdentifier("library.more")
         let add = toolbarAddButton
         add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
         add.target = self
         add.action = #selector(addTapped)
         add.bezelStyle = .texturedRounded
         add.setAccessibilityLabel(L10n.string("library.addBook"))
-        add.toolTip = L10n.string("library.addBook")
         add.setAccessibilityIdentifier("library.add")
-        add.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(searchField)
-        view.addSubview(sortButton)
-        view.addSubview(add)
-
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        for item in [search, searchField, spacer, moreButton, add] { toolbar.addArrangedSubview(item) }
+        toolbar.spacing = 8
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(toolbar)
         NSLayoutConstraint.activate([
-            searchField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            searchField.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
-            sortButton.leadingAnchor.constraint(equalTo: searchField.trailingAnchor, constant: 8),
-            sortButton.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
-            add.leadingAnchor.constraint(equalTo: sortButton.trailingAnchor, constant: 8),
-            add.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            add.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
-            add.widthAnchor.constraint(equalToConstant: 28),
+            toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            toolbar.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            toolbar.heightAnchor.constraint(greaterThanOrEqualToConstant: 32)
         ])
     }
 
@@ -124,13 +122,15 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         collectionView.backgroundColors = [.clear]
         collectionView.delegate = self
         collectionView.dataSource = self
-        collectionView.collectionViewLayout = MacLibraryCollectionLayout()
+        let layout = MacLibraryCollectionLayout()
+        layout.requestedColumns = columns.requestedColumns
+        collectionView.collectionViewLayout = layout
         scrollView.documentView = collectionView
         view.addSubview(scrollView)
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            scrollView.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 10),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
@@ -185,12 +185,42 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         addButton.isHidden = !empty || !library.books.isEmpty
     }
 
-    @objc
-    private func sortChanged(_ sender: NSPopUpButton) {
-        let modes = LibraryGridModel.SortMode.allCases
-        guard sender.indexOfSelectedItem < modes.count else { return }
-        sortMode = modes[sender.indexOfSelectedItem]
+    @objc private func showMore() {
+        let menu = NSMenu()
+        let columnMenu = NSMenu()
+        for count in LibraryColumnPreference.choices {
+            let item = NSMenuItem(title: L10n.string("library.columnCount", count),
+                                  action: #selector(changeColumns(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = count
+            item.state = columns.requestedColumns == count ? .on : .off
+            columnMenu.addItem(item)
+        }
+        let columnItem = NSMenuItem(title: L10n.string("library.columns"), action: nil, keyEquivalent: "")
+        columnItem.submenu = columnMenu
+        menu.addItem(columnItem)
+        menu.addItem(.separator())
+        for (index, mode) in LibraryGridModel.SortMode.allCases.enumerated() {
+            let item = NSMenuItem(title: mode.label, action: #selector(changeSort(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.state = mode == sortMode ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: moreButton.bounds.maxY), in: moreButton)
+    }
+
+    @objc private func changeSort(_ sender: NSMenuItem) {
+        guard LibraryGridModel.SortMode.allCases.indices.contains(sender.tag) else { return }
+        sortMode = LibraryGridModel.SortMode.allCases[sender.tag]
         reload()
+    }
+
+    @objc private func changeColumns(_ sender: NSMenuItem) {
+        columns.requestedColumns = sender.tag
+        guard let layout = collectionView.collectionViewLayout as? MacLibraryCollectionLayout else { return }
+        layout.requestedColumns = columns.requestedColumns
+        layout.updateItemSize()
     }
 
     @objc
@@ -224,8 +254,12 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     }
 
     func focusSearch() {
+        searchField.isHidden = false
+        toolbar.layoutSubtreeIfNeeded()
         view.window?.makeFirstResponder(searchField)
     }
+
+    @objc private func revealSearch() { focusSearch() }
 
     private func presentImportError(_ error: Error) {
         AppErrorReporter.message(error, context: "Library import")
@@ -344,44 +378,6 @@ final class MacLibraryScrollView: NSScrollView {
         guard let collectionView = documentView as? NSCollectionView,
               let layout = collectionView.collectionViewLayout as? MacLibraryCollectionLayout else { return }
         layout.updateItemSize()
-    }
-}
-
-/// Two columns sized from the visible viewport, including a non-overlay scroller.
-final class MacLibraryCollectionLayout: NSCollectionViewFlowLayout {
-    override init() {
-        super.init()
-        minimumInteritemSpacing = 18
-        minimumLineSpacing = 24
-        sectionInset = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-    }
-
-    func updateItemSize() {
-        guard let collectionView else { return }
-        let viewportWidth = collectionView.enclosingScrollView?.contentView.bounds.width
-            ?? collectionView.bounds.width
-        guard viewportWidth > sectionInset.left + sectionInset.right + minimumInteritemSpacing else { return }
-        // Round down so fractional viewport widths cannot push the second item out.
-        let width = floor((viewportWidth - sectionInset.left - sectionInset.right
-            - minimumInteritemSpacing) / 2)
-        let size = NSSize(width: width, height: width * 1.5 + 110)
-        let documentWidthChanged = collectionView.frame.width != viewportWidth
-        guard itemSize != size || documentWidthChanged else { return }
-        if documentWidthChanged {
-            collectionView.setFrameSize(NSSize(width: viewportWidth, height: collectionView.frame.height))
-        }
-        itemSize = size
-        invalidateLayout()
-        collectionView.needsLayout = true
-    }
-
-    override func shouldInvalidateLayout(forBoundsChange newBounds: NSRect) -> Bool {
-        newBounds.width != collectionView?.bounds.width
-            || super.shouldInvalidateLayout(forBoundsChange: newBounds)
     }
 }
 
