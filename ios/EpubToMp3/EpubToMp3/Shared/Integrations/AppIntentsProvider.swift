@@ -10,9 +10,9 @@ private enum IntentFailure: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noLibrary:
-            return "No books found in your library. Import an EPUB first."
+            return L10n.string("intents.noLibrary")
         case .bookNotFound(let title):
-            return "No book matching \"\(title)\" found in your library."
+            return L10n.string("intents.bookNotFound", title)
         }
     }
 }

@@ -104,7 +104,7 @@ final class ReaderPageNavigation {
         }
         turningPage.accessibilityIdentifier = "reader.pageCurl"
         turningPage.isAccessibilityElement = true
-        turningPage.accessibilityLabel = "Page turning"
+        turningPage.accessibilityLabel = L10n.string("reader.pageTurning")
         turningPage.layer.isDoubleSided = false
         turningPage.layer.anchorPoint = CGPoint(x: 0, y: 0.5)
         turningPage.layer.position = CGPoint(x: frame.minX, y: frame.midY)

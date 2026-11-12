@@ -48,7 +48,7 @@ enum LibraryImportFiles {
 
     private static func importContentChangedError() -> NSError {
         NSError(domain: "LibraryStore", code: 7,
-                userInfo: [NSLocalizedDescriptionKey: "The selected book content changed during import."])
+                userInfo: [NSLocalizedDescriptionKey: L10n.string("library.error.changedDuringImport")])
     }
 
     static func importedBooksDirectory(
