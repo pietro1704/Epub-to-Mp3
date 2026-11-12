@@ -81,12 +81,12 @@ enum LibraryBookmarkAccess {
                 domain: "LibraryStore",
                 code: 408,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "Timed out opening this book's file — it may be stuck downloading from iCloud. Check your connection and try again."]
+                    L10n.string("library.error.openTimeout")]
             )
         }
         guard let result = box.result else {
             throw NSError(domain: "LibraryStore", code: 500,
-                          userInfo: [NSLocalizedDescriptionKey: "Bookmark resolution finished without a result."])
+                          userInfo: [NSLocalizedDescriptionKey: L10n.string("library.error.fileUnavailable")])
         }
         switch result {
         case .success(let value): return value

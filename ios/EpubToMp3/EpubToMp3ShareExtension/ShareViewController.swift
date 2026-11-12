@@ -145,7 +145,7 @@ final class ShareViewController: UIViewController {
         try Task.checkCancellation()
         guard acceptedTypeIdentifiers.contains(typeIdentifier) else {
             throw NSError(domain: "ShareViewController", code: 101,
-                          userInfo: [NSLocalizedDescriptionKey: "Unsupported attachment type (\(typeIdentifier))."])
+                          userInfo: [NSLocalizedDescriptionKey: L10n.string("share.unsupportedAttachment", typeIdentifier)])
         }
         let ext = typeIdentifier == UTType.pdf.identifier ? "pdf" : "epub"
         let fileAccess = ShareAttachmentFileAccess(fileManager)

@@ -15,7 +15,7 @@ enum LibraryImportPreparation {
             throw NSError(
                 domain: "LibraryStore",
                 code: 0,
-                userInfo: [NSLocalizedDescriptionKey: "The selected book URL is invalid or unavailable."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.string("library.error.fileUnavailable")]
             )
         }
         // Sandbox: the parent grants us access to the user-picked URL
@@ -46,7 +46,7 @@ enum LibraryImportPreparation {
                 code: 1,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Cannot read \(url.lastPathComponent). The system denied access — try moving the file to a folder the app has permission to read (Documents, Downloads), or re-pick it from the file picker."
+                        L10n.string("library.error.fileAccess", url.lastPathComponent)
                 ]
             )
         }
@@ -60,7 +60,7 @@ enum LibraryImportPreparation {
                 code: 2,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Failed to read \(url.lastPathComponent): \(error.localizedDescription)"
+                        L10n.string("library.error.fileRead", url.lastPathComponent, error.localizedDescription)
                 ]
             )
         }
