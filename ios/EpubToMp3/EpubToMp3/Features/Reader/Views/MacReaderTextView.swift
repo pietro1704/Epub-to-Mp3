@@ -62,6 +62,10 @@ final class MacReaderTextView: NSTextView, NSTextViewDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if selectedRange().length > 0 || event.clickCount > 1 {
+            super.mouseUp(with: event)
+            return
+        }
         let location = convert(event.locationInWindow, from: nil)
         if let characterIndex = characterIndex(at: location), shouldDeferMouseUpToTextSystem(at: characterIndex) {
             super.mouseUp(with: event)

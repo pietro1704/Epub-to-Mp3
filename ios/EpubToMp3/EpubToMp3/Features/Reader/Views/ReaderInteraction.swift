@@ -113,7 +113,14 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
         // UITextView installs its own single-tap recognizers for selectable
         // text. Let the reader's non-link tap reach the immersive action too;
         // long-press selection and link handling keep their native behavior.
-        gestureRecognizer === composition.pageTap || otherGestureRecognizer === composition.pageTap
+        guard !(gestureRecognizer is UILongPressGestureRecognizer),
+              !(otherGestureRecognizer is UILongPressGestureRecognizer) else { return false }
+        return gestureRecognizer === composition.pageTap || otherGestureRecognizer === composition.pageTap
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        gestureRecognizer === composition.pageTap && otherGestureRecognizer is UILongPressGestureRecognizer
     }
 
     func gestureRecognizer(
@@ -135,6 +142,7 @@ final class ReaderInteraction: NSObject, UIScrollViewDelegate, UIGestureRecogniz
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard composition.textView.selectedRange.length == 0 else { return false }
         // Chrome requests are latest-wins. They must be accepted while a
         // previous viewport transaction is committing, whereas page turns
         // still wait for that final geometry.

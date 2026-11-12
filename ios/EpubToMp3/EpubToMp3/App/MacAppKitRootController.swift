@@ -292,7 +292,11 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             player: player,
             bookmarkStore: bookmarkStore,
             onClose: { [weak self] in self?.show(.library) },
-            onListen: { [weak self] in self?.playFromCurrentReaderPosition() }
+            onListen: { [weak self] in self?.playFromCurrentReaderPosition() },
+            onPlaySelection: { [weak self] chapter, ratio in
+                guard let self else { return }
+                self.playbackSession.start(owner: self, chapterOverride: chapter, pageRatioOverride: ratio)
+            }
         )
         reader.setBook(bookID)
         if let current = detailController {

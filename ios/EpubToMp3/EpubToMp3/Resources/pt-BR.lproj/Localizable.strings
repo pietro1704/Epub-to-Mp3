@@ -578,6 +578,9 @@
 "reader.footnotes.empty" = "Este capítulo não tem notas de rodapé.";
 "reader.search" = "Pesquisar";
 "reader.more" = "Mais opções do leitor";
+"reader.action.playFromHere" = "Tocar daqui";
+"reader.action.removeHighlight" = "Remover marcação";
+"reader.selection.more" = "Mais";
 "reader.search.placeholder" = "Pesquisar no livro";
 "reader.search.currentChapter" = "Pesquise neste capítulo enquanto o restante do livro fica disponível.";
 "reader.search.unavailable" = "A pesquisa não está disponível nesta visualização do documento.";
