@@ -9,11 +9,14 @@ final class MacSettingsViewController: NSViewController {
     private let clearDownloadsOperation: () async throws -> Void
     private let speechModels: SpeechModelLibraryClient
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
+    private let voiceModelsOnly: Bool
+    private var voiceModelDestination: MacSettingsDetailNavigation?
     private var speechModelState: SpeechModelLibraryViewState
     private lazy var speechModelPanel = MacSpeechModelLibraryPanel(
         settings: settings,
         speechModels: speechModels,
-        termsAcceptance: termsAcceptance
+        termsAcceptance: termsAcceptance,
+        expandedOnOpen: voiceModelsOnly
     )
     private var isClearingDownloads = false
     private let fontSizeStepper = NSStepper()
@@ -38,11 +41,13 @@ final class MacSettingsViewController: NSViewController {
          confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
          clearDownloadsOperation: (() async throws -> Void)? = nil,
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(),
-         speechModels: SpeechModelLibraryClient = .shared) {
+         speechModels: SpeechModelLibraryClient = .shared,
+         voiceModelsOnly: Bool = false) {
         self.settings = settings
         self.library = library
         self.speechModels = speechModels
         self.termsAcceptance = termsAcceptance
+        self.voiceModelsOnly = voiceModelsOnly
         self.speechModelState = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
         self.clearDownloadsOperation = clearDownloadsOperation ?? {
             try await AudioStorageMaintenance().clearAllDownloads()
@@ -50,7 +55,7 @@ final class MacSettingsViewController: NSViewController {
         self.diagnosticsSession = diagnosticsSession ?? .shared
         self.confirmStreamingDiagnostics = confirmStreamingDiagnostics
         super.init(nibName: nil, bundle: nil)
-        title = L10n.string("settings.title")
+        title = L10n.string(voiceModelsOnly ? "settings.voiceModels" : "settings.title")
     }
 
     @available(*, unavailable)
@@ -160,7 +165,12 @@ final class MacSettingsViewController: NSViewController {
         let sizeControl = NSStackView(views: [fontSizeStepper, fontSizeLabel])
         sizeControl.spacing = 8
         sizeControl.alignment = .centerY
-        let rows = [row(L10n.string("settings.embeddedServer"), statusLabel)] + audioEngineRows + [
+        let modelsButton = NSButton(title: L10n.string("settings.voiceModels"), target: self,
+                                   action: #selector(showVoiceModels))
+        modelsButton.setAccessibilityIdentifier("settings.speechModels.disclosure")
+        let rows = voiceModelsOnly ? audioEngineRows : [
+            row(L10n.string("settings.embeddedServer"), statusLabel),
+            row(L10n.string("settings.voiceModels"), modelsButton),
             row(L10n.string("settings.fontSize"), sizeControl),
             row(L10n.string("settings.font"), fontPopup),
             row(L10n.string("settings.theme"), themePopup),
@@ -174,16 +184,42 @@ final class MacSettingsViewController: NSViewController {
         grid.column(at: 0).width = 180
         grid.column(at: 0).xPlacement = .trailing
         grid.column(at: 1).xPlacement = .leading
-        let form = NSStackView(views: [grid, refreshButton, exportDiagnosticsButton,
+        let form = NSStackView(views: voiceModelsOnly ? [grid] : [grid, refreshButton, exportDiagnosticsButton,
                                       diagnosticsButton, diagnosticsLabel, clearButton])
         form.orientation = .vertical
         form.alignment = .leading
         form.spacing = 16
         form.translatesAutoresizingMaskIntoConstraints = false
         grid.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
-        diagnosticsLabel.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
+        if !voiceModelsOnly { diagnosticsLabel.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true }
         MacScrollableStack.install(form, in: view)
         rebuildNarrationChoices()
+    }
+
+    @objc private func showVoiceModels() {
+        guard voiceModelDestination == nil else { return }
+        let previousViews = view.subviews.map { ($0, $0.isHidden) }
+        let detail = MacSettingsViewController(settings: settings, library: library,
+            termsAcceptance: termsAcceptance, speechModels: speechModels, voiceModelsOnly: true)
+        let destination = MacSettingsDetailNavigation(detail: detail) { [weak self] in
+            guard let self, let destination = self.voiceModelDestination else { return }
+            destination.view.removeFromSuperview()
+            destination.removeFromParent()
+            self.voiceModelDestination = nil
+            previousViews.forEach { $0.0.isHidden = $0.1 }
+            self.refresh()
+        }
+        voiceModelDestination = destination
+        previousViews.forEach { $0.0.isHidden = true }
+        addChild(destination)
+        destination.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(destination.view)
+        NSLayoutConstraint.activate([
+            destination.view.topAnchor.constraint(equalTo: view.topAnchor),
+            destination.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            destination.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            destination.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
     }
 
     private func refresh() {
