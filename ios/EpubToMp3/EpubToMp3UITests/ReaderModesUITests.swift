@@ -90,9 +90,7 @@ final class ReaderModesUITests: XCTestCase {
     }
 
     func openReaderSettings(_ app: XCUIApplication) throws {
-        let settings = app.buttons["reader.settings.toggle"].firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 10), "Reader settings button must be available.")
-        settings.tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.settings.toggle", title: "Reader settings")
         XCTAssertTrue(
             app.cells["reader.settings.mode"].firstMatch.waitForExistence(timeout: 5),
             "The settings sheet must expose its reader-mode control through a stable identifier."

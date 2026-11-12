@@ -41,7 +41,7 @@ final class ScrollFlickerUITests: XCTestCase {
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
         firstBook.tap()
         // Reader chrome present == inside the book.
-        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
+        guard app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
         }
         resetProbe(app)
@@ -75,7 +75,7 @@ final class ScrollFlickerUITests: XCTestCase {
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
         firstBook.tap()
-        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
+        guard app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
         }
         sleep(1)

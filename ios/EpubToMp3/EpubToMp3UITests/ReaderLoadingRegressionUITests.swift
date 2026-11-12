@@ -111,14 +111,14 @@ final class ReaderLoadingRegressionUITests: XCTestCase {
         XCTAssertGreaterThan(pageNumbers(indicatorValue(indicator)).first ?? 0, initialPage,
                              "A real right-side screen tap must advance the page.")
 
-        let search = app.buttons["reader.search"].firstMatch
-        XCTAssertTrue(search.exists, "Reader chrome should initially be visible.")
+        let chrome = app.buttons["reader.more"].firstMatch
+        XCTAssertTrue(chrome.exists, "Reader chrome should initially be visible.")
         // This is intentionally above the vertical midpoint. The middle
         // column must toggle chrome regardless of y position.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.28)).tap()
-        XCTAssertTrue(search.waitForNonExistence(timeout: 3), "Middle-column tap must hide reader chrome.")
+        XCTAssertTrue(chrome.waitForNonExistence(timeout: 3), "Middle-column tap must hide reader chrome.")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.28)).tap()
-        XCTAssertTrue(search.waitForExistence(timeout: 3), "Second middle-column tap must restore reader chrome.")
+        XCTAssertTrue(chrome.waitForExistence(timeout: 3), "Second middle-column tap must restore reader chrome.")
     }
 
     func testLoadingCoverFitsLandscapeSafeViewport() throws {

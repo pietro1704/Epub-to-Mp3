@@ -30,7 +30,7 @@ final class PhysicalDeviceApproximateSeekUITests: XCTestCase {
         XCTAssertTrue(tile.waitForExistence(timeout: 10))
         let visible = tile.frame.intersection(collection.frame)
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: visible.midX, dy: visible.minY + 30)).tap()
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
         app.buttons["miniPlayer.playPause"].firstMatch.tap()
         let choice = app.buttons["From current page"].firstMatch

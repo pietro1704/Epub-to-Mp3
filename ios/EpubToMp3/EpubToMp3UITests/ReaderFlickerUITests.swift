@@ -36,8 +36,8 @@ final class ReaderFlickerUITests: XCTestCase {
         firstBook.tap()
 
         // Reader chrome present == we're inside the book.
-        let searchButton = app.buttons["reader.search"].firstMatch
-        guard searchButton.waitForExistence(timeout: 20) else {
+        let readerChrome = app.buttons["reader.more"].firstMatch
+        guard readerChrome.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open; skipping flicker test.")
         }
         return app

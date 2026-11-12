@@ -77,13 +77,13 @@ final class ReaderChapterPositionUITests: XCTestCase {
     }
 
     private func openBookIfNeeded(_ app: XCUIApplication) throws {
-        if !app.buttons["reader.toc.toggle"].firstMatch.waitForExistence(timeout: 5) {
+        if !app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 5) {
             try openBook(app)
         } else { try waitForReader(app) }
     }
 
     private func waitForReader(_ app: XCUIApplication) throws {
-        XCTAssertTrue(app.buttons["reader.toc.toggle"].firstMatch.waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 60))
         let loaded = app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60)
         XCTAssertTrue(loaded, "Reader must finish loading: \(app.staticTexts.matching(identifier: "reader.paginationProbe").allElementsBoundByIndex.map(\.label))")
         XCTAssertTrue(wait {
@@ -102,7 +102,7 @@ final class ReaderChapterPositionUITests: XCTestCase {
     }
 
     private func selectChapter(containing title: String, app: XCUIApplication) throws {
-        app.buttons["reader.toc.toggle"].firstMatch.tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
         let table = app.tables.firstMatch
         XCTAssertTrue(table.waitForExistence(timeout: 5))
         let target = table.cells.containing(NSPredicate(format: "label CONTAINS[c] %@", title)).firstMatch

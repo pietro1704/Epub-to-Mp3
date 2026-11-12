@@ -33,7 +33,7 @@ final class RealBookReaderUITests: XCTestCase {
         XCTAssertTrue(app.alerts.staticTexts["No matches found"].waitForExistence(timeout: 15))
         app.alerts.buttons["OK"].firstMatch.tap()
         XCTAssertEqual(harness.paginationMetrics?.values["offset"], before.values["offset"])
-        app.buttons["reader.search"].tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.search", title: "Search")
         let field = app.alerts.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText("DESTINATION7964")
@@ -102,7 +102,7 @@ final class RealBookReaderUITests: XCTestCase {
         viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
             .press(forDuration: 0.1, thenDragTo: viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)))
         XCTAssertTrue(waitUntil(timeout: 5) { (offset() ?? initialOffset) > initialOffset + 50 })
-        XCTAssertTrue(app.buttons["reader.search"].isHittable, "Scrolling must preserve visible chrome.")
+        XCTAssertTrue(app.buttons["reader.more"].isHittable, "Scrolling must preserve visible chrome.")
         let harness = ReaderModesHarness(app: app)
         let settledOffset = try XCTUnwrap(offset())
         harness.toggleChromeAndSettle(visible: false)
@@ -142,7 +142,7 @@ final class RealBookReaderUITests: XCTestCase {
         harness.assertNoClippedLines(scenario: "Dark reader at \(category)")
         retainLiveCapture(app, name: "dark-\(category)-reader")
         let before = try XCTUnwrap(harness.paginationMetrics)
-        app.buttons["reader.search"].tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.search", title: "Search")
         let cancel = app.alerts.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 5))
         let alert = app.alerts.firstMatch
@@ -227,13 +227,13 @@ final class RealBookReaderUITests: XCTestCase {
         let visible = visibleTile()
         XCTAssertGreaterThanOrEqual(visible.height, 44, "The book card must expose a usable tap target.")
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: visible.midX, dy: visible.midY)).tap()
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
         return app
     }
 
     private func submitLiveSearch(_ query: String, app: XCUIApplication) {
-        app.buttons["reader.search"].tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.search", title: "Search")
         let field = app.alerts.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText(query)
@@ -268,7 +268,7 @@ final class RealBookReaderUITests: XCTestCase {
             let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"].firstMatch
             XCTAssertTrue(tile.waitForExistence(timeout: 30))
             tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
-            XCTAssertTrue(app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 60))
+            XCTAssertTrue(app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 60))
             XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
             let harness = ReaderModesHarness(app: app)
             XCTAssertTrue(waitUntil(timeout: 30) {
@@ -361,7 +361,7 @@ final class RealBookReaderUITests: XCTestCase {
         // The development seed can otherwise leave the same book mounted in
         // MainReaderScreenController while the library presents a second one.
         tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].waitForNonExistence(timeout: 60),
                       "Reader navigation is intentionally blocked until loading finishes.")
         let deadline = Date().addingTimeInterval(60)
@@ -403,7 +403,7 @@ final class RealBookReaderUITests: XCTestCase {
         let closePlayer = app.buttons["fullPlayer.close"].firstMatch
         XCTAssertTrue(closePlayer.isHittable)
         closePlayer.tap()
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 5))
         let afterPlayer = try XCTUnwrap(harness.paginationMetrics)
         XCTAssertEqual(afterPlayer.values["offset"], beforePlayer.values["offset"])
         harness.assertNoClippedLines(scenario: "expanded player dismissal")

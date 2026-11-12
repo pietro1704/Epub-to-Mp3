@@ -31,7 +31,7 @@ final class SafeAreaCaptureUITests: XCTestCase {
             throw XCTSkip("No book in library.")
         }
         firstBook.tap()
-        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
+        guard app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
         }
         sleep(2)
