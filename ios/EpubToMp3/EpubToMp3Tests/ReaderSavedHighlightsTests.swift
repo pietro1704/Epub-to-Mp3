@@ -40,8 +40,21 @@ final class ReaderSavedHighlightsTests: XCTestCase {
 
     func testPlaybackOffsetUsesUnicodeScalarBoundariesInsteadOfUTF16Length() {
         let source = "😀 Text continues"
-        XCTAssertEqual(ReaderSavedHighlights.playbackRatio(at: 3, in: source), 2.0 / Double(source.unicodeScalars.count))
-        XCTAssertNil(ReaderSavedHighlights.playbackRatio(at: -1, in: source))
+        XCTAssertEqual(ReaderSavedHighlights.playbackRatio(selection: NSRange(location: 3, length: 4),
+            rendered: source, source: source), 2.0 / Double(source.unicodeScalars.count))
+        XCTAssertNil(ReaderSavedHighlights.playbackRatio(selection: NSRange(location: -1, length: 1),
+            rendered: source, source: source))
+    }
+
+    func testPlaybackStartsAtTheSelectedSourceOccurrenceAfterWhitespaceNormalization() throws {
+        let rendered = "😀 First repeated text. Second repeated text."
+        let source = "😀 First   repeated text.\n\nSecond  repeated text."
+        let selection = (rendered as NSString).range(of: "repeated text.", options: .backwards)
+        let expected = Double("😀 First   repeated text.\n\nSecond  ".unicodeScalars.count) / Double(source.unicodeScalars.count)
+        XCTAssertEqual(try XCTUnwrap(ReaderSavedHighlights.playbackRatio(selection: selection,
+            rendered: rendered, source: source)), expected, accuracy: 0.0000001)
+        XCTAssertNil(ReaderSavedHighlights.playbackRatio(selection: NSRange(location: 0, length: 6),
+            rendered: "repeat", source: "repeat repeat"))
     }
 
     private func mark(start: Int, end: Int, text: String) -> Bookmark {
