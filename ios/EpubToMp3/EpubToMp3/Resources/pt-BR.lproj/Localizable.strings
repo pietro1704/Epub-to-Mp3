@@ -737,6 +737,16 @@
 "tts.recovery.message" = "O modelo atual não suporta %@. Modelo sugerido: %@. A troca vale somente para esta conversão.";
 "tts.recovery.use" = "Usar %@";
 "tts.recovery.choose" = "Escolher outro modelo";
+/* Book and passage language corrections */
+"language.chooseTitle" = "Idioma do livro";
+"language.inconclusive" = "Não foi possível identificar o idioma após analisar outros trechos. Escolha o idioma deste livro ou trecho.";
+"language.automatic" = "Detecção automática";
+"language.passage" = "Idioma do trecho";
+"language.downloadTitle" = "Voz para %@";
+"language.downloadMessage" = "Baixe %@ para os trechos neste idioma. Os dois idiomas serão narrados; sua voz primária será mantida.";
+"language.choosePrompt" = "Escolha um idioma";
+"language.correctionHelp" = "Esta escolha vale para este livro ou trecho. Selecione Detecção automática para remover sua correção.";
+
 "tts.recovery.none" = "Nenhum modelo instalado e pronto suporta %@. Você pode instalar um modelo compatível nos Ajustes ou cancelar e continuar lendo.";
 "settings.modelInstall.alreadyActive" = "Já há uma instalação em andamento para este modelo.";
 "error.pdfOpen" = "Não foi possível abrir %@. O PDF pode estar danificado.";
@@ -794,13 +804,3 @@
 "readerSettings.audioTracking" = "Acompanhar leitura";
 "readerSettings.audioTrackingDescription" = "Destacar a frase e a palavra enquanto o áudio estiver tocando.";
 "settings.modelCompatibility.otherLanguage" = "Para outro idioma — você ainda pode ouvir esta voz instalada.";
-
-/* Book and passage language corrections */
-"language.chooseTitle" = "Idioma do livro";
-"language.inconclusive" = "Não foi possível identificar o idioma após analisar outros trechos. Escolha o idioma deste livro ou trecho.";
-"language.automatic" = "Detecção automática";
-"language.passage" = "Idioma do trecho";
-"language.downloadTitle" = "Voz para %@";
-"language.downloadMessage" = "Baixe %@ para os trechos neste idioma. Os dois idiomas serão narrados; sua voz primária será mantida.";
-"language.choosePrompt" = "Escolha um idioma";
-"language.correctionHelp" = "Esta escolha vale para este livro ou trecho. Selecione Detecção automática para remover sua correção.";
