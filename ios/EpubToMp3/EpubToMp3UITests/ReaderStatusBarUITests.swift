@@ -13,15 +13,15 @@ final class ReaderStatusBarUITests: XCTestCase {
         app = nil
     }
 
-    func testPaginatedReaderHidesAndRestoresSystemStatusBar() throws {
-        try verifyStatusBarFollowsChrome(layout: "paginated")
+    func testPaginatedReaderKeepsStatusBarHiddenUntilReturningToLibrary() throws {
+        try verifyStatusBarPreservesReaderSafeArea(layout: "paginated")
     }
 
-    func testScrollingReaderHidesAndRestoresSystemStatusBar() throws {
-        try verifyStatusBarFollowsChrome(layout: "scrolling")
+    func testScrollingReaderKeepsStatusBarHiddenUntilReturningToLibrary() throws {
+        try verifyStatusBarPreservesReaderSafeArea(layout: "scrolling")
     }
 
-    private func verifyStatusBarFollowsChrome(layout: String) throws {
+    private func verifyStatusBarPreservesReaderSafeArea(layout: String) throws {
         XCUIDevice.shared.orientation = .portrait
         let application = XCUIApplication()
         // Exercise the staged native EPUB without replacing the user's library
@@ -41,7 +41,7 @@ final class ReaderStatusBarUITests: XCTestCase {
             .firstMatch.waitForExistence(timeout: 20), "The staged LOTR EPUB must be available.")
         try harness.openBook(titleContaining: "lord")
         XCTAssertTrue(harness.chromeIsVisible)
-        assertStatusBar(visible: true, in: application, scenario: "reader with chrome")
+        assertStatusBar(visible: false, in: application, scenario: "reader with chrome")
 
         let viewport = application.scrollViews["reader.viewport"].firstMatch
         XCTAssertTrue(viewport.waitForExistence(timeout: 5))
@@ -68,7 +68,7 @@ final class ReaderStatusBarUITests: XCTestCase {
                 harness.assertNoClippedLines(scenario: "immersive status bar \(iteration)")
             }
             toggleChrome(harness, layout: layout, visible: true)
-            assertStatusBar(visible: true, in: application, scenario: "restored \(iteration)")
+            assertStatusBar(visible: false, in: application, scenario: "restored \(iteration)")
             XCTAssertEqual(viewport.frame, originalFrame)
             XCTAssertEqual(harness.paginationMetrics?.values["offset"], originalOffset)
             XCTAssertEqual(harness.paginationMetrics?.values["first"], originalAnchor)
@@ -80,7 +80,7 @@ final class ReaderStatusBarUITests: XCTestCase {
         // A later show request must win when toggles arrive in quick succession.
         tapChrome(harness, layout: layout)
         tapChrome(harness, layout: layout)
-        assertStatusBar(visible: true, in: application, scenario: "consecutive toggles")
+        assertStatusBar(visible: false, in: application, scenario: "consecutive toggles")
         XCTAssertTrue(harness.chromeIsVisible)
         XCTAssertEqual(harness.paginationMetrics?.values["offset"], originalOffset)
 

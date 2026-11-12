@@ -15,6 +15,8 @@ final class MacReaderViewController: NSViewController {
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
+    private let onChromeChanged: (Bool) -> Void
+    private var chromeHidden = false
     private lazy var composition: MacReaderViewComposition = MacReaderViewComposition(
         view: view, target: self, settings: settings,
         actions: .init(close: #selector(closeReader), contents: #selector(showTOC(_:)),
@@ -46,6 +48,7 @@ final class MacReaderViewController: NSViewController {
         player: AudioPlayer,
         bookmarkStore: BookmarkStore,
         onClose: @escaping () -> Void,
+        onChromeChanged: @escaping (Bool) -> Void = { _ in },
         preparedRenderer: PreparedChapterRenderer? = nil,
         preparedChapterStore: PreparedReaderChapterStore = .shared,
         preparedFulltextReader: @escaping @Sendable (String) async -> EbookFulltext? = { id in
@@ -64,6 +67,7 @@ final class MacReaderViewController: NSViewController {
         self.player = player
         self.bookmarkStore = bookmarkStore
         self.onClose = onClose
+        self.onChromeChanged = onChromeChanged
         self.preparedRenderer = preparedRenderer ?? .shared
         self.preparedChapterStore = preparedChapterStore
         self.preparedFulltextReader = preparedFulltextReader
@@ -82,6 +86,7 @@ final class MacReaderViewController: NSViewController {
 
     override func loadView() {
         let surface = MacReaderSurfaceView()
+        surface.onToggleChrome = { [weak self] in self?.toggleChrome() }
         surface.onKeyDown = { [weak self] event in
             self?.handleKeyboardEvent(event) ?? false
         }
@@ -122,6 +127,7 @@ final class MacReaderViewController: NSViewController {
         super.viewDidLoad()
         observeOpenStage("reader_configure_started")
         configureReader()
+        composition.textView.onToggleChrome = { [weak self] in self?.toggleChrome() }
         observeOpenStage("reader_configure_completed")
         textPresentation.observeAppearance()
         loadCurrentBook()
@@ -214,6 +220,11 @@ final class MacReaderViewController: NSViewController {
     @objc private func showFootnotes() { annotations.showFootnotes() }
 
     @objc private func closeReader() { onClose() }
+    private func toggleChrome() {
+        chromeHidden.toggle()
+        composition.setChromeHidden(chromeHidden)
+        onChromeChanged(chromeHidden)
+    }
 
     private lazy var textPresentation: MacReaderTextPresentation = MacReaderTextPresentation(
         document: document, composition: composition, settings: settings, renderer: preparedRenderer,

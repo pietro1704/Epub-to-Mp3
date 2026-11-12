@@ -36,7 +36,7 @@ enum MacReaderTheme {
         surface.wantsLayer = true
         surface.layer?.backgroundColor = colors.background.cgColor
         toolbar?.wantsLayer = true
-        toolbar?.layer?.backgroundColor = colors.background.cgColor
+        toolbar?.layer?.backgroundColor = nil
         scrollView.drawsBackground = true
         scrollView.backgroundColor = colors.background
         textView.drawsBackground = true

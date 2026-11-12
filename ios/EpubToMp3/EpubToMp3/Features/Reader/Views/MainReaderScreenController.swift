@@ -262,7 +262,7 @@ final class MainReaderScreenController: UIViewController {
         NSLayoutConstraint.activate([
             reader.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             reader.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            readerTopToNavigation,
+            readerTopToRoot,
             reader.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         reader.didMove(toParent: self)
@@ -312,15 +312,12 @@ final class MainReaderScreenController: UIViewController {
     }
 
     /// Keeps reader chrome visually independent from the paginated surface.
-    /// Hiding chrome moves the reading surface to the screen edge. The child
-    /// reader captures its visible text anchor before that reflow so the
-    /// expanded page does not jump to a different passage.
-    /// Root owns the mutable presentation state. Main only applies this
-    /// immutable snapshot to its navigation constraints.
+    /// Chrome visibility changes only the overlay. The reading surface keeps
+    /// the same physical-safe-area geometry and exact captured offset.
     @discardableResult
     func applyReaderPresentation(_ state: ReaderPresentationState, animated: Bool = false) -> Bool {
         let chromeChanged = readerController?.applyChromeVisibility(state.isChromeHidden) ?? false
-        let navigationChanged = (readerTopToNavigation?.isActive ?? false) != state.showsReaderNavigation
+        let navigationChanged = !(readerTopToRoot?.isActive ?? false)
         readerNavigation.applyLayout(
             shouldShow: state.showsReaderNavigation,
             animated: animated,

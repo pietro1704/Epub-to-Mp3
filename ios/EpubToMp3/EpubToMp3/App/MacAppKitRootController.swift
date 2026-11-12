@@ -15,6 +15,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private let detailContainer = NSViewController()
     private var playerBar: MacPlayerBarViewController!
     private var playerBarHeightConstraint: NSLayoutConstraint?
+    private var readerChromeHidden = false
     private var cancellables: Set<AnyCancellable> = []
     private var detailController: NSViewController?
     private var fullPlayerController: MacFullPlayerViewController?
@@ -285,12 +286,17 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     func showReader(bookID: String) {
         playbackSession.cancel(ifReplacingBook: bookID)
         sidebarPresentation.select(.library)
+        readerChromeHidden = false
         let reader = MacReaderViewController(
             library: library,
             settings: settings,
             player: player,
             bookmarkStore: bookmarkStore,
-            onClose: { [weak self] in self?.show(.library) }
+            onClose: { [weak self] in self?.show(.library) },
+            onChromeChanged: { [weak self] hidden in
+                self?.readerChromeHidden = hidden
+                self?.refreshPlayerBar()
+            }
         )
         reader.setBook(bookID)
         if let current = detailController {
@@ -305,7 +311,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
             contentView.topAnchor.constraint(equalTo: detailContainer.view.topAnchor),
-            contentView.bottomAnchor.constraint(equalTo: playerBar.view.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: detailContainer.view.bottomAnchor),
         ])
         detailController = reader
         refreshPlayerBar()
@@ -414,9 +420,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
 
     private func refreshPlayerBar() {
         syncPlayerCoverArt()
-        let hasReadingContext = player.snapshot != nil
+        let showsReaderChrome = !(detailController is MacReaderViewController) || !readerChromeHidden
+        let hasReadingContext = showsReaderChrome && (player.snapshot != nil
             || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
-            || library.books.contains { $0.lastOpenedAt != nil }
+            || library.books.contains { $0.lastOpenedAt != nil })
         // Keep the internal stack constrained to the full bar width. Toggling
         // only `isHidden` leaves the bar visible with its edge constraints
         // deactivated, which collapses the content to the leading edge and

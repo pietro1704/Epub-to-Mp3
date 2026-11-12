@@ -27,7 +27,8 @@ final class IOSRootContainerController: UIViewController {
     private lazy var miniPlayerPresentation = IOSMiniPlayerPresentation(view: miniPlayerController.view)
 
     override var prefersStatusBarHidden: Bool {
-        Self.shouldHideStatusBar(immersiveReaderMode: readerPresentationCoordinator.state.isChromeHidden)
+        // Keep system safe-area geometry stable for the whole reading session.
+        Self.shouldHideStatusBar(immersiveReaderMode: readerPresentationCoordinator.state.isReaderActive)
     }
 
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
@@ -150,7 +151,7 @@ final class IOSRootContainerController: UIViewController {
 
         let readerBottomToMiniPlayer = readerController.view.bottomAnchor.constraint(equalTo: miniPlayerController.view.topAnchor)
         let readerBottomToRoot = readerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        readerBottomToMiniPlayer.isActive = true
+        readerBottomToRoot.isActive = true
         readerPresentationCoordinator.configureChromeLayout(
             rootView: view,
             readerBottomToMiniPlayer: readerBottomToMiniPlayer,
@@ -342,7 +343,9 @@ final class IOSRootContainerController: UIViewController {
         )
 
         let wasImmersive = readerPresentationCoordinator.state.isChromeHidden
+        let wasReaderActive = readerPresentationCoordinator.state.isReaderActive
         readerPresentationCoordinator.setReaderActive(readerActive)
+        if wasReaderActive != readerActive { setNeedsStatusBarAppearanceUpdate() }
         readerController.view.isHidden = !readerActive
         // The reader owns the full screen while open. The library/settings/
         // conversion tabs must not remain visible underneath its player bar.

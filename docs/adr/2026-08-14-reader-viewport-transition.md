@@ -2,6 +2,11 @@
 
 **Status:** Accepted
 
+The viewport-size assumption is superseded by the
+[fixed chrome overlay decision](2026-11-12-reader-chrome-overlays.md).
+Transition ordering, exact offset preservation and stale-completion rejection
+remain applicable.
+
 ## Context
 
 Showing or hiding reader chrome changes navigation, page-indicator, mini-player
