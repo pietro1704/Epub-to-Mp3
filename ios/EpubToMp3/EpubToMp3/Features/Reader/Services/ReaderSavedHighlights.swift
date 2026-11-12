@@ -47,10 +47,9 @@ enum ReaderSavedHighlights {
         return result
     }
 
-    static func playbackRatio(at utf16Offset: Int, in text: String) -> Double? {
-        let value = text as NSString
-        guard utf16Offset >= 0, utf16Offset < value.length else { return nil }
-        let prefix = value.substring(to: utf16Offset)
-        return Double(prefix.unicodeScalars.count) / Double(max(1, text.unicodeScalars.count))
+    static func playbackRatio(selection: NSRange, rendered: String, source: String) -> Double? {
+        guard let mapped = ReaderAnchorRange.sourceRange(rendered: rendered, selection: selection, in: source),
+              let range = Range(mapped, in: source), !source.isEmpty else { return nil }
+        return Double(source[..<range.lowerBound].unicodeScalars.count) / Double(source.unicodeScalars.count)
     }
 }

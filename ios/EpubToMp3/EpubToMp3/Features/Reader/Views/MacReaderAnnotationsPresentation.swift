@@ -115,8 +115,9 @@ private func currentPayload(_ sender: NSMenuItem) -> PendingSelection? {
 @objc private func playFromSelection(_ sender: NSMenuItem) {
     guard let payload = currentPayload(sender), let storage = textView.textStorage else { return }
     let range = payload.highlight.flatMap { ReaderSavedHighlights.range(for: $0, in: storage) } ?? payload.range
-    guard let ratio = ReaderSavedHighlights.playbackRatio(at: range.location, in: textView.string) else { return }
-    onPlayFromHere?(chapter(at: selectedChapter)?.zeroBasedEpubIndex ?? selectedChapter, ratio)
+    guard let source = chapter(at: selectedChapter),
+          let ratio = ReaderSavedHighlights.playbackRatio(selection: range, rendered: textView.string, source: source.text) else { return }
+    onPlayFromHere?(source.zeroBasedEpubIndex, ratio)
 }
 
 @objc private func highlightSelectionFromMenu(_ sender: NSMenuItem) {

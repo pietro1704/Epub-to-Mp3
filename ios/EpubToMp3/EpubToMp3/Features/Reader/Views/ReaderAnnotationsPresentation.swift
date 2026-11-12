@@ -127,8 +127,10 @@ private func isCurrent(bookID: String, chapter: Int) -> Bool {
     isCurrentBook() && document.book.id == bookID && document.selectedChapter == chapter
 }
 private func play(from range: NSRange) {
-    guard valid(range), let ratio = ReaderSavedHighlights.playbackRatio(at: range.location, in: textView.text) else { return }
-    onPlayFromHere?(document.selectedChapter, ratio)
+    guard valid(range),
+          let source = document.activePreparedChapter?.chapter ?? document.fulltext?.chapters[safe: document.selectedChapter],
+          let ratio = ReaderSavedHighlights.playbackRatio(selection: range, rendered: textView.text, source: source.text) else { return }
+    onPlayFromHere?(source.zeroBasedEpubIndex, ratio)
 }
 private func removeHighlight(_ bookmark: Bookmark) {
     bookmarkStore.remove(id: bookmark.id)
