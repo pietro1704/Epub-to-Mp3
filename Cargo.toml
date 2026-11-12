@@ -28,6 +28,11 @@ sherpa-onnx-sys = { path = "native/vendor/sherpa-onnx-sys" }
 espeak-rs = { path = "native/vendor/espeak-rs" }
 espeak-rs-sys = { path = "native/vendor/espeak-rs-sys" }
 
+[profile.dev]
+# Keep source lines and symbol names without full dependency type metadata.
+debug = "line-tables-only"
+strip = "none"
+
 [profile.release]
 codegen-units = 1
 lto = "thin"

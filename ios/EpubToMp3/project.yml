@@ -151,6 +151,12 @@ settings:
 
   configs:
     Debug:
+      # Xcode's incremental mode is named singlefile. Keep compact source-line
+      # information for breakpoints and backtraces during fast local iteration.
+      SWIFT_COMPILATION_MODE: singlefile
+      GCC_GENERATE_DEBUGGING_SYMBOLS: NO
+      OTHER_SWIFT_FLAGS: "$(inherited) -j1 -gline-tables-only"
+      DEAD_CODE_STRIPPING: NO
       # One architecture keeps local incremental builds light on the
       # constrained Intel development machine. Release is universal below.
       ONLY_ACTIVE_ARCH: YES
