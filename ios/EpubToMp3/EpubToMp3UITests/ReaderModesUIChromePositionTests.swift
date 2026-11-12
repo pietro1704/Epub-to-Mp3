@@ -45,7 +45,7 @@ extension ReaderModesUITests {
         XCTAssertTrue(chromeVisible(app), "second center tap must restore paginated chrome")
     }
 
-    func testPaginatedChromeToggleExpandsTheViewportWithoutChangingThePage() throws {
+    func testPaginatedChromeToggleKeepsTheViewportAndPage() throws {
         let app = launch(layout: "paginated")
         try openBook(app)
 
@@ -60,10 +60,8 @@ extension ReaderModesUITests {
         toggleReaderChrome(in: app)
         sleep(1)
         XCTAssertFalse(chromeVisible(app), "The first center tap must hide reader chrome.")
-        XCTAssertLessThan(viewport.frame.minY, viewportBeforeToggle.minY,
-                          "Immersive reading must reclaim the navigation-bar height.")
-        XCTAssertGreaterThan(viewport.frame.height, viewportBeforeToggle.height,
-                             "Immersive reading must reclaim the bottom chrome height.")
+        XCTAssertEqual(viewport.frame, viewportBeforeToggle,
+                       "Chrome overlays must preserve the chrome-free viewport.")
         XCTAssertTrue(content.exists, "The paginated text surface must remain mounted.")
         XCTAssertGreaterThan(content.frame.height, 0)
 
