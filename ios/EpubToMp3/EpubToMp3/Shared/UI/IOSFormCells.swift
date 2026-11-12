@@ -5,6 +5,8 @@ import UIKit
 final class IOSContentCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
+        accessoryView = nil
+        accessoryType = .none
         accessibilityLabel = nil
         accessibilityValue = nil
         accessibilityHint = nil

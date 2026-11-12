@@ -99,7 +99,9 @@ struct SettingsCellPresentation {
     func aboutCell(for indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
+        cell.accessoryView = nil
         cell.accessoryType = .none
+        cell.accessibilityTraits = .staticText
         switch indexPath.row {
         case 0:
             content.text = L10n.string("settings.bundleIdentifier")
@@ -108,11 +110,13 @@ struct SettingsCellPresentation {
         case 1:
             content.text = L10n.string("settings.platform")
             content.secondaryText = Self.platformMinimumLabel
+            cell.accessibilityIdentifier = "settings.platform"
             cell.selectionStyle = .none
         default:
             content.text = L10n.string("settings.projectOnGithub")
             content.image = UIImage(systemName: "arrow.up.right.square")
             cell.accessoryType = .disclosureIndicator
+            cell.accessibilityTraits = .button
         }
         cell.contentConfiguration = content
         return cell
