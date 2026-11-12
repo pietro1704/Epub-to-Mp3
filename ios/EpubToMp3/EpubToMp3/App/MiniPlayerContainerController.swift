@@ -35,7 +35,8 @@ final class MiniPlayerContainerController: UIViewController {
         playbackClock: PlaybackClock,
         library: LibraryStore,
         onTap: @escaping () -> Void,
-        onPlayRequested: @escaping () -> Void
+        onPlayRequested: @escaping () -> Void,
+        onDismiss: @escaping () -> Void = {}
     ) {
         miniPlayerView.configure(
             player: player,
@@ -44,6 +45,7 @@ final class MiniPlayerContainerController: UIViewController {
             onTap: onTap,
             onPlayRequested: onPlayRequested
         )
+        miniPlayerView.setDismissAction(onDismiss)
     }
 
     func applyReaderBackground(_ color: UIColor) {

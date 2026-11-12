@@ -190,6 +190,7 @@
 "player.skipBack.seconds" = "Retroceder %d segundos";
 "player.pause" = "Pausa";
 "player.play" = "Reproducir";
+"player.dismissMiniPlayer" = "Detener reproducción y cerrar reproductor";
 "player.nothingPlaying" = "Nada en reproducción";
 "player.remaining" = "%@ restantes";
 "player.estimatedRemaining" = "Aproximadamente %@ restantes";

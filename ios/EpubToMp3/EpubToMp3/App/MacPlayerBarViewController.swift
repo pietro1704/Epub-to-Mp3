@@ -4,6 +4,7 @@ import Combine
 
 @MainActor
 final class MacPlayerBarViewController: NSViewController {
+    var onDismiss: () -> Void = {}
     private let player: AudioPlayer
     private let library: LibraryStore
     private let onStartPlayback: () -> Void
@@ -96,7 +97,11 @@ final class MacPlayerBarViewController: NSViewController {
         let playControls = NSStackView(views: [playButton, playSpinner])
         playControls.orientation = .horizontal
         playControls.alignment = .centerY
-        let stack = NSStackView(views: [openButton, previousButton, playControls, nextButton, rateButton])
+        let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)!,
+                             target: self, action: #selector(dismissPlayer))
+        close.setAccessibilityLabel(L10n.string("player.dismissMiniPlayer"))
+        close.setAccessibilityIdentifier("miniPlayer.dismiss")
+        let stack = NSStackView(views: [openButton, previousButton, playControls, nextButton, rateButton, close])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.distribution = .fill
@@ -125,6 +130,7 @@ final class MacPlayerBarViewController: NSViewController {
             button.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
         view = background
+        view.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(dragPlayer(_:))))
         // objectWillChange fires before @Published stores its new value.
         // Read transport state on the next main-loop turn so an external
         // pause/resume updates the displayed action to the committed state.
@@ -141,6 +147,17 @@ final class MacPlayerBarViewController: NSViewController {
             NSLayoutConstraint.deactivate(contentEdgeConstraints)
         } else {
             NSLayoutConstraint.activate(contentEdgeConstraints)
+        }
+    }
+
+    @objc private func dismissPlayer() { onDismiss() }
+
+    @objc private func dragPlayer(_ gesture: NSPanGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        let direction: Double = view.isFlipped ? 1 : -1
+        if MiniPlayerDismissal.shouldDismiss(distance: gesture.translation(in: view).y * direction,
+            velocity: gesture.velocity(in: view).y * direction, height: view.bounds.height, cancelled: false) {
+            onDismiss()
         }
     }
 

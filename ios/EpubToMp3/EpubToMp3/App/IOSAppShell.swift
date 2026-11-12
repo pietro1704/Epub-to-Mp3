@@ -106,7 +106,8 @@ final class IOSAppShellController: UITabBarController {
         playbackClock: PlaybackClock,
         library: LibraryStore,
         onTap: @escaping () -> Void,
-        onPlayRequested: @escaping () -> Void
+        onPlayRequested: @escaping () -> Void,
+        onDismiss: @escaping () -> Void = {}
     ) {
 #if compiler(>=6.2)
         guard #available(iOS 26.0, *) else { return }
@@ -119,6 +120,7 @@ final class IOSAppShellController: UITabBarController {
             onPlayRequested: onPlayRequested
         )
         miniPlayerAccessoryView = miniPlayerView
+        miniPlayerView.setDismissAction(onDismiss)
 #endif
     }
 
@@ -141,7 +143,8 @@ final class IOSAppShellController: UITabBarController {
         playbackClock: PlaybackClock,
         library: LibraryStore,
         onTap: @escaping () -> Void,
-        onPlayRequested: @escaping () -> Void
+        onPlayRequested: @escaping () -> Void,
+        onDismiss: @escaping () -> Void = {}
     ) {
         miniPlayerAccessoryView?.configure(
             player: player,
@@ -150,6 +153,7 @@ final class IOSAppShellController: UITabBarController {
             onTap: onTap,
             onPlayRequested: onPlayRequested
         )
+        miniPlayerAccessoryView?.setDismissAction(onDismiss)
     }
 
     func setReaderTabBarHidden(_ hidden: Bool, animated: Bool) {

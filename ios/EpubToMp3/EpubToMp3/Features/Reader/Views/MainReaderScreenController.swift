@@ -388,6 +388,16 @@ final class MainReaderScreenController: UIViewController {
         startListening(presentsFullPlayer: false)
     }
 
+    func dismissListeningSession() {
+        listeningRequestID = UUID()
+        retryWithModel = nil
+        listeningSession.cancel()
+        player.pause()
+        player.persistResumePoint(force: true)
+        player.stop()
+        player.clearConversionState()
+    }
+
     private func reportListeningFailure(_ error: Error) {
         guard TtsLanguageMismatch.decode(error) != nil else {
             ReaderListeningAlerts.present(error, from: self, library: { [weak self] in self?.library })
@@ -408,6 +418,7 @@ final class MainReaderScreenController: UIViewController {
         guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
+        MiniPlayerDismissal(defaults: sessionDefaults).allowPlayback(bookID: book.id)
         let priority = requestedChapter ?? readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
         // Capture the page before asynchronous file access or player teardown
