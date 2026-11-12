@@ -179,6 +179,10 @@ enum RuntimeSettingsRows {
                 return UITableViewCell()
             }
     }
+    static func backendWarningVisible(settings: AppSettings) -> Bool {
+        settings.remoteBackendControlsEnabled && settings.resolvedBaseURL == nil
+    }
+
     static func backendCell(for indexPath: IndexPath, tableView: UITableView, settings: AppSettings, controller: UIViewController) -> UITableViewCell {
             if indexPath.row == 0 {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "TextField", for: indexPath) as! IOSInlineTextFieldCell
@@ -190,9 +194,19 @@ enum RuntimeSettingsRows {
                     autocapitalization: .none,
                     isEnabled: settings.remoteBackendControlsEnabled
                 )
-                cell.onTextChanged = { [weak controller] text in
-                    guard controller != nil else { return }
+                cell.onTextChanged = { [weak controller, weak tableView] text in
+                    guard controller != nil, let tableView else { return }
+                    let warningWasVisible = backendWarningVisible(settings: settings)
                     settings.backendURL = text
+                    let warningIsVisible = backendWarningVisible(settings: settings)
+                    guard warningWasVisible != warningIsVisible else { return }
+                    let warning = IndexPath(row: 1, section: indexPath.section)
+                    // Update only the warning: replacing the URL cell would
+                    // destroy the active field and interrupt typing.
+                    tableView.performBatchUpdates {
+                        if warningIsVisible { tableView.insertRows(at: [warning], with: .automatic) }
+                        else { tableView.deleteRows(at: [warning], with: .automatic) }
+                    }
                  }
                 return cell
             }
@@ -202,8 +216,7 @@ enum RuntimeSettingsRows {
             content.image = UIImage(systemName: "exclamationmark.triangle.fill")
             content.imageProperties.tintColor = .systemRed
             cell.contentConfiguration = content
-            let showWarning = settings.remoteBackendControlsEnabled && settings.resolvedBaseURL == nil
-            cell.isHidden = !showWarning
+            cell.isHidden = false
             cell.selectionStyle = .none
             return cell
     }

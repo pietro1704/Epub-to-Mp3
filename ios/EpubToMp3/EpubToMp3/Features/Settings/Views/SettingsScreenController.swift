@@ -101,7 +101,8 @@ final class SettingsScreenController: UITableViewController {
 
     override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        Section(rawValue: section)?.rowCount(speechModels: speechModelState, disclosure: modelDisclosure) ?? 0
+        Section(rawValue: section)?.rowCount(speechModels: speechModelState, disclosure: modelDisclosure,
+            backendWarningVisible: RuntimeSettingsRows.backendWarningVisible(settings: settings)) ?? 0
     }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         Section(rawValue: section)?.title
