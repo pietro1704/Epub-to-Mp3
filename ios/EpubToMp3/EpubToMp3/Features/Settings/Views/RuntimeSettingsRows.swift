@@ -53,12 +53,12 @@ enum RuntimeSettingsRows {
                 content.secondaryText = SpeechModelSettingsDisclosure.summary(state: speechModels,
                     primary: settings.ttsPreferences.primary, events: installEvents)
                 content.secondaryTextProperties.numberOfLines = 0
-                content.image = UIImage(systemName: disclosure.isExpanded ? "chevron.down" : "chevron.right")
+                content.image = UIImage(systemName: "waveform")
                 cell.contentConfiguration = content
                 cell.accessibilityIdentifier = "settings.speechModels.disclosure"
                 cell.accessibilityValue = L10n.string(disclosure.isExpanded ? "settings.models.expanded" : "settings.models.collapsed")
-                cell.accessoryType = .none
-                cell.selectionStyle = .default
+                cell.accessoryType = disclosure.isExpanded ? .none : .disclosureIndicator
+                cell.selectionStyle = disclosure.isExpanded ? .none : .default
                 return cell
             case .primary:
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)

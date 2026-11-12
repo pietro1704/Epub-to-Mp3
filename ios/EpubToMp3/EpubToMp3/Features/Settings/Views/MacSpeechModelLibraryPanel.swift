@@ -43,18 +43,21 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     init(
         settings: AppSettings,
         speechModels: SpeechModelLibraryClient,
-        termsAcceptance: SpeechModelTermsAcceptanceStore
+        termsAcceptance: SpeechModelTermsAcceptanceStore,
+        expandedOnOpen: Bool = false
     ) {
         self.settings = settings
         self.speechModels = speechModels
         self.termsAcceptance = termsAcceptance
         self.state = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
         super.init(frame: .zero)
+        if expandedOnOpen { disclosure.toggle() }
         orientation = .vertical
         alignment = .leading
         spacing = 10
         setAccessibilityIdentifier("settings.speechModels")
         disclosureButton.setAccessibilityIdentifier("settings.speechModels.disclosure")
+        disclosureButton.isHidden = expandedOnOpen
         summaryLabel.setAccessibilityIdentifier("settings.speechModels.summary")
         addArrangedSubview(disclosureButton)
         addArrangedSubview(summaryLabel)

@@ -24,6 +24,7 @@ final class SettingsScreenController: UITableViewController {
     private let speechModels: SpeechModelLibraryClient
     private let audition = VoiceAuditionPresentation()
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
+    private let voiceModelsOnly: Bool
     private var modelDisclosure = SpeechModelSettingsDisclosure()
     private var speechModelState: SpeechModelLibraryViewState
     private var speechModelsTask: Task<Void, Never>?
@@ -38,18 +39,21 @@ final class SettingsScreenController: UITableViewController {
          diagnosticsSession: StreamingDiagnosticsSession? = nil,
          confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(),
-         speechModels: SpeechModelLibraryClient = .shared) {
+         speechModels: SpeechModelLibraryClient = .shared,
+         voiceModelsOnly: Bool = false) {
         self.settings = settings
         self.library = library
         self.player = player
         self.playbackClock = playbackClock
         self.speechModels = speechModels
         self.termsAcceptance = termsAcceptance
+        self.voiceModelsOnly = voiceModelsOnly
         self.speechModelState = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
         self.diagnosticsSession = diagnosticsSession ?? .shared
         self.confirmStreamingDiagnostics = confirmStreamingDiagnostics
         super.init(style: .insetGrouped)
-        title = L10n.string("settings.title")
+        if voiceModelsOnly { modelDisclosure.toggle() }
+        title = L10n.string(voiceModelsOnly ? "settings.voiceModels" : "settings.title")
         tabBarItem = UITabBarItem(
             title: L10n.string("nav.settings"),
             image: UIImage(systemName: "gearshape"),
@@ -99,9 +103,13 @@ final class SettingsScreenController: UITableViewController {
         tableView.reloadData()
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
+    override func numberOfSections(in tableView: UITableView) -> Int { voiceModelsOnly ? 1 : Section.allCases.count }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        Section(rawValue: section)?.rowCount(speechModels: speechModelState, disclosure: modelDisclosure,
+        if voiceModelsOnly {
+            return RuntimeSettingsRows.rowCount(speechModels: speechModelState, disclosure: modelDisclosure)
+        }
+        if section == Section.runtime.rawValue { return 1 }
+        return Section(rawValue: section)?.rowCount(speechModels: speechModelState, disclosure: modelDisclosure,
             backendWarningVisible: RuntimeSettingsRows.backendWarningVisible(settings: settings)) ?? 0
     }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
@@ -115,7 +123,8 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: indexPath.section) else { return UITableViewCell() }
         switch section {
         case .runtime:
-            return RuntimeSettingsRows.cell(for: indexPath, tableView: tableView, settings: settings,
+            let row = voiceModelsOnly ? indexPath : IndexPath(row: 2, section: indexPath.section)
+            return RuntimeSettingsRows.cell(for: row, tableView: tableView, settings: settings,
                                             speechModels: speechModelState,
                                             installEvents: speechModelInstallEvents,
                                             termsAcceptance: termsAcceptance,
@@ -140,7 +149,12 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: indexPath.section) else { return }
         switch section {
         case .runtime:
-            handleRuntimeSelection(row: indexPath.row, source: indexPath)
+            if voiceModelsOnly { handleRuntimeSelection(row: indexPath.row, source: indexPath) }
+            else {
+                navigationController?.pushViewController(SettingsScreenController(settings: settings,
+                    library: library, player: player, playbackClock: playbackClock,
+                    termsAcceptance: termsAcceptance, speechModels: speechModels, voiceModelsOnly: true), animated: true)
+            }
         case .reader:
             choicePresentation.handleReaderSelection(row: indexPath.row)
         case .playback:
@@ -160,8 +174,7 @@ final class SettingsScreenController: UITableViewController {
         guard let row = RuntimeSettingsRows.row(at: index, speechModels: speechModelState, disclosure: modelDisclosure) else { return }
         switch row {
         case .models:
-            modelDisclosure.toggle()
-            tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
+            break
         case .primary: presentPrimaryChoices(source: source)
         case .secondary: presentSecondaryChoices(source: source)
         case .studyLanguage:
@@ -403,26 +416,11 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func handleAdvancedSelection(row: Int) {
-        if row == 0 {
-            navigationController?.pushViewController(
-                JobsListScreenController(
-                    settings: settings,
-                    library: library,
-                    player: player,
-                    playbackClock: playbackClock
-                ),
-                animated: true
-            )
-        } else if row == 1 {
-            navigationController?.pushViewController(
-                TelemetryScreenController(settings: settings),
-                animated: true
-            )
-        } else if row == 2 {
-            exportPerformanceDiagnostics()
-        } else if row == 3 {
-            toggleStreamingDiagnostics()
-        }
+        if let destination = SettingsAdvancedNavigation.destination(row: row, settings: settings,
+            library: library, player: player, playbackClock: playbackClock) {
+            navigationController?.pushViewController(destination, animated: true)
+        } else if row == 2 { exportPerformanceDiagnostics() }
+        else if row == 3 { toggleStreamingDiagnostics() }
     }
 
     private func exportPerformanceDiagnostics() {
