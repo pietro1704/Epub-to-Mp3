@@ -10,10 +10,17 @@ final class PlatformSettingsCellTests: XCTestCase {
         cell.accessoryView = UISwitch()
         cell.accessoryType = .disclosureIndicator
         cell.accessibilityTraits = .adjustable
-        weak var previousSwitch = cell.accessoryView
+        cell.frame = CGRect(x: 0, y: 0, width: 320, height: 60)
+        cell.layoutIfNeeded()
         cell.prepareForReuse()
+        cell.layoutIfNeeded()
         XCTAssertNil(cell.accessoryView)
-        XCTAssertNil(previousSwitch)
+        // UIKit may retain a removed accessory until its autorelease pool drains.
+        // Reuse must remove it from the rendered hierarchy immediately.
+        func containsSwitch(_ view: UIView) -> Bool {
+            view is UISwitch || view.subviews.contains(where: containsSwitch)
+        }
+        XCTAssertFalse(containsSwitch(cell))
         XCTAssertEqual(cell.accessoryType, .none)
         XCTAssertFalse(cell.accessibilityTraits.contains(.adjustable))
     }
