@@ -74,8 +74,8 @@ For an already-built XCTest artifact, observation mode additionally accepts
 `--test-run /absolute/Products/name.xctestrun` and either one fully qualified
 `--test-selector Target/Class/testMethod` or `--test-manifest /absolute/preset.json`.
 The manifest must equal one of the closed presets in `SimulatorTestBackend`:
-eleven native playback/transport methods or the two embedded PDF/system-MP3
-methods. Partial, mixed, duplicate and wildcard selections are rejected. The
+eleven native playback/transport methods, the two embedded PDF/system-MP3
+methods, or the closed native Apple experience control/geometry batch. Partial, mixed, duplicate and wildcard selections are rejected. The
 runner uses `test-without-building`, one explicit destination, no parallel tests
 and a tracked process group. The test command has at most 120 seconds within
 the unchanged 180-second observation session. Test-run/manifest identities are
