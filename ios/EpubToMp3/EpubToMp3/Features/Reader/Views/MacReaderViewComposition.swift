@@ -26,6 +26,7 @@ final class MacReaderViewComposition {
     let comicPageImageView = NSImageView()
     let contentScrollView = NSScrollView()
     let toolbar = NSStackView()
+    private let chromeBackground = NSVisualEffectView()
     let bookTitleLabel = NSTextField(labelWithString: "")
     let chapterTitleLabel = NSTextField(labelWithString: "")
     let statusLabel = NSTextField(labelWithString: "")
@@ -97,7 +98,7 @@ final class MacReaderViewComposition {
         toolbar.spacing = 10
         toolbar.distribution = .fill
         toolbar.wantsLayer = true
-        toolbar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        toolbar.layer?.backgroundColor = nil
         toolbar.setAccessibilityIdentifier("reader.toolbar")
 
         chapterTitleLabel.font = .systemFont(ofSize: 24, weight: .bold)
@@ -137,10 +138,21 @@ final class MacReaderViewComposition {
         view.addSubview(chapterTitleLabel)
         view.addSubview(statusLabel)
         view.addSubview(contentScrollView)
+        chromeBackground.material = .headerView
+        chromeBackground.blendingMode = .withinWindow
+        chromeBackground.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(chromeBackground, positioned: .above, relativeTo: contentScrollView)
+        for chrome in [toolbar, chapterTitleLabel, statusLabel] {
+            view.addSubview(chrome, positioned: .above, relativeTo: chromeBackground)
+        }
         NSLayoutConstraint.activate([
             toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             toolbar.topAnchor.constraint(equalTo: view.topAnchor),
+            chromeBackground.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chromeBackground.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            chromeBackground.topAnchor.constraint(equalTo: view.topAnchor),
+            chromeBackground.bottomAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 8),
             chapterTitleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 34),
             chapterTitleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -34),
             chapterTitleLabel.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 22),
@@ -149,8 +161,8 @@ final class MacReaderViewComposition {
             statusLabel.topAnchor.constraint(equalTo: chapterTitleLabel.bottomAnchor, constant: 8),
             contentScrollView.leadingAnchor.constraint(equalTo: chapterTitleLabel.leadingAnchor),
             contentScrollView.trailingAnchor.constraint(equalTo: chapterTitleLabel.trailingAnchor),
-            contentScrollView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 8),
-            contentScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -22),
+            contentScrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
         loading.configure(in: view, toolbar: toolbar, target: target, retryAction: actions.retryLoading)
         textView.onKeyDown = { [weak self] event in
@@ -165,5 +177,9 @@ final class MacReaderViewComposition {
         }
     }
 
+    func setChromeHidden(_ hidden: Bool) {
+        // Visibility never participates in the content constraints or text layout.
+        for chrome in [toolbar, chapterTitleLabel, statusLabel, chromeBackground] { chrome.isHidden = hidden }
+    }
 }
 #endif

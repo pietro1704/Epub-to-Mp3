@@ -162,13 +162,11 @@ segment is available.
 
 ## Chrome-stable reader viewport
 
-Showing or hiding reader chrome changes only the viewport height. It must preserve
-the reader's exact `contentOffset` for the active text surface; it must not round
-that offset to a paginated boundary or replace it from the paginated-offset cache.
-Those boundaries depend on viewport height and cause repeated chrome toggles to
-move the book backward or forward. During a chrome transition, the raw viewport
-offset is the source of truth. Pagination boundaries remain for explicit page turns
-only, and glyph-aware layout must ensure no partially rendered line is shown.
+The reader's text geometry stays at its chrome-free, physical-safe-area size
+while navigation and playback controls appear as overlays. Chrome visibility
+preserves page boundaries, the reading anchor and the exact raw `contentOffset`
+of the active text surface. Explicit page turns use canonical page offsets;
+typography and actual window-size changes can establish a new text geometry.
 
 ## Reader text viewport
 
