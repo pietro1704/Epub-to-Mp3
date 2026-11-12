@@ -88,11 +88,15 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
     )));
     let first_input = root.join("first.epub");
     let second_input = root.join("second.epub");
-    book(&first_input, "First book", "First independent conversion.");
+    book(
+        &first_input,
+        "The English Story of the River Village",
+        "On Monday morning, the family walked through the green village and watched the river flow past the old bridge. They visited the small library, borrowed two books, and read the newspaper while waiting for their friends. This chapter describes ordinary life in England with complete English sentences and familiar words. In the afternoon, everyone returned home to prepare dinner and write letters about the day.",
+    );
     book(
         &second_input,
-        "Second book",
-        "Second independent conversion.",
+        "The English Story of the Mountain Village",
+        "Every Saturday, the neighbors meet at the market in the center of the village. They buy fresh bread, vegetables, and fruit before walking home along the narrow street. Their children play beside the school while the adults talk about books, music, and the weather. After lunch, the family reads together and plans a visit to the coast next week.",
     );
     let config = AppConfig::from_paths(paths.clone());
     let options = EmbeddedConversionOptions {
@@ -112,8 +116,8 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
         .convert()
         .expect("a fresh session without a caller job ID must create an independent job");
     assert_ne!(first.job_id, second.job_id);
-    assert_eq!(first.title, "First book");
-    assert_eq!(second.title, "Second book");
+    assert_eq!(first.title, "The English Story of the River Village");
+    assert_eq!(second.title, "The English Story of the Mountain Village");
     assert_eq!(first.chapters.len(), 1);
     assert_eq!(second.chapters.len(), 1);
     assert_eq!(
@@ -133,8 +137,8 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
     let explicit_input = root.join("explicit.epub");
     book(
         &explicit_input,
-        "Explicit book",
-        "Caller-owned conversion identity.",
+        "The English Story of the Old Harbor",
+        "This English chapter follows a sailor who returns to the harbor after many years. He walks along the wooden pier, meets his old friends, and tells them about the distant countries he visited. The community listens carefully and shares a warm meal before sunset.",
     );
     let explicit_session = EmbeddedConversionSession::open(
         explicit_input,
