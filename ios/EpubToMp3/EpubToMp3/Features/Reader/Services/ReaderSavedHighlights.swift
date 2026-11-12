@@ -50,6 +50,8 @@ enum ReaderSavedHighlights {
     static func playbackRatio(selection: NSRange, rendered: String, source: String) -> Double? {
         guard let mapped = ReaderAnchorRange.sourceRange(rendered: rendered, selection: selection, in: source),
               let range = Range(mapped, in: source), !source.isEmpty else { return nil }
-        return Double(source[..<range.lowerBound].unicodeScalars.count) / Double(source.unicodeScalars.count)
+        // The playback bridge floors ratio * source length. Bias one ULP upward
+        // so floating-point division cannot select the preceding source scalar.
+        return (Double(source[..<range.lowerBound].unicodeScalars.count) / Double(source.unicodeScalars.count)).nextUp
     }
 }

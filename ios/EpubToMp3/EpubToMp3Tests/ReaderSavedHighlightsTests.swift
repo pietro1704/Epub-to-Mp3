@@ -38,12 +38,16 @@ final class ReaderSavedHighlightsTests: XCTestCase {
         XCTAssertEqual(ReaderSavedHighlights.target(at: word, highlights: [bookmark], in: source)?.id, bookmark.id)
     }
 
-    func testPlaybackOffsetUsesUnicodeScalarBoundariesInsteadOfUTF16Length() {
+    func testPlaybackOffsetUsesUnicodeScalarBoundariesInsteadOfUTF16Length() throws {
         let source = "😀 Text continues"
-        XCTAssertEqual(ReaderSavedHighlights.playbackRatio(selection: NSRange(location: 3, length: 4),
-            rendered: source, source: source), 2.0 / Double(source.unicodeScalars.count))
+        XCTAssertEqual(try XCTUnwrap(ReaderSavedHighlights.playbackRatio(selection: NSRange(location: 3, length: 4),
+            rendered: source, source: source)), 2.0 / Double(source.unicodeScalars.count), accuracy: 0.0000001)
         XCTAssertNil(ReaderSavedHighlights.playbackRatio(selection: NSRange(location: -1, length: 1),
             rendered: source, source: source))
+        let shortSource = String(repeating: "a", count: 15) + "HELLO!!"
+        let ratio = try XCTUnwrap(ReaderSavedHighlights.playbackRatio(selection: NSRange(location: 15, length: 5),
+            rendered: shortSource, source: shortSource))
+        XCTAssertEqual(Int((ratio * Double(shortSource.unicodeScalars.count)).rounded(.down)), 15)
     }
 
     func testPlaybackStartsAtTheSelectedSourceOccurrenceAfterWhitespaceNormalization() throws {
