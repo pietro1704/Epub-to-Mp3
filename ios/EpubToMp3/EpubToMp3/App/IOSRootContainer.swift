@@ -178,7 +178,7 @@ final class IOSRootContainerController: UIViewController {
             },
             onPlayRequested: { [weak self] in
                 self?.readerController.startListeningFromMiniPlayer()
-            }
+            }, onDismiss: { [weak self] in self?.dismissMiniPlayer() }
         )
 
         bindState()
@@ -228,7 +228,7 @@ final class IOSRootContainerController: UIViewController {
             },
             onPlayRequested: { [weak self] in
                 self?.readerController.startListeningFromMiniPlayer()
-            }
+            }, onDismiss: { [weak self] in self?.dismissMiniPlayer() }
         )
         readerOpenStageProfiler?.recordStartupStage("root_mini_player_updated")
         shellController.refreshMiniPlayerAccessory(
@@ -240,7 +240,7 @@ final class IOSRootContainerController: UIViewController {
             },
             onPlayRequested: { [weak self] in
                 self?.readerController.startListeningFromMiniPlayer()
-            }
+            }, onDismiss: { [weak self] in self?.dismissMiniPlayer() }
         )
         readerOpenStageProfiler?.recordStartupStage("root_shell_mini_player_updated")
     }
@@ -335,7 +335,9 @@ final class IOSRootContainerController: UIViewController {
         let currentlyReadingBookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let availableBookIDs = Set(library.books.map(\.id))
         let readerActive = currentlyReadingBookID.flatMap { id in availableBookIDs.contains(id) ? id : nil } != nil
-        let showMini = IOSMiniPlayerPolicy.shouldShow(
+        let activeBookID = currentlyReadingBookID ?? currentBookID
+        let dismissal = MiniPlayerDismissal()
+        let showMini = !dismissal.isDismissed(bookID: activeBookID) && IOSMiniPlayerPolicy.shouldShow(
             currentBookID: currentBookID,
             currentlyReadingBookID: currentlyReadingBookID,
             availableBookIDs: availableBookIDs
@@ -399,6 +401,15 @@ final class IOSRootContainerController: UIViewController {
     private func setMiniPlayerBottomAnchor(readerActive: Bool) {
         NSLayoutConstraint.deactivate([miniBottomToRoot, miniBottomToTabBar])
         (readerActive ? miniBottomToRoot : miniBottomToTabBar).isActive = true
+    }
+
+    private func dismissMiniPlayer() {
+        MiniPlayerDismissal().dismiss(readingBookID:
+            UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+            playingBookID: UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
+        readerController.dismissListeningSession()
+        playerPresentation.dismissFullPlayer()
+        refreshOverlayState()
     }
 
     private func dismissReaderToLibrary() {

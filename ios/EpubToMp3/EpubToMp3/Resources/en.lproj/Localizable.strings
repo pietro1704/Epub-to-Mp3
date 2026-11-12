@@ -193,6 +193,7 @@
 "player.skipBack.seconds" = "Skip back %d seconds";
 "player.pause" = "Pause";
 "player.play" = "Play";
+"player.dismissMiniPlayer" = "Stop playback and dismiss player";
 "player.nothingPlaying" = "Nothing playing";
 "player.remaining" = "%@ remaining";
 "player.estimatedRemaining" = "About %@ remaining";

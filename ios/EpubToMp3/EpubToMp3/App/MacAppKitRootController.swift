@@ -55,6 +55,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         }, onShowFullPlayer: { [weak playerPresentation] in
             playerPresentation?.showFullPlayer()
         })
+        self.playerBar.onDismiss = { [weak self] in self?.dismissMiniPlayer() }
         let sidebar = NSSplitViewItem(sidebarWithViewController: sidebarPresentation.controller)
         sidebar.minimumThickness = 190
         sidebar.maximumThickness = 280
@@ -312,6 +313,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     }
 
     func startPlaybackForCurrentBook() {
+        MiniPlayerDismissal().allowPlayback(bookID:
+            UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey))
         playbackSession.start(owner: self)
     }
 
@@ -414,9 +417,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
 
     private func refreshPlayerBar() {
         syncPlayerCoverArt()
-        let hasReadingContext = player.snapshot != nil
+        let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let dismissal = MiniPlayerDismissal()
+        let hasReadingContext = !dismissal.isDismissed(bookID: bookID) && (player.snapshot != nil
             || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
-            || library.books.contains { $0.lastOpenedAt != nil }
+            || library.books.contains { $0.lastOpenedAt != nil })
         // Keep the internal stack constrained to the full bar width. Toggling
         // only `isHidden` leaves the bar visible with its edge constraints
         // deactivated, which collapses the content to the leading edge and
@@ -424,6 +430,19 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         playerBar.setCollapsed(!hasReadingContext)
         playerBarHeightConstraint?.constant = hasReadingContext ? 60 : 0
         refreshDetailAccessibilityChildren()
+    }
+
+    private func dismissMiniPlayer() {
+        MiniPlayerDismissal().dismiss(readingBookID:
+            UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+            playingBookID: UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
+        player.pause()
+        player.persistResumePoint(force: true)
+        playbackSession.cancel(stopPlayer: false)
+        player.stop()
+        player.clearConversionState()
+        playerPresentation.dismissFullPlayer()
+        refreshPlayerBar()
     }
 
     private func refreshDetailAccessibilityChildren() {

@@ -33,6 +33,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private var library: LibraryStore?
     private var onTap: (() -> Void)?
     private var onPlayRequested: (() -> Void)?
+    private var dismissGesture: MiniPlayerDismissGesture?
     private var cancellables: Set<AnyCancellable> = []
     private var coverDecodeTask: Task<Void, Never>?
     private var coverDecodeGeneration = UUID()
@@ -233,6 +234,11 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     func applyReaderBackground(_ color: UIColor) {
         backgroundColor = color
         bottomSafeAreaFill.backgroundColor = color
+    }
+
+    func setDismissAction(_ action: @escaping () -> Void) {
+        if let dismissGesture { dismissGesture.onDismiss = action }
+        else { dismissGesture = MiniPlayerDismissGesture(view: self, onDismiss: action) }
     }
 
     private func bindIfNeeded(player: AudioPlayer, library: LibraryStore) {
