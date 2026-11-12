@@ -5,7 +5,9 @@ import Foundation
 enum ReaderAnchorRange {
     /// Resolve repeated words using the selected occurrence's surrounding text.
     static func sourceRange(rendered: String, selection: NSRange, in sourceText: String) -> NSRange? {
-        guard selection.length > 0, Range(selection, in: rendered) != nil else { return nil }
+        let length = rendered.utf16.count
+        guard selection.location >= 0, selection.location < length, selection.length > 0,
+              selection.length <= length - selection.location, Range(selection, in: rendered) != nil else { return nil }
         let startIndex = String.Index(utf16Offset: selection.location, in: rendered)
         let endIndex = String.Index(utf16Offset: NSMaxRange(selection), in: rendered)
         guard startIndex.samePosition(in: rendered.unicodeScalars) != nil,
