@@ -1,13 +1,13 @@
 # Apple native experience — product outcome specification
 
-Status: **Draft; confirmed requirements preserved, remaining choices explicit.**
+Status: **Final product specification; all product questions resolved.**
 Decision date: 2026-11-12.
 Scope: native iPhone, iPad, and Mac applications.
 
 This specification describes the desired finished product and observable
 acceptance, not an implementation schedule or a claim of shipped behavior.
-Requirements marked confirmed come from the product discussion. Recommendations
-in the open-decision table are proposals and must not be treated as accepted.
+Requirements marked confirmed come from the product discussion. The decision
+table records the settled choices, including the final dependent questions.
 The current deliverable is the specification; this document does not report
 application changes or successful runtime validation.
 
@@ -65,7 +65,7 @@ and [native reader instructions](../ios/EpubToMp3/AGENTS.md) allow chrome to
 change viewport size while preserving offset. The requested final behavior
 replaces that size-changing product assumption with a fixed viewport. Their
 ordering, identity, offset preservation, and glyph protection guarantees remain
-applicable. This draft records the difference explicitly; it does not silently
+applicable. This specification records the difference explicitly; it does not silently
 claim the implementation or canonical runtime contracts have already changed.
 
 ## 3. Reader top bar and recent tool
@@ -82,7 +82,8 @@ button (`…`). Navigation on the leading side remains native.
   silently replace the recent reader tool.
 - Other screens keep their context-appropriate principal action and More menu;
   the remembered-tool rule belongs to the reader.
-- The initial direct-access tool, before any recorded choice, is pending D19.
+- Before any recorded choice, the direct-access tool is Aa, for appearance and
+  typography. Using another eligible reader tool replaces it as the recent tool.
 
 **Acceptance:** choosing a tool, leaving the book, reopening the app, and opening
 another book preserves the intended direct access without adding a third reader
@@ -111,8 +112,10 @@ under `…` or the platform's native More/submenu affordance.
 
 **Acceptance:** an existing highlight can be selected and removed via its own
 menu, remains removed after reopening the book, and never exposes an Add action
-for the same targeted highlight. The starting point and extent of Play from
-here are pending D18.
+for the same targeted highlight. Play from here starts at the beginning of the
+selected or targeted highlighted range and continues through subsequent content;
+it does not stop at the end of the selection. The range retains its book and
+content identity even if the user changes screens before audio is ready.
 
 ## 5. Dismissing the miniplayer ends its session
 
@@ -139,8 +142,8 @@ concurrent independent manual conversion remains intact.
 ## 6. Library grid and initially concealed search
 
 **Confirmed:** the library's top-bar More menu exposes collection layout
-controls. The user can change the grid's density/row-and-column presentation,
-and the collection adapts to the available screen or window size, like Finder.
+controls. The user chooses the number of columns; rows follow automatically.
+Cover and cell sizes adapt to the available screen or window size, like Finder.
 
 - Layout changes are presentation preferences; they do not reorder, filter,
   duplicate, or lose books or clear the active search.
@@ -152,12 +155,19 @@ and the collection adapts to the available screen or window size, like Finder.
 - Search remains reachable with native keyboard and accessibility interactions;
   Mac uses an equivalent initially concealed native search presentation.
 - An active query remains apparent while filtering results.
-- The precise density control (cover size, column count, or explicit rows ×
-  columns) is pending D14. No fixed set of layouts is assumed yet.
+- The column-count preference is explicit and visible in the More menu. The
+  library does not substitute a cover-size slider or ask for a fixed row count.
+- When a narrower window cannot accommodate the requested column count with
+  legible content and usable controls, the displayed grid temporarily uses fewer
+  columns. The requested count remains saved and returns when space permits.
+- An incomplete final row keeps the same cell sizing and column alignment as
+  complete rows; it does not stretch remaining covers across the window.
 
 **Acceptance:** the selected layout fits narrow and wide windows without
-horizontal overflow, unusably small controls, or distorted covers. Search can
-be revealed, used, cleared, and dismissed without changing the library's data.
+horizontal overflow, unusably small controls, or distorted covers. Choosing a
+count, shrinking the window, and expanding it restores that count without a new
+selection. Search can be revealed, used, cleared, and dismissed without changing
+the library's data.
 
 ## 7. Voice models have a dedicated destination
 
@@ -206,8 +216,17 @@ a magnetic slider, with no numeric-entry alert.
 - Keyboard and accessibility adjustments produce the same allowed values.
 - Valid ranges remain meaningful for each setting; labels stay readable at
   supported accessibility text sizes.
-- The exact point increment is pending D20. Controls in other units are not
-  silently assigned a one-point step.
+- Allowed values are the current predefined values for each control, including
+  irregularly spaced values. No new universal one-point increment is introduced.
+- Current values remain valid when replacing a chooser or numeric alert with a
+  slider. The labels, stored value, live preview, and accessibility value agree.
+- For font size, the predefined scale remains 14, 17, 20, 24, and 28 pt.
+- For line spacing in the existing iOS/iPadOS controls, values remain 0 through
+  16 pt in 2 pt increments; margins remain 16 through 80 pt in 4 pt increments.
+- Existing Mac Aa presets remain 16, 24, 32, 48, and 64 pt for margins and
+  -1, 0, 0.5, 1, 2, and 3 pt for letter spacing. The requirement preserves the
+  existing control's predefined set rather than silently replacing it with
+  another platform's set. Other units retain their own existing choices.
 
 **Acceptance:** every point-valued control reaches its minimum, intermediate
 values, and maximum with snapping and no alert, and retains the chosen value.
@@ -233,10 +252,16 @@ application's interface language and regardless of conversion entry point.
   never sufficient by itself. Content is always analyzed as well.
 - Multiple representative content segments are sampled statistically across the
   book, rather than relying on a title, the opening page, or one chapter.
-- A definite book language requires agreement among the applicable evidence.
-  Disagreement or insufficient evidence leads to additional different segments.
-- The exact treatment of incorrect metadata versus consistent content is
-  pending D15. The app must not present a guess as a confirmed book language.
+- A definite single book language requires agreement among the representative,
+  informative content samples. Disagreement or insufficient evidence leads to
+  additional different segments, distributed beyond the initially sampled areas.
+- If markup or metadata declares English but all informative samples agree on
+  Portuguese, Portuguese is confirmed and the declaration is treated as
+  incorrect. Metadata has initial priority as a clue, not authority to override
+  consistent content evidence.
+- Meaningful content disagreement cannot be discarded to manufacture unanimity:
+  it triggers more analysis or a multilingual classification. The app must not
+  present a majority guess as a confirmed single language.
 - Front matter, quotations, names, and sparse passages must not silently force
   a wrong language over the body of the book. Evidence and uncertainty remain
   distinguishable.
@@ -250,11 +275,38 @@ application's interface language and regardless of conversion entry point.
 - Native reading order, source passage identity, chapter identity, and the
   relation between parallel passages remain preserved; visual proximity alone
   must not interleave unrelated lines into the narration.
-- The narration policy for paired original/translation content is pending D16.
-  Recognition of multiple languages does not itself authorize skipping a
-  translation or reading it twice.
+- Bilingual editions always narrate both languages. There is no default that
+  silently omits the translation or asks the user to choose just one language.
+- Narration follows the book's reading order: one complete page or column,
+  followed by its corresponding page or column. It does not alternate original
+  and translation sentence by sentence or paragraph by paragraph.
+- For a left-original/right-translation edition, the complete left page/column
+  precedes the corresponding right page/column before advancing to the next pair.
+  Other source reading directions preserve the book's actual order.
+- Each passage is narrated once in its resolved language with the appropriate
+  voice; changes of voice do not reset reading position or lose text boundaries.
 
-### 11.3 Narration, persistence, and unresolved results
+### 11.3 Two-language voice coverage
+
+- If existing installed voices/models cover both languages, those compatible
+  selections are used. A model that supports both languages need not be
+  duplicated just to create a secondary slot.
+- If two models are needed, the app recommends the appropriate downloads, one
+  for the primary language and one secondary model for the other language.
+- Recommendations identify the covered languages and retain explicit download
+  consent. The user can use an already installed compatible system voice under
+  the existing fallback policy instead of an unnecessary model download.
+- The second-language model is selected because its language is needed; using
+  it does not require the primary model to fail first. This differs from
+  technical-failure fallback, which must also remain language compatible.
+- A missing second-language voice cannot silently cause that language to be
+  skipped, pronounced using an incompatible voice, or reported as converted.
+  The existing recovery flow explains what is missing and offers compatible
+  installed voices or an explicit model download.
+- The active language and voice remain identifiable through language transitions
+  and fallback. Explicitly configured selections are preserved when compatible.
+
+### 11.4 Narration, persistence, and unresolved results
 
 - Narration uses a voice compatible with the resolved book/chapter/passage
   language, while respecting explicit provider choices and installed capability.
@@ -265,15 +317,29 @@ application's interface language and regardless of conversion entry point.
   conversion agree on language and passage boundaries.
 - Confirmed decisions remain associated with the correct book/content identity.
   Old analysis or audio cannot overwrite a changed source or a newer selection.
-- Inconclusive analysis has a bounded terminal outcome rather than unlimited
-  resampling. That outcome is pending D17; manual correction policy is D21.
+- Inconclusive initial analysis automatically examines additional different
+  representative passages. The app does not immediately ask the user to guess.
+- Only after further available content cannot establish a reliable result does
+  the app ask the user to identify the book's language or unresolved language
+  scope. It does not silently fall back to the interface/system language.
+- Resampling is bounded and cancellable. Sparse or unidentifiable content reaches
+  that understandable recovery state instead of an endless loading state.
+- A manual correction can target a book or a passage. It is explicitly marked,
+  saved for that scope, and takes precedence over automatic results there; it
+  cannot be overwritten by a late analysis result. Other passages keep their
+  own decisions, and the user can return the corrected scope to automatic mode.
+- Changing an authoritative language decision cannot reuse audio narrated in
+  the previous incorrect language as if it matched the corrected request.
 - User-visible language names, uncertainty, and recovery messages are localized.
 
 **Acceptance cases:** correct metadata plus matching text; missing metadata;
-incorrect metadata; conflicting samples; short/sparse books; foreign quotations;
+incorrect metadata overridden by unanimous content; conflicting samples;
+short/sparse books; foreign quotations;
 chapter-language changes; language changes within a chapter; facing-page and
-side-by-side bilingual content; no installed matching voice; interrupted analysis;
-and matching results through streaming and manual conversion.
+side-by-side bilingual content narrated in both languages in book order; missing
+primary or secondary voice; accepted and declined model-download recommendations;
+interrupted analysis; manual book/passage correction; and matching results through
+streaming and manual conversion.
 
 ## 12. Complete interface localization
 
@@ -297,26 +363,23 @@ Spanish, including menus, accessibility, errors, conversion states, and recovery
 recovery states have coherent localized visible and accessible text in each
 supported locale.
 
-## 13. Decisions still awaiting the user's answer
+## 13. Confirmed decision record
 
-These questions refine accepted requirements. Proposed answers are not defaults
-authorized by silence.
+All questions from the product interview are resolved. IDs retain their interview
+numbers so that the final outcomes can be checked against the user's answers.
 
-| ID | Remaining product choice | Recommendation awaiting confirmation |
+| ID | Product choice | Confirmed outcome |
 | --- | --- | --- |
-| D14 | Library density: cover size, column count, or explicit rows × columns? | Cover-size control with automatic rows/columns, as in Finder. |
-| D15 | Metadata says English; all sampled content says Portuguese. Can content override metadata? | Confirm Portuguese and treat metadata as incorrect. |
-| D16 | Narration of bilingual original/translation pairs: both or one language? | Ask once per book, then remember the selection. |
-| D17 | Result when additional sampling remains inconclusive? | Ask for the language for this book; do not guess. |
-| D18 | Play from here: onward from the start of the selection/highlight, or selection only? | Start at the selected range's beginning and continue onward. |
-| D19 | Reader direct-access tool before any prior choice? | Aa. |
-| D20 | Sliders: one-point increments or existing predefined values? | One-point increments while dragging. |
-| D21 | May the user correct automatic language decisions explicitly? | Yes, scoped to the book or passage, authoritative for that scope. |
-
-Further dependent choices, such as the order when both parallel languages are
-selected, remain subject to the corresponding answer rather than an invented
-product default. The final specification must replace this table with settled
-outcomes before being described as final.
+| D14 | Library density control | Explicit column count, automatic rows, responsive cell sizing. |
+| D15 | Incorrect language declaration | Consistent content evidence overrides incorrect metadata. |
+| D16 | Bilingual narration | Always narrate both languages; recommend two models, including a secondary model, when needed. |
+| D17 | Inconclusive language identification | Analyze other representative passages first; ask only if a reliable result still cannot be obtained. |
+| D18 | Play from here | Start at the selected range's beginning and continue onward. |
+| D19 | Initial recent reader tool | Aa. |
+| D20 | Magnetic slider values | Preserve each control's existing predefined values. |
+| D21 | Manual language correction | Allowed for a book or passage, authoritative for the corrected scope. |
+| D22 | Parallel bilingual reading order | Complete each source page/column, then its corresponding page/column in book order. |
+| D23 | Narrow-window column behavior | Temporarily reduce displayed columns for legibility; restore the saved requested count when space permits. |
 
 ## 14. Relationship to existing specifications and Apple guidance
 

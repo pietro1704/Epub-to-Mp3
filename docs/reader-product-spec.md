@@ -6,7 +6,7 @@ and affected real app before claiming a format, feature or platform is supported
 The [Apple native experience specification](apple-native-experience-spec.md)
 records the 2026-11-12 refinement of reader chrome, menus, selection, playback,
 library layout, settings, language identification, and localization. Its confirmed
-outcomes take precedence for those areas; its open choices remain explicitly draft.
+outcomes take precedence for those areas; the product interview is fully resolved.
 [CONTEXT.md](../CONTEXT.md), relevant ADRs and the
 [native reader contract](../ios/EpubToMp3/AGENTS.md) govern current terminology and
 geometry; [execution policy](agents/execution-policy.md) governs validation.
