@@ -28,6 +28,51 @@ class SimulatorTestBackend < SimulatorBackend
     EpubToMp3Tests/ConversionOptionsInteropTests/testOptInSystemProviderPublishesPlayableMP3ThroughRust
   ].freeze
 
+  # Closed, task-scoped native control/geometry regression batch. The resource,
+  # identity, deadline and cleanup admission rules are unchanged.
+  APPLE_EXPERIENCE_METHODS = %w[
+    EpubToMp3Tests/BackendSettingsRowsTests/testAbsentWarningDoesNotReserveAnEmptyLastRow
+    EpubToMp3Tests/BackendSettingsRowsTests/testDisabledRemoteBackendHasOneVisibleURLCellEvenWithInvalidURL
+    EpubToMp3Tests/PlatformSettingsCellTests/testReusingAnInformationCellReleasesItsPreviousSwitch
+    EpubToMp3Tests/PlatformSettingsCellTests/testPlatformRowIsReadOnlyInformation
+    EpubToMp3Tests/VoiceModelSettingsNavigationTests/testVoiceModelsPushTheirOwnDestinationAndReturnWithoutInlineExpansion
+    EpubToMp3Tests/PointPresetScaleTests/testAnExistingValueRemainsReachableWithoutChangingStoredPreferences
+    EpubToMp3Tests/PointPresetScaleTests/testIrregularFontScaleKeepsTheExistingNearestChoices
+    EpubToMp3Tests/PointPresetSliderTests/testNativeSliderAndAccessibilityUseTheSamePresetValues
+    EpubToMp3Tests/PointPresetSliderTests/testSettingsRowsUpdateWithoutReplacingTheSliderOrPresentingAnAlert
+    EpubToMp3Tests/ReaderToolPreferenceTests/testRecentToolDefaultsAndPersistsAcrossRelaunch
+    EpubToMp3Tests/ReaderToolBarTests/testExactlyTwoNativeItemsKeepIdentityAfterUsingAnotherTool
+    EpubToMp3Tests/ReaderSavedHighlightsTests/testRemovingTheLastSavedHighlightRestoresOriginalBookBackground
+    EpubToMp3Tests/ReaderSavedHighlightsTests/testRemovalDoesNotChangeAnotherHighlightOrTextAndRangesStayBounded
+    EpubToMp3Tests/ReaderSavedHighlightsTests/testNativeWordSelectionCanTargetAPartialHighlightInsideTheWord
+    EpubToMp3Tests/ReaderSavedHighlightsTests/testPlaybackOffsetUsesUnicodeScalarBoundariesInsteadOfUTF16Length
+    EpubToMp3Tests/MiniPlayerDismissalTests/testDismissalSurvivesNavigationAndRelaunchUntilNewPlaybackForThatBook
+    EpubToMp3Tests/MiniPlayerDismissalTests/testDismissalCannotReviveTheOldAudioBookAfterReturningFromAnotherReader
+    EpubToMp3Tests/MiniPlayerDismissalTests/testShortCancelledAndUpwardDragsNeverDismiss
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testAccessibilityTextUsesOneFullWidthColumn
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testPhoneTileReservesSpaceForCoverAndMetadata
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testDefaultDensityFitsWithoutExceedingTheRequestedCount
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testUnavailableWidthUsesOneColumnWithoutInvalidArithmetic
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testRequestedColumnsReturnAfterNarrowingAndAccessibilityConstraints
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testColumnPreferenceSurvivesReopeningWithoutSavingTemporaryDensity
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testTileWidthGrowsInsteadOfAddingColumns
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testWideTilesUseBothColumnsWithoutUnusedSpace
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testTileWidthFillsUsableSpaceAcrossColumns
+    EpubToMp3Tests/LibraryGridLayoutMetricsTests/testTileWidthNeverNegative
+    EpubToMp3Tests/IOSLibraryCollectionLayoutTests/testActualLibraryCollectionHasTwoItemsPerRowAcrossResize
+    EpubToMp3Tests/ReaderChromeOverlayTests/testChromeRoundTripsPreserveTheActualNativeReadingViewport
+    EpubToMp3Tests/BookLanguageDecisionTests/testCorrectionsRemainScopedToContentIdentityAndManualChoicesWin
+    EpubToMp3Tests/BookLanguageDecisionTests/testLegacyModelMismatchUsesTheSameNativeRecoveryContract
+    EpubToMp3Tests/BookLanguageDecisionTests/testCompatibleSecondaryRecoveryKeepsPrimaryAndAutomaticLanguage
+    EpubToMp3Tests/BookLanguageDecisionTests/testRenderedSelectionMapsToSourceScalarsAndRejectsAmbiguousText
+    EpubToMp3Tests/LocalizationCoverageTests/testSupportedLocalesHaveEveryEnglishKeyAndMatchingFormatArguments
+    EpubToMp3Tests/ReaderAccessibilityContractTests/testNativeReaderInstallsStableContentAndNavigationIdentifiers
+    EpubToMp3Tests/ReaderListeningSessionTests/testConstructingSessionNeverOpensOrStartsPlayback
+    EpubToMp3Tests/ReaderListeningSessionTests/testCancellationRejectsLateFileOpenBeforeItTouchesThePlayer
+    EpubToMp3Tests/ReaderListeningSessionTests/testBookReplacementRejectsLateFileOpenBeforeItTouchesThePlayer
+    EpubToMp3Tests/ReaderListeningSessionTests/testCurrentOpenFailureReportsWithoutInstallingAPlaybackSession
+  ].freeze
+
   def initialize(test_run:, test_selector: nil, test_manifest: nil, seed_book: nil, **options)
     super(**options)
     @test_run = File.realpath(test_run)
@@ -36,7 +81,7 @@ class SimulatorTestBackend < SimulatorBackend
       @test_manifest = File.realpath(test_manifest)
       @manifest_digest = Digest::SHA256.file(@test_manifest).hexdigest
       @test_selectors = JSON.parse(File.read(@test_manifest))
-      unless @test_selectors.is_a?(Array) && [REGRESSION_METHODS, CONVERSION_METHODS].any? { |allowed|
+      unless @test_selectors.is_a?(Array) && [REGRESSION_METHODS, CONVERSION_METHODS, APPLE_EXPERIENCE_METHODS].any? { |allowed|
         @test_selectors.length == allowed.length && @test_selectors.uniq.sort == allowed.sort
       }
         raise SimulatorResources::Refusal, 'Manifest must select exactly an approved test preset'

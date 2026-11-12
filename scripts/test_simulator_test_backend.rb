@@ -30,6 +30,26 @@ class SimulatorTestBackendTest < Minitest::Test
     assert_raises(SimulatorResources::Refusal) { SimulatorTestBackend.new(**@options.merge(test_run: foreign)) }
   end
 
+  def test_native_experience_manifest_is_exact_and_never_accepts_a_partial_or_expanded_batch
+    manifest = File.join(@directory, 'experience.json')
+    selectors = SimulatorTestBackend::APPLE_EXPERIENCE_METHODS
+    options = @options.reject { |key, _| key == :test_selector }.merge(test_manifest: manifest)
+    assert_equal selectors.size, selectors.uniq.size
+    assert selectors.all? { |selector| selector.start_with?('EpubToMp3Tests/') }
+    [selectors.drop(1), selectors + [selectors.first], selectors + ['EpubToMp3Tests/Other/testOther']].each do |invalid|
+      File.write(manifest, JSON.generate(invalid))
+      assert_raises(SimulatorResources::Refusal) { SimulatorTestBackend.new(**options) }
+    end
+    File.write(manifest, JSON.generate(selectors))
+    backend = SimulatorTestBackend.new(**options)
+    received = nil
+    backend.define_singleton_method(:spawn_test) { |*argv, **| received = argv; 12345 }
+    backend.start(:test)
+    actual = received.grep(/\A-only-testing:/).map { |item| item.delete_prefix('-only-testing:') }
+    assert_equal selectors, actual
+    assert_equal 'test-without-building', received.last
+  end
+
   def test_changed_test_run_is_refused_before_launch
     backend = SimulatorTestBackend.new(**@options)
     File.write(@run, 'changed')
