@@ -125,7 +125,10 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
         baseline.jobs.delete(job).unwrap();
         let selected_audio = output.join(&baseline_result.chapters[0].filename);
         let prior_audio = fs::read(&selected_audio).unwrap();
-        let other_audio = [output.join("unselected-a.mp3"), output.join("unselected-c.mp3")];
+        let other_audio = [
+            output.join("unselected-a.mp3"),
+            output.join("unselected-c.mp3"),
+        ];
         for path in &other_audio {
             fs::write(path, b"unselected audio").unwrap();
         }
