@@ -106,7 +106,7 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
         let output = paths.output_dir.join(job);
         fs::create_dir_all(&output).unwrap();
         let baseline = ConversionWorker::new(AppConfig::from_paths(paths.clone())).unwrap();
-        baseline
+        let baseline_result = baseline
             .run(ConversionRequest {
                 tts_preferences: None,
                 models_root: None,
@@ -123,9 +123,9 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
             .unwrap();
         calls.lock().unwrap().clear();
         baseline.jobs.delete(job).unwrap();
-        let selected_audio = output.join("0001-b.mp3");
+        let selected_audio = output.join(&baseline_result.chapters[0].filename);
         let prior_audio = fs::read(&selected_audio).unwrap();
-        let other_audio = [output.join("0001-a.mp3"), output.join("0001-c.mp3")];
+        let other_audio = [output.join("unselected-a.mp3"), output.join("unselected-c.mp3")];
         for path in &other_audio {
             fs::write(path, b"unselected audio").unwrap();
         }
