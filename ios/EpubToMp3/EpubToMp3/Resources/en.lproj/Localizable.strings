@@ -804,3 +804,30 @@
 "readerSettings.audioTracking" = "Follow spoken text";
 "readerSettings.audioTrackingDescription" = "Highlight the current sentence and word while audio is playing.";
 "settings.modelCompatibility.otherLanguage" = "For another language — you can still preview this installed voice.";
+
+/* Localized navigation, accessibility and actionable failures. */
+"reader.pageTurning" = "Page turning";
+"library.untitled" = "Untitled";
+"intents.noLibrary" = "No books found in your library. Import an EPUB first.";
+"intents.bookNotFound" = "No book matching “%@” found in your library.";
+"Continue Reading" = "Continue Reading";
+"Opens the audiobook you were reading most recently." = "Opens the audiobook you were reading most recently.";
+"Open Book" = "Open Book";
+"Opens a specific audiobook by title." = "Opens a specific audiobook by title.";
+"Book Title" = "Book Title";
+"The title of the book you want to open." = "The title of the book you want to open.";
+"reader.pdf" = "PDF";
+"library.empty.title" = "Your library is empty";
+"reader.selectBook" = "Select a book to start reading";
+"error.sharedStorageUnavailable" = "Shared storage is unavailable. Open the app and try importing the book again.";
+"error.historyUnavailable" = "Conversion history could not be opened.";
+"library.error.fileUnavailable" = "The selected book file is unavailable.";
+"library.error.fileAccess" = "Cannot read %@. Select the file again, or move it to Documents or Downloads and try again.";
+"library.error.fileRead" = "Could not read %@: %@";
+"library.error.notFound" = "This book could not be found in your library.";
+"library.error.reimport" = "Import %@ again to restore access to this book.";
+"library.error.removedWhileOpening" = "This book was removed from the library while it was opening.";
+"library.error.changedWhileOpening" = "This book changed while it was opening. Try again.";
+"library.error.savedLibraryUnavailable" = "The saved library could not be loaded. Its original data has been preserved.";
+"library.error.openTimeout" = "Opening the book took too long. Check whether iCloud has finished downloading it, then try again.";
+"library.error.changedDuringImport" = "The selected book changed during import. Try importing it again.";

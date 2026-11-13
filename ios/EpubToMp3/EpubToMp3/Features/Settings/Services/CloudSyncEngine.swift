@@ -149,7 +149,7 @@ final class CloudSyncEngine: ObservableObject {
     private func bookFrom(record: CKRecord) -> BookEntity {
         BookEntity(
             id: record.recordID.recordName,
-            title: record["title"] as? String ?? "Untitled",
+            title: record["title"] as? String ?? L10n.string("library.untitled"),
             author: record["author"] as? String,
             bookmark: Data(),
             displayFilename: record["displayFilename"] as? String ?? "",

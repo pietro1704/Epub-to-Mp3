@@ -804,3 +804,30 @@
 "readerSettings.audioTracking" = "Acompanhar leitura";
 "readerSettings.audioTrackingDescription" = "Destacar a frase e a palavra enquanto o áudio estiver tocando.";
 "settings.modelCompatibility.otherLanguage" = "Para outro idioma — você ainda pode ouvir esta voz instalada.";
+
+/* Localized navigation, accessibility and actionable failures. */
+"reader.pageTurning" = "Virando página";
+"library.untitled" = "Sem título";
+"intents.noLibrary" = "Nenhum livro encontrado na biblioteca. Importe um EPUB primeiro.";
+"intents.bookNotFound" = "Nenhum livro correspondente a “%@” foi encontrado na biblioteca.";
+"Continue Reading" = "Continuar leitura";
+"Opens the audiobook you were reading most recently." = "Abre o audiolivro que você estava lendo mais recentemente.";
+"Open Book" = "Abrir livro";
+"Opens a specific audiobook by title." = "Abre um audiolivro pelo título.";
+"Book Title" = "Título do livro";
+"The title of the book you want to open." = "O título do livro que você deseja abrir.";
+"reader.pdf" = "PDF";
+"library.empty.title" = "Sua biblioteca está vazia";
+"reader.selectBook" = "Selecione um livro para começar a ler";
+"error.sharedStorageUnavailable" = "O armazenamento compartilhado está indisponível. Abra o app e tente importar o livro novamente.";
+"error.historyUnavailable" = "Não foi possível abrir o histórico de conversões.";
+"library.error.fileUnavailable" = "O arquivo do livro selecionado está indisponível.";
+"library.error.fileAccess" = "Não foi possível ler %@. Selecione o arquivo novamente ou mova-o para Documentos ou Downloads e tente outra vez.";
+"library.error.fileRead" = "Não foi possível ler %@: %@";
+"library.error.notFound" = "Este livro não foi encontrado na sua biblioteca.";
+"library.error.reimport" = "Importe %@ novamente para restaurar o acesso a este livro.";
+"library.error.removedWhileOpening" = "Este livro foi removido da biblioteca enquanto era aberto.";
+"library.error.changedWhileOpening" = "Este livro foi alterado enquanto era aberto. Tente novamente.";
+"library.error.savedLibraryUnavailable" = "Não foi possível carregar a biblioteca salva. Os dados originais foram preservados.";
+"library.error.openTimeout" = "A abertura do livro demorou demais. Verifique se o iCloud terminou de baixá-lo e tente novamente.";
+"library.error.changedDuringImport" = "O livro selecionado foi alterado durante a importação. Tente importá-lo novamente.";

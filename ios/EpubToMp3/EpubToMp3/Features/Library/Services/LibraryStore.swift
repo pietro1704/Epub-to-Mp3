@@ -297,14 +297,14 @@ final class LibraryStore: ObservableObject {
     ) throws -> URL {
         guard let i = books.firstIndex(where: { $0.id == id }) else {
             throw NSError(domain: "LibraryStore", code: 404,
-                          userInfo: [NSLocalizedDescriptionKey: "Book not found in library"])
+                          userInfo: [NSLocalizedDescriptionKey: L10n.string("library.error.notFound")])
         }
         guard !books[i].bookmark.isEmpty else {
             throw NSError(
                 domain: "LibraryStore",
                 code: 410,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "This book has no security-scoped bookmark (re-import \(books[i].displayFilename) from the file picker to restore access)."]
+                    L10n.string("library.error.reimport", books[i].displayFilename)]
             )
         }
         // Try security-scoped resolution first (matches a sandboxed
@@ -351,7 +351,7 @@ final class LibraryStore: ObservableObject {
     func openBookFileAsync(id: String) async throws -> URL {
         guard let initialIndex = books.firstIndex(where: { $0.id == id }) else {
             throw NSError(domain: "LibraryStore", code: 404,
-                          userInfo: [NSLocalizedDescriptionKey: "Book not found in library"])
+                          userInfo: [NSLocalizedDescriptionKey: L10n.string("library.error.notFound")])
         }
         let bookmark = books[initialIndex].bookmark
         guard !bookmark.isEmpty else {
@@ -359,7 +359,7 @@ final class LibraryStore: ObservableObject {
                 domain: "LibraryStore",
                 code: 410,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "This book has no security-scoped bookmark (re-import \(books[initialIndex].displayFilename) from the file picker to restore access)."]
+                    L10n.string("library.error.reimport", books[initialIndex].displayFilename)]
             )
         }
 
@@ -375,13 +375,13 @@ final class LibraryStore: ObservableObject {
             try Task.checkCancellation()
             guard let currentIndex = books.firstIndex(where: { $0.id == id }) else {
                 throw NSError(domain: "LibraryStore", code: 404,
-                              userInfo: [NSLocalizedDescriptionKey: "Book was removed from library while opening"])
+                              userInfo: [NSLocalizedDescriptionKey: L10n.string("library.error.removedWhileOpening")])
             }
             guard removalGenerations[id, default: 0] == removalGeneration,
                   books[currentIndex].bookmark == bookmark,
                   books[currentIndex].fileType == snapshot.fileType else {
                 throw NSError(domain: "LibraryStore", code: 409,
-                              userInfo: [NSLocalizedDescriptionKey: "Book changed in the library while opening. Please try again."])
+                              userInfo: [NSLocalizedDescriptionKey: L10n.string("library.error.changedWhileOpening")])
             }
             if let fresh = prepared.bookmark { books[currentIndex].bookmark = fresh }
             if let cover = prepared.refreshedCover,
@@ -441,7 +441,7 @@ final class LibraryStore: ObservableObject {
 
     private var unavailableCatalogError: NSError {
         NSError(domain: "LibraryStore", code: 8, userInfo: [NSLocalizedDescriptionKey:
-            "The saved library could not be loaded. Its original data has been preserved."])
+            L10n.string("library.error.savedLibraryUnavailable")])
     }
 
     private func requireLoadedCatalog() throws {
