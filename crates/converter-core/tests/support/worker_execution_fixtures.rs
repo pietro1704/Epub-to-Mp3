@@ -36,16 +36,28 @@ pub(super) fn book(path: &Path) {
         .unwrap();
     archive.start_file("content.opf", options).unwrap();
     archive.write_all(br#"<package xmlns:dc="x"><metadata><dc:title>Flags fixture</dc:title></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/><itemref idref="b"/><itemref idref="c"/></spine></package>"#).unwrap();
-    for (name, text) in [
-        ("a", "Unselected first chapter."),
-        ("b", "Selected chapter regenerated locally."),
-        ("c", "Unselected final chapter."),
+    for (name, heading, text) in [
+        (
+            "a",
+            "The Morning Market",
+            "The first chapter follows a family through the morning market in their English town. They walk between the stalls, choose fresh bread and apples, and speak with neighbors about the weather. After shopping, they carry their bags home and prepare lunch together.",
+        ),
+        (
+            "b",
+            "A Walk Through Town",
+            "The selected chapter follows the family on a quiet walk through town. They visit the library, read a short story, and meet their friends near the old station. The children describe their favorite books while everyone enjoys the warm afternoon before walking home.",
+        ),
+        (
+            "c",
+            "An Evening by the River",
+            "The final chapter takes the family beside the river in the evening. They sit beneath the trees, share a simple meal, and watch the boats move slowly past the bridge. As the sun sets, they return to their house and talk about the day.",
+        ),
     ] {
         archive
             .start_file(format!("{name}.xhtml"), options)
             .unwrap();
         archive
-            .write_all(format!("<html><body><h1>{name}</h1><p>{text}</p></body></html>").as_bytes())
+            .write_all(format!("<html><body><h1>{heading}</h1><p>{text}</p></body></html>").as_bytes())
             .unwrap();
     }
     archive.finish().unwrap();
