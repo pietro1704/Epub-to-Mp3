@@ -72,7 +72,7 @@ final class MacBookListeningSession {
     }
 
     /// macOS starts local Rust streaming directly from Book Detail.
-    func start() {
+    func start(optionsOverride: ConversionOptions? = nil) {
         guard localPlaybackGeneration == nil else { return }
         let jobID = UUID().uuidString
         localPlaybackGeneration = jobID
@@ -81,7 +81,7 @@ final class MacBookListeningSession {
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
                 guard !Task.isCancelled, localPlaybackGeneration == jobID else { return }
-                startRustStreaming(url: url, jobID: jobID)
+                startRustStreaming(url: url, jobID: jobID, optionsOverride: optionsOverride)
             } catch {
                 guard !Task.isCancelled, localPlaybackGeneration == jobID else { return }
                 localPlaybackGeneration = nil
@@ -90,7 +90,7 @@ final class MacBookListeningSession {
         }
     }
 
-    private func startRustStreaming(url: URL, jobID: String) {
+    private func startRustStreaming(url: URL, jobID: String, optionsOverride: ConversionOptions?) {
         guard localPlaybackGeneration == jobID else { return }
         localPlaybackControl?.cancel()
         let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
@@ -135,7 +135,7 @@ final class MacBookListeningSession {
         }
 
         let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
-        let conversionOptions = settings.conversionOptions
+        let conversionOptions = optionsOverride ?? settings.conversionOptions
         Task { [weak self] in
             guard let self, let control = self.localPlaybackControl,
                   self.localPlaybackGeneration == jobID else { return }
@@ -208,12 +208,30 @@ final class MacBookListeningSession {
                 playerPresentation.showFullPlayer()
             } catch {
                 guard localPlaybackGeneration == jobID else { return }
-                localPlaybackGeneration = nil
                 localPlaybackControl?.cancel()
                 localPlaybackControl = nil
                 if let current = player.snapshot, current.jobId == jobID {
                     player.finishStreaming(snapshot: BookDetailConversionSnapshot.terminal(from: current, state: "failed", error: error.localizedDescription))
                 }
+                if BookLanguageUncertain.decode(error) != nil {
+                    let recovered = await BookLanguagePicker.recover(error, bookID: book.id, isCurrent: { [weak self] in
+                        self?.localPlaybackGeneration == jobID
+                    })
+                    guard localPlaybackGeneration == jobID else { return }
+                    localPlaybackGeneration = nil
+                    if recovered { start(optionsOverride: conversionOptions) }
+                    return
+                }
+                if TtsLanguageMismatch.decode(error) != nil {
+                    let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: { [weak self] in
+                        self?.localPlaybackGeneration == jobID
+                    })
+                    guard localPlaybackGeneration == jobID else { return }
+                    localPlaybackGeneration = nil
+                    if let choice { start(optionsOverride: conversionOptions.recovering(with: choice.candidate, language: choice.language)) }
+                    return
+                }
+                localPlaybackGeneration = nil
                 onError(error)
             }
         }

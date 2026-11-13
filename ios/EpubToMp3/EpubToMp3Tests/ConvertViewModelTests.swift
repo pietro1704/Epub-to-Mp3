@@ -31,7 +31,7 @@ final class ConvertViewModelTests: XCTestCase {
     }
 
     @MainActor
-    func testCompatibleRecoveryAppliesOnlyToRetryWithoutChangingSavedPreferences() async throws {
+    func testCompatibleRecoveryAddsSecondaryOnlyForRetryWithoutChangingSavedPreferences() async throws {
         var captured: ConversionOptions?
         let result = manualResult()
         let model = ConvertViewModel(converter: { _, _, _, options in captured = options; return result })
@@ -42,8 +42,9 @@ final class ConvertViewModelTests: XCTestCase {
         model.recoverySelection = candidate
         model.recoveryLanguage = "en-US"
         await model.submit()
-        XCTAssertEqual(captured?.ttsPreferences?.primary, candidate.selection)
-        XCTAssertEqual(captured?.language, "en-US")
+        XCTAssertEqual(captured?.ttsPreferences?.primary, preferences.primary)
+        XCTAssertEqual(captured?.ttsPreferences?.secondary, candidate.selection)
+        XCTAssertNil(captured?.language)
         XCTAssertEqual(model.inheritedPreferences, preferences)
         XCTAssertNil(model.recoverySelection)
         await model.submit()

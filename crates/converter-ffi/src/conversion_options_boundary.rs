@@ -13,6 +13,7 @@ pub(super) struct EmbeddedConversionOptionsV1 {
     pub(super) engine: Option<String>,
     pub(super) voice: Option<String>,
     pub(super) language: Option<String>,
+    pub(super) language_overrides: Vec<converter_core::language::LanguageOverride>,
     pub(super) models_root: Option<String>,
     pub(super) model_id: Option<String>,
     pub(super) model_path: Option<String>,
@@ -23,6 +24,9 @@ pub(super) struct EmbeddedConversionOptionsV1 {
 impl EmbeddedConversionOptionsV1 {
     pub(super) fn validate_contract(&self) -> Result<(), String> {
         self.pronunciation.validate()?;
+        for correction in &self.language_overrides {
+            correction.validate()?;
+        }
         if !self.pronunciation.rules.is_empty() && self.tts_preferences.is_none() {
             return Err("Pronunciation requires an explicit captured TTS selection".into());
         }
@@ -220,4 +224,28 @@ pub(super) fn resolve_piper_model_paths(
         ));
     }
     Ok((model, config))
+}
+
+#[cfg(test)]
+mod language_correction_tests {
+    use super::EmbeddedConversionOptionsV1;
+
+    #[test]
+    fn language_overrides_cross_the_boundary_with_source_coordinates() {
+        let options: EmbeddedConversionOptionsV1 = serde_json::from_str(
+            r#"{"language_overrides":[{"chapter_index":3,"start":12,"end":80,"language":"pt-PT"}]}"#,
+        ).unwrap();
+        options.validate_contract().unwrap();
+        assert_eq!(options.language_overrides[0].chapter_index, 3);
+        assert_eq!(options.language_overrides[0].language, "pt-PT");
+        assert!(serde_json::from_str::<EmbeddedConversionOptionsV1>(
+            r#"{"language_overrides":[{"chapter_index":-1,"start":12,"end":80,"language":"en"}]}"#,
+        )
+        .is_err());
+        let invalid: EmbeddedConversionOptionsV1 = serde_json::from_str(
+            r#"{"language_overrides":[{"chapter_index":0,"start":80,"end":12,"language":"en"}]}"#,
+        )
+        .unwrap();
+        assert!(invalid.validate_contract().is_err());
+    }
 }

@@ -247,6 +247,24 @@ final class MacBookDetailViewController: NSViewController {
                 _ = try finalizeLocalConversion(result)
             } catch {
                 guard !Task.isCancelled, localConversionGeneration == jobID else { return }
+                if BookLanguageUncertain.decode(error) != nil {
+                    let recovered = await BookLanguagePicker.recover(error, bookID: book.id, isCurrent: { [weak self] in
+                        self?.localConversionGeneration == jobID && self?.isViewLoaded == true && self?.view.window != nil
+                    })
+                    guard localConversionGeneration == jobID else { return }
+                    localConversionGeneration = nil
+                    if recovered { convertWholeBook(options: options) }
+                    return
+                }
+                if TtsLanguageMismatch.decode(error) != nil {
+                    let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: { [weak self] in
+                        self?.localConversionGeneration == jobID && self?.isViewLoaded == true && self?.view.window != nil
+                    })
+                    guard localConversionGeneration == jobID else { return }
+                    localConversionGeneration = nil
+                    if let choice { convertWholeBook(options: options.recovering(with: choice.candidate, language: choice.language)) }
+                    return
+                }
                 localConversionGeneration = nil
                 let alert = NSAlert()
                 detailContent.recoveryPanel.refresh(bookID: book.id)

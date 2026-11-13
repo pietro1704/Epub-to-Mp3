@@ -24,13 +24,16 @@ final class MacReaderPlaybackSession {
         self.conversionExecutor = conversionExecutor
     }
 
-    func start(owner: AnyObject, optionsOverride: ConversionOptions? = nil) {
+    // The double optional distinguishes "use the current page" from an explicit nil page.
+    func start(owner: AnyObject, optionsOverride: ConversionOptions? = nil,
+               chapterOverride: Int? = nil, pageRatioOverride: Double?? = nil) {
         playerPresentation.dismissFullPlayer()
         let defaults = UserDefaults.standard
         guard let bookID = defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               let book = library.books.first(where: { $0.id == bookID }) else { return }
-        let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
-        let pageRatio = defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double
+        let chapterIndex = chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
+        let chapterStart = Int32(exactly: chapterIndex) ?? 0
+        let pageRatio = pageRatioOverride ?? (defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double)
         cancel(stopPlayer: false)
         let jobID = UUID().uuidString
         localPlaybackGeneration = jobID
@@ -161,6 +164,17 @@ final class MacReaderPlaybackSession {
                         lastActivityAt: Date().timeIntervalSince1970,
                     chapterIndexBase: 0
                     ))
+                }
+                if BookLanguageUncertain.decode(error) != nil {
+                    let recovered = await BookLanguagePicker.recover(error, bookID: bookID, isCurrent: { [weak self] in
+                        self?.localPlaybackGeneration == jobID
+                            && defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID
+                    })
+                    if recovered {
+                        self.start(owner: owner, optionsOverride: conversionOptions,
+                                   chapterOverride: Int(chapterStart), pageRatioOverride: .some(pageRatio))
+                    }
+                    return
                 }
                 if TtsLanguageMismatch.decode(error) != nil {
                     let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: { [weak self] in

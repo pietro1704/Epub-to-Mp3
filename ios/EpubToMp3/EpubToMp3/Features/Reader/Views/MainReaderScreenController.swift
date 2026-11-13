@@ -31,6 +31,7 @@ final class MainReaderScreenController: UIViewController {
         }
     )
     private var listeningRequestID = UUID()
+    private var retryLanguageDecision: (() -> Void)?
     private var retryWithModel: ((TtsRecoveryAlert.Choice) -> Void)?
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
@@ -399,6 +400,17 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func reportListeningFailure(_ error: Error) {
+        if BookLanguageUncertain.decode(error) != nil, let bookID = currentBook?.id {
+            let requestID = listeningRequestID
+            Task { [weak self] in
+                let recovered = await BookLanguagePicker.recover(error, bookID: bookID, isCurrent: { [weak self] in
+                    guard let self else { return false }
+                    return self.currentBook?.id == bookID && self.listeningRequestID == requestID && self.viewIfLoaded?.window != nil
+                })
+                if recovered { self?.retryLanguageDecision?() }
+            }
+            return
+        }
         guard TtsLanguageMismatch.decode(error) != nil else {
             ReaderListeningAlerts.present(error, from: self, library: { [weak self] in self?.library })
             return
@@ -436,6 +448,10 @@ final class MainReaderScreenController: UIViewController {
             } ?? []
         listeningRequestID = UUID()
         let requestID = listeningRequestID
+        retryLanguageDecision = { [weak self] in
+            guard let self, self.currentBook?.id == book.id, self.listeningRequestID == requestID else { return }
+            self.startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: priority, requestedRatio: pageRatio)
+        }
         retryWithModel = { [weak self] choice in
             guard let self, self.currentBook?.id == book.id, self.listeningRequestID == requestID else { return }
             self.startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: priority, requestedRatio: pageRatio, recovery: choice)

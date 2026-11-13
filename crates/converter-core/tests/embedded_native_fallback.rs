@@ -28,18 +28,23 @@ fn session(
         .unwrap();
     archive.start_file("content.opf", options).unwrap();
     archive.write_all(br#"<package xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata><dc:title>Installed fallback</dc:title><dc:language>en</dc:language></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/><itemref idref="b"/></spine></package>"#).unwrap();
-    for (name, text) in [
-        ("a", "The first chapter uses installed English speech."),
+    for (name, heading, text) in [
+        (
+            "a",
+            "A Morning in the Village",
+            "The first chapter describes an ordinary morning in a small English village. The neighbors walk to the local market, buy fresh bread, and talk about the weather before returning home. Their children read stories at school, while the families prepare lunch and plan a visit to the river.",
+        ),
         (
             "b",
-            "The second chapter keeps the original voice preferences.",
+            "An Afternoon by the River",
+            "The second chapter follows the same English families during the afternoon. They sit beside the river, share sandwiches, and read a newspaper beneath the trees. Later they walk through the town, greet their friends, and return to the village before the evening meal.",
         ),
     ] {
         archive
             .start_file(format!("{name}.xhtml"), options)
             .unwrap();
         archive
-            .write_all(format!("<html><body><h1>{name}</h1><p>{text}</p></body></html>").as_bytes())
+            .write_all(format!("<html><body><h1>{heading}</h1><p>{text}</p></body></html>").as_bytes())
             .unwrap();
     }
     archive.finish().unwrap();

@@ -106,8 +106,28 @@ final class MacReaderAnnotationsPresentation: NSObject {
         note.target = self
         note.representedObject = payload
 
-        return [highlight, note]
+        return [highlight, note] + (selectionLanguageMenuItem(range: range).map { [$0] } ?? [])
     }
+
+private func selectionLanguageMenuItem(range: NSRange) -> NSMenuItem? {
+    guard let bookID = currentBookId, let source = chapter(at: selectedChapter),
+          let scope = ReaderLanguageSelection.passage(rendered: textView.string, range: range,
+              source: source.text, chapterIndex: source.zeroBasedEpubIndex) else { return nil }
+    let item = NSMenuItem(title: L10n.string("language.passage"), action: #selector(changeSelectionLanguage(_:)), keyEquivalent: "")
+    item.target = self
+    item.representedObject = ReaderLanguageSelectionContext(bookID: bookID, readerChapter: selectedChapter, scope: scope)
+    return item
+}
+
+@objc private func changeSelectionLanguage(_ sender: NSMenuItem) {
+    guard let context = sender.representedObject as? ReaderLanguageSelectionContext,
+          context.bookID == currentBookId, context.readerChapter == selectedChapter else { return }
+    Task { [weak self] in
+        await BookLanguagePicker.edit(bookID: context.bookID, passage: context.scope, isCurrent: { [weak self] in
+            self?.currentBookId == context.bookID && self?.selectedChapter == context.readerChapter
+        })
+    }
+}
 
     @objc private func highlightSelectionFromMenu(_ sender: NSMenuItem) {
         guard let payload = sender.representedObject as? PendingSelection else { return }

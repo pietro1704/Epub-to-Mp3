@@ -307,6 +307,11 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         guard let indexPath = indexPaths.first else { return nil }
         let book = books[indexPath.item]
         let menu = NSMenu()
+        let language = NSMenuItem(title: L10n.string("language.chooseTitle"),
+            action: #selector(chooseBookLanguage(_:)), keyEquivalent: "")
+        language.target = self
+        language.representedObject = book.id
+        menu.addItem(language)
         let remove = NSMenuItem(title: L10n.string("library.removeFromLibrary"),
                                 action: #selector(removeSelectedBook(_:)),
                                 keyEquivalent: "")
@@ -324,6 +329,15 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         convert.representedObject = book.id
         menu.insertItem(convert, at: 0)
         return menu
+    }
+
+    @objc private func chooseBookLanguage(_ sender: NSMenuItem) {
+        guard let bookID = sender.representedObject as? String else { return }
+        Task { [weak self] in
+            await BookLanguagePicker.edit(bookID: bookID, isCurrent: { [weak self] in
+                self?.library.books.contains(where: { $0.id == bookID }) == true
+            })
+        }
     }
 
     @objc

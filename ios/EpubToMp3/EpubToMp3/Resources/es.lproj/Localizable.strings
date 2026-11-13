@@ -738,6 +738,16 @@
 "tts.recovery.message" = "El modelo actual no admite %@. Modelo sugerido: %@. El cambio solo se aplica a esta conversión.";
 "tts.recovery.use" = "Usar %@";
 "tts.recovery.choose" = "Elegir otro modelo";
+/* Book and passage language corrections */
+"language.chooseTitle" = "Idioma del libro";
+"language.inconclusive" = "No se pudo identificar el idioma después de analizar otros pasajes. Elige el idioma de este libro o pasaje.";
+"language.automatic" = "Detección automática";
+"language.passage" = "Idioma del pasaje";
+"language.downloadTitle" = "Voz para %@";
+"language.downloadMessage" = "Descarga %@ para los pasajes en este idioma. Se narrarán ambos idiomas; se conservará tu voz principal.";
+"language.choosePrompt" = "Elige un idioma";
+"language.correctionHelp" = "Esta elección se aplica a este libro o pasaje. Elige Detección automática para eliminar tu corrección.";
+
 "tts.recovery.none" = "Ningún modelo instalado y listo admite %@. Puedes instalar un modelo compatible en Ajustes o cancelar y seguir leyendo.";
 "settings.modelInstall.alreadyActive" = "Ya hay una instalación en curso para este modelo.";
 "error.pdfOpen" = "No se pudo abrir %@. El PDF puede estar dañado.";

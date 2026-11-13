@@ -1,8 +1,7 @@
 use super::chapter_execution::ChapterExecutionContext;
 use super::{
-    chapter_audio_receipt_path, chapter_selection_matches, detect_language,
-    refresh_chapter_audio_receipt, sanitize, ChapterAudioReceipt, ConversionRequest,
-    ConversionWorker, OutputManifest, WorkerError,
+    chapter_audio_receipt_path, chapter_selection_matches, refresh_chapter_audio_receipt, sanitize,
+    ChapterAudioReceipt, ConversionRequest, ConversionWorker, OutputManifest, WorkerError,
 };
 use crate::{audio, cache};
 use rayon::prelude::*;
@@ -127,15 +126,30 @@ impl ConversionWorker {
                 .attach(&chapters.iter().map(|(index, _)| *index).collect::<Vec<_>>())
                 .map_err(|error| WorkerError::Piper(error.to_string()))?;
         }
+        let language_analysis = crate::language::analyze_book(
+            book.chapters.iter().map(|chapter| chapter.text.as_str()),
+            book.language.as_deref(),
+            &|| self.cancel.is_cancelled(),
+        )
+        .map_err(|_| WorkerError::Cancelled)?;
+        cache::atomic_write_json(
+            cache_dir.join("language-analysis-v1.json"),
+            &language_analysis,
+        )?;
+        if request.language.is_none()
+            && self.language_overrides.is_empty()
+            && language_analysis.confirmed.is_none()
+            && language_analysis.languages.len() < 2
+        {
+            let evidence = serde_json::to_string(&language_analysis).expect("language evidence");
+            return Err(WorkerError::Unsupported(format!(
+                "Book language remains inconclusive after expanded sampling [[book_language_uncertain_v1]]{evidence}[[/book_language_uncertain_v1]]"
+            )));
+        }
         let detected_language = request
             .language
             .as_deref()
-            .or(book.language.as_deref())
-            .or_else(|| {
-                book.chapters
-                    .first()
-                    .and_then(|chapter| detect_language(&chapter.text))
-            });
+            .or(language_analysis.confirmed.as_deref());
         let parallelism = if request.tts_preferences.is_some()
             || (request.no_parallel && !self.execution_options.max_performance)
         {

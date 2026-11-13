@@ -737,6 +737,16 @@
 "tts.recovery.message" = "The current model does not support %@. Suggested model: %@. This change applies only to this conversion.";
 "tts.recovery.use" = "Use %@";
 "tts.recovery.choose" = "Choose another model";
+/* Book and passage language corrections */
+"language.chooseTitle" = "Book language";
+"language.inconclusive" = "The language could not be identified after analyzing additional passages. Choose the language for this book or passage.";
+"language.automatic" = "Automatic detection";
+"language.passage" = "Passage language";
+"language.downloadTitle" = "Voice for %@";
+"language.downloadMessage" = "Download %@ for the passages in this language. Both languages will be narrated; your primary voice will be kept.";
+"language.choosePrompt" = "Choose a language";
+"language.correctionHelp" = "This choice applies to this book or passage. Choose Automatic detection to remove your correction.";
+
 "tts.recovery.none" = "No installed, ready model supports %@. You can install a compatible model in Settings or cancel and keep reading.";
 "settings.modelInstall.alreadyActive" = "An installation is already in progress for this model.";
 "error.pdfOpen" = "Could not open %@. The PDF may be damaged.";

@@ -43,6 +43,7 @@ let production = [
     "Features/Conversion/Services/AudioEnginePreference.swift",
     "Features/Conversion/Services/ConversionChapterSelection.swift",
     "Features/Conversion/Services/ConversionOptions.swift",
+    "Features/Conversion/Services/BookLanguageCorrections.swift",
     "Features/Conversion/Services/BookConversionRecoveryStore.swift",
     "Features/Conversion/Services/BookPronunciationStore.swift",
     "Features/Conversion/Services/VoiceAuditionController.swift",
