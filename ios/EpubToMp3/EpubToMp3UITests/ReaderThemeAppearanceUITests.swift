@@ -24,7 +24,7 @@ final class ReaderThemeAppearanceUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         let harness = ReaderModesHarness(app: app)
-        if !app.buttons["reader.settings.toggle"].firstMatch.waitForExistence(timeout: 3) {
+        if !app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 3) {
             try harness.openBook(titleContaining: "Lord", timeout: 60)
         }
         XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
@@ -33,7 +33,7 @@ final class ReaderThemeAppearanceUITests: XCTestCase {
         harness.assertNoClippedLines(scenario: "\(theme) theme under \(systemStyle) system")
         attach(app, name: "seeded-lotr-\(theme)-system-\(systemStyle)")
 
-        app.buttons["reader.settings.toggle"].firstMatch.tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.settings.toggle", title: "Reader settings")
         let choice = app.cells.matching(NSPredicate(format: "label == %@", nextTheme)).firstMatch
         XCTAssertTrue(choice.waitForExistence(timeout: 5), "The live reader theme must be selectable.")
         if !choice.isHittable { app.tables.firstMatch.swipeUp() }

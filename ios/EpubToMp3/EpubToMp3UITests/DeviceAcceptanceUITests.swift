@@ -75,12 +75,12 @@ final class DeviceAcceptanceUITests: XCTestCase {
         let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"].firstMatch
         XCTAssertTrue(tile.waitForExistence(timeout: 30))
         tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
-        let search = app.buttons["reader.search"].firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 60))
+        let chrome = app.buttons["reader.more"].firstMatch
+        XCTAssertTrue(chrome.waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
         attach(app, name: "live-existing-reader")
 
-        search.tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.search", title: "Search")
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
@@ -89,13 +89,13 @@ final class DeviceAcceptanceUITests: XCTestCase {
         prompt.buttons["Cancel"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         attach(app, name: "live-after-search-cancel")
         XCTAssertTrue(prompt.waitForNonExistence(timeout: 5), "Cancel must dismiss the search prompt.")
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(chrome.waitForExistence(timeout: 5))
 
-        app.buttons["reader.toc.toggle"].firstMatch.tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
         XCTAssertTrue(app.tables["reader.toc"].cells.firstMatch.waitForExistence(timeout: 5))
         attach(app, name: "live-existing-toc")
         app.navigationBars.buttons["Done"].firstMatch.tap()
-        app.buttons["reader.settings.toggle"].firstMatch.tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.settings.toggle", title: "Reader settings")
         let done = app.navigationBars.buttons["Done"].firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         attach(app, name: "live-existing-reader-settings")
@@ -118,8 +118,8 @@ final class DeviceAcceptanceUITests: XCTestCase {
         let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"].firstMatch
         XCTAssertTrue(tile.waitForExistence(timeout: 30))
         tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
-        let search = app.buttons["reader.search"].firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 60))
+        let chrome = app.buttons["reader.more"].firstMatch
+        XCTAssertTrue(chrome.waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
         attach(app, name: "live-existing-reader")
 

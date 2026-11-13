@@ -577,6 +577,7 @@
 "reader.footnotes.title" = "Notas de rodapé";
 "reader.footnotes.empty" = "Este capítulo não tem notas de rodapé.";
 "reader.search" = "Pesquisar";
+"reader.more" = "Mais opções do leitor";
 "reader.search.placeholder" = "Pesquisar no livro";
 "reader.search.currentChapter" = "Pesquise neste capítulo enquanto o restante do livro fica disponível.";
 "reader.search.unavailable" = "A pesquisa não está disponível nesta visualização do documento.";

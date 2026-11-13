@@ -124,9 +124,26 @@ final class ReaderModesHarness {
             firstBook.tap()
         }
         XCTAssertTrue(
-            app.buttons["reader.search"].firstMatch.waitForExistence(timeout: timeout),
+            app.buttons["reader.more"].firstMatch.waitForExistence(timeout: timeout),
             "The selected book must open in the native reader."
         )
+    }
+
+    func activateReaderTool(identifier: String, title: String) {
+        if let direct = app.buttons.matching(identifier: identifier).allElementsBoundByIndex.first(where: \.isHittable) {
+            direct.tap()
+            return
+        }
+        let more = app.buttons["reader.more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), "Reader More must expose every tool.")
+        more.tap()
+        let command = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", identifier, title)).firstMatch
+        if command.waitForExistence(timeout: 3) { command.tap() }
+        else {
+            let item = app.menuItems[title].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 3), "Missing reader tool: \(identifier)")
+            item.tap()
+        }
     }
 
     func toggleChrome() {
@@ -172,7 +189,7 @@ final class ReaderModesHarness {
     }
 
     var chromeIsVisible: Bool {
-        app.buttons.matching(identifier: "reader.search").allElementsBoundByIndex.contains(where: \.isHittable)
+        app.buttons.matching(identifier: "reader.more").allElementsBoundByIndex.contains(where: \.isHittable)
             || app.buttons.matching(identifier: "reader.close").allElementsBoundByIndex.contains(where: \.isHittable)
     }
 
