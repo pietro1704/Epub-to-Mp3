@@ -55,7 +55,8 @@ class ReaderTab extends ConsumerWidget {
             FilledButton.icon(
               onPressed: () {
                 // Switch to library tab (index 1).
-                ref.read(rootTabIndexProvider.notifier).state = 1;
+                ref.read(appDestinationProvider.notifier).state =
+                    AppDestination.library;
               },
               icon: const Icon(Icons.library_books),
               label: Text(t.browseLibrary),

@@ -34,17 +34,20 @@ class PlayerTransportControls extends StatelessWidget {
               const SizedBox(width: 12),
               // Skip -15s
               Semantics(
-                label: t?.skipBack15 ?? 'Skip back 15 seconds',
+                label:
+                    '${t?.seekBackwardInterval ?? 'Skip backward'} ${player.seekBackwardSeconds} s',
                 button: true,
                 child: IconButton(
-                  icon: const SeekIntervalIcon(
+                  icon: SeekIntervalIcon(
                     key: ValueKey('seek.backward.15'),
                     forward: false,
+                    seconds: player.seekBackwardSeconds,
                     size: 32,
                   ),
                   iconSize: 32,
-                  onPressed: () => player.skipBackward(seconds: 15),
-                  tooltip: t?.skipBack15 ?? 'Skip back 15 seconds',
+                  onPressed: () => player.skipBackward(),
+                  tooltip:
+                      '${t?.seekBackwardInterval ?? 'Skip backward'} ${player.seekBackwardSeconds} s',
                 ),
               ),
               const SizedBox(width: 12),
@@ -65,17 +68,20 @@ class PlayerTransportControls extends StatelessWidget {
               const SizedBox(width: 12),
               // Skip +15s
               Semantics(
-                label: t?.skipForward15 ?? 'Skip forward 15 seconds',
+                label:
+                    '${t?.seekForwardInterval ?? 'Skip forward'} ${player.seekForwardSeconds} s',
                 button: true,
                 child: IconButton(
-                  icon: const SeekIntervalIcon(
+                  icon: SeekIntervalIcon(
                     key: ValueKey('seek.forward.15'),
                     forward: true,
+                    seconds: player.seekForwardSeconds,
                     size: 32,
                   ),
                   iconSize: 32,
-                  onPressed: () => player.skipForward(seconds: 15),
-                  tooltip: t?.skipForward15 ?? 'Skip forward 15 seconds',
+                  onPressed: () => player.skipForward(),
+                  tooltip:
+                      '${t?.seekForwardInterval ?? 'Skip forward'} ${player.seekForwardSeconds} s',
                 ),
               ),
               const SizedBox(width: 12),

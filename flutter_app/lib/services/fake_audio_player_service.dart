@@ -97,13 +97,15 @@ class FakeAudioPlayerService extends AudioPlayerInterface {
   }
 
   @override
-  void skipForward({int seconds = 15}) {
+  void skipForward({int? seconds}) {
+    seconds ??= seekForwardSeconds;
     _position += Duration(seconds: seconds);
     _positionController.add(_position);
   }
 
   @override
-  void skipBackward({int seconds = 15}) {
+  void skipBackward({int? seconds}) {
+    seconds ??= seekBackwardSeconds;
     final target = _position - Duration(seconds: seconds);
     _position = target < Duration.zero ? Duration.zero : target;
     _positionController.add(_position);

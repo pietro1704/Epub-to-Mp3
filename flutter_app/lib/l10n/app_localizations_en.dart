@@ -519,4 +519,27 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ttsSecondaryUsedNotice =>
       'Using the secondary voice. The primary voice will be retried periodically.';
+
+  @override
+  String get localAudioStorage => 'Local audio downloads';
+
+  @override
+  String get localAudioStorageHint =>
+      'Downloaded and listened audio is kept until you remove it.';
+
+  @override
+  String get removeAudioTitle => 'Remove downloaded audio?';
+
+  @override
+  String get removeAudioMessage =>
+      'The book, reading position and annotations will be kept.';
+
+  @override
+  String get originalTypography => 'Original book typography';
+
+  @override
+  String get seekForwardInterval => 'Skip forward';
+
+  @override
+  String get seekBackwardInterval => 'Skip backward';
 }
