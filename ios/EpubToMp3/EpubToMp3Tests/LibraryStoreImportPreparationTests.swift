@@ -145,7 +145,7 @@ extension LibraryStoreTests {
         let outcome = await store.importBooks(from: [source]).first
 
         XCTAssertNil(outcome?.book)
-        XCTAssertTrue(outcome?.error?.contains("content changed") == true)
+        XCTAssertEqual(outcome?.error, L10n.string("library.error.changedDuringImport"))
         XCTAssertEqual(store.books, previousBooks)
         XCTAssertEqual(try Data(contentsOf: durable), previousBytes)
         XCTAssertEqual(try Data(contentsOf: source), sourceBytes)

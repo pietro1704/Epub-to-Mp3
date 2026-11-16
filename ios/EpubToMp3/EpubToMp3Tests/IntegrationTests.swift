@@ -88,9 +88,10 @@ final class IntegrationTests: XCTestCase {
         XCTAssertThrowsError(try store.importBook(from: url)) { error in
             let nse = error as NSError
             XCTAssertEqual(nse.domain, "LibraryStore")
+            // Access-denied (1) or read failure (2); the localized text names the file.
+            XCTAssertTrue([1, 2].contains(nse.code), "unexpected error code: \(nse.code)")
             XCTAssertTrue(
-                nse.localizedDescription.contains("Cannot read") ||
-                nse.localizedDescription.contains("Failed to read"),
+                nse.localizedDescription.contains(url.lastPathComponent),
                 "expected human-readable error, got: \(nse.localizedDescription)"
             )
         }
