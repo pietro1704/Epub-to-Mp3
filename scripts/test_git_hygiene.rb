@@ -41,7 +41,7 @@ class GitHygieneTest < Minitest::Test
     end
     refute ignored?(".env.example")
     refute ignored?("web/.env.production.example")
-    %w[web/.env.desktop web/.env.mobile web/.env.production].each do |path|
+    %w[web/.env.desktop web/.env.production].each do |path|
       refute ignored?(path), "public Vite profile is hidden: #{path}"
     end
     assert ignored?("web/.env.local")

@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
@@ -42,29 +39,3 @@ for (const consumer of consumers) {
     }), true);
   });
 }
-
-test("Capacitor's Glob/Rimraf chain preserves discovery and removal scope", async () => {
-  const fromCapacitor = createRequire(require.resolve('@capacitor/cli/package.json'));
-  const fromRimraf = createRequire(fromCapacitor.resolve('rimraf'));
-  const { glob } = fromRimraf('glob');
-  const { rimraf } = fromCapacitor('rimraf');
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'epub-glob-security-')));
-  const fixture = join(root, 'fixture');
-
-  try {
-    await mkdir(join(fixture, 'remove', 'nested'), { recursive: true });
-    await writeFile(join(fixture, 'remove', 'nested', 'disposable.tmp'), 'temporary');
-    await writeFile(join(fixture, 'remove', 'keep.txt'), 'retained');
-    await writeFile(join(root, 'outside.txt'), 'outside');
-
-    assert.deepEqual(await glob('remove/**/*.tmp', { cwd: fixture }), [
-      'remove/nested/disposable.tmp',
-    ]);
-    await rimraf('remove/**/*.tmp', { glob: { cwd: fixture } });
-    assert.deepEqual(await glob('remove/**/*.tmp', { cwd: fixture }), []);
-    assert.equal(await readFile(join(fixture, 'remove', 'keep.txt'), 'utf8'), 'retained');
-    assert.equal(await readFile(join(root, 'outside.txt'), 'utf8'), 'outside');
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});

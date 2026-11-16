@@ -61,7 +61,6 @@ ENV/
 !.env.*.example
 # Checked-in Vite profiles contain public API routing only.
 !/web/.env.desktop
-!/web/.env.mobile
 !/web/.env.production
 .venv/
 .venv*/

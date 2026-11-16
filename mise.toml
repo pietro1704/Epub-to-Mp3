@@ -18,9 +18,6 @@ ruby = "4.0.7"
 "github:wasm-bindgen/wasm-bindgen" = "0.2.129"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
 flutter = { version = "3.47.9", os = ["linux", "windows"] }
-# CocoaPods is used by the Capacitor iOS build (web/ → web/ios/App/),
-# NOT by Flutter — Flutter does not target iOS/macOS in this repo.
-cocoapods = "1.16.2"
 # Java + Android SDK for the Flutter Android target. android-sdk plugin
 # requires JAVA_HOME to be set; mise handles that when java is in [tools].
 java = { version = "21.0.2", os = ["linux"] }
@@ -1413,25 +1410,6 @@ run = "docker build -t epub-to-mp3:local ."
 [tasks."docker:run"]
 description = "Run Docker image locally on port 7860"
 run = "docker run --rm -p 7860:7860 epub-to-mp3:local"
-
-# ── Mobile (Capacitor) ──────────────────────────────────────────────────────────
-
-[tasks."mobile:build"]
-description = "Build mobile web bundle (HF Spaces backend) — no Xcode/Android Studio needed locally"
-dir = "web"
-run = "npm run build:mobile"
-
-[tasks."mobile:init"]
-description = "Initialize Capacitor platforms (run once; native .ipa/.apk built by CI, not locally)"
-dir = "web"
-run = """
-#!/bin/bash
-set -euo pipefail
-npm install
-npx cap add ios || true
-npx cap add android || true
-npm run build:mobile
-"""
 
 # ── Tests ────────────────────────────────────────────────────────────────────────
 
