@@ -1,4 +1,4 @@
-import { lazy, useEffect, useRef } from 'react';
+import { lazy } from 'react';
 
 // Lazy load heavy components
 export const ConversionForm = lazy(() => import('./components/ConversionForm'));
@@ -53,21 +53,3 @@ export interface HfNotificationPayload {
 export const HIDDEN_RECENT_KEY = 'ebook-tts-hidden-recent';
 
 export const HIDDEN_RESUMABLE_KEY = 'ebook-tts-hidden-resumable';
-
-export function StartupLogView({ lines }: { lines: string[] }): JSX.Element {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.scrollTop = ref.current.scrollHeight;
-    }
-  }, [lines]);
-  return (
-    <div className="startup-log-panel__log" ref={ref}>
-      {lines.map((l, i) => (
-        <div key={i} className="startup-log-panel__line">
-          {l}
-        </div>
-      ))}
-    </div>
-  );
-}

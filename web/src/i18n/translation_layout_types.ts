@@ -102,9 +102,6 @@ export interface LayoutText {
   statsGpuUsage: string;
   statsGpuVram: string;
   statsGpuTemp: string;
-  tauriEngineWaiting: string;
-  tauriEngineErrorTitle: string;
-  tauriEngineRebuild: string;
   telemetryTitle: string;
   telemetryDescription: string;
   telemetryRefresh: string;

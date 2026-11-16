@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isTauri } from './lib/tauri';
 import { useConversionFlow } from './hooks/useConversionFlow';
 import { useSystemStats } from './hooks/useSystemStats';
 import { useI18n, useTranslations } from './i18n/I18nProvider';
@@ -33,7 +32,6 @@ export function useApplicationState({ props }: ApplicationStateInput) {
     uploadFile,
     recentJobs,
     healthStatus,
-    notifyServerReady,
     queue,
     queuePaused,
     resumeQueue,
@@ -205,19 +203,6 @@ export function useApplicationState({ props }: ApplicationStateInput) {
 
   const [restartDialog, setRestartDialog] = useState<'confirm' | 'cache' | 'finished' | null>(null);
 
-  // Tauri-specific: tracks whether the Python sidecar failed to start.
-  const [tauriEngineError, setTauriEngineError] = useState<string | null>(null);
-
-  const [tauriStarting, setTauriStarting] = useState<boolean>(isTauri());
-
-  const [tauriStartupLog, setTauriStartupLog] = useState<string[]>([]);
-
-  const didRestartRef = useRef(false);
-
-  const handleTauriStartupReadyRef = useRef<() => void>(() => {});
-
-  const [startupLogsExpanded, setStartupLogsExpanded] = useState<boolean>(false);
-
   const restartOptionsRef = useRef({ keepCache: false, keepFinished: false });
 
   const [hiddenRecentIds, setHiddenRecentIds] = useState<Set<string>>(() => {
@@ -265,11 +250,6 @@ export function useApplicationState({ props }: ApplicationStateInput) {
   }, [hiddenResumableIds]);
 
   return {
-    setTauriStarting,
-    setTauriEngineError,
-    handleTauriStartupReadyRef,
-    setTauriStartupLog,
-    tauriStarting,
     state,
     pendingUploads,
     t,
@@ -284,8 +264,6 @@ export function useApplicationState({ props }: ApplicationStateInput) {
     setBatchHistory,
     lastCompletedJobIdRef,
     setQueuePlanTotal,
-    didRestartRef,
-    notifyServerReady,
     setRepeatConfig,
     locale,
     submit,
@@ -331,10 +309,6 @@ export function useApplicationState({ props }: ApplicationStateInput) {
     setHiddenResumableIds,
     healthStatus,
     apiHealthLabel,
-    tauriStartupLog,
-    setStartupLogsExpanded,
-    startupLogsExpanded,
-    tauriEngineError,
     savedBatch,
     resumeBatch,
     dismissSavedBatch,

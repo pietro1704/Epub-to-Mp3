@@ -1,7 +1,7 @@
 import type { AppProps } from './application_contract';
 export type { AppProps } from './application_contract';
 import { useApplicationState } from './useApplicationState';
-import { useNativeStartup } from './useNativeStartup';
+import { useUnhandledErrorReporting } from './useUnhandledErrorReporting';
 import { useWorkspaceIntents } from './useWorkspaceIntents';
 import { usePlaybackWorkspace } from './usePlaybackWorkspace';
 import { useApplicationNotifications } from './useApplicationNotifications';
@@ -13,7 +13,7 @@ import { useLibraryWorkspace } from './useLibraryWorkspace';
 
 export function useApplicationWorkspaces(props?: AppProps) {
   const state = useApplicationState({ props });
-  useNativeStartup(state);
+  useUnhandledErrorReporting();
   const intents = useWorkspaceIntents(state);
   const playback = usePlaybackWorkspace({ ...state, ...intents });
   const notifications = useApplicationNotifications({ ...state, ...intents, ...playback });

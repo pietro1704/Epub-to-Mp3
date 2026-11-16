@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import type { ConversionFormValues, SubmitBatchOptions } from './types/conversion';
 import type { ReadyDownloadJob } from './components/ReadyDownloadsList';
 import type { ApplicationStateScope } from './useApplicationState';
@@ -19,10 +19,6 @@ type WorkspaceIntentsInput = Pick<
   | 'setBatchHistory'
   | 'lastCompletedJobIdRef'
   | 'setQueuePlanTotal'
-  | 'setTauriStarting'
-  | 'didRestartRef'
-  | 'notifyServerReady'
-  | 'handleTauriStartupReadyRef'
   | 'setRepeatConfig'
   | 'locale'
   | 'submit'
@@ -48,10 +44,6 @@ export function useWorkspaceIntents({
   setBatchHistory,
   lastCompletedJobIdRef,
   setQueuePlanTotal,
-  setTauriStarting,
-  didRestartRef,
-  notifyServerReady,
-  handleTauriStartupReadyRef,
   setRepeatConfig,
   locale,
   submit,
@@ -100,19 +92,6 @@ export function useWorkspaceIntents({
     lastCompletedJobIdRef.current = null;
     setQueuePlanTotal(0);
   }, [clearRecentJobView, reset]);
-
-  const handleTauriStartupReady = useCallback(() => {
-    setTauriStarting(false);
-    if (didRestartRef.current) {
-      handleReset();
-    }
-    didRestartRef.current = true;
-    notifyServerReady();
-  }, [handleReset, notifyServerReady]);
-
-  useEffect(() => {
-    handleTauriStartupReadyRef.current = handleTauriStartupReady;
-  }, [handleTauriStartupReady]);
 
   const handleTabChange = useCallback(
     (tabId: 'setup' | 'progress' | 'downloads') => {

@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { isTauri, sendNotification } from './lib/tauri';
 import type { RecentJobEntry } from './types/conversion';
 import type { ApplicationStateScope } from './useApplicationState';
 import type { WorkspaceIntentsScope } from './useWorkspaceIntents';
@@ -132,10 +131,6 @@ export function useCompletedConversionEffects({
     });
     manualDownloadOverrideRef.current = false;
     lastCompletedJobIdRef.current = state.jobId;
-    // OS notification — always in Tauri (app may be minimised or behind another window)
-    if (isTauri()) {
-      sendNotification(t.downloads.readyNotificationTitle, resolvedTitle);
-    }
   }, [
     state.bookTitle,
     state.downloads,

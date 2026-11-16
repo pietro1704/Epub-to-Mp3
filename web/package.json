@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "npx tsc --noEmit -p tsconfig.build.json && vite build",
-    "build:desktop": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode desktop",
     "preview": "vite preview",
     "lint": "eslint --max-warnings=0 .",
     "format": "prettier --write .",
@@ -15,8 +14,7 @@
     "test:dependency-security": "node --test scripts/minimatch.node-tests.mjs scripts/zod.node-tests.mjs",
     "test:watch": "vitest",
     "predev": "node scripts/prepare-tts-runtime.mjs",
-    "prebuild": "node scripts/prepare-tts-runtime.mjs",
-    "prebuild:desktop": "node scripts/prepare-tts-runtime.mjs"
+    "prebuild": "node scripts/prepare-tts-runtime.mjs"
   },
   "dependencies": {
     "@diffusionstudio/piper-wasm": "1.0.0",

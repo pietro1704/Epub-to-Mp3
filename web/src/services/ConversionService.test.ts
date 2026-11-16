@@ -34,9 +34,9 @@ describe("normalizeErrorMessage", () => {
 });
 
 /**
- * SSE idle watchdog: Tauri WKWebView keeps the TCP socket alive during long
- * backend silences (Edge slow mode), but `onmessage`/`onerror` never fire —
- * UI freezes. The client must auto-reconnect after a bounded idle window.
+ * SSE idle watchdog: WKWebView has been observed keeping the TCP socket alive
+ * during long backend silences (Edge slow mode) while `onmessage`/`onerror`
+ * never fire — UI freezes. The client must auto-reconnect after a bounded idle window.
  */
 describe("HttpConversionClient SSE idle watchdog", () => {
   class FakeEventSource {

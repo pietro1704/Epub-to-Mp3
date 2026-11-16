@@ -82,7 +82,7 @@
   cursor: not-allowed;
 }
 
-/* footer is now .status-bar — see desktop overrides section at bottom */
+/* footer is now .status-bar — see shell_status.css */
 
 @media (max-width: 720px) {
   .panel {
