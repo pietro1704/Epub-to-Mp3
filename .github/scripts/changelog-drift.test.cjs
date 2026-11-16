@@ -24,7 +24,7 @@ test('Dependabot comparison is informational and has no GitHub write capability'
   assert.equal(drift.jobs.drift.if, undefined);
   const events = drift.on ?? drift.true;
   assert.deepEqual(Object.keys(events), ['pull_request']);
-  for (const path of ['web/package.json', 'python_app/**', '.github/workflows/changelog-drift.yml',
+  for (const path of ['web/package.json', 'Cargo.toml', 'crates/**', '.github/workflows/changelog-drift.yml',
     '.github/scripts/changelog-drift.test.cjs']) {
     assert.ok(events.pull_request.paths.includes(path), `Missing trigger: ${path}`);
   }

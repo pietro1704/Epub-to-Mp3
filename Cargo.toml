@@ -15,7 +15,8 @@ members = [
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "0.1.0"
+# Product version: the single release version source (web/package.json mirrors it).
+version = "0.5.8"
 
 [workspace.dependencies]
 serde = "1"
