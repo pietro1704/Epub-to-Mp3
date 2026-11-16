@@ -31,11 +31,13 @@ class ReaderSearchOverlay extends StatefulWidget {
     required this.chapters,
     required this.onJumpToChapter,
     required this.onClose,
+    this.onJumpToPosition,
   });
 
   final List<FulltextChapter> chapters;
   final void Function(int chapterIndex) onJumpToChapter;
   final VoidCallback onClose;
+  final void Function(int chapter, int sourceUtf16Offset)? onJumpToPosition;
 
   @override
   State<ReaderSearchOverlay> createState() => _ReaderSearchOverlayState();
@@ -230,7 +232,20 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
                                   return _ResultTile(
                                     result: r,
                                     onTap: () {
-                                      widget.onJumpToChapter(r.chapterIndex);
+                                      if (widget.onJumpToPosition != null) {
+                                        final source = widget
+                                            .chapters[r.chapterIndex]
+                                            .text;
+                                        widget.onJumpToPosition!(
+                                          r.chapterIndex,
+                                          source
+                                              .substring(0, r.matchStart)
+                                              .runes
+                                              .length,
+                                        );
+                                      } else {
+                                        widget.onJumpToChapter(r.chapterIndex);
+                                      }
                                       _close();
                                     },
                                   );

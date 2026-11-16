@@ -32,7 +32,7 @@ Future<void> _pumpLibrary(
 }
 
 void main() {
-  testWidgets('library grid keeps two columns across phone and wide resize', (
+  testWidgets('library uses compact phone columns and a denser tablet grid', (
     tester,
   ) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -66,10 +66,15 @@ void main() {
       expect(cards, findsNWidgets(4));
       final rects = List.generate(4, (i) => tester.getRect(cards.at(i)));
       expect(rects[0].top, closeTo(rects[1].top, 0.01));
-      expect(rects[2].top, closeTo(rects[3].top, 0.01));
-      expect(rects[2].top, greaterThan(rects[0].bottom));
-      expect(rects[0].left, closeTo(rects[2].left, 0.01));
-      expect(rects[1].left, closeTo(rects[3].left, 0.01));
+      if (width < 600) {
+        expect(rects[2].top, closeTo(rects[3].top, 0.01));
+        expect(rects[2].top, greaterThan(rects[0].bottom));
+        expect(rects[0].left, closeTo(rects[2].left, 0.01));
+        expect(rects[1].left, closeTo(rects[3].left, 0.01));
+      } else {
+        expect(rects[2].top, closeTo(rects[0].top, 0.01));
+        expect(rects[2].left, greaterThan(rects[1].right));
+      }
       expect(rects[1].left, greaterThan(rects[0].right));
       expect(rects[0].width, closeTo(rects[1].width, 0.01));
       expect(rects[0].left, greaterThanOrEqualTo(0));
@@ -181,72 +186,84 @@ void main() {
 
   for (final locale in AppLocalizations.supportedLocales) {
     testWidgets(
-        'visible book actions open and dismiss tag editor in ${locale.languageCode}',
-        (tester) async {
-      final book = BookEntity(
-        id: 'tag-book',
-        title: 'Selected EPUB',
-        author: 'Author',
-        filePath: '/tmp/selected.epub',
-        displayFilename: 'selected.epub',
-        addedAt: DateTime(2025, 6, 1),
-        tags: ['Original'],
-      );
-      final untouchedBook = BookEntity(
-        id: 'other-book',
-        title: 'Another EPUB',
-        filePath: '/tmp/other.epub',
-        displayFilename: 'other.epub',
-        addedAt: DateTime(2025, 5, 1),
-        tags: ['Other'],
-      );
-      await _pumpLibrary(tester, locale: locale, prefsData: {
-        'library.books.v1': '[${book.encode()},${untouchedBook.encode()}]',
-      });
-      final context = tester.element(find.byType(LibraryScreen));
-      final labels = AppLocalizations.of(context)!;
-      final container = ProviderScope.containerOf(context);
-      final store = container.read(libraryStoreProvider);
-      final before = store.books.map((item) => item.encode()).toList();
+      'visible book actions open and dismiss tag editor in ${locale.languageCode}',
+      (tester) async {
+        final book = BookEntity(
+          id: 'tag-book',
+          title: 'Selected EPUB',
+          author: 'Author',
+          filePath: '/tmp/selected.epub',
+          displayFilename: 'selected.epub',
+          addedAt: DateTime(2025, 6, 1),
+          tags: ['Original'],
+        );
+        final untouchedBook = BookEntity(
+          id: 'other-book',
+          title: 'Another EPUB',
+          filePath: '/tmp/other.epub',
+          displayFilename: 'other.epub',
+          addedAt: DateTime(2025, 5, 1),
+          tags: ['Other'],
+        );
+        await _pumpLibrary(
+          tester,
+          locale: locale,
+          prefsData: {
+            'library.books.v1': '[${book.encode()},${untouchedBook.encode()}]',
+          },
+        );
+        final context = tester.element(find.byType(LibraryScreen));
+        final labels = AppLocalizations.of(context)!;
+        final container = ProviderScope.containerOf(context);
+        final store = container.read(libraryStoreProvider);
+        final before = store.books.map((item) => item.encode()).toList();
 
-      Future<void> openActions() async {
-        final title = find.text(book.title);
-        await tester.ensureVisible(title);
+        Future<void> openActions() async {
+          final title = find.text(book.title);
+          await tester.ensureVisible(title);
+          await tester.pumpAndSettle();
+          expect(title.hitTestable(), findsOneWidget);
+          await tester.longPress(title);
+          await tester.pumpAndSettle();
+          expect(find.text(labels.editTags), findsOneWidget);
+          expect(find.text(labels.removeFromLibrary), findsOneWidget);
+        }
+
+        await openActions();
+        // Dismissing the action sheet must not open the reader or change books.
+        await tester.tapAt(const Offset(8, 8));
         await tester.pumpAndSettle();
-        expect(title.hitTestable(), findsOneWidget);
-        await tester.longPress(title);
+        expect(find.text(labels.editTags), findsNothing);
+        expect(container.read(currentlyReadingBookIdProvider), isNull);
+
+        await openActions();
+        await tester.tap(find.text(labels.editTags));
         await tester.pumpAndSettle();
-        expect(find.text(labels.editTags), findsOneWidget);
-        expect(find.text(labels.removeFromLibrary), findsOneWidget);
-      }
+        final editor = find.byType(DraggableScrollableSheet);
+        expect(editor, findsOneWidget);
+        expect(
+          find.descendant(of: editor, matching: find.text('Original')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: editor, matching: find.text('Other')),
+          findsOneWidget,
+        );
+        await tester.enterText(
+          find.descendant(of: editor, matching: find.byType(TextField)),
+          'Unsaved tag',
+        );
+        await tester.tap(find.text(labels.done));
+        await tester.pumpAndSettle();
 
-      await openActions();
-      // Dismissing the action sheet must not open the reader or change books.
-      await tester.tapAt(const Offset(8, 8));
-      await tester.pumpAndSettle();
-      expect(find.text(labels.editTags), findsNothing);
-      expect(container.read(currentlyReadingBookIdProvider), isNull);
-
-      await openActions();
-      await tester.tap(find.text(labels.editTags));
-      await tester.pumpAndSettle();
-      final editor = find.byType(DraggableScrollableSheet);
-      expect(editor, findsOneWidget);
-      expect(find.descendant(of: editor, matching: find.text('Original')),
-          findsOneWidget);
-      expect(find.descendant(of: editor, matching: find.text('Other')),
-          findsOneWidget);
-      await tester.enterText(
-        find.descendant(of: editor, matching: find.byType(TextField)),
-        'Unsaved tag',
-      );
-      await tester.tap(find.text(labels.done));
-      await tester.pumpAndSettle();
-
-      expect(editor, findsNothing);
-      expect(store.books.map((item) => item.encode()).toList(), equals(before));
-      expect(container.read(currentlyReadingBookIdProvider), isNull);
-      expect(tester.takeException(), isNull);
-    });
+        expect(editor, findsNothing);
+        expect(
+          store.books.map((item) => item.encode()).toList(),
+          equals(before),
+        );
+        expect(container.read(currentlyReadingBookIdProvider), isNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 }

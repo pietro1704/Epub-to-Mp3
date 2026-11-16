@@ -14,6 +14,8 @@ import 'audio_playback_state.dart';
 export 'audio_player_interface.dart';
 export 'fake_audio_player_service.dart';
 
+part 'audio_player_navigation.dart';
+
 class _GrowingChapterEntry {
   _GrowingChapterEntry(this.source);
   final GrowingChapterAudioSource source;
@@ -24,6 +26,7 @@ class _GrowingChapterEntry {
 }
 
 class AudioPlayerService extends AudioPlayerInterface
+    with _AudioPlayerNavigation
     implements StreamingChapterPlayer {
   AudioPlayerService({String? backendBase, AudioPlayer? player})
     : _baseUrl = backendBase,
@@ -31,6 +34,7 @@ class AudioPlayerService extends AudioPlayerInterface
     _playbackState = AudioPlaybackState(_player);
   }
 
+  @override
   final AudioPlayer _player;
   late final AudioPlaybackState _playbackState;
   @override
@@ -55,6 +59,17 @@ class AudioPlayerService extends AudioPlayerInterface
   @override
   int? get currentIndexValue => _player.currentIndex;
   AudioPlayer get raw => _player;
+  @override
+  Uri? get currentAudioUri {
+    final source = _player.sequenceState.currentSource;
+    if (source is UriAudioSource) return source.uri;
+    final index = currentIndexValue;
+    if (index == null) return null;
+    final queueIndex = chapterIndexForPlayerIndex(index);
+    if (queueIndex < 0 || queueIndex >= chapters.length) return null;
+    final path = _growingChapters[chapters[queueIndex].index]?.finalPath;
+    return path == null ? null : Uri.file(path);
+  }
 
   bool _isSegmentMode = false;
   int _segmentChapterIndex = -1;
@@ -383,26 +398,6 @@ class AudioPlayerService extends AudioPlayerInterface
     _speed = speed;
     await _player.setSpeed(speed);
   }
-
-  @override
-  void skipForward({int seconds = 15}) {
-    final pos = _player.position;
-    final dur = _player.duration ?? Duration.zero;
-    final target = pos + Duration(seconds: seconds);
-    unawaited(seek(dur > Duration.zero && target > dur ? dur : target));
-  }
-
-  @override
-  void skipBackward({int seconds = 15}) {
-    final pos = _player.position;
-    final target = pos - Duration(seconds: seconds);
-    unawaited(seek(target < Duration.zero ? Duration.zero : target));
-  }
-
-  @override
-  void nextChapter() => _player.seekToNext();
-  @override
-  void previousChapter() => _player.seekToPrevious();
 
   @override
   void togglePlayPause() {

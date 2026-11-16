@@ -1,3 +1,5 @@
+import '../features/reader/epub_reader_resources.dart';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -12,9 +14,8 @@ import 'android_speech_fallback.dart';
 
 part 'android_conversion_model_channels.dart';
 
-final _androidChunkEvents = const EventChannel(
-  'epub_to_mp3/audio_chunks',
-).receiveBroadcastStream();
+final _androidChunkEvents = const EventChannel('epub_to_mp3/audio_chunks')
+    .receiveBroadcastStream();
 
 /// The Android implementation invokes the registered native converter through
 /// the platform channel. It never falls back to HTTP.
@@ -268,7 +269,9 @@ class AndroidEmbeddedConverter
         );
       }
       if (jobId.isNotEmpty) decoded['jobId'] = jobId;
-      return EbookFulltext.fromJson(decoded);
+      return EbookFulltext.fromJson(
+        await EpubReaderResources.enrich(decoded, inputPath),
+      );
     } on MissingPluginException {
       throw EmbeddedConverterUnavailable();
     } on PlatformException catch (error) {
@@ -379,5 +382,4 @@ class AndroidEmbeddedConverter
       );
     }
   }
-
 }
