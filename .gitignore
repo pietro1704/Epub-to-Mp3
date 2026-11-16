@@ -7,11 +7,8 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
-develop-eggs/
 dist/
 downloads/
-eggs/
-.eggs/
 lib/
 lib64/
 !web/src/lib/
@@ -39,10 +36,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 .reports/
-.reports/device/
-.reports/mobile-audio/
 htmlcov/
-.tox/
 .nox/
 .coverage
 .coverage.*
@@ -75,7 +69,6 @@ env.bak/
 venv.bak/
 
 # Caches and temp files
-.cache/
 .jobs/
 .uploads/
 .job_inputs/
@@ -84,7 +77,6 @@ output/.jobs/
 output/.uploads/
 output/.job_inputs/
 output/.source_backups/
-.mise-cache/
 *.log
 log_*.txt
 *.tmp
@@ -151,7 +143,6 @@ converted/
 # TTS models and temporary files
 /models/
 !python_app/models/*.onnx
-!ios/EpubToMp3/EpubToMp3/Models/
 *.pt
 *.pth
 *.bin
@@ -187,11 +178,7 @@ web/dist/
 preview_*
 temp_*
 tmp_*
-.cache
 .env.local
-
-# Local build artifacts
-releases/
 
 # Claude Code runtime artifacts
 .claude/settings.local.json
@@ -212,16 +199,12 @@ buildServer.json
 # iOS embedded-Python spike (feat/ios-python-embed) — vendored Python
 # runtime is ~150 MB; bootstrapped by
 # ios/EpubToMp3/scripts/bootstrap-ios-python.sh
-ios/EpubToMp3/EpubToMp3/Vendor/Python/
-ios/EpubToMp3/EpubToMp3/Vendor/site-packages/
 ios/EpubToMp3/Vendor/Python/
 ios/EpubToMp3/Vendor/site-packages/
 ios/EpubToMp3/Vendor/python-stdlib/
 
 # Local Piper voice model copies for iOS
 ios/EpubToMp3/Vendor/piper-models/
-.claude/mirror-queue.txt
-.worktrees/
 target/
 # Local Hermes QA artifacts
 .hermes-run/
