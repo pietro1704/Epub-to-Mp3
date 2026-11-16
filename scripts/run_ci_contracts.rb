@@ -26,6 +26,7 @@ module CiContracts
     .github/scripts/rollback-target.test.cjs
     scripts/test_guarded_pr_merge.mjs
     scripts/test_pr_gate_policy.mjs
+    scripts/test_refresh_behind_pr.mjs
     scripts/test_validated_merge.mjs
     scripts/test_post_merge_validation.mjs
   ].freeze
