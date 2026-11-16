@@ -80,7 +80,7 @@ final class ReaderNavigationPresentation {
         if let readerTopToNavigation,
            let readerTopToRoot {
             NSLayoutConstraint.deactivate([readerTopToNavigation, readerTopToRoot])
-            (shouldShow ? readerTopToNavigation : readerTopToRoot).isActive = true
+            readerTopToRoot.isActive = true
         }
 
         guard let request = visibility.request(visible: shouldShow) else {
