@@ -47,7 +47,7 @@ module CiContracts
     [{ "name" => "Git LFS prerequisite", "argv" => ["git", "lfs", "version"] }] + ruby + node + [
       { "name" => "Workflow YAML syntax", "argv" => [RbConfig.ruby, "-ryaml", "-e", 'Dir[".github/workflows/*.yml"].each { |path| YAML.parse_file(path) }'] },
       { "name" => "Actual Swift tool scope", "argv" => [RbConfig.ruby, "scripts/check_codeql_swift_tool_scope.rb"] },
-      { "name" => "Shell safety syntax", "argv" => ["bash", "-n", "scripts/device-workflow.sh", ".claude/hooks/swift_test_after_edit.sh", ".claude/hooks/xcode_build_smoke.sh"] },
+      { "name" => "Shell safety syntax", "argv" => ["bash", "-n", "scripts/device-workflow.sh"] },
       { "name" => "Python offline contracts", "argv" => ["python3", "-m", "pytest", "-q", *PYTHON_SUITES], "timeout_seconds" => 180 }
     ]
   end

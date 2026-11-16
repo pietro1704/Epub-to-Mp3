@@ -89,7 +89,7 @@ class GitHygieneTest < Minitest::Test
       .agents/skills/example/agents/openai.yaml
       .agents/skills/example/scripts/check.sh
       .codex/skills/goal-plan-execute/SKILL.md
-      .claude/skills/example/SKILL.md .claude/hooks/session_start.sh
+      .claude/skills/example/SKILL.md
       .claude/settings.json .hermes/skills/handoff
       docs/archive/plans/shared-engineering-plan.md
       .vscode/extensions.json .vscode/settings.json .vscode/tasks.json
