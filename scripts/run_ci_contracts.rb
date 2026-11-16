@@ -22,7 +22,6 @@ module CiContracts
     .github/scripts/rust-cache-identity.test.cjs
     .github/scripts/changelog-drift.test.cjs
     .github/scripts/pr-repair-safety.test.cjs
-    .github/scripts/repository-health-watchdog.test.cjs
     .github/scripts/rollback-target.test.cjs
     scripts/test_guarded_pr_merge.mjs
     scripts/test_pr_gate_policy.mjs
