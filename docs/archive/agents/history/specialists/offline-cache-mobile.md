@@ -6,7 +6,7 @@ review. It is not current instructions, permissions or work to resume.
 - [Immutable original](https://github.com/pietro1704/Epub-to-Mp3/blob/e585a86d5edbae3cc914c70fe345a70b01f6e0f8/.claude/agents/offline-cache-mobile.md) at commit `e585a86d5edbae3cc914c70fe345a70b01f6e0f8`.
 - Original path: `.claude/agents/offline-cache-mobile.md`; original size: 2548 bytes.
 - Original SHA-256: `ea6a1f3b62075ab7d654f0fbcda2f6b90f9faa3803c838cef30bda89ac7c40d8`.
-- [Current counterpart](../../../../../.claude/agents/offline-cache-mobile.md) follows the current project contract.
+- Current counterpart: the compatibility pointer `.claude/agents/offline-cache-mobile.md` was removed; see the canonical specialists in [.claude/agents](../../../../../.claude/agents/README.md).
 
 The complete original bytes remain in the Git blob at that revision, including
 historical whitespace and final-newline state. Local read-only recovery uses
