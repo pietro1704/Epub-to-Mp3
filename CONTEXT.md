@@ -21,7 +21,7 @@ conversion remains available in the dedicated Convert destination.
 All supported devices and clients — macOS, iOS, iPadOS, Android, Linux, and
 Windows — must perform audiobook conversion through the same shared Rust
 conversion code (`converter-core`/`converter-ffi`). The application embeds and invokes that Rust runtime locally; no external
-HTTP/Python backend or backend service of any kind is part of the product
+HTTP backend or backend service of any kind is part of the product
 runtime or required for conversion.
 
 The Rust conversion boundary is model/provider agnostic. Model selection is a

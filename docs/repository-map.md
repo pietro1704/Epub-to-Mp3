@@ -4,7 +4,8 @@ This map explains ownership and navigation, not runtime readiness. The organizat
 inventory was taken on 2026-11-03 at
 `bf1be38df8a60ff2efefc7399c3d4d152cb36936`: 5,256 tracked paths from
 `git ls-files -z`, including four symlinks. Counts below describe that baseline,
-before this map was added. Ignored books, models, audio, caches and private
+before this map was added; the legacy Python application and other retired paths
+were removed later by the repository cleanup. Ignored books, models, audio, caches and private
 execution evidence are outside the inventory.
 
 The [six-phase audit plan](https://github.com/pietro1704/Epub-to-Mp3/pull/1072)
@@ -27,8 +28,9 @@ establish acceptance for that checkpoint or the later audit phases.
 | Historical consolidation results | [Reconciled checkpoint](archive/root/RESUME_CONSOLIDATION.md) and [historical reports](archive/consolidation/historical-reports.md) |
 
 Guides describe their own scope and may retain dated examples. Read the canonical
-contract and actual task definition before executing an example. Simulator
-acceptance remains blocked by quarantine; Android work remains paused. The map
+contract and actual task definition before executing an example. Generic
+Simulator execution remains quarantined except the supervised SE1/iOS 15.2 route
+in the execution policy; Android work remains paused. The map
 does not authorize dependency compilation, installs, cleanup or publication.
 
 ## Tracked product families
@@ -45,7 +47,6 @@ audit records its evidence. Keep the current paths for these families.
 | `native/` (2,237) | Piper runtime adapter and patched dependencies | `native/piper-runtime` is project code; `native/vendor` is dependency source/data selected by Cargo patches. See provenance below. |
 | `flutter_app/` (345) | Non-Apple client, tests and platform packaging | [pubspec.yaml](../flutter_app/pubspec.yaml), platform manifests and `cmake/` select sources/assets. `lib/`, `test/`, `integration_test/`, Linux/Windows/Android packaging and generated bindings are distinct families. |
 | `web/` (267) | Browser app and compatibility adapters | [package.json](../web/package.json), Vite/TypeScript configuration and `crates/converter-wasm` feed browser/Docker tasks. `src/wasm/` contains generated artifacts. |
-| `python_app/` (603) | Legacy compatibility and migration oracle | [pyproject.toml](../pyproject.toml), compatibility requirements and entrypoints select `src/` and tests/fixtures. Preserve until consumers and differential acceptance are reconciled. |
 | `ruby_app/` (67) | Rust HTTP client and Ruby/Rails gateways | [Ruby guide](../ruby_app/README.md), Gemfiles and gateway routes; conversion domain behavior stays in Rust. |
 
 ## Supporting families
@@ -65,7 +66,7 @@ path has no direct production import.
 | `.agents/` (23), `.claude/` (61), `.codex/` (1), `.hermes/` (3) | Harness routing, shared skills, hooks and specialist locators; Hermes paths alias `.agents/skills/` | Preserve aliases; configuration maintenance has its own routing |
 | `.vscode/` (3) | Editor task, setting and extension integration | Keep; not an authoritative runtime contract |
 | `docs/` (253) | Authored guidance, dated plans and retained research/evidence | Classify by document status as below |
-| Root manifests and entrypoints | `mise.toml`, Cargo manifests/lockfile, Dockerfile, `convert`, Python launchers/requirements, validation/benchmark helpers, `desktop.spec`, `shell-completion.zsh` | Keep consumer paths; Python/Web/Ruby full functional audits are outside the Swift/Rust/Flutter sequence |
+| Root manifests and entrypoints | `mise.toml`, Cargo manifests/lockfile (the workspace version is the product version), Dockerfile, `convert` (Rust CLI wrapper) | Keep consumer paths; Web/Ruby full functional audits are outside the Swift/Rust/Flutter sequence |
 | Remaining root files | Contracts, changelogs, security guidance, editor/tool/delivery settings, retained plans and the two uncertain artifacts below | Classify individually; filenames or age do not establish non-use |
 
 The root `AGENTS.md` is a symlink to `CLAUDE.md`. The three tracked Hermes skill

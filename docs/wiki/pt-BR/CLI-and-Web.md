@@ -37,4 +37,4 @@ pré-requisitos ausentes e gerencia processos de desenvolvimento. Use somente pa
 jornada de servidor explícita após inspecionar `scripts/dev.sh` e o escopo.
 `converter-server` e o cliente HTTP retido são adaptadores de compatibilidade;
 rotas/payloads pertencem ao código atual do servidor Rust e cliente escolhido.
-Receitas Python/FastAPI e `hf_app.py` são legado, não a inicialização padrão.
+O servidor Python/FastAPI legado e o `hf_app.py` foram removidos.

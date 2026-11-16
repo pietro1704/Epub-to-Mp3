@@ -36,4 +36,4 @@ missing dependencies and manages development processes. Use it only for an
 explicit server journey after inspecting `scripts/dev.sh` and task scope.
 `converter-server` and the retained HTTP client are compatibility adapters; actual
 routes/payloads belong to current Rust server and selected client sources.
-Python/FastAPI recipes and `hf_app.py` are legacy, not the default launch path.
+The legacy Python/FastAPI server and `hf_app.py` were removed.

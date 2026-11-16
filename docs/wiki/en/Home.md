@@ -26,6 +26,6 @@ installation action. Browser native speech is listening-only; MP3 export needs P
 - [Troubleshooting](Troubleshooting.md)
 - [Contributing and Security](Contributing-and-Security.md)
 
-Legacy Python/FastAPI, SwiftUI slice notes and old sidecar guides are migration
-references. Current behavior requires source inspection and evidence from the
+Archived SwiftUI slice notes and old sidecar guides under `docs/archive/` are
+historical. Current behavior requires source inspection and evidence from the
 actual adapter. This wiki update is local; it does not publish or validate a service.

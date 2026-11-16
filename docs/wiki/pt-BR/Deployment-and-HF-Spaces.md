@@ -1,8 +1,7 @@
 # Deploy e Hugging Face Spaces
 
 O `Dockerfile` atual compila React/Vite e `converter-server` Rust, depois executa
-o binário em imagem Debian mínima. `hf_app.py` é legado, não entrada do container
-de produção. Inspecione revisão implantada, modo do cliente e workflow antes de
+o binário em imagem Debian mínima. Inspecione revisão implantada, modo do cliente e workflow antes de
 diagnosticar serviço hospedado.
 
 O container declara `PORT=7860`, `HOST=0.0.0.0` e

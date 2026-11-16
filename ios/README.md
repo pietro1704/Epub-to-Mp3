@@ -2,8 +2,8 @@
 
 The Apple client lives in [EpubToMp3/](EpubToMp3/README.md). Its application UI
 uses UIKit on iOS/iPadOS and AppKit on macOS. Both use embedded Rust
-`converter-core`/`converter-ffi` for conversion. Python/FastAPI and the standalone
-Rust HTTP server are compatibility surfaces, not Apple conversion prerequisites.
+`converter-core`/`converter-ffi` for conversion. The standalone Rust HTTP server is not an
+Apple conversion prerequisite.
 
 Start with the library/import, reader and playback flow. Shared behavior belongs
 in Rust; native services adapt local files, platform voice APIs, media controls

@@ -12,8 +12,8 @@ screen. Do not introduce new user-facing screens without Pietro's explicit reque
 Apple clients use native Swift (UIKit/AppKit) and embedded Rust
 `converter-core`/`converter-ffi`. Rust owns conversion, provider/model selection,
 progress, cancellation and artifacts. CLI, web and Flutter use Rust binaries,
-WASM or bindings. Python/FastAPI is legacy compatibility material, not an Apple
-sidecar. Shared conversion behavior belongs in Rust first.
+WASM or bindings. The legacy Python application was removed; Python remains only
+in host scripts. Shared conversion behavior belongs in Rust first.
 
 Piper `pt_BR-faber-medium` is the default primary TTS. Default fallback uses
 installed system TTS, preferring Apple Luciana for Brazilian Portuguese when
@@ -44,7 +44,6 @@ and never require a paid provider.
   [macOS validation](docs/agents/macos-validation.md).
 - Reader, pagination, chrome or player layout: read `ios/EpubToMp3/AGENTS.md`,
   `CONTEXT.md`, relevant `docs/adr/` and the native-reader-regression skill.
-- Legacy Python changes: read [legacy gotchas](docs/legacy-agent-reference.md).
 - Domain documentation: read [domain](docs/agents/domain.md); authorized issue
   work: read [issue tracker](docs/agents/issue-tracker.md).
 - Memory routing: read [memory](docs/agents/memory.md); transport/configuration:

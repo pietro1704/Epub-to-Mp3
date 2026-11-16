@@ -12,15 +12,13 @@ conditionally compiled; the full native process/network pipeline is not a browse
 | Web | `web/src/services/BrowserConversionClient.ts` | Browser I/O/Piper/storage around Rust sessions |
 | Flutter | `flutter_app/lib/main.dart`, `lib/services/conversion/embedded_converter.dart` | Registered Android native channel and Linux/Windows FFI |
 | Optional server | `crates/converter-server/src/main.rs` | Hosted HTTP compatibility contract |
-| Legacy | `python_app/`, `hf_app.py` | Compatibility fixtures and migration reference |
 
 Apple does not require Python or an HTTP sidecar for embedded conversion.
 Browser conversion does not silently select the retained HTTP adapter. Flutter
-startup registers embedded converters; retained Python bridge/assets do not prove
-that production calls them. Check actual callers before removing legacy material.
+startup registers embedded converters. The legacy Python application was removed.
 
 Paths, schemas and persistence depend on the adapter and configuration; do not
-reuse old Python `.jobs/`/`.uploads/` defaults as universal platform paths.
+reuse the removed Python `.jobs/`/`.uploads/` defaults as universal platform paths.
 Use [runtime navigation](../../agents/runtime-navigation.md),
 [CONTEXT.md](../../../CONTEXT.md) and relevant ADRs for detailed ownership.
 Source wiring alone is not a passing migration or runtime acceptance report.
