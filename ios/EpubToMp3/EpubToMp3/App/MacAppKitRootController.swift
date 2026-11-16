@@ -295,6 +295,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             bookmarkStore: bookmarkStore,
             onClose: { [weak self] in self?.show(.library) },
             onListen: { [weak self] in self?.playFromCurrentReaderPosition() },
+            onPlaySelection: { [weak self] chapter, ratio in
+                guard let self else { return }
+                self.playbackSession.start(owner: self, chapterOverride: chapter, pageRatioOverride: ratio)
+            },
             onChromeChanged: { [weak self] hidden in
                 self?.readerChromeHidden = hidden
                 self?.refreshPlayerBar()

@@ -16,6 +16,7 @@ final class MacReaderViewController: NSViewController {
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
     private let onListen: () -> Void
+    private let onPlaySelection: (Int, Double) -> Void
     private let onChromeChanged: (Bool) -> Void
     private var chromeHidden = false
     private lazy var composition: MacReaderViewComposition = MacReaderViewComposition(
@@ -51,6 +52,7 @@ final class MacReaderViewController: NSViewController {
         bookmarkStore: BookmarkStore,
         onClose: @escaping () -> Void,
         onListen: @escaping () -> Void = {},
+        onPlaySelection: @escaping (Int, Double) -> Void = { _, _ in },
         onChromeChanged: @escaping (Bool) -> Void = { _ in },
         preparedRenderer: PreparedChapterRenderer? = nil,
         preparedChapterStore: PreparedReaderChapterStore = .shared,
@@ -71,6 +73,7 @@ final class MacReaderViewController: NSViewController {
         self.bookmarkStore = bookmarkStore
         self.onClose = onClose
         self.onListen = onListen
+        self.onPlaySelection = onPlaySelection
         self.onChromeChanged = onChromeChanged
         self.preparedRenderer = preparedRenderer ?? .shared
         self.preparedChapterStore = preparedChapterStore
@@ -131,6 +134,7 @@ final class MacReaderViewController: NSViewController {
         super.viewDidLoad()
         observeOpenStage("reader_configure_started")
         configureReader()
+        annotations.onPlayFromHere = { [weak self] chapter, ratio in self?.onPlaySelection(chapter, ratio) }
         composition.textView.onToggleChrome = { [weak self] in self?.toggleChrome() }
         observeOpenStage("reader_configure_completed")
         textPresentation.observeAppearance()
