@@ -46,7 +46,7 @@ Playback requires an explicit user gesture.
 ## Shared Apple resources
 
 App Group `group.com.pietrocode.epubtomp3` connects main-app and widget state.
-`EpubToMp3/Models/ConversionActivityAttributes.swift` is shared with the widget;
+`EpubToMp3/Shared/Integrations/ConversionActivityAttributes.swift` is shared with the widget;
 ActivityKit Codable identity and target membership must stay consistent when
 changing it. Inspect `project.yml` and current widget sources for platform
 availability rather than inferring that all application UI uses the widget's UI
