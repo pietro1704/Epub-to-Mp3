@@ -3,8 +3,8 @@
 Apple clients use native UIKit/AppKit plus embedded Rust FFI. Start with the
 [Apple guide](../../../ios/EpubToMp3/README.md) and
 [macOS validation](../../agents/macos-validation.md). The full `mac:build` task
-builds embedded FFI prerequisites; `sidecar:build` is a separate standalone-server
-task and is not the Apple application dependency.
+builds embedded FFI prerequisites; the standalone Rust HTTP server is not an
+Apple application dependency.
 
 Flutter owns Linux/Windows/Android with registered native Rust adapters. Follow
 [the Flutter guide](../../../flutter_app/README.md); do not infer a system-Python

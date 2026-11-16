@@ -62,7 +62,6 @@ path has no direct production import.
 | `voice_samples/` (1) | Tracked README describes optional fixture/preview audio; ignored recordings are outside the census | Preserve retained samples; no audio generation, playback or cleanup |
 | `config/` (1), `.cargo/` (1) | Mac storage guard and Cargo configuration; native supervisor and workspace commands consume them | Preserve enforcement; inspect before build changes |
 | `.github/` (65), `.githooks/` (2) | CI, artifact production, protected delivery and local Git gates | Keep existing exact-head merge mechanism; workflow presence is not a passing check |
-| `aur/` (2) | Arch packaging metadata, canonical `PKGBUILD` and derived `.SRCINFO` | Validate on the owning platform before packaging changes |
 | `.agents/` (23), `.claude/` (61), `.codex/` (1), `.hermes/` (3) | Harness routing, shared skills, hooks and specialist locators; Hermes paths alias `.agents/skills/` | Preserve aliases; configuration maintenance has its own routing |
 | `.vscode/` (3) | Editor task, setting and extension integration | Keep; not an authoritative runtime contract |
 | `docs/` (253) | Authored guidance, dated plans and retained research/evidence | Classify by document status as below |

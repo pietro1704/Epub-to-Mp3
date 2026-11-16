@@ -62,8 +62,7 @@ open EpubToMp3.xcodeproj
 ```
 
 The Apple app calls `converter-core` through `converter-ffi` in-process.
-`mise run sidecar:build` builds the separate compatibility HTTP server; it is
-not an Apple runtime dependency. Mac compilation uses the project build guard
+The Rust HTTP server (`converter-server`) is not an Apple runtime dependency. Mac compilation uses the project build guard
 and one compiler job; preserve compatible artifacts rather than rebuilding them
 for inspection.
 

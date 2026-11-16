@@ -12,7 +12,7 @@ require_relative "mise_task_bodies"
 # Apple service, Python runtime, Simulator, app, or device is invoked.
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
-  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check sidecar:build piper:build-runtime web:wasm-build].freeze
+  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check piper:build-runtime web:wasm-build].freeze
   TASKS = MiseTaskBodies.load(ROOT, %w[ios:run ios:test ios:device:test ios:build ios:device:build ios:simulator:test ios:simulator:run ios:simulator:resume ios:simulator:smoke:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS)
 
   def setup

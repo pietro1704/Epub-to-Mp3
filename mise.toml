@@ -96,7 +96,7 @@ run = "bash scripts/guard_no_python_production.sh"
 
 [tasks."migration:build-and-gate"]
 description = "Build Rust production artifacts and run the migration readiness gate"
-run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run check:rust-migration"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p converter-cli -p converter-server --release && mise run check:rust-migration"
 
 [tasks."check:rust-migration"]
 description = "Check Rust migration readiness, packaging artifacts, and remaining blockers"
@@ -726,20 +726,6 @@ run = """
 #!/bin/bash
 set -euo pipefail
 .venv/bin/python scripts/performance_evidence_gate.py "$@"
-"""
-
-[tasks."sidecar:build"]
-description = "Build the Rust macOS converter-server sidecar"
-sources = ["Cargo.toml", "Cargo.lock", "crates/**"]
-outputs = ["dist/epub-to-mp3-server"]
-run = """
-#!/bin/bash
-set -euo pipefail
-mkdir -p dist
-mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build --release -p converter-server
-cp target/release/converter-server dist/epub-to-mp3-server
-chmod 755 dist/epub-to-mp3-server
-echo "Built Rust sidecar: dist/epub-to-mp3-server"
 """
 
 [tasks."xcode:generate"]

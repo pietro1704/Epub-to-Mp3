@@ -183,14 +183,6 @@ jobs:
         with:
           toolchain: 1.99.1
 
-      - name: Build Rust macOS sidecar
-        run: |
-          cargo build --release -p converter-server
-          mkdir -p dist
-          cp target/release/converter-server dist/epub-to-mp3-server
-          chmod 755 dist/epub-to-mp3-server
-          ls -lh dist/epub-to-mp3-server
-
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
         run: xcodegen generate
