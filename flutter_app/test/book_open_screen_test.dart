@@ -20,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Fake API client that always throws on upload — simulates unreachable
-/// backend so the conversion flow falls through to PythonBridge.
+/// backend.
 class _FakeApiClient extends ApiClient {
   _FakeApiClient() : super('http://fake');
   int uploads = 0;
@@ -351,7 +351,7 @@ void main() {
       await t.pump();
       await t.pump();
 
-      // PythonBridge.isSupported is false on macOS test host, so the
+      // No local parser result is available for a missing book, so the
       // error state should render.
       expect(find.text('Could not open this book'), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);

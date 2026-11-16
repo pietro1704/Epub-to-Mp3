@@ -53,8 +53,3 @@ dependency_overrides:
 flutter:
   uses-material-design: true
   generate: true
-  assets:
-    # Legacy compatibility assets. Active Android/Linux/Windows conversion
-    # uses embedded Rust bindings; Python/Chaquopy is not a runtime dependency.
-    # Keeping these assets does not select a Python conversion backend.
-    - assets/python_app/src/
