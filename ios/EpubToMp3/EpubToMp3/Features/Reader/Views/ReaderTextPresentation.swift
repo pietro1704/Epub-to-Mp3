@@ -75,7 +75,7 @@ final class ReaderTextPresentation {
     func applyReaderLayoutMode() {
         let configuration = ReaderViewportConfiguration.resolve(
             layout: settings.readerLayout,
-            chromeHidden: chromeHidden,
+            chromeHidden: false,
             showsPageNumbers: settings.readerShowPageNumbers
         )
         let isDisplayingImageChapter = composition.contentSurface.isDisplayingComic
@@ -86,6 +86,8 @@ final class ReaderTextPresentation {
         composition.scrollView.alwaysBounceHorizontal = false
         composition.textView.isScrollEnabled = false
         composition.textView.panGestureRecognizer.isEnabled = false
+        composition.pageIndicator.isHidden = chromeHidden || !configuration.showsPageIndicator
+        composition.pageIndicator.alpha = composition.pageIndicator.isHidden ? 0 : 1
         guard configuration != lastAppliedViewportConfiguration
                 || isDisplayingImageChapter != lastAppliedComicLayout else { return }
         lastAppliedViewportConfiguration = configuration
@@ -99,7 +101,7 @@ final class ReaderTextPresentation {
         // the first line can never be clipped by an outer 8pt gap.
         composition.scrollTopToSafeArea.constant = 0
         composition.scrollBottomToPageIndicator.constant = -8
-        composition.scrollBottomToSafeArea.constant = chromeHidden ? 0 : -8
+        composition.scrollBottomToSafeArea.constant = 0
         NSLayoutConstraint.deactivate([
             composition.scrollTopToSafeArea,
             composition.scrollTopToRoot,
@@ -109,15 +111,11 @@ final class ReaderTextPresentation {
         ])
         if configuration.usesScreenEdges {
             NSLayoutConstraint.activate([composition.scrollTopToRoot, composition.scrollBottomToRoot])
-        } else if configuration.showsPageIndicator {
-            NSLayoutConstraint.activate([composition.scrollTopToSafeArea, composition.scrollBottomToPageIndicator])
         } else {
             NSLayoutConstraint.activate([composition.scrollTopToSafeArea, composition.scrollBottomToSafeArea])
         }
         composition.forwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
         composition.backwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
-        composition.pageIndicator.isHidden = !configuration.showsPageIndicator
-        composition.pageIndicator.alpha = configuration.showsPageIndicator ? 1 : 0
         lastPaginatedViewportSize = .zero
         lastScrollingViewportSize = .zero
     }
