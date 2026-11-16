@@ -238,11 +238,11 @@ class NativeTaskWiringTest < Minitest::Test
     assert_unlocked
   end
 
-  def test_rust_server_preserves_piper_environment_and_releases_lease_before_launch
+  def test_rust_server_preserves_piper_model_and_releases_lease_before_launch
     _, error, status = run_task("rust:server", "FIXTURE_SIM_STATE" => "Shutdown", "FIXTURE_CARGO_STATUS" => "0")
     assert status.success?, error
     assert_equal ["cargo", "server"], events.map { |event| event.split(/[ |]/).first }
-    assert_equal "server||127.0.0.1:8000|#{@dir}/.venv/bin/piper|#{@dir}/models/piper/en_US-lessac-medium.onnx", events.last
+    assert_equal "server||127.0.0.1:8000||#{@dir}/models/piper/en_US-lessac-medium.onnx", events.last
     assert_unlocked
   end
 

@@ -36,8 +36,6 @@ ruby.compile = false
 DEVELOPER_DIR = "{% if os() == 'macos' %}{{ exec(command='ruby scripts/xcode_build_paths.rb developer') }}{% else %}{{ env.DEVELOPER_DIR | default(value='') }}{% endif %}"
 # Reuse the GUI workspace cache; SDK/configuration subdirectories stay isolated.
 APPLE_DERIVED_DATA_PATH = "{% if os() == 'macos' %}{{ exec(command='ruby scripts/xcode_build_paths.rb derived-data') }}{% else %}{{ config_root }}/ios/EpubToMp3/.build{% endif %}"
-# Keep the project virtualenv managed by mise without the deprecated tool option.
-_.python.venv = { path = ".venv", create = true }
 
 [tasks."vendor:python"]
 description = "Install and verify the mise-managed Python used by Simulator helper scripts"
@@ -61,7 +59,7 @@ run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo r
 
 [tasks."rust:server"]
 description = "Run the Rust Axum health and metadata server"
-run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_PROJECT_ROOT/models/piper/en_US-lessac-medium.onnx\" bash scripts/dev_backend.sh"
+run = "PIPER_MODEL=\"$MISE_PROJECT_ROOT/models/piper/en_US-lessac-medium.onnx\" bash scripts/dev_backend.sh"
 
 [tasks.convert]
 description = "Build/package and run the native Rust CLI with its own runtime and phonemizer assets"
@@ -415,67 +413,6 @@ run = "SDKMANAGER=\"$HOME/.local/share/mise/installs/android-sdk/11.0/cmdline-to
 description = "Verify packaged ARM64 ELF, actual Piper/JNI exports, dependent libraries and phonemizer assets"
 run = "mise exec -- ruby scripts/package_converter_ffi_android.rb --audit"
 
-[tasks.clean]
-description = "Clean backend cache, pycache, and completed outputs"
-run = """
-#!/bin/bash
-set -e
-
-echo "🧹 Cleaning backend cache..."
-
-# Remove __pycache__ directories
-echo "  → Removing __pycache__..."
-find python_app -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-find . -maxdepth 1 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-
-# Remove .pyc files
-echo "  → Removing .pyc files..."
-find python_app -type f -name "*.pyc" -delete 2>/dev/null || true
-find . -maxdepth 2 -type f -name "*.pyc" -delete 2>/dev/null || true
-
-# Remove pytest cache
-echo "  → Removing .pytest_cache..."
-rm -rf .pytest_cache 2>/dev/null || true
-rm -rf python_app/.pytest_cache 2>/dev/null || true
-
-# Remove output directory (completed conversions) and job metadata/uploads
-# Note: output/.* contains jobs, uploads, inputs that need to be cleaned
-echo "  → Removing output files and jobs..."
-rm -rf output/* 2>/dev/null || true
-rm -rf output/.jobs output/.uploads output/.job_inputs output/.source_backups 2>/dev/null || true
-rm -rf output/.cover_cache 2>/dev/null || true
-# Also clean from root (may exist from older versions)
-rm -rf .jobs .uploads .job_inputs 2>/dev/null || true
-
-# Remove cached books but keep downloaded models
-echo "  → Cleaning book cache (preserving models)..."
-PYTHONPATH=python_app python - <<'PY'
-from src.cache_manager import CacheManager
-
-try:
-    manager = CacheManager()
-    removed = manager.clear_cache()
-    msg = "    Book cache cleared." if removed else "    No book cache found."
-    print(msg)
-except Exception as exc:
-    print(f"    ⚠️ Failed to clear cache: {exc}")
-PY
-
-# Remove mise cache
-echo "  → Removing .mise-cache..."
-rm -rf .mise-cache 2>/dev/null || true
-
-echo "✅ Clean complete!"
-echo ""
-echo "Cleaned directories:"
-echo "  - __pycache__"
-echo "  - .pyc files"
-echo "  - .pytest_cache"
-echo "  - output/*"
-echo "  - book cache (.cache/<book>), models preserved"
-echo "  - .mise-cache"
-"""
-
 [tasks."build:storage"]
 description = "Inspect Mac free space and project build caches across linked worktrees"
 run = "ruby scripts/mac_build_budget.rb status"
@@ -504,157 +441,24 @@ run = "ruby scripts/mac_build_budget.rb prune"
 description = "Prune superseded Xcode caches below the configured free-space floor, only without active jobs"
 run = "ruby scripts/mac_build_budget.rb prune-if-low"
 
-[tasks.install]
-description = "Install Python and web dependencies (venv + npm)"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-echo "📦 Installing dependencies with mise..."
-mise install
-
-echo "🐍 Creating .venv (Python managed by mise) if missing..."
-if [ ! -x ".venv/bin/python" ]; then
-  mise exec -- python -m venv .venv
-fi
-
-echo "🐍 Installing Python dependencies (root)..."
-UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
-if [ -x "$UV_BIN" ]; then
-  "$UV_BIN" pip install --python .venv/bin/python -r requirements.txt
-else
-  mise exec -- python -m pip install -r requirements.txt
-fi
-
-echo "🐍 Installing Python dependencies (python_app)..."
-if [ -x "$UV_BIN" ]; then
-  "$UV_BIN" pip install --python .venv/bin/python -r python_app/requirements.txt
-else
-  mise exec -- python -m pip install -r python_app/requirements.txt
-fi
-
-echo "🔍 Installing lint/format tools..."
-if [ -x "$UV_BIN" ]; then
-  "$UV_BIN" pip install --python .venv/bin/python ruff pre-commit
-else
-  mise exec -- python -m pip install ruff pre-commit
-fi
-
-echo "🎙️ Configuring native Piper..."
-bash scripts/install_piper_binary.sh
-
-echo "🌐 Installing web dependencies..."
-(cd web && mise exec -- npm install)
-"""
-
 [tasks.test]
-description = "Run unit + integration + web tests"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-mise run test:unit
-mise run test:integration
-mise run test:web
-"""
+description = "Run the web suite"
+run = "mise run test:web"
 
 [tasks.preflight]
 description = "Run the full local delivery gate before opening or merging a PR"
 run = "bash scripts/preflight.sh"
 
-[tasks."test:unit"]
-description = "Run Python unit tests (excluding benchmarks)"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-if [ ! -x ".venv/bin/python" ]; then
-  mise run install
-fi
-
-.venv/bin/python -m pytest --ignore=.ai-jail python_app/tests test_ambiguous_languages.py test_new_features.py -k "not benchmark"
-"""
-
-[tasks."test:integration"]
-description = "Run Python integration/benchmark-style tests"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-if [ ! -x ".venv/bin/python" ]; then
-  mise run install
-fi
-
-.venv/bin/python -m pytest --ignore=.ai-jail python_app/tests -k "benchmark"
-"""
-
-[tasks."trim-log"]
-description = "Trim conversions.jsonl to last 500 entries to keep it fast"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-LOG_FILE=".logs/conversions.jsonl"
-if [[ ! -f "$LOG_FILE" ]]; then
-    echo "No log file found at $LOG_FILE"
-    exit 0
-fi
-
-python3 - "$LOG_FILE" <<'PY'
-import sys, json
-path = sys.argv[1]
-records = []
-with open(path, encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if line:
-            try:
-                records.append(json.loads(line))
-            except Exception:
-                pass
-if len(records) <= 500:
-    print(f"Log has {len(records)} entries — no trim needed.")
-    sys.exit(0)
-keep = records[-500:]
-with open(path, "w", encoding="utf-8") as f:
-    for r in keep:
-        f.write(json.dumps(r, ensure_ascii=False) + "\\n")
-print(f"Trimmed {len(records)} → 500 entries.")
-PY
-"""
-
 [tasks.audit]
-description = "Scan Python and npm dependencies for known CVEs"
+description = "Scan npm dependencies for known CVEs"
 run = """
 #!/bin/bash
 set -euo pipefail
 
-echo "🔍 Python CVE scan (PyPI service — declared requirements)..."
-# Resolve in a temporary Python 3.12 environment because the project requires
-# numpy 2.5+ and the managed project venv intentionally has no pip.
-UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
-AUDIT_TMP="$(mktemp -d "${TMPDIR:-/tmp}/epub-audit.XXXXXX")"
-trap 'rm -rf "$AUDIT_TMP"' EXIT
-"$UV_BIN" venv --python 3.12 "$AUDIT_TMP/venv" >/dev/null
-"$UV_BIN" pip install --python "$AUDIT_TMP/venv/bin/python" \
-    -r requirements.txt -r python_app/requirements.txt >/dev/null
-"$UV_BIN" tool run --from pip-audit pip-audit --path \
-    "$AUDIT_TMP/venv/lib/python3.12/site-packages" -s pypi || {
-    echo ""
-    echo "⚠️ CVEs surfaced in the resolved Python dependencies."
-    exit 1
-}
-echo "✅ Python: no known vulnerabilities."
-
-echo ""
 echo "🔍 npm CVE scan..."
 (cd web && mise exec -- npm audit --audit-level=moderate)
 echo "✅ npm: no known vulnerabilities."
 """
-
-[tasks."analyze-logs"]
-description = "Harvest conversion + CI logs, surface anomalies (slow chapters, fallbacks, language mismatches)"
-run = "python scripts/analyze_logs.py"
 
 [tasks."hooks:check"]
 description = "Check Git hook syntax and executability (focused)"
@@ -1410,10 +1214,6 @@ description = "Run web lint + test + build"
 run = """
 #!/bin/bash
 set -euo pipefail
-
-if [ ! -x ".venv/bin/python" ]; then
-  mise run install
-fi
 
 (cd web && mise exec -- npm run lint)
 (cd web && mise exec -- npm run test)

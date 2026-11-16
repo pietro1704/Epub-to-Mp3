@@ -31,13 +31,6 @@ jobs:
       - name: Install toolchain
         run: mise install
 
-      - name: pip-audit
-        id: pip_audit
-        continue-on-error: true
-        run: |
-          mise exec -- pip install pip-audit
-          mise exec -- pip-audit -r requirements.txt --strict 2>&1 | tee pip-audit.log
-
       - name: npm audit
         id: npm_audit
         continue-on-error: true
@@ -45,12 +38,11 @@ jobs:
         run: npm audit --audit-level=moderate 2>&1 | tee ../npm-audit.log
 
       - name: Open issue on failure
-        if: steps.pip_audit.outcome == 'failure' || steps.npm_audit.outcome == 'failure'
+        if: steps.npm_audit.outcome == 'failure'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require('fs');
-            const pip = fs.existsSync('pip-audit.log') ? fs.readFileSync('pip-audit.log', 'utf8') : '(no output)';
             const npmLog = fs.existsSync('npm-audit.log') ? fs.readFileSync('npm-audit.log', 'utf8') : '(no output)';
             const today = new Date().toISOString().slice(0, 10);
             const body = [
@@ -58,11 +50,6 @@ jobs:
               '',
               `Run: ${context.runId}`,
               `Date: ${today}`,
-              '',
-              '### pip-audit',
-              '```',
-              pip.slice(-3000),
-              '```',
               '',
               '### npm audit',
               '```',
@@ -78,5 +65,5 @@ jobs:
             });
 
       - name: Fail job if any audit failed
-        if: steps.pip_audit.outcome == 'failure' || steps.npm_audit.outcome == 'failure'
+        if: steps.npm_audit.outcome == 'failure'
         run: exit 1

@@ -2,7 +2,7 @@ name: Release Desktop
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  # Required so mise can activate the .venv from mise.toml (virtualenv feature)
+  # Keep mise experimental features enabled for the release jobs
   MISE_EXPERIMENTAL: "1"
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && (inputs.checkout_ref != '' && inputs.checkout_ref || format('refs/tags/{0}', inputs.tag)) || github.ref }}

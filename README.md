@@ -272,13 +272,10 @@ PIPER_MAX_PROCS=0                # 0 = auto-detect from CPU
 ## Development
 
 ```bash
-mise run test           # Python unit/integration + Web lint/tests/build; not a full Rust/Flutter/Apple gate
-mise run test:unit      # Python unit tests only
+mise run test           # Web lint + tests + build; not a full Rust/Flutter/Apple gate
 mise run test:web       # Web lint + tests + build
-mise run clean          # Potentially destructive; inspect targets, back up first, and run only when explicitly requested
-mise run trim-log       # Trim conversions.jsonl to last 500 entries
-mise run hooks-test     # Validate Claude Code hook scripts
-mise run audit          # Scan Python dependencies for CVEs
+mise run hooks-test     # Validate Git hooks and the host workflow gate
+mise run audit          # Scan npm dependencies for CVEs
 ```
 
 `mise run test` does not certify Rust, Flutter, or Apple behavior. Inspect

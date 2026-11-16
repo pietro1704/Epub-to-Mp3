@@ -8,11 +8,9 @@ if [[ "${CI:-false}" != "true" ]]; then
     exit 0
 fi
 
-if [[ -x .venv/bin/pre-commit ]]; then
-    .venv/bin/pre-commit run --hook-stage pre-commit
-elif command -v pre-commit >/dev/null 2>&1; then
+if command -v pre-commit >/dev/null 2>&1; then
     pre-commit run --hook-stage pre-commit
 else
-    echo "pre-commit is unavailable; install dependencies with 'mise run install'." >&2
+    echo "pre-commit is unavailable on this CI runner." >&2
     exit 1
 fi
