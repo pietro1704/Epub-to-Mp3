@@ -90,21 +90,13 @@ run = "mise exec -- node --experimental-transform-types --test web/scripts/piper
 description = "Exercise embedded Web and Flutter runtime contracts"
 run = "bash scripts/check_direct_runtime_boundary.sh"
 
-[tasks."branches:cleanup-preview"]
-description = "Preview safe remote branch cleanup without deleting anything"
-run = "bash scripts/cleanup_remote_branches.sh --remote origin"
-
 [tasks."guard:no-python-production"]
 description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
 run = "bash scripts/guard_no_python_production.sh"
 
 [tasks."migration:build-and-gate"]
 description = "Build Rust production artifacts and run the migration readiness gate"
-run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run migration:gate"
-
-[tasks."migration:gate"]
-description = "Report Rust migration readiness, packaging artifacts, and remaining blockers"
-run = "bash scripts/check_rust_migration_gate.sh"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run check:rust-migration"
 
 [tasks."check:rust-migration"]
 description = "Check Rust migration readiness, packaging artifacts, and remaining blockers"
@@ -426,10 +418,6 @@ run = "SDKMANAGER=\"$HOME/.local/share/mise/installs/android-sdk/11.0/cmdline-to
 description = "Verify packaged ARM64 ELF, actual Piper/JNI exports, dependent libraries and phonemizer assets"
 run = "mise exec -- ruby scripts/package_converter_ffi_android.rb --audit"
 
-[tasks."piper:android-arm64"]
-description = "Build the shared Android Piper/JNI converter with the mise-managed NDK"
-run = "mise exec -- ruby scripts/build_converter_ffi_android.rb"
-
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
 run = """
@@ -667,22 +655,6 @@ echo "🔍 npm CVE scan..."
 echo "✅ npm: no known vulnerabilities."
 """
 
-[tasks."logs-perf"]
-description = "Show recent perf/error/freeze events from .logs/events.jsonl"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-EVENTS_FILE=".logs/events.jsonl"
-if [[ ! -f "$EVENTS_FILE" ]]; then
-    echo "No events log at $EVENTS_FILE"
-    exit 0
-fi
-
-LIMIT="${1:-30}"
-.venv/bin/python scripts/print_events.py "$EVENTS_FILE" "$LIMIT"
-"""
-
 [tasks."analyze-logs"]
 description = "Harvest conversion + CI logs, surface anomalies (slow chapters, fallbacks, language mismatches)"
 run = "python scripts/analyze_logs.py"
@@ -761,17 +733,6 @@ run = """
 set -euo pipefail
 .venv/bin/python scripts/performance_evidence_gate.py "$@"
 """
-
-[tasks."benchmark:cross-client"]
-description = "Evaluate the complete cross-client performance evidence matrix"
-run = """
-#!/bin/bash
-set -euo pipefail
-.venv/bin/python scripts/cross_client_performance_gate.py "$@"
-"""
-
-# ── Native macOS build ────────────────────────────────────────────────────────
-# Apple clients embed converter-ffi; the standalone server is a separate target.
 
 [tasks."sidecar:build"]
 description = "Build the Rust macOS converter-server sidecar"
@@ -1390,10 +1351,6 @@ run = "bash scripts/device-workflow.sh test"
 description = "Check physical device readiness once; fail immediately when locked"
 run = "bash scripts/device-workflow.sh preflight"
 
-[tasks."ios:device:prepare"]
-description = "Explicitly build the physical-device workflow CLI under the native build guard"
-run = "bash scripts/device-workflow.sh prepare"
-
 [tasks."ios:device:benchmark"]
 description = "Benchmark explicit EPUB/ranges on iPhone; --case BOOK START END, at most two chapters unless --whole-book"
 run = "bash scripts/device-workflow.sh benchmark"
@@ -1619,11 +1576,6 @@ depends = ["converter-ffi:android-install"]
 description = "Build the Flutter Android APK (release)"
 run = "mise exec -- ruby scripts/build_flutter_android.rb release"
 
-[tasks."flutter:build-apk-debug:clean"]
-depends = ["converter-ffi:android-install"]
-description = "Explicitly clean Flutter Android artifacts before a debug build"
-run = "mise exec -- ruby scripts/build_flutter_android.rb debug --clean"
-
 [tasks."android:bootstrap-python"]
 description = "Sync python_app/src into the Flutter Android Chaquopy source set"
 run = "bash flutter_app/scripts/bootstrap-android-python.sh"
@@ -1638,19 +1590,3 @@ run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
 [tasks."piper:build-runtime"]
 description = "Build the native Piper Embedded runtime without external executable fallback"
 run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"
-
-[tasks."ios:resources:preflight"]
-description = "Check actual macOS resource headroom without launching Apple tools"
-run = "mise exec -- python scripts/simulator_resource_monitor.py"
-
-[tasks."ios:resources:observe"]
-description = "Observe macOS resources for 15 seconds without authorizing or starting Simulator"
-run = "mise exec -- python scripts/simulator_resource_monitor.py --observe 15"
-
-[tasks."host:simulator-resources:test"]
-description = "Test the resource monitor with host-free fixtures and no Apple processes"
-run = "mise exec -- python scripts/test_simulator_resource_monitor.py -v"
-
-[tasks."host:simulator-session:test"]
-description = "Test quarantined session ownership and bounded cleanup without Apple execution"
-run = "mise exec -- ruby scripts/test_native_simulator_session.rb"

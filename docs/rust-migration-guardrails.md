@@ -12,7 +12,7 @@ Run the commands relevant to the changed surface from the repository root with
 
 - `mise run web:wasm-build` generates browser Rust/WASM artifacts.
 - `mise run migration:build-and-gate` builds CLI/server release artifacts and
-  checks migration boundaries. `migration:gate` alone requires existing artifacts.
+  checks migration boundaries. `check:rust-migration` alone requires existing artifacts.
 - `mise run test:web` exercises the Web client.
 
 Inspect the selected task before execution. A focused change does not require
