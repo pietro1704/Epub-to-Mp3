@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_mac_run_replaces_the_previous_debug_instance() -> None:

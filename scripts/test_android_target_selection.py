@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "select_android_target.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "select_android_target.py"
 
 
 def _load_module():

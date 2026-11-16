@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "codeql.yml"
+WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "codeql.yml"
 
 
 def test_codeql_runs_are_not_cancelled_by_newer_pushes() -> None:

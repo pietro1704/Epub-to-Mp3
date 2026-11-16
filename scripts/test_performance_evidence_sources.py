@@ -199,7 +199,7 @@ def test_strict_cli_reports_pending(tmp_path, capsys):
 def test_script_imports_original_capture_and_writes_pending_report(tmp_path):
     manifest = bundle(tmp_path, [capture(tmp_path)])
     output = tmp_path / "report.json"
-    script = Path(__file__).resolve().parents[2] / "scripts" / "performance_evidence_gate.py"
+    script = Path(__file__).resolve().parents[1] / "scripts" / "performance_evidence_gate.py"
     completed = subprocess.run(
         [sys.executable, str(script), str(manifest), "--output", str(output), "--strict"],
         check=False,

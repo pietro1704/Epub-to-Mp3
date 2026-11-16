@@ -33,11 +33,23 @@ module CiContracts
     scripts/test_android_ui_session.py
     scripts/test_capture_native_test_metadata.py
     scripts/test_simulator_resource_monitor.py
-    python_app/tests/test_feature_ab_cache_isolation.py
-    python_app/tests/test_feature_ab_regression.py
-    python_app/tests/test_guard_ios_simulator_resources.py
-    python_app/tests/test_heavy_job_guard.py
-    python_app/tests/test_select_ios_simulator.py
+    scripts/test_android_target_selection.py
+    scripts/test_apple_latency_evidence.py
+    scripts/test_codeql_workflow.py
+    scripts/test_development_run_tasks.py
+    scripts/test_guard_ios_simulator_resources.py
+    scripts/test_heavy_job_guard.py
+    scripts/test_ios_device_mise_tasks.py
+    scripts/test_ios_disk_guard.py
+    scripts/test_mac_run_task.py
+    scripts/test_mise_python_environment.py
+    scripts/test_mobile_file_associations.py
+    scripts/test_performance_evidence_gate.py
+    scripts/test_performance_evidence_sources.py
+    scripts/test_seed_ios_development_book.py
+    scripts/test_select_ios_simulator.py
+    scripts/test_sync_hf_workflow.py
+    scripts/test_widget_embed_config.py
   ].freeze
 
   def self.steps

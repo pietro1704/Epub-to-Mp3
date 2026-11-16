@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_device_build_targets_a_connected_device_without_simulator_guard() -> None:

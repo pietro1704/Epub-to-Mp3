@@ -54,7 +54,7 @@ def test_percentile_uses_interpolation_and_rejects_empty_values():
 def test_script_entry_point_emits_pending_and_strict_failure(tmp_path):
     path = tmp_path / "empty.json"
     path.write_text('{"schema_version":2,"captures":[]}')
-    script = Path(__file__).resolve().parents[2] / "scripts" / "performance_evidence_gate.py"
+    script = Path(__file__).resolve().parents[1] / "scripts" / "performance_evidence_gate.py"
     result = subprocess.run(
         [sys.executable, str(script), str(path), "--strict"],
         capture_output=True,

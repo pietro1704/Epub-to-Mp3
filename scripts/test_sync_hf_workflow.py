@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "sync-hf.yml"
+WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "sync-hf.yml"
 
 
 def test_hf_sync_snapshots_only_the_validated_revision() -> None:

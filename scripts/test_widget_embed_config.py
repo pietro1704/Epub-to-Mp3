@@ -15,7 +15,7 @@ Slices the guards belong to:
 
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_YML = PROJECT_ROOT / "ios" / "EpubToMp3" / "project.yml"
 MISE_TOML = PROJECT_ROOT / "mise.toml"
 
@@ -131,17 +131,3 @@ def test_simulator_run_task_requires_an_existing_app_and_never_builds():
     assert "xcodebuild" not in task
     assert "xcodegen" not in task
     assert "-downloadPlatform" not in task
-
-
-def test_install_task_uses_uv_before_security_pins():
-    """Fresh environments must install dependencies without relying on pip."""
-    body = MISE_TOML.read_text(encoding="utf-8")
-    install_start = body.index("[tasks.install]")
-    test_start = body.index("\n[tasks.test]", install_start)
-    task = body[install_start:test_start]
-
-    uv_install = '"$UV_BIN" pip install --python .venv/bin/python -r requirements.txt'
-    requirements = '"$UV_BIN" pip install --python .venv/bin/python -r python_app/requirements.txt'
-    assert 'UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"' in task
-    assert uv_install in task
-    assert task.index(uv_install) < task.index(requirements)
