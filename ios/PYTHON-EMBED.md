@@ -6,7 +6,7 @@ Status: the app uses an in-process Python conversion boundary and a native
 Swift Edge transport. The macOS live streaming test and signed iPhone arm64
 bundle installation pass; real-device playback remains required before a
 release, and the current adapter is not yet full CLI-policy parity. See
-[`docs/ios-in-process-edge-audio-architecture-research-2026-07-30.md`](../docs/ios-in-process-edge-audio-architecture-research-2026-07-30.md)
+[`docs/ios-in-process-edge-audio-architecture-research-2026-07-30.md`](../docs/archive/ios-in-process-edge-audio-architecture-research-2026-07-30.md)
 for the current Apple-platform design and acceptance evidence.
 
 ## Why

@@ -24,7 +24,7 @@ establish acceptance for that checkpoint or the later audit phases.
 | Browser client | [Web guide](../web/README.md) and [WASM boundary](wasm-capability-boundary.md) |
 | Embedded native packages | [FFI artifact contract](converter-ffi-artifacts.md) and [iOS integration](../ios/EpubToMp3/docs/converter-ffi-ios.md) |
 | Local user documentation | [Wiki source index](wiki/README.md), in English and Brazilian Portuguese |
-| Historical consolidation results | [Reconciled checkpoint](../RESUME_CONSOLIDATION.md) and [historical reports](consolidation/historical-reports.md) |
+| Historical consolidation results | [Reconciled checkpoint](archive/root/RESUME_CONSOLIDATION.md) and [historical reports](archive/consolidation/historical-reports.md) |
 
 Guides describe their own scope and may retain dated examples. Read the canonical
 contract and actual task definition before executing an example. Simulator
@@ -131,17 +131,12 @@ Do not split them solely to satisfy a source-file threshold.
 | Current path | Classification and consumers | Proposed destination/action |
 | --- | --- | --- |
 | `README.md` and this map | Public product entry and ownership navigation | Keep paths; link the map from README |
-| `CONTEXT.md`, `CODING_STANDARDS.md`, `CLAUDE.md`, `docs/agents/` outside `history/` | Current contracts and operational routing | Keep canonical paths; link rather than duplicate policy |
+| `CONTEXT.md`, `CODING_STANDARDS.md`, `CLAUDE.md`, `docs/agents/` | Current contracts and operational routing | Keep canonical paths; link rather than duplicate policy |
 | `docs/adr/` | Dated architectural decisions, with section-specific supersession | Keep; the 2026-10-02 reactive-state ADR retains accepted state design but supersedes its old Edge defaults |
 | `docs/wiki/`, client READMEs, Apple `docs/` | Local user/developer guidance | Keep; reconcile product facts with canonical source, in both wiki languages when affected |
-| `docs/plans/`, `docs/research/`, `docs/bugs/`, dated root `docs/*.md` | Proposals, observations, experiments or dated reports | Keep provenance; status must not imply current runtime acceptance |
-| `docs/agents/history/` | Explicit historical snapshots of former guides/skills/specialists | Keep historical evidence separate from active routing |
-| `docs/consolidation/`, `RESUME_CONSOLIDATION.md` | Prior consolidation inventory/results and reconciled 2026-11-02 checkpoint | Keep; reconcile the index's obsolete pending claims against its checkpoint |
-| `APP_REMAINING_WORK.md`, `QA_FIX_PLAN.md`, `READER_LAYOUT_RESUME_HTML_PLAN.md` | Already marked historical on 2026-10-21; referenced by backlog/bootstrap/QA reports | Keep; trace and update references before any later move |
-| `AUDIT-0.4.0.md` | Read-only 2026-05-10 triage; linked by changelog/backlog | Keep historical location pending a complete reference/move proposal |
-| `CLAUDE-MINI-PROMPT.md`, `CLAUDE-PROJECT-BRIEF.md` | Optional task scaffold and bootstrap locator, not historical audit results | Keep; these point to current contracts rather than establish product facts |
+| [`docs/archive/`](archive/README.md) | Historical plans, research, bug notes, consolidation reports, former agent guides/specialists, dated reports and superseded root/Apple planning documents | Read-only history; status there never implies current runtime acceptance |
 
-This first slice proposes no source or historical-document relocation. Existing
+Historical documents were relocated to `docs/archive/` by the repository cleanup. Existing
 Apple/Rust/Flutter roots remain the target structure. No consequential structural
 decision has been justified by the inventory alone. Any later move proposal must
 name every exact old/new path, implicit packaging consumer, validation and rollback

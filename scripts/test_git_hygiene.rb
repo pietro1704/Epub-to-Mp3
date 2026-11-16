@@ -91,7 +91,7 @@ class GitHygieneTest < Minitest::Test
       .codex/skills/goal-plan-execute/SKILL.md
       .claude/skills/example/SKILL.md .claude/hooks/session_start.sh
       .claude/settings.json .hermes/skills/handoff
-      docs/plans/shared-engineering-plan.md
+      docs/archive/plans/shared-engineering-plan.md
       .vscode/extensions.json .vscode/settings.json .vscode/tasks.json
     ].each { |path| refute ignored?(path), "shared asset is hidden: #{path}" }
     assert ignored?(".vscode/local-machine.json")

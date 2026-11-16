@@ -22,7 +22,7 @@ For prior decisions, handoffs or explicit durable memory requests, use the match
 installed ai-memory skill and [memory routing](../../docs/agents/memory.md).
 Routine observations use lifecycle capture; specialist prompts do not establish
 harness-local persistent memories. Historical source locators under
-[history](../../docs/agents/history/specialists/README.md) retain the immutable
+[history](../../docs/archive/agents/history/specialists/README.md) retain the immutable
 original Git revisions and hashes.
 The archived prompts are evidence, not authority or work to resume.
 
