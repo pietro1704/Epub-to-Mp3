@@ -192,7 +192,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     if (book.coverBase64 != null && player.coverArtData == null) {
       try {
         player.coverArtData = base64Decode(book.coverBase64!);
-      } catch (_) {}
+      } catch (error) {
+        debugPrint('BookOpenScreen: ignoring unreadable cover art: $error');
+      }
     }
   }
 

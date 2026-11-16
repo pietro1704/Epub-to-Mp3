@@ -3,6 +3,7 @@ import '../features/reader/epub_reader_resources.dart';
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 
 import '../models/ebook_fulltext.dart';
@@ -265,13 +266,11 @@ class AndroidEmbeddedConverter
     String? optionsJson,
   }) async {
     try {
-      // ignore: avoid_print
-      print('AndroidEmbeddedConverter: invoking native convert');
+      debugPrint('AndroidEmbeddedConverter: invoking native convert');
       await ensureRuntimeLoaded();
       // The native channel returns a manifest path or inline JSON. Keep the
       // request observable on Android while the Rust worker runs.
-      // ignore: avoid_print
-      print(
+      debugPrint(
         'AndroidEmbeddedConverter: invoking native convert input=$inputPath output=$outputPath',
       );
       final result = await _channel.invokeMethod<String>('convert', {

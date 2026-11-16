@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path_provider/path_provider.dart';
 
 // MARK: - Configuration constants
@@ -206,10 +207,14 @@ class OfflineCacheEviction {
           try {
             final stat = await entity.stat();
             total += stat.size;
-          } catch (_) {}
+          } catch (error) {
+            debugPrint('OfflineCacheEviction: skipped unreadable file: $error');
+          }
         }
       }
-    } catch (_) {}
+    } catch (error) {
+      debugPrint('OfflineCacheEviction: could not size $dir: $error');
+    }
     return total;
   }
 

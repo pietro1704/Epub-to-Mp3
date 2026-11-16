@@ -79,7 +79,12 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         if (await source.exists() && await source.length() > 0) {
           await source.copy(target.path);
         }
-      } catch (_) {}
+      } catch (error) {
+        // Without a local copy the book is not marked offline below.
+        debugPrint(
+          'FullPlayerSheet: could not keep chapter ${ch.index}: $error',
+        );
+      }
       completed++;
       if (mounted) {
         setState(() => _downloadStatus = '$completed/${chapters.length}');

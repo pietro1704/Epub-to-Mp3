@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:just_audio/just_audio.dart';
 
 import '../models/job_snapshot.dart';
@@ -130,8 +130,7 @@ class AudioPlayerService extends AudioPlayerInterface
   @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
     _playbackState.beginRequest(_player.playerState);
-    // ignore: avoid_print
-    print('AudioPlayer setQueue chapters=${chapters.length}');
+    debugPrint('AudioPlayer setQueue chapters=${chapters.length}');
     final children = <AudioSource>[];
     final map = <int>[];
     final urls = <Uri>[];
@@ -167,8 +166,7 @@ class AudioPlayerService extends AudioPlayerInterface
         );
     _chapters = chapters;
     _playableMap = map;
-    // ignore: avoid_print
-    print('AudioPlayer resolvedSources=${urls.length} urls=$urls');
+    debugPrint('AudioPlayer resolvedSources=${urls.length} urls=$urls');
     if (children.isEmpty) {
       _playbackState.fail();
       throw StateError('No playable audio sources were produced by Rust');
@@ -269,13 +267,11 @@ class AudioPlayerService extends AudioPlayerInterface
   @override
   Future<void> play() async {
     await _segmentUpdates;
-    // ignore: avoid_print
-    print(
+    debugPrint(
       'AudioPlayer play requested sourceCount=${_chapterQueueURLs.length} segment=$_isSegmentMode',
     );
     if (!hasQueuedAudio) {
-      // ignore: avoid_print
-      print('AudioPlayer play ignored: no queued audio');
+      debugPrint('AudioPlayer play ignored: no queued audio');
       return;
     }
     final restart = phase == PlaybackPhase.completed;
