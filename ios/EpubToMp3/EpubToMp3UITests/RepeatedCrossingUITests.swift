@@ -95,10 +95,10 @@ final class RepeatedCrossingUITests: XCTestCase {
         }
         // Hide chrome. `toggleChromeVisibility()` is a synchronous property
         // set (no animation) that hides the tools bar containing
-        // "reader.search", so its disappearance is a reliable, near-instant
+        // "reader.more", so its disappearance is a reliable, near-instant
         // observable signal instead of a fixed guess.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        waitUntil(timeout: 1.0) { !app.buttons["reader.search"].firstMatch.exists }
+        waitUntil(timeout: 1.0) { !app.buttons["reader.more"].firstMatch.exists }
 
         // Page to the last page (taps still turn pages with chrome hidden).
         var g = 0

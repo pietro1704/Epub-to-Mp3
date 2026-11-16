@@ -96,7 +96,7 @@ final class MacFallbackResponsivenessTests: XCTestCase {
             importDirectory: directory.appendingPathComponent("books"))
         let book = try library.importBook(from: source)
         let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+        let keys = ["reader.recentTool.v1", ReaderSessionState.currentlyReadingBookIDKey,
             AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
             AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey,
             AudioPlayer.readerCurrentSentenceIdDefaultsKey,
@@ -194,8 +194,9 @@ final class MacFallbackResponsivenessTests: XCTestCase {
                 return fulltext.chapters[ordinal].zeroBasedEpubIndex == nextReaderChapter
             })
             let contents = try XCTUnwrap(descendants(root.view).compactMap { $0 as? NSButton }
-                .first { $0.accessibilityIdentifier() == "reader.toc.toggle" })
-            contents.performClick(nil)
+                .first { $0.accessibilityIdentifier() == "reader.more" })
+            let command = try XCTUnwrap(contents.menu?.items.first { ($0.representedObject as? String) == ReaderTool.contents.rawValue })
+            NSApp.sendAction(try XCTUnwrap(command.action), to: command.target, from: command)
             let table = try XCTUnwrap(NSApp.windows.flatMap { $0.contentView.map(descendants) ?? [] }
                 .compactMap { $0 as? NSTableView }.first { $0.numberOfRows == rows.count })
             table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)

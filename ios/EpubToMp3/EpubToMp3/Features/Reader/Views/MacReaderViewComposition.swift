@@ -10,7 +10,21 @@ final class MacReaderViewComposition {
         let contents: Selector
         let search: Selector
         let settings: Selector
+        let footnotes: Selector
+        let listen: Selector
         let retryLoading: Selector
+
+        init(close: Selector, contents: Selector, search: Selector, settings: Selector,
+             footnotes: Selector = NSSelectorFromString("showFootnotes"),
+             listen: Selector = NSSelectorFromString("listenFromReader"), retryLoading: Selector) {
+            self.close = close
+            self.contents = contents
+            self.search = search
+            self.settings = settings
+            self.footnotes = footnotes
+            self.listen = listen
+            self.retryLoading = retryLoading
+        }
     }
     let view: NSView
     private unowned let target: NSViewController
@@ -31,6 +45,7 @@ final class MacReaderViewComposition {
     let statusLabel = NSTextField(labelWithString: "")
     let tocPopover = NSPopover()
     let settingsPopover = NSPopover()
+    private var toolBar: MacReaderToolBar?
 
     init(view: NSView, target: NSViewController, settings: AppSettings, actions: Actions,
          cancelJourney: @escaping () -> Void, onLink: @escaping (URL, String) -> Bool,
@@ -53,34 +68,24 @@ final class MacReaderViewComposition {
         close.toolTip = L10n.string("reader.close")
         close.setAccessibilityIdentifier("reader.close")
 
-        let toc = NSButton(title: L10n.string("reader.toc"), target: target, action: actions.contents)
-        toc.bezelStyle = .texturedRounded
-        toc.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: L10n.string("reader.toc"))
-        toc.imagePosition = .imageLeading
-        toc.toolTip = L10n.string("reader.toc")
-        toc.setAccessibilityIdentifier("reader.toc.toggle")
-
-        let search = NSButton(
-            image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: L10n.string("reader.search.placeholder")) ?? NSImage(),
-            target: target, action: actions.search
-        )
-        search.bezelStyle = .texturedRounded
-        search.toolTip = L10n.string("reader.search.placeholder")
-        search.setAccessibilityIdentifier("reader.search")
-
-        let appearance = NSButton(title: "Aa", target: target, action: actions.settings)
-        appearance.bezelStyle = .texturedRounded
-        appearance.font = .systemFont(ofSize: 13, weight: .semibold)
-        appearance.toolTip = L10n.string("reader.settings")
-        appearance.setAccessibilityLabel(L10n.string("reader.settings"))
-        appearance.setAccessibilityIdentifier("reader.settings.toggle")
+        let tools = MacReaderToolBar { [weak self] tool, sender in
+            guard let self else { return }
+            switch tool {
+            case .appearance: self.target.perform(self.actions.settings, with: sender)
+            case .contents: self.target.perform(self.actions.contents, with: sender)
+            case .search: self.target.perform(self.actions.search)
+            case .footnotes: self.target.perform(self.actions.footnotes)
+            case .listen: self.target.perform(self.actions.listen)
+            }
+        }
+        toolBar = tools
 
         bookTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         bookTitleLabel.alignment = .center
         bookTitleLabel.lineBreakMode = .byTruncatingTail
         bookTitleLabel.setAccessibilityIdentifier("reader.title")
         bookTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let leadingControls = NSStackView(views: [close, toc, search, appearance])
+        let leadingControls = NSStackView(views: [close])
         leadingControls.orientation = .horizontal
         leadingControls.spacing = 8
         let leadingSpacer = NSView()
@@ -91,6 +96,8 @@ final class MacReaderViewComposition {
         toolbar.addArrangedSubview(leadingSpacer)
         toolbar.addArrangedSubview(bookTitleLabel)
         toolbar.addArrangedSubview(trailingSpacer)
+        toolbar.addArrangedSubview(tools.recent)
+        toolbar.addArrangedSubview(tools.more)
         toolbar.orientation = .horizontal
         toolbar.alignment = .centerY
         toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)

@@ -25,7 +25,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         let chapters = try XCTUnwrap(metadata["chapters"] as? [[String: Any]])
         let count = try XCTUnwrap(chapters[10]["textChars"] as? Int)
         let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+        let keys = ["reader.recentTool.v1", ReaderSessionState.currentlyReadingBookIDKey,
             AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
             AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
         let saved = keys.map { standard.object(forKey: $0) }
@@ -74,7 +74,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         let source = try EpubFixture.createWithChapters((0..<12).map { "Source chapter \($0 + 1)." })
         let book = try library.importBook(from: source)
         let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+        let keys = ["reader.recentTool.v1", ReaderSessionState.currentlyReadingBookIDKey,
             AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
             AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
         let saved = keys.map { standard.object(forKey: $0) }
@@ -120,7 +120,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         let library = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: directory.appendingPathComponent("books"))
         let book = try library.importBook(from: source)
         let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+        let keys = ["reader.recentTool.v1", ReaderSessionState.currentlyReadingBookIDKey,
             AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
             AudioPlayer.readerCurrentSentenceIdDefaultsKey, AudioPlayer.currentBookIDDefaultsKey,
             AudioPlayer.currentChapterIndexDefaultsKey, "readerProgress.v1", "readerWarmBookIDs.v1"]
@@ -209,8 +209,9 @@ final class MacReaderListeningRestartTests: XCTestCase {
         play.performClick(nil)
         XCTAssertFalse(player.isPlaying)
         let contents = try XCTUnwrap(descendants(root.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "reader.toc.toggle" })
-        contents.performClick(nil)
+            .first { $0.accessibilityIdentifier() == "reader.more" })
+        let command = try XCTUnwrap(contents.menu?.items.first { ($0.representedObject as? String) == ReaderTool.contents.rawValue })
+        NSApp.sendAction(try XCTUnwrap(command.action), to: command.target, from: command)
         let table = try XCTUnwrap(NSApp.windows.flatMap { $0.contentView.map(descendants) ?? [] }
             .compactMap { $0 as? NSTableView }.first { $0.numberOfRows == 12 })
         table.selectRowIndexes(IndexSet(integer: 10), byExtendingSelection: false)
@@ -235,7 +236,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         let input = try EpubFixture.createWithChapter(body: "First selected words. Second selected words.", includeCover: false)
         let book = try library.importBook(from: input)
         let standard = UserDefaults.standard
-        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+        let keys = ["reader.recentTool.v1", ReaderSessionState.currentlyReadingBookIDKey,
             AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
             AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
         let saved = keys.map { standard.object(forKey: $0) }

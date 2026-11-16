@@ -32,7 +32,7 @@ final class EpubToMp3AudioUITests: XCTestCase {
         )
         firstBook.tap()
 
-        let readerReady = app.buttons["reader.search"].firstMatch
+        let readerReady = app.buttons["reader.more"].firstMatch
         XCTAssertTrue(
             readerReady.waitForExistence(timeout: 20),
             "Opening a book should show the reader chrome."
@@ -84,10 +84,10 @@ final class EpubToMp3AudioUITests: XCTestCase {
         let contextRemoveButton = app.descendants(matching: .any).matching(
             NSPredicate(format: "label IN %@", ["Remover livro", "Remove book", "Eliminar libro"])
         ).firstMatch
-        // The reader must NOT have been opened — search button is only visible inside a book.
-        let searchButton = app.buttons["reader.search"].firstMatch
+        // The reader must NOT have been opened — the reader More button is only visible inside a book.
+        let readerChrome = app.buttons["reader.more"].firstMatch
         XCTAssertFalse(
-            searchButton.exists,
+            readerChrome.exists,
             "Long-press must NOT open the book — reader chrome must not be visible."
         )
 
@@ -256,22 +256,20 @@ final class EpubToMp3AudioUITests: XCTestCase {
         }
         firstBook.tap()
 
-        let searchButton = app.buttons["reader.search"].firstMatch
-        guard searchButton.waitForExistence(timeout: 20) else {
+        let readerChrome = app.buttons["reader.more"].firstMatch
+        guard readerChrome.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader chrome unavailable; skipping TOC test.")
         }
 
         // A book opens directly into the reader view — the TOC is opt-in,
         // revealed only by tapping the toolbar toggle.
-        let tocToggle = app.buttons["reader.toc.toggle"].firstMatch
-        XCTAssertTrue(tocToggle.waitForExistence(timeout: 5), "Reader toolbar must expose a TOC toggle.")
-        tocToggle.tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
 
         let tocRows = app.tables["reader.toc"].cells
         XCTAssertTrue(tocRows.firstMatch.waitForExistence(timeout: 5), "TOC must expose chapter rows.")
         tocRows.firstMatch.tap()
 
-        XCTAssertTrue(searchButton.waitForExistence(timeout: 10), "TOC jump must return to the reader.")
+        XCTAssertTrue(readerChrome.waitForExistence(timeout: 10), "TOC jump must return to the reader.")
     }
 
     func testInBookSearchOpensAcceptsQueryAndDismisses() throws {
@@ -286,11 +284,11 @@ final class EpubToMp3AudioUITests: XCTestCase {
         }
         firstBook.tap()
 
-        let searchButton = app.buttons["reader.search"].firstMatch
-        guard searchButton.waitForExistence(timeout: 20) else {
+        let readerChrome = app.buttons["reader.more"].firstMatch
+        guard readerChrome.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader chrome unavailable; skipping search test.")
         }
-        searchButton.tap()
+        readerChrome.tap()
 
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5), "Search overlay must expose its text field.")
@@ -301,7 +299,7 @@ final class EpubToMp3AudioUITests: XCTestCase {
         XCTAssertTrue(done.waitForExistence(timeout: 5), "Search overlay must expose its dismiss action.")
         done.tap()
 
-        XCTAssertTrue(searchButton.waitForExistence(timeout: 10), "Dismissed search must return to the reader.")
+        XCTAssertTrue(readerChrome.waitForExistence(timeout: 10), "Dismissed search must return to the reader.")
     }
 
 

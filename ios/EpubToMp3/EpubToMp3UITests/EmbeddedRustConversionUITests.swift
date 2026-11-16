@@ -26,7 +26,7 @@ final class EmbeddedRustConversionUITests: XCTestCase {
 
         let reader = app.scrollViews["reader.viewport"].firstMatch
         XCTAssertTrue(reader.waitForExistence(timeout: 10), "The seeded EPUB must open without backend parsing.")
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 10))
 
         let unavailableError = app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS[c] %@", "Embedded converter artifact is unavailable")

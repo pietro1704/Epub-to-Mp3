@@ -27,7 +27,7 @@ final class PhysicalDeviceDownloadUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(seconds(elapsed.label), 50)
         capture("authored-chapter-natural-end")
         app.buttons["fullPlayer.close"].tap()
-        app.buttons["reader.toc.toggle"].tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
         let download = app.buttons["reader.toc.download.0"].firstMatch
         XCTAssertTrue(download.waitForExistence(timeout: 10))
         XCTAssertTrue(wait(timeout: 90) { download.isEnabled })
@@ -38,7 +38,7 @@ final class PhysicalDeviceDownloadUITests: XCTestCase {
         app.terminate()
         app.launch()
         openAuthoredBook(app, bookID: bookID)
-        app.buttons["reader.toc.toggle"].tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
         XCTAssertTrue(download.waitForExistence(timeout: 10))
         XCTAssertEqual((download.value as? String)?.lowercased(), "downloaded")
         app.buttons["Close"].firstMatch.tap()
@@ -100,7 +100,7 @@ final class PhysicalDeviceDownloadUITests: XCTestCase {
         }
         let visible = tile.frame.intersection(books.frame)
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: visible.midX, dy: visible.minY + 30)).tap()
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
     }
 

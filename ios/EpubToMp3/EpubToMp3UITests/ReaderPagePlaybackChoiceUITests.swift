@@ -25,7 +25,7 @@ final class ReaderPagePlaybackChoiceUITests: XCTestCase {
         let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"]
         XCTAssertTrue(tile.waitForExistence(timeout: 20))
         tile.tap()
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].waitForNonExistence(timeout: 60))
         let harness = ReaderModesHarness(app: app)
         XCTAssertTrue(wait(timeout: 20) { (harness.paginationMetrics?.values["total"] ?? 0) > 1 })
@@ -107,7 +107,7 @@ final class ReaderPagePlaybackChoiceUITests: XCTestCase {
         let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"]
         XCTAssertTrue(tile.waitForExistence(timeout: 20))
         tile.tap()
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].waitForNonExistence(timeout: 60))
         let harness = ReaderModesHarness(app: app)
         XCTAssertTrue(wait(timeout: 20) { (harness.paginationMetrics?.values["total"] ?? 0) > 1 })

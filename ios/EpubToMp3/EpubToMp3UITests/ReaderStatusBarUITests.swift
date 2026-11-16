@@ -21,6 +21,28 @@ final class ReaderStatusBarUITests: XCTestCase {
         try verifyStatusBarFollowsChrome(layout: "scrolling")
     }
 
+    func testNativeMoreMenuMakesSearchRecentAndRestoresItAfterRelaunch() throws {
+        let application = XCUIApplication()
+        application.launchArguments = ["-uiTestResetActiveReader", "-developmentSeedBook",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        let harness = ReaderModesHarness(app: application)
+        app = application
+        application.launch()
+        try harness.openBook(titleContaining: "lord")
+        harness.activateReaderTool(identifier: "reader.search", title: "Search")
+        let search = application.alerts.firstMatch
+        XCTAssertTrue(search.textFields.firstMatch.waitForExistence(timeout: 5))
+        search.buttons["Cancel"].tap()
+        XCTAssertTrue(application.buttons["reader.search"].firstMatch.isHittable)
+        application.terminate()
+        application.launch()
+        try harness.openBook(titleContaining: "lord")
+        XCTAssertTrue(application.buttons["reader.search"].firstMatch.isHittable,
+                      "The selected tool survives a real application relaunch.")
+        // Restore the initial Aa tool after the native menu/relaunch journey.
+        harness.activateReaderTool(identifier: "reader.settings.toggle", title: "Reader settings")
+    }
+
     private func verifyStatusBarFollowsChrome(layout: String) throws {
         XCUIDevice.shared.orientation = .portrait
         let application = XCUIApplication()

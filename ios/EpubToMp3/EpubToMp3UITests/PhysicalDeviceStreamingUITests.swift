@@ -43,7 +43,7 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
         }
         let visible = tile.frame.intersection(collection.frame)
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: visible.midX, dy: visible.minY + 30)).tap()
-        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
         let miniPlay = app.buttons["miniPlayer.playPause"].firstMatch
         XCTAssertEqual(miniPlay.label.lowercased(), "play", "Opening must not autoplay.")
@@ -156,7 +156,7 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
             }
             let visible = tile.frame.intersection(books.frame)
             app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: visible.midX, dy: visible.minY + 30)).tap()
-            XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
+            XCTAssertTrue(app.buttons["reader.more"].waitForExistence(timeout: 60))
             XCTAssertTrue(app.images["reader.loadingCover"].firstMatch.waitForNonExistence(timeout: 60))
             if miniTransport.label.lowercased() == "play" { miniTransport.tap() }
             open.tap()
@@ -392,9 +392,7 @@ final class PhysicalDeviceStreamingUITests: XCTestCase {
         app.buttons["Off"].firstMatch.tap()
         app.buttons["fullPlayer.close"].tap()
 
-        let toc = app.buttons["reader.toc.toggle"].firstMatch
-        XCTAssertTrue(toc.waitForExistence(timeout: 5))
-        toc.tap()
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
         for index in 0...1 {
             let download = app.buttons["reader.toc.download.\(index)"].firstMatch
             XCTAssertTrue(download.waitForExistence(timeout: 5))

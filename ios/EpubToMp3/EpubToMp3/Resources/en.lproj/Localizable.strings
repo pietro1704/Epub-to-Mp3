@@ -580,6 +580,7 @@
 "reader.footnotes.title" = "Footnotes";
 "reader.footnotes.empty" = "No footnotes in this chapter.";
 "reader.search" = "Search";
+"reader.more" = "More reader options";
 "reader.search.placeholder" = "Search in book";
 "reader.search.currentChapter" = "Search this chapter while the rest of the book becomes available.";
 "reader.search.unavailable" = "Search isn't available in this document view.";

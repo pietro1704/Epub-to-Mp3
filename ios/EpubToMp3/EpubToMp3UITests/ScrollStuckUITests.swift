@@ -22,7 +22,7 @@ final class ScrollStuckUITests: XCTestCase {
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
         firstBook.tap()
-        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
+        guard app.buttons["reader.more"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
         }
         sleep(2)
@@ -36,7 +36,7 @@ final class ScrollStuckUITests: XCTestCase {
         }
         sleep(1)
 
-        XCTAssertTrue(app.buttons["reader.search"].firstMatch.exists,
+        XCTAssertTrue(app.buttons["reader.more"].firstMatch.exists,
                       "reader chrome must remain alive after repeated scroll gestures")
         XCTAssertTrue(app.textViews["reader.content"].firstMatch.exists,
                       "reader content must remain mounted after repeated scroll gestures")
