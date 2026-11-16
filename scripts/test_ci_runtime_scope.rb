@@ -51,7 +51,7 @@ class CiRuntimeScopeTest < Minitest::Test
   def test_documentation_changes_skip_runtimes_and_host_contracts_but_not_packaging
     result, status, err, contracts = scope(['docs/guide.md'])
     assert status.success?, err
-    assert_equal %w[rust web flutter android python wasm apple].to_h { |name| [name, 'false'] }, result
+    assert_equal %w[rust web flutter android wasm apple].to_h { |name| [name, 'false'] }, result
     assert_equal 'false', contracts
     guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
     refute guard.key?('if')
@@ -59,7 +59,7 @@ class CiRuntimeScopeTest < Minitest::Test
     boundary = guard.fetch('steps').find { |step| step['name'] == 'Check production packaging boundary' }
     refute boundary.key?('if')
     assert_equal 'bash scripts/guard_no_python_production.sh', boundary.fetch('run')
-    %w[rust web flutter android python wasm apple contracts].each do |name|
+    %w[rust web flutter android wasm apple contracts].each do |name|
       assert_equal "${{ steps.scope.outputs.#{name} }}", @workflow.fetch('jobs').fetch('changes').fetch('outputs').fetch(name)
     end
   end
@@ -103,7 +103,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[python-tests rust flutter android-jvm web apple-app]
+    runtimes = %w[rust flutter android-jvm web apple-app]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -112,7 +112,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_platform_and_shared_runtime_dependencies
     { 'web/src/app.tsx' => %w[web], 'flutter_app/lib/main.dart' => %w[flutter],
-      'python_app/src/converter.py' => %w[python], 'crates/converter-server/src/main.rs' => %w[rust],
+      'scripts/host_tool.py' => [], 'crates/converter-server/src/main.rs' => %w[rust],
       'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
       'ios/EpubToMp3/Package.swift' => %w[apple],
       'native/piper-runtime/src/lib.rs' => %w[rust apple flutter android],
@@ -120,10 +120,10 @@ class CiRuntimeScopeTest < Minitest::Test
       'Cargo.lock' => %w[rust apple flutter android web wasm],
       'Cargo.toml' => %w[rust apple flutter android web wasm],
       'rust-toolchain.toml' => %w[rust apple flutter android web wasm],
-      'mise.toml' => %w[rust apple flutter android web wasm python],
-      'mise.lock' => %w[rust apple flutter android web wasm python],
-      '.github/workflows/ci.yml' => %w[rust apple flutter android web wasm python],
-      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android web wasm python],
+      'mise.toml' => %w[rust apple flutter android web wasm],
+      'mise.lock' => %w[rust apple flutter android web wasm],
+      '.github/workflows/ci.yml' => %w[rust apple flutter android web wasm],
+      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android web wasm],
       '.github/workflows/browser-runtime.yml' => %w[web wasm],
       '.github/workflows/faber-integration.yml' => %w[rust apple flutter android web wasm],
       '.github/workflows/converter-ffi.yml' => %w[rust apple flutter android],
@@ -152,19 +152,6 @@ class CiRuntimeScopeTest < Minitest::Test
     assert_equal %w[apple flutter rust wasm web], result.select { |_, value| value == 'true' }.keys.sort
   end
 
-  def test_extracted_python_helpers_keep_runtime_selection
-    %w[validate_conversion.py conversion_validation_chapter.py
-       .github/scripts/fixture_helper.py
-       .github/scripts/fixture_helper_cases.py].each do |path|
-      result, status, err = scope([path])
-      assert status.success?, err
-      assert_equal ['python'], result.select { |_, value| value == 'true' }.keys, path
-    end
-    result, status, err = scope(['docs/conversion_validation_chapter.py.md'])
-    assert status.success?, err
-    assert_equal 'false', result.fetch('python')
-  end
-
   def test_full_validation_uses_every_runtime_without_pr_context
     result, status, err, contracts = scope(['README.md'], full: true, base: '', event: 'push')
     assert status.success?, err
@@ -191,7 +178,7 @@ class CiRuntimeScopeTest < Minitest::Test
   def gate(scopes, results = {}, integrated = false)
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
-    { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web',
+    { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web',
       'apple-app' => 'apple' }.each do |job, name|
       selected = scopes[name] == 'true' && !(%w[apple-app android-jvm].include?(job) && integrated == true)
       needs[job] = { 'result' => selected ? 'success' : 'skipped' }
@@ -202,7 +189,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_native_app_gate_rejects_failures_and_integrated_validation_avoids_duplicate_app_runs
-    scopes = %w[rust web flutter android python wasm apple].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
+    scopes = %w[rust web flutter android wasm apple].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'apple-app' => result).success? }
     assert gate(scopes, {}, true).success?
@@ -211,7 +198,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_gate_accepts_only_confirmed_scopes_and_matching_results
-    scopes = %w[rust web flutter android python wasm apple].to_h { |name| [name, 'false'] }.merge('web' => 'true')
+    scopes = %w[rust web flutter android wasm apple].to_h { |name| [name, 'false'] }.merge('web' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'web' => result).success? }
     refute gate(scopes, 'changes' => 'failure').success?
@@ -237,30 +224,8 @@ class CiRuntimeScopeTest < Minitest::Test
     assert_equal false, events.fetch('workflow_dispatch').fetch('inputs').fetch('full_validation').fetch('default')
   end
 
-  def test_lightweight_python_reuses_contracts_from_the_required_guard
-    guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
-    refute guard.key?('if')
-    assert_includes @workflow.fetch('jobs').fetch('pr-gate').fetch('needs'), 'production-packaging-guard'
-    assert guard.fetch('steps').any? { |step| step['run'].to_s.include?('ruby scripts/run_ci_contracts.rb') }
-    guarded = CiContracts.steps.find { |step| step.fetch('name') == 'Python offline contracts' }.fetch('argv')
-    steps = @workflow.fetch('jobs').fetch('python-tests').fetch('steps')
-    lightweight = steps.find { |step| step['name'] == 'Validate legacy syntax, lint and offline consent contracts' }
-    pytest = lightweight.fetch('run').lines.map { |line| Shellwords.split(line) }.find { |argv| argv.include?('pytest') }
-    assert_includes pytest, 'python_app/tests/test_audio_pause_policy.py'
-    %w[test_feature_ab_cache_isolation.py test_feature_ab_regression.py].each do |name|
-      path = "python_app/tests/#{name}"
-      assert_equal 1, guarded.count(path), path
-      refute_includes pytest, path
-    end
-  end
-
-  def test_pr_jobs_do_not_install_legacy_models_or_rebuild_unaffected_wasm
-    python_steps = @workflow.fetch('jobs').fetch('python-tests').fetch('steps')
-    %w[Install\ Python\ dependencies Run\ Python\ tests Install\ system\ dependencies Install\ explicit\ pinned\ Faber\ model\ for\ offline\ CLI\ smoke].each do |name|
-      assert_equal 'inputs.full_validation == true', python_steps.find { |step| step['name'] == name }.fetch('if'), name
-    end
-    lite = python_steps.find { |step| step['name'] == 'Install lightweight legacy validation dependencies' }
-    assert_equal "mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.17.4", lite.fetch('run')
+  def test_pr_jobs_do_not_rebuild_unaffected_wasm
+    refute @workflow.fetch('jobs').key?('python-tests')
     web = @workflow.fetch('jobs').fetch('web')
     %w[Install\ Rust\ WASM\ target Build\ direct\ Rust\ WASM\ adapter].each do |name|
       assert_equal "needs.changes.outputs.wasm == 'true'", web.fetch('steps').find { |step| step['name'] == name }.fetch('if')
@@ -412,23 +377,6 @@ end
     assert_includes production.fetch('run'), 'node web/scripts/verify-browser-tts.mjs'
   end
 
-  def test_python_runtime_checks_are_bounded_and_cover_http_lifecycle
-    python = @workflow.fetch('jobs').fetch('python-tests')
-    assert_equal '${{ inputs.full_validation == true && 30 || 7 }}', python.fetch('timeout-minutes')
-    steps = python.fetch('steps')
-    dependencies = steps.find { |step| step['name'] == 'Install lightweight legacy validation dependencies' }.fetch('run')
-    assert_includes dependencies, 'pytest-asyncio'
-    assert_includes dependencies, 'starlette>=1.9.0'
-    focused = steps.find { |step| step['name'] == 'Exercise legacy HTTP response lifecycle' }
-    assert_equal 'inputs.full_validation != true', focused.fetch('if')
-    assert_includes focused.fetch('run'), 'timeout --signal=TERM --kill-after=10s 60s'
-    assert_includes focused.fetch('run'), 'python_app/tests/test_stream_http_observation.py'
-    full = steps.find { |step| step['name'] == 'Run Python tests' }
-    assert_equal 'inputs.full_validation == true', full.fetch('if')
-    assert_includes full.fetch('run'), 'timeout --signal=TERM --kill-after=30s 20m'
-    assert_includes full.fetch('run'), 'faulthandler_timeout=60'
-  end
-
   def test_android_and_desktop_setup_use_project_flutter_without_unpinned_composite_actions
     root = File.expand_path('..', __dir__)
     codeql = YAML.load_file(File.join(root, '.github/workflows/codeql.yml'))
@@ -457,7 +405,7 @@ end
     assert_equal 2, jobs.fetch('changes').fetch('timeout-minutes')
     assert_equal 7, jobs.fetch('production-packaging-guard').fetch('timeout-minutes')
     assert_equal 1, jobs.fetch('pr-gate').fetch('timeout-minutes')
-    %w[python-tests rust web flutter].each do |name|
+    %w[rust web flutter].each do |name|
       assert_equal '${{ inputs.full_validation == true && 30 || 7 }}', jobs.fetch(name).fetch('timeout-minutes')
       assert_includes jobs.fetch(name).fetch('needs'), 'changes'
       refute_includes jobs.fetch(name).fetch('needs'), 'production-packaging-guard'

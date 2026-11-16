@@ -38,7 +38,6 @@ jobs:
       web: ${{ steps.scope.outputs.web }}
       flutter: ${{ steps.scope.outputs.flutter }}
       android: ${{ steps.scope.outputs.android }}
-      python: ${{ steps.scope.outputs.python }}
       wasm: ${{ steps.scope.outputs.wasm }}
       apple: ${{ steps.scope.outputs.apple }}
       contracts: ${{ steps.scope.outputs.contracts }}
@@ -56,7 +55,7 @@ jobs:
         shell: ruby {0}
         run: |
           require 'open3'
-          scopes = %w[rust web flutter android python wasm apple].to_h { |name| [name, false] }
+          scopes = %w[rust web flutter android wasm apple].to_h { |name| [name, false] }
           contracts = true
           if ENV.fetch('FULL_VALIDATION') == 'true'
             scopes.transform_values! { true }
@@ -79,7 +78,6 @@ jobs:
               scopes['web'] ||= wasm || path.start_with?('web/') || path.match?(/\Ascripts\/(?:build_web|check_direct_runtime)/)
               scopes['flutter'] ||= orchestration || shared_build || shared_core || native_abi || path.start_with?('flutter_app/') || path.match?(/\Ascripts\/(?:build_flutter|build_converter_ffi_android|package_converter_ffi_android|check_direct_runtime)/)
               scopes['android'] ||= orchestration || shared_build || native_abi || path.start_with?('flutter_app/android/') || %w[flutter_app/pubspec.yaml flutter_app/pubspec.lock].include?(path) || path.match?(/\Ascripts\/(?:build_flutter_android|build_converter_ffi_android|package_converter_ffi_android|fetch_onnxruntime_android|android_jni_exports)/)
-              scopes['python'] ||= orchestration || path.start_with?('python_app/', 'tests/') || path.match?(/\A(?:[^\/]+\.py|requirements[^\/]*\.txt|pyproject\.toml|pytest\.ini|setup\.cfg|(?:scripts|\.github\/scripts)\/.*\.py)\z/)
               scopes['wasm'] ||= wasm
               scopes['apple'] ||= orchestration || shared_build || shared_core || native_abi || path.start_with?('ios/EpubToMp3/')
             end
@@ -151,176 +149,6 @@ jobs:
           path: .reports/ci-contracts/
           if-no-files-found: warn
           retention-days: 7
-
-  python-tests:
-    if: needs.changes.outputs.python == 'true'
-    name: Python tests
-    needs: [changes]
-    runs-on: ubuntu-24.04
-    timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
-    env:
-      MISE_ENABLE_TOOLS: python
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install mise
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
-        with:
-          version: 2026.11.3
-          cache: false
-          install: false
-
-      - name: Check Python toolchain scope
-        run: |
-          mise ls --current --json | python3 -c '
-          import json, sys
-          tools = set(json.load(sys.stdin))
-          if tools != {"python"}:
-              sys.exit(f"Unexpected Python CI tools: {sorted(tools)}")
-          print("Python CI tools: python")
-          '
-
-      - name: Install toolchain
-        env:
-          MISE_GITHUB_TOKEN: ${{ github.token }}
-        run: mise install
-
-      - name: Install lightweight legacy validation dependencies
-        if: inputs.full_validation != true
-        run: mise exec -- python -m pip install pytest pytest-asyncio 'starlette>=1.9.0' ruff==0.17.4
-      - name: Resolve and verify the current pandas requirement
-        if: inputs.full_validation != true
-        run: |
-          pandas_requirement=$(sed -n '/^pandas[<>=]/p' requirements.txt)
-          test -n "$pandas_requirement"
-          mise exec -- python -m pip install --only-binary=:all: "$pandas_requirement"
-          mise exec -- python -m pytest --noconftest -q python_app/tests/test_requirements_consistency.py
-      - name: Validate legacy syntax, lint and offline consent contracts
-        if: inputs.full_validation != true
-        run: |
-          mise exec -- python -m compileall -q python_app tests scripts
-          mise exec -- ruff check python_app tests
-          mise exec -- python -m pytest --noconftest -q python_app/tests/test_audio_pause_policy.py
-      - name: Exercise legacy HTTP response lifecycle
-        if: inputs.full_validation != true
-        run: timeout --signal=TERM --kill-after=10s 60s mise exec -- python -m pytest -v --tb=short --maxfail=1 -o faulthandler_timeout=10 python_app/tests/test_stream_http_observation.py
-      - name: Verify current documentation and publication contracts
-        if: inputs.full_validation != true
-        run: mise exec -- python -m pytest --noconftest -q python_app/tests/test_engine_documentation_contract.py python_app/tests/test_sync_hf_workflow.py python_app/tests/test_mise_python_environment.py
-
-      - name: Cache pip
-        if: inputs.full_validation == true
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
-          restore-keys: pip-
-
-      - name: Cache Python virtualenv
-        if: inputs.full_validation == true
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .venv
-          key: python-venv-${{ runner.os }}-3.14.10-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
-          restore-keys: python-venv-${{ runner.os }}-3.14.10-
-
-      - name: Install system dependencies
-        if: inputs.full_validation == true
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-
-      - name: Install Python dependencies
-        if: inputs.full_validation == true
-        env:
-          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
-          PIP_DISABLE_PIP_VERSION_CHECK: "1"
-        run: |
-          "$(mise where python)/bin/python" -m venv .venv
-          test "$(mise exec -- python --version)" = 'Python 3.14.10'
-          .venv/bin/python -m pip install -r requirements.txt -r python_app/requirements.txt ruff==0.17.4
-          bash scripts/install_piper_binary.sh
-
-      - name: Bootstrap iOS embedded Python vendor
-        if: inputs.full_validation == true
-        working-directory: ios/EpubToMp3
-        run: bash scripts/bootstrap-ios-python.sh
-
-      - name: Run Python tests
-        if: inputs.full_validation == true
-        run: timeout --signal=TERM --kill-after=30s 20m mise exec -- python -m pytest -v --tb=short -o faulthandler_timeout=60
-
-      - name: Run Python lint
-        if: inputs.full_validation == true
-        run: mise exec -- ruff check python_app tests
-
-      - name: Install explicit pinned Faber model for offline CLI smoke
-        if: inputs.full_validation == true
-        run: |
-          model_dir="$RUNNER_TEMP/legacy-piper-model"
-          mkdir -p "$model_dir"
-          model_base="https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium"
-          curl --fail --location --retry 3 "$model_base/pt_BR-faber-medium.onnx" -o "$model_dir/pt_BR-faber-medium.onnx"
-          curl --fail --location --retry 3 "$model_base/pt_BR-faber-medium.onnx.json" -o "$model_dir/pt_BR-faber-medium.onnx.json"
-          printf '%s  %s\n' \
-            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$model_dir/pt_BR-faber-medium.onnx" \
-            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$model_dir/pt_BR-faber-medium.onnx.json" \
-            | sha256sum --check --status
-          echo "PIPER_MODEL_DIR=$model_dir" >> "$GITHUB_ENV"
-
-      - name: Run offline sample conversion smoke
-        if: inputs.full_validation == true
-        env:
-          R2_OPTIONAL: "true"
-          PIPER_MAX_PROCS: "1"
-        run: |
-          mise exec -- python -m python_app.main convert web/public/sample.epub \
-            --engine piper --model "$PIPER_MODEL_DIR/pt_BR-faber-medium.onnx" \
-            --fallback-engine none --chapter 1 --no-parallel --force-reprocess \
-            --output-dir "$RUNNER_TEMP/legacy-piper-smoke" --verbose
-
-      - name: Run offline external worker pool E2E smoke
-        if: inputs.full_validation == true
-        env:
-          R2_OPTIONAL: "true"
-          PIPER_MAX_PROCS: "1"
-          CHAPTER_PARALLEL_COUNT: "1"
-        run: |
-          mise exec -- python scripts/external_worker_pool.py web/public/sample.epub \
-            --workers 1 \
-            --forward-args "--engine piper --model $PIPER_MODEL_DIR/pt_BR-faber-medium.onnx --fallback-engine none --chapter 1 --no-parallel --force-reprocess --output-dir $RUNNER_TEMP/legacy-piper-pool-smoke --stage-pipeline"
-
-      - name: Set up the explicit optional Coqui interpreter
-        if: inputs.full_validation == true
-        id: coqui-python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.11.18'
-
-      - name: Verify optional Coqui numerical ABI and dependency resolution
-        if: inputs.full_validation == true
-        env:
-          COQUI_PYTHON: ${{ steps.coqui-python.outputs.python-path }}
-        run: |
-          "$COQUI_PYTHON" -m venv "$RUNNER_TEMP/coqui-compatibility"
-          coqui_python="$RUNNER_TEMP/coqui-compatibility/bin/python"
-          "$coqui_python" -m pip install --only-binary=:all: 'numpy>=1.26.4,<2' 'pandas>=1.5.3,<2' numba==0.68.1 llvmlite==0.50.0
-          "$coqui_python" -c 'import numpy, pandas, numba, llvmlite; print(numpy.__version__, pandas.__version__, numba.__version__, llvmlite.__version__)'
-          mkdir -p .reports/python-compatibility
-          "$coqui_python" -m pip install --dry-run --report .reports/python-compatibility/coqui-resolution.json -r requirements-coqui.txt
-
-      - name: Retain optional Python compatibility evidence
-        if: always() && inputs.full_validation == true
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: python-compatibility-${{ github.sha }}
-          path: .reports/python-compatibility/
-          if-no-files-found: warn
-          retention-days: 14
 
   rust:
     if: needs.changes.outputs.rust == 'true'
@@ -734,7 +562,7 @@ jobs:
 
   pr-gate:
     name: PR gate
-    needs: [changes, production-packaging-guard, python-tests, rust, flutter, android-jvm, web, apple-app]
+    needs: [changes, production-packaging-guard, rust, flutter, android-jvm, web, apple-app]
     if: always()
     timeout-minutes: 1
     runs-on: ubuntu-24.04
@@ -754,7 +582,7 @@ jobs:
           wasm = scopes.fetch('wasm')
           abort 'Missing scope evidence: wasm' unless %w[true false].include?(wasm)
           abort 'WASM validation requires the Web job' if wasm == 'true' && scopes.fetch('web') != 'true'
-          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web', 'apple-app' => 'apple' }.each do |job, scope|
+          { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web', 'apple-app' => 'apple' }.each do |job, scope|
             selected = scopes.fetch(scope)
             abort "Missing scope evidence: #{scope}" unless %w[true false].include?(selected)
             # Full post-merge validation already requires the complete Faber matrix.

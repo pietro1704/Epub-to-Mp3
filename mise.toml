@@ -709,20 +709,12 @@ echo "Installed repository hooks from .githooks."
 description = "Measure Rust migration parser, chunker, cache, and orchestration throughput"
 run = "mise exec -- cargo bench --manifest-path benches/Cargo.toml --bench rust_migration -- --save-baseline rust-migration"
 
-[tasks."benchmark:check"]
-description = "Compare live telemetry throughput against benchmarks/baseline.json"
-run = """
-#!/bin/bash
-set -euo pipefail
-.venv/bin/python scripts/benchmark_regression.py "$@"
-"""
-
 [tasks."benchmark:journeys"]
 description = "Validate recorded cross-client cold/warm journey evidence"
 run = """
 #!/bin/bash
 set -euo pipefail
-.venv/bin/python scripts/performance_evidence_gate.py "$@"
+mise exec -- python scripts/performance_evidence_gate.py "$@"
 """
 
 [tasks."xcode:generate"]

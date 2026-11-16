@@ -80,10 +80,6 @@ jobs:
     needs: merge
     uses: ./.github/workflows/native-ffi-test-isolation.yml
 
-  offline:
-    needs: merge
-    uses: ./.github/workflows/offline-audio-contracts.yml
-
   audit:
     needs: merge
     uses: ./.github/workflows/rust-dependency-audit.yml
@@ -95,7 +91,7 @@ jobs:
   validated:
     name: Validated merged source
     if: always()
-    needs: [merge, ci, codeql, ffi, faber, flutter, fallback, native, snapshot, cli, linux, isolation, offline, audit, ruby]
+    needs: [merge, ci, codeql, ffi, faber, flutter, fallback, native, snapshot, cli, linux, isolation, audit, ruby]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

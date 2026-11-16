@@ -58,7 +58,7 @@ path has no direct production import.
 | --- | --- | --- |
 | `scripts/` (202) | Host tooling; mise tasks, CI, native packaging and verification invoke script entrypoints and executable regressions | Keep paths; audit affected tool behavior with its host suite |
 | `tools/` (14) | Native device tooling; `DeviceWorkflow/Package.swift` selects library, CLI and tests consumed by `scripts/device-workflow.sh` | Keep; host tests cannot replace device acceptance |
-| `tests/` (13), `benches/` (2), `benchmarks/` (2) | Shared audio/parity fixtures, Cargo benchmark and retained JSON reports; runtime tests and migration/performance comparisons consume them | Preserve fixture identity and dated evidence |
+| `tests/` (13), `benches/` (2), `benchmarks/` (1) | Shared audio/parity fixtures, Cargo benchmark and retained JSON reports; runtime tests and migration/performance comparisons consume them | Preserve fixture identity and dated evidence |
 | `voice_samples/` (1) | Tracked README describes optional fixture/preview audio; ignored recordings are outside the census | Preserve retained samples; no audio generation, playback or cleanup |
 | `config/` (1), `.cargo/` (1) | Mac storage guard and Cargo configuration; native supervisor and workspace commands consume them | Preserve enforcement; inspect before build changes |
 | `.github/` (65), `.githooks/` (2) | CI, artifact production, protected delivery and local Git gates | Keep existing exact-head merge mechanism; workflow presence is not a passing check |
