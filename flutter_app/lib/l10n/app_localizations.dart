@@ -844,6 +844,12 @@ abstract class AppLocalizations {
   /// **'Using the secondary voice. The primary voice will be retried periodically.'**
   String get ttsSecondaryUsedNotice;
 
+  /// No description provided for @platformVoiceNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Using the system voice for this segment.'**
+  String get platformVoiceNotice;
+
   /// No description provided for @localAudioStorage.
   ///
   /// In en, this message translates to:

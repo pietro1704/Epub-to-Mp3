@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import '../models/ebook_fulltext.dart';
 import 'embedded_conversion_contract.dart';
 import 'embedded_conversion_result.dart';
@@ -10,10 +8,6 @@ export 'embedded_conversion_result.dart';
 
 class UnavailableEmbeddedConverter implements EmbeddedConverter {
   const UnavailableEmbeddedConverter();
-
-  @override
-  Future<Uint8List> edgeProbe(String text, {String? locale}) =>
-      throw EmbeddedConverterUnavailable();
 
   @override
   Future<void> speakFallback(String text, {required String locale}) =>

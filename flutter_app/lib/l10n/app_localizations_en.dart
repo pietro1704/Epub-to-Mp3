@@ -415,6 +415,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Using the secondary voice. The primary voice will be retried periodically.';
 
   @override
+  String get platformVoiceNotice => 'Using the system voice for this segment.';
+
+  @override
   String get localAudioStorage => 'Local audio downloads';
 
   @override

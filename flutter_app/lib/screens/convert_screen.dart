@@ -93,9 +93,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              platformVoiceNotice(Localizations.localeOf(context).languageCode),
-            ),
+            content: Text(AppLocalizations.of(context)!.platformVoiceNotice),
           ),
         );
       });

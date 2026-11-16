@@ -35,9 +35,3 @@ class PlatformVoiceNoticeSession {
         onNotice();
       }, onError: (Object _) {});
 }
-
-String platformVoiceNotice(String languageCode) => switch (languageCode) {
-  'pt' => 'Edge indisponível. Voz local temporária neste trecho.',
-  'es' => 'Edge no disponible. Voz local temporal en este fragmento.',
-  _ => 'Edge unavailable. Temporary local voice for this segment.',
-};

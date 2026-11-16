@@ -160,6 +160,7 @@
   "ttsActualVoices": "Used voice: {voices}",
   "@ttsActualVoices": {"placeholders": {"voices": {"type": "String"}}},
   "ttsSecondaryUsedNotice": "Using the secondary voice. The primary voice will be retried periodically.",
+  "platformVoiceNotice": "Using the system voice for this segment.",
   "localAudioStorage": "Local audio downloads",
   "localAudioStorageHint": "Downloaded and listened audio is kept until you remove it.",
   "removeAudioTitle": "Remove downloaded audio?",
