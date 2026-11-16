@@ -24,9 +24,9 @@
     "prebuild:mobile:bundle": "node scripts/prepare-tts-runtime.mjs"
   },
   "dependencies": {
-    "@capacitor/android": "^8.6.0",
-    "@capacitor/core": "^8.6.0",
-    "@capacitor/ios": "^8.6.0",
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2",
     "@diffusionstudio/piper-wasm": "1.0.0",
     "@mintplex-labs/piper-tts-web": "1.0.5",
     "clsx": "^2.1.1",
