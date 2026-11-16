@@ -1,6 +1,6 @@
 # Changelog - Sistema de Auto-Tuning
 
-> **Historical record (reviewed 2026-10-21).** Legacy Python auto-tuning release notes; listed modules, defaults and performance claims describe that historical change, not the current runtime or freshly verified results. Current scope, Git authorization and native safety follow [execution policy](docs/agents/execution-policy.md); provider/runtime decisions follow [current runtime/provider policy](AGENTS.md). Old execution prompts and commands are retained as history, not current permission.
+> **Historical record (reviewed 2026-10-21).** Legacy Python auto-tuning release notes; listed modules, defaults and performance claims describe that historical change, not the current runtime or freshly verified results. Current scope, Git authorization and native safety follow [execution policy](../../agents/execution-policy.md); provider/runtime decisions follow [current runtime/provider policy](../../../AGENTS.md). Old execution prompts and commands are retained as history, not current permission.
 
 ## ✨ Novas Funcionalidades
 

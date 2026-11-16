@@ -12,9 +12,9 @@ file, source comment or asset declaration does not identify the active productio
 path. The historical subprocess probing/extraction contract and timing estimates
 are archived, not instructions to install or embed another Python runtime.
 
-Read [the Flutter guide](README.md),
-[FFI artifacts](../docs/converter-ffi-artifacts.md) and
-[execution policy](../docs/agents/execution-policy.md). Flutter Linux work belongs
+Read [the Flutter guide](../../../flutter_app/README.md),
+[FFI artifacts](../../converter-ffi-artifacts.md) and
+[execution policy](../../agents/execution-policy.md). Flutter Linux work belongs
 on Arch; Windows needs a compatible Windows toolchain. Apple platforms use the
 native application, not a new Flutter scaffold.
 

@@ -190,9 +190,7 @@ buildServer.json
 /.hermes/tools/
 /.hermes/snapshots/
 
-# iOS embedded-Python spike (feat/ios-python-embed) — vendored Python
-# runtime is ~150 MB; bootstrapped by
-# ios/EpubToMp3/scripts/bootstrap-ios-python.sh
+# Former iOS embedded-Python runtime copies (~150 MB); local data only.
 ios/EpubToMp3/Vendor/Python/
 ios/EpubToMp3/Vendor/site-packages/
 ios/EpubToMp3/Vendor/python-stdlib/

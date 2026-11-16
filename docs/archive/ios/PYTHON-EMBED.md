@@ -1,12 +1,12 @@
 # In-Process Python on iOS
 
-> **Historical record (reviewed 2026-10-21).** Retired Apple Python integration/bootstrapping guide. The old status and “current” design link below describe the Python-era migration. Apple clients now embed Rust through converter-ffi; use [runtime navigation](../docs/agents/runtime-navigation.md) and [execution policy](../docs/agents/execution-policy.md) rather than executing this bootstrap recipe.
+> **Historical record (reviewed 2026-10-21).** Retired Apple Python integration/bootstrapping guide. The old status and “current” design link below describe the Python-era migration. Apple clients now embed Rust through converter-ffi; use [runtime navigation](../../agents/runtime-navigation.md) and [execution policy](../../agents/execution-policy.md) rather than executing this bootstrap recipe.
 
 Status: the app uses an in-process Python conversion boundary and a native
 Swift Edge transport. The macOS live streaming test and signed iPhone arm64
 bundle installation pass; real-device playback remains required before a
 release, and the current adapter is not yet full CLI-policy parity. See
-[`docs/ios-in-process-edge-audio-architecture-research-2026-07-30.md`](../docs/archive/ios-in-process-edge-audio-architecture-research-2026-07-30.md)
+[`docs/ios-in-process-edge-audio-architecture-research-2026-07-30.md`](../ios-in-process-edge-audio-architecture-research-2026-07-30.md)
 for the current Apple-platform design and acceptance evidence.
 
 ## Why
