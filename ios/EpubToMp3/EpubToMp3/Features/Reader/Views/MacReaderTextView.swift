@@ -2,6 +2,7 @@
 import AppKit
 
 final class MacReaderSurfaceView: NSView {
+    var onToggleChrome: (() -> Void)?
     var onKeyDown: ((NSEvent) -> Bool)?
     var onPageTap: ((Bool) -> Bool)?
     var onAppearanceChange: (() -> Void)?
@@ -22,12 +23,17 @@ final class MacReaderSurfaceView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
+        if bounds.insetBy(dx: bounds.width / 3, dy: 0).contains(location) {
+            onToggleChrome?()
+            return
+        }
         let forward = location.x >= bounds.midX
         if onPageTap?(forward) != true { super.mouseUp(with: event) }
     }
 }
 
 final class MacReaderTextView: NSTextView, NSTextViewDelegate {
+    var onToggleChrome: (() -> Void)?
     var onKeyDown: ((NSEvent) -> Bool)?
     var onPageTap: ((Bool) -> Bool)?
     var onBuildSelectionMenu: ((NSRange) -> [NSMenuItem])?
@@ -65,6 +71,11 @@ final class MacReaderTextView: NSTextView, NSTextViewDelegate {
         let location = convert(event.locationInWindow, from: nil)
         if let characterIndex = characterIndex(at: location), shouldDeferMouseUpToTextSystem(at: characterIndex) {
             super.mouseUp(with: event)
+            return
+        }
+        let visible = visibleRect
+        if visible.insetBy(dx: visible.width / 3, dy: 0).contains(location) {
+            onToggleChrome?()
             return
         }
         let forward = location.x >= bounds.midX

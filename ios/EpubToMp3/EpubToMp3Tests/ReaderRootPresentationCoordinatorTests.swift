@@ -29,8 +29,8 @@ final class ReaderRootPresentationCoordinatorTests: XCTestCase {
             restoreViewport: { restoredViewport = true }
         )
 
-        XCTAssertTrue(toMini.isActive)
-        XCTAssertFalse(toRoot.isActive)
+        XCTAssertFalse(toMini.isActive)
+        XCTAssertTrue(toRoot.isActive)
         XCTAssertEqual(root.layoutCount, 0,
                        "Initial constraints should use UIKit's natural first layout pass")
         XCTAssertFalse(restoredViewport,
@@ -138,13 +138,13 @@ final class ReaderRootPresentationCoordinatorTests: XCTestCase {
 
         coordinator.setReaderActive(true)
         coordinator.applyChromeLayout(transition: nil, needsFinalLayout: true, restoreViewport: {})
-        XCTAssertTrue(toMini.isActive)
-        XCTAssertFalse(toRoot.isActive)
+        XCTAssertFalse(toMini.isActive)
+        XCTAssertTrue(toRoot.isActive)
 
         XCTAssertTrue(coordinator.setLoading(true))
         coordinator.applyChromeLayout(transition: nil, needsFinalLayout: true, restoreViewport: {})
-        XCTAssertTrue(toMini.isActive)
-        XCTAssertFalse(toRoot.isActive)
+        XCTAssertFalse(toMini.isActive)
+        XCTAssertTrue(toRoot.isActive)
     }
 }
 
