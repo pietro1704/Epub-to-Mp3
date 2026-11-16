@@ -1,3 +1,0 @@
-[env]
-# Inherit the current root Python; Coqui has an explicit, isolated environment.
-_.python.venv = { path = ".venv", create = true }

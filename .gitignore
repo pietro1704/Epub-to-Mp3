@@ -23,10 +23,8 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
+# Build manifests
 *.manifest
-*.spec
-!desktop.spec
 !flutter_app/windows/runner/runner.exe.manifest
 
 # Installer logs
@@ -118,7 +116,7 @@ Thumbs.db
 
 # EBook files (for testing - uncomment if needed)
 *.epub
-!python_app/tests/fixtures/epubs/*.epub
+!tests/fixtures/epubs/*.epub
 !web/public/sample.epub
 *.pdf
 *.mobi
@@ -139,7 +137,6 @@ converted/
 
 # TTS models and temporary files
 /models/
-!python_app/models/*.onnx
 *.pt
 *.pth
 *.bin

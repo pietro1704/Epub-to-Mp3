@@ -71,7 +71,7 @@ class CiRuntimeScopeTest < Minitest::Test
       assert_equal 'false', contracts, paths.inspect
     end
     [[], ['AGENTS.md'], ['mise.toml'], ['docs/generator.rb'], ['unknown.file'],
-      ['python_app/source.py'], ['web/src/app.tsx'], ['flutter_app/lib/main.dart'],
+      ['scripts/host_tool.py'], ['web/src/app.tsx'], ['flutter_app/lib/main.dart'],
       ['README.md', 'scripts/run_ci_contracts.rb'], ['scripts/deleted.rb', 'docs/moved.md']].each do |paths|
       _, status, err, contracts = scope(paths)
       assert status.success?, err
