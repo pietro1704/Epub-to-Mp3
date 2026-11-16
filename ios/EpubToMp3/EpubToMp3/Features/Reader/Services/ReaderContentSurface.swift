@@ -20,6 +20,20 @@ final class ReaderContentSurface {
     private let readerView: UIView
     private let scrollView: UIScrollView
     private var pdfView: PDFView?
+    private(set) var pdfPresentation: ReaderPDFPresentation?
+    private var pdfContext: PDFContext?
+    struct PDFContext {
+        let bookID: String
+        let settings: AppSettings
+        let player: AudioPlayer
+        let defaults: UserDefaults
+        let toggleChrome: () -> Void
+        let playFrom: (PDFReadingAudioMap.Anchor) -> Void
+        let positionChanged: (PDFReadingAudioMap.Anchor?, Int, Int) -> Void
+    }
+    func configurePDF(_ context: PDFContext) { pdfContext = context }
+    func applyPDFSettings(_ settings: AppSettings) { pdfPresentation?.applyLayout(settings.readerLayout) }
+
     private var pdfLoadingIndicator: UIActivityIndicatorView?
     private var pdfPreparationTask: Task<Void, Never>?
     private var pdfMountGeneration = 0
@@ -112,6 +126,7 @@ final class ReaderContentSurface {
         NSLayoutConstraint.activate(textConstraints)
         comicPageImageView.isHidden = true
         comicPageImageView.isUserInteractionEnabled = false
+        scrollView.isHidden = false
         textView.isHidden = false
         textView.isUserInteractionEnabled = true
         kind = .text
@@ -121,6 +136,7 @@ final class ReaderContentSurface {
         removePDFIfNeeded()
         NSLayoutConstraint.deactivate(textConstraints)
         NSLayoutConstraint.activate(comicConstraints)
+        scrollView.isHidden = false
         comicPageImageView.isHidden = false
         comicPageImageView.isUserInteractionEnabled = true
         textView.isHidden = true
@@ -137,19 +153,24 @@ final class ReaderContentSurface {
         textView.isUserInteractionEnabled = false
         comicPageImageView.isHidden = true
         comicPageImageView.isUserInteractionEnabled = false
-        let pdfView = PDFView()
+        scrollView.isHidden = true
+        let pdfView = ReaderPDFView(frame: .zero)
+        let presentation = ReaderPDFPresentation(view: pdfView, bookID: pdfContext?.bookID ?? url.lastPathComponent,
+            defaults: pdfContext?.defaults ?? .standard, settings: pdfContext?.settings, player: pdfContext?.player)
+        presentation.onToggleChrome = pdfContext?.toggleChrome
+        presentation.onPlayFrom = pdfContext?.playFrom
+        presentation.onPositionChanged = pdfContext?.positionChanged
+        pdfPresentation = presentation
         pdfView.autoScales = true
-        pdfView.displayMode = .singlePageContinuous
-        pdfView.displayDirection = .vertical
         pdfView.displaysPageBreaks = true
         pdfView.pageShadowsEnabled = true
         pdfView.translatesAutoresizingMaskIntoConstraints = false
         readerView.addSubview(pdfView)
         NSLayoutConstraint.activate([
-            pdfView.leadingAnchor.constraint(equalTo: readerView.leadingAnchor),
-            pdfView.trailingAnchor.constraint(equalTo: readerView.trailingAnchor),
-            pdfView.topAnchor.constraint(equalTo: readerView.safeAreaLayoutGuide.topAnchor),
-            pdfView.bottomAnchor.constraint(equalTo: readerView.bottomAnchor),
+            pdfView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            pdfView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            pdfView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            pdfView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
         ])
         let loadingIndicator = UIActivityIndicatorView(style: .large)
         loadingIndicator.translatesAutoresizingMaskIntoConstraints = false
@@ -163,8 +184,10 @@ final class ReaderContentSurface {
         self.pdfLoadingIndicator = loadingIndicator
         kind = .pdf
         pdfPreparationTask = Task { [weak self, weak pdfView] in
-            let normalized = await Task.detached(priority: .userInitiated) {
-                PdfReadingPageNormalizer.normalizedDocument(from: url)
+            let prepared = await Task.detached(priority: .userInitiated) {
+                let normalized = PdfReadingPageNormalizer.normalizedDocument(from: url)
+                let metadata = try? ConverterFFIAdapter().openBook(at: url).metadataJSON
+                return (document: normalized ?? PDFDocument(url: url), metadata: metadata, normalized: normalized != nil)
             }.value
             guard let self,
                   self.pdfMountGeneration == generation,
@@ -172,7 +195,7 @@ final class ReaderContentSurface {
             else {
                 return
             }
-            pdfView?.document = normalized ?? PDFDocument(url: url)
+            self.pdfPresentation?.load(document: prepared.document, metadata: prepared.metadata)
             self.pdfLoadingIndicator?.stopAnimating()
             self.pdfLoadingIndicator?.removeFromSuperview()
             self.pdfLoadingIndicator = nil
@@ -184,7 +207,7 @@ final class ReaderContentSurface {
                 else {
                     return
                 }
-                self.onPDFPageReady?(normalized != nil)
+                self.onPDFPageReady?(prepared.normalized)
             }
         }
     }
@@ -195,6 +218,8 @@ final class ReaderContentSurface {
         pdfLoadingIndicator?.stopAnimating()
         pdfLoadingIndicator?.removeFromSuperview()
         pdfLoadingIndicator = nil
+        pdfPresentation?.persistPosition()
+        pdfPresentation = nil
         pdfView?.removeFromSuperview()
         pdfView = nil
     }

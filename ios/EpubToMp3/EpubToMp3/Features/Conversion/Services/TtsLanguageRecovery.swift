@@ -57,3 +57,25 @@ extension ConversionOptions {
         return copy
     }
 }
+
+/// A download suggestion is presentation over Rust's compatibility decision.
+enum TtsMissingVoicePolicy {
+    static func recommended(in snapshot: SpeechModelSnapshot) -> SpeechModelSnapshot.Entry? {
+        snapshot.entries.filter {
+            $0.identity.provider == "piper" && $0.distribution.installable
+                && $0.compatibility.compatible && $0.installation.state != .installed
+                && $0.licence.validation != "rejected"
+        }.sorted {
+            let firstDefault = $0.identity.modelID == snapshot.defaultSelection.modelID
+            let secondDefault = $1.identity.modelID == snapshot.defaultSelection.modelID
+            if firstDefault != secondDefault { return firstDefault }
+            let firstMedium = $0.presentation.quality == .medium
+            let secondMedium = $1.presentation.quality == .medium
+            if firstMedium != secondMedium { return firstMedium }
+            let firstBytes = $0.distribution.downloadBytes ?? UInt64.max
+            let secondBytes = $1.distribution.downloadBytes ?? UInt64.max
+            if firstBytes != secondBytes { return firstBytes < secondBytes }
+            return $0.identity.modelID < $1.identity.modelID
+        }.first
+    }
+}

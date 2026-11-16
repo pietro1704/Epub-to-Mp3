@@ -96,11 +96,16 @@ actor SpeechModelLibraryClient {
 
     /// A recovery query never changes the user's study language or saved selections.
     func recoveryCandidates(for mismatch: TtsLanguageMismatch) throws -> [TtsRecoveryCandidate] {
-        let snapshot = try languageSnapshot(mismatch.language)
-        guard snapshot.target?.language == mismatch.language else {
+        TtsRecoveryCandidate.available(in: try recoverySnapshot(language: mismatch.language), excluding: mismatch.modelID)
+    }
+
+    /// Recovery fails closed when the catalogue answers for another language.
+    func recoverySnapshot(language: String) throws -> SpeechModelSnapshot {
+        let snapshot = try languageSnapshot(language)
+        guard snapshot.target?.language == language else {
             throw EmbeddedConverterError.artifactInvalid("Recovery catalogue language does not match the request")
         }
-        return TtsRecoveryCandidate.available(in: snapshot, excluding: mismatch.modelID)
+        return snapshot
     }
 
     /// A language-specific query does not change study language or global selections.
@@ -146,7 +151,7 @@ actor SpeechModelLibraryClient {
     }
 
     func install(modelID: String, acceptedTermsFingerprint: String? = nil, language: String? = nil) async throws -> URL {
-        let current = try language.map { try languageSnapshot($0) } ?? snapshot(probeRuntime: false)
+        let current = try language.map { try recoverySnapshot(language: $0) } ?? snapshot(probeRuntime: false)
         guard let entry = current.entries.first(where: { $0.identity.modelID == modelID }) else {
             throw SpeechModelInstallationError.unknownModel(modelID)
         }

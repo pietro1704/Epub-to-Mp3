@@ -838,3 +838,15 @@
 "library.error.savedLibraryUnavailable" = "No se pudo cargar la biblioteca guardada. Se han conservado los datos originales.";
 "library.error.openTimeout" = "El libro tardó demasiado en abrirse. Comprueba si iCloud ha terminado de descargarlo e inténtalo de nuevo.";
 "library.error.changedDuringImport" = "El libro seleccionado cambió durante la importación. Intenta importarlo de nuevo.";
+
+// Missing-language voice recovery
+"tts.missingVoice.title" = "Sin voz para este idioma";
+"tts.missingVoice.message" = "No hay ningún modelo de voz instalado listo para leer este libro en %@. Elige cómo continuar.";
+"tts.missingVoice.recommended" = "Modelo recomendado: %@.";
+"tts.missingVoice.downloadRecommended" = "Descargar recomendado";
+"tts.missingVoice.openSettings" = "Descargar un modelo para este idioma";
+"tts.missingVoice.system" = "Escuchar con la voz del sistema";
+"tts.missingVoice.acceptDownload" = "Aceptar condiciones y descargar";
+"tts.missingVoice.downloading" = "Descargando modelo recomendado";
+
+"reader.pdf.audioUnavailable" = "No se pudo vincular esta página con el texto de narración. Un PDF escaneado necesita OCR verificado antes de generar audio.";

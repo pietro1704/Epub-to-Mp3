@@ -24,7 +24,10 @@ final class VoiceModelSettingsNavigationTests: XCTestCase {
         XCTAssertFalse(detail === root)
         detail.loadViewIfNeeded()
         XCTAssertEqual(detail.title, L10n.string("settings.voiceModels"))
-        XCTAssertEqual(detail.numberOfSections(in: detail.tableView), 1)
+        // Runtime rows come first; every further section is a language group or the empty-catalogue row.
+        XCTAssertGreaterThanOrEqual(detail.numberOfSections(in: detail.tableView), 2)
+        XCTAssertEqual(detail.settingsSection(at: 0), .runtime)
+        XCTAssertNil(detail.settingsSection(at: 1))
         XCTAssertGreaterThan(detail.tableView(detail.tableView, numberOfRowsInSection: 0), 1)
         settings.selectSecondaryNarration(nil)
         navigation.popViewController(animated: false)

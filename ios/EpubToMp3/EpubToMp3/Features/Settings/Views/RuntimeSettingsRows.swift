@@ -43,11 +43,12 @@ enum RuntimeSettingsRows {
         installEvents: [String: SpeechModelInstallEvent],
         termsAcceptance: SpeechModelTermsAcceptanceStore,
         disclosure: SpeechModelSettingsDisclosure = .init(),
-        controller: UIViewController
+        controller: UIViewController,
+        rowOverride: Row? = nil, existingCell: UITableViewCell? = nil
     ) -> UITableViewCell {
-            switch row(at: indexPath.row, speechModels: speechModels, disclosure: disclosure) {
+            switch rowOverride ?? row(at: indexPath.row, speechModels: speechModels, disclosure: disclosure) {
             case .models:
-                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.voiceModels")
                 content.secondaryText = SpeechModelSettingsDisclosure.summary(state: speechModels,
@@ -61,7 +62,7 @@ enum RuntimeSettingsRows {
                 cell.selectionStyle = disclosure.isExpanded ? .none : .default
                 return cell
             case .primary:
-                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.audioEngineChoice")
                 content.secondaryText = speechModels.displayName(for: settings.ttsPreferences.primary)
@@ -87,7 +88,7 @@ enum RuntimeSettingsRows {
                 cell.accessibilityIdentifier = "settings.allowCellularAudio"
                 return cell
             case .secondary:
-                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.secondaryVoice")
                 content.secondaryText = settings.ttsPreferences.secondary
@@ -121,7 +122,7 @@ enum RuntimeSettingsRows {
                 }
                 return cell
             case .studyLanguage:
-                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.modelLanguage.study")
                 content.secondaryText = speechModels.languageTitle(speechModels.studyLanguage)
@@ -131,7 +132,7 @@ enum RuntimeSettingsRows {
                 cell.selectionStyle = .default
                 return cell
             case let .model(entry):
-                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 guard let entry else {
                     content.text = L10n.string("settings.voiceModels")

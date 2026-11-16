@@ -28,3 +28,24 @@ struct SpeechModelSettingsDisclosure {
         return lines.joined(separator: "\n")
     }
 }
+
+/// One section per declared language set; multilingual models appear exactly once.
+struct SpeechModelLanguageSection {
+    let languages: [String]
+    let entries: [SpeechModelSnapshot.Entry]
+
+    static func sections(state: SpeechModelLibraryViewState) -> [Self] {
+        let groups = Dictionary(grouping: state.orderedEntries) { entry in
+            let exact = entry.languageEvidence.exactTags.map(\.tag)
+            return Array(Set((exact.isEmpty ? entry.languageEvidence.routingTags : exact)
+                .map { $0.replacingOccurrences(of: "_", with: "-") })).sorted()
+        }
+        return groups.keys.sorted { $0.joined(separator: ",") < $1.joined(separator: ",") }
+            .map { Self(languages: $0, entries: groups[$0] ?? []) }
+    }
+
+    func title(state: SpeechModelLibraryViewState) -> String {
+        languages.isEmpty ? L10n.string("settings.modelLanguage.routingOnly")
+            : languages.map { state.languageTitle($0) }.joined(separator: " · ")
+    }
+}

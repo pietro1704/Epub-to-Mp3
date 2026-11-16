@@ -74,7 +74,7 @@ final class ReaderTextPresentation {
 
     func applyReaderLayoutMode() {
         let configuration = ReaderViewportConfiguration.resolve(
-            layout: settings.readerLayout,
+            layout: composition.contentSurface.kind == .pdf ? .paginated : settings.readerLayout,
             chromeHidden: false,
             showsPageNumbers: settings.readerShowPageNumbers
         )
@@ -239,7 +239,7 @@ final class ReaderTextPresentation {
     /// so navigation never changes whether the controls are visible.
     func synchronizeChromeVisibility() {
         let configuration = ReaderViewportConfiguration.resolve(
-            layout: settings.readerLayout,
+            layout: composition.contentSurface.kind == .pdf ? .paginated : settings.readerLayout,
             chromeHidden: chromeHidden,
             showsPageNumbers: settings.readerShowPageNumbers
         )
@@ -248,6 +248,7 @@ final class ReaderTextPresentation {
     }
 
     func updatePageIndicator() {
+        if let pdf = composition.contentSurface.pdfPresentation { pdf.refreshPosition(); return }
         guard composition.scrollView.bounds.height > 0 else {
             composition.pageIndicator.text = L10n.string("reader.pageOf", 1, 1)
             return
@@ -309,6 +310,12 @@ final class ReaderTextPresentation {
     }
 
     func layoutCommittedViewport() {
+        if let pdf = composition.contentSurface.pdfPresentation {
+            composition.pageOverflowGuard.isHidden = true
+            composition.pageUnderflowGuard.isHidden = true
+            pdf.refreshPosition()
+            return
+        }
         applyReaderMargins()
         // The parent callback can precede UIScrollView's child layout. Apply
         // the final text width before measuring page geometry.

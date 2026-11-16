@@ -1,0 +1,154 @@
+#if os(iOS)
+import PDFKit
+import UIKit
+import XCTest
+@testable import EpubToMp3
+
+@MainActor
+final class PDFReaderParityTests: XCTestCase {
+    func testPhysicalPDFPagesMapToTheBundledRustNarrationAxis() throws {
+        let url = try PdfFixture.createMultiPage(pages: [
+            (heading: "First", body: "First audible passage, ação e coração."),
+            (heading: "Second", body: "Second audible passage with another sentence.")])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let document = try XCTUnwrap(PDFDocument(url: url))
+        let metadata = try ConverterFFIAdapter().openBook(at: url).metadataJSON
+        let map = try PDFReadingAudioMap(metadata: metadata,
+            pageTexts: (0..<document.pageCount).map { document.page(at: $0)?.string ?? "" })
+        XCTAssertEqual(map.anchor(page: 0)?.chapterIndex, 0)
+        XCTAssertEqual(map.anchor(page: 1)?.chapterIndex, 1)
+        XCTAssertEqual(map.anchor(page: 1)?.ratio, 0)
+        let body = (document.page(at: 1)?.string ?? "") as NSString
+        let phrase = body.range(of: "another")
+        XCTAssertNotEqual(phrase.location, NSNotFound)
+        XCTAssertGreaterThan(try XCTUnwrap(map.anchor(page: 1, character: phrase.location)?.ratio), 0)
+        XCTAssertNil(map.anchor(page: 2))
+    }
+
+    func testRepeatedPagesRemainDistinctAndRatiosUseRustUnicodeScalars() throws {
+        let text = "😀Prefixo\n\nMesmo trecho.\n\nMesmo trecho."
+        let metadata = try JSONSerialization.data(withJSONObject: ["chapters": [
+            ["index": "1", "name": "One chapter", "sourcePath": "page-1", "text": text]]])
+        let map = try PDFReadingAudioMap(metadata: metadata, pageTexts: ["😀Prefixo", "Mesmo trecho.", "Mesmo trecho.", "Unrelated text"])
+        let first = try XCTUnwrap(map.anchor(page: 1))
+        let second = try XCTUnwrap(map.anchor(page: 2))
+        XCTAssertEqual(first.chapterIndex, second.chapterIndex)
+        XCTAssertGreaterThan(second.ratio, first.ratio)
+        let expected = Double("😀Prefixo\n\n".unicodeScalars.count) / Double(text.unicodeScalars.count)
+        XCTAssertEqual(first.ratio, expected, accuracy: 0.000001)
+        XCTAssertNil(map.anchor(page: 3), "Never substitute an unrelated paragraph or invent OCR text")
+    }
+
+    func testPDFLayoutSwitchPageNavigationAndReopenPreserveTheSourcePage() throws {
+        let url = try PdfFixture.createMultiPage(pages: [
+            (heading: "First", body: "First page with readable text."),
+            (heading: "Second", body: "Second page with readable text."),
+            (heading: "Third", body: "Third page with readable text.")])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let suite = "pdf-parity-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        settings.readerLayout = .paginated
+        let view = ReaderPDFView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let pdf = ReaderPDFPresentation(view: view, bookID: "fixture", defaults: defaults, settings: settings)
+        let document = try XCTUnwrap(PDFDocument(url: url))
+        pdf.load(document: document, metadata: try ConverterFFIAdapter().openBook(at: url).metadataJSON)
+        view.layoutIfNeeded()
+        XCTAssertTrue(view.isUsingPageViewController)
+        XCTAssertEqual(view.displayDirection, .horizontal)
+        pdf.goToChapter(1)
+        XCTAssertEqual(pdf.currentPage, 1)
+        var played: PDFReadingAudioMap.Anchor?
+        pdf.onPlayFrom = { played = $0 }
+        pdf.playFromCurrentPosition()
+        XCTAssertEqual(played?.chapterIndex, 1)
+        pdf.applyLayout(.scrolling)
+        view.layoutIfNeeded()
+        XCTAssertFalse(view.isUsingPageViewController)
+        XCTAssertEqual(view.displayDirection, .vertical)
+        XCTAssertEqual(pdf.currentPage, 1)
+        let originalOffset = try XCTUnwrap(pdf.documentOffset)
+        pdf.prepareForViewportTransition()
+        view.frame.size.height -= 80
+        view.layoutIfNeeded()
+        pdf.completeViewportTransition()
+        XCTAssertEqual(pdf.documentOffset, originalOffset)
+        XCTAssertEqual(pdf.currentPage, 1)
+        pdf.persistPosition()
+        let savedData = try XCTUnwrap(defaults.data(forKey: "reader.pdf.position.v1.fixture"))
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: savedData) as? [String: Any])
+        XCTAssertEqual(saved["page"] as? Int, 1)
+        let reopenedView = ReaderPDFView(frame: view.frame)
+        let reopened = ReaderPDFPresentation(view: reopenedView, bookID: "fixture", defaults: defaults, settings: settings)
+        reopened.load(document: PDFDocument(url: url), metadata: nil)
+        reopenedView.layoutIfNeeded()
+        XCTAssertEqual(reopened.currentPage, 1)
+        let other = ReaderPDFPresentation(view: ReaderPDFView(frame: view.frame), bookID: "other", defaults: defaults)
+        other.load(document: PDFDocument(url: url), metadata: nil)
+        XCTAssertEqual(other.currentPage, 0)
+    }
+
+    func testAppLongPressRemainsOnTheContainingSurfaceAcrossPDFLayoutAndRemoval() throws {
+        let source = try PdfFixture.createSinglePage(bodyText: "A selectable PDF passage.")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let view = ReaderPDFView(frame: container.bounds)
+        container.addSubview(view)
+        let press = try XCTUnwrap(container.gestureRecognizers?.compactMap { $0 as? UILongPressGestureRecognizer }.first)
+        view.document = PDFDocument(url: source)
+        view.layoutIfNeeded()
+        XCTAssertTrue(press.isEnabled)
+        XCTAssertTrue(press.view === container)
+        XCTAssertFalse(press.delegate === view, "App gestures must not dispatch through PDFKit's optional delegate methods")
+        XCTAssertTrue(press.delegate?.gestureRecognizerShouldBegin?(press) == true)
+        view.removeFromSuperview()
+        XCTAssertNil(press.view, "Closing/replacing the PDF must remove its app interaction from the old surface")
+    }
+
+    func testPDFSuppressesSystemEditingMenuButKeepsAppPlayAction() throws {
+        let view = ReaderPDFView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        XCTAssertFalse(view.canBecomeFirstResponder)
+        XCTAssertFalse(view.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
+        let nativeSelection = UILongPressGestureRecognizer()
+        view.addGestureRecognizer(nativeSelection)
+        let textSurface = UIView(frame: view.bounds)
+        view.addSubview(textSurface)
+        let nativeText = UITextInteraction(for: .nonEditable)
+        textSurface.addInteraction(nativeText)
+        let zoom = UIPinchGestureRecognizer()
+        textSurface.addGestureRecognizer(zoom)
+        if #available(iOS 16.0, *) {
+            textSurface.addInteraction(UIEditMenuInteraction(delegate: nil))
+        }
+        view.layoutIfNeeded()
+        XCTAssertFalse(nativeSelection.isEnabled)
+        XCTAssertNil(nativeText.view)
+        XCTAssertFalse(textSurface.interactions.contains { $0 is UITextInteraction || $0 is UIContextMenuInteraction })
+        if #available(iOS 16.0, *) {
+            XCTAssertFalse(textSurface.interactions.contains { $0 is UIEditMenuInteraction })
+        }
+        XCTAssertTrue(zoom.isEnabled, "Suppressing editing must preserve PDF navigation gestures")
+        let menuDelegate = PDFEditingMenuDelegate()
+        let lateContextMenu = UIContextMenuInteraction(delegate: menuDelegate)
+        textSurface.addInteraction(lateContextMenu)
+        textSurface.addInteraction(nativeText)
+        view.prepareForReaderInteraction()
+        XCTAssertNil(lateContextMenu.view, "Page turns can install another editing menu after layout")
+        XCTAssertNil(nativeText.view)
+        XCTAssertTrue(view.gestureRecognizers?.contains { $0 is UILongPressGestureRecognizer && $0.isEnabled } == true)
+        let suite = "pdf-settings-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = ReaderSettingsScreenController(settings: AppSettings(defaults: defaults), isPDF: true)
+        controller.loadViewIfNeeded()
+        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 1), 0)
+        XCTAssertEqual(controller.tableView(controller.tableView, numberOfRowsInSection: 2), 2)
+    }
+}
+
+private final class PDFEditingMenuDelegate: NSObject, UIContextMenuInteractionDelegate {
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? { nil }
+}
+#endif

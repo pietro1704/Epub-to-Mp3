@@ -1,0 +1,317 @@
+#if os(iOS)
+import Combine
+import PDFKit
+import UIKit
+
+@MainActor
+final class ReaderPDFPresentation {
+    private struct SavedPosition: Codable { let page: Int; let x: Double; let y: Double }
+    let view: ReaderPDFView
+    let bookID: String
+    private let defaults: UserDefaults
+    private weak var player: AudioPlayer?
+    private var settings: AppSettings?
+    private var observers: Set<AnyCancellable> = []
+    private let sync = SyncEngine()
+    private var timingIdentity: (chapter: Int, duration: Double)?
+    private var sentenceRanges: [String: NSRange] = [:]
+    private var latestAudio: PlaybackAudioOutput.Position?
+    private var audioObservedAt: TimeInterval = 0
+    private var searchSelection: PDFSelection?
+    private var hasLoaded = false
+    private var viewportPage: PDFPage?
+    private var viewportOffset: CGPoint?
+    private var isViewportTransitioning = false
+    private(set) var audioMap: PDFReadingAudioMap?
+    var onToggleChrome: (() -> Void)?
+    var onPlayFrom: ((PDFReadingAudioMap.Anchor) -> Void)?
+    var onPositionChanged: ((PDFReadingAudioMap.Anchor?, Int, Int) -> Void)?
+    private var progressKey: String { "reader.pdf.position.v1.\(bookID)" }
+
+    init(view: ReaderPDFView, bookID: String, defaults: UserDefaults = .standard,
+         settings: AppSettings? = nil, player: AudioPlayer? = nil) {
+        self.view = view
+        self.bookID = bookID
+        self.defaults = defaults
+        self.settings = settings
+        self.player = player
+        view.autoScales = true
+        view.onReaderTap = { [weak self] point in self?.tap(at: point) }
+        view.onReaderLongPress = { [weak self] point in self?.showActions(at: point) }
+        for name in [Notification.Name.PDFViewPageChanged, .PDFViewVisiblePagesChanged] {
+            NotificationCenter.default.publisher(for: name, object: view).sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.publishPosition() }
+            }.store(in: &observers)
+        }
+        NotificationCenter.default.publisher(for: .PDFViewSelectionChanged, object: view).sink { [weak view] _ in
+            MainActor.assumeIsolated { if view?.currentSelection != nil { view?.clearSelection() } }
+        }.store(in: &observers)
+        if let player {
+            player.playbackClock.audioOutput.$position.sink { [weak self] position in
+                self?.latestAudio = position
+                self?.audioObservedAt = ProcessInfo.processInfo.systemUptime
+                self?.paintAudio()
+            }.store(in: &observers)
+            player.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
+            player.speechOutput.$spokenWord.sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
+            Timer.publish(every: 0.1, on: .main, in: .common).autoconnect().sink { [weak self] _ in self?.paintAudio() }.store(in: &observers)
+        }
+        applyLayout(settings?.readerLayout ?? .scrolling)
+    }
+
+    func load(document: PDFDocument?, metadata: Data?) {
+        view.document = document
+        if let document, let metadata {
+            audioMap = try? PDFReadingAudioMap(metadata: metadata,
+                pageTexts: (0..<document.pageCount).map { document.page(at: $0)?.string ?? "" })
+        }
+        if let document, let saved = defaults.data(forKey: progressKey).flatMap({ try? JSONDecoder().decode(SavedPosition.self, from: $0) }),
+           let page = document.page(at: saved.page) {
+            view.layoutIfNeeded()
+            if view.isUsingPageViewController { view.go(to: page) }
+            else { view.go(to: PDFDestination(page: page, at: CGPoint(x: saved.x, y: saved.y))) }
+        }
+        for (index, chapter) in (audioMap?.chapters ?? []).enumerated() {
+            player?.updateReaderChapterTitle(chapter.name, for: index)
+        }
+        hasLoaded = true
+        publishPosition()
+    }
+
+    private var documentScrollView: UIScrollView? {
+        var ancestor = view.documentView?.superview
+        while let candidate = ancestor {
+            if let scroll = candidate as? UIScrollView { return scroll }
+            ancestor = candidate.superview
+        }
+        return nil
+    }
+
+    var documentOffset: CGPoint? { documentScrollView?.contentOffset }
+
+    func prepareForViewportTransition() {
+        guard !isViewportTransitioning else { return }
+        isViewportTransitioning = true
+        viewportPage = view.currentPage
+        viewportOffset = documentOffset
+    }
+
+    func completeViewportTransition() {
+        guard isViewportTransitioning else { return }
+        view.layoutIfNeeded()
+        if !view.isUsingPageViewController, let viewportOffset, let scroll = documentScrollView {
+            // PDFDestination restoration can align the bottom of a page with
+            // the new viewport and advance currentPage. A chrome resize owns
+            // geometry only, so preserve the document scroll view's raw origin.
+            scroll.setContentOffset(viewportOffset, animated: false)
+        } else if let viewportPage {
+            view.go(to: viewportPage)
+        }
+        viewportPage = nil
+        viewportOffset = nil
+        isViewportTransitioning = false
+        publishPosition()
+    }
+
+    func applyLayout(_ mode: ReaderLayout) {
+        let destination = view.currentDestination
+        let sourcePage = view.currentPage
+        let targetMode: PDFDisplayMode = mode == .paginated ? .singlePage : .singlePageContinuous
+        let direction: PDFDisplayDirection = mode == .paginated ? .horizontal : .vertical
+        guard view.isUsingPageViewController != (mode == .paginated) || view.displayDirection != direction
+            || (mode == .scrolling && view.displayMode != targetMode) else { return }
+        view.usePageViewController(false, withViewOptions: nil)
+        view.displayMode = targetMode
+        view.displayDirection = direction
+        view.usePageViewController(mode == .paginated, withViewOptions: nil)
+        view.autoScales = true
+        view.layoutIfNeeded()
+        if mode == .paginated, let sourcePage { view.go(to: sourcePage) }
+        else if let destination { view.go(to: destination) }
+        publishPosition()
+    }
+
+    var currentPage: Int? {
+        guard let document = view.document, let page = view.currentPage else { return nil }
+        let index = document.index(for: page)
+        return index == NSNotFound ? nil : index
+    }
+
+    var currentAnchor: PDFReadingAudioMap.Anchor? {
+        guard let page = view.currentPage, let index = currentPage else { return nil }
+        let visible = view.convert(view.bounds, to: page)
+        let pageBounds = page.bounds(for: view.displayBox)
+        let point = CGPoint(x: pageBounds.minX + 1, y: min(pageBounds.maxY, visible.maxY))
+        let character = page.characterIndex(at: point)
+        return audioMap?.anchor(page: index, character: character == NSNotFound ? 0 : max(0, character))
+    }
+
+    func anchor(at point: CGPoint) -> PDFReadingAudioMap.Anchor? {
+        guard let document = view.document, let page = view.page(for: point, nearest: false) else { return nil }
+        let character = page.characterIndex(at: view.convert(point, to: page))
+        guard character != NSNotFound, character >= 0 else { return nil }
+        return audioMap?.anchor(page: document.index(for: page), character: character)
+    }
+
+    func persistPosition() {
+        guard hasLoaded, !isViewportTransitioning, let sourcePage = view.currentPage,
+              let document = view.document else { return }
+        let page = document.index(for: sourcePage)
+        let visible = view.convert(view.bounds, to: sourcePage)
+        let bounds = sourcePage.bounds(for: view.displayBox)
+        let x = min(max(visible.minX, bounds.minX), bounds.maxX)
+        let y = min(max(visible.maxY, bounds.minY), bounds.maxY)
+        guard page != NSNotFound, x.isFinite, y.isFinite else { return }
+        // currentDestination can describe a neighboring page in continuous
+        // mode. Persist the page reported to the reader and a point in it.
+        let saved = SavedPosition(page: page, x: Double(x), y: Double(y))
+        if let encoded = try? JSONEncoder().encode(saved) { defaults.set(encoded, forKey: progressKey) }
+    }
+
+    func refreshPosition() { publishPosition() }
+
+    private func publishPosition() {
+        guard hasLoaded, !isViewportTransitioning, let index = currentPage, let document = view.document else { return }
+        persistPosition()
+        view.accessibilityValue = L10n.string("reader.pageOf", index + 1, document.pageCount)
+        let anchor = currentAnchor
+        if let anchor, defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID {
+            defaults.set(anchor.chapterIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+            defaults.set(anchor.ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        }
+        onPositionChanged?(anchor, index + 1, document.pageCount)
+    }
+
+    func turnPage(forward: Bool) {
+        if forward, view.canGoToNextPage { view.goToNextPage(nil) }
+        else if !forward, view.canGoToPreviousPage { view.goToPreviousPage(nil) }
+    }
+
+    private func tap(at point: CGPoint) {
+        switch ReaderTapAction.resolve(point: point, in: view.bounds, isPaginated: settings?.readerLayout == .paginated) {
+        case .toggleChrome: onToggleChrome?()
+        case .turnPage(let forward): turnPage(forward: forward)
+        case .none: break
+        }
+    }
+
+    func playFromCurrentPosition() {
+        guard let anchor = currentAnchor else { showUnavailable(); return }
+        onPlayFrom?(anchor)
+    }
+
+    private func showActions(at point: CGPoint) {
+        guard let controller = presenter(), controller.presentedViewController == nil else { return }
+        let anchor = anchor(at: point)
+        let alert = UIAlertController(title: L10n.string("reader.selection.playFromHere"), message: nil, preferredStyle: .actionSheet)
+        let play = UIAlertAction(title: L10n.string("reader.selection.playFromHere"), style: .default) { [weak self] _ in
+            if let anchor { self?.onPlayFrom?(anchor) }
+        }
+        play.isEnabled = anchor != nil
+        alert.addAction(play)
+        if anchor == nil { alert.message = L10n.string("reader.pdf.audioUnavailable") }
+        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        alert.popoverPresentationController?.sourceView = view
+        alert.popoverPresentationController?.sourceRect = CGRect(origin: point, size: CGSize(width: 1, height: 1))
+        // Outside taps dismiss the action instead of reaching the PDF reader.
+        alert.popoverPresentationController?.passthroughViews = []
+        controller.present(alert, animated: true)
+    }
+
+    private func showUnavailable() {
+        guard let controller = presenter(), controller.presentedViewController == nil else { return }
+        let alert = UIAlertController(title: L10n.string("reader.selection.playFromHere"),
+            message: L10n.string("reader.pdf.audioUnavailable"), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+        controller.present(alert, animated: true)
+    }
+
+    func goToChapter(_ chapter: Int) {
+        guard let map = audioMap, map.chapters.indices.contains(chapter),
+              let index = map.chapters[chapter].startPage, let page = view.document?.page(at: index) else { return }
+        view.go(to: page)
+        publishPosition()
+    }
+
+    func promptSearch() {
+        guard let controller = presenter(), controller.presentedViewController == nil else { return }
+        let alert = UIAlertController(title: L10n.string("reader.search.placeholder"), message: nil, preferredStyle: .alert)
+        alert.addTextField()
+        alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default) { [weak self, weak alert] _ in
+            guard let self, let query = alert?.textFields?.first?.text, !query.isEmpty,
+                  let result = view.document?.findString(query, withOptions: .caseInsensitive).first else { return }
+            view.go(to: result)
+            searchSelection = result
+            result.color = .systemYellow
+            view.highlightedSelections = [result]
+            publishPosition()
+        })
+        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        controller.present(alert, animated: true)
+    }
+
+    private func presenter() -> UIViewController? {
+        var responder: UIResponder? = view
+        while let next = responder?.next {
+            if let controller = next as? UIViewController { return controller }
+            responder = next
+        }
+        return nil
+    }
+
+    private func paintAudio() {
+        guard let player, player.isPlaying, !player.isSeeking, player.isPlaybackForReaderBook(bookID),
+              settings?.readerAudioTrackingEnabled == true, let map = audioMap else {
+            view.highlightedSelections = searchSelection.map { [$0] }; return
+        }
+        let chapterIndex: Int
+        let range: NSRange?
+        var measuredWord = false
+        if player.isUsingSpeechFallback, let spoken = player.speechOutput.spokenWord,
+           let index = spoken.chapterIndex, map.chapters.indices.contains(index) {
+            chapterIndex = index
+            measuredWord = true
+            let text = map.chapters[index].text as NSString
+            let occurrence = text.range(of: spoken.text)
+            if occurrence.location != NSNotFound,
+               text.range(of: spoken.text, range: NSRange(location: NSMaxRange(occurrence), length: text.length - NSMaxRange(occurrence))).location == NSNotFound,
+               NSMaxRange(spoken.range) <= occurrence.length {
+                range = NSRange(location: occurrence.location + spoken.range.location, length: spoken.range.length)
+            } else { range = nil }
+        } else if let latestAudio, map.chapters.indices.contains(latestAudio.chapterIndex),
+                  ProcessInfo.processInfo.systemUptime - audioObservedAt < 0.8 {
+            let position = ReaderAudioHighlightPresentation.projected(latestAudio,
+                age: ProcessInfo.processInfo.systemUptime - audioObservedAt, rate: Double(player.rate.rawValue))
+            chapterIndex = position.chapterIndex
+            if let measured = position.alignment?.spokenWord(at: position.itemSeconds) {
+                let text = map.chapters[chapterIndex].text
+                measuredWord = true
+                range = ReaderSpokenTextResolver.word(measured.word, passage: measured.passage, chapterText: text, renderedText: text)
+            } else { range = approximateSentence(position, map: map) }
+        } else { view.highlightedSelections = searchSelection.map { [$0] }; return }
+        guard let range, let match = map.displayRange(chapter: chapterIndex, range: range),
+              let page = view.document?.page(at: match.page), let selection = page.selection(for: match.range) else {
+            view.highlightedSelections = searchSelection.map { [$0] }; return
+        }
+        selection.color = UIColor.systemYellow.withAlphaComponent(measuredWord ? 0.65 : 0.2)
+        view.highlightedSelections = [selection]
+    }
+    private func approximateSentence(_ position: PlaybackAudioOutput.Position, map: PDFReadingAudioMap) -> NSRange? {
+        let index = position.chapterIndex
+        if timingIdentity?.chapter != index || timingIdentity?.duration != position.duration {
+            let source = map.chapters[index]
+            let chapter = EbookFulltext.Chapter(index: index + 1, name: source.name, text: source.text,
+                html: nil, css: nil, charCount: source.text.count, segments: nil)
+            sync.load(chapter: chapter, chapterDurationSeconds: position.duration)
+            sentenceRanges = ReaderAudioHighlightPresentation.sentenceRanges(spans: sync.spans, in: source.text as NSString)
+            timingIdentity = (index, position.duration)
+        }
+        let entry = sync.timing.first {
+            if let id = position.sentenceID { return sync.readerSentenceID(forTimingID: $0.id) == sync.readerSentenceID(forTimingID: id) }
+            return position.seconds * 1000 >= Double($0.startMs) && position.seconds * 1000 < Double($0.endMs)
+        }
+        return sync.readerSentenceID(forTimingID: entry?.id).flatMap { sentenceRanges[$0] }
+    }
+
+}
+#endif

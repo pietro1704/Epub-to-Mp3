@@ -16,7 +16,17 @@ enum TtsRecoveryAlert {
         catch { _ = AppErrorReporter.message(error, context: "Speech model recovery"); candidates = [] }
         guard !Task.isCancelled, isCurrent() else { return nil }
         guard let suggested = candidates.first else {
+            #if os(iOS)
+            // iPhone and iPad let the reader choose between a download, the
+            // voice-model destination and an installed system voice.
+            guard let controller = presenter() else { return nil }
+            let selected = await TtsMissingVoiceAlert.choose(language: mismatch.language, on: controller,
+                                                           isCurrent: isCurrent)
+            guard !Task.isCancelled, isCurrent(), let selected else { return nil }
+            return Choice(candidate: selected, language: mismatch.language)
+            #else
             return await TtsLanguageDownload.offer(for: mismatch, isCurrent: isCurrent)
+            #endif
         }
         let selected = await select(candidates, suggested: suggested, language: mismatch.language)
         guard !Task.isCancelled, isCurrent(), let selected else { return nil }

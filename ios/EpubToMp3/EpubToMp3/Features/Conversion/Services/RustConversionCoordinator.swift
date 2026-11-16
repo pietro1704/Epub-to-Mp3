@@ -86,11 +86,22 @@ final class RustConversionCoordinator {
         if options != nil {
             try adapter.validateConversionSupport(options: options)
         }
+        var bookMetadata: Data?
         let requestedChapterPositions = try requestedChapterRange(
             in: bookURL,
             chapterStart: chapterStart,
-            chapterEnd: chapterEnd
+            chapterEnd: chapterEnd,
+            onMetadata: { bookMetadata = $0 }
         )
+        #if os(iOS)
+        if playbackControl != nil, TtsMissingVoicePreflight.requiresCheck(options: options) {
+            let invocation = RustConversionInvocation(adapter: adapter)
+            let metadata: Data
+            if let bookMetadata { metadata = bookMetadata }
+            else { metadata = try await Task.detached { try invocation.adapter.openBook(at: bookURL).metadataJSON }.value }
+            try await TtsMissingVoicePreflight.validate(metadata: metadata, options: options)
+        }
+        #endif
         let effectiveControl: ConverterPlaybackControl
         if let playbackControl {
             effectiveControl = playbackControl
@@ -277,7 +288,8 @@ final class RustConversionCoordinator {
     private func requestedChapterRange(
         in bookURL: URL,
         chapterStart: Int32,
-        chapterEnd: Int32
+        chapterEnd: Int32,
+        onMetadata: ((Data) -> Void)? = nil
     ) throws -> ClosedRange<Int>? {
         do {
             try ConversionChapterSelection.validateBounds(start: chapterStart, end: chapterEnd)
@@ -286,6 +298,7 @@ final class RustConversionCoordinator {
         }
         if chapterStart == -1 && chapterEnd == -1 { return nil }
         let book = try adapter.openBook(at: bookURL)
+        onMetadata?(book.metadataJSON)
         guard
             let metadata = try JSONSerialization.jsonObject(with: book.metadataJSON) as? [String: Any],
             let chapters = metadata["chapters"] as? [[String: Any]]
