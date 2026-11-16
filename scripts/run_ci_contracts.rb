@@ -17,6 +17,7 @@ module CiContracts
     test_download_converter_ffi_macos.rb
     test_ubuntu_package_mirror.rb test_rust_build_cache.rb test_build_web_wasm.rb
     test_runner_acquisition_retry.rb
+    test_convert_entrypoint.rb
   ]).uniq.freeze
   NODE_SUITES = %w[
     .github/scripts/rust-cache-identity.test.cjs

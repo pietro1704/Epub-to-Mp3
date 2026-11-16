@@ -188,12 +188,6 @@ without an additional prompt. The worker's job-ID output directories are a
 separate layout. Inspect the targets and preserve required audio before an
 intentionally authorized clear.
 
-### Legacy Python autocomplete
-
-[shell-completion.zsh](shell-completion.zsh) describes the Python compatibility
-CLI and includes Python-only options. Its registrations also cover `convert`;
-inspect aliases before sourcing it for an explicitly selected legacy workflow.
-
 ---
 
 ## Web Server

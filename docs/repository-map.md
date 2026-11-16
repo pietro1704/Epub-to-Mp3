@@ -65,7 +65,7 @@ path has no direct production import.
 | `.agents/` (23), `.claude/` (61), `.codex/` (1), `.hermes/` (3) | Harness routing, shared skills, hooks and specialist locators; Hermes paths alias `.agents/skills/` | Preserve aliases; configuration maintenance has its own routing |
 | `.vscode/` (3) | Editor task, setting and extension integration | Keep; not an authoritative runtime contract |
 | `docs/` (253) | Authored guidance, dated plans and retained research/evidence | Classify by document status as below |
-| Root manifests and entrypoints | `mise.toml`, Cargo manifests/lockfile, Dockerfile, `convert`, `convert-rust`, Python launchers/requirements, validation/benchmark helpers, `desktop.spec`, `shell-completion.zsh` | Keep consumer paths; Python/Web/Ruby full functional audits are outside the Swift/Rust/Flutter sequence |
+| Root manifests and entrypoints | `mise.toml`, Cargo manifests/lockfile, Dockerfile, `convert`, Python launchers/requirements, validation/benchmark helpers, `desktop.spec`, `shell-completion.zsh` | Keep consumer paths; Python/Web/Ruby full functional audits are outside the Swift/Rust/Flutter sequence |
 | Remaining root files | Contracts, changelogs, security guidance, editor/tool/delivery settings, retained plans and the two uncertain artifacts below | Classify individually; filenames or age do not establish non-use |
 
 The root `AGENTS.md` is a symlink to `CLAUDE.md`. The three tracked Hermes skill
