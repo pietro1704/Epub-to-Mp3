@@ -10,7 +10,7 @@ object NativeTtsOptions {
     private external fun nativeValidateSessionOptions(raw: String): String?
     @Synchronized fun prepare(context: Context, raw: String?): String {
         // Rust's Android default (/data/local/tmp) is not writable by app UIDs.
-        // Foreground and WorkManager conversions must share the app cache path.
+        // Every conversion must use the app cache path.
         val temporaryDirectory = context.cacheDir
         check(temporaryDirectory.isDirectory || temporaryDirectory.mkdirs()) { "Cannot create native temporary directory" }
         Os.setenv("TMPDIR", temporaryDirectory.absolutePath, true)

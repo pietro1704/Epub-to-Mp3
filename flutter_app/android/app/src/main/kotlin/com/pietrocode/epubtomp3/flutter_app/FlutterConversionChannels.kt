@@ -5,17 +5,10 @@ import android.os.Looper
 import android.os.StatFs
 
 import android.util.Log
-import androidx.work.Data
-import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
-import org.json.JSONObject
-import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -65,45 +58,6 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) { platformVoiceEvents = events }
                 override fun onCancel(arguments: Any?) { platformVoiceEvents = null }
             })
-
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            "epub_to_mp3/background_conversion"
-        ).also { methodChannels.add(it) }.setMethodCallHandler { call, originalResult ->
-            val result = replies.track(originalResult)
-            when (call.method) {
-                "enqueueChapter" -> {
-                    val jobId = call.argument<String>("jobId")
-                    val inputPath = call.argument<String>("inputPath")
-                    val chapterIndex = call.argument<Int>("chapterIndex")
-                    val outputPath = call.argument<String>("outputPath")
-                    val optionsJson = call.argument<String>("optionsJson")
-                    if (jobId.isNullOrBlank() || inputPath.isNullOrBlank() || chapterIndex == null || outputPath.isNullOrBlank() || optionsJson.isNullOrBlank()) {
-                        result.error("BAD_ARGS", "jobId, inputPath, chapterIndex, outputPath and optionsJson are required", null)
-                    } else {
-                        val payloadFile = persistBackgroundPayload(jobId, inputPath, chapterIndex, outputPath, optionsJson)
-                        if (payloadFile == null) {
-                            result.error("IO_ERROR", "Could not persist background conversion payload", null)
-                        } else {
-                            val request = OneTimeWorkRequestBuilder<BackgroundChapterWorker>()
-                                .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build())
-                                .setInputData(Data.Builder().putString(BackgroundChapterWorker.KEY_PAYLOAD, payloadFile.absolutePath).build()).build()
-                            WorkManager.getInstance(applicationContext).enqueueUniqueWork(jobId, ExistingWorkPolicy.KEEP, request)
-                            result.success(true)
-                        }
-                    }
-                }
-                "cancel" -> {
-                    val jobId = call.argument<String>("jobId")
-                    if (jobId.isNullOrBlank()) result.error("BAD_ARGS", "jobId is required", null)
-                    else {
-                        WorkManager.getInstance(applicationContext).cancelUniqueWork(jobId)
-                        result.success(true)
-                    }
-                }
-                else -> result.notImplemented()
-            }
-        }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -233,18 +187,6 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                 else -> if (!models.dispatch(call, result)) result.notImplemented()
             }
         }        }
-    }
-
-    private fun persistBackgroundPayload(jobId: String, inputPath: String, chapterIndex: Int, outputPath: String, optionsJson: String): File? {
-        return try {
-            val payload = JSONObject().apply {
-                put("inputPath", inputPath)
-                put("chapterIndex", chapterIndex)
-                put("optionsJson", optionsJson)
-                put("outputPath", outputPath)
-            }.toString()
-            BackgroundPayloadStore.persist(File(activity.filesDir, "background_conversion"), jobId, payload)
-        } catch (_: Exception) { null }
     }
 
     fun close() {

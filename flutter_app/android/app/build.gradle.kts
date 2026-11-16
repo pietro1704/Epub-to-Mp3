@@ -5,7 +5,6 @@ plugins {
 }
 
 dependencies {
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
     // Built-in Kotlin needs the JVM test backend explicitly selected.
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.4.0")
 }
