@@ -65,7 +65,7 @@ cargo test --workspace
 echo 'Web production build...'
 (cd web && npm run build)
 
-echo 'Repository hooks and native-reader pairing...'
+echo 'Repository hooks and host workflow gate...'
 mise run hooks-test
 
 echo '== preflight passed =='

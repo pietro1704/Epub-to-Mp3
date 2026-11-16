@@ -63,7 +63,7 @@ changes and instruction patches. Their public CLI regressions run through
 main CI. They do not launch native apps or Simulators. Inspect exact logs on
 failure; a successful wrapper is not evidence that an unexecuted step passed.
 
-For hook syntax, executable bits and reader-pairing checks during iteration,
+For Git hook syntax and executable bits during iteration,
 use `mise run hooks:check`. `mise run hooks-test` retains that focused check
 followed by the complete host workflow gate. For a narrow host regression,
 `mise exec -- ruby scripts/run_host_checks.rb --suite scripts/test_NAME.rb`
@@ -119,8 +119,8 @@ to 30 and accepts a positive value up to 60; timeout returns 75, invalid input 2
 and tool errors/signals retain their actual status. The lease follows the tool
 if its supervisor dies. It does not compile or launch an app.
 
-The local pre-commit hook remains a read-only whitespace gate. Native pairing
-and language checks keep their existing owners. Inspect task definitions before
+The local pre-commit hook remains a read-only whitespace gate. Language checks
+keep their existing owners. Inspect task definitions before
 running build/test commands that may generate artifacts or set up dependencies.
 
 ## Review and delivery

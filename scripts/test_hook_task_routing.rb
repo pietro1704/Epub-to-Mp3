@@ -10,14 +10,11 @@ class HookTaskRoutingTest < Minitest::Test
 
   def setup
     @root = File.realpath(Dir.mktmpdir("hook-task-routing-"))
-    %w[.claude/hooks .githooks scripts bin].each { |dir| FileUtils.mkdir_p(File.join(@root, dir)) }
+    %w[.githooks bin].each { |dir| FileUtils.mkdir_p(File.join(@root, dir)) }
     @events = File.join(@root, "events")
     @env = {"PATH" => "#{@root}/bin:#{ENV.fetch('PATH')}", "HOOK_EVENTS" => @events}
-    script("scripts/test_reader_change_check.sh", 'echo reader >> "$HOOK_EVENTS"; exit "${READER_STATUS:-0}"')
     script("bin/mise", 'echo "$*" >> "$HOOK_EVENTS"; exit "${MISE_STATUS:-0}"')
-    script(".claude/hooks/example.sh", "exit 0")
     script(".githooks/pre-commit", "exit 0")
-    script("scripts/reader-change-check.sh", "exit 0")
   end
 
   def teardown
@@ -38,16 +35,17 @@ class HookTaskRoutingTest < Minitest::Test
   def test_focused_check_validates_hooks_without_starting_the_host_gate
     output, error, status = invoke("hooks:check")
     assert status.success?, "#{output}#{error}"
-    assert_equal "reader\n", File.read(@events)
+    refute File.exist?(@events), "hooks:check started another task"
   end
 
-  def test_focused_check_rejects_syntax_and_reader_failures
-    script(".claude/hooks/example.sh", "if then")
+  def test_focused_check_rejects_syntax_and_executable_failures
+    script(".githooks/pre-commit", "if then")
     _, _, status = invoke("hooks:check")
     refute status.success?
-    script(".claude/hooks/example.sh", "exit 0")
-    _, _, status = invoke("hooks:check", "READER_STATUS" => "23")
-    assert_equal 23, status.exitstatus
+    script(".githooks/pre-commit", "exit 0")
+    File.chmod(0o644, File.join(@root, ".githooks/pre-commit"))
+    _, _, status = invoke("hooks:check")
+    refute status.success?
   end
 
   def test_full_gate_retains_both_checks_and_stops_on_first_failure
