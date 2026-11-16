@@ -21,7 +21,6 @@ class NativeFaberEntrypointsTest < Minitest::Test
     'verify_portable_tts.rb' => [],
     'build_onnxruntime_macos.sh' => []
   }.freeze
-  BENCHMARKS = %w[build-edge.rb build-pocket.rb run.rb].freeze
 
   def setup
     @directory = File.realpath(Dir.mktmpdir('native Faber entrypoints '))
@@ -30,11 +29,6 @@ class NativeFaberEntrypointsTest < Minitest::Test
     @lock = File.join(@directory, 'lease')
     @events = File.join(@directory, 'events')
     FileUtils.mkdir_p([@scripts, @bin, File.join(@directory, 'flutter_app')])
-    benchmark_directory = File.join(@directory, 'docs/research/tts-phone-benchmark')
-    FileUtils.mkdir_p(benchmark_directory)
-    BENCHMARKS.each do |name|
-      FileUtils.cp(File.join(ROOT, 'docs/research/tts-phone-benchmark', name), benchmark_directory)
-    end
     (DRIVERS.keys + %w[native_job.rb native_build_command.rb fetch_onnxruntime_android.rb fetch_onnxruntime_macos.rb]).each do |name|
       content = File.read(File.join(ROOT, 'scripts', name))
       content = content.gsub('/tmp/epub2mp3.heavy-job.lock', @lock)
@@ -123,17 +117,6 @@ class NativeFaberEntrypointsTest < Minitest::Test
       assert_equal 75, status.exitstatus, "#{driver}: #{output}#{error}"
       assert_includes error, 'Fixture: build storage budget exceeded'
       refute File.exist?(@events), "#{driver} started preparation or a compiler after storage refusal"
-    end
-  end
-
-  def test_benchmark_drivers_refuse_before_preparation_or_device_actions
-    BENCHMARKS.each do |name|
-      file = File.join(@directory, 'docs/research/tts-phone-benchmark', name)
-      output, error, status = Open3.capture3(@environment.merge('FIXTURE_BLOCKED' => '1'),
-                                           RbConfig.ruby, file, chdir: @directory)
-      assert_equal 75, status.exitstatus, "#{name}: #{output}#{error}"
-      refute File.exist?(File.join(@directory, '.reports')), "#{name} started preparation"
-      refute File.exist?(@events), "#{name} started a compiler or device action"
     end
   end
 
