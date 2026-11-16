@@ -96,36 +96,6 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
   }) => throw EmbeddedConverterUnavailable();
 }
 
-/// Routes local conversion to embedded ffi or the explicit HTTP compatibility
-/// path. Embedded mode never falls through to HTTP.
-class LocalConverterAdapter {
-  LocalConverterAdapter({
-    required this.mode,
-    this.embedded = const UnavailableEmbeddedConverter(),
-    required this.httpFallback,
-  });
-
-  final ConverterMode mode;
-  final EmbeddedConverter embedded;
-  final Future<String> Function({
-    required String inputPath,
-    required String outputPath,
-  })
-  httpFallback;
-
-  Future<String> convert({
-    required String inputPath,
-    required String outputPath,
-  }) {
-    switch (mode) {
-      case ConverterMode.embedded:
-        return embedded.convert(inputPath: inputPath, outputPath: outputPath);
-      case ConverterMode.http:
-        return httpFallback(inputPath: inputPath, outputPath: outputPath);
-    }
-  }
-}
-
 /// Process-local registration point used by platform integration code.
 class EmbeddedConverterRegistry {
   EmbeddedConverterRegistry._();

@@ -2,7 +2,6 @@ package com.pietrocode.epubtomp3.flutter_app
 
 import android.os.Handler
 import android.os.Looper
-import android.os.StatFs
 
 import android.util.Log
 
@@ -58,17 +57,6 @@ internal class FlutterConversionChannels(private val activity: MainActivity) {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) { platformVoiceEvents = events }
                 override fun onCancel(arguments: Any?) { platformVoiceEvents = null }
             })
-
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            "epub_to_mp3/storage"
-        ).also { methodChannels.add(it) }.setMethodCallHandler { call, originalResult ->
-            val result = replies.track(originalResult)
-            when (call.method) {
-                "availableBytes" -> result.success(StatFs(filesDir.absolutePath).availableBytes)
-                else -> result.notImplemented()
-            }
-        }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,

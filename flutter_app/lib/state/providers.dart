@@ -8,11 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
 import '../models/tts_preferences.dart';
-import '../services/api_client.dart';
 import '../services/audio_player_service.dart';
 import '../services/background_audio_handler.dart';
 import '../services/bookmark_store.dart';
-import '../services/audiobook_downloads.dart';
 import '../services/embedded_converter.dart';
 import '../services/local_fulltext_cache.dart';
 import '../services/local_conversion_job.dart';
@@ -61,11 +59,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> setTtsPreferences(TtsPreferences value) async {
     await state.setTtsPreferences(value);
-    _emit();
-  }
-
-  Future<void> setBackendUrl(String v) async {
-    await state.setBackendURL(v);
     _emit();
   }
 
@@ -146,11 +139,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     _emit();
   }
 
-  Future<void> setUseEmbeddedRuntime(bool v) async {
-    await state.setUseEmbeddedRuntime(v);
-    _emit();
-  }
-
   Future<void> setReaderColumnWidth(double v) async {
     await state.setReaderColumnWidth(v);
     _emit();
@@ -164,33 +152,8 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
   return SettingsNotifier(prefs);
 });
 
-final apiClientProvider = Provider<ApiClient>((ref) {
-  final settings = ref.watch(settingsProvider);
-  final baseUrl = settings.resolvedBaseURL;
-  final api = ApiClient(
-    baseUrl?.toString() ?? settings.backendURL,
-    configurationError: baseUrl == null
-        ? 'No reachable backend is configured. Set the backend URL to an '
-              'HTTP(S) LAN address or deployed backend in Settings.'
-        : null,
-  );
-  return api;
-});
-
-/// All product targets use the embedded Rust converter. Remote HTTP conversion
-/// is intentionally not a product mode.
-final converterModeProvider = Provider<ConverterMode>((ref) {
-  return ConverterMode.embedded;
-});
-
 final embeddedConverterProvider = Provider<EmbeddedConverter>((ref) {
   return EmbeddedConverterRegistry.current;
-});
-
-final downloadManagerProvider = Provider<AudiobookDownloads>((ref) {
-  final downloads = AudiobookDownloads();
-  ref.onDispose(downloads.dispose);
-  return downloads;
 });
 
 final resumeStoreProvider = Provider<ResumeStore>((ref) {
@@ -283,7 +246,7 @@ final playbackResumePersistenceProvider = Provider<PlaybackResumePersistence>((
 /// Typed as the interface so tests can substitute a fake player.
 final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
   final settings = ref.read(settingsProvider);
-  final p = AudioPlayerService(backendBase: settings.backendURL);
+  final p = AudioPlayerService();
   p.seekForwardSeconds = settings.seekForwardSeconds;
   p.seekBackwardSeconds = settings.seekBackwardSeconds;
   ref.listen(

@@ -19,9 +19,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTitle => 'Settings';
 
   @override
-  String get backendUrl => 'Backend URL';
-
-  @override
   String get wpmLabel => 'Words per minute';
 
   @override

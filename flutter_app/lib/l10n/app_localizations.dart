@@ -118,12 +118,6 @@ abstract class AppLocalizations {
   /// **'Settings'**
   String get settingsTitle;
 
-  /// No description provided for @backendUrl.
-  ///
-  /// In en, this message translates to:
-  /// **'Backend URL'**
-  String get backendUrl;
-
   /// No description provided for @wpmLabel.
   ///
   /// In en, this message translates to:

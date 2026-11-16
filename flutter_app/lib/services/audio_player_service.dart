@@ -27,9 +27,8 @@ class _GrowingChapterEntry {
 class AudioPlayerService extends AudioPlayerInterface
     with _AudioPlayerNavigation
     implements StreamingChapterPlayer {
-  AudioPlayerService({String? backendBase, AudioPlayer? player})
-    : _baseUrl = backendBase,
-      _player = player ?? AudioPlayer() {
+  AudioPlayerService({AudioPlayer? player})
+    : _player = player ?? AudioPlayer() {
     _playbackState = AudioPlaybackState(_player);
   }
 
@@ -40,7 +39,6 @@ class AudioPlayerService extends AudioPlayerInterface
   PlaybackPhase get phase => _playbackState.phase;
   @override
   Stream<PlaybackPhase> get phases => _playbackState.changes;
-  final String? _baseUrl;
   List<ChapterProgress> _chapters = const [];
 
   @override
@@ -133,8 +131,7 @@ class AudioPlayerService extends AudioPlayerInterface
   Future<void> setQueue(List<ChapterProgress> chapters) async {
     _playbackState.beginRequest(_player.playerState);
     // ignore: avoid_print
-    print('AudioPlayer setQueue chapters=${chapters.length} base=$_baseUrl');
-    final base = _baseUrl ?? '';
+    print('AudioPlayer setQueue chapters=${chapters.length}');
     final children = <AudioSource>[];
     final map = <int>[];
     final urls = <Uri>[];
@@ -149,10 +146,8 @@ class AudioPlayerService extends AudioPlayerInterface
           map.add(i);
           continue;
         }
-        final url = _resolve(base, c.downloadUrl!);
-        if (url.scheme.isEmpty || (url.scheme == 'http' && base.isEmpty)) {
-          continue;
-        }
+        final url = _resolveLocal(c.downloadUrl!);
+        if (url == null) continue;
         if (growing != null && growing.matches(url)) {
           children.add(growing.source);
           urls.add(growing.identity);
@@ -259,18 +254,16 @@ class AudioPlayerService extends AudioPlayerInterface
     });
   }
 
-  Uri _resolve(String base, String urlOrPath) {
-    if (urlOrPath.startsWith('http') || urlOrPath.startsWith('file:')) {
-      return Uri.parse(urlOrPath);
+  /// Chapter audio is local: `file:` URIs or absolute paths. Relative paths
+  /// and plain `http` URLs were only playable through the removed remote
+  /// backend base URL, so they are skipped exactly as when no base was set.
+  Uri? _resolveLocal(String urlOrPath) {
+    if (urlOrPath.startsWith('/')) return Uri.file(urlOrPath);
+    if (!urlOrPath.startsWith('http') && !urlOrPath.startsWith('file:')) {
+      return null;
     }
-    if (urlOrPath.startsWith('/')) {
-      return Uri.file(urlOrPath);
-    }
-    final cleanBase = base.endsWith('/')
-        ? base.substring(0, base.length - 1)
-        : base;
-    final cleanPath = urlOrPath.startsWith('/') ? urlOrPath : '/$urlOrPath';
-    return Uri.parse('$cleanBase$cleanPath');
+    final url = Uri.parse(urlOrPath);
+    return url.scheme == 'http' ? null : url;
   }
 
   @override

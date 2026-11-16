@@ -6,11 +6,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   final List<ChapterProgress> _playableChapters = [];
   LocalConversionJob? _localJob;
   ResumeRestorationGuard _resumeGuard = ResumeRestorationGuard();
-  StreamSubscription<JobSnapshot>? _sseSubscription;
   StreamSubscription<int?>? _chapterIndexSub;
   StreamSubscription<Duration>? _positionSub;
   Timer? _resumeSaveTimer;
-  Future<void> _snapshotWork = Future.value();
   Future<void> Function()? _playbackRequest;
   StreamController<int> _playbackWindowChanges =
       StreamController<int>.broadcast();
@@ -75,139 +73,13 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       );
       return;
     }
-    // Unsupported companion shells must opt into legacy HTTP compatibility.
-    if (ref.read(settingsProvider).useEmbeddedRuntime) {
-      _showConversionError(
-        EmbeddedConverterUnavailable(
-          'No local Rust audio adapter is registered for this platform.',
-        ),
-      );
-      if (mounted) setState(() => _isConverting = false);
-      return;
-    }
-    try {
-      await _startBackendConversion();
-    } catch (error) {
-      if (!mounted) return;
-      _showConversionError(error);
-      setState(() {
-        _isConverting = false;
-      });
-    }
-  }
-
-  Future<void> _startBackendConversion() async {
-    final api = ref.read(apiClientProvider);
-    final library = ref.read(libraryStoreProvider);
-    // Null-safe lookup mirrors the _load() guard. Same race: the
-    // book can disappear from the library between the user tapping
-    // play and this method running.
-    final book = library.books.where((b) => b.id == widget.bookId).firstOrNull;
-    if (book == null) {
-      throw StateError('Book is no longer in the library');
-    }
-
-    final jobId = await api.uploadAndConvert(book.filePath);
-
-    book.lastJobId = jobId;
-    library.update(book);
-
-    _sseSubscription?.cancel();
-    _sseSubscription = SseSubscriptionLifecycle.listen(
-      api.jobStream(jobId),
-      onData: _enqueueSnapshot,
-      onError: (Object e) {
-        _sseSubscription = null;
-        if (!mounted) return;
-        setState(() {
-          _isConverting = false;
-        });
-      },
-      onDone: () {
-        _sseSubscription = null;
-        if (!mounted) return;
-        setState(() => _isConverting = false);
-      },
+    // Platforms without a registered Rust adapter cannot convert locally.
+    _showConversionError(
+      EmbeddedConverterUnavailable(
+        'No local Rust audio adapter is registered for this platform.',
+      ),
     );
-  }
-
-  void _enqueueSnapshot(JobSnapshot snapshot) {
-    // SSE can deliver the next chapter before asynchronous queue updates for
-    // the previous one complete. Process snapshots in order so each update
-    // appends to the same audio queue instead of racing a replacement.
-    _snapshotWork = _snapshotWork.then((_) async {
-      try {
-        await _handleSnapshot(snapshot);
-      } catch (error) {
-        if (!mounted) return;
-        setState(() {
-          _isConverting = false;
-        });
-      }
-    });
-  }
-
-  Future<void> _handleSnapshot(JobSnapshot snapshot) async {
-    if (!mounted) return;
-
-    final playable = snapshot.playableChapters;
-    final newChapters = playable
-        .where((c) => !_playableChapters.any((e) => e.index == c.index))
-        .toList();
-
-    if (newChapters.isNotEmpty) {
-      final isFirstPlayableBatch = _playableChapters.isEmpty;
-      _playableChapters.addAll(newChapters);
-      _playableChapters.sort((a, b) => a.index.compareTo(b.index));
-
-      final player = ref.read(globalAudioPlayerProvider);
-      _setCoverOnPlayer(player);
-      await player.setQueue(List.of(_playableChapters));
-      if (!mounted) return;
-      if (isFirstPlayableBatch) {
-        await _restoreResumePosition(player);
-        _startResumeListener(player);
-        // Starting a conversion is explicit user intent. Queue readiness must
-        // not turn into an implicit playback request on Android.
-        // The user starts playback from the reader controls.
-      }
-    }
-
-    if (snapshot.coverUrl != null) {
-      _fetchBackendCover(snapshot.coverUrl!);
-    }
-
-    if (snapshot.isTerminal) {
-      _sseSubscription?.cancel();
-      _sseSubscription = null;
-      if (snapshot.state.toLowerCase() == 'failed') {
-        setState(() => _isConverting = false);
-      } else {
-        setState(() => _isConverting = false);
-      }
-    }
-  }
-
-  Future<void> _fetchBackendCover(String coverUrl) async {
-    final library = ref.read(libraryStoreProvider);
-    // Cheap pre-check to avoid the network call when we already have
-    // a cover. The actual race-safe writeback happens after the
-    // await via CoverWriteback (re-looks up by id).
-    final existing = library.books
-        .where((b) => b.id == widget.bookId)
-        .firstOrNull;
-    if (existing == null || existing.coverBase64 != null) return;
-
-    try {
-      final api = ref.read(apiClientProvider);
-      final bytes = await api.fetchBytes(coverUrl);
-      if (bytes == null || bytes.isEmpty || !mounted) return;
-      CoverWriteback.apply(
-        library: library,
-        bookId: widget.bookId,
-        coverBase64: base64Encode(bytes),
-      );
-    } catch (_) {}
+    if (mounted) setState(() => _isConverting = false);
   }
 
   Future<void> _startLocalConversion({
@@ -418,8 +290,6 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     _playbackStartup.invalidate();
     _platformVoiceSession.end();
     _stopNativeConversion();
-    _sseSubscription?.cancel();
-    _sseSubscription = null;
     _chapterIndexSub?.cancel();
     _chapterIndexSub = null;
     _positionSub?.cancel();

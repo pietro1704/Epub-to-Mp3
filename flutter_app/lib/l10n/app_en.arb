@@ -3,7 +3,6 @@
   "appTitle": "Epub to MP3",
   "convertTitle": "Convert",
   "settingsTitle": "Settings",
-  "backendUrl": "Backend URL",
   "wpmLabel": "Words per minute",
   "audioRateLabel": "Audio playback rate",
   "fontSizeLabel": "Reader font size",

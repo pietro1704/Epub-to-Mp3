@@ -19,9 +19,6 @@ class AppLocalizationsEs extends AppLocalizations {
   String get settingsTitle => 'Configuración';
 
   @override
-  String get backendUrl => 'URL del servidor';
-
-  @override
   String get wpmLabel => 'Palabras por minuto';
 
   @override

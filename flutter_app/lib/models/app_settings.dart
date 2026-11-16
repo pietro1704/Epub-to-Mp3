@@ -15,34 +15,10 @@ import 'dart:convert';
 
 import 'tts_preferences.dart';
 
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_app/services/offline_cache_eviction.dart';
 
 part 'playback_settings.dart';
-
-/// Default backend URL for platforms where the host loopback is reachable.
-/// Android emulators use [androidEmulatorBackendUrl] because their
-/// `localhost` is the emulator itself. Physical Android devices must use an
-/// explicit LAN or deployed URL; guessing a host address would silently pick
-/// the wrong network.
-@visibleForTesting
-String defaultBackendUrl({TargetPlatform? platform}) {
-  return 'http://localhost:8000';
-}
-
-const androidEmulatorBackendUrl = 'http://10.0.2.2:8000';
-
-/// A backend URL is usable only when it identifies an HTTP(S) origin with a
-/// host. This validates configuration without pretending that reachability can
-/// be known until the device makes a request.
-@visibleForTesting
-bool isValidBackendUrl(String value) {
-  final uri = Uri.tryParse(value.trim());
-  return uri != null &&
-      (uri.scheme == 'http' || uri.scheme == 'https') &&
-      uri.host.isNotEmpty;
-}
 
 enum ReaderFontFamily { serif, sans, mono }
 
@@ -136,19 +112,20 @@ class CustomReaderColors {
   );
 }
 
-/// Reader / backend settings. Same key names as the Swift @AppStorage
+/// Reader and playback settings. Same key names as the Swift @AppStorage
 /// wrappers so the iOS and Flutter clients could share a settings file
 /// if a Codable bridge is ever needed (today they do not).
 ///
 /// Legacy keys from the old `state/providers.dart` AppSettings
-/// (`backendUrl`, `wpm`, `audioRate`, `fontSize`, `darkMode`) are
-/// migrated to the new key space on first construction via
-/// [migrateLegacyKeysIfNeeded]. Idempotent — sets a sentinel
-/// `_settingsMigratedV1` flag so the migration runs at most once.
+/// (`wpm`, `audioRate`, `fontSize`, `darkMode`) are migrated to the new
+/// key space on first construction via [migrateLegacyKeysIfNeeded].
+/// Idempotent — sets a sentinel `_settingsMigratedV1` flag so the
+/// migration runs at most once.
 class MirrorAppSettings with PlaybackSettings {
   MirrorAppSettings(this._prefs) {
     migrateLegacyKeysIfNeeded();
     migrateReaderLayoutDefaultIfNeeded();
+    removeRemoteBackendKeysIfNeeded();
   }
 
   @override
@@ -185,7 +162,6 @@ class MirrorAppSettings with PlaybackSettings {
   /// key space. Runs only if `_settingsMigratedV1` isn't set yet.
   ///
   /// Mapping:
-  ///   backendUrl → backendURL   (camelCase change)
   ///   wpm        → wpm          (kept; new key for player WPM)
   ///   audioRate  → audioRate    (kept; new key for playback speed)
   ///   fontSize   → readerFontSize (was raw point size; bucket into 0..4 step)
@@ -195,11 +171,6 @@ class MirrorAppSettings with PlaybackSettings {
   /// versions can drop the legacy reads + delete the keys.
   void migrateLegacyKeysIfNeeded() {
     if (_prefs.getBool('_settingsMigratedV1') == true) return;
-
-    final legacyBackend = _prefs.getString('backendUrl');
-    if (legacyBackend != null && _prefs.getString('backendURL') == null) {
-      _prefs.setString('backendURL', legacyBackend);
-    }
 
     final legacyFontSize = _prefs.getDouble('fontSize');
     if (legacyFontSize != null && _prefs.getInt('readerFontSize') == null) {
@@ -243,11 +214,24 @@ class MirrorAppSettings with PlaybackSettings {
     _prefs.setBool(migrationKey, true);
   }
 
-  // backendURL ----------------------------------------------------------
-  String get backendURL =>
-      _prefs.getString('backendURL') ??
-      defaultBackendUrl(platform: defaultTargetPlatform);
-  Future<void> setBackendURL(String v) => _prefs.setString('backendURL', v);
+  /// Remote backend keys whose only consumer, the HTTP conversion mode, was
+  /// removed. No current setting replaces them, so the cleanup deletes them
+  /// once. The sentinel keeps the step idempotent across launches.
+  static const remoteBackendKeys = [
+    'backendURL',
+    'backendUrl',
+    'useEmbeddedRuntime',
+    'useEmbeddedSidecar',
+  ];
+
+  void removeRemoteBackendKeysIfNeeded() {
+    const migrationKey = '_remoteBackendKeysRemovedV1';
+    if (_prefs.getBool(migrationKey) == true) return;
+    for (final key in remoteBackendKeys) {
+      _prefs.remove(key);
+    }
+    _prefs.setBool(migrationKey, true);
+  }
 
   // Legacy compatibility — `wpm` and `audioRate` were on the old
   // AppSettings; Swift exposes them on the AudioPlayer/SyncEngine
@@ -280,21 +264,6 @@ class MirrorAppSettings with PlaybackSettings {
   bool get darkMode => readerTheme == ReaderTheme.dark;
   Future<void> setDarkMode(bool v) =>
       setReaderTheme(v ? ReaderTheme.dark : ReaderTheme.light);
-
-  // Legacy lowercase alias used by call sites that haven't migrated to
-  // the camelCase Swift-mirror name yet.
-  String get backendUrl => backendURL;
-
-  // Sidecar (macOS only on Swift; on Flutter only the Linux/Windows
-  // desktop builds spin up a sidecar.
-  Uri? sidecarURL;
-  bool get useEmbeddedSidecar => _prefs.getBool('useEmbeddedSidecar') ?? true;
-  Future<void> setUseEmbeddedSidecar(bool v) =>
-      _prefs.setBool('useEmbeddedSidecar', v);
-
-  bool get useEmbeddedRuntime => _prefs.getBool('useEmbeddedRuntime') ?? true;
-  Future<void> setUseEmbeddedRuntime(bool v) =>
-      _prefs.setBool('useEmbeddedRuntime', v);
 
   // Reader appearance ---------------------------------------------------
   int get readerFontSize {
@@ -451,17 +420,6 @@ class MirrorAppSettings with PlaybackSettings {
   int savedPageIndex(String bookId) => _prefs.getInt('readPos_pg_$bookId') ?? 0;
   Future<void> savePageIndex(int index, String bookId) =>
       _prefs.setInt('readPos_pg_$bookId', index);
-
-  /// Best-effort base URL; nil if the user typed garbage.
-  Uri? get resolvedBaseURL {
-    if (useEmbeddedSidecar && sidecarURL != null) return sidecarURL;
-    final trimmed = backendURL.trim();
-    if (trimmed.isEmpty) return null;
-    final cleaned = trimmed.endsWith('/')
-        ? trimmed.substring(0, trimmed.length - 1)
-        : trimmed;
-    return isValidBackendUrl(cleaned) ? Uri.parse(cleaned) : null;
-  }
 
   /// Resolved point size for the current 0..4 step.
   double get readerPointSize {

@@ -299,46 +299,29 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('embedded mode uses the registered implementation', () async {
+  test('the registry serves the registered implementation', () async {
     final embedded = FakeConverter();
-    final adapter = LocalConverterAdapter(
-      mode: ConverterMode.embedded,
-      embedded: embedded,
-      httpFallback: ({required inputPath, required outputPath}) async => 'http',
-    );
+    EmbeddedConverterRegistry.register(embedded);
+    addTearDown(EmbeddedConverterRegistry.clear);
     expect(
-      await adapter.convert(inputPath: 'book.epub', outputPath: 'book.mp3'),
+      await EmbeddedConverterRegistry.current.convert(
+        inputPath: 'book.epub',
+        outputPath: 'book.mp3',
+      ),
       'book.mp3',
     );
     expect(embedded.calls, 1);
   });
 
-  test('embedded mode reports a typed unavailable error', () async {
-    final adapter = LocalConverterAdapter(
-      mode: ConverterMode.embedded,
-      httpFallback: ({required inputPath, required outputPath}) async => 'http',
-    );
+  test('an unregistered runtime reports a typed unavailable error', () async {
+    EmbeddedConverterRegistry.clear();
     expect(
-      () => adapter.convert(inputPath: 'book.epub', outputPath: 'book.mp3'),
+      () => EmbeddedConverterRegistry.current.convert(
+        inputPath: 'book.epub',
+        outputPath: 'book.mp3',
+      ),
       throwsA(isA<EmbeddedConverterUnavailable>()),
     );
-  });
-
-  test('HTTP mode explicitly uses the compatibility fallback', () async {
-    var calls = 0;
-    final adapter = LocalConverterAdapter(
-      mode: ConverterMode.http,
-      embedded: FakeConverter(),
-      httpFallback: ({required inputPath, required outputPath}) async {
-        calls++;
-        return 'http-output';
-      },
-    );
-    expect(
-      await adapter.convert(inputPath: 'book.epub', outputPath: 'book.mp3'),
-      'http-output',
-    );
-    expect(calls, 1);
   });
 
   test(

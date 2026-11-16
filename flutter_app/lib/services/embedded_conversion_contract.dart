@@ -4,9 +4,6 @@ import '../models/ebook_fulltext.dart';
 import 'embedded_conversion_result.dart';
 import 'growing_chapter_audio_source.dart';
 
-/// Selects the implementation used for local conversion.
-enum ConverterMode { embedded, http }
-
 /// Raised when embedded conversion was explicitly requested but no native
 /// converter-ffi implementation has been registered for this process.
 class EmbeddedConverterUnavailable extends Error {

@@ -105,16 +105,11 @@ void main() {
     );
     await coordinator.failChapter(job, 2, 'Installed voice is unavailable');
     await prefs.setString('local-conversion.v1:damaged', '{invalid');
-    var httpReads = 0;
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sharedPrefsProvider.overrideWithValue(prefs),
-          apiClientProvider.overrideWith((ref) {
-            httpReads++;
-            throw StateError('Jobs must not request HTTP');
-          }),
         ],
         child: const MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -124,7 +119,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(httpReads, 0);
     expect(find.text('The Fellowship'), findsOneWidget);
     expect(find.textContaining('1 saved conversion record'), findsOneWidget);
     await tester.tap(find.text('The Fellowship'));
@@ -132,24 +126,18 @@ void main() {
     expect(find.text('literal-rust-job-id'), findsOneWidget);
     expect(find.text('A Long-expected Party'), findsOneWidget);
     expect(find.textContaining('Installed voice is unavailable'), findsWidgets);
-    expect(httpReads, 0);
   });
   testWidgets(
     'Jobs shows storage read failure without requesting HTTP',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
-      var httpReads = 0;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             sharedPrefsProvider.overrideWithValue(prefs),
             localConversionHistoryProvider.overrideWith((ref) async {
               throw StateError('Local history storage unavailable');
-            }),
-            apiClientProvider.overrideWith((ref) {
-              httpReads++;
-              throw StateError('Jobs must not request HTTP');
             }),
           ],
           child: const MaterialApp(
@@ -164,7 +152,6 @@ void main() {
         find.textContaining('Local history storage unavailable'),
         findsOneWidget,
       );
-      expect(httpReads, 0);
       expect(tester.takeException(), isNull);
     },
   );
@@ -176,7 +163,6 @@ void main() {
         final prefs = await SharedPreferences.getInstance();
         final store = LocalConversionJobStore(prefs);
         var reads = 0;
-        var httpReads = 0;
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
@@ -186,10 +172,6 @@ void main() {
                   throw StateError('Temporary local history failure');
                 }
                 return store.loadHistory();
-              }),
-              apiClientProvider.overrideWith((ref) {
-                httpReads++;
-                throw StateError('Jobs must not request HTTP');
               }),
             ],
             child: const MaterialApp(
@@ -217,7 +199,6 @@ void main() {
         await tester.dragFrom(start, const Offset(0, 300));
         await tester.pumpAndSettle();
         expect(find.text('saved-after-mount'), findsOneWidget);
-        expect(httpReads, 0);
         expect(tester.takeException(), isNull);
       },
     );
@@ -240,9 +221,6 @@ void main() {
       ProviderScope(
         overrides: [
           sharedPrefsProvider.overrideWithValue(prefs),
-          apiClientProvider.overrideWith((ref) {
-            throw StateError('Manual history must not request HTTP');
-          }),
         ],
         child: const MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
