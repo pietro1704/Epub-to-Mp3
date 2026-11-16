@@ -11,7 +11,6 @@ dist/
 downloads/
 lib/
 lib64/
-!web/src/lib/
 !flutter_app/lib/
 !flutter_app/lib/**
 parts/
