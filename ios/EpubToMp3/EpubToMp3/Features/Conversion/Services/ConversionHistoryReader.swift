@@ -29,7 +29,7 @@ enum ConversionHistoryReader {
         guard limit > 0 else { return Snapshot(sessions: [], bytesRead: 0, budgetExhausted: false, ioOnMainThread: false) }
         guard byteBudget > 0 else {
             throw NSError(domain: "ConversionHistoryReader", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Invalid history read budget."])
+                          userInfo: [NSLocalizedDescriptionKey: L10n.string("error.historyUnavailable")])
         }
         try Task.checkCancellation()
         let handle = try FileHandle(forReadingFrom: url)

@@ -40,7 +40,7 @@ enum SharedContainerInbox {
                 domain: "SharedContainerInbox",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey:
-                    "App Group container not available for \(groupID). Check entitlements + provisioning."]
+                    L10n.string("error.sharedStorageUnavailable")]
             )
         }
         let destination = uniqueDestination(
