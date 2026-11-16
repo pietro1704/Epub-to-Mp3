@@ -249,6 +249,10 @@ final class MainReaderScreenController: UIViewController {
             self?.listeningSession.updateChapterEstimates(estimates, for: book.id)
         }
         reader.onListenRequested = { [weak self] in self?.startListeningFromMiniPlayer() }
+        reader.onSelectionPlaybackRequested = { [weak self] chapter, ratio in
+            guard let self, self.currentBook?.id == book.id else { return }
+            self.startListening(presentsFullPlayer: false, requestedChapter: chapter, requestedRatio: ratio)
+        }
         reader.onChromeVisibilityRequested = { [weak self] isHidden in
             guard let self else { return }
             self.onReaderChromeVisibilityChanged?(isHidden)
