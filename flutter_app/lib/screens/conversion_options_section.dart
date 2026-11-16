@@ -43,6 +43,7 @@ class ConversionOptionsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DropdownButtonFormField<String>(
+          isExpanded: true,
           initialValue: engine,
           decoration: const InputDecoration(labelText: 'Engine'),
           items: [
@@ -63,6 +64,7 @@ class ConversionOptionsSection extends StatelessWidget {
           ),
         if (engine == 'edge')
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: voice,
             decoration: const InputDecoration(labelText: 'Voice'),
             items: const [
@@ -82,6 +84,7 @@ class ConversionOptionsSection extends StatelessWidget {
             onChanged: (v) => onVoiceChanged(v ?? voice),
           ),
         DropdownButtonFormField<String>(
+          isExpanded: true,
           initialValue: language,
           decoration: const InputDecoration(labelText: 'Language'),
           items: const [

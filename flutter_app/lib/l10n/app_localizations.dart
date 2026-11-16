@@ -1041,6 +1041,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Using the secondary voice. The primary voice will be retried periodically.'**
   String get ttsSecondaryUsedNotice;
+
+  /// No description provided for @localAudioStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Local audio downloads'**
+  String get localAudioStorage;
+
+  /// No description provided for @localAudioStorageHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded and listened audio is kept until you remove it.'**
+  String get localAudioStorageHint;
+
+  /// No description provided for @removeAudioTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove downloaded audio?'**
+  String get removeAudioTitle;
+
+  /// No description provided for @removeAudioMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'The book, reading position and annotations will be kept.'**
+  String get removeAudioMessage;
+
+  /// No description provided for @originalTypography.
+  ///
+  /// In en, this message translates to:
+  /// **'Original book typography'**
+  String get originalTypography;
+
+  /// No description provided for @seekForwardInterval.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip forward'**
+  String get seekForwardInterval;
+
+  /// No description provided for @seekBackwardInterval.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip backward'**
+  String get seekBackwardInterval;
 }
 
 class _AppLocalizationsDelegate

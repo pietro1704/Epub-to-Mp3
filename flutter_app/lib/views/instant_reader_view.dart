@@ -1,3 +1,7 @@
+import '../features/playback/measured_playback_binding.dart';
+import '../screens/bookmarks_list_screen.dart';
+import 'reader_search_overlay.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -14,6 +18,8 @@ import '../state/providers.dart';
 import 'reader_settings_sheet.dart';
 import 'reader_theme_colors.dart';
 import 'reader_view.dart';
+
+part 'instant_reader_tools.dart';
 
 typedef Chapter = FulltextChapter;
 
@@ -44,10 +50,45 @@ class InstantReaderView extends ConsumerStatefulWidget {
 class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   late int _currentChapterIndex;
   bool _chromeVisible = true;
+  int _visibleTextOffset = 0;
+  int? _requestedSourceOffset;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<String?>? _sentenceSub;
   SentenceSyncCoordinator? _sentenceSync;
   String? _liveSentenceId;
+  MeasuredPlaybackBinding? _measuredBinding;
+  StreamSubscription<TextRange?>? _measuredSubscription;
+  TextRange? _measuredRange;
+  Object? _measuredIdentity;
+
+  void _bindMeasuredPlayback(FulltextChapter chapter) {
+    final identity = (
+      widget.bookId,
+      chapter.index,
+      chapter.text,
+      widget.player,
+    );
+    if (identity == _measuredIdentity) return;
+    _measuredIdentity = identity;
+    _measuredBinding?.dispose();
+    _measuredSubscription?.cancel();
+    _measuredRange = null;
+    final player = widget.player;
+    if (player == null) return;
+    final binding = MeasuredPlaybackBinding(
+      player: player,
+      bookId: widget.bookId ?? '',
+      chapterIndex: chapter.index,
+      source: chapter.text,
+    );
+    _measuredBinding = binding;
+    _measuredSubscription = binding.changes.listen((range) {
+      if (mounted) setState(() => _measuredRange = range);
+    });
+    binding.update(player.positionSeconds);
+  }
+
+  void _update(VoidCallback update) => setState(update);
 
   @override
   void initState() {
@@ -98,6 +139,8 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
   @override
   void dispose() {
+    _measuredBinding?.dispose();
+    _measuredSubscription?.cancel();
     _positionSub?.cancel();
     _sentenceSub?.cancel();
     // Always restore the system chrome when leaving the reader so other
@@ -168,7 +211,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
   bool returnToPreviousChapter() {
     if (_currentChapterIndex <= 0) return false;
-    setState(() => _currentChapterIndex -= 1);
+    setState(() {
+      _currentChapterIndex -= 1;
+      _requestedSourceOffset = null;
+    });
     _savePosition();
     return true;
   }
@@ -188,7 +234,6 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
       builder: (_) => const ReaderSettingsSheet(),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +260,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
       _sentenceSync!.loadIfChanged(
         fulltext: widget.fulltext,
         playableChapters: widget.player?.chapters ?? const [],
-        playableIndex: _currentChapterIndex,
+        playableIndex: widget.player?.currentIndexValue ?? -1,
       );
     }
     if (chapter == null) {
@@ -233,6 +278,17 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
         ),
       );
     }
+    final player = widget.player;
+    final queueIndex = player?.currentIndexValue == null
+        ? -1
+        : player!.chapterIndexForPlayerIndex(player.currentIndexValue!);
+    final ownsHighlight =
+        player != null &&
+        player.currentBookId == widget.bookId &&
+        queueIndex >= 0 &&
+        queueIndex < player.chapters.length &&
+        player.chapters[queueIndex].index == chapter.index;
+    _bindMeasuredPlayback(chapter);
     final spans = chapter.splitSentences();
     final bg = ReaderThemeColors.background(
       settings.readerTheme,
@@ -246,8 +302,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     return Column(
       children: [
         // Toolbar with settings button — hidden when chrome is off
-        AnimatedSize(
-          duration: const Duration(milliseconds: 250),
+        SizedBox(
           child: _chromeVisible
               ? Container(
                   color: bg,
@@ -256,6 +311,12 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                     bottom: false,
                     child: Row(
                       children: [
+                        BackButton(
+                          color: fg,
+                          onPressed: () =>
+                              ref.read(appDestinationProvider.notifier).state =
+                                  AppDestination.library,
+                        ),
                         Expanded(
                           child: Semantics(
                             header: true,
@@ -270,6 +331,38 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                                   ),
                             ),
                           ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.list, color: fg),
+                          tooltip: AppLocalizations.of(context)!
+                              .tableOfContents,
+                          onPressed: _showContents,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.search, color: fg),
+                          tooltip: AppLocalizations.of(context)!.searchInBook,
+                          onPressed: _showSearch,
+                        ),
+                        PopupMenuButton<String>(
+                          icon: Icon(Icons.bookmark_outline, color: fg),
+                          tooltip: AppLocalizations.of(context)!.bookmarksTitle,
+                          onSelected: (choice) => choice == 'add'
+                              ? _addBookmark()
+                              : _showBookmarks(),
+                          itemBuilder: (_) => [
+                            PopupMenuItem(
+                              value: 'add',
+                              child: Text(
+                                AppLocalizations.of(context)!.addBookmark,
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'list',
+                              child: Text(
+                                AppLocalizations.of(context)!.bookmarksTitle,
+                              ),
+                            ),
+                          ],
                         ),
                         IconButton(
                           icon: Icon(
@@ -292,19 +385,51 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
         Expanded(
           child: ReaderView(
-            onVisibleTextOffset: (offset) => widget.onVisibleTextOffset?.call(widget.fulltext.chapters.indexOf(chapter), offset),
+            key: ValueKey((_currentChapterIndex, _requestedSourceOffset)),
+            initialSourceOffset:
+                _requestedSourceOffset ??
+                (ref
+                            .read(sharedPrefsProvider)
+                            .getInt('readPos_sourceChapter_${widget.bookId}') ==
+                        _currentChapterIndex
+                    ? ref
+                              .read(sharedPrefsProvider)
+                              .getInt('readPos_offset_${widget.bookId}') ??
+                          0
+                    : 0),
+            onVisibleTextOffset: (offset) {
+              _visibleTextOffset = offset ?? _visibleTextOffset;
+              final book = widget.bookId;
+              if (book != null && offset != null) {
+                ref
+                    .read(sharedPrefsProvider)
+                    .setInt(
+                      'readPos_sourceChapter_$book',
+                      _currentChapterIndex,
+                    );
+                ref
+                    .read(sharedPrefsProvider)
+                    .setInt('readPos_offset_$book', offset);
+              }
+              widget.onVisibleTextOffset?.call(
+                widget.fulltext.chapters.indexOf(chapter),
+                offset,
+              );
+            },
             chapter: chapter,
+            measuredHighlight: _measuredRange,
             spans: spans,
             // Live sentence id (driven by SyncEngine + position stream
             // through slice 25) takes precedence over the static prop.
-            currentSentenceId: _liveSentenceId ?? widget.activeSentenceId,
+            currentSentenceId: ownsHighlight
+                ? _liveSentenceId ?? widget.activeSentenceId
+                : null,
             onAdvanceChapter: advanceToNextChapter,
             onPreviousChapter: returnToPreviousChapter,
             onCenterTap: () => _setChromeVisible(!_chromeVisible),
             onAutoHideChrome: () => _setChromeVisible(false),
           ),
         ),
-
       ],
     );
   }
