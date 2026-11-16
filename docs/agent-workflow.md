@@ -37,6 +37,49 @@ needs the matching skill, not every available role. For external-project
 research, retain sources, revisions, license boundaries and adoption evidence
 under an indexed `docs/research/<date>-<topic>/` reference.
 
+## Shared execution entry points
+
+`.claude/skills/portable-agent-pipeline`, `.codex/skills/goal-plan-execute` and
+`.agents/skills/auto-prompt-execute` are thin entry points to this section;
+keep their behavior here, not in the skill files.
+
+Recover the active objective, current evidence, acceptance and authorization.
+A continuation resumes the active task from current evidence; it does not select
+an unrelated backlog item. Keep a short working prompt internally unless the
+user requests its text:
+
+```text
+Objective: [observable outcome, preserving literal identifiers]
+Evidence: [current source, completed checks and remaining uncertainty]
+Scope: [owned seam, protected state and authorized actions]
+Route: [available relevant workflows or direct implementation]
+Acceptance: [observable success and relevant failure/cancellation/identity cases]
+Verification: [actual project tasks at the affected runtime]
+Delivery: [authorized local/external actions and unresolved gates]
+```
+
+Then follow the focused implementation sequence above. A clear, bounded change
+starts directly with inspection and implementation; write a short plan only for
+material uncertainty or dependent work. Use the smallest applicable route: a
+direct fix needs no triage, specification, extra specialists or persisted plan.
+For Matt-style workflow adaptation read
+[skill routing](agents/skill-routing.md); discover actual skills rather than
+treating a name as proof that a skill or tool exists, and disclose substitutions.
+Delegate only when authorized and useful. For parser or rendering changes,
+compare source fidelity explicitly: labels, hierarchy, markup, resources, links
+and fallback.
+
+Create or manage a tracked goal only when the user explicitly requests or allows
+one. Reuse a goal for the same task, preserve an unrelated unfinished goal and
+set a token budget only when the user supplies it. Completion requires all
+acceptance, pause requires the user's explicit request, and a missing runtime or
+device prerequisite is never reported as verified. Without goal tools, execute
+and disclose that no tracked goal was created.
+
+Current project and user authorization governs every mutation and external
+action; an entry point does not expand it. Report actual changes, executed
+checks, unresolved acceptance and delivery state separately.
+
 ## Acceptance oracle
 
 Before implementation, name the observable outcome, affected runtime and an
