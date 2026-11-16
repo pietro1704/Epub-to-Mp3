@@ -8,6 +8,9 @@ on:
     branches: [master]
     types: [opened, reopened, synchronize, ready_for_review]
   workflow_dispatch:
+  # Heartbeat: a failed CI run skips this job, so refresh the queue periodically.
+  schedule:
+    - cron: "17,47 * * * *"
 
 permissions:
   contents: write
@@ -67,3 +70,11 @@ jobs:
               echo "PR #$pr merge delivery is unconfirmed; no post-merge validation dispatched."
             fi
           done < <(jq -r '.[] | [.number, .headRefOid] | @tsv' <<< "$prs")
+
+      - name: Refresh the oldest green pull request behind master
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # User credential so the refreshed head triggers CI; GITHUB_TOKEN pushes do not.
+          PR_BRANCH_UPDATE_TOKEN: ${{ secrets.DEPENDABOT_ADMIN_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: node scripts/refresh_behind_pr.mjs --repo "$REPO" || echo "::warning::Behind pull request refresh skipped."
