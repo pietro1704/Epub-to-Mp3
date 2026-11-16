@@ -3,6 +3,7 @@ import 'package:just_audio/just_audio.dart';
 
 import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/services/audio_player_service.dart';
+import 'support/fake_audio_player_service.dart';
 
 void main() {
   group('AudioPlayerService readiness boundaries', () {

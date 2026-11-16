@@ -250,12 +250,6 @@ abstract class AppLocalizations {
   /// **'Refresh'**
   String get refresh;
 
-  /// No description provided for @playerTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Player'**
-  String get playerTitle;
-
   /// No description provided for @readerTitle.
   ///
   /// In en, this message translates to:
@@ -267,24 +261,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Chapters'**
   String get tocTitle;
-
-  /// No description provided for @loadingFulltext.
-  ///
-  /// In en, this message translates to:
-  /// **'Loading text…'**
-  String get loadingFulltext;
-
-  /// No description provided for @fulltextEmpty.
-  ///
-  /// In en, this message translates to:
-  /// **'No readable text available'**
-  String get fulltextEmpty;
-
-  /// No description provided for @fulltextGone.
-  ///
-  /// In en, this message translates to:
-  /// **'Text no longer available'**
-  String get fulltextGone;
 
   /// No description provided for @downloadAll.
   ///
@@ -358,18 +334,6 @@ abstract class AppLocalizations {
   /// **'Remove'**
   String get remove;
 
-  /// No description provided for @noConversionYet.
-  ///
-  /// In en, this message translates to:
-  /// **'Convert this book first to play audio'**
-  String get noConversionYet;
-
-  /// No description provided for @readerEmptyHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Open a book from the library to start reading'**
-  String get readerEmptyHint;
-
   /// No description provided for @pickBookToRead.
   ///
   /// In en, this message translates to:
@@ -400,59 +364,17 @@ abstract class AppLocalizations {
   /// **'Retry'**
   String get retry;
 
-  /// No description provided for @generatingAudio.
-  ///
-  /// In en, this message translates to:
-  /// **'Generating audio'**
-  String get generatingAudio;
-
-  /// No description provided for @nowPlaying.
-  ///
-  /// In en, this message translates to:
-  /// **'Now Playing'**
-  String get nowPlaying;
-
   /// No description provided for @audioEngineSection.
   ///
   /// In en, this message translates to:
   /// **'Audio engine'**
   String get audioEngineSection;
 
-  /// No description provided for @useBuiltInEngine.
-  ///
-  /// In en, this message translates to:
-  /// **'Use built-in audio engine'**
-  String get useBuiltInEngine;
-
   /// No description provided for @useBuiltInEngineDesc.
   ///
   /// In en, this message translates to:
   /// **'Synthesises chapters on this device. No backend needed.'**
   String get useBuiltInEngineDesc;
-
-  /// No description provided for @audioEngineFooter.
-  ///
-  /// In en, this message translates to:
-  /// **'Reading works offline either way — this only affects audio generation.'**
-  String get audioEngineFooter;
-
-  /// No description provided for @remoteBackendSection.
-  ///
-  /// In en, this message translates to:
-  /// **'Remote backend'**
-  String get remoteBackendSection;
-
-  /// No description provided for @backendUrlHint.
-  ///
-  /// In en, this message translates to:
-  /// **'http://localhost:8000'**
-  String get backendUrlHint;
-
-  /// No description provided for @backendUrlFooter.
-  ///
-  /// In en, this message translates to:
-  /// **'Point to a local server or Hugging Face Space URL.'**
-  String get backendUrlFooter;
 
   /// No description provided for @fontLabel.
   ///
@@ -532,41 +454,17 @@ abstract class AppLocalizations {
   /// **'Platform'**
   String get platformLabel;
 
-  /// No description provided for @projectOnGithub.
-  ///
-  /// In en, this message translates to:
-  /// **'Project on GitHub'**
-  String get projectOnGithub;
-
   /// No description provided for @readerPrefsFooter.
   ///
   /// In en, this message translates to:
   /// **'These preferences apply to every book in your library.'**
   String get readerPrefsFooter;
 
-  /// No description provided for @invalidUrl.
-  ///
-  /// In en, this message translates to:
-  /// **'URL is not valid'**
-  String get invalidUrl;
-
-  /// No description provided for @backendUnavailable.
-  ///
-  /// In en, this message translates to:
-  /// **'Set an HTTP(S) backend URL reachable from this device.'**
-  String get backendUnavailable;
-
   /// No description provided for @nOfSteps.
   ///
   /// In en, this message translates to:
   /// **'{n} of {total}'**
   String nOfSteps(int n, int total);
-
-  /// No description provided for @sortBy.
-  ///
-  /// In en, this message translates to:
-  /// **'Sort by'**
-  String get sortBy;
 
   /// No description provided for @sortLastOpened.
   ///
@@ -610,23 +508,11 @@ abstract class AppLocalizations {
   /// **'Remove from library'**
   String get removeFromLibrary;
 
-  /// No description provided for @startingConversion.
-  ///
-  /// In en, this message translates to:
-  /// **'Starting conversion…'**
-  String get startingConversion;
-
   /// No description provided for @conversionFailed.
   ///
   /// In en, this message translates to:
   /// **'Conversion failed'**
   String get conversionFailed;
-
-  /// No description provided for @uploadFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Upload failed'**
-  String get uploadFailed;
 
   /// No description provided for @downloading.
   ///
@@ -639,12 +525,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Download complete'**
   String get downloadComplete;
-
-  /// No description provided for @downloadFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'Download failed'**
-  String get downloadFailed;
 
   /// No description provided for @chaptersConverted.
   ///
@@ -663,12 +543,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Save'**
   String get saveForOffline;
-
-  /// No description provided for @charsCount.
-  ///
-  /// In en, this message translates to:
-  /// **'{n} chars'**
-  String charsCount(int n);
 
   /// No description provided for @searchInBook.
   ///
@@ -699,18 +573,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sort library'**
   String get sortLibrary;
-
-  /// No description provided for @skipBack15.
-  ///
-  /// In en, this message translates to:
-  /// **'Skip back 15 seconds'**
-  String get skipBack15;
-
-  /// No description provided for @skipForward15.
-  ///
-  /// In en, this message translates to:
-  /// **'Skip forward 15 seconds'**
-  String get skipForward15;
 
   /// No description provided for @playbackPosition.
   ///
@@ -747,24 +609,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Table of contents'**
   String get tableOfContents;
-
-  /// No description provided for @readerSettings.
-  ///
-  /// In en, this message translates to:
-  /// **'Reader settings'**
-  String get readerSettings;
-
-  /// No description provided for @audioReady.
-  ///
-  /// In en, this message translates to:
-  /// **'Audio ready'**
-  String get audioReady;
-
-  /// No description provided for @currentlyPlaying.
-  ///
-  /// In en, this message translates to:
-  /// **'Currently playing'**
-  String get currentlyPlaying;
 
   /// No description provided for @editTags.
   ///
@@ -898,12 +742,6 @@ abstract class AppLocalizations {
   /// **'Bookmark added'**
   String get bookmarkAdded;
 
-  /// No description provided for @bookmarkRemoved.
-  ///
-  /// In en, this message translates to:
-  /// **'Bookmark removed'**
-  String get bookmarkRemoved;
-
   /// No description provided for @sizeLabel.
   ///
   /// In en, this message translates to:
@@ -927,36 +765,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Android'**
   String get platformAndroid;
-
-  /// No description provided for @chapterListTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Chapters'**
-  String get chapterListTitle;
-
-  /// No description provided for @sleepTimerActive.
-  ///
-  /// In en, this message translates to:
-  /// **'Sleep timer active'**
-  String get sleepTimerActive;
-
-  /// No description provided for @sleepTimerOff.
-  ///
-  /// In en, this message translates to:
-  /// **'Sleep timer off'**
-  String get sleepTimerOff;
-
-  /// No description provided for @speedLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Speed'**
-  String get speedLabel;
-
-  /// No description provided for @sleepMinutes.
-  ///
-  /// In en, this message translates to:
-  /// **'{n} min'**
-  String sleepMinutes(int n);
 
   /// No description provided for @off.
   ///

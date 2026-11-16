@@ -8,17 +8,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
 import '../models/tts_preferences.dart';
-import '../models/ebook_fulltext.dart';
-import '../models/job_snapshot.dart';
-import '../models/session_record.dart';
 import '../services/api_client.dart';
-import '../services/android_speech_fallback.dart';
 import '../services/audio_player_service.dart';
 import '../services/background_audio_handler.dart';
 import '../services/bookmark_store.dart';
 import '../services/audiobook_downloads.dart';
 import '../services/embedded_converter.dart';
-import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
 import '../services/local_conversion_job.dart';
 import '../services/playback_snapshot.dart';
@@ -192,17 +187,6 @@ final embeddedConverterProvider = Provider<EmbeddedConverter>((ref) {
   return EmbeddedConverterRegistry.current;
 });
 
-final localConverterAdapterProvider = Provider<LocalConverterAdapter>((ref) {
-  final api = ref.watch(apiClientProvider);
-  return LocalConverterAdapter(
-    mode: ref.watch(converterModeProvider),
-    embedded: ref.watch(embeddedConverterProvider),
-    httpFallback: ({required inputPath, required outputPath}) async {
-      await api.parseDocument(inputPath);
-      return outputPath;
-    },
-  );
-});
 final downloadManagerProvider = Provider<AudiobookDownloads>((ref) {
   final downloads = AudiobookDownloads();
   ref.onDispose(downloads.dispose);
@@ -215,15 +199,6 @@ final resumeStoreProvider = Provider<ResumeStore>((ref) {
 
 final bookmarkStoreProvider = ChangeNotifierProvider<BookmarkStore>((ref) {
   return BookmarkStore(prefs: ref.watch(sharedPrefsProvider));
-});
-
-final fulltextStoreProvider = Provider<FulltextStore>((ref) {
-  return FulltextStore(ref.watch(apiClientProvider));
-});
-
-final sessionsProvider = FutureProvider<List<SessionRecord>>((ref) async {
-  final api = ref.watch(apiClientProvider);
-  return api.fetchSessions(last: 50);
 });
 
 /// Reload persisted local history when entering Jobs, including after a
@@ -243,42 +218,6 @@ final localConversionHistoryProvider = FutureProvider<LocalConversionHistory>((
     ),
   );
   return ref.watch(localConversionJobStoreProvider).loadHistory();
-});
-
-final jobSnapshotProvider = FutureProvider.family<JobSnapshot, String>((
-  ref,
-  jobId,
-) async {
-  final api = ref.watch(apiClientProvider);
-  return api.fetchJob(jobId);
-});
-
-final fulltextProvider = FutureProvider.family<EbookFulltext, String>((
-  ref,
-  jobId,
-) async {
-  final store = ref.watch(fulltextStoreProvider);
-  return store.fetch(jobId);
-});
-
-/// Live SSE stream for a running job. Emits [JobSnapshot] on every backend
-/// event. The stream auto-disposes when the last listener goes away.
-final jobStreamProvider = StreamProvider.family<JobSnapshot, String>((
-  ref,
-  jobId,
-) {
-  final api = ref.watch(apiClientProvider);
-  return api.jobStream(jobId);
-});
-
-final audioPlayerProvider = Provider.family<AudioPlayerService, String>((
-  ref,
-  jobId,
-) {
-  final settings = ref.watch(settingsProvider);
-  final p = AudioPlayerService(backendBase: settings.backendURL);
-  ref.onDispose(p.dispose);
-  return p;
 });
 
 final syncEngineProvider = Provider.family<SyncEngine, String>((ref, jobId) {
@@ -341,7 +280,7 @@ final playbackResumePersistenceProvider = Provider<PlaybackResumePersistence>((
 
 /// Singleton audio player for on-device playback. Not keyed by jobId — this
 /// Flutter app runs everything locally, so one player instance suffices.
-/// Typed as the interface so tests can substitute a [FakeAudioPlayerService].
+/// Typed as the interface so tests can substitute a fake player.
 final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
   final settings = ref.read(settingsProvider);
   final p = AudioPlayerService(backendBase: settings.backendURL);
@@ -381,12 +320,6 @@ final audioStartupStateProvider = ChangeNotifierProvider<AudioStartupState>(
 final backgroundAudioHandlerProvider = Provider<BackgroundAudioHandler?>(
   (ref) => ref.watch(audioStartupStateProvider).handler,
 );
-
-/// Android offline TTS fallback. The default adapter is a no-op on iOS,
-/// desktop, web, and host tests; tests can override this provider.
-final androidSpeechFallbackProvider = Provider<SpeechEngine>((ref) {
-  return AndroidSpeechFallback();
-});
 
 /// Shared fulltext cache singleton.
 final localFulltextCacheProvider = Provider<LocalFulltextCache>((ref) {

@@ -106,7 +106,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     }
     // Slice 25: wire the SyncEngine so the read-along surface shipped
     // through book_open_screen → InstantReaderView gets the same
-    // sentence-level highlight that PlayerReaderScreen got in slice 24.
+    // sentence-level highlight that the retired player-reader screen had.
     _wireSentenceSync();
   }
 

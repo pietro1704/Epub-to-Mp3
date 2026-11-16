@@ -31,7 +31,7 @@ class AudiobookCacheEntry {
 
 /// Legacy cache-maintenance entry point for the Flutter offline audiobook cache.
 ///
-/// **Layout:** `<documents>/downloads/<jobId>/` — mirrors [DownloadManager].
+/// **Layout:** `<documents>/downloads/<jobId>/` — mirrors [AudiobookDownloads].
 ///
 /// **Last-access tracking:** A sidecar file `.last_access` (ISO-8601 UTC)
 /// lives inside each jobId folder. Call [touchLastAccess] when playback

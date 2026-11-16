@@ -30,12 +30,8 @@
   "conversionHistorySaveWarning": "Conversion completed, but its history could not be saved: {error}",
   "@conversionHistorySaveWarning": {"placeholders": {"error": {"type": "String"}}},
   "refresh": "Refresh",
-  "playerTitle": "Player",
   "readerTitle": "Reader",
   "tocTitle": "Chapters",
-  "loadingFulltext": "Loading text…",
-  "fulltextEmpty": "No readable text available",
-  "fulltextGone": "Text no longer available",
   "downloadAll": "Download all",
   "play": "Play",
   "pause": "Pause",
@@ -53,23 +49,14 @@
   },
   "cancel": "Cancel",
   "remove": "Remove",
-  "noConversionYet": "Convert this book first to play audio",
-  "readerEmptyHint": "Open a book from the library to start reading",
   "pickBookToRead": "Pick a book to read",
   "browseLibrary": "Browse Library",
   "parsingBook": "Opening book…",
   "parsingFailed": "Could not open this book",
   "retry": "Retry",
-  "generatingAudio": "Generating audio",
-  "nowPlaying": "Now Playing",
 
   "audioEngineSection": "Audio engine",
-  "useBuiltInEngine": "Use built-in audio engine",
   "useBuiltInEngineDesc": "Synthesises chapters on this device. No backend needed.",
-  "audioEngineFooter": "Reading works offline either way — this only affects audio generation.",
-  "remoteBackendSection": "Remote backend",
-  "backendUrlHint": "http://localhost:8000",
-  "backendUrlFooter": "Point to a local server or Hugging Face Space URL.",
   "fontLabel": "Font",
   "layoutLabel": "Layout",
   "lineSpacingLabel": "Line spacing",
@@ -83,10 +70,7 @@
   "playbackSection": "Playback",
   "aboutSection": "About",
   "platformLabel": "Platform",
-  "projectOnGithub": "Project on GitHub",
   "readerPrefsFooter": "These preferences apply to every book in your library.",
-  "invalidUrl": "URL is not valid",
-  "backendUnavailable": "Set an HTTP(S) backend URL reachable from this device.",
   "nOfSteps": "{n} of {total}",
   "@nOfSteps": {
     "placeholders": {
@@ -95,7 +79,6 @@
     }
   },
 
-  "sortBy": "Sort by",
   "sortLastOpened": "Last opened",
   "sortTitle": "Title",
   "sortDateAdded": "Date added",
@@ -104,12 +87,9 @@
   "cachingLabel": "Caching",
   "removeFromLibrary": "Remove from library",
 
-  "startingConversion": "Starting conversion…",
   "conversionFailed": "Conversion failed",
-  "uploadFailed": "Upload failed",
   "downloading": "Downloading…",
   "downloadComplete": "Download complete",
-  "downloadFailed": "Download failed",
   "chaptersConverted": "{n} of {total} chapters",
   "@chaptersConverted": {
     "placeholders": {
@@ -119,12 +99,6 @@
   },
   "drmFootnote": "DRM-protected books (e.g. from Google Play or Kindle) cannot be opened.",
   "saveForOffline": "Save",
-  "charsCount": "{n} chars",
-  "@charsCount": {
-    "placeholders": {
-      "n": { "type": "int" }
-    }
-  },
 
   "searchInBook": "Search in book",
   "noResults": "No results",
@@ -132,17 +106,12 @@
   "searchResultsCapped": "Showing first 100 results",
 
   "sortLibrary": "Sort library",
-  "skipBack15": "Skip back 15 seconds",
-  "skipForward15": "Skip forward 15 seconds",
   "playbackPosition": "Playback position",
   "playbackSpeed": "Playback speed",
   "sleepTimer": "Sleep timer",
   "albumArt": "Album art",
   "closePlayer": "Close player",
   "tableOfContents": "Table of contents",
-  "readerSettings": "Reader settings",
-  "audioReady": "Audio ready",
-  "currentlyPlaying": "Currently playing",
 
   "editTags": "Edit Tags",
   "tagsSection": "Tags",
@@ -167,7 +136,6 @@
   "removeBookmarkMessage": "Remove this bookmark?",
   "addBookmark": "Add bookmark",
   "bookmarkAdded": "Bookmark added",
-  "bookmarkRemoved": "Bookmark removed",
 
   "sizeLabel": "Size",
   "noContentAvailable": "No content available",
@@ -178,16 +146,6 @@
     }
   },
   "platformAndroid": "Android",
-  "chapterListTitle": "Chapters",
-  "sleepTimerActive": "Sleep timer active",
-  "sleepTimerOff": "Sleep timer off",
-  "speedLabel": "Speed",
-  "sleepMinutes": "{n} min",
-  "@sleepMinutes": {
-    "placeholders": {
-      "n": { "type": "int" }
-    }
-  },
   "off": "Off",
   "ttsPrimaryNarration": "Primary narration",
   "ttsSecondaryNarration": "Secondary narration",

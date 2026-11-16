@@ -12,7 +12,6 @@ import 'audio_player_interface.dart';
 import 'audio_playback_state.dart';
 
 export 'audio_player_interface.dart';
-export 'fake_audio_player_service.dart';
 
 part 'audio_player_navigation.dart';
 

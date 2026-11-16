@@ -99,22 +99,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get refresh => 'Refresh';
 
   @override
-  String get playerTitle => 'Player';
-
-  @override
   String get readerTitle => 'Reader';
 
   @override
   String get tocTitle => 'Chapters';
-
-  @override
-  String get loadingFulltext => 'Loading text…';
-
-  @override
-  String get fulltextEmpty => 'No readable text available';
-
-  @override
-  String get fulltextGone => 'Text no longer available';
 
   @override
   String get downloadAll => 'Download all';
@@ -155,12 +143,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get remove => 'Remove';
 
   @override
-  String get noConversionYet => 'Convert this book first to play audio';
-
-  @override
-  String get readerEmptyHint => 'Open a book from the library to start reading';
-
-  @override
   String get pickBookToRead => 'Pick a book to read';
 
   @override
@@ -176,34 +158,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get retry => 'Retry';
 
   @override
-  String get generatingAudio => 'Generating audio';
-
-  @override
-  String get nowPlaying => 'Now Playing';
-
-  @override
   String get audioEngineSection => 'Audio engine';
-
-  @override
-  String get useBuiltInEngine => 'Use built-in audio engine';
 
   @override
   String get useBuiltInEngineDesc =>
       'Synthesises chapters on this device. No backend needed.';
-
-  @override
-  String get audioEngineFooter =>
-      'Reading works offline either way — this only affects audio generation.';
-
-  @override
-  String get remoteBackendSection => 'Remote backend';
-
-  @override
-  String get backendUrlHint => 'http://localhost:8000';
-
-  @override
-  String get backendUrlFooter =>
-      'Point to a local server or Hugging Face Space URL.';
 
   @override
   String get fontLabel => 'Font';
@@ -245,26 +204,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get platformLabel => 'Platform';
 
   @override
-  String get projectOnGithub => 'Project on GitHub';
-
-  @override
   String get readerPrefsFooter =>
       'These preferences apply to every book in your library.';
-
-  @override
-  String get invalidUrl => 'URL is not valid';
-
-  @override
-  String get backendUnavailable =>
-      'Set an HTTP(S) backend URL reachable from this device.';
 
   @override
   String nOfSteps(int n, int total) {
     return '$n of $total';
   }
-
-  @override
-  String get sortBy => 'Sort by';
 
   @override
   String get sortLastOpened => 'Last opened';
@@ -289,22 +235,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get removeFromLibrary => 'Remove from library';
 
   @override
-  String get startingConversion => 'Starting conversion…';
-
-  @override
   String get conversionFailed => 'Conversion failed';
-
-  @override
-  String get uploadFailed => 'Upload failed';
 
   @override
   String get downloading => 'Downloading…';
 
   @override
   String get downloadComplete => 'Download complete';
-
-  @override
-  String get downloadFailed => 'Download failed';
 
   @override
   String chaptersConverted(int n, int total) {
@@ -317,11 +254,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get saveForOffline => 'Save';
-
-  @override
-  String charsCount(int n) {
-    return '$n chars';
-  }
 
   @override
   String get searchInBook => 'Search in book';
@@ -337,12 +269,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sortLibrary => 'Sort library';
-
-  @override
-  String get skipBack15 => 'Skip back 15 seconds';
-
-  @override
-  String get skipForward15 => 'Skip forward 15 seconds';
 
   @override
   String get playbackPosition => 'Playback position';
@@ -361,15 +287,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tableOfContents => 'Table of contents';
-
-  @override
-  String get readerSettings => 'Reader settings';
-
-  @override
-  String get audioReady => 'Audio ready';
-
-  @override
-  String get currentlyPlaying => 'Currently playing';
 
   @override
   String get editTags => 'Edit Tags';
@@ -439,9 +356,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookmarkAdded => 'Bookmark added';
 
   @override
-  String get bookmarkRemoved => 'Bookmark removed';
-
-  @override
   String get sizeLabel => 'Size';
 
   @override
@@ -454,23 +368,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get platformAndroid => 'Android';
-
-  @override
-  String get chapterListTitle => 'Chapters';
-
-  @override
-  String get sleepTimerActive => 'Sleep timer active';
-
-  @override
-  String get sleepTimerOff => 'Sleep timer off';
-
-  @override
-  String get speedLabel => 'Speed';
-
-  @override
-  String sleepMinutes(int n) {
-    return '$n min';
-  }
 
   @override
   String get off => 'Off';

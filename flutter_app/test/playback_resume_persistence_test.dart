@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
-import 'package:flutter_app/services/audio_player_service.dart';
+import 'support/fake_audio_player_service.dart';
 import 'package:flutter_app/services/playback_resume_persistence.dart';
 import 'package:flutter_app/services/resume_store.dart';
 import 'package:flutter_app/state/providers.dart';

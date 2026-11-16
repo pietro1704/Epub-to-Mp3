@@ -12,6 +12,7 @@ import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/screens/book_open_screen.dart';
 import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/services/audio_player_service.dart';
+import 'support/fake_audio_player_service.dart';
 import 'package:flutter_app/services/local_fulltext_cache.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

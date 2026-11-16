@@ -26,12 +26,8 @@
   "conversionStatusUnknown": "Desconhecido",
   "conversionHistorySaveWarning": "Conversão concluída, mas não foi possível salvar o histórico: {error}",
   "refresh": "Atualizar",
-  "playerTitle": "Reprodutor",
   "readerTitle": "Leitor",
   "tocTitle": "Capítulos",
-  "loadingFulltext": "Carregando texto…",
-  "fulltextEmpty": "Texto não disponível",
-  "fulltextGone": "Texto não está mais disponível",
   "downloadAll": "Baixar tudo",
   "play": "Reproduzir",
   "pause": "Pausar",
@@ -49,23 +45,14 @@
   },
   "cancel": "Cancelar",
   "remove": "Remover",
-  "noConversionYet": "Converta este livro antes de reproduzir áudio",
-  "readerEmptyHint": "Abra um livro da biblioteca para começar a ler",
   "pickBookToRead": "Escolha um livro para ler",
   "browseLibrary": "Ver Biblioteca",
   "parsingBook": "Abrindo livro…",
   "parsingFailed": "Não foi possível abrir este livro",
   "retry": "Tentar novamente",
-  "generatingAudio": "Gerando áudio",
-  "nowPlaying": "Reproduzindo",
 
   "audioEngineSection": "Motor de áudio",
-  "useBuiltInEngine": "Usar motor de áudio integrado",
   "useBuiltInEngineDesc": "Sintetiza capítulos neste dispositivo. Sem servidor necessário.",
-  "audioEngineFooter": "A leitura funciona offline de qualquer forma — isso afeta apenas a geração de áudio.",
-  "remoteBackendSection": "Servidor remoto",
-  "backendUrlHint": "http://localhost:8000",
-  "backendUrlFooter": "Aponte para um servidor local ou URL do Hugging Face Space.",
   "fontLabel": "Fonte",
   "layoutLabel": "Layout",
   "lineSpacingLabel": "Espaçamento",
@@ -79,10 +66,7 @@
   "playbackSection": "Reprodução",
   "aboutSection": "Sobre",
   "platformLabel": "Plataforma",
-  "projectOnGithub": "Projeto no GitHub",
   "readerPrefsFooter": "Estas preferências se aplicam a todos os livros da biblioteca.",
-  "invalidUrl": "URL inválida",
-  "backendUnavailable": "Configure uma URL HTTP(S) acessível por este dispositivo.",
   "nOfSteps": "{n} de {total}",
   "@nOfSteps": {
     "placeholders": {
@@ -91,7 +75,6 @@
     }
   },
 
-  "sortBy": "Ordenar por",
   "sortLastOpened": "Último aberto",
   "sortTitle": "Título",
   "sortDateAdded": "Data de adição",
@@ -100,12 +83,9 @@
   "cachingLabel": "Cacheando",
   "removeFromLibrary": "Remover da biblioteca",
 
-  "startingConversion": "Iniciando conversão…",
   "conversionFailed": "Falha na conversão",
-  "uploadFailed": "Falha no upload",
   "downloading": "Baixando…",
   "downloadComplete": "Download concluído",
-  "downloadFailed": "Falha no download",
   "chaptersConverted": "{n} de {total} capítulos",
   "@chaptersConverted": {
     "placeholders": {
@@ -115,12 +95,6 @@
   },
   "drmFootnote": "Livros com DRM (ex: Google Play ou Kindle) nao podem ser abertos.",
   "saveForOffline": "Salvar",
-  "charsCount": "{n} caracteres",
-  "@charsCount": {
-    "placeholders": {
-      "n": { "type": "int" }
-    }
-  },
 
   "searchInBook": "Buscar no livro",
   "noResults": "Nenhum resultado",
@@ -128,17 +102,12 @@
   "searchResultsCapped": "Mostrando os primeiros 100 resultados",
 
   "sortLibrary": "Ordenar biblioteca",
-  "skipBack15": "Voltar 15 segundos",
-  "skipForward15": "Avançar 15 segundos",
   "playbackPosition": "Posição de reprodução",
   "playbackSpeed": "Velocidade de reprodução",
   "sleepTimer": "Timer de sono",
   "albumArt": "Capa do álbum",
   "closePlayer": "Fechar reprodutor",
   "tableOfContents": "Índice",
-  "readerSettings": "Configurações do leitor",
-  "audioReady": "Áudio pronto",
-  "currentlyPlaying": "Reproduzindo agora",
 
   "editTags": "Editar Tags",
   "tagsSection": "Tags",
@@ -163,7 +132,6 @@
   "removeBookmarkMessage": "Remover este marcador?",
   "addBookmark": "Adicionar marcador",
   "bookmarkAdded": "Marcador adicionado",
-  "bookmarkRemoved": "Marcador removido",
 
   "sizeLabel": "Tamanho",
   "noContentAvailable": "Nenhum conteúdo disponível",
@@ -174,16 +142,6 @@
     }
   },
   "platformAndroid": "Android",
-  "chapterListTitle": "Capítulos",
-  "sleepTimerActive": "Timer de sono ativo",
-  "sleepTimerOff": "Timer de sono desligado",
-  "speedLabel": "Velocidade",
-  "sleepMinutes": "{n} min",
-  "@sleepMinutes": {
-    "placeholders": {
-      "n": { "type": "int" }
-    }
-  },
   "off": "Desligado",
   "ttsPrimaryNarration": "Narração principal",
   "ttsSecondaryNarration": "Narração secundária",
