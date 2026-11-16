@@ -62,7 +62,8 @@ final class ReaderRootPresentationCoordinator {
         guard let rootView, let readerBottomToMiniPlayer, let readerBottomToRoot else { return }
         let hidesBottomChrome = state.hidesBottomChrome
         NSLayoutConstraint.deactivate([readerBottomToMiniPlayer, readerBottomToRoot])
-        (hidesBottomChrome ? readerBottomToRoot : readerBottomToMiniPlayer).isActive = true
+        // Chrome is an overlay. Its visibility never owns the text boundary.
+        readerBottomToRoot.isActive = true
         let changed = !bottomChromeInitialized || bottomChromeHidden != hidesBottomChrome
         bottomChromeInitialized = true
         bottomChromeHidden = hidesBottomChrome
