@@ -144,5 +144,62 @@ extension JobSnapshot {
             lastActivityAt: nil
         )
     }
+
+    /// Running five-chapter job with two finished chapters.
+    static let previewSample = JobSnapshot(
+        jobId: "preview-job-id",
+        state: "running",
+        bookTitle: "Foundation",
+        bookAuthor: "Isaac Asimov",
+        coverUrl: nil,
+        coverMimeType: nil,
+        engine: "edge",
+        voice: "en-US-JennyNeural",
+        language: "en",
+        progressPercent: 42.0,
+        chaptersTotal: 5,
+        chaptersCompleted: 2,
+        chapterProgress: [
+            .init(index: 0, name: "Prologue",
+                  status: "completed",
+                  downloadUrl: "/jobs/preview-job-id/chapter_001.mp3",
+                  chars: 4321, charsProcessed: 4321,
+                  progressRatio: 1.0,
+                  durationSeconds: 180,
+                  startedAt: nil, completedAt: nil),
+            .init(index: 1, name: "Part I — The Psychohistorians",
+                  status: "completed",
+                  downloadUrl: "/jobs/preview-job-id/chapter_002.mp3",
+                  chars: 9210, charsProcessed: 9210,
+                  progressRatio: 1.0,
+                  durationSeconds: 420,
+                  startedAt: nil, completedAt: nil),
+            .init(index: 2, name: "Part II — The Encyclopedists",
+                  status: "running",
+                  downloadUrl: nil,
+                  chars: 7800, charsProcessed: 3120,
+                  progressRatio: 0.4,
+                  durationSeconds: nil,
+                  startedAt: nil, completedAt: nil),
+            .init(index: 3, name: "Part III — The Mayors",
+                  status: "pending",
+                  downloadUrl: nil,
+                  chars: 8500, charsProcessed: 0,
+                  progressRatio: 0.0,
+                  durationSeconds: nil,
+                  startedAt: nil, completedAt: nil),
+            .init(index: 4, name: "Part IV — The Traders",
+                  status: "pending",
+                  downloadUrl: nil,
+                  chars: 6700, charsProcessed: 0,
+                  progressRatio: 0.0,
+                  durationSeconds: nil,
+                  startedAt: nil, completedAt: nil),
+        ],
+        outputs: nil,
+        logUrl: nil,
+        error: nil,
+        lastActivityAt: nil
+    )
 }
 #endif

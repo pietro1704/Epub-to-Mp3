@@ -30,7 +30,7 @@ final class BookDetailWiringTests: XCTestCase {
         XCTAssertEqual(opened, [book.id])
         XCTAssertNil(player.snapshot)
 #else
-        throw XCTSkip("AppKit action adapter; UIKit book actions run in NativeResponsiveScreenTests.")
+        throw XCTSkip("AppKit action adapter.")
 #endif
     }
 

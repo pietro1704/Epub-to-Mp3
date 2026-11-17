@@ -178,7 +178,7 @@ settings:
       LLVM_LTO: YES_THIN
       # NOTE: ENABLE_PREVIEWS stays ON (inherited from base) for Release.
       # The codebase has #Preview blocks that reference fixtures gated by
-      # `#if DEBUG` (Views/PreviewFixtures.swift). Flipping previews off
+      # `#if DEBUG`. Flipping previews off
       # in Release would compile the #Preview body but strip the symbols
       # it depends on, breaking the Release link. The metadata overhead
       # is negligible vs the breakage risk.

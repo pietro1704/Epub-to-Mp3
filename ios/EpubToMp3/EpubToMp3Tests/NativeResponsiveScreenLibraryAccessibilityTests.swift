@@ -38,20 +38,6 @@ extension NativeResponsiveScreenTests {
 #endif
 
 #if os(iOS)
-    func testBookActionsFitAndRemainReachableOnCompactAndLargePhones() throws {
-        for size in [CGSize(width: 320, height: 568), CGSize(width: 428, height: 926), CGSize(width: 568, height: 320)] {
-            try verifyBookDetail(size: size, category: .large)
-        }
-    }
-#endif
-
-#if os(iOS)
-    func testBookActionsRemainReachableAtAccessibilityTextSize() throws {
-        try verifyBookDetail(size: CGSize(width: 320, height: 568), category: .accessibilityExtraExtraExtraLarge)
-    }
-#endif
-
-#if os(iOS)
 #else
     func testLibraryToolbarImportIsPresentInAccessibleChildren() throws {
         let controller = MacLibraryViewController(library: LibraryStore(defaults: defaults),

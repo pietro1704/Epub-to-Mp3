@@ -30,21 +30,8 @@ final class PlaybackConversionReadiness: ObservableObject {
     /// One-way latch: once `true` it stays `true` for the session.
     @Published private(set) var firstSegmentReady: Bool = false
 
-    /// Live conversion event log. Populated by `enqueueSegment`,
-    /// `markFirstChapterReady`, and error paths in the native reader.
-    /// Observed by `ConversionStatusSheet` so the user can inspect
-    /// segment-level progress without leaving the reader.
-    let status = ConversionStatus()
     func markFirstChapterReady() {
         firstChapterReady = true
-        status.record(.chapterComplete, "First chapter audio ready")
-    }
-
-    /// Record a conversion error in the status log. Called by
-    /// the native reader when a chapter synthesis fails so the user can
-    /// see the error in `ConversionStatusSheet` and tap Retry.
-    func recordConversionError(_ message: String) {
-        status.record(.error, message)
     }
 
     /// Marks a user-initiated Listen request as loading before runtime
@@ -63,7 +50,6 @@ final class PlaybackConversionReadiness: ObservableObject {
             firstChapterReady = false
             firstSegmentReady = false
         }
-        status.endSession()
     }
     func markFirstSegmentReady() {
         if !firstSegmentReady {

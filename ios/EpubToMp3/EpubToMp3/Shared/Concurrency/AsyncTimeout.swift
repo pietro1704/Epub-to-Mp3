@@ -7,7 +7,7 @@
 //    iOS 15 (see ce8e547 — migrated `@Observable` → `ObservableObject`
 //    for iOS 15 readiness).
 //  - Several critical paths (backend fulltext requests,
-//    `convertChapterStreaming`, `EdgeTTSBridge.synthesize`, the SSE
+//    `convertChapterStreaming`, the SSE
 //    stream subscription) can stall silently and leave the UI spinning
 //    forever. Wrapping them in `withTimeout` guarantees the call site
 //    sees either a result or a `TimeoutError` within a known bound.

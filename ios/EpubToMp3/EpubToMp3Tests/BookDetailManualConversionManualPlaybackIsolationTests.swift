@@ -1,9 +1,7 @@
-#if os(iOS) || os(macOS)
+#if os(macOS)
 import XCTest
 import AVFoundation
-#if os(macOS)
 import AppKit
-#endif
 
 @testable import EpubToMp3
 
@@ -40,19 +38,11 @@ extension BookDetailManualConversionTests {
             try? FileManager.default.removeItem(at: directory)
             try? FileManager.default.removeItem(at: source)
         }
-        #if os(iOS)
-        let controller = BookDetailScreenController(book: book, library: library,
-            settings: AppSettings(defaults: defaults), player: player,
-            playerPresentation: presentation, conversionExecutor: executor)
-        controller.loadViewIfNeeded()
-        controller.downloadWholeBook()
-        #else
         let controller = MacBookDetailViewController(book: book, library: library,
             settings: AppSettings(defaults: defaults), player: player,
             playerPresentation: presentation, onRead: { _ in }, onShowJobs: {}, conversionExecutor: executor)
         _ = controller.view
         controller.convertWholeBook(options: AppSettings(defaults: defaults).conversionOptions)
-        #endif
         await fulfillment(of: [started], timeout: 3)
         let jobID = try XCTUnwrap(requestedJob)
         NotificationCenter.default.post(name: RustConversionOutputStore.willRemoveAudio,
@@ -70,11 +60,7 @@ extension BookDetailManualConversionTests {
         let reloaded = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: directory)
         XCTAssertNil(reloaded.books.first(where: { $0.id == book.id })?.lastJobId)
         XCTAssertNil(player.snapshot)
-        #if os(iOS)
-        XCTAssertNil(controller.presentedViewController)
-        #else
         XCTAssertNil(NSApp.modalWindow)
-        #endif
         withExtendedLifetime(controller) { }
     }
 

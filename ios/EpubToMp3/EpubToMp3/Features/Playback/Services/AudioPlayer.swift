@@ -396,10 +396,6 @@ final class AudioPlayer: ObservableObject {
 
     func beginPlaybackPreparation() { services.readiness.beginPlaybackPreparation() }
 
-    func recordConversionError(_ message: String) { services.readiness.recordConversionError(message) }
-
-    var conversionStatus: ConversionStatus { services.readiness.status }
-
     func clearConversionState() {
         services.readiness.reset(clearLatches: !isPlaying && player == nil)
     }

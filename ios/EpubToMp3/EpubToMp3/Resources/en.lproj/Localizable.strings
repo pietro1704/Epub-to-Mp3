@@ -754,8 +754,6 @@
 "convert.stateUnknown" = "Status unavailable";
 "error.timeout" = "The operation timed out after %d seconds. Please try again.";
 "error.speechTimeout" = "The voice took too long to respond. Please try again.";
-"error.exportNoAudio" = "No completed audio is available to export.";
-"error.exportTooLarge" = "%@ is too large to export as a standard ZIP.";
 "error.localAudioMissing" = "Local audio is unavailable. Convert this chapter again.";
 "error.localAudioInvalid" = "The saved audio is empty or damaged. Convert this chapter again.";
 "error.epubInvalid" = "%@ is not a valid EPUB package.";
