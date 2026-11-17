@@ -16,7 +16,7 @@ final class ReaderPlaybackPosition {
 
     func publish(_ anchor: ReaderReadingPosition.ReadingAnchor? = nil,
                  facts: ReaderReadingPosition.Facts, isViewportTransitioning: Bool) {
-        guard composition.contentSurface.kind == .text else { return }
+        guard composition.contentSurface.kind != .pdf else { return }
         let ratio: Double
         let textLength = composition.textView.attributedText.length
         var character = anchor?.characterOffset

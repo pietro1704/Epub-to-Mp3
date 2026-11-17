@@ -84,7 +84,10 @@ enum TtsMissingVoiceAlert {
         progress.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel) { _ in
             installation.cancel()
         })
-        controller.present(progress, animated: true)
+        // A fast failure must not dismiss the alert in the middle of its presentation.
+        await withCheckedContinuation { continuation in
+            controller.present(progress, animated: true) { continuation.resume() }
+        }
         do {
             _ = try await installation.value
             await dismissAlert(on: controller)
@@ -102,39 +105,36 @@ enum TtsMissingVoiceAlert {
         }
     }
 
-    /// Opens the voice-model destination on the Settings tab, showing the book's
-    /// language. The destination is pushed; Settings itself never expands inline.
+    /// Shows the voice-model destination for the book's language as a sheet over the
+    /// current screen. The reader covers the tab shell while a book is open, so
+    /// switching tabs underneath it would show nothing.
     static func openSettings(language: String, snapshot: SpeechModelSnapshot?, from controller: UIViewController,
                              client: SpeechModelLibraryClient) async {
-        func findTabs(_ root: UIViewController?) -> UITabBarController? {
+        func findSettings(_ root: UIViewController?) -> SettingsScreenController? {
             guard let root else { return nil }
-            if let tabs = root as? UITabBarController { return tabs }
-            return root.children.compactMap { findTabs($0) }.first
+            if let settings = root as? SettingsScreenController { return settings }
+            return root.children.lazy.compactMap { findSettings($0) }.first
         }
-        guard let tabs = controller.tabBarController ?? findTabs(controller.view.window?.rootViewController),
-              let navigation = tabs.viewControllers?.compactMap({ $0 as? UINavigationController }).first(where: {
-                  $0.viewControllers.first is SettingsScreenController
-              }), let settings = navigation.viewControllers.first as? SettingsScreenController else { return }
+        guard controller.presentedViewController == nil,
+              let settings = findSettings(controller.view.window?.rootViewController) else { return }
         var targetSnapshot = snapshot
         let languageTags = snapshot?.entries.filter { $0.compatibility.compatible }
             .flatMap { $0.languageEvidence.exactTags.map(\.tag) }.sorted() ?? []
         if let tag = languageTags.first(where: { $0 == language }) ?? languageTags.first {
             targetSnapshot = (try? await client.setStudyLanguage(tag)) ?? snapshot
         }
+        guard controller.presentedViewController == nil, controller.view.window != nil else { return }
         let destination = settings.makeVoiceModelsDestination()
         destination.loadViewIfNeeded()
-        if let targetSnapshot {
-            destination.speechModelsTask?.cancel()
-            destination.speechModelState = SpeechModelLibraryViewState(snapshot: targetSnapshot)
-            destination.observeInstalls(in: targetSnapshot.entries)
-        }
-        navigation.popToRootViewController(animated: false)
-        navigation.pushViewController(destination, animated: false)
-        tabs.selectedViewController = navigation
-        destination.tableView.reloadData()
+        if let targetSnapshot { destination.show(targetSnapshot) }
+        let navigation = UINavigationController(rootViewController: destination)
+        destination.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done,
+            primaryAction: UIAction { [weak navigation] _ in navigation?.dismiss(animated: true) })
+        destination.navigationItem.rightBarButtonItem?.accessibilityIdentifier = "settings.voiceModels.done"
+        navigation.view.accessibilityIdentifier = "tts.missingVoice.voiceModels"
+        controller.present(navigation, animated: true)
         let groups = destination.modelLanguageSections
-        if let index = groups.firstIndex(where: { $0.entries.contains { $0.compatibility.compatible } }),
-           !groups[index].entries.isEmpty {
+        if let index = groups.firstIndex(where: { $0.entries.contains { $0.compatibility.compatible } }) {
             destination.tableView.scrollToRow(at: IndexPath(row: 0, section: index + 1), at: .top, animated: false)
         }
     }

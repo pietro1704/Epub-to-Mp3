@@ -58,6 +58,17 @@ extension ConversionOptions {
     }
 }
 
+extension SpeechModelLibraryClient {
+    /// Recovery fails closed when the catalogue answers for another language.
+    func recoverySnapshot(language: String) throws -> SpeechModelSnapshot {
+        let snapshot = try languageSnapshot(language)
+        guard snapshot.target?.language == language else {
+            throw EmbeddedConverterError.artifactInvalid("Recovery catalogue language does not match the request")
+        }
+        return snapshot
+    }
+}
+
 /// A download suggestion is presentation over Rust's compatibility decision.
 enum TtsMissingVoicePolicy {
     static func recommended(in snapshot: SpeechModelSnapshot) -> SpeechModelSnapshot.Entry? {

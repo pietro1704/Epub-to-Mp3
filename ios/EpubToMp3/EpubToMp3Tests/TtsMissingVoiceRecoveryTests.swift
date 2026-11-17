@@ -78,13 +78,13 @@ final class TtsMissingVoiceRecoveryTests: XCTestCase {
     }
 
     func testSystemRecoveryServesOneRequestAsSecondaryVoiceWithoutChangingTheBookLanguage() async throws {
-        var original = ConversionOptions(engine: "piper", language: "pt-BR")
+        var original = ConversionOptions(engine: "piper", language: "en-US")
         original.ttsPreferences = TtsPreferences(primary: .selected(.piper), secondary: nil,
                                                  allowOnlineFallback: false, policyVersion: 2)
         let system = TtsRecoveryCandidate(name: "Installed system voice", selection: .selected(.system))
-        let recovered = original.recovering(with: system, language: "en-US")
+        let recovered = original.recovering(with: system, language: "pt-BR")
         XCTAssertEqual(recovered.engine, "piper")
-        XCTAssertEqual(recovered.language, "pt-BR", "Recovery never rewrites the book language")
+        XCTAssertEqual(recovered.language, "en-US", "Recovery never rewrites the book language")
         XCTAssertEqual(recovered.ttsPreferences?.primary.engine, "piper")
         XCTAssertEqual(recovered.ttsPreferences?.secondary?.engine, "system")
         XCTAssertEqual(recovered.ttsPreferences?.policyVersion, 3)
@@ -94,15 +94,12 @@ final class TtsMissingVoiceRecoveryTests: XCTestCase {
 
         // The explicit choice satisfies the listening preflight, so the alert is not repeated.
         let client = SpeechModelLibraryClient(initialSnapshot: try makeSnapshot())
-        let metadata = Data("{\"language\":\"en-US\"}".utf8)
         let english = [InstalledSpeechVoicePolicy.Voice(identifier: "fixture.en", name: "Fixture",
                                                        language: "en-US", isCompact: false)]
-        try await TtsMissingVoicePreflight.validate(metadata: metadata, options: recovered,
-                                                    client: client, systemVoices: { english })
+        try await TtsMissingVoicePreflight.validate(options: recovered, client: client, systemVoices: { english })
         for (options, voices) in [(original, english), (recovered, [])] {
             do {
-                try await TtsMissingVoicePreflight.validate(metadata: metadata, options: options,
-                                                            client: client, systemVoices: { voices })
+                try await TtsMissingVoicePreflight.validate(options: options, client: client, systemVoices: { voices })
                 XCTFail("Automatic fallback and a missing system voice must still ask first")
             } catch {
                 XCTAssertEqual(TtsLanguageMismatch.decode(error)?.language, "en-US")
@@ -110,27 +107,30 @@ final class TtsMissingVoiceRecoveryTests: XCTestCase {
         }
     }
 
-    func testListeningPreflightRaisesTheRecoveryContextBeforeFallback() async throws {
-        let snapshot = try makeSnapshot()
-        let client = SpeechModelLibraryClient(initialSnapshot: snapshot)
-        let metadata = Data("{\"language\":\"en-US\"}".utf8)
+    func testListeningPreflightAsksOnlyForAnAuthoritativeLanguageWithoutAnInstalledVoice() async throws {
+        let client = SpeechModelLibraryClient(initialSnapshot: try makeSnapshot())
         do {
-            try await TtsMissingVoicePreflight.validate(metadata: metadata,
-                options: ConversionOptions(engine: "piper", modelID: "pt_BR-faber-medium"), client: client)
+            try await TtsMissingVoicePreflight.validate(
+                options: ConversionOptions(engine: "piper", language: "en-US", modelID: "pt_BR-faber-medium"),
+                client: client, systemVoices: { [] })
             XCTFail("Missing local voices must reach the actionable alert instead of silent fallback")
         } catch {
             XCTAssertEqual(TtsLanguageMismatch.decode(error), .init(language: "en-US", modelID: "pt_BR-faber-medium"))
         }
+        // Declared metadata is only a hint: without an authoritative language Rust resolves it.
+        try await TtsMissingVoicePreflight.validate(options: ConversionOptions(engine: "piper"), client: client)
+        try await TtsMissingVoicePreflight.validate(options: ConversionOptions(engine: "piper", language: "  "), client: client)
+        // A catalogue that answers for another language is not evidence of a missing voice.
+        try await TtsMissingVoicePreflight.validate(
+            options: ConversionOptions(engine: "piper", language: "fr-FR"), client: client)
         let ready = SpeechModelLibraryClient(initialSnapshot: try makeSnapshot(installed: true, ready: true))
-        try await TtsMissingVoicePreflight.validate(metadata: metadata,
-            options: ConversionOptions(engine: "piper"), client: ready)
-        try await TtsMissingVoicePreflight.validate(metadata: metadata,
-            options: ConversionOptions(engine: "system"), client: client)
-        try await TtsMissingVoicePreflight.validate(metadata: Data("{}".utf8),
-            options: ConversionOptions(engine: "piper"), client: client)
+        try await TtsMissingVoicePreflight.validate(
+            options: ConversionOptions(engine: "piper", language: "en-US"), client: ready)
+        try await TtsMissingVoicePreflight.validate(
+            options: ConversionOptions(engine: "system", language: "en-US"), client: client)
     }
 
-    func testLanguageActionPushesTheVoiceModelDestinationForTheBookLanguage() async throws {
+    func testLanguageActionPresentsTheVoiceModelDestinationOverACoveringReader() async throws {
         let suite = "missing-voice-navigation-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -141,22 +141,31 @@ final class TtsMissingVoiceRecoveryTests: XCTestCase {
         let settings = SettingsScreenController(settings: AppSettings(defaults: defaults),
             library: LibraryStore(defaults: defaults, importDirectory: root), player: player,
             playbackClock: PlaybackClock(), speechModels: client)
-        let source = UIViewController()
-        let navigation = UINavigationController(rootViewController: settings)
+        let settingsNavigation = UINavigationController(rootViewController: settings)
         let tabs = UITabBarController()
-        tabs.viewControllers = [UINavigationController(rootViewController: source), navigation]
+        tabs.viewControllers = [UINavigationController(rootViewController: UIViewController()), settingsNavigation]
+        // Like the app's root container, the reader is a sibling that covers the tab shell.
+        let container = UIViewController()
+        let reader = UIViewController()
+        for child in [tabs, reader] {
+            container.addChild(child)
+            container.view.addSubview(child.view)
+            child.didMove(toParent: container)
+        }
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        window.rootViewController = tabs
+        window.rootViewController = container
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
-        await TtsMissingVoiceAlert.openSettings(language: "en-US", snapshot: snapshot, from: source, client: client)
-        XCTAssertTrue(tabs.selectedViewController === navigation)
-        let destination = try XCTUnwrap(navigation.topViewController as? SettingsScreenController)
-        XCTAssertFalse(destination === settings, "Voice models open in their own pushed destination")
-        XCTAssertTrue(navigation.viewControllers.first === settings)
+        await TtsMissingVoiceAlert.openSettings(language: "en-US", snapshot: snapshot, from: container, client: client)
+        let sheet = try XCTUnwrap(container.presentedViewController as? UINavigationController,
+                                  "The destination must be visible above the reader")
+        let destination = try XCTUnwrap(sheet.topViewController as? SettingsScreenController)
+        XCTAssertFalse(destination === settings)
         XCTAssertTrue(destination.voiceModelsOnly)
-        XCTAssertEqual(destination.speechModelState.studyLanguage, "en-US")
+        XCTAssertNotNil(destination.navigationItem.rightBarButtonItem, "The sheet needs its own way back to the book")
         XCTAssertEqual(destination.modelEntry(at: IndexPath(row: 0, section: 1))?.identity.modelID, "fixture-english")
+        XCTAssertTrue(tabs.selectedViewController !== settingsNavigation, "The covered tab shell is left alone")
+        XCTAssertTrue(settingsNavigation.topViewController === settings)
         XCTAssertNil(settings.modelEntry(at: IndexPath(row: 0, section: 1)), "Settings never expands inline")
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)

@@ -21,6 +21,14 @@ extension SettingsScreenController {
         }
     }
 
+    /// Presents a catalogue the caller already resolved, replacing the pending reload.
+    func show(_ snapshot: SpeechModelSnapshot) {
+        speechModelsTask?.cancel()
+        speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
+        observeInstalls(in: snapshot.entries)
+        tableView.reloadData()
+    }
+
     func settingsSection(at index: Int) -> SettingsSection? {
         voiceModelsOnly ? (index == 0 ? .runtime : nil) : SettingsSection(rawValue: index)
     }
@@ -75,6 +83,9 @@ extension SettingsScreenController {
                         controller: self, rowOverride: .models, existingCell: cell)
                 }
             }
+            // Self-sizing invalidation is iOS 16+; re-measure the live rows without replacing them.
+            tableView.beginUpdates()
+            tableView.endUpdates()
         }
     }
 }

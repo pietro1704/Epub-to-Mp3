@@ -99,15 +99,6 @@ actor SpeechModelLibraryClient {
         TtsRecoveryCandidate.available(in: try recoverySnapshot(language: mismatch.language), excluding: mismatch.modelID)
     }
 
-    /// Recovery fails closed when the catalogue answers for another language.
-    func recoverySnapshot(language: String) throws -> SpeechModelSnapshot {
-        let snapshot = try languageSnapshot(language)
-        guard snapshot.target?.language == language else {
-            throw EmbeddedConverterError.artifactInvalid("Recovery catalogue language does not match the request")
-        }
-        return snapshot
-    }
-
     /// A language-specific query does not change study language or global selections.
     func languageSnapshot(_ language: String) throws -> SpeechModelSnapshot {
         if let snapshotOverride { return try snapshotOverride() }

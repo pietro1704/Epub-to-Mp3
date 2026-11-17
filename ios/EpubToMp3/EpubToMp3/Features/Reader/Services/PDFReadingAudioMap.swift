@@ -9,7 +9,9 @@ struct PDFReadingAudioMap: Sendable {
         let name: String
         let sourcePath: String
         let text: String
-        var startPage: Int? { Int(sourcePath.replacingOccurrences(of: "page-", with: "")).map { $0 - 1 } }
+        var startPage: Int? {
+            Int(sourcePath.replacingOccurrences(of: "page-", with: "")).map { $0 - 1 }.flatMap { $0 >= 0 ? $0 : nil }
+        }
     }
     struct Metadata: Decodable { let chapters: [Chapter] }
     struct Anchor: Equatable { let chapterIndex: Int; let ratio: Double }
@@ -35,9 +37,10 @@ struct PDFReadingAudioMap: Sendable {
             for pageIndex in start..<end {
                 let displayed = Self.normalized(pageTexts[pageIndex])
                 guard displayed.text.length > 0, cursor <= canonical.text.length else { continue }
-                let match = canonical.text.range(of: displayed.text as String,
+                // Literal matching keeps the offset tables aligned with the matched range.
+                let match = canonical.text.range(of: displayed.text as String, options: .literal,
                     range: NSRange(location: cursor, length: canonical.text.length - cursor))
-                guard match.location != NSNotFound else { continue }
+                guard match.location != NSNotFound, match.length == displayed.text.length else { continue }
                 mapped[pageIndex] = Page(chapterIndex: chapterIndex, displayOffsets: displayed.offsets,
                     chapterOffsets: Array(canonical.offsets[match.location..<NSMaxRange(match)]),
                     speechOffsets: Array(canonical.scalarOffsets[match.location..<NSMaxRange(match)]),

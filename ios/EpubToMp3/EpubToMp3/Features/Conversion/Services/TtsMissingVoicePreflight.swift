@@ -3,7 +3,8 @@ import AVFoundation
 import Foundation
 
 /// The Apple listening UI asks before silently falling back when no local model
-/// can narrate the book. Rust still supplies metadata, compatibility and readiness.
+/// can narrate the book's authoritative language. Rust still supplies compatibility
+/// and readiness, and remains the owner of language resolution.
 enum TtsMissingVoicePreflight {
     static func requiresCheck(options: ConversionOptions?) -> Bool {
         (options?.ttsPreferences?.primary.engine ?? options?.engine ?? "piper") == "piper"
@@ -26,15 +27,17 @@ enum TtsMissingVoicePreflight {
         return InstalledSpeechVoicePolicy.select(language: language, voices: voices) != nil
     }
 
-    static func validate(metadata: Data, options: ConversionOptions?,
-                         client: SpeechModelLibraryClient = .shared,
+    /// Only an authoritative language is checked here: the listener's correction or the
+    /// request's own language. Declared book metadata is merely a hint; Rust resolves
+    /// the narration language from content and reports its own mismatch.
+    static func validate(options: ConversionOptions?, client: SpeechModelLibraryClient = .shared,
                          systemVoices: () -> [InstalledSpeechVoicePolicy.Voice] = installedSystemVoices) async throws {
         guard requiresCheck(options: options),
-              let fields = try JSONSerialization.jsonObject(with: metadata) as? [String: Any],
-              let language = options?.language ?? fields["language"] as? String,
-              !language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+              let language = options?.language?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !language.isEmpty else { return }
         try Task.checkCancellation()
-        let snapshot = try await client.recoverySnapshot(language: language)
+        // An unavailable catalogue is not evidence of a missing voice; Rust decides.
+        guard let snapshot = try? await client.recoverySnapshot(language: language) else { return }
         try Task.checkCancellation()
         guard TtsRecoveryCandidate.available(in: snapshot, excluding: "").isEmpty else { return }
         if acceptsExplicitSystemVoice(options: options, language: language, voices: systemVoices()) { return }
