@@ -5,6 +5,8 @@ mod listening_contract_tests;
 mod low_quality_cache_tests;
 #[path = "provider_deadline_tests.rs"]
 mod provider_deadline_tests;
+#[path = "runtime_revision_cache_identity_tests.rs"]
+mod runtime_revision_cache_identity_tests;
 
 struct TestSystem {
     texts: Arc<Mutex<Vec<String>>>,

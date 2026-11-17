@@ -6,6 +6,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const CONTRACT_VERSION: u32 = 2;
+/// Revision of the built-in native synthesis runtimes, published as
+/// `ProviderDescriptor::revision` and recorded in `ResolvedIdentity::runtime_revision`.
+///
+/// It is part of persisted audio identity: the segment cache key, the chapter
+/// request key, completion receipts and output manifests all carry it. It is
+/// therefore deliberately independent of the package version, so a product
+/// release never invalidates audio users already synthesized. The value is the
+/// workspace version that was in effect when this constant replaced
+/// `CARGO_PKG_VERSION`; change it only when a native runtime change makes
+/// previously synthesized audio unsuitable for reuse.
+pub const NATIVE_RUNTIME_REVISION: &str = "0.1.0";
 pub const MAX_SEGMENT_BYTES: usize = 16 * 1024 * 1024;
 mod recovery;
 pub use recovery::RecoveryAttempt;

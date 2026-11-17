@@ -141,7 +141,8 @@ pub fn builtin_descriptors() -> Vec<ProviderDescriptor> {
     .map(|(provider, runtime, format, online)| ProviderDescriptor {
         provider: provider.into(),
         runtime: runtime.into(),
-        revision: env!("CARGO_PKG_VERSION").into(),
+        // Cache identity: never the package version (see NATIVE_RUNTIME_REVISION).
+        revision: NATIVE_RUNTIME_REVISION.into(),
         targets: vec![
             "ios".into(),
             "macos".into(),
