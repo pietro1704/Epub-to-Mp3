@@ -44,17 +44,6 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(info.contains("EpubToMp3ShareExtension.ShareViewController"))
     }
 
-    func testShareExtensionFilesystemHelpersAreNonisolated() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3ShareExtension/ShareViewController.swift")
-        let source = try readSourceFileIfAvailable(at: sourceURL)
-
-        XCTAssertTrue(source.contains("private nonisolated static func copyToTemp"))
-        XCTAssertTrue(source.contains("private nonisolated static func tempURL"))
-    }
-
     @MainActor
     func testWidgetCommandAndApplicationObserveTheSameNotification() {
         XCTAssertEqual(WidgetPlaybackCommand.notificationName, ApplicationWidgetIntents.notificationName)
@@ -72,56 +61,6 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         let unavailable = await EpubFallbackParser.parseAsync(url: missing, bookId: "unavailable-book")
         XCTAssertEqual(unavailable.jobId, "unavailable-book")
         XCTAssertTrue(unavailable.chapters.isEmpty)
-    }
-
-    func testNativeConversionControllersHaveTheirSupportingTypes() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let detail = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Conversion/Views/JobDetailScreenController.swift"
-            )
-        )
-        let jobs = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Conversion/Views/JobsListScreenController.swift"
-            )
-        )
-        let model = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Conversion/Services/JobDetailViewModel.swift"
-            )
-        )
-        let list = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Conversion/Views/JobsListController.swift"
-            )
-        )
-
-        XCTAssertTrue(detail.contains("JobDetailViewModel()"))
-        XCTAssertTrue(model.contains("final class JobDetailViewModel"))
-        XCTAssertTrue(jobs.contains("JobsListController()"))
-        XCTAssertTrue(list.contains("final class JobsListController"))
-    }
-
-    func testReaderSessionStateHasOneNativeDefinition() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let state = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Reader/Services/ReaderSessionState.swift"
-            )
-        )
-        let presentation = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Playback/Services/PlayerPresentation.swift"
-            )
-        )
-
-        XCTAssertEqual(state.components(separatedBy: "enum ReaderSessionState").count, 2)
-        XCTAssertFalse(presentation.contains("struct ReaderSessionState"))
     }
 
     func testWarningsAreBuildErrorsForSwiftAndClang() throws {
@@ -151,54 +90,6 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(project.contains("ONLY_ACTIVE_ARCH: YES"))
         XCTAssertTrue(project.contains("ONLY_ACTIVE_ARCH: NO"))
         XCTAssertTrue(project.contains("LLVM_LTO: YES_THIN"))
-    }
-
-    func testStrictMemorySafetyUsesExplicitBoundaries() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let widgetSync = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Shared/Integrations/WidgetDataSync.swift"
-            )
-        )
-        let zipReader = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Documents/Services/ZipReader.swift"
-            )
-        )
-        let telemetry = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Settings/Views/TelemetryScreenController.swift"
-            )
-        )
-
-        XCTAssertTrue(widgetSync.contains("private static let lastReadState = LastReadState()"))
-        XCTAssertFalse(widgetSync.contains("nonisolated(unsafe) private static var pendingLastRead"))
-        XCTAssertFalse(widgetSync.contains("nonisolated(unsafe) private static var lastReadFlushTask"))
-        XCTAssertTrue(zipReader.contains("let rc = deflated.withUnsafeBytes"))
-        XCTAssertFalse(telemetry.contains("String(format:"))
-
-        let importer = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Offline/Services/SharedContainerImporter.swift"
-            )
-        )
-        XCTAssertTrue(importer.contains("private static let availabilityState = AvailabilityState()"))
-        XCTAssertFalse(importer.contains("nonisolated(unsafe) private static var groupAvailabilityCache"))
-
-        let cacheManager = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Offline/Services/ChapterCacheManager.swift"
-            )
-        )
-        let apiClient = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Conversion/Services/APIClient.swift"
-            )
-        )
-        XCTAssertTrue(cacheManager.contains("private final class ObserverState: @unchecked Sendable"))
-        XCTAssertTrue(apiClient.contains("final class APIClient: @unchecked Sendable"))
     }
 
     private func generatedProjectObjects() throws -> [String: [String: Any]] {

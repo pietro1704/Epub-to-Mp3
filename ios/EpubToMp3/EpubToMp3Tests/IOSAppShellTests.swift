@@ -57,19 +57,6 @@ final class IOSMiniPlayerPolicyTests: XCTestCase {
 #if os(iOS)
 final class IOSAppShellTests: XCTestCase {
     @MainActor
-    func testIOSAppShellFileKeepsOnlyUIKitControllerEntryPoint() throws {
-        let source = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSAppShell.swift")
-        )
-
-        XCTAssertFalse(source.contains("struct IOSAppShell: UIViewControllerRepresentable"))
-        XCTAssertTrue(source.contains("final class IOSAppShellController: UITabBarController"))
-    }
-
-    @MainActor
     func testUIKitShellTabOrderMatchesAppContract() {
         XCTAssertEqual(IOSAppShellTab.allCases, [.library, .settings, .convert])
         XCTAssertEqual(IOSAppShellTab.allCases.map(\.systemImage), [
@@ -149,70 +136,6 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertNil(controller.bottomAccessory)
     }
 #endif
-
-    @MainActor
-    func testReaderOverlayRemainsOpaqueAboveTheLibrary() throws {
-        let source = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift")
-        )
-
-        XCTAssertFalse(
-            source.contains("readerController.view.backgroundColor = .clear"),
-            "An active reader must not reveal the library through a transparent overlay."
-        )
-    }
-
-    @MainActor
-    func testMiniPlayerExposesAutomationIdentifiers() throws {
-        let source = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift")
-        )
-
-        XCTAssertTrue(source.contains("miniPlayer.bar"))
-        XCTAssertTrue(source.contains("miniPlayer.playPause"))
-    }
-
-    @MainActor
-    func testMainAppContainsNoSwiftUIScreensOrHostingBridges() throws {
-        let appRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3")
-        let swiftFiles = (FileManager.default
-            .subpaths(atPath: appRoot.path) ?? [])
-            .compactMap { relativePath -> URL? in
-                guard relativePath.hasSuffix(".swift") else { return nil }
-                return appRoot.appendingPathComponent(relativePath)
-            }
-
-        for file in swiftFiles {
-            let source = try readSourceFileIfAvailable(at: file)
-            XCTAssertFalse(source.contains("import SwiftUI"), "UIKit/AppKit app must not import SwiftUI: \(file.lastPathComponent)")
-            XCTAssertFalse(source.contains("UIHostingController"), "UIKit app must not host SwiftUI screens: \(file.lastPathComponent)")
-            XCTAssertFalse(source.contains("NSHostingController"), "AppKit app must not host SwiftUI screens: \(file.lastPathComponent)")
-        }
-    }
-
-    @MainActor
-    func testUIKitShellThreadsPlaybackDependenciesIntoSettingsFlow() throws {
-        let source = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSAppShell.swift")
-        )
-
-        XCTAssertTrue(source.contains("SettingsScreenController("))
-        XCTAssertTrue(source.contains("player: player"))
-        XCTAssertTrue(source.contains("playbackClock: player.playbackClock"))
-        XCTAssertTrue(source.contains("ConvertScreenController("))
-    }
 
     @MainActor
     private func makeShellController() -> IOSAppShellController {

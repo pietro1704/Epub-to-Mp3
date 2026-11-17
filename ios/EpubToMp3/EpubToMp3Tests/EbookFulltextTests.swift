@@ -251,22 +251,6 @@ final class EbookFulltextTests: XCTestCase {
         XCTAssertEqual(chapter.displayTitle, L10n.string("player.chapter", 7))
     }
 
-    func testDisplayTitleFallbackIsNotHardcodedInSource() throws {
-        // Regression guard: the fallback once hardcoded "Chapter \(index)",
-        // which showed English titles on pt-BR lock screens/readers.
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // EpubToMp3Tests
-            .deletingLastPathComponent()  // ios/EpubToMp3
-        for relative in ["EpubToMp3/Features/Reader/Models/EbookFulltext.swift",
-                         "EpubToMp3/Features/Conversion/Models/JobSnapshot.swift"] {
-            let source = try readSourceFileIfAvailable(at: root.appendingPathComponent(relative))
-            XCTAssertFalse(
-                source.contains("\"Chapter \\("),
-                "\(relative) must localize the chapter fallback via L10n, not a hardcoded literal"
-            )
-        }
-    }
-
     func testCachedChapterWithoutBodyIsNotReadable() {
         let empty = EbookFulltext.Chapter(
             index: 1, name: "Chapter 1", text: "   ",

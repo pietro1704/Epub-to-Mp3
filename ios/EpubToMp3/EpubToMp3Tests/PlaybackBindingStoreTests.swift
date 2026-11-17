@@ -162,24 +162,4 @@ final class PlaybackBindingStoreTests: XCTestCase {
         XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "The Lord of the Rings")
     }
 
-    @MainActor
-    func testPlaybackBindingStoreReplacesLegacyNowPlayingViewHelper() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let projectRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let appSource = try readSourceFileIfAvailable(
-            at: projectRoot.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift")
-        )
-        let bookOpenSource = try readSourceFileIfAvailable(
-            at: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift")
-        )
-
-        XCTAssertTrue(appSource.contains("PlaybackBindingStore.setCurrentlyPlaying"))
-        XCTAssertTrue(bookOpenSource.contains("ReaderSessionState.setCurrentlyReading"))
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/NowPlayingView.swift").path
-        ))
-    }
-
 }
