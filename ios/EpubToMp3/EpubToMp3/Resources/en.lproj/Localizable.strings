@@ -268,21 +268,6 @@
 "player.error.segmentWriteFailed" = "Couldn't save a streaming audio segment to disk. Free up some space and try again.";
 "player.error.missingSnapshot" = "The player has no book loaded. Open a book first.";
 
-/* Audio engine warm-up */
-"audioWarmup.starting" = "Starting audio engine…";
-"audioWarmup.loading" = "Loading audio runtime…";
-"audioWarmup.ready" = "Audio engine ready";
-"audioWarmup.failed" = "Audio engine failed: %@";
-"audioWarmup.retry" = "Audio engine failed to start. Tap retry.";
-"audioWarmup.accessibilityStarting" = "Starting audio engine";
-"audioWarmup.details.title" = "Audio runtime";
-"audioWarmup.details.status" = "Status";
-"audioWarmup.details.accessibilityHint" = "Open audio runtime progress";
-"audioWarmup.state.idle" = "Idle";
-"audioWarmup.state.loading" = "Loading";
-"audioWarmup.state.ready" = "Ready";
-"audioWarmup.state.failed" = "Failed";
-
 /* ChapterListSheet accessibility */
 "chapterList.nowPlaying" = "%@, now playing";
 "chapterList.noAudio" = "%@, no audio available";

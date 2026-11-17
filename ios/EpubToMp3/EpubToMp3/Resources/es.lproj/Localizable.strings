@@ -265,21 +265,6 @@
 "player.error.segmentWriteFailed" = "No se pudo guardar un fragmento de audio en disco. Libera espacio e inténtalo de nuevo.";
 "player.error.missingSnapshot" = "Ningún libro cargado en el reproductor. Abre un libro primero.";
 
-/* Calentamiento del motor de audio */
-"audioWarmup.starting" = "Iniciando motor de audio…";
-"audioWarmup.loading" = "Cargando runtime de audio…";
-"audioWarmup.ready" = "Motor de audio listo";
-"audioWarmup.failed" = "Falló el motor de audio: %@";
-"audioWarmup.retry" = "No se pudo iniciar el motor de audio. Toca reintentar.";
-"audioWarmup.accessibilityStarting" = "Iniciando motor de audio";
-"audioWarmup.details.title" = "Runtime de audio";
-"audioWarmup.details.status" = "Estado";
-"audioWarmup.details.accessibilityHint" = "Abrir progreso del runtime de audio";
-"audioWarmup.state.idle" = "Inactivo";
-"audioWarmup.state.loading" = "Cargando";
-"audioWarmup.state.ready" = "Listo";
-"audioWarmup.state.failed" = "Falló";
-
 /* ChapterListSheet accesibilidad */
 "chapterList.nowPlaying" = "%@, reproduciendo ahora";
 "chapterList.noAudio" = "%@, sin audio disponible";

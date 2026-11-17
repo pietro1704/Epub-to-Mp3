@@ -18,7 +18,6 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let settings = AppSettings()
     let library: LibraryStore
     let player = AudioPlayer()
-    let audioWarmup = AudioEngineWarmup()
     let playerPresentation = PlayerPresentation()
     let bookmarkStore = BookmarkStore()
 
