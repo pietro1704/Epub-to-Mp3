@@ -20,27 +20,6 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertStreaming(
-    env: JNIEnv<'_>,
-    activity: JObject<'_>,
-    path: JString<'_>,
-    output: JString<'_>,
-    chapter_start: jint,
-    chapter_end: jint,
-) -> jstring {
-    convert_android(
-        env,
-        activity,
-        path,
-        output,
-        chapter_start,
-        chapter_end,
-        true,
-        None,
-    )
-}
-
-#[no_mangle]
 pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertWithOptions(
     mut env: JNIEnv<'_>,
     activity: JObject<'_>,
