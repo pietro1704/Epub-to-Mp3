@@ -52,6 +52,23 @@ class ConvertEntrypointTest < Minitest::Test
     assert_equal ['run', 'convert', '--', 'Missing Title', '/abs/book.epub', '--verify'], recorded.drop(1)
   end
 
+  def test_option_values_stay_literal_when_they_match_existing_paths
+    %w[piper 5].each { |name| FileUtils.mkdir_p(File.join(@caller, name)) }
+    _, error, status = invoke('books/My Book.epub', '--engine', 'piper', '--chapter', '5', '--section', '5', '--retry-failed', '5', '--from-chapter-to-end', '5')
+    assert status.success?, error
+    assert_equal ['run', 'convert', '--', File.join(@caller, 'books', 'My Book.epub'),
+                  '--engine', 'piper', '--chapter', '5', '--section', '5', '--retry-failed', '5', '--from-chapter-to-end', '5'], recorded.drop(1)
+  end
+
+  def test_paths_after_boolean_flags_and_path_options_are_still_resolved
+    FileUtils.mkdir_p(File.join(@caller, 'models'))
+    File.write(File.join(@caller, 'models', 'voice.onnx'), 'fixture')
+    _, error, status = invoke('--yes', 'books/My Book.epub', '--model', 'models/voice.onnx')
+    assert status.success?, error
+    assert_equal ['run', 'convert', '--', '--yes', File.join(@caller, 'books', 'My Book.epub'),
+                  '--model', File.join(@caller, 'models', 'voice.onnx')], recorded.drop(1)
+  end
+
   def test_runs_without_arguments_and_preserves_failure_status
     _, _, status = invoke(environment: { 'MISE_STATUS' => '7' })
     assert_equal 7, status.exitstatus

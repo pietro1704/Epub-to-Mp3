@@ -22,7 +22,20 @@ if ! command -v mise >/dev/null 2>&1; then
 fi
 
 arguments=()
+literal_value=false
 for argument in "$@"; do
+    if $literal_value; then
+        arguments+=("$argument")
+        literal_value=false
+        continue
+    fi
+    # Selectors and provider values are literals even when a local path has
+    # the same name. Path-valued options still resolve from the caller's cwd.
+    case "$argument" in
+        --engine|--fallback-engine|--voice|--fallback-voice|--chapter|--section|--tts-preferences-json|--from-chapter-to-end|--from-chapter-to-chapter|--retry-failed)
+            literal_value=true
+            ;;
+    esac
     if [[ "$argument" != /* && "$argument" != -* && -e "$argument" ]]; then
         argument="$(cd -- "$(dirname -- "$argument")" && pwd)/$(basename -- "$argument")"
     fi
