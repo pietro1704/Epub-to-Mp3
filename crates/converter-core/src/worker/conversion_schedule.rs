@@ -67,6 +67,7 @@ impl ConversionWorker {
         // separate file handles doubled disk I/O for every conversion.
         let source = crate::book_input::read_book_source(&request.input)?;
         let book_key = cache::sha256_bytes(&source);
+        self.validate_source_identity(&book_key)?;
         *self.source_identity.lock().expect("source identity lock") = Some(book_key.clone());
         let book =
             crate::book_input::parse_book_source_with_cancel(&request.input, &source, &|| {
@@ -79,11 +80,7 @@ impl ConversionWorker {
         fs::create_dir_all(&cache_dir)?;
         fs::create_dir_all(&output_dir)?;
         cache::atomic_write_json(
-            self.config
-                .paths
-                .jobs_dir
-                .join("requests")
-                .join(format!("{}.json", request.job_id)),
+            super::persisted_request_path(&self.config.paths.jobs_dir, &request.job_id),
             request,
         )?;
         let chapters: Vec<_> = book
@@ -306,6 +303,7 @@ impl ConversionWorker {
             .expect("segment policy lock")
             .clone();
         let result = OutputManifest {
+            source_sha256: Some(book_key),
             source_chapters_total: Some(source_chapters_total),
             tts_preferences: request.tts_preferences.clone(),
             used_selections,

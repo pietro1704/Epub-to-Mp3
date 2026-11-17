@@ -98,6 +98,25 @@ pub(super) fn refresh_chapter_audio_receipt(output: &Path) -> Result<(), WorkerE
     Ok(())
 }
 
+/// Whether published chapter audio still has the exact bytes its completion
+/// receipt recorded when the audio was accepted. This is independent of the
+/// request that produced it, so a client can audit an old job without rebuilding
+/// its synthesis identity; missing audio or a missing receipt is not intact.
+pub fn retained_chapter_audio_is_intact(output: &Path) -> bool {
+    cache::read_json::<ChapterAudioReceipt>(chapter_audio_receipt_path(output))
+        .is_ok_and(|receipt| chapter_audio_is_complete(output, &receipt.request_key))
+}
+
+/// Withdraw the completion receipt of audio that failed independent validation,
+/// so the next run of its job synthesizes that chapter again. The audio itself
+/// stays in place until a validated replacement is published over it.
+pub(super) fn discard_chapter_audio_receipt(output: &Path) -> std::io::Result<()> {
+    match fs::remove_file(chapter_audio_receipt_path(output)) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
+    }
+}
+
 /// Repair retained audio only after validating its existing receipt. Copies in
 /// the offline library may have no receipt; source jobs retain their identity.
 pub fn prepare_retained_audio(output: &Path) -> Result<(), WorkerError> {
@@ -225,4 +244,33 @@ pub(super) fn ensure_chapter_audio_with_control(
     fs::rename(&pending, output)?;
     fs::rename(pending_receipt, chapter_audio_receipt_path(output))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod retained_audio_tests {
+    use super::*;
+
+    #[test]
+    fn retained_audio_is_intact_only_while_bytes_and_receipt_agree() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("0001-Chapter.mp3");
+        assert!(!retained_chapter_audio_is_intact(&output));
+        ensure_chapter_audio(&output, "request-key", |pending| {
+            fs::write(pending, b"accepted chapter audio").map_err(WorkerError::from)
+        })
+        .unwrap();
+        assert!(retained_chapter_audio_is_intact(&output));
+
+        fs::write(&output, b"accepted chapter audio, altered").unwrap();
+        assert!(!retained_chapter_audio_is_intact(&output));
+        fs::write(&output, b"accepted chapter audio").unwrap();
+        assert!(retained_chapter_audio_is_intact(&output));
+
+        discard_chapter_audio_receipt(&output).unwrap();
+        assert!(!retained_chapter_audio_is_intact(&output));
+        assert_eq!(fs::read(&output).unwrap(), b"accepted chapter audio");
+        // Withdrawing an absent receipt is not an error.
+        discard_chapter_audio_receipt(&output).unwrap();
+        assert!(!chapter_audio_is_complete(&output, "request-key"));
+    }
 }

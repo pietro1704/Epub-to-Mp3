@@ -2,7 +2,10 @@
 use super::cli_arguments::{normalize_cli_args, parse_args};
 use super::cli_book_inputs::{resolve_entry, resolve_inputs};
 use super::cli_cache_commands::{clear_book_cache, clear_global_cache};
+use super::cli_chapter_ranges::range_selection;
 use super::cli_environment::{cli_config, ExpandPath};
+use super::conversion_retry::{run_with_retry_rounds, RetryRounds};
+use super::existing_output_verification::verify_existing_outputs;
 use super::model_commands::command_models;
 use super::output_reporting::{show_structure, verify_output};
 use super::tts_preferences_command::{command_preferences, effective_preferences};
@@ -64,6 +67,35 @@ pub(super) fn run_cli_command(raw: Vec<String>) -> Result<i32, String> {
     if options.show_structure {
         return show_structure(&all);
     }
+    let config = conversion_config(&options);
+    if options.verify_only || options.fix {
+        return verify_existing_outputs(&all, &config, &options);
+    }
+
+    let selectors: Vec<String> = options
+        .chapters
+        .iter()
+        .chain(options.sections.iter())
+        .cloned()
+        .collect();
+    // Resolve every book's range before the first side effect of the invocation,
+    // so one unknown or reversed range leaves no job, cache or output behind.
+    let range_selections = match &options.chapter_range {
+        Some(range) => {
+            let mut selections = Vec::with_capacity(all.len());
+            for input in &all {
+                let session = converter_core::embedded::EmbeddedConversionSession::open(
+                    input,
+                    Default::default(),
+                    config.clone(),
+                )
+                .map_err(|error| error.to_string())?;
+                selections.push(range_selection(session.metadata(), range, &selectors)?);
+            }
+            Some(selections)
+        }
+        None => None,
+    };
 
     if options.clean_cache {
         for input in &all {
@@ -71,22 +103,14 @@ pub(super) fn run_cli_command(raw: Vec<String>) -> Result<i32, String> {
         }
     }
 
-    let config = conversion_config(&options);
     let preferences = effective_preferences(&config, &options, &raw)?;
 
-    let selected_chapters = if options.chapters.is_empty() && options.sections.is_empty() {
-        None
-    } else {
-        Some(
-            options
-                .chapters
-                .iter()
-                .chain(options.sections.iter())
-                .cloned()
-                .collect(),
-        )
-    };
+    let selected_chapters = (!selectors.is_empty()).then_some(selectors);
     for (position, input) in all.iter().enumerate() {
+        let chapter_indices = match &range_selections {
+            Some(selections) => Some(selections[position].clone()),
+            None => selected_chapters.clone(),
+        };
         let session = converter_core::embedded::EmbeddedConversionSession::open(
             input,
             converter_core::embedded::EmbeddedConversionOptions {
@@ -98,13 +122,20 @@ pub(super) fn run_cli_command(raw: Vec<String>) -> Result<i32, String> {
                 engine: Some(preferences.primary.engine.clone()),
                 voice: options.voice.clone(),
                 language: None,
-                chapter_indices: selected_chapters.clone(),
+                chapter_indices,
                 no_parallel: options.no_parallel,
+                execution_options: converter_core::worker::ExecutionOptions {
+                    force_reprocess: options.force_reprocess,
+                    ..Default::default()
+                },
             },
             config.clone(),
         )
         .map_err(|error| error.to_string())?;
-        let manifest = session.convert().map_err(|error| error.to_string())?;
+        let manifest =
+            run_with_retry_rounds(&session, RetryRounds::from_options(&options), |session| {
+                session.convert()
+            })?;
         if options.verify {
             verify_output(&config.paths.output_dir.join(&manifest.job_id), &manifest)?;
             println!("verified: {} chapters and archive", manifest.chapters.len());

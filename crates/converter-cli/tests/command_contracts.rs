@@ -17,6 +17,22 @@ fn epub(path: &Path) {
     archive.finish().unwrap();
 }
 
+/// Three spine documents without a TOC: chapter indices 1, 2 and 3.
+fn epub_with_three_chapters(path: &Path) {
+    let mut archive = ZipWriter::new(fs::File::create(path).unwrap());
+    for (name, contents) in [
+        ("META-INF/container.xml", "<container><rootfiles><rootfile full-path=\"content.opf\"/></rootfiles></container>"),
+        ("content.opf", "<package xmlns:dc=\"x\"><metadata><dc:title>Range fixture</dc:title></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"b\" href=\"b.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"c\" href=\"c.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/><itemref idref=\"b\"/><itemref idref=\"c\"/></spine></package>"),
+        ("a.xhtml", "<html><body><h1>Opening</h1><p>First chapter content.</p></body></html>"),
+        ("b.xhtml", "<html><body><h1>Middle</h1><p>Second chapter content.</p></body></html>"),
+        ("c.xhtml", "<html><body><h1>Closing</h1><p>Third chapter content.</p></body></html>"),
+    ] {
+        archive.start_file(name, SimpleFileOptions::default()).unwrap();
+        archive.write_all(contents.as_bytes()).unwrap();
+    }
+    archive.finish().unwrap();
+}
+
 fn command(root: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_converter-cli"))
         .args(args)
@@ -73,7 +89,7 @@ fn unsupported_flags_fail_before_input_resolution_synthesis_or_cleanup() {
     let book = fixture.path().join("book.epub");
     epub(&book);
     fs::write(runtime.path().join("listener.mp3"), b"retained audio").unwrap();
-    for flag in ["--verify-only", "--no-cache", "--stop-on-error"] {
+    for flag in ["--no-cache", "--stop-on-error"] {
         let output = command(
             runtime.path(),
             &[
@@ -102,7 +118,10 @@ fn text_pdf_structure_uses_the_shared_source_dispatch_without_creating_output() 
     let pdf_path = fixture.path().join("second.PDF");
     fs::write(
         &pdf_path,
-        pdf_fixture::pdf(true, &["First page body.", "Middle page body.", "Last page body."]),
+        pdf_fixture::pdf(
+            true,
+            &["First page body.", "Middle page body.", "Last page body."],
+        ),
     )
     .unwrap();
     fs::write(runtime.path().join("listener.mp3"), b"retained audio").unwrap();
@@ -181,4 +200,170 @@ fn epub_structure_and_ordinary_verify_remain_distinct_from_rejected_options() {
     assert!(text.contains("Command fixture"));
     assert!(text.contains("Readable chapter"));
     assert_untouched(runtime.path());
+}
+
+#[test]
+fn rejected_range_and_retry_requests_fail_before_any_job_cache_or_output() {
+    let fixture = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let book = fixture.path().join("book.epub");
+    epub_with_three_chapters(&book);
+    let pdf_path = fixture.path().join("book.pdf");
+    fs::write(
+        &pdf_path,
+        pdf_fixture::pdf(
+            true,
+            &["First page body.", "Middle page body.", "Last page body."],
+        ),
+    )
+    .unwrap();
+    fs::write(runtime.path().join("listener.mp3"), b"retained audio").unwrap();
+    let (book, pdf_path) = (book.to_str().unwrap(), pdf_path.to_str().unwrap());
+    for (arguments, expected) in [
+        // Both range flags, in either order.
+        (
+            vec![
+                book,
+                "--from-chapter-to-end",
+                "2",
+                "--from-chapter-to-chapter",
+                "2..3",
+            ],
+            "--from-chapter-to-end and --from-chapter-to-chapter are mutually exclusive",
+        ),
+        (
+            vec![
+                book,
+                "--from-chapter-to-chapter",
+                "2..3",
+                "--from-chapter-to-end",
+                "2",
+            ],
+            "mutually exclusive",
+        ),
+        // A range that is not A..B.
+        (
+            vec![book, "--from-chapter-to-chapter", "2-3"],
+            "--from-chapter-to-chapter requires an inclusive range A..B",
+        ),
+        // Bounds that name no chapter of this book, or only one before the start.
+        (
+            vec![book, "--from-chapter-to-end", "7"],
+            "--from-chapter-to-end: chapter selector '7' matches no chapter",
+        ),
+        (
+            vec![book, "--from-chapter-to-chapter", "2..9"],
+            "chapter selector '9' matches no chapter at or after '2'",
+        ),
+        (
+            vec![book, "--from-chapter-to-chapter", "3..1"],
+            "chapter selector '1' matches no chapter at or after '3'",
+        ),
+        // A narrowing selector that leaves the range empty.
+        (
+            vec![
+                book,
+                "--from-chapter-to-end",
+                "2",
+                "--chapter",
+                "position:0",
+            ],
+            "no --chapter or --section selector matches a chapter inside the range",
+        ),
+        // The same resolution applies to a PDF and to every book of a batch.
+        (
+            vec![pdf_path, "--from-chapter-to-end", "position:5"],
+            "chapter selector 'position:5' matches no chapter",
+        ),
+        (
+            vec![book, pdf_path, "--from-chapter-to-end", "3"],
+            "--from-chapter-to-end: chapter selector '3' matches no chapter",
+        ),
+        (
+            vec![book, "--retry-failed", "-1"],
+            "--retry-failed requires a non-negative number",
+        ),
+        (
+            vec![book, "--retry-failed", "twice"],
+            "--retry-failed requires a non-negative number",
+        ),
+    ] {
+        // Cache cleaning is requested too: it must not run for a rejected request.
+        let arguments = [&["convert"][..], &arguments, &["--clean-cache", "--yes"]].concat();
+        let output = command(runtime.path(), &arguments);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}\n{stderr}");
+        assert!(stderr.contains(expected), "{arguments:?}\n{stderr}");
+        assert_untouched(runtime.path());
+    }
+}
+
+#[test]
+fn existing_output_modes_never_convert_and_report_missing_output_with_status_one() {
+    let fixture = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let book = fixture.path().join("book.epub");
+    epub_with_three_chapters(&book);
+    fs::write(runtime.path().join("listener.mp3"), b"retained audio").unwrap();
+    let book = book.to_str().unwrap();
+    for mode in ["--verify-only", "--fix"] {
+        let output = command(runtime.path(), &["convert", book, mode]);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(output.status.code(), Some(1), "{stdout}");
+        assert!(
+            stdout.contains("no existing output for 'Range fixture'"),
+            "{stdout}"
+        );
+        assert_untouched(runtime.path());
+    }
+    for (arguments, expected) in [
+        (
+            vec![book, "--verify-only", "--fix"],
+            "--verify-only and --fix are mutually exclusive",
+        ),
+        (
+            vec![book, "--verify-only", "--force-reprocess"],
+            "--force-reprocess cannot be combined with --verify-only",
+        ),
+        (
+            vec![book, "--fix", "--chapter", "2"],
+            "--chapter cannot be combined with --fix",
+        ),
+        (
+            vec![book, "--fix", "--engine", "edge"],
+            "--engine cannot be combined with --fix",
+        ),
+        (
+            vec![book, "--verify-only", "--clean-cache", "--yes"],
+            "--clean-cache cannot be combined with --verify-only",
+        ),
+    ] {
+        let arguments = [&["convert"][..], &arguments].concat();
+        let output = command(runtime.path(), &arguments);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}\n{stderr}");
+        assert!(stderr.contains(expected), "{arguments:?}\n{stderr}");
+        assert_untouched(runtime.path());
+    }
+}
+
+#[test]
+fn help_documents_every_ported_flag() {
+    let runtime = tempfile::tempdir().unwrap();
+    let output = command(runtime.path(), &["--help"]);
+    assert!(output.status.success());
+    let help = String::from_utf8_lossy(&output.stdout);
+    for flag in [
+        "--from-chapter-to-end CHAPTER",
+        "--from-chapter-to-chapter A..B",
+        "--force-reprocess",
+        "--retry-failed N",
+        "--retry-failed-manual",
+        "--verify-only",
+        "--fix",
+        "--verify ",
+        "--chapter CHAPTER",
+    ] {
+        assert!(help.contains(flag), "help lacks {flag}\n{help}");
+    }
 }

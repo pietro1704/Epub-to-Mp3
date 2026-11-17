@@ -9,7 +9,7 @@ mod mp3_metadata;
 mod mpeg_frame_validation;
 mod wave_bounds;
 
-pub use audio_archive::create_archive;
+pub use audio_archive::{create_archive, validate_archive};
 pub use audio_encoding::{add_silence_padding, concatenate, wav_to_mp3, Padding};
 pub use audio_process::ProcessSpec;
 pub use audio_validation::{probe_duration, probe_sample_rate, validate_audio};

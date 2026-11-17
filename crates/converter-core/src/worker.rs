@@ -87,6 +87,9 @@ pub struct OutputManifest {
     /// Full parsed source count; selected chapters remain represented by `chapters`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_chapters_total: Option<usize>,
+    /// Identity of the exact source bytes used to produce these artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_sha256: Option<String>,
     pub archive: String,
     pub cover: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -177,6 +180,7 @@ impl ExecutionOptions {
 pub struct ConversionWorker {
     language_overrides: Vec<crate::language::LanguageOverride>,
     source_identity: Mutex<Option<String>>,
+    expected_source_sha256: Mutex<Option<String>>,
     pronunciation: crate::pronunciation::PronunciationDictionary,
     render_progress: Mutex<render_progress::RenderProgress>,
     pub config: AppConfig,
@@ -222,6 +226,7 @@ impl ConversionWorker {
         Ok(Self {
             language_overrides: Vec::new(),
             source_identity: Mutex::new(None),
+            expected_source_sha256: Mutex::new(None),
             pronunciation: Default::default(),
             render_progress: Default::default(),
             config,
@@ -312,64 +317,6 @@ impl ConversionWorker {
     pub fn cancel(&self) {
         self.cancel.cancel();
     }
-    pub fn run(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
-        let primary = request
-            .tts_preferences
-            .as_ref()
-            .map(|preferences| &preferences.primary);
-        let metadata = serde_json::json!({
-            "input": request.input,
-            "engine": primary.map(|selection| &selection.engine).or(request.engine.as_ref()),
-            "voice": primary.map_or(request.voice.as_ref(), |selection| selection.voice.as_ref()),
-            "language": request.language,
-            "tts_preferences": request.tts_preferences,
-            "models_root": request.models_root,
-            "piper_model": request.piper_model,
-            "piper_config": request.piper_config
-        });
-
-        self.jobs.create(JobRecord::new(
-            &request.job_id,
-            metadata.as_object().cloned().unwrap_or_default(),
-        ))?;
-        self.run_prepared(request)
-    }
-
-    /// Retry a job whose previous worker has stopped, preserving its output ID
-    /// and chapter paths across attempts.
-    pub fn resume(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
-        match self.jobs.restart(&request.job_id) {
-            Ok(_) => self.run_prepared(request),
-            Err(JobError::NotFound(_)) => self.run(request),
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    fn run_prepared(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
-        self.jobs.transition(&request.job_id, JobState::Running)?;
-        let result = self.run_inner(&request);
-        self.tts_sessions
-            .lock()
-            .expect("TTS session lock")
-            .retain(|(job, _, _), _| job != &request.job_id);
-        match &result {
-            Ok(_) => {
-                self.jobs.transition(&request.job_id, JobState::Completed)?;
-            }
-            Err(WorkerError::Cancelled) => {
-                // A control token can cancel without a persisted request. Follow
-                // the state machine before reporting terminal cancellation.
-                if self.jobs.load(&request.job_id)?.state != JobState::Cancelling {
-                    self.jobs.request_cancellation(&request.job_id)?;
-                }
-                self.jobs.transition(&request.job_id, JobState::Cancelled)?;
-            }
-            Err(_) => {
-                let _ = self.jobs.transition(&request.job_id, JobState::Failed);
-            }
-        }
-        result
-    }
     #[allow(dead_code)]
     fn emit(&self, mut event: ProgressEvent) {
         if event.state == "running"
@@ -395,13 +342,19 @@ impl ConversionWorker {
 }
 
 mod chapter_audio_receipt;
-pub use chapter_audio_receipt::prepare_retained_audio;
+use chapter_audio_receipt::discard_chapter_audio_receipt;
+pub use chapter_audio_receipt::{prepare_retained_audio, retained_chapter_audio_is_intact};
 mod chapter_audio_recovery;
 mod chapter_execution;
+mod chapter_range_selection;
+pub use chapter_range_selection::{chapter_range_positions, ChapterRangeError};
 mod conversion_input_policy;
+use conversion_input_policy::chapter_selection_matches;
+pub(crate) use conversion_input_policy::persisted_request_path;
 mod conversion_schedule;
 mod edge_synthesis_execution;
 mod heading_pauses;
+mod job_lifecycle;
 mod kokoro_model_identity;
 mod language_routing;
 mod native_tts_adapters;

@@ -6,6 +6,46 @@ use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+/// Compare a published ZIP with its exact chapter/cover files without extracting
+/// entries or buffering whole audio files. Reading every entry also verifies CRCs.
+pub fn validate_archive(output: &Path, files: &[(PathBuf, String)]) -> Result<(), AudioError> {
+    let mut archive = zip::ZipArchive::new(File::open(output)?)?;
+    if archive.len() != files.len() {
+        return Err(AudioError::Validation(
+            "archive file count differs from the manifest".into(),
+        ));
+    }
+    let mut packed = vec![0; 64 * 1024];
+    let mut retained = vec![0; packed.len()];
+    for (path, name) in files {
+        let mut entry = archive.by_name(name)?;
+        let mut original = File::open(path)?;
+        if !original.metadata()?.is_file() || entry.size() != original.metadata()?.len() {
+            return Err(AudioError::Validation(format!(
+                "archive entry '{name}' has a different size"
+            )));
+        }
+        loop {
+            let count = entry.read(&mut packed)?;
+            if count == 0 {
+                break;
+            }
+            original.read_exact(&mut retained[..count])?;
+            if packed[..count] != retained[..count] {
+                return Err(AudioError::Validation(format!(
+                    "archive entry '{name}' differs from the retained file"
+                )));
+            }
+        }
+        if original.read(&mut retained[..1])? != 0 {
+            return Err(AudioError::Validation(format!(
+                "archive entry '{name}' is incomplete"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn create_archive(
     output: impl AsRef<Path>,
     files: &[(PathBuf, String)],

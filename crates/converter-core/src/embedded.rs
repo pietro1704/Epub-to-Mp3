@@ -3,8 +3,9 @@
 use crate::{
     config::AppConfig,
     epub::Book,
+    jobs::JobError,
     structure::StructureVerification,
-    worker::{ConversionRequest, ConversionWorker, OutputManifest, WorkerError},
+    worker::{ConversionRequest, ConversionWorker, ExecutionOptions, OutputManifest, WorkerError},
 };
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -22,6 +23,8 @@ pub struct EmbeddedConversionOptions {
     pub language: Option<String>,
     pub chapter_indices: Option<Vec<String>>,
     pub no_parallel: bool,
+    /// Per-invocation cache controls. The default reuses validated audio.
+    pub execution_options: ExecutionOptions,
 }
 
 /// Allocate a path-safe identity for a fresh conversion without a caller-owned ID.
@@ -73,6 +76,7 @@ pub enum EmbeddedConversionError {
 #[derive(Debug, Clone)]
 pub struct EmbeddedConversionSession {
     input: PathBuf,
+    expected_source_sha256: Option<String>,
     options: EmbeddedConversionOptions,
     metadata: EmbeddedBookMetadata,
     structure: StructureVerification,
@@ -100,6 +104,7 @@ impl EmbeddedConversionSession {
         let structure = crate::book_input::verify_book_source(&input, &book);
         Ok(Self {
             input,
+            expected_source_sha256: None,
             options,
             metadata: metadata_from_book(&book),
             structure,
@@ -124,6 +129,51 @@ impl EmbeddedConversionSession {
         &self.structure
     }
 
+    /// Reopen the request a previous job persisted, so that job can be retried or
+    /// repaired in place with exactly the selection that produced its output.
+    /// `input` replaces the recorded source path, which may have been relative
+    /// to another working directory; audio identity depends on source content.
+    pub fn reopen_job<P: AsRef<Path>>(
+        job_id: &str,
+        input: P,
+        config: AppConfig,
+    ) -> Result<Self, EmbeddedConversionError> {
+        if job_id.is_empty() || matches!(job_id, "." | "..") || job_id.contains(['/', '\\', '\0']) {
+            return Err(WorkerError::Job(JobError::InvalidJobId).into());
+        }
+        let request: ConversionRequest = crate::cache::read_json(
+            crate::worker::persisted_request_path(&config.paths.jobs_dir, job_id),
+        )
+        .map_err(WorkerError::from)?;
+        if request.job_id != job_id {
+            return Err(WorkerError::Job(JobError::InvalidJobId).into());
+        }
+        let expected_source_sha256 = crate::cache::read_json::<OutputManifest>(
+            config.paths.output_dir.join(job_id).join("manifest.json"),
+        )
+        .ok()
+        .and_then(|manifest| manifest.source_sha256);
+        let mut session = Self::open(
+            input,
+            EmbeddedConversionOptions {
+                job_id: Some(request.job_id),
+                tts_preferences: request.tts_preferences,
+                models_root: request.models_root,
+                piper_model: request.piper_model,
+                piper_config: request.piper_config,
+                engine: request.engine,
+                voice: request.voice,
+                language: request.language,
+                chapter_indices: request.chapter_indices,
+                no_parallel: request.no_parallel,
+                execution_options: ExecutionOptions::default(),
+            },
+            config,
+        )?;
+        session.expected_source_sha256 = expected_source_sha256;
+        Ok(session)
+    }
+
     /// Run conversion synchronously using the embedded worker.
     pub fn convert(&self) -> Result<OutputManifest, EmbeddedConversionError> {
         let job_id = self
@@ -131,7 +181,47 @@ impl EmbeddedConversionSession {
             .job_id
             .clone()
             .unwrap_or_else(fresh_embedded_job_id);
-        let worker = ConversionWorker::new(self.config.clone())?;
+        Ok(self.worker()?.run(self.request(job_id))?)
+    }
+
+    /// Run this session's job again after a failed or cancelled attempt. Chapters
+    /// whose completion receipt still validates are reused; the rest are
+    /// synthesized. Requires a caller-owned job ID, and fails for a completed job.
+    pub fn retry_failed(&self) -> Result<OutputManifest, EmbeddedConversionError> {
+        let job_id = self.caller_job_id()?;
+        Ok(self.worker()?.resume(self.request(job_id))?)
+    }
+
+    /// Re-run a finished job in place. Every chapter whose completion receipt
+    /// still validates for this request is kept; missing, altered or withdrawn
+    /// chapters are synthesized again, then the manifest and archive are
+    /// republished. A job recorded as still active is never touched.
+    pub fn repair(&self) -> Result<OutputManifest, EmbeddedConversionError> {
+        self.repair_chapters(&[])
+    }
+
+    /// Invalidate receipts for the named source chapter positions, then repair
+    /// this job under exclusive ownership. Refused jobs retain every receipt.
+    pub fn repair_chapters(
+        &self,
+        source_indices: &[usize],
+    ) -> Result<OutputManifest, EmbeddedConversionError> {
+        let job_id = self.caller_job_id()?;
+        Ok(self
+            .worker()?
+            .repair_chapters(self.request(job_id), source_indices)?)
+    }
+
+    fn caller_job_id(&self) -> Result<String, EmbeddedConversionError> {
+        self.options.job_id.clone().ok_or_else(|| {
+            WorkerError::Unsupported("retrying a job requires a caller-owned job ID".into()).into()
+        })
+    }
+
+    fn worker(&self) -> Result<ConversionWorker, EmbeddedConversionError> {
+        let worker = ConversionWorker::new(self.config.clone())?
+            .with_execution_options(self.options.execution_options)
+            .with_expected_source_sha256(self.expected_source_sha256.clone());
         #[cfg(any(target_os = "linux", target_os = "windows"))]
         let worker = {
             // Adapter presence also affects legacy Edge routing; require an explicit selection.
@@ -153,21 +243,23 @@ impl EmbeddedConversionSession {
                 worker
             }
         };
-        worker
-            .run(ConversionRequest {
-                input: self.input.clone(),
-                job_id,
-                tts_preferences: self.options.tts_preferences.clone(),
-                models_root: self.options.models_root.clone(),
-                engine: self.options.engine.clone(),
-                voice: self.options.voice.clone(),
-                language: self.options.language.clone(),
-                piper_model: self.options.piper_model.clone(),
-                piper_config: self.options.piper_config.clone(),
-                chapter_indices: self.options.chapter_indices.clone(),
-                no_parallel: self.options.no_parallel,
-            })
-            .map_err(EmbeddedConversionError::from)
+        Ok(worker)
+    }
+
+    fn request(&self, job_id: String) -> ConversionRequest {
+        ConversionRequest {
+            input: self.input.clone(),
+            job_id,
+            tts_preferences: self.options.tts_preferences.clone(),
+            models_root: self.options.models_root.clone(),
+            engine: self.options.engine.clone(),
+            voice: self.options.voice.clone(),
+            language: self.options.language.clone(),
+            piper_model: self.options.piper_model.clone(),
+            piper_config: self.options.piper_config.clone(),
+            chapter_indices: self.options.chapter_indices.clone(),
+            no_parallel: self.options.no_parallel,
+        }
     }
 
     /// Async-compatible entrypoint for FFI adapters and async hosts.

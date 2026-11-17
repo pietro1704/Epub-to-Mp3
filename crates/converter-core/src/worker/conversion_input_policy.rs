@@ -1,6 +1,14 @@
 use super::WorkerError;
 use crate::{config::AppConfig, piper};
+use std::path::{Path, PathBuf};
 
+/// Where a job's request is persisted for restart, retry and in-place repair.
+pub(crate) fn persisted_request_path(jobs_dir: &Path, job_id: &str) -> PathBuf {
+    jobs_dir.join("requests").join(format!("{job_id}.json"))
+}
+
+/// Whether one `ConversionRequest::chapter_indices` selector names this chapter:
+/// its own index, or its zero-based source position (`position:N` or bare `N`).
 pub(super) fn chapter_selection_matches(value: &str, chapter_index: &str, position: usize) -> bool {
     value == chapter_index
         || value
