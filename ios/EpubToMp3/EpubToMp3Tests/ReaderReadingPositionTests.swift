@@ -24,6 +24,9 @@ final class ReaderReadingPositionTests: XCTestCase {
         composition.scrollView.contentSize = CGSize(width: 320, height: 2_000)
         composition.loadingContainer.isHidden = true
         composition.scrollView.contentOffset = CGPoint(x: 0, y: 137.25)
+        // UIKit may align an assigned offset to the device's pixel grid.
+        // The viewport contract preserves the accepted raw position exactly.
+        let originalOffset = composition.scrollView.contentOffset
         let document = ReaderBookDocument(book: BookEntity(
             id: suite, title: "Raw offset", bookmark: Data([1]),
             displayFilename: "position.epub", addedAt: Date()
@@ -37,7 +40,7 @@ final class ReaderReadingPositionTests: XCTestCase {
             })
         position.prepareForViewportTransition()
         XCTAssertTrue(position.isViewportTransitioning)
-        XCTAssertEqual(position.pendingViewportAnchor?.viewportOffset, 137.25)
+        XCTAssertEqual(position.pendingViewportAnchor?.viewportOffset, originalOffset.y)
         hidden = true
         composition.scrollView.bounds.size.height = 500
         composition.scrollView.contentOffset = .zero
@@ -46,7 +49,7 @@ final class ReaderReadingPositionTests: XCTestCase {
         await fulfillment(of: [restored], timeout: 2)
         XCTAssertFalse(position.isViewportTransitioning)
         XCTAssertNil(position.pendingViewportAnchor)
-        XCTAssertEqual(composition.scrollView.contentOffset.y, 137.25, accuracy: 0.001)
+        XCTAssertEqual(composition.scrollView.contentOffset, originalOffset)
     }
 }
 #endif

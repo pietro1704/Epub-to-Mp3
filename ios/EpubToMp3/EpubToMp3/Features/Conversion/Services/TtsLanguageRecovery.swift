@@ -57,3 +57,36 @@ extension ConversionOptions {
         return copy
     }
 }
+
+extension SpeechModelLibraryClient {
+    /// Recovery fails closed when the catalogue answers for another language.
+    func recoverySnapshot(language: String) throws -> SpeechModelSnapshot {
+        let snapshot = try languageSnapshot(language)
+        guard snapshot.target?.language == language else {
+            throw EmbeddedConverterError.artifactInvalid("Recovery catalogue language does not match the request")
+        }
+        return snapshot
+    }
+}
+
+/// A download suggestion is presentation over Rust's compatibility decision.
+enum TtsMissingVoicePolicy {
+    static func recommended(in snapshot: SpeechModelSnapshot) -> SpeechModelSnapshot.Entry? {
+        snapshot.entries.filter {
+            $0.identity.provider == "piper" && $0.distribution.installable
+                && $0.compatibility.compatible && $0.installation.state != .installed
+                && $0.licence.validation != "rejected"
+        }.sorted {
+            let firstDefault = $0.identity.modelID == snapshot.defaultSelection.modelID
+            let secondDefault = $1.identity.modelID == snapshot.defaultSelection.modelID
+            if firstDefault != secondDefault { return firstDefault }
+            let firstMedium = $0.presentation.quality == .medium
+            let secondMedium = $1.presentation.quality == .medium
+            if firstMedium != secondMedium { return firstMedium }
+            let firstBytes = $0.distribution.downloadBytes ?? UInt64.max
+            let secondBytes = $1.distribution.downloadBytes ?? UInt64.max
+            if firstBytes != secondBytes { return firstBytes < secondBytes }
+            return $0.identity.modelID < $1.identity.modelID
+        }.first
+    }
+}

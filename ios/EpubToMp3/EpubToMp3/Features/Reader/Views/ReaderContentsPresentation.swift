@@ -32,6 +32,18 @@ final class ReaderContentsPresentation {
     /// layout — so a book always opens directly into its content and the
     /// chapter list never pushes or overlays the reading column.
     func presentTOC() {
+        if let pdf = composition.contentSurface.pdfPresentation {
+            let rows = pdf.audioMap?.chapters.enumerated().map {
+                ReaderTocRow(title: $0.element.name, level: 0, chapterIndex: $0.offset)
+            } ?? []
+            let sheet = ReaderContentsSheet(rows: rows, initialChapterIndex: pdf.currentAnchor?.chapterIndex ?? 0) {
+                [weak pdf] chapter in pdf?.goToChapter(chapter)
+            }
+            let nav = UINavigationController(rootViewController: sheet)
+            configureTOCSheetPresentation(nav)
+            present(nav)
+            return
+        }
         if let snapshot = player.snapshot {
             let controller = TocScreenController(
                 fulltext: document.fulltext ?? EbookFulltext(

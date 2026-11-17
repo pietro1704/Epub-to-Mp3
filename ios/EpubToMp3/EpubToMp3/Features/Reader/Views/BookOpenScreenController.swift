@@ -119,7 +119,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// while the user is turning pages, so playback scheduling uses this
     /// value to synthesize the chapter currently on screen first.
     var currentReaderChapterIndex: Int {
-        ReaderPlaybackAnchor.epubIndex(
+        if let anchor = composition.contentSurface.pdfPresentation?.currentAnchor { return anchor.chapterIndex }
+        return ReaderPlaybackAnchor.epubIndex(
             forReaderPosition: document.selectedChapter,
             in: document.fulltext?.chapters ?? []
         ) ?? document.activePreparedChapter?.chapter.zeroBasedEpubIndex ?? document.selectedChapter
@@ -133,6 +134,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     var playbackChapterCatalog: [(index: Int, title: String)] {
+        if let chapters = composition.contentSurface.pdfPresentation?.audioMap?.chapters {
+            return chapters.enumerated().map { ($0.offset, $0.element.name) }
+        }
         if let fulltext = document.fulltext {
             return fulltext.chapters.map { ($0.zeroBasedEpubIndex, $0.displayTitle) }
         }
@@ -149,7 +153,10 @@ private lazy var toolBar = ReaderToolBar(defaults: sessionDefaults) { [weak self
     case .contents: self.presentTOC()
     case .search: self.promptSearch()
     case .footnotes: self.showFootnotes()
-    case .listen: self.onListenRequested?()
+    case .listen:
+        // A PDF starts at the visible page and fails closed when it has no narration text.
+        if let pdf = self.composition.contentSurface.pdfPresentation { pdf.playFromCurrentPosition() }
+        else { self.onListenRequested?() }
     }
 }
 
@@ -426,10 +433,26 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
         }
     )
     @objc private func showFootnotes() { annotations.showFootnotes() }
-    @objc private func promptSearch() { annotations.promptSearch() }
+    @objc private func promptSearch() {
+        if let pdf = composition.contentSurface.pdfPresentation { pdf.promptSearch() }
+        else { annotations.promptSearch() }
+    }
 
     private func showPDF(_ url: URL) {
+        composition.contentSurface.configurePDF(.init(bookID: document.book.id, settings: settings,
+            player: player, defaults: sessionDefaults, toggleChrome: { [weak self] in self?.toggleChromeVisibility() },
+            playFrom: { [weak self] in self?.onSelectionPlaybackRequested?($0.chapterIndex, $0.ratio) },
+            positionChanged: { [weak self] anchor, page, total in
+                guard let self else { return }
+                if let anchor { document.selectedChapter = anchor.chapterIndex }
+                let position = L10n.string("reader.pageOf", page, total)
+                composition.pageIndicator.text = position
+                composition.pageIndicator.accessibilityValue = position
+                composition.pageIndicator.isHidden = !settings.readerShowPageNumbers || textPresentation.chromeHidden
+                composition.pageIndicator.alpha = composition.pageIndicator.isHidden ? 0 : 1
+            }))
         composition.contentSurface.mount(.pdf(url))
+        textPresentation.applyReaderLayoutMode()
     }
 
     func presentDocumentPicker() {

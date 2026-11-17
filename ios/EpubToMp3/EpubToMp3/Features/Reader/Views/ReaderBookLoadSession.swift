@@ -91,7 +91,7 @@ final class ReaderBookLoadSession {
 
         // Memory-ready text stays synchronous. A disk-prepared rendering is
         // restored without reopening the source or running the HTML importer.
-        if let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: loadingBookID),
+        if document.book.fileType != .pdf, let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: loadingBookID),
            !warmPayload.chapters.isEmpty {
             LatencyObservationStore.shared.classifyCache(.inMemoryWarm, for: journeyID)
             document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
@@ -156,7 +156,7 @@ final class ReaderBookLoadSession {
                 let titleRepairKey = "reader.titleRepairAttempted.\(document.book.id)"
                 let shouldRepairCachedTitles = cachedNeedsTitleRepair
                     && !UserDefaults.standard.bool(forKey: titleRepairKey)
-                if let cached, !shouldRepairCachedTitles, cachedHasReadableContent {
+                if let cached, document.book.fileType != .pdf, !shouldRepairCachedTitles, cachedHasReadableContent {
                     LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
                     payload = cached
                 } else {

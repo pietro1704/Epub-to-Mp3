@@ -91,6 +91,9 @@ final class RustConversionCoordinator {
             chapterStart: chapterStart,
             chapterEnd: chapterEnd
         )
+        #if os(iOS)
+        if playbackControl != nil { try await TtsMissingVoicePreflight.validate(options: options) }
+        #endif
         let effectiveControl: ConverterPlaybackControl
         if let playbackControl {
             effectiveControl = playbackControl

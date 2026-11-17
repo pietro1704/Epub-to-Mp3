@@ -837,3 +837,15 @@
 "library.error.savedLibraryUnavailable" = "The saved library could not be loaded. Its original data has been preserved.";
 "library.error.openTimeout" = "Opening the book took too long. Check whether iCloud has finished downloading it, then try again.";
 "library.error.changedDuringImport" = "The selected book changed during import. Try importing it again.";
+
+// Missing-language voice recovery
+"tts.missingVoice.title" = "No voice for this language";
+"tts.missingVoice.message" = "No installed voice model is ready to read this book in %@. Choose how to continue.";
+"tts.missingVoice.recommended" = "Recommended model: %@.";
+"tts.missingVoice.downloadRecommended" = "Download recommended";
+"tts.missingVoice.openSettings" = "Download a model for this language";
+"tts.missingVoice.system" = "Listen with the system voice";
+"tts.missingVoice.acceptDownload" = "Accept terms and download";
+"tts.missingVoice.downloading" = "Downloading recommended model";
+
+"reader.pdf.audioUnavailable" = "This page could not be matched to the narration text. A scanned PDF requires verified OCR before audio can start.";

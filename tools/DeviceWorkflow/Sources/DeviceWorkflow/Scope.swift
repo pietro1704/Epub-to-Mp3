@@ -77,8 +77,44 @@ public struct Options {
         }
         // Keep exact method selectors aligned with the audited device test classes.
         // Partial method audits must never authorize a whole-class selector.
-        let allowedClasses: Set<String> = ["ReaderViewportTransitionTests", "ReaderProgressStoreTests", "NativePlaybackFeedbackTests", "NativeTransportFeedbackTests"]
+        let allowedClasses: Set<String> = ["ReaderViewportTransitionTests", "ReaderProgressStoreTests", "NativePlaybackFeedbackTests", "NativeTransportFeedbackTests",
+            "PDFReaderParityTests", "TtsMissingVoiceRecoveryTests", "ReaderReadingPositionTests",
+            "ReaderAccessibilityContractTests", "SpeechModelObserverLifetimeTests"]
         let allowedMethods: [String: Set<String>] = [
+            "PDFReaderParityTests": [
+                "testPhysicalPDFPagesMapToTheBundledRustNarrationAxis",
+                "testRepeatedPagesRemainDistinctAndRatiosUseRustUnicodeScalars",
+                "testPDFLayoutSwitchPageNavigationAndReopenPreserveTheSourcePage",
+                "testAppLongPressRemainsOnTheContainingSurfaceAcrossPDFLayoutAndRemoval",
+                "testPDFSuppressesSystemEditingMenuButKeepsAppPlayAction",
+            ],
+            "TtsMissingVoiceRecoveryTests": [
+                "testMissingVoiceAlertExposesAllThreeActionsAndCancellation",
+                "testRecommendationNeverOffersInstalledIncompatibleOrOnlineModels",
+                "testConfirmedDownloadUsesBookLanguageWithoutChangingStudyLanguageOrPrimary",
+                "testDownloadFailureAndCancellationNeverBecomeAPlayableSelection",
+                "testSystemRecoveryServesOneRequestAsSecondaryVoiceWithoutChangingTheBookLanguage",
+                "testListeningPreflightAsksOnlyForAnAuthoritativeLanguageWithoutAnInstalledVoice",
+                "testLanguageActionPresentsTheVoiceModelDestinationOverACoveringReader",
+                "testStaleBookRequestDoesNotPresentAnAlertOrDownload",
+            ],
+            "ReaderReadingPositionTests": [
+                "testChromeTransitionRestoresExactFractionalRawOffsetAfterFinalLayout",
+            ],
+            "ReaderAccessibilityContractTests": [
+                "testNativeReaderInstallsStableContentAndNavigationIdentifiers",
+            ],
+            "SpeechModelObserverLifetimeTests": [
+                "testClosingIdleOwnerDeallocatesItAndTerminatesEveryModelObserver",
+                "testClosingOneOwnerPreservesAnotherOwnersSubscriptions",
+                "testRepeatedOpenAndCloseDoesNotAccumulateSubscriptionsOrInstallModels",
+                "testClosingOwnerDoesNotCancelItsConfirmedClientInstallation",
+                "testLateInstallationFailureDoesNotKeepOrRecreateClosedOwner",
+                "testSuccessfulInstallKeepsLiveOwnerSubscribedUntilItCloses",
+                "testExplicitInstallationCancellationDoesNotEndLiveViewSubscriptions",
+                "testVoiceModelDestinationGroupsModelsByLanguageWhileSettingsKeepsOneSummaryRow",
+                "testProgressPreservesVisibleCellsAndScrollPosition",
+            ],
             "NativePlaybackFeedbackTests": [
                 "testBothMenusIncludeNormalSpeedAndMarkExactlyTheActiveRateIncludingLegacyValues",
                 "testExpandedPanelStartsAtRootSafeAreaInBothOrientations",

@@ -17,19 +17,19 @@ final class SettingsScreenController: UITableViewController {
         refreshStorageUsage: { [weak self] in self?.refreshStorageUsage() }
     )
 
-    private let settings: AppSettings
+    let settings: AppSettings
     private let library: LibraryStore
     private let player: AudioPlayer
     private let playbackClock: PlaybackClock
-    private let speechModels: SpeechModelLibraryClient
+    let speechModels: SpeechModelLibraryClient
     private let audition = VoiceAuditionPresentation()
-    private let termsAcceptance: SpeechModelTermsAcceptanceStore
-    private let voiceModelsOnly: Bool
-    private var modelDisclosure = SpeechModelSettingsDisclosure()
-    private var speechModelState: SpeechModelLibraryViewState
-    private var speechModelsTask: Task<Void, Never>?
+    let termsAcceptance: SpeechModelTermsAcceptanceStore
+    let voiceModelsOnly: Bool
+    var modelDisclosure = SpeechModelSettingsDisclosure()
+    var speechModelState: SpeechModelLibraryViewState
+    var speechModelsTask: Task<Void, Never>?
     private var speechModelInstallTasks: [String: Task<Void, Never>] = [:]
-    private var speechModelInstallEvents: [String: SpeechModelInstallEvent] = [:]
+    var speechModelInstallEvents: [String: SpeechModelInstallEvent] = [:]
     private var storageUsage = StorageUsageScanner.current()
     private let diagnosticsSession: StreamingDiagnosticsSession
     private let confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)?
@@ -103,32 +103,45 @@ final class SettingsScreenController: UITableViewController {
         tableView.reloadData()
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { voiceModelsOnly ? 1 : Section.allCases.count }
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        voiceModelsOnly ? 1 + modelSectionCount : Section.allCases.count
+    }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if voiceModelsOnly {
-            return RuntimeSettingsRows.rowCount(speechModels: speechModelState, disclosure: modelDisclosure)
+            return section == 0 ? RuntimeSettingsRows.rowCount(speechModels: speechModelState)
+                : modelRowCount(inSection: section)
         }
         if section == Section.runtime.rawValue { return 1 }
         return Section(rawValue: section)?.rowCount(speechModels: speechModelState, disclosure: modelDisclosure,
             backendWarningVisible: RuntimeSettingsRows.backendWarningVisible(settings: settings)) ?? 0
     }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        Section(rawValue: section)?.title
+        if let section = settingsSection(at: section) { return section.title }
+        let group = section - 1
+        return modelLanguageSections.indices.contains(group)
+            ? modelLanguageSections[group].title(state: speechModelState) : nil
     }
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        Section(rawValue: section)?.footer(settings: settings)
+        settingsSection(at: section)?.footer(settings: settings)
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard let section = Section(rawValue: indexPath.section) else { return UITableViewCell() }
+        if let entry = modelEntry(at: indexPath) {
+            return modelCell(at: indexPath, entry: entry)
+        }
+        let runtimeCell = { (row: RuntimeSettingsRows.Row?) in
+            RuntimeSettingsRows.cell(for: indexPath, tableView: tableView, settings: self.settings,
+                speechModels: self.speechModelState, installEvents: self.speechModelInstallEvents,
+                termsAcceptance: self.termsAcceptance, disclosure: self.modelDisclosure,
+                controller: self, rowOverride: row)
+        }
+        // An empty catalogue keeps its explanatory row in the destination.
+        guard let section = settingsSection(at: indexPath.section) else { return runtimeCell(.model(nil)) }
         switch section {
         case .runtime:
-            let row = voiceModelsOnly ? indexPath : IndexPath(row: 2, section: indexPath.section)
-            return RuntimeSettingsRows.cell(for: row, tableView: tableView, settings: settings,
-                                            speechModels: speechModelState,
-                                            installEvents: speechModelInstallEvents,
-                                            termsAcceptance: termsAcceptance,
-                                            disclosure: modelDisclosure, controller: self)
+            // Settings shows one summary row; the destination lists every runtime row.
+            return runtimeCell(voiceModelsOnly
+                ? RuntimeSettingsRows.row(at: indexPath.row, speechModels: speechModelState) : .models)
         case .backend:
             return RuntimeSettingsRows.backendCell(for: indexPath, tableView: tableView, settings: settings, controller: self)
         case .reader:
@@ -146,15 +159,15 @@ final class SettingsScreenController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         defer { tableView.deselectRow(at: indexPath, animated: true) }
-        guard let section = Section(rawValue: indexPath.section) else { return }
+        if let entry = modelEntry(at: indexPath) {
+            presentModelActions(for: entry, source: indexPath)
+            return
+        }
+        guard let section = settingsSection(at: indexPath.section) else { return }
         switch section {
         case .runtime:
             if voiceModelsOnly { handleRuntimeSelection(row: indexPath.row, source: indexPath) }
-            else {
-                navigationController?.pushViewController(SettingsScreenController(settings: settings,
-                    library: library, player: player, playbackClock: playbackClock,
-                    termsAcceptance: termsAcceptance, speechModels: speechModels, voiceModelsOnly: true), animated: true)
-            }
+            else { navigationController?.pushViewController(makeVoiceModelsDestination(), animated: true) }
         case .reader:
             choicePresentation.handleReaderSelection(row: indexPath.row)
         case .playback:
@@ -170,8 +183,15 @@ final class SettingsScreenController: UITableViewController {
         }
     }
 
+    /// Voice models live in their own pushed destination, never inline in Settings.
+    func makeVoiceModelsDestination() -> SettingsScreenController {
+        SettingsScreenController(settings: settings, library: library, player: player,
+            playbackClock: playbackClock, termsAcceptance: termsAcceptance,
+            speechModels: speechModels, voiceModelsOnly: true)
+    }
+
     private func handleRuntimeSelection(row index: Int, source: IndexPath) {
-        guard let row = RuntimeSettingsRows.row(at: index, speechModels: speechModelState, disclosure: modelDisclosure) else { return }
+        guard let row = RuntimeSettingsRows.row(at: index, speechModels: speechModelState) else { return }
         switch row {
         case .models:
             break
@@ -374,24 +394,7 @@ final class SettingsScreenController: UITableViewController {
         }
     }
 
-    private func reloadSpeechModels() {
-        speechModelsTask?.cancel()
-        let client = speechModels
-        speechModelsTask = Task { [weak self] in
-            guard !Task.isCancelled else { return }
-            do {
-                let snapshot = try await client.snapshot()
-                guard !Task.isCancelled else { return }
-                self?.speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-                self?.observeInstalls(in: snapshot.entries)
-                self?.tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
-            } catch {
-                // Fail closed: keep existing selections and the last valid presentation.
-            }
-        }
-    }
-
-    private func observeInstalls(in entries: [SpeechModelSnapshot.Entry]) {
+    func observeInstalls(in entries: [SpeechModelSnapshot.Entry]) {
         speechModelInstallTasks.values.forEach { $0.cancel() }
         speechModelInstallTasks.removeAll()
         let client = speechModels
@@ -402,14 +405,14 @@ final class SettingsScreenController: UITableViewController {
                 let events = await client.watchInstall(modelID: modelID)
                 for await event in events {
                     guard !Task.isCancelled else { return }
-                    self?.speechModelInstallEvents[modelID] = event
+                    self?.applyInstallEvent(event)
                     if event.stage == .completed,
                        let snapshot = try? await client.snapshot() {
                         guard !Task.isCancelled else { return }
                         self?.speechModelInstallEvents.removeValue(forKey: modelID)
                         self?.speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
                     }
-                    self?.tableView.reloadSections(IndexSet(integer: Section.runtime.rawValue), with: .none)
+                    if event.stage == .completed { self?.tableView.reloadData() }
                 }
             }
         }

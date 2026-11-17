@@ -40,7 +40,7 @@ final class ReaderSettingsPresentation {
     /// Reader typography/theme/layout controls, presented as a floating
     /// modal sheet (mirrors `presentTOC()` / `showFootnotes()`).
     func presentReaderSettings() {
-        let controller = ReaderSettingsScreenController(settings: settings)
+        let controller = ReaderSettingsScreenController(settings: settings, isPDF: composition.contentSurface.kind == .pdf)
         controller.onChange = { [weak self] in
             self?.scheduleReaderSettingsUpdate()
         }
@@ -51,6 +51,13 @@ final class ReaderSettingsPresentation {
     }
 
     func scheduleReaderSettingsUpdate() {
+        if composition.contentSurface.kind == .pdf {
+            applyReaderColors()
+            textPresentation.applyReaderLayoutMode()
+            composition.contentSurface.applyPDFSettings(settings)
+            composition.pageIndicator.isHidden = !settings.readerShowPageNumbers
+            return
+        }
         guard !isLoading(), document.fulltext != nil || document.activePreparedChapter != nil else {
             applyReaderColors()
             return

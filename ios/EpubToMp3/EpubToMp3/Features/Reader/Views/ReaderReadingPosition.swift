@@ -66,6 +66,7 @@ final class ReaderReadingPosition {
     func forgetViewportOffsets() { rememberedViewportOffsets.removeAll() }
 
     func persistReadingProgress() {
+        if let pdf = composition.contentSurface.pdfPresentation { pdf.persistPosition(); return }
         let anchor = captureReadingAnchor()
         rememberViewportOffset(for: anchor)
         playback.publish(anchor, facts: facts(), isViewportTransitioning: isViewportTransitioning)
@@ -217,6 +218,7 @@ final class ReaderReadingPosition {
     /// immersive mode. Capture the current glyph before that reflow and
     /// restore it after TextKit has measured the larger viewport.
     func prepareForViewportTransition() {
+        if let pdf = composition.contentSurface.pdfPresentation { pdf.prepareForViewportTransition(); return }
         guard composition.loadingContainer.isHidden,
               composition.scrollView.bounds.height > 0 else { return }
         // Both the reader and its host prepare the same constraint change.
@@ -247,6 +249,7 @@ final class ReaderReadingPosition {
     /// The parent invokes this after its navigation-bar animation reaches
     /// final geometry. Only then are the current page offsets safe to use.
     func completeViewportTransition() {
+        if let pdf = composition.contentSurface.pdfPresentation { pdf.completeViewportTransition(); return }
         guard isViewportTransitioning else { return }
         composition.view.setNeedsLayout()
         composition.view.layoutIfNeeded()

@@ -187,6 +187,78 @@ final class SpeechModelObserverLifetimeTests: XCTestCase {
                        "The held installer is a native boundary fixture, never a model download")
     }
 
+    #if os(iOS)
+    func testVoiceModelDestinationGroupsModelsByLanguageWhileSettingsKeepsOneSummaryRow() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let root = fixture.makeOwner()
+        await waitForObservers(1, fixture: fixture)
+        XCTAssertEqual(root.numberOfSections(in: root.tableView), SettingsSection.allCases.count)
+        XCTAssertEqual(root.tableView(root.tableView, numberOfRowsInSection: 0), 1)
+        XCTAssertTrue(root.modelLanguageSections.isEmpty, "Settings itself never lists models inline")
+        XCTAssertNil(root.modelEntry(at: IndexPath(row: 0, section: 1)))
+        XCTAssertEqual(root.settingsSection(at: SettingsSection.storage.rawValue), .storage)
+        let owner = root.makeVoiceModelsDestination()
+        owner.loadViewIfNeeded()
+        await waitForObservers(2, fixture: fixture)
+        XCTAssertEqual(owner.numberOfSections(in: owner.tableView), 3)
+        XCTAssertEqual(owner.tableView(owner.tableView, numberOfRowsInSection: 0), 7)
+        XCTAssertEqual(owner.settingsSection(at: 0), .runtime)
+        XCTAssertNil(owner.settingsSection(at: 1))
+        let paths = (1...2).flatMap { section in
+            (0..<owner.tableView(owner.tableView, numberOfRowsInSection: section)).map { IndexPath(row: $0, section: section) }
+        }
+        XCTAssertEqual(Set(paths.compactMap { owner.modelEntry(at: $0)?.identity.modelID }), Set(Fixture.modelIDs))
+        XCTAssertEqual(paths.count, Fixture.modelIDs.count)
+        for path in paths {
+            let entry = try XCTUnwrap(owner.modelEntry(at: path))
+            let tag = try XCTUnwrap(entry.languageEvidence.exactTags.first?.tag)
+            XCTAssertEqual(owner.tableView(owner.tableView, titleForHeaderInSection: path.section),
+                           SpeechModelLibraryViewState(snapshot: fixture.snapshot).languageTitle(tag))
+        }
+        let path = try XCTUnwrap(paths.first { owner.modelEntry(at: $0)?.identity.modelID == Fixture.modelIDs[0] })
+        let modelCell = owner.tableView(owner.tableView, cellForRowAt: path)
+        XCTAssertEqual(modelCell.accessibilityIdentifier, "settings.speechModel.\(Fixture.modelIDs[0])")
+        let summary = owner.tableView(owner.tableView, cellForRowAt: owner.modelSummaryPath)
+        XCTAssertEqual(summary.accessibilityIdentifier, "settings.speechModels.disclosure")
+    }
+
+    func testProgressPreservesVisibleCellsAndScrollPosition() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let root = fixture.makeOwner()
+        await waitForObservers(1, fixture: fixture)
+        let owner = root.makeVoiceModelsDestination()
+        owner.loadViewIfNeeded()
+        await waitForObservers(2, fixture: fixture)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = owner
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        owner.tableView.layoutIfNeeded()
+        let summaryPath = owner.modelSummaryPath
+        XCTAssertEqual(summaryPath, IndexPath(row: 2, section: 0))
+        let summary = try XCTUnwrap(owner.tableView.cellForRow(at: summaryPath))
+        let offset = owner.tableView.contentOffset
+        owner.applyInstallEvent(.init(sequence: 1, operationID: "foreign", modelID: "missing-model",
+            stage: .downloading, artifactIndex: nil, bytesCompleted: 50, bytesTotal: 100, failure: nil))
+        XCTAssertNil(owner.speechModelInstallEvents["missing-model"])
+        for (sequence, stage) in [SpeechModelInstallEvent.Stage.downloading, .verifying, .failed, .cancelled].enumerated() {
+            owner.applyInstallEvent(.init(sequence: UInt64(sequence + 1), operationID: "fixture",
+                modelID: Fixture.modelIDs[0], stage: stage, artifactIndex: nil,
+                bytesCompleted: 50, bytesTotal: 100, failure: nil))
+            owner.tableView.layoutIfNeeded()
+            XCTAssertTrue(owner.tableView.cellForRow(at: summaryPath) === summary,
+                          "Progress must configure the existing cell without reloading the section")
+            XCTAssertEqual(owner.tableView.contentOffset, offset)
+            XCTAssertTrue(((summary.contentConfiguration as? UIListContentConfiguration)?.secondaryText ?? "").contains(
+                SpeechModelLibraryViewState(snapshot: fixture.snapshot).installStatus(for:
+                    .init(sequence: 1, operationID: "fixture", modelID: Fixture.modelIDs[0], stage: stage,
+                          artifactIndex: nil, bytesCompleted: 50, bytesTotal: 100, failure: nil))))
+        }
+    }
+    #endif
+
     private func waitForObservers(_ expected: Int, fixture: Fixture) async {
         for _ in 0..<200 {
             var counts: [Int] = []
@@ -277,7 +349,7 @@ final class SpeechModelObserverLifetimeTests: XCTestCase {
                  "presentation": ["model_name": "Fixture voice \(index)", "family_name": "Piper", "quality": "medium",
                                   "voice_choices": [["voice_id": NSNull(), "name": "Fixture voice"]]],
                  "language_evidence": ["routing_tags": ["pt"],
-                                       "exact_tags": [["tag": "pt-BR", "frontend": "fixture", "validation": "runtime_validated"]]],
+                                       "exact_tags": [["tag": index == 2 ? "en-US" : "pt-BR", "frontend": "fixture", "validation": "runtime_validated"]]],
                  "distribution": ["installable": index < 2, "download_bytes": 1, "installed_bytes": 1],
                  "licence": ["id": "fixture", "category": "dataset", "evidence_url": "https://example.invalid/model",
                              "requires_acceptance": false, "validation": "partial"],

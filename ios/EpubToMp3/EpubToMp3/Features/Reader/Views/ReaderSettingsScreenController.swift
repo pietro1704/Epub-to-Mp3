@@ -18,6 +18,7 @@ final class ReaderSettingsScreenController: UITableViewController {
     }
 
     private let settings: AppSettings
+    private let isPDF: Bool
 
     /// Fired at the end of every `refresh()` — i.e. right after any setting
     /// changes — so the reader behind this sheet can re-render immediately.
@@ -27,8 +28,9 @@ final class ReaderSettingsScreenController: UITableViewController {
     /// after the sheet has restored its final presentation transform.
     var onDismiss: (() -> Void)?
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, isPDF: Bool = false) {
         self.settings = settings
+        self.isPDF = isPDF
         super.init(style: .insetGrouped)
         title = L10n.string("readerSettings.title")
     }
@@ -69,8 +71,9 @@ final class ReaderSettingsScreenController: UITableViewController {
         case .theme:
             return ReaderTheme.allCases.filter { $0 != .custom }.count
         case .font:
-            return 2
+            return isPDF ? 0 : 2
         case .layout:
+            if isPDF { return 2 }
             return settings.readerLayout == .paginated ? 6 : 4
         case .audioTracking:
             return 1
@@ -81,7 +84,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: section) else { return nil }
         switch section {
         case .theme: return L10n.string("readerSettings.theme")
-        case .font: return L10n.string("readerSettings.font")
+        case .font: return isPDF ? nil : L10n.string("readerSettings.font")
         case .layout: return L10n.string("readerSettings.layout")
         case .audioTracking: return L10n.string("settings.playback")
         }
@@ -196,6 +199,10 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
     }
 
     private func layoutCellContent(_ content: inout UIListContentConfiguration, row: Int) {
+        if isPDF, row == 1 {
+            content.text = L10n.string("readerSettings.showPageNumbers")
+            return
+        }
         let paginated = settings.readerLayout == .paginated
         if row == 0 {
             content.text = L10n.string("readerSettings.mode")
@@ -236,7 +243,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
     }
 
     private func isToggleLayoutRow(_ row: Int) -> Bool {
-        settings.readerLayout == .paginated && row == 2
+        isPDF ? row == 1 : settings.readerLayout == .paginated && row == 2
     }
 
     private func layoutAccessibilityIdentifier(for row: Int) -> String {
@@ -254,7 +261,8 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
     }
 
     private func isSliderLayoutRow(_ row: Int) -> Bool {
-        row == (settings.readerLayout == .paginated ? 4 : 2)
+        if isPDF { return false }
+        return row == (settings.readerLayout == .paginated ? 4 : 2)
             || row == (settings.readerLayout == .paginated ? 5 : 3)
     }
 
@@ -275,6 +283,11 @@ private func handleFontSelection(row: Int) {
                 self?.settings.readerLayout = ReaderLayout.allCases[index]
                 self?.refresh()
             }
+            return
+        }
+        if isPDF, row == 1 {
+            settings.readerShowPageNumbers.toggle()
+            refresh()
             return
         }
         if paginated && row == 1 {
