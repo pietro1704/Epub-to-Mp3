@@ -15,7 +15,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../models/job_snapshot.dart';
 import '../services/audio_player_service.dart';
-import '../state/providers.dart';
 import '../screens/library_screen.dart';
 
 part 'player_chapter_list.dart';
@@ -53,10 +52,6 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     final chapters = widget.player.chapters;
     if (chapters.isEmpty) return;
 
-    final dm = ref.read(downloadManagerProvider);
-    final settings = ref.read(settingsProvider);
-    final base = settings.backendURL.trim();
-
     setState(() {
       _downloading = true;
       _downloadStatus = '0/${chapters.length}';
@@ -65,42 +60,35 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     var completed = 0;
     for (final ch in chapters) {
       final url = ch.downloadUrl;
-      if (url == null || url.isEmpty) {
+      // Only completed local chapter files can be saved; in-progress
+      // streams and remote URLs have no local copy to keep.
+      if (url == null || url.isEmpty || !url.startsWith('file:')) {
         completed++;
         if (mounted) {
           setState(() => _downloadStatus = '$completed/${chapters.length}');
         }
         continue;
       }
-      if (url.startsWith('file:')) {
-        try {
-          final source = File.fromUri(Uri.parse(url));
-          final dir = await getApplicationDocumentsDirectory();
-          final folder = Directory(
-            '${dir.path}/downloads/${widget.bookId ?? 'unknown'}',
-          )..createSync(recursive: true);
-          final target = File('${folder.path}/chapter_${ch.index}.mp3');
-          if (await source.exists() && await source.length() > 0) {
-            await source.copy(target.path);
-          }
-        } catch (_) {}
-        completed++;
-        if (mounted) {
-          setState(() => _downloadStatus = '$completed/${chapters.length}');
-        }
-        continue;
-      }
-      final fullUrl = url.startsWith('http')
-          ? url
-          : '${base.endsWith('/') ? base.substring(0, base.length - 1) : base}$url';
-      final name = 'chapter_${ch.index}.mp3';
-      final jobId = widget.bookId ?? 'unknown';
       try {
-        await dm.download(jobId: jobId, url: fullUrl, filename: name);
-      } catch (_) {}
+        final source = File.fromUri(Uri.parse(url));
+        final dir = await getApplicationDocumentsDirectory();
+        final folder = Directory(
+          '${dir.path}/downloads/${widget.bookId ?? 'unknown'}',
+        )..createSync(recursive: true);
+        final target = File('${folder.path}/chapter_${ch.index}.mp3');
+        if (await source.exists() && await source.length() > 0) {
+          await source.copy(target.path);
+        }
+      } catch (error) {
+        // Without a local copy the book is not marked offline below.
+        debugPrint(
+          'FullPlayerSheet: could not keep chapter ${ch.index}: $error',
+        );
+      }
       completed++;
-      if (!mounted) return;
-      setState(() => _downloadStatus = '$completed/${chapters.length}');
+      if (mounted) {
+        setState(() => _downloadStatus = '$completed/${chapters.length}');
+      }
     }
 
     if (!mounted) return;

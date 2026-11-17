@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/services/playback_snapshot.dart';
-import 'package:flutter_app/services/fake_audio_player_service.dart';
+import 'support/fake_audio_player_service.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
 
 void main() {

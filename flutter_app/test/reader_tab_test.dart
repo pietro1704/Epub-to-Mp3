@@ -90,7 +90,7 @@ void main() {
       await t.pump();
 
       // BookOpenScreen should show (at least a loading/parsing state).
-      // Since PythonBridge is not available in test, we should see an error
+      // Without a parsed book in the test host, we should see an error
       // or loading state — but NOT the empty reader state.
       expect(find.text('Pick a book to read'), findsNothing);
     });

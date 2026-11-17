@@ -3,12 +3,12 @@ import '../features/reader/epub_reader_resources.dart';
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 
 import '../models/ebook_fulltext.dart';
 import 'embedded_conversion_contract.dart';
 import 'embedded_conversion_result.dart';
-import 'edge_web_tts.dart';
 import 'growing_chapter_audio_source.dart';
 import 'android_speech_fallback.dart';
 
@@ -37,7 +37,6 @@ class AndroidEmbeddedConverter
   final Stream<dynamic> _chunkEvents;
   final Map<String, GrowingChapterAudioSource> _liveStreams = {};
   final Set<String> _cancelledStreams = {};
-  final EdgeWebTts _edge = EdgeWebTts();
   final AndroidSpeechFallback _speechFallback = AndroidSpeechFallback();
 
   @override
@@ -165,30 +164,6 @@ class AndroidEmbeddedConverter
   }
 
   @override
-  Future<Uint8List> edgeProbe(String text, {String? locale}) async {
-    final normalized = (locale ?? 'en-US').replaceAll('_', '-');
-    final voice = normalized.toLowerCase().startsWith('pt')
-        ? 'pt-BR-AntonioNeural'
-        : normalized.toLowerCase().startsWith('es')
-        ? 'es-ES-AlvaroNeural'
-        : 'en-US-GuyNeural';
-    try {
-      final raw = await _edge.synthesize(text, voice: voice);
-      if (raw.isEmpty) {
-        throw EmbeddedConversionFailure(
-          'EDGE_PROBE_EMPTY',
-          'Edge returned no audio',
-        );
-      }
-      return raw;
-    } on EmbeddedConversionFailure {
-      rethrow;
-    } catch (error) {
-      throw EmbeddedConversionFailure('EDGE_PROBE_FAILED', '$voice: $error');
-    }
-  }
-
-  @override
   Future<void> speakFallback(String text, {required String locale}) =>
       _speechFallback.speak(text, locale: locale);
 
@@ -291,13 +266,11 @@ class AndroidEmbeddedConverter
     String? optionsJson,
   }) async {
     try {
-      // ignore: avoid_print
-      print('AndroidEmbeddedConverter: invoking native convert');
+      debugPrint('AndroidEmbeddedConverter: invoking native convert');
       await ensureRuntimeLoaded();
       // The native channel returns a manifest path or inline JSON. Keep the
       // request observable on Android while the Rust worker runs.
-      // ignore: avoid_print
-      print(
+      debugPrint(
         'AndroidEmbeddedConverter: invoking native convert input=$inputPath output=$outputPath',
       );
       final result = await _channel.invokeMethod<String>('convert', {

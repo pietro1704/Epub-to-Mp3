@@ -1,7 +1,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_app/services/audio_player_service.dart';
+import 'support/fake_audio_player_service.dart';
 import 'package:flutter_app/services/background_audio_handler.dart';
 
 void main() {

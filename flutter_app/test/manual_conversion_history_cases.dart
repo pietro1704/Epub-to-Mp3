@@ -69,17 +69,10 @@ void registerManualConversionHistoryCases() {
       try {
         SharedPreferences.setMockInitialValues({});
         final prefs = await SharedPreferences.getInstance();
-        var httpReads = 0;
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
               sharedPrefsProvider.overrideWithValue(prefs),
-              apiClientProvider.overrideWith((ref) {
-                httpReads++;
-                throw StateError(
-                  'Local manual conversion must not request HTTP',
-                );
-              }),
             ],
             child: MaterialApp(
               localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -113,7 +106,6 @@ void registerManualConversionHistoryCases() {
         );
         await tester.tap(find.text('Start conversion'));
         await tester.pumpAndSettle();
-        expect(httpReads, 0);
         final history = await LocalConversionJobStore(prefs).loadHistory();
         expect(history.jobs, hasLength(1));
         final job = history.jobs.single;

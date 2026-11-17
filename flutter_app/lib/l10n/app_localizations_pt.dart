@@ -19,9 +19,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get settingsTitle => 'Configurações';
 
   @override
-  String get backendUrl => 'URL do servidor';
-
-  @override
   String get wpmLabel => 'Palavras por minuto';
 
   @override
@@ -99,22 +96,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get refresh => 'Atualizar';
 
   @override
-  String get playerTitle => 'Reprodutor';
-
-  @override
   String get readerTitle => 'Leitor';
 
   @override
   String get tocTitle => 'Capítulos';
-
-  @override
-  String get loadingFulltext => 'Carregando texto…';
-
-  @override
-  String get fulltextEmpty => 'Texto não disponível';
-
-  @override
-  String get fulltextGone => 'Texto não está mais disponível';
 
   @override
   String get downloadAll => 'Baixar tudo';
@@ -155,13 +140,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get remove => 'Remover';
 
   @override
-  String get noConversionYet => 'Converta este livro antes de reproduzir áudio';
-
-  @override
-  String get readerEmptyHint =>
-      'Abra um livro da biblioteca para começar a ler';
-
-  @override
   String get pickBookToRead => 'Escolha um livro para ler';
 
   @override
@@ -177,34 +155,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get retry => 'Tentar novamente';
 
   @override
-  String get generatingAudio => 'Gerando áudio';
-
-  @override
-  String get nowPlaying => 'Reproduzindo';
-
-  @override
   String get audioEngineSection => 'Motor de áudio';
-
-  @override
-  String get useBuiltInEngine => 'Usar motor de áudio integrado';
 
   @override
   String get useBuiltInEngineDesc =>
       'Sintetiza capítulos neste dispositivo. Sem servidor necessário.';
-
-  @override
-  String get audioEngineFooter =>
-      'A leitura funciona offline de qualquer forma — isso afeta apenas a geração de áudio.';
-
-  @override
-  String get remoteBackendSection => 'Servidor remoto';
-
-  @override
-  String get backendUrlHint => 'http://localhost:8000';
-
-  @override
-  String get backendUrlFooter =>
-      'Aponte para um servidor local ou URL do Hugging Face Space.';
 
   @override
   String get fontLabel => 'Fonte';
@@ -246,26 +201,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get platformLabel => 'Plataforma';
 
   @override
-  String get projectOnGithub => 'Projeto no GitHub';
-
-  @override
   String get readerPrefsFooter =>
       'Estas preferências se aplicam a todos os livros da biblioteca.';
-
-  @override
-  String get invalidUrl => 'URL inválida';
-
-  @override
-  String get backendUnavailable =>
-      'Configure uma URL HTTP(S) acessível por este dispositivo.';
 
   @override
   String nOfSteps(int n, int total) {
     return '$n de $total';
   }
-
-  @override
-  String get sortBy => 'Ordenar por';
 
   @override
   String get sortLastOpened => 'Último aberto';
@@ -290,22 +232,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get removeFromLibrary => 'Remover da biblioteca';
 
   @override
-  String get startingConversion => 'Iniciando conversão…';
-
-  @override
   String get conversionFailed => 'Falha na conversão';
-
-  @override
-  String get uploadFailed => 'Falha no upload';
 
   @override
   String get downloading => 'Baixando…';
 
   @override
   String get downloadComplete => 'Download concluído';
-
-  @override
-  String get downloadFailed => 'Falha no download';
 
   @override
   String chaptersConverted(int n, int total) {
@@ -318,11 +251,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get saveForOffline => 'Salvar';
-
-  @override
-  String charsCount(int n) {
-    return '$n caracteres';
-  }
 
   @override
   String get searchInBook => 'Buscar no livro';
@@ -338,12 +266,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get sortLibrary => 'Ordenar biblioteca';
-
-  @override
-  String get skipBack15 => 'Voltar 15 segundos';
-
-  @override
-  String get skipForward15 => 'Avançar 15 segundos';
 
   @override
   String get playbackPosition => 'Posição de reprodução';
@@ -362,15 +284,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get tableOfContents => 'Índice';
-
-  @override
-  String get readerSettings => 'Configurações do leitor';
-
-  @override
-  String get audioReady => 'Áudio pronto';
-
-  @override
-  String get currentlyPlaying => 'Reproduzindo agora';
 
   @override
   String get editTags => 'Editar Tags';
@@ -440,9 +353,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get bookmarkAdded => 'Marcador adicionado';
 
   @override
-  String get bookmarkRemoved => 'Marcador removido';
-
-  @override
   String get sizeLabel => 'Tamanho';
 
   @override
@@ -455,23 +365,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get platformAndroid => 'Android';
-
-  @override
-  String get chapterListTitle => 'Capítulos';
-
-  @override
-  String get sleepTimerActive => 'Timer de sono ativo';
-
-  @override
-  String get sleepTimerOff => 'Timer de sono desligado';
-
-  @override
-  String get speedLabel => 'Velocidade';
-
-  @override
-  String sleepMinutes(int n) {
-    return '$n min';
-  }
 
   @override
   String get off => 'Desligado';
@@ -520,6 +413,9 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get ttsSecondaryUsedNotice =>
       'Usando a voz secundária. A voz principal será tentada novamente periodicamente.';
+
+  @override
+  String get platformVoiceNotice => 'Usando a voz do sistema neste trecho.';
 
   @override
   String get localAudioStorage => 'Áudio baixado no dispositivo';

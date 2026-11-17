@@ -27,7 +27,6 @@ import '../models/book_entity.dart';
 import '../models/job_snapshot.dart';
 import '../services/async_load_guard.dart';
 import '../services/audio_player_service.dart';
-import '../services/cover_writeback.dart';
 
 import '../services/local_conversion_job.dart';
 import '../services/embedded_converter.dart';
@@ -41,7 +40,6 @@ import '../services/playback_first_resource_policy.dart';
 import '../services/speech_text_policy.dart';
 import '../services/resume_position_router.dart';
 import '../services/resume_restoration_guard.dart';
-import '../services/sse_subscription_lifecycle.dart';
 import '../state/providers.dart';
 import '../views/instant_reader_view.dart';
 import 'library_screen.dart';
@@ -73,9 +71,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              platformVoiceNotice(Localizations.localeOf(context).languageCode),
-            ),
+            content: Text(AppLocalizations.of(context)!.platformVoiceNotice),
           ),
         );
       });
@@ -118,7 +114,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     _stopNativeConversion();
     _platformVoiceSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    _sseSubscription?.cancel();
     _chapterIndexSub?.cancel();
     _chapterIndexSub = null;
     _positionSub?.cancel();

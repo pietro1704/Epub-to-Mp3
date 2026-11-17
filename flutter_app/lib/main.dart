@@ -18,7 +18,6 @@ import 'services/background_audio_handler.dart';
 import 'services/app_deep_link.dart';
 import 'services/incoming_document_service.dart';
 import 'services/widget_playback_snapshot.dart';
-import 'models/app_settings.dart';
 import 'services/offline_cache_eviction.dart';
 import 'state/providers.dart';
 import 'services/embedded_converter.dart';
@@ -63,7 +62,7 @@ Future<void> main() async {
   final deepLinks = AppDeepLinkService(deepLinkStream);
   final audioStartup = AudioStartupState();
   final sharedPlayer = defaultTargetPlatform == TargetPlatform.android
-      ? AudioPlayerService(backendBase: MirrorAppSettings(prefs).backendURL)
+      ? AudioPlayerService()
       : null;
 
   // Run LRU+TTL eviction on every app launch (background, best-effort).

@@ -1618,7 +1618,7 @@ description = "Verify native speech notices, cancellation and Android voice sele
 run = '''
 mise exec -- ruby scripts/native_build_command.rb -- mise exec -- ruby -e '
 Dir.chdir("flutter_app") do
-  command = ["mise", "exec", "--", "flutter", "test", "test/platform_voice_notice_test.dart", "test/background_conversion_lifecycle_test.dart", "test/background_conversion_preferences_test.dart", "test/embedded_converter_test.dart", "test/convert_screen_test.dart", "test/rust_playback_conversion_test.dart", "test/android_chapter_stream_test.dart", "test/growing_chapter_audio_source_test.dart", "test/growing_chapter_player_test.dart", "test/rust_streaming_window_test.dart", "test/reader_playback_startup_test.dart", "test/audio_player_service_test.dart", "test/book_open_screen_test.dart", "test/resume_restoration_guard_test.dart"]
+  command = ["mise", "exec", "--", "flutter", "test", "test/platform_voice_notice_test.dart", "test/embedded_converter_test.dart", "test/convert_screen_test.dart", "test/rust_playback_conversion_test.dart", "test/android_chapter_stream_test.dart", "test/growing_chapter_audio_source_test.dart", "test/growing_chapter_player_test.dart", "test/rust_streaming_window_test.dart", "test/reader_playback_startup_test.dart", "test/audio_player_service_test.dart", "test/book_open_screen_test.dart", "test/resume_restoration_guard_test.dart"]
   exit($?.exitstatus || 1) unless system(*command)
   Dir.chdir("android") { exit($?.exitstatus || 1) unless system("mise", "exec", "--", "./gradlew", ":app:testDebugUnitTest", "--max-workers=1") }
 end

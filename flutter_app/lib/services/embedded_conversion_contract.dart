@@ -1,11 +1,6 @@
-import 'dart:typed_data';
-
 import '../models/ebook_fulltext.dart';
 import 'embedded_conversion_result.dart';
 import 'growing_chapter_audio_source.dart';
-
-/// Selects the implementation used for local conversion.
-enum ConverterMode { embedded, http }
 
 /// Raised when embedded conversion was explicitly requested but no native
 /// converter-ffi implementation has been registered for this process.
@@ -32,10 +27,6 @@ class EmbeddedConversionFailure extends Error {
 
 /// Platform-neutral seam for the converter-ffi C ABI.
 abstract interface class EmbeddedConverter {
-  Future<Uint8List> edgeProbe(String text, {String? locale}) =>
-      throw EmbeddedConverterUnavailable(
-        'Android Edge transport probe is unavailable',
-      );
   Future<void> speakFallback(String text, {required String locale}) =>
       throw EmbeddedConverterUnavailable(
         'Android speech fallback is unavailable',

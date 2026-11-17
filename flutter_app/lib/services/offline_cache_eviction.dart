@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path_provider/path_provider.dart';
 
 // MARK: - Configuration constants
@@ -31,7 +32,8 @@ class AudiobookCacheEntry {
 
 /// Legacy cache-maintenance entry point for the Flutter offline audiobook cache.
 ///
-/// **Layout:** `<documents>/downloads/<jobId>/` — mirrors [DownloadManager].
+/// **Layout:** `<documents>/downloads/<jobId>/` — where the full player's
+/// "Download all" action keeps local chapter copies.
 ///
 /// **Last-access tracking:** A sidecar file `.last_access` (ISO-8601 UTC)
 /// lives inside each jobId folder. Call [touchLastAccess] when playback
@@ -205,10 +207,14 @@ class OfflineCacheEviction {
           try {
             final stat = await entity.stat();
             total += stat.size;
-          } catch (_) {}
+          } catch (error) {
+            debugPrint('OfflineCacheEviction: skipped unreadable file: $error');
+          }
         }
       }
-    } catch (_) {}
+    } catch (error) {
+      debugPrint('OfflineCacheEviction: could not size $dir: $error');
+    }
     return total;
   }
 

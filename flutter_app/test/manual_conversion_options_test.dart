@@ -124,9 +124,6 @@ void main() {
         overrides: [
           sharedPrefsProvider.overrideWithValue(prefs),
           embeddedConverterProvider.overrideWithValue(converter),
-          apiClientProvider.overrideWith((ref) {
-            throw StateError('Manual conversion must not request HTTP');
-          }),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -187,9 +184,6 @@ void main() {
               embeddedConverterProvider.overrideWithValue(
                 AndroidEmbeddedConverter(channel: converterChannel),
               ),
-              apiClientProvider.overrideWith((ref) {
-                throw StateError('Android conversion must not request HTTP');
-              }),
             ],
             child: const MaterialApp(
               localizationsDelegates: AppLocalizations.localizationsDelegates,

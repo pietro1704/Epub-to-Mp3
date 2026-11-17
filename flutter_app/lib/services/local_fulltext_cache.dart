@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/ebook_fulltext.dart';
@@ -94,7 +95,10 @@ class LocalFulltextCache {
     try {
       await File('${file.path}.last_access')
           .writeAsString(DateTime.now().toUtc().toIso8601String(), flush: true);
-    } catch (_) {}
+    } catch (error) {
+      // Access tracking is best effort.
+      debugPrint('LocalFulltextCache: could not record access: $error');
+    }
   }
 
   Future<void> _reclaimRebuildableBytes(Directory directory) async {
@@ -126,6 +130,9 @@ class LocalFulltextCache {
         final marker = File('$path.last_access');
         if (await marker.exists()) await marker.delete();
       }
-    } catch (_) {}
+    } catch (error) {
+      // Rebuildable text; a later maintenance pass can retry.
+      debugPrint('LocalFulltextCache: eviction stopped: $error');
+    }
   }
 }

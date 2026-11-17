@@ -8,43 +8,14 @@ import 'package:flutter_app/services/embedded_converter.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/book_entity.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
-import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/screens/book_open_screen.dart';
-import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_app/services/audio_player_service.dart';
+import 'support/fake_audio_player_service.dart';
 import 'package:flutter_app/services/local_fulltext_cache.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-/// Fake API client that always throws on upload — simulates unreachable
-/// backend so the conversion flow falls through to PythonBridge.
-class _FakeApiClient extends ApiClient {
-  _FakeApiClient() : super('http://fake');
-  int uploads = 0;
-
-  @override
-  Future<String> uploadAndConvert(
-    String filePath, {
-    int? chapterEnd,
-    int? chapterStart,
-    String engine = 'edge',
-    bool? includeCover,
-    String? language,
-    bool? normalizeAudio,
-    String? voice,
-  }) async {
-    uploads++;
-    throw Exception('Backend unreachable');
-  }
-
-  @override
-  Stream<JobSnapshot> jobStream(String jobId) => const Stream.empty();
-
-  @override
-  Future<List<int>?> fetchBytes(String url) async => null;
-}
 
 /// In-memory cache that avoids real file I/O in tests.
 class _FakeFulltextCache extends LocalFulltextCache {
@@ -120,7 +91,6 @@ Widget _wrap(
   SharedPreferences prefs,
   String bookId, {
   required LocalFulltextCache cache,
-  ApiClient? apiClient,
   AudioPlayerInterface? player,
   EmbeddedConverter? converter,
 }) {
@@ -128,7 +98,6 @@ Widget _wrap(
     overrides: [
       sharedPrefsProvider.overrideWithValue(prefs),
       localFulltextCacheProvider.overrideWithValue(cache),
-      if (apiClient != null) apiClientProvider.overrideWithValue(apiClient),
       if (player != null) globalAudioPlayerProvider.overrideWithValue(player),
       if (converter != null)
         embeddedConverterProvider.overrideWithValue(converter),
@@ -166,7 +135,6 @@ void main() {
     });
     final converter = _DesktopFakeConverter();
     final player = FakeAudioPlayerService();
-    final api = _FakeApiClient();
     Future<void>? pendingPlayback;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
@@ -182,7 +150,6 @@ void main() {
           prefs,
           'desktop',
           cache: _FakeFulltextCache(),
-          apiClient: api,
           player: player,
           converter: converter,
         ),
@@ -210,7 +177,6 @@ void main() {
         isNull,
       );
       expect(converter.options, isEmpty);
-      expect(api.uploads, 0);
       expect(player.hasQueuedAudio, false);
       expect(player.isPlaying, false);
       expect(tester.takeException(), isNull);
@@ -249,9 +215,7 @@ void main() {
         );
         final prefs = await _mockPrefs({
           'library.books.v1': '[${book.encode()}]',
-          'useEmbeddedRuntime': false,
         });
-        final api = _FakeApiClient();
         final converter = _DesktopFakeConverter();
         final player = FakeAudioPlayerService();
         try {
@@ -260,7 +224,6 @@ void main() {
               prefs,
               'desktop',
               cache: _FakeFulltextCache(),
-              apiClient: api,
               player: player,
               converter: converter,
             ),
@@ -283,7 +246,6 @@ void main() {
             )['tts_preferences']['primary']['model_id'],
             'pt_BR-faber-medium',
           );
-          expect(api.uploads, 0);
           expect(player.hasQueuedAudio, true);
           expect(player.isPlaying, true);
         } finally {
@@ -350,7 +312,7 @@ void main() {
       await t.pump();
       await t.pump();
 
-      // PythonBridge.isSupported is false on macOS test host, so the
+      // No local parser result is available for a missing book, so the
       // error state should render.
       expect(find.text('Could not open this book'), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
@@ -384,7 +346,6 @@ void main() {
         ],
       });
 
-      final fakeApi = _FakeApiClient();
       final fakePlayer = FakeAudioPlayerService();
 
       await t.pumpWidget(
@@ -392,7 +353,6 @@ void main() {
           prefs,
           'play-book',
           cache: cache,
-          apiClient: fakeApi,
           player: fakePlayer,
         ),
       );
@@ -403,7 +363,9 @@ void main() {
       expect(find.byIcon(Icons.play_circle_filled), findsNothing);
     });
 
-    testWidgets('conversion falls back to local when backend fails', (t) async {
+    testWidgets('cached book leaves conversion to the global shell', (
+      t,
+    ) async {
       final book = BookEntity(
         id: 'fallback-book',
         title: 'Fallback Book',
@@ -427,7 +389,6 @@ void main() {
         ],
       });
 
-      final fakeApi = _FakeApiClient();
       final fakePlayer = FakeAudioPlayerService();
 
       await t.pumpWidget(
@@ -435,7 +396,6 @@ void main() {
           prefs,
           'fallback-book',
           cache: cache,
-          apiClient: fakeApi,
           player: fakePlayer,
         ),
       );

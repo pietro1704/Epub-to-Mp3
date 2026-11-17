@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_app/models/book_entity.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
-import 'package:flutter_app/services/audio_player_service.dart';
+import 'support/fake_audio_player_service.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_app/views/mini_player_bar.dart';
 

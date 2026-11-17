@@ -1,12 +1,23 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/services/platform_voice_notice.dart';
 import 'dart:async';
 
 void main() {
-  test('voice change notice tells the user about the offline substitution', () {
-    expect(platformVoiceNotice('pt'), contains('Voz local temporária'));
-    expect(platformVoiceNotice('es'), contains('Voz local temporal'));
-    expect(platformVoiceNotice('en'), contains('Temporary local voice'));
+  test('voice change notice names the system voice in every locale', () {
+    expect(
+      lookupAppLocalizations(const Locale('pt')).platformVoiceNotice,
+      contains('voz do sistema'),
+    );
+    expect(
+      lookupAppLocalizations(const Locale('es')).platformVoiceNotice,
+      contains('voz del sistema'),
+    );
+    expect(
+      lookupAppLocalizations(const Locale('en')).platformVoiceNotice,
+      contains('system voice'),
+    );
   });
 
   test(

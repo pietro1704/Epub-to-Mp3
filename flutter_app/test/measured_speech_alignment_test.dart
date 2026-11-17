@@ -6,7 +6,7 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/features/playback/measured_speech_alignment.dart';
 import 'package:flutter_app/features/playback/measured_playback_binding.dart';
-import 'package:flutter_app/services/fake_audio_player_service.dart';
+import 'support/fake_audio_player_service.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
 
 Uint8List tag(List<Object> passages, {int version = 3}) {

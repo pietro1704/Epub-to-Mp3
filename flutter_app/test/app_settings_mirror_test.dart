@@ -15,11 +15,6 @@ void main() {
   }
 
   group('MirrorAppSettings', () {
-    test('default backend URL is localhost:8000', () async {
-      final s = await make();
-      expect(s.backendURL, 'http://localhost:8000');
-    });
-
     test('font size clamps to 0..4', () async {
       final s = await make();
       await s.setReaderFontSize(99);
@@ -36,12 +31,6 @@ void main() {
       expect(s.readerPointSize, 20);
       await s.setReaderFontSize(4);
       expect(s.readerPointSize, 28);
-    });
-
-    test('resolvedBaseURL drops trailing slash', () async {
-      final s = await make();
-      await s.setBackendURL('http://example.com/');
-      expect(s.resolvedBaseURL.toString(), 'http://example.com');
     });
 
     test('readerCustomColors falls back when stored string is bad', () async {
@@ -63,16 +52,6 @@ void main() {
       expect(c.background.r, closeTo(0.1, 1e-3));
       expect(c.foreground.b, closeTo(0.6, 1e-3));
     });
-
-    test(
-      'sidecarURL preempts backendURL when useEmbeddedSidecar=true',
-      () async {
-        final s = await make();
-        s.sidecarURL = Uri.parse('http://127.0.0.1:12345');
-        await s.setUseEmbeddedSidecar(true);
-        expect(s.resolvedBaseURL.toString(), 'http://127.0.0.1:12345');
-      },
-    );
 
     test('readerShowPageNumbers defaults to true and persists', () async {
       final s = await make();
@@ -115,14 +94,6 @@ void main() {
 
   group('MirrorAppSettings legacy migration', () {
     test(
-      'legacy backendUrl is copied into backendURL on first construction',
-      () async {
-        final s = await make({'backendUrl': 'http://legacy.example/api'});
-        expect(s.backendURL, 'http://legacy.example/api');
-      },
-    );
-
-    test(
       'legacy fontSize (raw points) is bucketed into readerFontSize step',
       () async {
         final s = await make({'fontSize': 28.0});
@@ -143,20 +114,15 @@ void main() {
 
     test('migration sentinel is idempotent — no double-write', () async {
       // First boot migrates.
-      SharedPreferences.setMockInitialValues({
-        'backendUrl': 'http://legacy.example',
-        'darkMode': true,
-      });
+      SharedPreferences.setMockInitialValues({'darkMode': true});
       final prefs = await SharedPreferences.getInstance();
       MirrorAppSettings(prefs); // first construction migrates
       expect(prefs.getBool('_settingsMigratedV1'), isTrue);
 
       // Now the user explicitly changes the new keys; the migration
       // must NOT clobber them on subsequent constructions.
-      await prefs.setString('backendURL', 'http://new.example');
       await prefs.setString('readerTheme', ReaderTheme.sepia.rawValue);
       final s = MirrorAppSettings(prefs);
-      expect(s.backendURL, 'http://new.example');
       expect(s.readerTheme, ReaderTheme.sepia);
     });
 
@@ -164,22 +130,69 @@ void main() {
       // Both old and new present: new wins (user opted into new key
       // explicitly before the migration ran).
       final s = await make({
-        'backendUrl': 'http://old.example',
-        'backendURL': 'http://already-migrated.example',
+        'darkMode': true,
+        'readerTheme': ReaderTheme.sepia.rawValue,
       });
-      expect(s.backendURL, 'http://already-migrated.example');
+      expect(s.readerTheme, ReaderTheme.sepia);
     });
 
     test('shim getters surface the new key space via legacy names', () async {
       final s = await make();
-      await s.setBackendURL('http://shim.example');
-      expect(s.backendUrl, 'http://shim.example');
       await s.setFontSize(28);
       expect(s.fontSize, 28);
       expect(s.readerFontSize, 4);
       await s.setDarkMode(true);
       expect(s.darkMode, isTrue);
       expect(s.readerTheme, ReaderTheme.dark);
+    });
+  });
+
+  group('MirrorAppSettings remote backend key cleanup', () {
+    const remoteBackendSeed = <String, Object>{
+      'backendURL': 'http://192.168.0.10:8000',
+      'backendUrl': 'http://legacy.example',
+      'useEmbeddedRuntime': false,
+      'useEmbeddedSidecar': true,
+    };
+
+    test('removes every remote backend key on first construction', () async {
+      SharedPreferences.setMockInitialValues({
+        ...remoteBackendSeed,
+        'wpm': 240,
+        'readerTheme': ReaderTheme.sepia.rawValue,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      MirrorAppSettings(prefs);
+
+      for (final key in MirrorAppSettings.remoteBackendKeys) {
+        expect(prefs.containsKey(key), isFalse, reason: key);
+      }
+      expect(prefs.getBool('_remoteBackendKeysRemovedV1'), isTrue);
+      // Unrelated preferences survive the cleanup.
+      expect(prefs.getInt('wpm'), 240);
+      expect(prefs.getString('readerTheme'), ReaderTheme.sepia.rawValue);
+    });
+
+    test('runs once: later writes to removed keys are left alone', () async {
+      SharedPreferences.setMockInitialValues(remoteBackendSeed);
+      final prefs = await SharedPreferences.getInstance();
+      MirrorAppSettings(prefs);
+      MirrorAppSettings(prefs);
+      expect(prefs.getBool('_remoteBackendKeysRemovedV1'), isTrue);
+
+      await prefs.setString('backendURL', 'http://written-later.example');
+      MirrorAppSettings(prefs);
+      expect(prefs.getString('backendURL'), 'http://written-later.example');
+    });
+
+    test('is a no-op on a fresh install apart from the sentinel', () async {
+      final s = await make();
+      expect(s.wpm, 200);
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in MirrorAppSettings.remoteBackendKeys) {
+        expect(prefs.containsKey(key), isFalse, reason: key);
+      }
+      expect(prefs.getBool('_remoteBackendKeysRemovedV1'), isTrue);
     });
   });
 }

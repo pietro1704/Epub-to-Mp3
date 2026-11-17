@@ -95,9 +95,6 @@ void main() {
                 embeddedConverterProvider.overrideWithValue(
                   AndroidEmbeddedConverter(),
                 ),
-                apiClientProvider.overrideWith(
-                  (ref) => throw StateError('No HTTP conversion'),
-                ),
               ],
               child: MaterialApp(
                 localizationsDelegates: AppLocalizations.localizationsDelegates,

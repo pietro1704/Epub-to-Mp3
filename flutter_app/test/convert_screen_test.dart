@@ -35,9 +35,6 @@ Future<void> _pumpManualResult(
     ProviderScope(
       overrides: [
         sharedPrefsProvider.overrideWithValue(prefs),
-        apiClientProvider.overrideWith((ref) {
-          throw StateError('Completed local conversion must not request HTTP');
-        }),
       ],
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
