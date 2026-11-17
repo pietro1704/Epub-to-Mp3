@@ -14,9 +14,9 @@ mise run convert -- book.epub --show-structure
 ```
 
 These examples follow current task/parser source; they are not executed acceptance
-evidence. The CLI rejects PDF conversion and structure inspection. The shared
-embedded core's separate [PDF contract](../../pdf-conversion.md) does not expand
-the CLI's capability. Use repeated `--chapter` flags for multiple literal chapter
+evidence. The CLI converts and inspects (`--show-structure`) EPUB and text-layer
+PDF through the shared source dispatch; a PDF without extractable text fails
+before any job starts. See the [PDF contract](../../pdf-conversion.md). Use repeated `--chapter` flags for multiple literal chapter
 IDs; `position:N` explicitly selects a zero-based position. Inspect current parser/help
 for batch, output, verification and preference options rather than carrying over
 Python flags or assuming all product-target formats work.
