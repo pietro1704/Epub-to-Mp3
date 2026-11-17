@@ -117,17 +117,6 @@ pub unsafe extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainAct
     (cancellation.0)() as jboolean
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativePlatformSpeechCancelled(
-    env: JNIEnv<'_>,
-    worker: JObject<'_>,
-    context: jlong,
-) -> jboolean {
-    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePlatformSpeechCancelled(
-        env, worker, context,
-    )
-}
-
 fn read_string(env: &mut JNIEnv<'_>, value: JString<'_>) -> Result<String, String> {
     env.get_string(&value)
         .map(|value| value.to_string_lossy().into_owned())

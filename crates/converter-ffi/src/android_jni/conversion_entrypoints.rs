@@ -51,62 +51,6 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
     )
 }
 
-#[no_mangle]
-pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativePrepareConversion(
-    env: JNIEnv<'_>,
-    worker: JObject<'_>,
-    request: JString<'_>,
-) {
-    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePrepareConversion(
-        env, worker, request,
-    )
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativeConvertWithOptions(
-    env: JNIEnv<'_>,
-    worker: JObject<'_>,
-    path: JString<'_>,
-    output: JString<'_>,
-    chapter_start: jint,
-    chapter_end: jint,
-    options_json: JString<'_>,
-    streaming: jboolean,
-) -> jstring {
-    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertWithOptions(
-        env,
-        worker,
-        path,
-        output,
-        chapter_start,
-        chapter_end,
-        options_json,
-        streaming,
-    )
-}
-
-#[no_mangle]
-pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativeCancelConversion(
-    mut env: JNIEnv<'_>,
-    worker: JObject<'_>,
-    request: JString<'_>,
-) -> jboolean {
-    let active = env
-        .get_string(&request)
-        .ok()
-        .map(String::from)
-        .is_some_and(|request| {
-            android_controls()
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .contains_key(&request)
-        });
-    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeCancelConversion(
-        env, worker, request,
-    );
-    active as jboolean
-}
-
 fn convert_android(
     mut env: JNIEnv<'_>,
     activity: JObject<'_>,
