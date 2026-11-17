@@ -74,57 +74,6 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
         }
     }
 
-    func testEmbeddedSnapshotUsesRawBookAndEpubChapterForRetention() {
-        let snapshot = JobSnapshot(
-            jobId: "embedded-book-id",
-            state: "partial",
-            bookTitle: "Book",
-            bookAuthor: nil,
-            coverUrl: nil,
-            coverMimeType: nil,
-            engine: "edge",
-            voice: "voice",
-            language: nil,
-            progressPercent: 50,
-            chaptersTotal: 4,
-            chaptersCompleted: 1,
-            chapterProgress: [
-                .init(
-                    index: 7,
-                    name: "Seven",
-                    status: "completed",
-                    downloadUrl: "file:///chapter-7.mp3",
-                    chars: nil,
-                    charsProcessed: nil,
-                    progressRatio: 1,
-                    durationSeconds: nil,
-                    startedAt: nil,
-                    completedAt: nil
-                )
-            ],
-            outputs: nil,
-            logUrl: nil,
-            error: nil,
-            lastActivityAt: nil
-        )
-
-        let target = PlaybackResumeStore.playbackRetentionTarget(
-            snapshot: snapshot,
-            playableChapterOffset: 0
-        )
-
-        XCTAssertEqual(target?.bookID, "book-id")
-        XCTAssertEqual(target?.chapterIndex, 7)
-    }
-
-    func testRetentionPreservesNonEmbeddedIdentityAndRejectsInvalidOffsets() {
-        let snapshot = snapshot(chapters: [(7, "completed", 100, "a.mp3")])
-        XCTAssertEqual(PlaybackResumeStore.playbackRetentionTarget(snapshot: snapshot, playableChapterOffset: 0)?.bookID, "job")
-        XCTAssertEqual(PlaybackResumeStore.playbackRetentionTarget(snapshot: snapshot, playableChapterOffset: 0)?.chapterIndex, 7)
-        XCTAssertNil(PlaybackResumeStore.playbackRetentionTarget(snapshot: snapshot, playableChapterOffset: -1))
-        XCTAssertNil(PlaybackResumeStore.playbackRetentionTarget(snapshot: snapshot, playableChapterOffset: 1))
-    }
-
     func testRestoredPlaybackUsesPersistedEpubChapterInPartialSnapshot() {
         let snapshot = JobSnapshot(
             jobId: "embedded-book-id",

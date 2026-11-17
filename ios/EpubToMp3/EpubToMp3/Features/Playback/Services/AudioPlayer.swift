@@ -410,10 +410,6 @@ final class AudioPlayer: ObservableObject {
     func startSleepTimer(minutes: Int) {
         services.sleep.start(minutes: minutes)
     }
-
-    func cancelSleepTimer() {
-        services.sleep.cancel()
-    }
     func cycleRate() {
         services.transport.cycleRate()
     }

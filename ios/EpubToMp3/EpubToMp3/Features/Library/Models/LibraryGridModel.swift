@@ -50,7 +50,6 @@ struct LibraryGridModel: Equatable {
     func arrangedBooks() -> [BookEntity] {
         var base = books
         if let tag = selectedTag {
-            // Mirrors `LibraryStore.books(withTag:)`.
             base = base.filter { $0.tags.contains(tag) }
         }
         let query = searchQuery
@@ -75,10 +74,5 @@ struct LibraryGridModel: Equatable {
         case .addedDate:
             return base.sorted { $0.addedAt > $1.addedAt }
         }
-    }
-
-    /// Stable identifiers for the diffable data source, in arranged order.
-    func arrangedIdentifiers() -> [String] {
-        arrangedBooks().map(\.id)
     }
 }

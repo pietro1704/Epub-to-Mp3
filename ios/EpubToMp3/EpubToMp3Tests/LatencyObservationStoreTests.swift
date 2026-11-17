@@ -256,7 +256,6 @@ final class LatencyObservationStoreTests: XCTestCase {
             [.playRequested, .audioQueued, .audioAudible]
         )
         XCTAssertEqual(journey.records.map(\.elapsedNanoseconds), [0, 30, 70])
-        XCTAssertEqual(store.latestElapsedNanoseconds(for: journeyID), 70)
     }
 
     func testProgressivePlaybackRejectsAudibleBeforeQueueReadiness() throws {

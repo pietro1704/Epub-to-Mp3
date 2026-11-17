@@ -94,14 +94,6 @@ enum WidgetDataSync {
         reloadWidgets()
     }
 
-    /// Update only the isPlaying flag without touching other fields.
-    /// Lightweight — called on every play/pause toggle.
-    static func updateIsPlaying(_ isPlaying: Bool) {
-        guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
-        defaults.set(isPlaying, forKey: Keys.nowPlayingIsPlaying)
-        reloadNowPlayingWidgets()
-    }
-
     /// Update playback progress (0.0–1.0). Debounced by the caller;
     /// we just write and reload.
     static func updateNowPlayingProgress(_ progress: Double) {

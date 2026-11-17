@@ -224,59 +224,6 @@ final class RustConversionCoordinator {
         try handle.write(contentsOf: Data((line + "\n").utf8))
     }
 
-    func convertFirstSubstantiveChapter(
-        of bookURL: URL,
-        minimumCharacters: Int = 2_500,
-        jobID: String = UUID().uuidString,
-        options: ConversionOptions? = nil,
-        onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil
-    ) async throws -> Result {
-        if options != nil {
-            try adapter.validateConversionSupport(options: options)
-        }
-        let book = try adapter.openBook(at: bookURL)
-        guard
-            let metadata = try JSONSerialization.jsonObject(with: book.metadataJSON) as? [String: Any],
-            let chapters = metadata["chapters"] as? [[String: Any]]
-        else {
-            throw EmbeddedConverterError.conversionFailed(
-                "Rust chapter metadata is missing or invalid."
-            )
-        }
-
-        for (position, chapter) in chapters.enumerated() {
-            guard (chapter["textChars"] as? Int ?? 0) >= minimumCharacters,
-                  !isFrontMatter(title: chapter["name"] as? String ?? ""),
-                  let selector = Int32(exactly: position) else {
-                continue
-            }
-            return try await convert(
-                bookURL: bookURL,
-                jobID: jobID,
-                chapterStart: selector,
-                chapterEnd: selector,
-                options: options,
-                onChapterCompleted: onChapterCompleted
-            )
-        }
-
-        throw EmbeddedConverterError.conversionFailed(
-            "No substantive chapter can be selected unambiguously for a one-chapter test."
-        )
-    }
-
-    private func isFrontMatter(title: String) -> Bool {
-        let normalized = title.folding(
-            options: [.diacriticInsensitive, .caseInsensitive],
-            locale: Locale(identifier: "en_US_POSIX")
-        )
-        return [
-            "contents", "copyright", "credits", "table of contents", "folha de rosto",
-            "sumario", "indice", "epigraph", "note on", "foreword", "title page", "cover",
-            "preface", "dedication",
-        ].contains(where: normalized.contains)
-    }
-
     private func requestedChapterRange(
         in bookURL: URL,
         chapterStart: Int32,

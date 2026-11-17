@@ -208,34 +208,10 @@ final class PlaybackSystemSession {
     }
 
 
-    nonisolated static func interruptionRecoveryAction(
-        interruptionBegan: Bool,
-        shouldResume: Bool,
-        wasPlaying: Bool
-    ) -> InterruptionRecoveryAction {
-        if interruptionBegan { return wasPlaying ? .pause : .none }
-        return shouldResume && wasPlaying ? .resume : .none
-    }
-
-
     nonisolated static func shouldPauseForRouteChange(reason: RouteChangeReason) -> Bool {
         reason == .oldDeviceUnavailable
     }
 
-
-    nonisolated static func shouldRecoverFromMediaServicesReset(wasPlaying: Bool) -> Bool {
-        wasPlaying
-    }
-
-
-    nonisolated static func audioSessionConfigurationStateAfterAttempt(succeeded: Bool) -> Bool {
-        succeeded
-    }
-
-
-    nonisolated static func reconciledIsPlaying(queueRate: Float, currentIsPlaying: Bool) -> Bool {
-        queueRate > 0
-    }
 
     enum InterruptionRecoveryAction: Equatable {
         case pause

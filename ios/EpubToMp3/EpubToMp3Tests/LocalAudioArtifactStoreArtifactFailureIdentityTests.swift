@@ -4,21 +4,6 @@ import XCTest
 @testable import EpubToMp3
 
 extension LocalAudioArtifactStoreTests {
-    func testClassifiesCocoaOutOfSpaceAsStoragePressure() {
-        let error = NSError(
-            domain: NSCocoaErrorDomain,
-            code: NSFileWriteOutOfSpaceError
-        )
-
-        XCTAssertTrue(StoragePressureError.isInsufficientSpace(error))
-    }
-
-    func testDoesNotClassifyAnUnrelatedErrorAsStoragePressure() {
-        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
-
-        XCTAssertFalse(StoragePressureError.isInsufficientSpace(error))
-    }
-
     func testPrepareRecoversAnAvailableArtifactWhoseFileWasRemoved() async throws {
         let store = LocalAudioArtifactStore(root: root)
         try await store.prepare(

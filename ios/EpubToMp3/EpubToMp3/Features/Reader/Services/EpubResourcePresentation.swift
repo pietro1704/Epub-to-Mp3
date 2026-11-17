@@ -14,18 +14,6 @@ typealias EpubInlineImage = NSImage
 
 @MainActor
 enum EpubResourcePresentation {
-    private static func stripImageSources(_ html: String) -> String {
-        html.replacingOccurrences(
-            of: #"(<img\b[^>]*)\bsrc\s*=\s*("[^"]*"|'[^']*')"#,
-            with: "$1",
-            options: .regularExpression
-        ).replacingOccurrences(
-            of: #"(<image\b[^>]*)\bxlink:href\s*=\s*("[^"]*"|'[^']*')"#,
-            with: "$1",
-            options: .regularExpression
-        )
-    }
-
     /// Replace EPUB-relative image references with bounded, local data URIs.
     /// Resource hrefs are matched after percent-decoding and removing query/
     /// fragment suffixes; `data:` and remote URLs remain untouched.

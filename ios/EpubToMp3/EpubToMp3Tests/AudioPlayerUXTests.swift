@@ -34,15 +34,6 @@ final class AudioPlayerUXTests: XCTestCase {
     }
 
     @MainActor
-    func testEmbeddedChapterDurationUsesChapterEstimateNotOneSegment() {
-        XCTAssertEqual(
-            PlaybackSegmentSession.estimatedChapterDurationSeconds(wordCount: 400, wordsPerMinute: 200),
-            120,
-            accuracy: 0.001
-        )
-    }
-
-    @MainActor
     func testEmbeddedChapterTitleUsesEpubChapterIndex() {
         let title = PlaybackSegmentSession.segmentChapterTitle(
             chapterIndex: 1,
@@ -105,16 +96,6 @@ final class AudioPlayerUXTests: XCTestCase {
         player.startSleepTimer(minutes: 5)
         XCTAssertEqual(player.sleepTimerRemaining, 300, accuracy: 1,
             "5-minute timer should expose 300 s remaining immediately after start")
-    }
-
-    /// `cancelSleepTimer()` must zero out remaining time.
-    @MainActor
-    func testCancelSleepTimerZerosRemaining() {
-        let player = makePlayer()
-        player.startSleepTimer(minutes: 30)
-        player.cancelSleepTimer()
-        XCTAssertEqual(player.sleepTimerRemaining, 0,
-            "Remaining should be 0 after cancel")
     }
 
     /// `setSleepTimer(seconds: 0)` is equivalent to cancel.

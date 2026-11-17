@@ -61,13 +61,6 @@ enum EpubFontManager {
         return register(fontURLs: fontURLs(in: persistentDirectory(bookID: bookID)), bookID: bookID)
     }
 
-    static func unregisterFonts(_ urls: [URL]) {
-        for url in urls {
-            var error: Unmanaged<CFError>?
-            CTFontManagerUnregisterFontsForURL(url as CFURL, .process, &error)
-        }
-    }
-
     static func familyAliases(css: String, directory: URL?) -> [String: String] {
         let files = fontURLs(in: directory)
         return EpubFontAliases.families(css: css) { resource in

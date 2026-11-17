@@ -2,72 +2,10 @@ import XCTest
 @testable import EpubToMp3
 
 final class AudioPlayerInterruptionRecoveryTests: XCTestCase {
-    func testInterruptionBeginPausesOnlyWhenPlaybackWasActive() {
-        XCTAssertEqual(
-            PlaybackSystemSession.interruptionRecoveryAction(
-                interruptionBegan: true,
-                shouldResume: false,
-                wasPlaying: true
-            ),
-            .pause
-        )
-        XCTAssertEqual(
-            PlaybackSystemSession.interruptionRecoveryAction(
-                interruptionBegan: true,
-                shouldResume: false,
-                wasPlaying: false
-            ),
-            .none
-        )
-    }
-
-    func testInterruptionEndResumesOnlyWhenSystemRequestsResumeAndIntentWasPlaying() {
-        XCTAssertEqual(
-            PlaybackSystemSession.interruptionRecoveryAction(
-                interruptionBegan: false,
-                shouldResume: true,
-                wasPlaying: true
-            ),
-            .resume
-        )
-        XCTAssertEqual(
-            PlaybackSystemSession.interruptionRecoveryAction(
-                interruptionBegan: false,
-                shouldResume: true,
-                wasPlaying: false
-            ),
-            .none
-        )
-        XCTAssertEqual(
-            PlaybackSystemSession.interruptionRecoveryAction(
-                interruptionBegan: false,
-                shouldResume: false,
-                wasPlaying: true
-            ),
-            .none
-        )
-    }
-
     func testRouteChangePausesWhenOldOutputWasRemoved() {
         XCTAssertTrue(PlaybackSystemSession.shouldPauseForRouteChange(reason: AudioPlayer.RouteChangeReason.oldDeviceUnavailable))
         XCTAssertFalse(PlaybackSystemSession.shouldPauseForRouteChange(reason: AudioPlayer.RouteChangeReason.newDeviceAvailable))
         XCTAssertFalse(PlaybackSystemSession.shouldPauseForRouteChange(reason: AudioPlayer.RouteChangeReason.categoryChange))
-    }
-
-    func testMediaServicesResetRequiresSessionReconfigurationAndPlaybackRecovery() {
-        XCTAssertTrue(PlaybackSystemSession.shouldRecoverFromMediaServicesReset(wasPlaying: true))
-        XCTAssertFalse(PlaybackSystemSession.shouldRecoverFromMediaServicesReset(wasPlaying: false))
-    }
-
-    func testFailedAudioSessionConfigurationRemainsRetryable() {
-        XCTAssertFalse(PlaybackSystemSession.audioSessionConfigurationStateAfterAttempt(succeeded: false))
-        XCTAssertTrue(PlaybackSystemSession.audioSessionConfigurationStateAfterAttempt(succeeded: true))
-    }
-
-    func testPlaybackStateFollowsQueueRateDuringReconciliation() {
-        XCTAssertTrue(PlaybackSystemSession.reconciledIsPlaying(queueRate: 1, currentIsPlaying: false))
-        XCTAssertFalse(PlaybackSystemSession.reconciledIsPlaying(queueRate: 0, currentIsPlaying: true))
-        XCTAssertFalse(PlaybackSystemSession.reconciledIsPlaying(queueRate: 0, currentIsPlaying: false))
     }
 
     @MainActor

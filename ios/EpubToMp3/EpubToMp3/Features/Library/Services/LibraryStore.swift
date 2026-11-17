@@ -407,24 +407,6 @@ final class LibraryStore: ObservableObject {
         Array(Set(books.flatMap { $0.tags })).sorted()
     }
 
-    func addTag(_ tag: String, to bookId: String) {
-        guard let i = books.firstIndex(where: { $0.id == bookId }) else { return }
-        let normalized = tag.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty, !books[i].tags.contains(normalized) else { return }
-        books[i].tags.append(normalized)
-        persist()
-    }
-
-    func removeTag(_ tag: String, from bookId: String) {
-        guard let i = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[i].tags.removeAll { $0 == tag }
-        persist()
-    }
-
-    func books(withTag tag: String) -> [BookEntity] {
-        books.filter { $0.tags.contains(tag) }
-    }
-
     func recordConversion(jobId: String, for bookId: String, cachedOffline: Bool = false) {
         guard let index = books.firstIndex(where: { $0.id == bookId }) else { return }
         books[index].lastJobId = jobId
@@ -466,25 +448,3 @@ final class LibraryStore: ObservableObject {
 
 
 }
-
-
-#if DEBUG
-extension LibraryStore {
-    static var previewEmpty: LibraryStore {
-        let suite = "library.preview.empty.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        return LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
-    }
-
-    static var previewPopulated: LibraryStore {
-        let suite = "library.preview.full.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        let store = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
-        let now = Date()
-        store.books = LibraryPreviewBooks.populated(now: now)
-        return store
-    }
-}
-#endif

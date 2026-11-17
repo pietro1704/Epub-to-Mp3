@@ -55,7 +55,6 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
         var id: String { name }
 
         var isMP3: Bool { name.lowercased().hasSuffix(".mp3") }
-        var isZip: Bool { name.lowercased().hasSuffix(".zip") }
     }
 
     let jobId: String
