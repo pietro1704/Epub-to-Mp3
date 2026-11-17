@@ -1,6 +1,6 @@
 //! Input validation and embedded Rust conversion dispatch for one CLI invocation.
 use super::cli_arguments::{normalize_cli_args, parse_args};
-use super::cli_book_inputs::{require_supported_conversion, resolve_entry, resolve_inputs};
+use super::cli_book_inputs::{resolve_entry, resolve_inputs};
 use super::cli_cache_commands::{clear_book_cache, clear_global_cache};
 use super::cli_environment::{cli_config, ExpandPath};
 use super::model_commands::command_models;
@@ -61,10 +61,6 @@ pub(super) fn run_cli_command(raw: Vec<String>) -> Result<i32, String> {
 
     let mut all = options.inputs.clone();
     all.extend(batch);
-    // Validate the complete batch before cache cleanup or the first conversion.
-    for input in &all {
-        require_supported_conversion(Path::new(input))?;
-    }
     if options.show_structure {
         return show_structure(&all);
     }

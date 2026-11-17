@@ -1,6 +1,9 @@
 use std::{fs, io::Write, path::Path, process::Command};
 use zip::{write::SimpleFileOptions, ZipWriter};
 
+#[path = "../../converter-core/tests/support/pdf_fixture.rs"]
+mod pdf_fixture;
+
 fn epub(path: &Path) {
     let mut archive = ZipWriter::new(fs::File::create(path).unwrap());
     for (name, contents) in [
@@ -24,24 +27,29 @@ fn command(root: &Path, args: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
-fn pdf(path: &Path) {
+/// One page that only draws an image: like a scan, it has no narration text.
+fn scanned_pdf(path: &Path) {
     let mut bytes = b"%PDF-1.4\n".to_vec();
     let mut offsets = Vec::new();
     for (number, contents) in [
         (1, "<< /Type /Catalog /Pages 2 0 R >>"),
         (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
-        (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>"),
+        (
+            3,
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>",
+        ),
+        (4, "<< /Length 7 >>\nstream\n/Im0 Do\nendstream"),
     ] {
         offsets.push(bytes.len());
         bytes.extend_from_slice(format!("{number} 0 obj\n{contents}\nendobj\n").as_bytes());
     }
     let xref = bytes.len();
-    bytes.extend_from_slice(b"xref\n0 4\n0000000000 65535 f \n");
+    bytes.extend_from_slice(b"xref\n0 5\n0000000000 65535 f \n");
     for offset in offsets {
         bytes.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
     }
     bytes.extend_from_slice(
-        format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        format!("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
     );
     fs::write(path, bytes).unwrap();
 }
@@ -85,13 +93,18 @@ fn unsupported_flags_fail_before_input_resolution_synthesis_or_cleanup() {
 }
 
 #[test]
-fn pdf_and_mixed_batches_fail_before_the_first_job_or_cleanup() {
+fn text_pdf_structure_uses_the_shared_source_dispatch_without_creating_output() {
     let fixture = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
     let book = fixture.path().join("first.epub");
     epub(&book);
+    // The extension match is case-insensitive, as for discovery.
     let pdf_path = fixture.path().join("second.PDF");
-    pdf(&pdf_path);
+    fs::write(
+        &pdf_path,
+        pdf_fixture::pdf(true, &["First page body.", "Middle page body.", "Last page body."]),
+    )
+    .unwrap();
     fs::write(runtime.path().join("listener.mp3"), b"retained audio").unwrap();
     let list = fixture.path().join("batch.txt");
     fs::write(
@@ -100,22 +113,45 @@ fn pdf_and_mixed_batches_fail_before_the_first_job_or_cleanup() {
     )
     .unwrap();
     for args in [
-        vec!["convert", pdf_path.to_str().unwrap()],
         vec!["convert", pdf_path.to_str().unwrap(), "--show-structure"],
         vec![
             "convert",
-            book.to_str().unwrap(),
-            pdf_path.to_str().unwrap(),
-            "--clean-cache",
-            "--yes",
+            "--batch-file",
+            list.to_str().unwrap(),
+            "--show-structure",
         ],
-        vec!["convert", "--batch-file", list.to_str().unwrap()],
-        vec!["convert", "--batch", fixture.path().to_str().unwrap()],
+    ] {
+        let output = command(runtime.path(), &args);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains("Title: PDF fixture"), "{text}");
+        assert!(text.contains("First section"), "{text}");
+        assert!(text.contains("Second section"), "{text}");
+        assert_untouched(runtime.path());
+    }
+}
+
+#[test]
+fn pdf_without_extractable_text_fails_closed_before_any_job_or_output() {
+    let fixture = tempfile::tempdir().unwrap();
+    let runtime = tempfile::tempdir().unwrap();
+    let pdf_path = fixture.path().join("scanned.pdf");
+    scanned_pdf(&pdf_path);
+    fs::write(runtime.path().join("listener.mp3"), b"retained audio").unwrap();
+    for args in [
+        vec!["convert", pdf_path.to_str().unwrap()],
+        vec!["convert", pdf_path.to_str().unwrap(), "--show-structure"],
     ] {
         let output = command(runtime.path(), &args);
         assert_eq!(output.status.code(), Some(2));
-        assert!(String::from_utf8_lossy(&output.stderr)
-            .contains("PDF conversion and structure inspection are not supported"));
+        assert!(
+            !String::from_utf8_lossy(&output.stderr).contains("not supported by the native CLI"),
+            "PDF input is supported; only unreadable sources are rejected"
+        );
         assert_untouched(runtime.path());
     }
 }

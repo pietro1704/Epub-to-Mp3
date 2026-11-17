@@ -71,20 +71,6 @@ pub(super) fn supported(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-pub(super) fn require_supported_conversion(path: &Path) -> Result<(), String> {
-    if path
-        .extension()
-        .and_then(|value| value.to_str())
-        .is_some_and(|value| value.eq_ignore_ascii_case("pdf"))
-    {
-        return Err(format!(
-            "PDF conversion and structure inspection are not supported by the native CLI: {}",
-            path.display()
-        ));
-    }
-    Ok(())
-}
-
 pub(super) fn fuzzy_find_book(query: &str) -> Option<std::path::PathBuf> {
     let tokens = norm_tokens(query);
     if tokens.is_empty() {

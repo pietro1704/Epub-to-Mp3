@@ -1,5 +1,4 @@
 //! Artifact-manifest checks and source-structure reporting.
-use super::cli_book_inputs::require_supported_conversion;
 use super::cli_environment::cli_config;
 use std::fs;
 use std::path::Path;
@@ -61,26 +60,22 @@ pub(super) fn normalized_name(value: &str) -> String {
 }
 
 pub(super) fn show_structure(inputs: &[String]) -> Result<i32, String> {
-    for input in inputs {
-        require_supported_conversion(Path::new(input))?;
-    }
     let config = cli_config();
     for input in inputs {
         println!("Structure: {input}");
-        if input.to_ascii_lowercase().ends_with(".epub") {
-            let session = converter_core::embedded::EmbeddedConversionSession::open(
-                input,
-                Default::default(),
-                config.clone(),
-            )
-            .map_err(|error| error.to_string())?;
-            let metadata = session.metadata();
-            if !metadata.title.is_empty() {
-                println!("Title: {}", metadata.title);
-            }
-            for chapter in &metadata.chapters {
-                println!("{} {}", chapter.index, chapter.name);
-            }
+        // EPUB and PDF share the core source dispatch used by conversion.
+        let session = converter_core::embedded::EmbeddedConversionSession::open(
+            input,
+            Default::default(),
+            config.clone(),
+        )
+        .map_err(|error| error.to_string())?;
+        let metadata = session.metadata();
+        if !metadata.title.is_empty() {
+            println!("Title: {}", metadata.title);
+        }
+        for chapter in &metadata.chapters {
+            println!("{} {}", chapter.index, chapter.name);
         }
     }
     Ok(0)
