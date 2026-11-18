@@ -16,10 +16,6 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<!-- Edge-TTS conversion is network-intensive; this hints iOS to keep
-	     Wi-Fi awake during long jobs instead of dropping the radio. -->
-	<key>UIRequiresPersistentWiFi</key>
-	<true/>
 	<!-- iPadOS trackpad / Magic Mouse hover + scrub support for the
 	     player scrubber and library list. -->
 	<key>UIApplicationSupportsIndirectInputEvents</key>
