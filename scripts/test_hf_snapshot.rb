@@ -153,6 +153,14 @@ class HfSnapshotTest < Minitest::Test
     refute Dir.exist?(File.join(@snapshot, '.git')), 'rejection must precede snapshot commit preparation'
   end
 
+  # The Space image builder installs no OpenSSL headers; a TLS stack that needs
+  # them (for example ureq native-tls under ort-sys) breaks `docker build`.
+  def test_server_image_lockfile_needs_no_system_openssl
+    lockfile = File.read(File.expand_path('../Cargo.lock', __dir__))
+    packages = lockfile.scan(/^name = "([^"]+)"$/).flatten
+    assert_empty packages & %w[openssl-sys native-tls], 'Use rustls; the Docker builder has no libssl-dev'
+  end
+
   def test_rejected_secondary_push_is_not_silently_successful
     snapshot!
     reject_push('main')
