@@ -30,6 +30,7 @@ void main() {
     messenger.setMockMethodCallHandler(noticesChannel, (_) async => null);
     messenger.setMockMethodCallHandler(converterChannel, (call) async {
       converterCalls.add(call);
+      if (call.method == 'ttsModels') return null;
       if (call.method == 'status') {
         return {'runtimeLoaded': true, 'engineReady': true};
       }
@@ -135,6 +136,7 @@ void main() {
       (tester) async {
         await submitRange(tester, start, end);
         expect(converterCalls.map((call) => call.method), [
+          'ttsModels',
           'status',
           'convert',
         ]);

@@ -17,12 +17,6 @@ part 'voice_selection_settings.dart';
 part 'installed_narration_models.dart';
 part 'playback_preferences.dart';
 
-final _ttsCatalogSelections = FutureProvider<List<TtsSelection>>(
-  (ref) async =>
-      TtsCatalog.decode(await ref.read(embeddedConverterProvider).ttsModels())
-          .selections(),
-);
-
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
