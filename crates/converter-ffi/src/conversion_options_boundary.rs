@@ -22,6 +22,30 @@ pub(super) struct EmbeddedConversionOptionsV1 {
 }
 
 impl EmbeddedConversionOptionsV1 {
+    pub(super) fn selection_input(
+        &self,
+    ) -> converter_core::conversion_selection::ConversionSelectionInput<'_> {
+        converter_core::conversion_selection::ConversionSelectionInput {
+            preferences: self.tts_preferences.as_ref(),
+            engine: self.engine.as_deref(),
+            voice: self.voice.as_deref(),
+            model_id: self.model_id.as_deref(),
+            language: self.language.as_deref(),
+            models_root: self.models_root.as_deref(),
+            model_path: self.model_path.as_deref(),
+            model_config_path: self.model_config_path.as_deref(),
+        }
+    }
+
+    pub(super) fn capture_preferences(&mut self, edge_system_fallback: bool) -> Result<(), String> {
+        self.tts_preferences = Some(self.selection_input().capture(edge_system_fallback)?);
+        let preferences = self.tts_preferences.as_ref().expect("captured preferences");
+        self.engine = Some(preferences.primary.engine.clone());
+        self.voice = preferences.primary.voice.clone();
+        self.model_id = preferences.primary.model_id.clone();
+        Ok(())
+    }
+
     pub(super) fn validate_contract(&self) -> Result<(), String> {
         self.pronunciation.validate()?;
         for correction in &self.language_overrides {
@@ -72,158 +96,101 @@ impl EmbeddedConversionOptionsV1 {
 pub unsafe extern "C" fn converter_conversion_options_validate_json_v2(
     options_json: *const c_char,
 ) -> bool {
-    clear_last_error();
-    let json = match c_string(options_json, "conversion options") {
-        Ok(json) => json,
-        Err(error) => return fail(error),
-    };
-    let options: EmbeddedConversionOptionsV1 = match serde_json::from_str(&json) {
-        Ok(options) => options,
-        Err(error) => return fail(error.to_string()),
-    };
-    if options.contract_version != Some(2) {
-        return fail("Version 2 contract is required".into());
-    }
-    match options.validate_contract() {
-        Ok(()) => true,
-        Err(error) => fail(error),
-    }
+    ffi_guard(
+        "converter_conversion_options_validate_json_v2",
+        false,
+        || {
+            clear_last_error();
+            let json = match c_string(options_json, "conversion options") {
+                Ok(json) => json,
+                Err(error) => return fail(error),
+            };
+            let options: EmbeddedConversionOptionsV1 = match serde_json::from_str(&json) {
+                Ok(options) => options,
+                Err(error) => return fail(error.to_string()),
+            };
+            if options.contract_version != Some(2) {
+                return fail("Version 2 contract is required".into());
+            }
+            match options.validate_contract() {
+                Ok(()) => true,
+                Err(error) => fail(error),
+            }
+        },
+    )
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn converter_conversion_options_validate_json_v1(
     options_json: *const c_char,
 ) -> bool {
-    clear_last_error();
-    let json = match c_string(options_json, "conversion options") {
-        Ok(json) => json,
-        Err(error) => return fail(error),
-    };
-    let options = match serde_json::from_str::<EmbeddedConversionOptionsV1>(&json) {
-        Ok(options) => options,
-        Err(error) => return fail(format!("invalid conversion options: {error}")),
-    };
-    let mut options = options;
-    if let Some(preferences) = &options.tts_preferences {
-        if let Err(error) = preferences.validate(options.language.as_deref()) {
-            return fail(error);
-        }
-        options.engine = Some(preferences.primary.engine.clone());
-        options.voice = preferences.primary.voice.clone();
-        options.model_id = preferences.primary.model_id.clone();
-    }
-    let engine = options
-        .engine
-        .as_deref()
-        .unwrap_or("edge")
-        .to_ascii_lowercase();
-    if !matches!(engine.as_str(), "edge" | "piper" | "system") {
-        return fail(format!("unsupported conversion engine: {engine}"));
-    }
-    if options
-        .language
-        .as_deref()
-        .is_some_and(|value| value.chars().any(char::is_control))
-    {
-        return fail("language contains control characters".to_owned());
-    }
-    if engine == "piper" {
-        if (options.models_root.is_none()
-            && !options
-                .tts_preferences
-                .as_ref()
-                .is_some_and(|p| p.continues_native()))
-            || options.model_id.is_none()
-        {
-            return fail("Piper requires an explicitly installed local model.".to_owned());
-        }
-        if let Err(error) = resolve_piper_model_paths(&options) {
-            return fail(error);
-        }
-    } else if options.model_id.is_some()
-        || options.model_path.is_some()
-        || options.model_config_path.is_some()
-    {
-        return fail("Piper model configuration cannot be used with Edge.".to_owned());
-    }
-    true
-}
-
-pub(super) fn embedded_engine_from_value(value: Option<&str>) -> String {
-    match value
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "piper" => "piper".to_owned(),
-        "system" => "system".to_owned(),
-        _ => "edge".to_owned(),
-    }
+    ffi_guard(
+        "converter_conversion_options_validate_json_v1",
+        false,
+        || {
+            clear_last_error();
+            let json = match c_string(options_json, "conversion options") {
+                Ok(json) => json,
+                Err(error) => return fail(error),
+            };
+            let options = match serde_json::from_str::<EmbeddedConversionOptionsV1>(&json) {
+                Ok(options) => options,
+                Err(error) => return fail(format!("invalid conversion options: {error}")),
+            };
+            let mut options = options;
+            if let Err(error) = options.capture_preferences(false) {
+                return fail(error);
+            }
+            let engine = options
+                .engine
+                .as_deref()
+                .expect("captured primary provider");
+            if options
+                .language
+                .as_deref()
+                .is_some_and(|value| value.chars().any(char::is_control))
+            {
+                return fail("language contains control characters".to_owned());
+            }
+            if engine == "piper" {
+                if (options.models_root.is_none()
+                    && !options
+                        .tts_preferences
+                        .as_ref()
+                        .is_some_and(|p| p.continues_native()))
+                    || options.model_id.is_none()
+                {
+                    return fail("Piper requires an explicitly installed local model.".to_owned());
+                }
+                if let Err(error) = resolve_piper_model_paths(&options) {
+                    return fail(error);
+                }
+            } else if options.model_id.is_some()
+                || options.model_path.is_some()
+                || options.model_config_path.is_some()
+            {
+                return fail("Piper model configuration cannot be used with Edge.".to_owned());
+            }
+            true
+        },
+    )
 }
 
 pub(super) fn resolve_piper_model_paths(
     options: &EmbeddedConversionOptionsV1,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
-    let Some(model_id) = options.model_id.as_deref() else {
-        return Err("Piper requires an explicitly installed local model.".to_owned());
-    };
-    // Validation may run before the session supplies its managed model root.
-    // Actual conversion fills that root from AppConfig before resolving paths.
-    let root = match options.models_root.as_deref() {
-        Some(root) => root,
-        None if options
+    converter_core::conversion_selection::InstalledPiperSelection {
+        root: options.models_root.as_deref().map(Path::new),
+        model_id: options.model_id.as_deref(),
+        model_path: options.model_path.as_deref(),
+        config_path: options.model_config_path.as_deref(),
+    }
+    .resolve(
+        options
             .tts_preferences
             .as_ref()
-            .is_some_and(|p| p.continues_native()) =>
-        {
-            "."
-        }
-        None => return Err("Piper requires an explicitly installed local model.".into()),
-    };
-    for value in [
-        model_id,
-        options.model_path.as_deref().unwrap_or("model.onnx"),
-        options
-            .model_config_path
-            .as_deref()
-            .unwrap_or("model.onnx.json"),
-    ] {
-        if value.is_empty()
-            || Path::new(value)
-                .components()
-                .any(|component| !matches!(component, std::path::Component::Normal(_)))
-            || value.contains(char::from(92))
-        {
-            return Err(
-                "Piper model paths must remain inside the installed model directory".into(),
-            );
-        }
-    }
-    if Path::new(model_id).components().count() != 1 {
-        return Err("Invalid Piper model ID".into());
-    }
-    let model = Path::new(root)
-        .join(model_id)
-        .join(options.model_path.as_deref().unwrap_or("model.onnx"));
-    let config = model.with_file_name(
-        options
-            .model_config_path
-            .as_deref()
-            .unwrap_or("model.onnx.json"),
-    );
-    if (!model.is_file() || !config.is_file())
-        && !options
-            .tts_preferences
-            .as_ref()
-            .is_some_and(|p| p.continues_native())
-    {
-        return Err(format!(
-            "Piper model or voice config is not installed: {}",
-            model.display()
-        ));
-    }
-    Ok((model, config))
+            .is_some_and(|p| p.continues_native()),
+    )
 }
 
 #[cfg(test)]

@@ -3,12 +3,7 @@ import XCTest
 
 final class TtsCatalogTests: XCTestCase {
     func testDescriptorSelectionPreservesRuntimeModelRevisionAndVoiceAcrossSnapshot() throws {
-        let json = Data("""
-        {"version":2,"models":[{"id":"model-a","engine":"provider-a","runtime":"runtime-a",
-        "revision":"sha-a","languages":["pt"],"platforms":["Macos"]},
-        {"id":"model-b","engine":"provider-a","runtime":"runtime-a",
-        "revision":"sha-b","languages":["en"],"platforms":["Macos"]}]}
-        """.utf8)
+        let json = TtsCatalogFixture.data
         let catalog = try TtsCatalog.decode(json)
         let first = try XCTUnwrap(catalog.models[0].selection(voice: "voice-a"))
         let second = try XCTUnwrap(catalog.models[1].selection(voice: "voice-b"))

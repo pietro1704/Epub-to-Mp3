@@ -8,60 +8,62 @@ pub unsafe extern "C" fn converter_voice_audition_v1(
     output: *const c_char,
     control: *const ConverterJobControl,
 ) -> bool {
-    clear_last_error();
-    let result =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
-            let options: EmbeddedConversionOptionsV1 =
-                serde_json::from_str(&c_string(options_json, "audition options")?)
-                    .map_err(|error| error.to_string())?;
-            if options.contract_version != Some(2)
-                || options
-                    .tts_preferences
+    ffi_guard("converter_voice_audition_v1", false, || {
+        clear_last_error();
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
+                let options: EmbeddedConversionOptionsV1 =
+                    serde_json::from_str(&c_string(options_json, "audition options")?)
+                        .map_err(|error| error.to_string())?;
+                if options.contract_version != Some(2)
+                    || options
+                        .tts_preferences
+                        .as_ref()
+                        .is_none_or(|preferences| preferences.primary.session.is_none())
+                {
+                    return Err("Audition requires version-2 captured voice identity".into());
+                }
+                options.validate_contract()?;
+                let text = c_string(text, "audition text")?;
+                if text.trim().is_empty() || text.chars().count() > 300 {
+                    return Err("Audition requires 1–300 characters".into());
+                }
+                let output = std::path::PathBuf::from(c_string(output, "audition output")?);
+                if !output.is_absolute()
+                    || output.extension().and_then(|value| value.to_str()) != Some("mp3")
+                    || std::fs::symlink_metadata(&output).is_ok()
+                {
+                    return Err("Audition requires a new absolute MP3 output path".into());
+                }
+                let control = control
                     .as_ref()
-                    .is_none_or(|preferences| preferences.primary.session.is_none())
-            {
-                return Err("Audition requires version-2 captured voice identity".into());
+                    .ok_or("Audition requires an independent cancellation control")?;
+                let token = control.control.cancellation_token();
+                if token.is_cancelled() {
+                    return Err("Audition cancelled".into());
+                }
+                // Swift cooperative workers have small stacks. Match the conversion
+                // boundary's stack budget for embedded eSpeak/ONNX inference.
+                std::thread::Builder::new()
+                    .name("converter-ffi-audition".into())
+                    .stack_size(8 * 1024 * 1024)
+                    .spawn(move || synthesize_audition(options, &text, &output, &token))
+                    .map_err(|error| format!("Failed to start audition thread: {error}"))?
+                    .join()
+                    .map_err(|_| "Voice audition panicked".to_owned())?
+            }));
+        match result {
+            Ok(Ok(())) => true,
+            Ok(Err(error)) => {
+                fail::<()>(error);
+                false
             }
-            options.validate_contract()?;
-            let text = c_string(text, "audition text")?;
-            if text.trim().is_empty() || text.chars().count() > 300 {
-                return Err("Audition requires 1–300 characters".into());
+            Err(_) => {
+                fail::<()>("Voice audition panicked".into());
+                false
             }
-            let output = std::path::PathBuf::from(c_string(output, "audition output")?);
-            if !output.is_absolute()
-                || output.extension().and_then(|value| value.to_str()) != Some("mp3")
-                || std::fs::symlink_metadata(&output).is_ok()
-            {
-                return Err("Audition requires a new absolute MP3 output path".into());
-            }
-            let control = control
-                .as_ref()
-                .ok_or("Audition requires an independent cancellation control")?;
-            let token = control.control.cancellation_token();
-            if token.is_cancelled() {
-                return Err("Audition cancelled".into());
-            }
-            // Swift cooperative workers have small stacks. Match the conversion
-            // boundary's stack budget for embedded eSpeak/ONNX inference.
-            std::thread::Builder::new()
-                .name("converter-ffi-audition".into())
-                .stack_size(8 * 1024 * 1024)
-                .spawn(move || synthesize_audition(options, &text, &output, &token))
-                .map_err(|error| format!("Failed to start audition thread: {error}"))?
-                .join()
-                .map_err(|_| "Voice audition panicked".to_owned())?
-        }));
-    match result {
-        Ok(Ok(())) => true,
-        Ok(Err(error)) => {
-            fail::<()>(error);
-            false
         }
-        Err(_) => {
-            fail::<()>("Voice audition panicked".into());
-            false
-        }
-    }
+    })
 }
 
 fn synthesize_audition(

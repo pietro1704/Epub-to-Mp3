@@ -64,7 +64,6 @@ final class ConverterModelCatalogOwnershipTests: XCTestCase {
             available: true,
             freeString: { Allocations.shared.release($0) },
             lastError: { Allocations.shared.result() },
-            modelsJSON: { Allocations.shared.result() },
             defaultEngine: { _, _, _ in Allocations.shared.result() },
             selectInstalledReady: { _, _, _, _, _ in Allocations.shared.result() },
             installArtifact: { _, _, _, _ in Allocations.shared.result() },
@@ -74,7 +73,6 @@ final class ConverterModelCatalogOwnershipTests: XCTestCase {
             installCatalogManifest: { _, _ in Allocations.shared.result() }
         )
         let operations: [(String, () throws -> Void)] = [
-            ("models", { _ = try catalog.ttsModels() }),
             ("default engine", { _ = try catalog.ttsDefaultEngine(language: "pt-BR", platform: "apple") }),
             ("installed engine", { _ = try catalog.ttsInstalledReadyEngine(language: "pt-BR", platform: "apple", installedModelIDsJSON: "[]", readyModelIDsJSON: "[]") }),
             ("artifact", { _ = try catalog.installTtsModel(modelID: "fixture", url: "fixture", sha256: "fixture", root: "/fixture") }),
@@ -116,6 +114,43 @@ final class ConverterModelCatalogOwnershipTests: XCTestCase {
         }
         XCTAssertEqual(allocations.liveCount, 0, "Malformed last_error leaked")
         XCTAssertEqual(allocations.freed.count, 1)
+    }
+
+    func testDescriptorCatalogUsesV3WithoutInstallationIOAndFreesEveryResult() throws {
+        let allocations = Allocations.shared
+        defer { allocations.reset(bytes: nil) }
+        let catalog = ConverterModelCatalog(
+            available: true,
+            freeString: { Allocations.shared.release($0) },
+            catalogJSONV3: { _, _, _, _, _, root in
+                XCTAssertEqual(root.map { String(cString: $0) }, "")
+                return Allocations.shared.result()
+            }
+        )
+        allocations.reset(bytes: Array(TtsCatalogFixture.data))
+        let descriptors = try catalog.ttsCatalog()
+        XCTAssertEqual(descriptors.version, 3)
+        XCTAssertEqual(descriptors.models.map(\.id), ["model-a", "model-b"])
+        XCTAssertEqual(descriptors.models.first?.artifacts?.first?.sha256, "checksum-a")
+        let preferences = TtsPreferences(
+            primary: TtsSelection(engine: "provider-a", modelID: "model-b", voice: "captured-voice"),
+            secondary: nil, allowOnlineFallback: false, policyVersion: 2)
+        let captured = descriptors.capture(preferences, target: "macos")
+        XCTAssertEqual(captured.primary.session?.modelRevision, "sha-b")
+        XCTAssertEqual(captured.primary.voice, "captured-voice")
+        XCTAssertNil(preferences.primary.session)
+        XCTAssertEqual(allocations.freed.count, 1)
+        XCTAssertEqual(allocations.liveCount, 0)
+
+        for bytes in [[UInt8](arrayLiteral: 0xFF), Array("{}".utf8)] {
+            allocations.reset(bytes: bytes)
+            XCTAssertThrowsError(try catalog.ttsCatalog())
+            XCTAssertEqual(allocations.freed.count, 1)
+            XCTAssertEqual(allocations.liveCount, 0)
+        }
+        allocations.reset(bytes: nil)
+        XCTAssertThrowsError(try catalog.ttsCatalog())
+        XCTAssertEqual(allocations.freed.count, 0)
     }
 
     func testRuntimeProbeUsesItsOwnABIAndFreesReturnedSnapshot() throws {

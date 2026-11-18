@@ -29,31 +29,14 @@ typealias ConverterJobControlWindow = @convention(c) (UnsafeRawPointer?, Int, In
 typealias ConverterJobControlWindowContains = @convention(c) (UnsafeRawPointer?, Int) -> Bool
 typealias ConverterJobControlJSON = @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>?) -> Bool
 typealias ConverterJobControlGeneration = @convention(c) (UnsafeRawPointer?) -> UInt64
-typealias ConverterSessionConvertJob = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
-    ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
-) -> UnsafeMutablePointer<CChar>?
-typealias ConverterSessionConvertJobOptionsV1 = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
-    ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
-) -> UnsafeMutablePointer<CChar>?
-typealias ConverterSessionConvertStreamingJob = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
-    ConverterChapterCallback?, ConverterChapterCallback?, ConverterAudioChunkCallback?,
-    UnsafeMutableRawPointer?, UnsafeRawPointer?
-) -> UnsafeMutablePointer<CChar>?
 typealias ConverterSessionConvertStreamingJobOptionsV1 = @convention(c) (
     UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
     ConverterChapterCallback?, ConverterChapterCallback?, ConverterAudioChunkCallback?,
     UnsafeMutableRawPointer?, UnsafeRawPointer?
 ) -> UnsafeMutablePointer<CChar>?
-typealias ConverterSessionConvert = @convention(c) (
-    UnsafeRawPointer?, UnsafePointer<CChar>?, Int32, Int32
-) -> UnsafeMutablePointer<CChar>?
 typealias ConverterStringFree = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
 typealias ConverterLastError = @convention(c) () -> UnsafeMutablePointer<CChar>?
 typealias ConverterOptionsValidateV1 = @convention(c) (UnsafePointer<CChar>?) -> Bool
-typealias ConverterTtsModels = @convention(c) () -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsCatalogV3 = @convention(c) (
     UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?,
     UnsafePointer<CChar>?, UnsafePointer<CChar>?

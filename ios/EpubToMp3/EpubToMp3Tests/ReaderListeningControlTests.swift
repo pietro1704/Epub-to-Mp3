@@ -70,7 +70,7 @@ final class ReaderListeningControlTests: XCTestCase {
     }
 
     func testCatalogAndCapturedSelectionKeepIndependentRuntimeAndModelRevision() throws {
-        let catalog = try TtsCatalog.decode(Data(#"{"version":2,"models":[{"id":"a","engine":"piper","runtime":"piper","revision":"sha-a","languages":["pt"],"platforms":["Macos"]}]}"#.utf8))
+        let catalog = try TtsCatalog.decode(TtsCatalogFixture.data)
         let selection = try XCTUnwrap(catalog.models.first?.selection())
         var options = ConversionOptions()
         options.ttsPreferences = TtsPreferences(primary: selection, secondary: nil, allowOnlineFallback: false, policyVersion: 2)

@@ -370,10 +370,12 @@ final class SpeechModelInstallCoordinatorTests: XCTestCase {
         installation.cancel()
         let (terminalEvent, installationError) = recorder.result()
         let error = try XCTUnwrap(installationError)
+        let converterError = try XCTUnwrap(error as? EmbeddedConverterError)
         XCTAssertTrue(
-            error.localizedDescription.localizedCaseInsensitiveContains("checksum"),
-            "Unexpected install error: \(error.localizedDescription)"
+            converterError.diagnosticDescription.localizedCaseInsensitiveContains("checksum"),
+            "Unexpected install error: \(converterError.diagnosticDescription)"
         )
+        XCTAssertEqual(error.localizedDescription, L10n.string("error.conversionFailed"))
         let event = try XCTUnwrap(terminalEvent)
         XCTAssertEqual(event.stage, .failed)
         XCTAssertEqual(event.failure?.kind, "checksum_mismatch")

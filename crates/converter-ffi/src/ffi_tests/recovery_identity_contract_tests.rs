@@ -19,20 +19,16 @@ fn controlled_ffi_recovery_regenerates_opaque_voice_after_selection_renumbers_it
             let output = CString::new(root.path().join(job).to_str().unwrap()).unwrap();
             let job_id = CString::new(job).unwrap();
             let control = converter_job_control_create();
-            if start == 1 {
-                let source = CString::new("selection-predecessor").unwrap();
-                assert!(converter_job_control_set_recovery_job(
-                    control,
-                    source.as_ptr()
-                ));
-            }
-            let response = converter_session_convert_controlled_job_options_json_v1(
+            let options =
+                fixture_recovery_options(&options, (start == 1).then_some("selection-predecessor"));
+            let response = converter_session_convert_streaming_job_options_json_v1(
                 session,
                 output.as_ptr(),
                 job_id.as_ptr(),
                 options.as_ptr(),
                 start,
                 1,
+                None,
                 None,
                 None,
                 ptr::null_mut(),
@@ -131,20 +127,18 @@ fn controlled_ffi_recovery_does_not_reuse_a_different_source() {
             )
             .unwrap();
             let control = converter_job_control_create();
-            if job == "source-successor" {
-                let source = CString::new("source-predecessor").unwrap();
-                assert!(converter_job_control_set_recovery_job(
-                    control,
-                    source.as_ptr()
-                ));
-            }
-            let response = converter_session_convert_controlled_job_options_json_v1(
+            let options = fixture_recovery_options(
+                &options,
+                (job == "source-successor").then_some("source-predecessor"),
+            );
+            let response = converter_session_convert_streaming_job_options_json_v1(
                 session,
                 output.as_ptr(),
                 job_id.as_ptr(),
                 options.as_ptr(),
                 0,
                 0,
+                None,
                 None,
                 None,
                 ptr::null_mut(),

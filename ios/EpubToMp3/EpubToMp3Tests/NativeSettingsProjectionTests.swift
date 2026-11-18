@@ -56,7 +56,7 @@ final class NativeSettingsProjectionTests: XCTestCase {
             XCTAssertEqual(restored.ttsPreferences.primary, primary)
             XCTAssertEqual(restored.ttsPreferences.secondary, secondary)
             XCTAssertFalse(restored.allowOnlineAudioFallback)
-            let captured = TtsCatalog(version: 2, models: [], providers: []).capture(restored.ttsPreferences, target: "ios")
+            let captured = TtsCatalog(version: 3, models: [], providers: []).capture(restored.ttsPreferences, target: "ios")
             restored.allowAutomaticSystemVoiceFallback = true
             XCTAssertEqual(restored.ttsPreferences.policyVersion, 2)
             XCTAssertEqual(captured.policyVersion, 3)

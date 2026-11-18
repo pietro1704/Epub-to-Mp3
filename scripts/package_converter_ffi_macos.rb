@@ -203,7 +203,8 @@ module ConverterFfiMacOSPackage
     raise 'FFI library has an unexpected dependency' unless dependencies.all? { |path| path.start_with?('/System/Library/', '/usr/lib/') || %w[@rpath/libconverter_ffi.dylib @rpath/libonnxruntime.dylib].include?(path) }
     raise 'FFI library is missing Piper/ORT linkage' unless dependencies.include?('@rpath/libonnxruntime.dylib')
     exports = command('xcrun', 'nm', '-gU', library)
-    required = %w[_converter_session_open _converter_session_free _converter_bytes_free]
+    required = %w[_converter_session_open _converter_session_free _converter_string_free
+                  _converter_session_convert_streaming_job_options_json_v1 _converter_tts_catalog_json_v3]
     missing = required.reject { |symbol| exports.match?(/\b#{Regexp.escape(symbol)}\s*$/) }
     raise "FFI library is missing C ABI exports: #{missing.join(', ')}" unless missing.empty?
   end

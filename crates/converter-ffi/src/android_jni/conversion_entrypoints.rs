@@ -7,15 +7,22 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
     chapter_start: jint,
     chapter_end: jint,
 ) -> jstring {
-    convert_android(
-        env,
-        activity,
-        path,
-        output,
-        chapter_start,
-        chapter_end,
-        false,
-        None,
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvert",
+        std::ptr::null_mut(),
+        || {
+            convert_android(
+                env,
+                activity,
+                path,
+                output,
+                chapter_start,
+                chapter_end,
+                false,
+                None,
+            )
+        },
     )
 }
 
@@ -30,24 +37,32 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
     options_json: JString<'_>,
     streaming: jboolean,
 ) -> jstring {
-    let options = match read_string(&mut env, options_json).and_then(|value| {
-        serde_json::from_str::<EmbeddedConversionOptionsV1>(&value).map_err(|e| e.to_string())
-    }) {
-        Ok(options) => options,
-        Err(error) => {
-            fail::<()>(format!("Invalid Android conversion options: {error}"));
-            return std::ptr::null_mut();
-        }
-    };
-    convert_android(
-        env,
-        activity,
-        path,
-        output,
-        chapter_start,
-        chapter_end,
-        streaming != 0,
-        Some(options),
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertWithOptions",
+        std::ptr::null_mut(),
+        || {
+            let options = match read_string(&mut env, options_json).and_then(|value| {
+                serde_json::from_str::<EmbeddedConversionOptionsV1>(&value)
+                    .map_err(|e| e.to_string())
+            }) {
+                Ok(options) => options,
+                Err(error) => {
+                    fail::<()>(format!("Invalid Android conversion options: {error}"));
+                    return std::ptr::null_mut();
+                }
+            };
+            convert_android(
+                env,
+                activity,
+                path,
+                output,
+                chapter_start,
+                chapter_end,
+                streaming != 0,
+                Some(options),
+            )
+        },
     )
 }
 
@@ -100,6 +115,8 @@ fn convert_android(
         eprintln!("converter-ffi: open failed");
         return std::ptr::null_mut();
     }
+    // Own the session while Java callbacks and conversion can unwind.
+    let mut session = unsafe { Box::from_raw(handle) };
     let platform = match env.get_java_vm().and_then(|vm| {
         env.new_global_ref(&activity)
             .map(|activity| AndroidPlatformSpeech {
@@ -110,24 +127,22 @@ fn convert_android(
     }) {
         Ok(platform) => platform,
         Err(error) => {
-            unsafe { converter_session_free(handle) };
             fail::<()>(format!("Android speech adapter unavailable: {error}"));
             return std::ptr::null_mut();
         }
     };
-    unsafe {
-        (*handle).platform_tts = Some(Arc::new(platform));
-    }
+    session.platform_tts = Some(Arc::new(platform));
     let job = converter_core::embedded::fresh_embedded_job_id();
-    let output = match CString::new(Path::new(&output).join(&job).to_string_lossy().as_bytes())
-    {
+    let output = match CString::new(Path::new(&output).join(&job).to_string_lossy().as_bytes()) {
         Ok(output) => output,
         Err(_) => {
-            unsafe { converter_session_free(handle) };
             return std::ptr::null_mut();
         }
     };
-    let job = CString::new(job).unwrap();
+    let job = match CString::new(job) {
+        Ok(job) => job,
+        Err(_) => return fail("Android job ID contains an interior NUL byte".into()),
+    };
     let chunk_context = if streaming {
         match env.get_java_vm().and_then(|vm| {
             env.new_global_ref(&activity)
@@ -142,7 +157,6 @@ fn convert_android(
         }) {
             Ok(context) => Some(context),
             Err(error) => {
-                unsafe { converter_session_free(handle) };
                 fail::<()>(format!("Android audio chunk bridge unavailable: {error}"));
                 return std::ptr::null_mut();
             }
@@ -156,7 +170,7 @@ fn convert_android(
     };
     let result = unsafe {
         convert_job_json(
-            handle,
+            &mut *session,
             output.as_ptr(),
             job.as_ptr(),
             chapter_start,
@@ -181,14 +195,12 @@ fn convert_android(
         "converter-ffi: conversion returned result={}",
         !result.is_null()
     );
-    unsafe { converter_session_free(handle) };
     if result.is_null() {
         return std::ptr::null_mut();
     }
-    let manifest = unsafe { CStr::from_ptr(result) }
+    let manifest = unsafe { CString::from_raw(result) }
         .to_string_lossy()
         .into_owned();
-    unsafe { converter_string_free(result) };
     if let Some(context) = &chunk_context {
         if context.delivered.load(std::sync::atomic::Ordering::Acquire) == 0 {
             let cached = serde_json::from_str::<serde_json::Value>(&manifest)

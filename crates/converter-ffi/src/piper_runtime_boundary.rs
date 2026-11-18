@@ -3,72 +3,83 @@ use super::*;
 #[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub unsafe extern "C" fn piper_runtime_status() -> PiperRuntimeStatusC {
-    let status = piper::piper_runtime_status();
-    PiperStatus {
-        runtime_loaded: status.runtime_loaded,
-        model_available: status.model_available,
-        abi_compatible: status.abi_compatible,
-        engine_ready: status.engine_ready,
-    }
+    ffi_guard(
+        "piper_runtime_status",
+        PiperStatus {
+            runtime_loaded: false,
+            model_available: false,
+            abi_compatible: false,
+            engine_ready: false,
+        },
+        || {
+            let status = piper::piper_runtime_status();
+            PiperStatus {
+                runtime_loaded: status.runtime_loaded,
+                model_available: status.model_available,
+                abi_compatible: status.abi_compatible,
+                engine_ready: status.engine_ready,
+            }
+        },
+    )
 }
 
 #[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub unsafe extern "C" fn piper_runtime_init(model: *const c_char, config: *const c_char) -> bool {
-    clear_last_error();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let model = c_string(model, "Piper model")?;
-        let config = c_string(config, "Piper config")?;
-        piper::piper_runtime_init(Path::new(&model), Path::new(&config))
-            .map_err(|error| error.to_string())
-    }));
-    match result {
-        Ok(Ok(())) => true,
-        Ok(Err(error)) => {
-            fail::<()>(error);
-            false
+    ffi_guard("piper_runtime_init", false, || {
+        clear_last_error();
+        let result = (|| -> Result<(), String> {
+            let model = c_string(model, "Piper model")?;
+            let config = c_string(config, "Piper config")?;
+            piper::piper_runtime_init(Path::new(&model), Path::new(&config))
+                .map_err(|error| error.to_string())
+        })();
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                fail::<()>(error);
+                false
+            }
         }
-        Err(_) => {
-            fail::<()>("Piper runtime initialization panicked".into());
-            false
-        }
-    }
+    })
 }
 
 #[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub unsafe extern "C" fn piper_synthesize(text: *const c_char, output: *const c_char) -> bool {
-    clear_last_error();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let text = c_string(text, "Piper text")?;
-        let output = c_string(output, "Piper output")?;
-        piper::piper_synthesize(&text, Path::new(&output))
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-    }));
-    match result {
-        Ok(Ok(())) => true,
-        Ok(Err(error)) => {
-            fail::<()>(error);
-            false
+    ffi_guard("piper_synthesize", false, || {
+        clear_last_error();
+        let result = (|| -> Result<(), String> {
+            let text = c_string(text, "Piper text")?;
+            let output = c_string(output, "Piper output")?;
+            piper::piper_synthesize(&text, Path::new(&output))
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })();
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                fail::<()>(error);
+                false
+            }
         }
-        Err(_) => {
-            fail::<()>("Piper synthesis panicked".into());
-            false
-        }
-    }
+    })
 }
 
 #[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub extern "C" fn piper_runtime_shutdown() {
-    piper::piper_runtime_shutdown();
+    ffi_guard("piper_runtime_shutdown", (), || {
+        piper::piper_runtime_shutdown();
+    })
 }
 
 /// Registers the platform runtime through a conservative status-only bridge.
 #[no_mangle]
 pub extern "C" fn piper_runtime_register_unavailable() {
-    piper::register_runtime(Arc::new(UnavailablePiperRuntime));
+    ffi_guard("piper_runtime_register_unavailable", (), || {
+        piper::register_runtime(Arc::new(UnavailablePiperRuntime));
+    })
 }
 struct UnavailablePiperRuntime;
 impl piper::PiperRuntime for UnavailablePiperRuntime {
@@ -99,7 +110,9 @@ impl piper::PiperRuntime for UnavailablePiperRuntime {
 #[cfg(feature = "piper-runtime")]
 #[no_mangle]
 pub extern "C" fn piper_runtime_register_embedded() {
-    piper::register_runtime(Arc::new(EmbeddedPiperRuntime));
+    ffi_guard("piper_runtime_register_embedded", (), || {
+        piper::register_runtime(Arc::new(EmbeddedPiperRuntime));
+    })
 }
 
 /// Configure the native phonemizer for Rust hosts using the same embedded provider.

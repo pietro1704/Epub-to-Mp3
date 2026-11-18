@@ -12,6 +12,8 @@ class AndroidJniExportsTest < Minitest::Test
 
   def test_complete_source_and_apk_export_lists_pass
     assert_includes AndroidJniExports::REQUIRED, JOB_LOG
+    assert_includes AndroidJniExports::REQUIRED,
+                    'Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogV3'
     assert AndroidJniExports.verify!(nm_output, label: 'Built library')
     assert AndroidJniExports.verify!(nm_output, label: 'APK JNI library')
   end

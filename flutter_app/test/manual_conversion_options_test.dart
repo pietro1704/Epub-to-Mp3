@@ -34,9 +34,9 @@ void converter_job_control_free(Control* control) {
  }
  free(control);
 }
-char* converter_session_convert_controlled_job_options_json_v1(void* session,
+char* converter_session_convert_streaming_job_options_json_v1(void* session,
  const char* output, const char* job, const char* options, int start, int end,
- void* progress, void* chapter, void* context, Control* control) {
+ void* progress, void* chapter, void* chunk, void* context, Control* control) {
  if (strcmp(session, "/owned/options.epub") || start != 5 || end != 6 ||
      !strstr(options, "pt_BR-faber-medium") || !strstr(options, "tts-models")) return NULL;
  const char* name = strrchr(output, '/');

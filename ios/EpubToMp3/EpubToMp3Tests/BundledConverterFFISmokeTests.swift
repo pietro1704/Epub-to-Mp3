@@ -13,9 +13,8 @@ final class BundledConverterFFISmokeTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: library.path))
         // Explicit bundle URL prevents test overrides from hiding packaging failures.
         let adapter = ConverterFFIAdapter(libraryURL: library)
-        let catalog = try adapter.ttsModels()
-        XCTAssertFalse(catalog.isEmpty)
-        _ = try JSONSerialization.jsonObject(with: catalog)
+        let catalog = try adapter.ttsCatalog()
+        XCTAssertTrue(catalog.models.contains { $0.id == "pt_BR-faber-medium" })
 
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("speech-model-catalog-v3-\(UUID().uuidString)", isDirectory: true)

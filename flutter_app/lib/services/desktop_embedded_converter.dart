@@ -189,7 +189,6 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
       chapterEnd: end,
       optionsJson: options ?? const TtsPreferences.appDefaults().optionsJson(),
       controlAddress: control.address,
-      streaming: onChunk != null,
     );
     Timer? polling;
     Future<void>? currentDrain;

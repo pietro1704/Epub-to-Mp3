@@ -10,19 +10,33 @@ class TtsCatalog {
   final int? androidApi;
   factory TtsCatalog.decode(String json) {
     final decoded = jsonDecode(json);
-    // Older embedded libraries retain their read-only model listing.
-    final Object? entries;
-    if (decoded is List) {
-      entries = decoded;
-    } else if (decoded is Map && decoded['version'] == 2) {
-      entries = decoded['models'];
-    } else {
+    if (decoded is! Map || decoded['schema_version'] != 3) {
       throw const FormatException('Unsupported TTS catalog version');
     }
-    if (entries is! List) { throw const FormatException('Invalid TTS model catalog'); }
-    final providers = decoded is Map && decoded['providers'] is List ? decoded['providers'] as List : const [];
-    return TtsCatalog._(List.unmodifiable(entries.map((value) => Map<String, dynamic>.unmodifiable(Map<String, dynamic>.from(value as Map)))),
-      List.unmodifiable(providers.map((value) => Map<String, dynamic>.from(value as Map))), decoded is Map ? decoded['android_api'] as int? : null);
+    final entries = decoded['entries'];
+    final providers = decoded['providers'];
+    if (entries is! List || providers is! List) {
+      throw const FormatException('Invalid TTS model catalog');
+    }
+    final models = entries.map((entry) {
+      final identity = entry['identity'] as Map;
+      final compatibility = entry['compatibility'] as Map;
+      final distribution = entry['distribution'] as Map;
+      return Map<String, dynamic>.unmodifiable({
+        'id': identity['model_id'], 'engine': identity['provider'],
+        'runtime': identity['runtime'], 'revision': identity['model_revision'],
+        'languages': entry['language_evidence']['routing_tags'],
+        'platforms': compatibility['platforms'],
+        'minimum_android_api': compatibility['minimum_android_api'],
+        'runtime_available': compatibility['runtime_available'],
+        'artifacts': distribution['artifacts'],
+        'download_bytes': distribution['download_bytes'],
+      });
+    });
+    final target = decoded['target'];
+    return TtsCatalog._(List.unmodifiable(models),
+      List.unmodifiable(providers.map((value) => Map<String, dynamic>.from(value as Map))),
+      decoded['android_api'] as int? ?? (target is Map ? target['android_api'] as int? : null));
   }
   /// Capture new jobs only. Persisted requests keep their original wire identity.
   TtsPreferences captureNewPreferences(TtsPreferences preferences, {String? target}) {
