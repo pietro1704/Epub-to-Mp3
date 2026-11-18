@@ -108,7 +108,7 @@ jobs:
           $dumpbin = Join-Path $msvc.FullName 'bin/Hostx64/x64/dumpbin.exe'
           $exports = & $dumpbin /exports $library | Out-String
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged ABI' }
-          foreach ($symbol in @('converter_session_open', 'converter_session_free', 'converter_session_convert_streaming_job_options_json_v1', 'converter_string_free')) {
+          foreach ($symbol in @('converter_session_open', 'converter_session_free', 'converter_session_convert_streaming_job_options_json_v1', 'converter_book_library_metadata_json_v1', 'converter_string_free')) {
             if ($exports -notmatch "\b$symbol\b") { throw "Missing packaged ABI: $symbol" }
           }
           $ortExports = & $dumpbin /exports $runtime | Out-String

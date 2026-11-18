@@ -16,6 +16,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 converter-core = { path = "../converter-core" }
+base64 = "0.22"
 serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
 jni = { version = "0.21", optional = true }

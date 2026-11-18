@@ -9,6 +9,7 @@ module AndroidJniExports
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePiperSynthesizeWithOptions
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeJobLog
     Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogV3
+    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeLibraryMetadata
   ].freeze
 
   def self.verify!(output, label: 'Android JNI library')

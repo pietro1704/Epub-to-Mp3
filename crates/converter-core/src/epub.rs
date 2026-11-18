@@ -1,13 +1,15 @@
 mod epub_chapter_content;
+mod epub_library_metadata;
 mod epub_package;
 mod epub_resources;
 use epub_chapter_content::{
     first_heading, hierarchy_indices, html_to_text_projection, toc_levels, toc_title_for,
 };
+pub use epub_library_metadata::{read_library_metadata, LibraryMetadata};
 use epub_package::{
-    normalized_media_type, parse_package, resolve_resource_path, xml_attr, xml_text, Manifest,
+    normalized_media_type, parse_package, resolve_resource_path, xml_attr, xml_text,
 };
-use epub_resources::{read_entry, read_resource, EpubReadBudget};
+use epub_resources::{read_entry, EpubReadBudget};
 
 use std::io::{Read, Seek};
 use std::path::Path;
@@ -188,7 +190,8 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
             level,
         });
     }
-    let (cover, cover_mime) = cover_image(&mut archive, &manifest, opf_dir, &mut budget)?;
+    let (cover, cover_mime) =
+        epub_library_metadata::cover_image(&mut archive, &opf, opf_dir, &mut budget)?;
     Ok(Book {
         title,
         author,
@@ -198,24 +201,6 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
         cover,
         cover_mime,
     })
-}
-
-fn cover_image<R: Read + Seek>(
-    archive: &mut ZipArchive<R>,
-    manifest: &Manifest,
-    base: &Path,
-    budget: &mut EpubReadBudget,
-) -> Result<(Option<Vec<u8>>, Option<String>), EpubError> {
-    for (href, media) in manifest.values() {
-        let media = media.as_deref().unwrap_or_default().to_ascii_lowercase();
-        let name = href.to_ascii_lowercase();
-        if media.starts_with("image/") && (name.contains("cover") || name.contains("capa")) {
-            let path = resolve_resource_path(base, href);
-            let bytes = read_resource(archive, &path, budget)?;
-            return Ok((Some(bytes), Some(media.to_string())));
-        }
-    }
-    Ok((None, None))
 }
 
 #[cfg(test)]
