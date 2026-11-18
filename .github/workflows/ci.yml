@@ -370,13 +370,7 @@ jobs:
       - name: Install ONNX Runtime smoke-test library
         if: inputs.full_validation == true
         run: |
-          archive="$RUNNER_TEMP/onnxruntime-linux-x64-1.24.4.tgz"
-          curl --fail --location --retry 3 \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz \
-            --output "$archive"
-          echo '3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747  '"$archive" | sha256sum --check --status
-          mkdir -p "$RUNNER_TEMP/onnxruntime"
-          tar -xzf "$archive" -C "$RUNNER_TEMP/onnxruntime"
+          bash scripts/fetch_onnxruntime_linux.sh "$RUNNER_TEMP/onnxruntime"
           runtime_library="$RUNNER_TEMP/onnxruntime/onnxruntime-linux-x64-1.24.4/lib/libonnxruntime.so"
           test -f "$runtime_library"
           echo "ORT_DYLIB_PATH=$runtime_library" >> "$GITHUB_ENV"

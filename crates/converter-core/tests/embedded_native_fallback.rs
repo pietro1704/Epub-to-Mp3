@@ -87,7 +87,10 @@ fn installed_native_speech_produces_valid_audio_through_embedded_fallback() {
         session.options().tts_preferences.as_ref(),
         Some(&preferences)
     );
-    assert!(manifest.fallback_used);
+    // Faber cannot speak English, so language routing selects the installed
+    // system secondary up front. No provider failed, so this is not a
+    // recovery fallback; the native continuation unit test pins the same rule.
+    assert!(!manifest.fallback_used);
     assert!(!manifest.used_selections.is_empty());
     assert!(manifest
         .used_selections
@@ -106,7 +109,7 @@ fn installed_native_speech_produces_valid_audio_through_embedded_fallback() {
             serde_json::from_slice(&fs::read(audio.with_extension("mp3.complete.json")).unwrap())
                 .unwrap();
         assert_eq!(receipt["provider"], "system");
-        assert_eq!(receipt["fallback_used"], true);
+        assert_eq!(receipt["fallback_used"], false);
         assert_eq!(
             receipt["used_selections"],
             serde_json::to_value(&manifest.used_selections).unwrap()

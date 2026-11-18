@@ -14,6 +14,9 @@ prebuilt ONNX Runtime 1.28.2 from the Sherpa maintainer's runtime releases,
 whose Intel artifact declares macOS 10.15. This preserves the product's macOS
 12 target without compiling ONNX. Actual inference must verify the API 23 /
 runtime combination. iOS uses its separately built platform artifact.
+The `ort` dependency keeps upstream's default features except `tls-native`,
+which is replaced by `tls-rustls`: the build-time binary download must not
+require system OpenSSL headers (the Debian server image has none).
 Inference now accepts request cancellation through ONNX RunOptions termination.
 A scoped monitor is joined after inference; no worker is detached. Cancellation
 is checked before and after synchronous phonemization, which cannot itself be
