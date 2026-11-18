@@ -386,10 +386,12 @@ jobs:
           restore-keys: |
             rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
             rust-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.identity }}-
-      - name: Install audio tools and eSpeak-NG phoneme data
+      # Rust audio runs in process; the only test that requires ffmpeg runs in
+      # native-fallback.yml, which installs it there.
+      - name: Install eSpeak-NG phoneme data
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng-data
+          sudo apt-get install -y --no-install-recommends espeak-ng-data
           phoneme_table="$(dpkg -L espeak-ng-data | sed -n '/\/espeak-ng-data\/phontab$/p' | head -n 1)"
           test -n "$phoneme_table"
           test -f "$phoneme_table"
