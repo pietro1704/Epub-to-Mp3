@@ -2,21 +2,10 @@ import Foundation
 
 @MainActor
 final class ConvertViewModel {
-    typealias ConversionExecutor = @MainActor (URL, Int32, Int32, ConversionOptions?) async throws -> RustConversionCoordinator.Result
     let session: ManualConversionSession
 
-    init(converter: ConversionExecutor? = nil) {
-        if let converter {
-            session = ManualConversionSession(executor: { file, _, start, end, options, _, _ in
-                try await converter(file, start, end, options)
-            })
-        } else {
-            session = ManualConversionSession()
-        }
-    }
-
-    init(session: ManualConversionSession) {
-        self.session = session
+    init(session: ManualConversionSession? = nil) {
+        self.session = session ?? ManualConversionSession()
     }
     var selectedFile: URL?
     var engine = "piper"
@@ -116,7 +105,7 @@ final class ConvertViewModel {
 #if os(macOS)
     /// Copies a selected document into an app-owned inbox with a balanced
     /// security-scoped access lifetime.
-    static func importForConversion(
+    nonisolated static func importForConversion(
         _ url: URL,
         fileManager: FileManager = .default,
         baseDirectory: URL? = nil
@@ -142,7 +131,7 @@ final class ConvertViewModel {
         return destination
     }
 
-    static func conversionInboxDirectory(
+    nonisolated static func conversionInboxDirectory(
         fileManager: FileManager = .default,
         baseDirectory: URL? = nil
     ) throws -> URL {

@@ -6,24 +6,30 @@ final class ConvertViewModelRoutingTests: XCTestCase {
     func testLegacyRemoteFlagStillRoutesTheExactFileAndRangeThroughEmbeddedExecutor() async {
         let input = URL(fileURLWithPath: "/fixture-only/Book with spaces.epub")
         var captured: (URL, Int32, Int32)?
-        let model = ConvertViewModel(converter: { file, start, end, _ in
+        var requestedJobID: String?
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { file, jobID, start, end, _, _, _ in
+            requestedJobID = jobID
             captured = (file, start, end)
-            return .init(jobID: "embedded-route", manifestJSON: Data(), outputDirectory: input.deletingLastPathComponent())
-        })
+            return .init(jobID: jobID, manifestJSON: Data(), outputDirectory: input.deletingLastPathComponent())
+        }))
         model.selectedFile = input
         model.chapters = "8-9"
         await model.submit(client: nil, useEmbeddedRuntime: false)
         XCTAssertEqual(captured?.0, input)
         XCTAssertEqual(captured?.1, 8)
         XCTAssertEqual(captured?.2, 9)
-        XCTAssertEqual(model.submittedJobId, "embedded-route")
+        XCTAssertNotNil(requestedJobID)
+        XCTAssertEqual(model.submittedJobId, requestedJobID)
         XCTAssertNil(model.error)
         XCTAssertFalse(model.isSubmitting)
     }
 
     func testMissingInputAndInvalidRangeNeverReachExecutor() async {
         var calls = 0
-        let model = ConvertViewModel(converter: { _, _, _, _ in calls += 1; throw CancellationError() })
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, _, _, _, _, _, _ in
+            calls += 1
+            throw CancellationError()
+        }))
         await model.submit()
         XCTAssertEqual(model.error, L10n.string("convert.error.pickFileFirst"))
         model.selectedFile = URL(fileURLWithPath: "/fixture-only/input.epub")
@@ -36,7 +42,9 @@ final class ConvertViewModelRoutingTests: XCTestCase {
     }
 
     func testCancelledEmbeddedExecutorClearsSubmissionWithoutPublishingAJob() async {
-        let model = ConvertViewModel(converter: { _, _, _, _ in throw CancellationError() })
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, _, _, _, _, _, _ in
+            throw CancellationError()
+        }))
         model.selectedFile = URL(fileURLWithPath: "/fixture-only/input.epub")
         await model.submit(useEmbeddedRuntime: true)
         XCTAssertNil(model.submittedJobId)

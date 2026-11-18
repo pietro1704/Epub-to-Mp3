@@ -103,6 +103,23 @@ final class ManualConversionSessionTests: XCTestCase {
         XCTAssertEqual(calls, 2)
     }
 
+    func testForeignCompletionCannotPublishAResultOrBlockRetry() async {
+        var calls = 0
+        let session = ManualConversionSession(executor: { _, jobID, _, _, _, _, _ in
+            calls += 1
+            return self.result(calls == 1 ? "another-job" : jobID)
+        })
+        await session.run(file: file, start: -1, end: -1, options: nil)
+        XCTAssertEqual(session.phase, .failed)
+        XCTAssertNil(session.result)
+        XCTAssertNotNil(session.failure)
+        XCTAssertFalse(session.isRunning)
+        await session.run(file: file, start: -1, end: -1, options: nil)
+        XCTAssertEqual(session.phase, .completed)
+        XCTAssertNotEqual(session.result?.jobID, "another-job")
+        XCTAssertNotNil(session.result)
+    }
+
     func testCancelWaitsForWriterAndRejectsLateProgressAndSuccess() async {
         let gate = ManualConversionGate()
         defer { gate.release() }

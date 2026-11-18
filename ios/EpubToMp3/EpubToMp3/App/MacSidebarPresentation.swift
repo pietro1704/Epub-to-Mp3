@@ -4,10 +4,11 @@ import AppKit
 @MainActor
 final class MacSidebarPresentation {
     enum Destination: Int, CaseIterable {
-        case library, jobs, settings
+        case library = 0, convert = 3, jobs = 1, settings = 2
         var title: String {
             switch self {
             case .library: return L10n.string("nav.library")
+            case .convert: return L10n.string("convert.title")
             case .jobs: return L10n.string("nav.conversions")
             case .settings: return L10n.string("nav.settings")
             }
@@ -15,6 +16,7 @@ final class MacSidebarPresentation {
         var icon: String {
             switch self {
             case .library: return "books.vertical"
+            case .convert: return "wand.and.stars"
             case .jobs: return "arrow.triangle.2.circlepath"
             case .settings: return "gearshape"
             }

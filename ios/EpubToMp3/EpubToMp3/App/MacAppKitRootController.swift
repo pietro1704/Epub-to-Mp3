@@ -226,10 +226,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                         (self?.detailController as? MacBookDetailViewController)?.downloadWholeBook()
                     },
                     onConvertBook: { [weak self] bookID in
-                        self?.showBookDetail(bookID: bookID)
-                        (self?.detailController as? MacBookDetailViewController)?.convertWholeBook()
+                        self?.showConverter(bookID: bookID)
                     }
                 )
+            case .convert: controller = MacConvertScreenController(settings: settings, library: library)
             case .jobs: controller = MacJobsListViewController()
             case .settings: controller = MacSettingsViewController(settings: settings, library: library)
             }
@@ -251,6 +251,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         ])
         detailController = controller
         refreshDetailAccessibilityChildren()
+    }
+
+    func showConverter(bookID: String) {
+        show(.convert)
+        guard let converter = controllers[.convert] as? MacConvertScreenController else { return }
+        Task { await converter.selectLibraryBook(bookID) }
     }
 
     private func showBookDetail(bookID: String) {
