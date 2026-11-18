@@ -8,16 +8,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
 import '../models/tts_preferences.dart';
-import '../services/audio_player_service.dart';
-import '../services/background_audio_handler.dart';
-import '../services/bookmark_store.dart';
-import '../services/embedded_converter.dart';
-import '../services/local_fulltext_cache.dart';
-import '../services/local_conversion_job.dart';
-import '../services/playback_snapshot.dart';
-import '../services/playback_resume_persistence.dart';
-import '../services/resume_store.dart';
-import '../services/sync_engine.dart';
+import '../services/playback/audio_player_service.dart';
+import '../services/playback/background_audio_handler.dart';
+import '../services/storage/bookmark_store.dart';
+import '../services/conversion/embedded_converter.dart';
+import '../services/storage/local_fulltext_cache.dart';
+import '../services/conversion/local_conversion_job.dart';
+import '../services/playback/playback_snapshot.dart';
+import '../services/playback/playback_resume_persistence.dart';
+import '../services/storage/resume_store.dart';
+import '../services/playback/sync_engine.dart';
 
 part 'settings_providers.dart';
 part 'reader_providers.dart';

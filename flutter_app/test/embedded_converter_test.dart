@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_app/services/embedded_converter.dart';
+import 'package:flutter_app/services/conversion/embedded_converter.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 

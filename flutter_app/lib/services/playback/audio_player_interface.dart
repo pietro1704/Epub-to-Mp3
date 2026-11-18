@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import '../models/job_snapshot.dart';
+import '../../models/job_snapshot.dart';
 import 'growing_chapter_audio_source.dart';
 
 abstract interface class StreamingChapterPlayer {

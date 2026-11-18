@@ -16,7 +16,7 @@ import 'dart:convert';
 import 'tts_preferences.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_app/services/offline_cache_eviction.dart';
+import 'package:flutter_app/services/storage/offline_cache_eviction.dart';
 
 part 'playback_settings.dart';
 

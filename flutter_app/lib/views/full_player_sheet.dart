@@ -14,7 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/job_snapshot.dart';
-import '../services/audio_player_service.dart';
+import '../services/playback/audio_player_service.dart';
 import '../screens/library_screen.dart';
 
 part 'player_chapter_list.dart';

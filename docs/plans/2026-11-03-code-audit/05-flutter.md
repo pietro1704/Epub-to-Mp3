@@ -14,7 +14,7 @@ the selected slice. See the [audit overview](../2026-11-03-complete-code-audit.m
 - [providers.dart](../../../flutter_app/lib/state/providers.dart) selects
   `ConverterMode.embedded`. HTTP-facing providers and a compatibility adapter still
   exist. Their presence does not prove a backend dependency in an active journey.
-- [DesktopEmbeddedConverter](../../../flutter_app/lib/services/desktop_embedded_converter.dart)
+- [DesktopEmbeddedConverter](../../../flutter_app/lib/services/conversion/desktop_embedded_converter.dart)
   loads the FFI library, queues worker operations and tracks native job controls
   by output path. Android uses platform channels with streaming subscriptions.
 - [pubspec.yaml](../../../flutter_app/pubspec.yaml) includes Python compatibility
@@ -74,7 +74,7 @@ Follow [execution policy](../../agents/execution-policy.md) and
 
 ## Step 3: audit import, identity and retained storage
 
-1. Follow [LibraryStore](../../../flutter_app/lib/services/library_store.dart),
+1. Follow [LibraryStore](../../../flutter_app/lib/services/storage/library_store.dart),
    `incoming_document_service.dart`, `epub_metadata_reader.dart` and Android's
    `IncomingDocumentIntake.kt`/`IncomingDocumentUriPolicy.kt`. Distinguish original
    documents, temporary picker files, durable imports, reader caches and audio.

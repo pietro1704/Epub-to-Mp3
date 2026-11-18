@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_app/services/playback_first_resource_policy.dart';
+import 'package:flutter_app/services/playback/playback_first_resource_policy.dart';
 
 void main() {
   test('conversion yields for playback and pending navigation', () {

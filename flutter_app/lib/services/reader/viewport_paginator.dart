@@ -1,5 +1,5 @@
 import 'package:flutter/painting.dart';
-import '../models/ebook_fulltext.dart';
+import '../../models/ebook_fulltext.dart';
 
 class ReaderPage {
   final List<SentenceSpan> spans;

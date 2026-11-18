@@ -16,7 +16,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path_provider/path_provider.dart';
 
-import '../models/ebook_fulltext.dart';
+import '../../models/ebook_fulltext.dart';
 import 'rebuildable_cache_policy.dart';
 
 class LocalFulltextCache {

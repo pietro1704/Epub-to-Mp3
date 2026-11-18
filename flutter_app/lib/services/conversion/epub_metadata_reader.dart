@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 
-import 'library_store.dart';
+import '../storage/library_store.dart';
 
 const _maxCoverBytes = 2 * 1024 * 1024; // 2 MB
 

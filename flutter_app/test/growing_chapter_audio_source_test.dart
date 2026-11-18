@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_app/services/growing_chapter_audio_source.dart';
+import 'package:flutter_app/services/playback/growing_chapter_audio_source.dart';
 
 void main() {
   test(

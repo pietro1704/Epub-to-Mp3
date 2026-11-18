@@ -1,5 +1,5 @@
-import '../models/ebook_fulltext.dart';
-import '../models/job_snapshot.dart';
+import '../../models/ebook_fulltext.dart';
+import '../../models/job_snapshot.dart';
 import 'chapter_index_mapper.dart';
 
 /// Picks the right `FulltextChapter` to render in the reader pane

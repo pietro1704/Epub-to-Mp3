@@ -9,10 +9,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../services/manual_conversion_output.dart';
-import '../services/platform_voice_notice.dart';
-import '../services/embedded_converter.dart';
-import '../services/desktop_embedded_converter.dart';
+import '../services/conversion/manual_conversion_output.dart';
+import '../services/playback/platform_voice_notice.dart';
+import '../services/conversion/embedded_converter.dart';
+import '../services/conversion/desktop_embedded_converter.dart';
 import 'library_screen.dart' show libraryStoreProvider;
 
 import '../state/providers.dart';

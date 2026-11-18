@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/book_entity.dart';
-import '../services/library_store.dart';
+import '../services/storage/library_store.dart';
 
 /// Show the tag editor as a Material 3 modal bottom sheet.
 /// Returns when the user dismisses the sheet.

@@ -4,8 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:just_audio/just_audio.dart';
 
-import '../models/job_snapshot.dart';
-import 'latency_observation.dart';
+import '../../models/job_snapshot.dart';
+import '../latency_observation.dart';
 import 'growing_chapter_audio_source.dart';
 
 import 'audio_player_interface.dart';

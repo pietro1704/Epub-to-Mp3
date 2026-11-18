@@ -6,7 +6,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
-import 'package:flutter_app/services/desktop_embedded_converter.dart';
+import 'package:flutter_app/services/conversion/desktop_embedded_converter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 typedef _OrtGetApiNative = ffi.Pointer<ffi.Void> Function(ffi.Uint32);

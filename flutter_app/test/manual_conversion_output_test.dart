@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_app/services/manual_conversion_output.dart';
+import 'package:flutter_app/services/conversion/manual_conversion_output.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

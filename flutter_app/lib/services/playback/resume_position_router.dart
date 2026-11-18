@@ -1,5 +1,5 @@
-import '../models/job_snapshot.dart';
-import 'chapter_index_mapper.dart';
+import '../../models/job_snapshot.dart';
+import '../reader/chapter_index_mapper.dart';
 
 /// Routes resume-position saves and restores between the
 /// `AudioPlayerService` player axis and the EPUB chapter axis stored

@@ -1,4 +1,4 @@
-part of 'desktop_embedded_converter.dart';
+part of '../conversion/desktop_embedded_converter.dart';
 
 extension _DesktopPositionedChapter on DesktopEmbeddedConverter {
   Future<ConvertedChapterAudio> _positionedChapter({required String inputPath,

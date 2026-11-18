@@ -1,6 +1,6 @@
-import '../models/tts_preferences.dart';
+import '../../models/tts_preferences.dart';
 import 'local_conversion_record.dart';
-import 'local_conversion_store.dart';
+import '../storage/local_conversion_store.dart';
 
 class ConversionJobCoordinator {
   ConversionJobCoordinator(

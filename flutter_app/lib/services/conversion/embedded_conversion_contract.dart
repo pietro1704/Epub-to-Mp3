@@ -1,6 +1,6 @@
-import '../models/ebook_fulltext.dart';
+import '../../models/ebook_fulltext.dart';
 import 'embedded_conversion_result.dart';
-import 'growing_chapter_audio_source.dart';
+import '../playback/growing_chapter_audio_source.dart';
 
 /// Raised when embedded conversion was explicitly requested but no native
 /// converter-ffi implementation has been registered for this process.

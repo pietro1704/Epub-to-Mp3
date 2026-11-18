@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_app/services/local_conversion_job.dart';
+import 'package:flutter_app/services/conversion/local_conversion_job.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _RefusingManualPreferences extends Fake implements SharedPreferences {

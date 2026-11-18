@@ -6,7 +6,7 @@ in Rust, with platform adapters for UI, files, speech and playback.
 
 `lib/main.dart` registers `AndroidEmbeddedConverter` on Android and
 `DesktopEmbeddedConverter` on Linux/Windows before providers resolve the runtime.
-`lib/services/embedded_converter.dart` defines the seam; desktop uses direct
+`lib/services/conversion/embedded_converter.dart` defines the seam; desktop uses direct
 `converter-ffi`, Android uses its registered native platform channel/JNI path.
 `RustPlaybackConversionService` handles the moving Listen window over that seam.
 The retained `api_client.dart`, Python bridge source/assets and backend settings
@@ -56,10 +56,10 @@ conversion/reader journeys remain separate from this Linux playback check.
 
 
 - `lib/state/providers.dart`: runtime and state composition.
-- `lib/services/local_conversion_job.dart`: local history from Rust manifests.
-- `lib/services/audio_player_service.dart`: playback and progressive sources.
-- `lib/services/resume_store.dart`: persisted playback position.
-- `lib/services/desktop_tts_model_adapter.dart`: shared model catalog/store adapter.
+- `lib/services/conversion/local_conversion_job.dart`: local history from Rust manifests.
+- `lib/services/playback/audio_player_service.dart`: playback and progressive sources.
+- `lib/services/storage/resume_store.dart`: persisted playback position.
+- `lib/services/conversion/desktop_tts_model_adapter.dart`: shared model catalog/store adapter.
 - `lib/l10n/`: locale resources; keep intended locale values literal.
 
 Piper `pt_BR-faber-medium` remains primary, with installed system TTS fallback

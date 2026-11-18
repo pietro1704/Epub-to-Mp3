@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_app/services/offline_cache_eviction.dart';
+import 'package:flutter_app/services/storage/offline_cache_eviction.dart';
 
 // ---------------------------------------------------------------------------
 // Helper: plant an audiobook folder with a stub file.

@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/app_settings.dart';
 
 import '../models/ebook_fulltext.dart';
-import '../services/viewport_paginator.dart';
+import '../services/reader/viewport_paginator.dart';
 
 import '../state/providers.dart';
 import 'reader_theme_colors.dart';

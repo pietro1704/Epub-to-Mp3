@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
-import 'package:flutter_app/services/audio_player_service.dart';
-import 'package:flutter_app/services/growing_chapter_audio_source.dart';
+import 'package:flutter_app/services/playback/audio_player_service.dart';
+import 'package:flutter_app/services/playback/growing_chapter_audio_source.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

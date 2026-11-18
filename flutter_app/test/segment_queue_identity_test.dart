@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:flutter_app/services/audio_player_service.dart';
+import 'package:flutter_app/services/playback/audio_player_service.dart';
 
 class RecordingPlaylistPlayer extends AudioPlayer {
   RecordingPlaylistPlayer()

@@ -22,24 +22,24 @@ import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/tts_catalog.dart';
 import '../models/reader_listening_position.dart';
-import '../services/listening_schedule.dart';
+import '../services/playback/listening_schedule.dart';
 import '../models/book_entity.dart';
 import '../models/job_snapshot.dart';
 import '../services/async_load_guard.dart';
-import '../services/audio_player_service.dart';
+import '../services/playback/audio_player_service.dart';
 
-import '../services/local_conversion_job.dart';
-import '../services/embedded_converter.dart';
-import '../services/rust_playback_conversion.dart';
-import '../services/platform_voice_notice.dart';
-import '../services/reader_playback_startup.dart';
+import '../services/conversion/local_conversion_job.dart';
+import '../services/conversion/embedded_converter.dart';
+import '../services/conversion/rust_playback_conversion.dart';
+import '../services/playback/platform_voice_notice.dart';
+import '../services/reader/reader_playback_startup.dart';
 import '../services/latency_observation.dart';
 
-import '../services/playback_first_resource_policy.dart';
+import '../services/playback/playback_first_resource_policy.dart';
 
-import '../services/speech_text_policy.dart';
-import '../services/resume_position_router.dart';
-import '../services/resume_restoration_guard.dart';
+import '../services/conversion/speech_text_policy.dart';
+import '../services/playback/resume_position_router.dart';
+import '../services/playback/resume_restoration_guard.dart';
 import '../state/providers.dart';
 import '../views/instant_reader_view.dart';
 import 'library_screen.dart';

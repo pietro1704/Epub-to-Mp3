@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_app/models/job_snapshot.dart';
-import 'package:flutter_app/services/chapter_index_mapper.dart';
+import 'package:flutter_app/services/reader/chapter_index_mapper.dart';
 
 void main() {
   group('ChapterIndexMapper (sparse playable layout)', () {

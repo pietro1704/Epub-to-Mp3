@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_app/services/speech_text_policy.dart';
+import 'package:flutter_app/services/conversion/speech_text_policy.dart';
 
 void main() {
   test('detects English Lord of the Rings text', () {

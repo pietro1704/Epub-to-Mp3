@@ -5,8 +5,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
-import 'package:flutter_app/services/audio_player_service.dart';
-import 'package:flutter_app/services/desktop_audio_backend.dart';
+import 'package:flutter_app/services/playback/audio_player_service.dart';
+import 'package:flutter_app/services/playback/desktop_audio_backend.dart';
 
 Future<void> eventually(bool Function() condition) async {
   final deadline = DateTime.now().add(const Duration(seconds: 10));

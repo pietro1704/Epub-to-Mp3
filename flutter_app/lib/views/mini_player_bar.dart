@@ -14,11 +14,11 @@ import 'seek_interval_icon.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../services/audio_player_service.dart';
+import '../services/playback/audio_player_service.dart';
 import '../l10n/app_localizations.dart';
-import '../services/playback_snapshot.dart';
+import '../services/playback/playback_snapshot.dart';
 
-import '../services/background_audio_handler.dart' as background_audio;
+import '../services/playback/background_audio_handler.dart' as background_audio;
 import '../state/providers.dart';
 import 'full_player_sheet.dart';
 import '../screens/library_screen.dart';

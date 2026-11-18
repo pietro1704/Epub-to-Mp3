@@ -1,4 +1,4 @@
-part of 'desktop_embedded_converter.dart';
+part of '../conversion/desktop_embedded_converter.dart';
 
 /// Registers installed system speech inside the worker-owned session only.
 bool _installDesktopPlatformSpeech(

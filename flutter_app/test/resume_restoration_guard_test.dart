@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_app/models/job_snapshot.dart';
-import 'package:flutter_app/services/resume_position_router.dart';
-import 'package:flutter_app/services/resume_restoration_guard.dart';
+import 'package:flutter_app/services/playback/resume_position_router.dart';
+import 'package:flutter_app/services/playback/resume_restoration_guard.dart';
 
 void main() {
   ChapterProgress completed(int index) => ChapterProgress(

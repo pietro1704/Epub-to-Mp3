@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
-import 'package:flutter_app/services/embedded_converter.dart';
-import 'package:flutter_app/services/growing_chapter_audio_source.dart';
-import 'package:flutter_app/services/local_conversion_job.dart';
-import 'package:flutter_app/services/rust_playback_conversion.dart';
+import 'package:flutter_app/services/conversion/embedded_converter.dart';
+import 'package:flutter_app/services/playback/growing_chapter_audio_source.dart';
+import 'package:flutter_app/services/conversion/local_conversion_job.dart';
+import 'package:flutter_app/services/conversion/rust_playback_conversion.dart';
 
 class PositionedProbe extends UnavailableEmbeddedConverter implements PositionedChapterConverter {
   int? requestedOffset;

@@ -1,4 +1,4 @@
-import '../features/reader/epub_reader_resources.dart';
+import '../../features/reader/epub_reader_resources.dart';
 
 import 'dart:convert';
 import 'dart:async';
@@ -8,18 +8,18 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
-import '../models/ebook_fulltext.dart';
+import '../../models/ebook_fulltext.dart';
 import 'embedded_converter.dart';
-import 'growing_chapter_audio_source.dart';
-import 'listening_schedule.dart';
+import '../playback/growing_chapter_audio_source.dart';
+import '../playback/listening_schedule.dart';
 import 'desktop_tts_model_adapter.dart';
-import '../models/tts_preferences.dart';
+import '../../models/tts_preferences.dart';
 
 part 'desktop_ffi_bindings.dart';
-part 'desktop_listening_schedule.dart';
-part 'desktop_positioned_chapter.dart';
+part '../playback/desktop_listening_schedule.dart';
+part '../playback/desktop_positioned_chapter.dart';
 part 'desktop_conversion_worker.dart';
-part 'desktop_platform_speech.dart';
+part '../playback/desktop_platform_speech.dart';
 
 /// Direct Linux/Windows adapter over converter-ffi; no HTTP or Python runtime.
 final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter

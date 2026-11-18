@@ -1,4 +1,4 @@
-import '../features/reader/epub_reader_resources.dart';
+import '../../features/reader/epub_reader_resources.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -6,11 +6,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 
-import '../models/ebook_fulltext.dart';
+import '../../models/ebook_fulltext.dart';
 import 'embedded_conversion_contract.dart';
 import 'embedded_conversion_result.dart';
-import 'growing_chapter_audio_source.dart';
-import 'android_speech_fallback.dart';
+import '../playback/growing_chapter_audio_source.dart';
+import '../playback/android_speech_fallback.dart';
 
 part 'android_conversion_model_channels.dart';
 

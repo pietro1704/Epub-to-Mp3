@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/tts_preferences.dart';
-import 'local_conversion_record.dart';
+import '../../models/tts_preferences.dart';
+import '../conversion/local_conversion_record.dart';
 
 class LocalConversionHistory {
   const LocalConversionHistory({

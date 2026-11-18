@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
-import '../models/bookmark.dart';
+import '../../models/bookmark.dart';
 
 class BookmarkStore extends ChangeNotifier {
   BookmarkStore({

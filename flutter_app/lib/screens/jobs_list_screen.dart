@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
-import '../services/local_conversion_job.dart';
-import '../services/embedded_converter.dart';
+import '../services/conversion/local_conversion_job.dart';
+import '../services/conversion/embedded_converter.dart';
 import '../state/providers.dart';
 import 'library_screen.dart' show libraryStoreProvider;
 import 'conversion_log_screen.dart';

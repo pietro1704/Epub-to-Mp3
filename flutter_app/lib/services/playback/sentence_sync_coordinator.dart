@@ -1,6 +1,6 @@
-import '../models/ebook_fulltext.dart';
-import '../models/job_snapshot.dart';
-import 'reader_chapter_resolver.dart';
+import '../../models/ebook_fulltext.dart';
+import '../../models/job_snapshot.dart';
+import '../reader/reader_chapter_resolver.dart';
 import 'sync_engine.dart';
 
 /// Drives a `SyncEngine` from a `(fulltext, playableChapters,

@@ -3,11 +3,11 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:flutter_app/services/audio_playback_state.dart';
-import 'package:flutter_app/services/audio_player_interface.dart';
+import 'package:flutter_app/services/playback/audio_playback_state.dart';
+import 'package:flutter_app/services/playback/audio_player_interface.dart';
 import 'support/fake_audio_player_service.dart';
-import 'package:flutter_app/services/playback_snapshot.dart';
-import 'package:flutter_app/services/background_audio_handler.dart';
+import 'package:flutter_app/services/playback/playback_snapshot.dart';
+import 'package:flutter_app/services/playback/background_audio_handler.dart';
 import 'package:flutter_app/views/full_player_sheet.dart';
 
 class DecoderEventPlayer implements AudioPlayer {

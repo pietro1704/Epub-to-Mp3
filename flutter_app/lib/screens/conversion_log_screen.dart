@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/conversion_log_source.dart';
+import '../services/conversion/conversion_log_source.dart';
 import '../l10n/app_localizations.dart';
 
 class ConversionLogScreen extends StatefulWidget {

@@ -6,7 +6,7 @@ import 'package:flutter_app/l10n/app_localizations_es.dart';
 import 'package:flutter_app/l10n/app_localizations_pt.dart';
 import 'package:flutter_app/screens/root_screen.dart';
 import 'package:flutter_app/state/providers.dart';
-import 'package:flutter_app/services/local_conversion_job.dart';
+import 'package:flutter_app/services/conversion/local_conversion_job.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

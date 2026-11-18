@@ -10,7 +10,7 @@ conditionally compiled; the full native process/network pipeline is not a browse
 | --- | --- | --- |
 | Apple | `ios/EpubToMp3/EpubToMp3/Features/` | UIKit/AppKit, local files, media and FFI |
 | Web | `web/src/services/BrowserConversionClient.ts` | Browser I/O/Piper/storage around Rust sessions |
-| Flutter | `flutter_app/lib/main.dart`, `lib/services/embedded_converter.dart` | Registered Android native channel and Linux/Windows FFI |
+| Flutter | `flutter_app/lib/main.dart`, `lib/services/conversion/embedded_converter.dart` | Registered Android native channel and Linux/Windows FFI |
 | Optional server | `crates/converter-server/src/main.rs` | Hosted HTTP compatibility contract |
 | Legacy | `python_app/`, `hf_app.py` | Compatibility fixtures and migration reference |
 
