@@ -55,23 +55,19 @@ class CiContractsTest < Minitest::Test
 
   def test_allowlist_contains_existing_fixture_files_and_no_build_commands
     root = File.expand_path("..", __dir__)
-    paths = CiContracts::RUBY_SUITES.map { |path| "scripts/#{path}" } + CiContracts::NODE_SUITES + CiContracts::PYTHON_SUITES + CiContracts::ISOLATED_PYTHON_SUITES
+    paths = CiContracts::RUBY_SUITES.map { |path| "scripts/#{path}" } + CiContracts::NODE_SUITES + CiContracts::PYTHON_SUITES
     paths.each { |path| assert File.file?(File.join(root, path)), path }
     refute CiContracts.steps.any? { |step| %w[cargo swift swiftc xcodebuild simctl docker].include?(step.fetch("argv").first) }
     assert_equal paths.uniq, paths
   end
 
-  def test_only_the_two_independent_slow_node_files_run_concurrently_and_each_file_runs_once
+  def test_each_node_file_runs_once_in_its_own_step
     node = CiContracts.steps.select { |entry| entry.fetch("argv").first == "node" }
     scheduled = node.flat_map { |entry| entry.fetch("argv").drop(1).reject { |argument| argument.start_with?("--") } }
     host_node = CiContracts::RUBY_SUITES.map { |name| HostChecks.suite_argv("scripts/#{name}") }.select { |argv| argv.first == "node" }.map(&:last)
     assert_equal (host_node + CiContracts::NODE_SUITES).sort, scheduled.sort
     assert_equal scheduled.length, scheduled.uniq.length
-    grouped = node.select { |entry| entry.fetch("argv").include?("--test-concurrency=2") }
-    assert_equal 1, grouped.length
-    assert_equal ["node", "--test", "--test-concurrency=2", *CiContracts::CONCURRENT_NODE_SUITES], grouped.first.fetch("argv")
-    assert_equal %w[.github/scripts/dependency-audit-results.test.cjs .github/scripts/pr-repair-safety.test.cjs], CiContracts::CONCURRENT_NODE_SUITES
-    assert node.reject { |entry| entry == grouped.first }.all? { |entry| entry.fetch("argv").length == 3 }
+    assert node.all? { |entry| entry.fetch("argv").length == 3 }
   end
 
   def test_missing_git_lfs_fails_before_expensive_fixture_checks

@@ -3,9 +3,6 @@
 from pathlib import Path
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "sync-hf.yml"
-REMEDIATION_WORKFLOW = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "code-scanning-remediation.yml"
-)
 
 
 def test_hf_sync_snapshots_only_the_validated_revision() -> None:
@@ -30,12 +27,3 @@ def test_hf_sync_checks_out_the_trusted_workflow_revision() -> None:
     assert '--ref "$VALIDATED_SHA" --latest' in workflow
     assert workflow.index('--ref "$VALIDATED_SHA" --latest') < workflow.index("bash scripts/hf_push.sh")
     assert "issues: write" not in workflow
-
-
-def test_code_scanning_remediation_repairs_existing_tracking_issues() -> None:
-    workflow = REMEDIATION_WORKFLOW.read_text(encoding="utf-8")
-
-    assert "Determine remediation status" in workflow
-    assert "tracking_exists" in workflow
-    assert "steps.remediation.outputs.skip != 'true'" in workflow
-    assert "steps.dedupe.outputs.skip" not in workflow

@@ -26,6 +26,7 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: Merge only after required exact-head checks succeed
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout trusted merge policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -291,11 +291,6 @@ test('every workflow writer uses the trusted gate or leaves automatic merge disa
     const text = readFileSync(new URL(filename, directory), 'utf8');
     assert.doesNotMatch(text, /\bgh\s+pr\s+merge\b|\bpulls\.merge\s*\(|\/pulls\/[^\s]+\/merge\b/, filename);
   }
-  for (const filename of ['code-scanning-remediation.yml', 'dependency-vulnerability-remediation.yml', 'issue-remediation.yml']) {
-    const text = readFileSync(new URL(filename, directory), 'utf8');
-    assert.match(text, /Auto-merge disabled/);
-    assert.match(text, /trusted master scripts\/guarded_pr_merge\.mjs/);
-  }
 });
 
 test('freshness requires an actual current master ancestry comparison', () => {

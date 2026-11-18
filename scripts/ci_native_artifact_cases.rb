@@ -104,16 +104,16 @@ class CiRuntimeScopeTest
     assert_equal ['macos-15', 'macos-15-intel'], selected_faber_matrix(faber, event_name: 'workflow_call', workflow_inputs: {}).map { |entry| entry.fetch('os') }
   end
 
-  def test_faber_intel_rust_cache_is_toolchain_scoped_and_saved_only_after_architecture_validation
+  def test_faber_rust_cache_covers_both_architectures_is_toolchain_scoped_and_saved_only_on_master_after_validation
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     steps = faber.fetch('jobs').fetch('macos-preferences').fetch('steps')
     identity = steps.find { |step| step['id'] == 'rust-cache-identity' }
     restore = steps.find { |step| step['id'] == 'rust-cache' }
     build = steps.find { |step| step['id'] == 'ffi-build' }
     verify = steps.find { |step| step['id'] == 'ffi-architecture' }
-    save = steps.find { |step| step['name'] == 'Save Intel Rust build cache' }
+    save = steps.find { |step| step['name'] == 'Save Rust build cache on master' }
     [identity, restore, build, verify, save].each { |step| refute_nil step }
-    [identity, restore].each { |step| assert_equal "matrix.arch == 'x86_64' && !inputs.intel_prebuilt", step.fetch('if') }
+    [identity, restore].each { |step| assert_equal "matrix.arch != 'x86_64' || !inputs.intel_prebuilt", step.fetch('if') }
     assert_pinned_action('actions/cache/restore', restore.fetch('uses'))
     assert_pinned_action('actions/cache/save', save.fetch('uses'))
     paths = ["~/.cargo/registry", 'target/release', 'target/espeak-data']
@@ -121,7 +121,8 @@ class CiRuntimeScopeTest
     refute_includes paths, 'target'
     refute paths.any? { |path| path.include?('onnxruntime') }
     key = restore.fetch('with').fetch('key')
-    %w[runner.arch steps.rust-cache-identity.outputs.identity].each do |identity_key|
+    assert key.start_with?('faber-rust-${{ matrix.os }}-${{ runner.arch }}-'), 'Architecture and runner image select the cache'
+    %w[matrix.os runner.arch steps.rust-cache-identity.outputs.identity].each do |identity_key|
       assert_includes key, "${{ #{identity_key} }}"
     end
     ["hashFiles('Cargo.lock'", "'**/Cargo.toml'", "'.cargo/config.toml'", "'mise.toml'",
@@ -133,8 +134,8 @@ class CiRuntimeScopeTest
     assert_includes restore_prefix, "'Cargo.lock'"
     refute_includes restore_prefix, "'crates/**/*.rs'"
     assert_equal "${{ steps.rust-cache.outputs.cache-primary-key }}", save.fetch('with').fetch('key')
-    assert_match(/matrix\.arch == 'x86_64'/, save.fetch('if'))
-    assert_includes save.fetch('if'), '!inputs.intel_prebuilt'
+    assert_includes save.fetch('if'), "(matrix.arch != 'x86_64' || !inputs.intel_prebuilt)"
+    assert_includes save.fetch('if'), "github.ref == 'refs/heads/master'"
     assert_includes save.fetch('if'), 'success()'
     assert_includes save.fetch('if'), "steps.rust-cache.outputs.cache-hit != 'true'"
     assert_includes save.fetch('if'), "steps.ffi-build.outcome == 'success'"
@@ -143,7 +144,13 @@ class CiRuntimeScopeTest
     refute verify.key?('if')
     assert_equal 'mise run converter-ffi:build', build.fetch('run')
     assert_includes verify.fetch('run'), 'xcrun lipo -archs target/release/libconverter_ffi.dylib'
-    assert_equal 'ruby scripts/intel_rust_cache_identity.rb', identity.fetch('run')
+    assert_equal 'mise exec -- ruby scripts/intel_rust_cache_identity.rb', identity.fetch('run')
+    producer = YAML.load_file(File.expand_path('../.github/workflows/converter-ffi-macos-intel-prebuilt.yml', __dir__))
+    shared = producer.fetch('jobs').fetch('build').fetch('steps').find { |step| step['id'] == 'rust-cache-identity' }
+    refute_nil shared
+    intel_key = key.sub('${{ matrix.os }}', 'macos-15-intel')
+    producer_cache = producer.fetch('jobs').fetch('build').fetch('steps').find { |step| step['uses'].to_s.start_with?('actions/cache') }
+    assert_equal intel_key, producer_cache.fetch('with').fetch('key'), 'Intel Faber and the Intel FFI producer must share one cache key'
     assert_operator steps.index(identity), :<, steps.index(restore)
     assert_operator steps.index(restore), :<, steps.index(build)
     assert_operator steps.index(build), :<, steps.index(verify)

@@ -129,6 +129,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
 
       - name: Install scoped host contract tools
@@ -172,6 +173,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
 
       - name: Check Python toolchain scope
@@ -318,6 +320,7 @@ jobs:
           name: python-compatibility-${{ github.sha }}
           path: .reports/python-compatibility/
           if-no-files-found: warn
+          retention-days: 14
 
   rust:
     if: needs.changes.outputs.rust == 'true'
@@ -333,6 +336,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Verify vendored phoneme source assets
         working-directory: native/vendor/espeak-rs-sys
         run: sha256sum --check phsource-wav.sha256
@@ -340,6 +345,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Check Rust toolchain scope
         run: |
@@ -354,6 +360,9 @@ jobs:
         run: |
           mise install
           mise exec -- rustup component add rustfmt
+      # Formatting needs no build; fail before the cache restore and test build.
+      - name: Rust formatting
+        run: mise exec -- cargo fmt --all -- --check
       - name: Test vendored source cache refresh
         run: |
           mise exec -- rustc --edition=2021 --test native/vendor/espeak-rs-sys/source_copy.rs -o "$RUNNER_TEMP/espeak-source-copy-tests"
@@ -368,8 +377,10 @@ jobs:
       - name: Identify the actual Rust compiler
         id: rust-toolchain
         run: echo "identity=$(mise exec -- rustc -vV | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - name: Cache Rust build artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Pull requests restore master's entries; only master saves (cache quota).
+      - name: Restore Rust build artifacts
+        id: rust-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -383,9 +394,13 @@ jobs:
       # Rust audio runs in process; the only test that requires ffmpeg runs in
       # native-fallback.yml, which installs it there.
       - name: Install eSpeak-NG phoneme data
+        timeout-minutes: 4
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends espeak-ng-data
+          set -euo pipefail
+          sudo /usr/bin/ruby scripts/normalize_ubuntu_package_mirror.rb
+          apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+          sudo apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends espeak-ng-data
           phoneme_table="$(dpkg -L espeak-ng-data | sed -n '/\/espeak-ng-data\/phontab$/p' | head -n 1)"
           test -n "$phoneme_table"
           test -f "$phoneme_table"
@@ -396,8 +411,6 @@ jobs:
         run: mise run migration:build-and-gate
       - name: Test Rust workspace
         run: mise exec -- cargo test --workspace --locked
-      - name: Rust formatting
-        run: mise exec -- cargo fmt --all -- --check
       - name: Install Piper smoke model
         if: inputs.full_validation == true
         run: |
@@ -411,6 +424,16 @@ jobs:
       - name: Piper Embedded runtime smoke test
         if: inputs.full_validation == true
         run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
+      - name: Save Rust build artifacts on master
+        if: github.ref == 'refs/heads/master' && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            native/piper-runtime/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
   web:
     if: needs.changes.outputs.web == 'true'
     name: Web
@@ -425,10 +448,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install mise
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Check Web toolchain scope
         env:
@@ -458,8 +484,9 @@ jobs:
       - name: Verify generated WASM runtime contracts
         if: needs.changes.outputs.wasm == 'true'
         run: mise run web:wasm-contract:test
-      - name: Cache npm downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore npm downloads
+        id: npm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
@@ -467,6 +494,12 @@ jobs:
       - name: Install web dependencies
         working-directory: web
         run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
+      - name: Save npm downloads on master
+        if: github.ref == 'refs/heads/master' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
       - name: Run full web tests
         working-directory: web
         run: mise exec -- npm test -- --maxWorkers=2
@@ -499,6 +532,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
 
       - name: Check Flutter toolchain scope
@@ -511,12 +545,21 @@ jobs:
           print("Flutter CI tools: python, flutter")
           '
 
+      # Key tool caches by the installed versions, not by unrelated mise.toml task edits.
+      - name: Identify cached toolchain versions
+        id: tool-versions
+        run: |
+          set -euo pipefail
+          tools="$(mise ls --current --json)"
+          echo "mise=$(mise --version | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "flutter=$(jq -er '.flutter[0].version' <<< "$tools")" >> "$GITHUB_OUTPUT"
+
       - name: Cache Flutter SDK
         id: flutter-sdk-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/mise/installs/flutter
-          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-mise-${{ steps.tool-versions.outputs.mise }}-flutter-${{ steps.tool-versions.outputs.flutter }}
 
       - name: Install toolchain
         env:
@@ -524,23 +567,31 @@ jobs:
         run: mise install
 
       - name: Retain installed Flutter SDK
-        if: steps.flutter-sdk-cache.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/master' && steps.flutter-sdk-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/mise/installs/flutter
-          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-mise-${{ steps.tool-versions.outputs.mise }}-flutter-${{ steps.tool-versions.outputs.flutter }}
 
-      - name: Cache Pub downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Pub downloads
+        id: pub-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
-          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
+          key: pub-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-
 
       - name: Install Flutter dependencies
         id: flutter-dependencies
         working-directory: flutter_app
         run: mise exec -- flutter pub get
+
+      - name: Save Pub downloads on master
+        if: github.ref == 'refs/heads/master' && steps.pub-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.pub-cache
+          key: ${{ steps.pub-cache.outputs.cache-primary-key }}
 
       - name: Run Flutter analyzer
         id: flutter-analyze
@@ -567,7 +618,9 @@ jobs:
 
   android-jvm:
     # The integrated Faber APK job already executes the same JVM suite.
-    if: needs.changes.outputs.android == 'true' && !(inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master')
+    # Post-merge validation arrives as push or workflow_dispatch (GITHUB_TOKEN
+    # merges); in a called workflow github.workflow_ref names the caller.
+    if: needs.changes.outputs.android == 'true' && !(inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@'))
     name: Android JVM tests
     needs: [changes]
     timeout-minutes: ${{ inputs.full_validation == true && 30 || 12 }}
@@ -582,36 +635,48 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
+      # Key tool caches by the installed versions, not by unrelated mise.toml task edits.
+      - name: Identify cached toolchain versions
+        id: tool-versions
+        run: |
+          set -euo pipefail
+          tools="$(mise ls --current --json)"
+          echo "mise=$(mise --version | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "flutter=$(jq -er '.flutter[0].version' <<< "$tools")" >> "$GITHUB_OUTPUT"
+          echo "java=$(jq -er '.java[0].version' <<< "$tools")" >> "$GITHUB_OUTPUT"
       - name: Cache Flutter SDK
         id: flutter-sdk-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/mise/installs/flutter
-          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-mise-${{ steps.tool-versions.outputs.mise }}-flutter-${{ steps.tool-versions.outputs.flutter }}
       - name: Install scoped project tools
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
       - name: Retain installed Flutter SDK
-        if: steps.flutter-sdk-cache.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/master' && steps.flutter-sdk-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/mise/installs/flutter
-          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
-      - name: Cache Pub downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-mise-${{ steps.tool-versions.outputs.mise }}-flutter-${{ steps.tool-versions.outputs.flutter }}
+      # Restore only: post-merge master skips this job; the Flutter job and the
+      # Faber Android APK job save these entries on master.
+      - name: Restore Pub downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
-          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
-      - name: Cache Gradle dependency downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          key: pub-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-
+      - name: Restore Gradle dependency downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.gradle/caches/modules-2
             ~/.gradle/wrapper/dists
-          key: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'flutter_app/android/**/*.gradle.kts', 'flutter_app/android/gradle.properties', 'flutter_app/android/gradle/wrapper/gradle-wrapper.properties', 'flutter_app/pubspec.lock') }}
+          key: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-java-${{ steps.tool-versions.outputs.java }}-${{ hashFiles('flutter_app/android/**/*.gradle.kts', 'flutter_app/android/gradle.properties', 'flutter_app/android/gradle/wrapper/gradle-wrapper.properties', 'flutter_app/pubspec.lock') }}
           restore-keys: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Resolve Flutter plugins and hosted Android SDK
         run: |
@@ -659,7 +724,7 @@ jobs:
   apple-app:
     name: Apple app tests
     needs: [changes]
-    if: needs.changes.outputs.apple == 'true' && !(inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master')
+    if: needs.changes.outputs.apple == 'true' && !(inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@'))
     uses: ./.github/workflows/faber-integration.yml
     with:
       macos_only: true
@@ -667,54 +732,9 @@ jobs:
       contents: read
       actions: read
 
-  apple-foundation:
-    if: needs.changes.outputs.apple == 'true'
-    name: Apple Foundation tests
-    needs: [changes]
-    timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
-    runs-on: macos-15
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      MISE_ENABLE_TOOLS: ruby
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Require Xcode 16.4 without launching a device
-        run: |
-          test -d "$DEVELOPER_DIR"
-          test "$(xcodebuild -version | head -n 1)" = 'Xcode 16.4'
-      - name: Install mise
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
-        with:
-          version: 2026.11.3
-          install: false
-      - name: Install scoped Ruby toolchain
-        env:
-          MISE_GITHUB_TOKEN: ${{ github.token }}
-        run: mise install
-      - name: Test the Foundation-only Apple production seam
-        run: |
-          set -o pipefail
-          mkdir -p .reports/apple-foundation
-          mise run apple:foundation:test 2>&1 | tee .reports/apple-foundation/test.log
-      - name: Require the conversion history regression suite
-        shell: ruby {0}
-        run: |
-          log = File.read('.reports/apple-foundation/test.log')
-          suites = log.scan(/Test Suite 'ConversionHistoryReaderTests' passed[^\n]*\n\s*Executed (\d+) tests?, with 0 failures/)
-          abort 'Foundation history must execute without failures or skips' if suites.empty? || suites.any? { |counts| counts.first.to_i.zero? }
-          abort 'Foundation history contains a skipped or failing case' if log.match?(/Test Case '[^'\n]*ConversionHistoryReaderTests[^'\n]*' (?:skipped|failed)/)
-          puts "FOUNDATION_HISTORY_XCTEST total=#{suites.sum { |counts| counts.first.to_i }} failed=0 skipped=0"
-
-
   pr-gate:
     name: PR gate
-    needs: [changes, production-packaging-guard, python-tests, rust, flutter, android-jvm, web, apple-foundation, apple-app]
+    needs: [changes, production-packaging-guard, python-tests, rust, flutter, android-jvm, web, apple-app]
     if: always()
     timeout-minutes: 1
     runs-on: ubuntu-24.04
@@ -722,7 +742,7 @@ jobs:
       - name: Require every selected runtime and reject missing scope evidence
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          INTEGRATED_VALIDATION: ${{ inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+          INTEGRATED_VALIDATION: ${{ inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@') }}
         shell: ruby {0}
         run: |
           require 'json'
@@ -734,7 +754,7 @@ jobs:
           wasm = scopes.fetch('wasm')
           abort 'Missing scope evidence: wasm' unless %w[true false].include?(wasm)
           abort 'WASM validation requires the Web job' if wasm == 'true' && scopes.fetch('web') != 'true'
-          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web', 'apple-foundation' => 'apple', 'apple-app' => 'apple' }.each do |job, scope|
+          { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web', 'apple-app' => 'apple' }.each do |job, scope|
             selected = scopes.fetch(scope)
             abort "Missing scope evidence: #{scope}" unless %w[true false].include?(selected)
             # Full post-merge validation already requires the complete Faber matrix.

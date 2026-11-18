@@ -11,10 +11,10 @@ class CiRuntimeScopeTest
     assert_pinned_action 'actions/cache/restore', restore.fetch('uses')
     assert_pinned_action 'actions/cache/save', save.fetch('uses')
     assert_equal 'flutter-sdk-cache', restore.fetch('id')
-    assert_equal "steps.flutter-sdk-cache.outputs.cache-hit != 'true'", save.fetch('if')
+    assert_equal "github.ref == 'refs/heads/master' && steps.flutter-sdk-cache.outputs.cache-hit != 'true'", save.fetch('if')
     assert_equal restore.fetch('with'), save.fetch('with')
     assert_equal '~/.local/share/mise/installs/flutter', save.fetch('with').fetch('path')
-    assert_includes save.fetch('with').fetch('key'), "hashFiles('mise.toml', 'mise.lock')"
+    assert_includes save.fetch('with').fetch('key'), '${{ steps.tool-versions.outputs.flutter }}'
     refute install.key?('continue-on-error')
     assert_operator steps.index(restore), :<, steps.index(install)
     assert_operator steps.index(install), :<, steps.index(save)
@@ -31,8 +31,10 @@ class CiRuntimeScopeTest
     assert_equal '~/.local/share/mise/installs/flutter', cache.fetch('with').fetch('path')
     key = cache.fetch('with').fetch('key')
     %w[runner.os runner.arch].each { |identity| assert_includes key, "${{ #{identity} }}" }
-    assert_includes key, "hashFiles('mise.toml', 'mise.lock')"
+    %w[steps.tool-versions.outputs.mise steps.tool-versions.outputs.flutter].each { |identity| assert_includes key, "${{ #{identity} }}" }
+    refute_includes key, 'mise.toml', 'Task edits must not invalidate the installed SDK'
     refute cache.fetch('with').key?('restore-keys')
+    assert_operator names_index(steps, 'Identify cached toolchain versions'), :<, names_index(steps, 'Cache Flutter SDK')
     names = steps.map { |step| step['name'] }
     assert_operator names.index('Check Flutter toolchain scope'), :<, names.index('Cache Flutter SDK')
     assert_operator names.index('Cache Flutter SDK'), :<, names.index('Install toolchain')
@@ -46,6 +48,29 @@ class CiRuntimeScopeTest
       refute step.key?('continue-on-error'), "#{name} failures must block validation"
     end
     assert_equal 'mise install', steps.find { |step| step['name'] == 'Install toolchain' }.fetch('run')
+  end
+
+  def names_index(steps, name)
+    steps.index { |step| step['name'] == name } || flunk("Missing step: #{name}")
+  end
+
+  def test_pull_requests_restore_tool_caches_that_only_master_saves
+    jobs = @workflow.fetch('jobs')
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__)).fetch('jobs')
+    caches = jobs.flat_map { |_, job| job.fetch('steps', []) } + faber.fetch('android-package').fetch('steps')
+    saves = caches.select { |step| step['uses'].to_s.start_with?('actions/cache/save@') }
+    refute_empty saves
+    saves.each { |step| assert step.fetch('if').start_with?("github.ref == 'refs/heads/master' && "), step['name'] }
+    %w[flutter android-jvm rust web].each do |name|
+      refute jobs.fetch(name).fetch('steps').any? { |step| step['uses'].to_s.start_with?('actions/cache@') }, name
+    end
+    gradle_restore = jobs.fetch('android-jvm').fetch('steps').find { |step| step['name'] == 'Restore Gradle dependency downloads' }
+    gradle_save = faber.fetch('android-package').fetch('steps').find { |step| step['name'] == 'Save Gradle dependency downloads on master' }
+    faber_restore = faber.fetch('android-package').fetch('steps').find { |step| step['id'] == 'gradle-cache' }
+    assert_equal gradle_restore.fetch('with').fetch('key'), faber_restore.fetch('with').fetch('key')
+    assert_equal '${{ steps.gradle-cache.outputs.cache-primary-key }}', gradle_save.fetch('with').fetch('key')
+    assert_includes gradle_restore.fetch('with').fetch('key'), '${{ steps.tool-versions.outputs.java }}'
+    refute_includes gradle_restore.fetch('with').fetch('key'), 'mise.toml'
   end
 
   def test_android_jvm_selection_covers_platform_and_dependency_changes_without_dart_only_builds
@@ -74,7 +99,7 @@ class CiRuntimeScopeTest
     assert gate(selected, {}, true).success?
     refute gate(selected, { 'android-jvm' => 'success' }, true).success?
     job = @workflow.fetch('jobs').fetch('android-jvm')
-    integrated = "inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master'"
+    integrated = "inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@')"
     assert_equal "needs.changes.outputs.android == 'true' && !(#{integrated})", job.fetch('if')
     assert_equal '${{ inputs.full_validation == true && 30 || 12 }}', job.fetch('timeout-minutes')
     assert_equal 'python,ruby,flutter,java', job.fetch('env').fetch('MISE_ENABLE_TOOLS')

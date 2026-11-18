@@ -18,6 +18,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -150,6 +151,7 @@ jobs:
           name: pr-repair-${{ github.run_id }}
           path: ${{ runner.temp }}/repair.patch
           if-no-files-found: error
+          retention-days: 7
       - name: Report attempt outcome without claiming publication or successful verification
         if: always()
         env:

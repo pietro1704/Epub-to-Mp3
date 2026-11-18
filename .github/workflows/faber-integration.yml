@@ -69,6 +69,7 @@ jobs:
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - run: mise install
       - name: Test Apple runtime packaging with owned process fixtures
@@ -90,6 +91,7 @@ jobs:
           name: faber-jni-contracts
           path: .reports/tts-preferences
           if-no-files-found: ignore
+          retention-days: 14
 
   android-package:
     if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
@@ -118,10 +120,28 @@ jobs:
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Install host build prerequisites
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config
       - run: mise install
+      # Same identity as ci.yml android-jvm, which restores this entry on PRs.
+      - name: Identify cached toolchain versions
+        id: tool-versions
+        run: |
+          set -euo pipefail
+          tools="$(mise ls --current --json)"
+          echo "flutter=$(jq -er '.flutter[0].version' <<< "$tools")" >> "$GITHUB_OUTPUT"
+          echo "java=$(jq -er '.java[0].version' <<< "$tools")" >> "$GITHUB_OUTPUT"
+      - name: Restore Gradle dependency downloads
+        id: gradle-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-java-${{ steps.tool-versions.outputs.java }}-${{ hashFiles('flutter_app/android/**/*.gradle.kts', 'flutter_app/android/gradle.properties', 'flutter_app/android/gradle/wrapper/gradle-wrapper.properties', 'flutter_app/pubspec.lock') }}
+          restore-keys: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Accept Android SDK licenses
         run: |
           set +o pipefail
@@ -176,6 +196,14 @@ jobs:
           if [[ "$ANDROID_VERIFICATION_MODE" == identity ]]; then identity_only=true; fi
           mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- flutter build apk --debug --target-platform android-arm64 --target integration_test/android_piper_inference_test.dart --dart-define="ANDROID_JOB_IDENTITY_ONLY=$identity_only"
           mise exec -- ruby ../scripts/native_build_command.rb -- mise exec -- ruby ../scripts/package_converter_ffi_android.rb --audit --apk "$GITHUB_WORKSPACE/flutter_app/build/app/outputs/flutter-apk/app-debug.apk"
+      - name: Save Gradle dependency downloads on master
+        if: github.ref == 'refs/heads/master' && steps.gradle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
       - name: Run actual Piper inference in the packaged ARM64 app
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
@@ -203,6 +231,7 @@ jobs:
             flutter_app/build/app/test-results
             .reports/tts-preferences/android-inference.log
           if-no-files-found: warn
+          retention-days: 14
 
       - name: Build the private-fixture APK for physical Android verification
         id: device-fixture-apk
@@ -262,6 +291,7 @@ jobs:
           name: faber-android-device-fixture
           path: .reports/android-device-fixture
           if-no-files-found: error
+          retention-days: 14
 
       - name: Retain the normal Android UI APK and build identity
         if: success() && steps.main-ui-apk.outcome == 'success'
@@ -270,6 +300,7 @@ jobs:
           name: faber-android-ui
           path: .reports/android-ui
           if-no-files-found: error
+          retention-days: 14
 
   macos-preferences:
     name: Faber macOS preferences and installation (${{ matrix.arch }})
@@ -285,6 +316,8 @@ jobs:
       EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Require the canonical hosted Xcode 16.4 toolchain
         run: |
           test "$(uname -m)" = "$EXPECTED_ARCH"
@@ -294,6 +327,7 @@ jobs:
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Install official prebuilt Ruby for Intel
         if: matrix.arch == 'x86_64'
@@ -325,6 +359,24 @@ jobs:
           ' > "$RUNNER_TEMP/faber-ruby-mise.txt"
           cmp "$RUNNER_TEMP/faber-ruby-direct.txt" "$RUNNER_TEMP/faber-ruby-mise.txt"
           cat "$RUNNER_TEMP/faber-ruby-direct.txt"
+      # Formerly the separate Apple Foundation tests job: it shares this job's
+      # Xcode 16.4 runner, so the PR app gate and post-merge arm64 run it here.
+      - name: Test the Foundation-only Apple production seam
+        if: matrix.arch == 'arm64'
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          mise run apple:foundation:test 2>&1 | tee .reports/tts-preferences/apple-foundation-test.log
+      - name: Require the conversion history regression suite
+        if: matrix.arch == 'arm64'
+        shell: ruby {0}
+        run: |
+          log = File.read('.reports/tts-preferences/apple-foundation-test.log')
+          suites = log.scan(/Test Suite 'ConversionHistoryReaderTests' passed[^\n]*\n\s*Executed (\d+) tests?, with 0 failures/)
+          abort 'Foundation history must execute without failures or skips' if suites.empty? || suites.any? { |counts| counts.first.to_i.zero? }
+          abort 'Foundation history contains a skipped or failing case' if log.match?(/Test Case '[^'\n]*ConversionHistoryReaderTests[^'\n]*' (?:skipped|failed)/)
+          puts "FOUNDATION_HISTORY_XCTEST total=#{suites.sum { |counts| counts.first.to_i }} failed=0 skipped=0"
       - name: Download and verify the pinned Intel converter-ffi artifact
         if: matrix.arch == 'x86_64' && inputs.intel_prebuilt
         env:
@@ -343,12 +395,14 @@ jobs:
         run: mise exec -- ruby scripts/test_download_converter_ffi_macos.rb
       - name: Install Xcode project generator
         run: brew install xcodegen
-      - name: Identify Intel Rust cache inputs
-        if: matrix.arch == 'x86_64' && !inputs.intel_prebuilt
+      # Both architectures reuse master's embedded runtime build; the Intel key
+      # (matrix.os macos-15-intel) stays shared with the Intel FFI producer.
+      - name: Identify Rust cache inputs
+        if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt
         id: rust-cache-identity
-        run: ruby scripts/intel_rust_cache_identity.rb
-      - name: Restore Intel Rust build cache
-        if: matrix.arch == 'x86_64' && !inputs.intel_prebuilt
+        run: mise exec -- ruby scripts/intel_rust_cache_identity.rb
+      - name: Restore Rust build cache
+        if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt
         id: rust-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -356,9 +410,9 @@ jobs:
             ~/.cargo/registry
             target/release
             target/espeak-data
-          key: faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs', 'native/**/*.c', 'native/**/*.cc', 'native/**/*.cpp', 'native/**/*.h', 'native/vendor/espeak-rs-sys/espeak-ng/**') }}
+          key: faber-rust-${{ matrix.os }}-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-${{ hashFiles('crates/**/*.rs', 'native/**/*.rs', 'native/**/*.c', 'native/**/*.cc', 'native/**/*.cpp', 'native/**/*.h', 'native/vendor/espeak-rs-sys/espeak-ng/**') }}
           restore-keys: |
-            faber-rust-macos-15-intel-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-
+            faber-rust-${{ matrix.os }}-${{ runner.arch }}-${{ steps.rust-cache-identity.outputs.identity }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'mise.toml', 'scripts/native_job.rb', 'scripts/native_build_command.rb', 'scripts/fetch_onnxruntime_macos.rb', 'scripts/prepare_onnxruntime_macos.rb') }}-
       - name: Build embedded host runtime without Simulator
         id: ffi-build
         if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt
@@ -381,8 +435,8 @@ jobs:
           ' "$runtime_root/runtime.json" "$EXPECTED_ARCH"
           printf 'Host: %s\nFFI: %s\nORT: %s\n' "$(uname -m)" "$ffi_arch" "$ort_arch" > .reports/tts-preferences/native-architectures.log
           cat .reports/tts-preferences/native-architectures.log
-      - name: Save Intel Rust build cache
-        if: success() && matrix.arch == 'x86_64' && !inputs.intel_prebuilt && steps.rust-cache.outputs.cache-hit != 'true' && steps.ffi-build.outcome == 'success' && steps.ffi-architecture.outcome == 'success'
+      - name: Save Rust build cache on master
+        if: success() && github.ref == 'refs/heads/master' && (matrix.arch != 'x86_64' || !inputs.intel_prebuilt) && steps.rust-cache.outputs.cache-hit != 'true' && steps.ffi-build.outcome == 'success' && steps.ffi-architecture.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -523,6 +577,7 @@ jobs:
           name: ${{ inputs.macos_only == true && 'apple-app-gate' || 'faber-macos-prefs' }}-${{ matrix.arch }}
           path: .reports/tts-preferences
           if-no-files-found: warn
+          retention-days: 14
 
   browser-runtime:
     if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}

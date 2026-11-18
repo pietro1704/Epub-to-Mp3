@@ -103,7 +103,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[python-tests rust flutter android-jvm web apple-foundation apple-app]
+    runtimes = %w[python-tests rust flutter android-jvm web apple-app]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -154,8 +154,8 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_extracted_python_helpers_keep_runtime_selection
     %w[validate_conversion.py conversion_validation_chapter.py
-       .github/scripts/hosted_archive_inspector.py
-       .github/scripts/hosted_archive_process_cases.py].each do |path|
+       .github/scripts/fixture_helper.py
+       .github/scripts/fixture_helper_cases.py].each do |path|
       result, status, err = scope([path])
       assert status.success?, err
       assert_equal ['python'], result.select { |_, value| value == 'true' }.keys, path
@@ -163,15 +163,6 @@ class CiRuntimeScopeTest < Minitest::Test
     result, status, err = scope(['docs/conversion_validation_chapter.py.md'])
     assert status.success?, err
     assert_equal 'false', result.fetch('python')
-  end
-
-  def test_hosted_archive_workflow_matches_extracted_helpers
-    workflow = YAML.load_file(File.expand_path('../.github/workflows/hosted-legacy-ios-archive.yml', __dir__))
-    paths = workflow.fetch('on', workflow[true]).fetch('push').fetch('paths')
-    %w[hosted_archive_commands.py hosted_archive_process_cases.py].each do |name|
-      assert paths.any? { |pattern| File.fnmatch?(pattern, ".github/scripts/#{name}") }, name
-    end
-    refute paths.any? { |pattern| File.fnmatch?(pattern, 'python_app/unrelated.py') }
   end
 
   def test_full_validation_uses_every_runtime_without_pr_context
@@ -201,7 +192,7 @@ class CiRuntimeScopeTest < Minitest::Test
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
     { 'python-tests' => 'python', 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web',
-      'apple-foundation' => 'apple', 'apple-app' => 'apple' }.each do |job, name|
+      'apple-app' => 'apple' }.each do |job, name|
       selected = scopes[name] == 'true' && !(%w[apple-app android-jvm].include?(job) && integrated == true)
       needs[job] = { 'result' => selected ? 'success' : 'skipped' }
     end
@@ -339,26 +330,34 @@ def test_full_client_suites_replace_duplicate_subset_runs
   end
 end
 
-  def test_foundation_run_moves_to_the_apple_pr_gate_without_faber_duplication
+  def test_foundation_run_shares_the_apple_app_gate_runner
     app = @workflow.fetch('jobs').fetch('apple-app')
-    integrated = "inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master'"
+    integrated = "inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@')"
     assert_equal "needs.changes.outputs.apple == 'true' && !(#{integrated})", app.fetch('if')
     assert_equal "${{ #{integrated} }}", @workflow.fetch('jobs').fetch('pr-gate').fetch('steps').first.fetch('env').fetch('INTEGRATED_VALIDATION')
     assert_equal './.github/workflows/faber-integration.yml', app.fetch('uses')
     assert_equal({ 'macos_only' => true }, app.fetch('with'))
     refute File.exist?(File.expand_path('../.github/workflows/app-foundation-history.yml', __dir__))
-    foundation = @workflow.fetch('jobs').fetch('apple-foundation')
-    assert_equal "needs.changes.outputs.apple == 'true'", foundation.fetch('if')
-    assert_equal 'macos-15', foundation.fetch('runs-on')
-    assert_equal '/Applications/Xcode_16.4.app/Contents/Developer', foundation.fetch('env').fetch('DEVELOPER_DIR')
-    assert_equal 'ruby', foundation.fetch('env').fetch('MISE_ENABLE_TOOLS')
-    assert foundation.fetch('steps').any? { |step| step['run'].to_s.include?('mise run apple:foundation:test') }
-    history = foundation.fetch('steps').find { |step| step['name'] == 'Require the conversion history regression suite' }
+    refute @workflow.fetch('jobs').key?('apple-foundation'), 'Foundation tests share the Apple app gate runner'
+    refute_includes @workflow.fetch('jobs').fetch('pr-gate').fetch('needs'), 'apple-foundation'
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    mac = faber.fetch('jobs').fetch('macos-preferences')
+    assert_equal '/Applications/Xcode_16.4.app/Contents/Developer', mac.fetch('env').fetch('DEVELOPER_DIR')
+    assert_includes mac.fetch('env').fetch('MISE_ENABLE_TOOLS'), "'python,rust,ruby'"
+    foundation = mac.fetch('steps').find { |step| step['name'] == 'Test the Foundation-only Apple production seam' }
+    refute_nil foundation
+    assert_equal "matrix.arch == 'arm64'", foundation.fetch('if')
+    assert_includes foundation.fetch('run'), 'mise run apple:foundation:test'
+    assert_includes foundation.fetch('run'), 'set -o pipefail'
+    history = mac.fetch('steps').find { |step| step['name'] == 'Require the conversion history regression suite' }
     refute_nil history
-    evidence = File.join(@root, '.reports/apple-foundation')
+    assert_equal "matrix.arch == 'arm64'", history.fetch('if')
+    assert_operator mac.fetch('steps').index(foundation), :<, mac.fetch('steps').index(history)
+    assert_equal [{ 'os' => 'macos-15', 'arch' => 'arm64' }], selected_faber_matrix(faber, event_name: 'pull_request', workflow_inputs: { 'macos_only' => true })
+    evidence = File.join(@root, '.reports/tts-preferences')
     FileUtils.mkdir_p(evidence)
     execute = lambda do |log|
-      File.write(File.join(evidence, 'test.log'), log)
+      File.write(File.join(evidence, 'apple-foundation-test.log'), log)
       Open3.capture3(RbConfig.ruby, '-e', history.fetch('run'), chdir: @root).last
     end
     suite = "Test Suite 'ConversionHistoryReaderTests' passed at 2026-10-20.\n  Executed 4 tests, with 0 failures (0 unexpected) in 0.003 seconds\n"
@@ -367,14 +366,12 @@ end
     refute execute.call(suite.sub('with 0 failures', 'with 1 test skipped and 0 failures')).success?
     refute execute.call(suite + "Test Case '-[AppFoundationTests.ConversionHistoryReaderTests testHistory]' skipped (0.001 seconds).\n").success?
 
-    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
-    faber_commands = faber.fetch('jobs').fetch('macos-preferences').fetch('steps').filter_map { |step| step['run'] }.join("\n")
+    faber_commands = mac.fetch('steps').filter_map { |step| step['run'] }.join("\n")
     artifact = faber.fetch('jobs').fetch('macos-preferences').fetch('steps').find { |step| step['name'] == 'Retain macOS XCTest evidence' }
     assert_equal "${{ inputs.macos_only == true && 'apple-app-gate' || 'faber-macos-prefs' }}-${{ matrix.arch }}", artifact.fetch('with').fetch('name')
     %w[build-for-testing test-without-building].each do |action|
       assert_includes faber_commands, "ruby ../../scripts/native_job.rb build -- xcodebuild #{action}"
     end
-    refute_includes faber_commands, 'mise run apple:foundation:test'
 
     package = File.read(File.expand_path('../ios/EpubToMp3/Package.swift', __dir__))
     assert_includes package, '"Features/Conversion/Services/SpeechModelLibraryClient.swift"'
@@ -460,7 +457,7 @@ end
     assert_equal 2, jobs.fetch('changes').fetch('timeout-minutes')
     assert_equal 7, jobs.fetch('production-packaging-guard').fetch('timeout-minutes')
     assert_equal 1, jobs.fetch('pr-gate').fetch('timeout-minutes')
-    %w[python-tests rust web flutter apple-foundation].each do |name|
+    %w[python-tests rust web flutter].each do |name|
       assert_equal '${{ inputs.full_validation == true && 30 || 7 }}', jobs.fetch(name).fetch('timeout-minutes')
       assert_includes jobs.fetch(name).fetch('needs'), 'changes'
       refute_includes jobs.fetch(name).fetch('needs'), 'production-packaging-guard'

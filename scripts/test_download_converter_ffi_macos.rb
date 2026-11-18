@@ -285,7 +285,9 @@ class ConverterFfiMacOSDownloaderTest < Minitest::Test
     workflow = File.read(File.join(__dir__, '..', '.github/workflows/faber-integration.yml'))
     assert_equal 2, workflow.scan(/intel_prebuilt:\n\s+description:.*\n\s+type: boolean\n\s+default: false/).length
     assert_includes workflow, "if: matrix.arch == 'x86_64' && inputs.intel_prebuilt"
-    assert_includes workflow, "if: matrix.arch == 'x86_64' && !inputs.intel_prebuilt"
+    # Rust cache identity, restore and save steps are skipped only for the Intel prebuilt path.
+    assert_equal 2, workflow.scan("if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt\n        id: rust-cache").length
+    assert_includes workflow, "&& (matrix.arch != 'x86_64' || !inputs.intel_prebuilt) && steps.rust-cache.outputs.cache-hit != 'true'"
     assert_includes workflow, "if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt"
     assert_includes workflow, "matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'python'"
     assert_match(/Download and verify the pinned Intel converter-ffi artifact.*?mise run onnxruntime:host.*?scripts\/download_converter_ffi_macos\.rb/m, workflow)

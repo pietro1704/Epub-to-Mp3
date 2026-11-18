@@ -30,6 +30,7 @@ jobs:
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Install scoped project tools
         env:
@@ -249,6 +250,7 @@ jobs:
           name: flutter-linux-normal-product
           path: .reports/linux-gui-product
           if-no-files-found: error
+          retention-days: 14
       - name: Retain build logs separately from the product
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -256,3 +258,4 @@ jobs:
           name: flutter-linux-normal-build-logs
           path: .reports/linux-gui
           if-no-files-found: warn
+          retention-days: 14
