@@ -69,6 +69,18 @@ class ConvertEntrypointTest < Minitest::Test
                   '--model', File.join(@caller, 'models', 'voice.onnx')], recorded.drop(1)
   end
 
+  def test_output_and_manifest_paths_resolve_from_the_caller_even_when_missing
+    _, error, status = invoke(
+      'books/My Book.epub', '--output-dir', 'new out', '--batch-file', 'queue.txt',
+      '--output-dir', '/abs/out'
+    )
+    assert status.success?, error
+    assert_equal ['run', 'convert', '--', File.join(@caller, 'books', 'My Book.epub'),
+                  '--output-dir', File.join(@caller, 'new out'),
+                  '--batch-file', File.join(@caller, 'queue.txt'),
+                  '--output-dir', '/abs/out'], recorded.drop(1)
+  end
+
   def test_runs_without_arguments_and_preserves_failure_status
     _, _, status = invoke(environment: { 'MISE_STATUS' => '7' })
     assert_equal 7, status.exitstatus
