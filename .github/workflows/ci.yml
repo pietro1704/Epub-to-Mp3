@@ -129,6 +129,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
 
       - name: Install scoped host contract tools
@@ -172,6 +173,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
 
       - name: Check Python toolchain scope
@@ -340,6 +342,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Check Rust toolchain scope
         run: |
@@ -440,6 +443,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Check Web toolchain scope
         env:
@@ -510,6 +514,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
 
       - name: Check Flutter toolchain scope
@@ -595,6 +600,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Cache Flutter SDK
         id: flutter-sdk-cache
@@ -705,6 +711,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Install scoped Ruby toolchain
         env:

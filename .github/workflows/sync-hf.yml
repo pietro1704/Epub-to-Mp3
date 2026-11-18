@@ -70,6 +70,7 @@ jobs:
           MISE_ENABLE_TOOLS: ruby
         with:
           version: 2026.11.3
+          cache: false
           install: false
 
       - name: Install managed Ruby

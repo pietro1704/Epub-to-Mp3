@@ -35,6 +35,7 @@ jobs:
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           version: 2026.11.3
+          cache: false
           install: false
       - name: Install scoped project tools
         env:
