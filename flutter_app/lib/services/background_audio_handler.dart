@@ -67,15 +67,13 @@ class BackgroundAudioHandler extends BaseAudioHandler {
     this.player, {
     this._snapshotStore,
   }) {
-    _subscriptions.add(player.phases.listen((_) => _publishState()));
-    _subscriptions.add(player.position.listen((_) => _publishState()));
-    _subscriptions.add(player.currentIndex.listen((_) => _publishState()));
+    _changes = player.stateChanges.listen((_) => _publishState());
     _publishState();
   }
 
   final AudioPlayerInterface player;
   final WidgetPlaybackSnapshotStore? _snapshotStore;
-  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  late final StreamSubscription<void> _changes;
   bool _disposed = false;
   String? _lastMetadataId;
   BackgroundAudioMetadata? _metadata;
@@ -217,9 +215,7 @@ class BackgroundAudioHandler extends BaseAudioHandler {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    for (final subscription in _subscriptions) {
-      await subscription.cancel();
-    }
+    await _changes.cancel();
     await player.dispose();
   }
 }
