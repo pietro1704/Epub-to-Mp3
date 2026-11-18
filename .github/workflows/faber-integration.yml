@@ -353,6 +353,24 @@ jobs:
           ' > "$RUNNER_TEMP/faber-ruby-mise.txt"
           cmp "$RUNNER_TEMP/faber-ruby-direct.txt" "$RUNNER_TEMP/faber-ruby-mise.txt"
           cat "$RUNNER_TEMP/faber-ruby-direct.txt"
+      # Formerly the separate Apple Foundation tests job: it shares this job's
+      # Xcode 16.4 runner, so the PR app gate and post-merge arm64 run it here.
+      - name: Test the Foundation-only Apple production seam
+        if: matrix.arch == 'arm64'
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          mise run apple:foundation:test 2>&1 | tee .reports/tts-preferences/apple-foundation-test.log
+      - name: Require the conversion history regression suite
+        if: matrix.arch == 'arm64'
+        shell: ruby {0}
+        run: |
+          log = File.read('.reports/tts-preferences/apple-foundation-test.log')
+          suites = log.scan(/Test Suite 'ConversionHistoryReaderTests' passed[^\n]*\n\s*Executed (\d+) tests?, with 0 failures/)
+          abort 'Foundation history must execute without failures or skips' if suites.empty? || suites.any? { |counts| counts.first.to_i.zero? }
+          abort 'Foundation history contains a skipped or failing case' if log.match?(/Test Case '[^'\n]*ConversionHistoryReaderTests[^'\n]*' (?:skipped|failed)/)
+          puts "FOUNDATION_HISTORY_XCTEST total=#{suites.sum { |counts| counts.first.to_i }} failed=0 skipped=0"
       - name: Download and verify the pinned Intel converter-ffi artifact
         if: matrix.arch == 'x86_64' && inputs.intel_prebuilt
         env:
