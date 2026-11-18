@@ -12,6 +12,7 @@ require 'rbconfig'
 require 'tmpdir'
 require 'rubygems/version'
 require_relative 'package_linux_onnxruntime'
+require_relative 'espeak_runtime_assets'
 
 root = File.expand_path('..', __dir__)
 Dir.chdir(root)
@@ -39,10 +40,7 @@ abort 'Rust CLI build failed' unless system(build_environment, 'mise', 'exec', '
 name = windows ? 'converter-cli.exe' : 'converter-cli'
 compiled = File.join(root, 'target', 'release', name)
 abort "Missing compiled native CLI: #{compiled}" unless File.file?(compiled)
-asset_candidates = %w[target/release target/espeak-data/debug].flat_map do |directory|
-  Dir.glob(File.join(root, directory, 'build', 'espeak-rs-sys-*', 'out', '{share,build}', 'espeak-ng-data', 'phontab'))
-end
-assets = asset_candidates.map { |path| File.dirname(path) }.find { |directory| %w[phontab phondata phonindex pt_dict].all? { |entry| File.file?(File.join(directory, entry)) } }
+assets = EspeakRuntimeAssets.find(root, %w[target/release target/espeak-data/debug])
 abort 'The native CLI build did not produce complete Piper/eSpeak runtime assets' unless assets
 parent = File.join(root, 'dist')
 package = File.join(parent, 'epub-to-mp3-cli')
