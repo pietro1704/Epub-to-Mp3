@@ -124,7 +124,7 @@ jobs:
 
       - name: Set up mise for task metadata checks
         if: needs.changes.outputs.contracts == 'true'
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.3
           cache: false
@@ -170,7 +170,7 @@ jobs:
         working-directory: native/vendor/espeak-rs-sys
         run: sha256sum --check phsource-wav.sha256
       - name: Install mise
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.3
           cache: false
@@ -279,7 +279,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install mise
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.3
           cache: false
@@ -357,7 +357,7 @@ jobs:
           persist-credentials: false
 
       - name: Install mise
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.3
           cache: false
@@ -460,7 +460,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install mise
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.3
           cache: false
