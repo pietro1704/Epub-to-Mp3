@@ -38,6 +38,9 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         library = AppStartupTiming.shared.measure(.libraryStoreCreation) { LibraryStore() }
         sessionDefaults = .standard
         super.init()
+        // One-shot and idempotent; it removes only values of removed features.
+        LegacyPreferenceCleanup.runIfNeeded(standard: .standard,
+                                            appGroup: UserDefaults(suiteName: LibraryStore.appGroupID))
 #if os(iOS)
         library.installUITestFixtureIfRequested()
         DevelopmentSeedBook.install(into: library)
