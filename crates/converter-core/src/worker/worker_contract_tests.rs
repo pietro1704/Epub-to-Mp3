@@ -1,4 +1,9 @@
+#[path = "../../tests/support/epub_fixture.rs"]
+mod epub_fixture;
+
 use super::*;
+#[path = "captured_request_tests.rs"]
+mod captured_request_tests;
 #[path = "listening_contract_tests.rs"]
 mod listening_contract_tests;
 #[path = "low_quality_cache_tests.rs"]
@@ -67,6 +72,28 @@ fn preference_test_request() -> ConversionRequest {
         no_parallel: true,
     }
 }
+fn synthesize_native_fixture(
+    worker: &ConversionWorker,
+    engine: &str,
+    text: &str,
+    output: &Path,
+) -> Result<(), WorkerError> {
+    let mut request = preference_test_request();
+    request.engine = Some(engine.into());
+    let request = worker.capture_request_preferences(request)?;
+    worker.synthesize_preferences(
+        &request,
+        request.tts_preferences.as_ref().unwrap(),
+        text,
+        output,
+        0,
+        Some("pt-BR"),
+        &std::sync::atomic::AtomicBool::new(false),
+        &Mutex::new(Vec::new()),
+        1,
+    )
+}
+
 fn platform_test_book(path: &Path) {
     platform_test_book_with_text(path, "Uma frase para testar a voz offline.");
 }
@@ -77,26 +104,20 @@ fn platform_test_book_in_language(path: &Path, text: &str, language: &str) {
     platform_test_book_with_heading(path, text, language, Some("Chapter"));
 }
 fn platform_test_book_with_heading(path: &Path, text: &str, language: &str, heading: Option<&str>) {
-    use std::io::Write;
     let heading = heading
         .map(|title| format!("<h1>{title}</h1>"))
         .unwrap_or_default();
     let body = format!("<html><body>{heading}<p>{text}</p></body></html>");
     let package = format!("<package xmlns:dc=\"x\"><metadata><dc:title>System speech</dc:title><dc:language>{language}</dc:language></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/></spine></package>");
-    let mut archive = zip::ZipWriter::new(fs::File::create(path).unwrap());
-    let options = zip::write::SimpleFileOptions::default();
-    for (name, content) in [
+    let bytes = epub_fixture::epub_bytes([
         (
             "META-INF/container.xml",
             "<container><rootfiles><rootfile full-path=\"content.opf\"/></rootfiles></container>",
         ),
         ("content.opf", package.as_str()),
         ("a.xhtml", body.as_str()),
-    ] {
-        archive.start_file(name, options).unwrap();
-        archive.write_all(content.as_bytes()).unwrap();
-    }
-    archive.finish().unwrap();
+    ], zip::write::SimpleFileOptions::default());
+    fs::write(path, bytes).unwrap();
 }
 
 include!("conversion_contract_tests.rs");

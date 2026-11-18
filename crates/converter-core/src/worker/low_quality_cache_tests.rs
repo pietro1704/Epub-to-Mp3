@@ -99,7 +99,7 @@ fn verify_rejected_legacy_low_cache(recover: bool, typed: bool) {
     ensure_chapter_audio(&retained, &key, |pending| {
         fs::write(
             pending,
-            platform_tts::encode_wav(&test_system_wav()).unwrap(),
+            crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap(),
         )?;
         Ok(())
     })

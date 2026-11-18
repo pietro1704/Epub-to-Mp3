@@ -1,83 +1,19 @@
-use std::io::{Cursor, Write};
+#[path = "support/epub_fixture.rs"]
+mod epub_fixture;
 
-use converter_core::archive::{extract_member, list_members, ArchiveError, ArchiveMember};
-use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+use std::io::Cursor;
 
-fn fixture(compression: CompressionMethod, name: &str) -> Vec<u8> {
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    writer
-        .start_file(
-            name,
-            SimpleFileOptions::default().compression_method(compression),
-        )
-        .unwrap();
-    writer.write_all(b"chapter content").unwrap();
-    writer.finish().unwrap().into_inner()
-}
-
-#[test]
-fn stored_and_deflated_members_keep_their_names_sizes_and_bytes() {
-    for compression in [CompressionMethod::Stored, CompressionMethod::Deflated] {
-        let archive = fixture(compression, "pages/2.txt");
-        assert_eq!(
-            list_members(Cursor::new(&archive)).unwrap(),
-            vec![ArchiveMember {
-                name: "pages/2.txt".into(),
-                size: 15,
-            }]
-        );
-        let directory = tempfile::tempdir().unwrap();
-        let output = directory.path().join("extracted/chapter.txt");
-        extract_member(Cursor::new(&archive), "pages/2.txt", &output).unwrap();
-        assert_eq!(std::fs::read(output).unwrap(), b"chapter content");
-    }
-}
-
-#[test]
-fn traversal_members_are_rejected_before_output_is_created() {
-    let archive = fixture(CompressionMethod::Deflated, "../outside.txt");
-    let directory = tempfile::tempdir().unwrap();
-    let output = directory.path().join("extracted/chapter.txt");
-    assert!(matches!(
-        list_members(Cursor::new(&archive)),
-        Err(ArchiveError::UnsafeMember(name)) if name == "../outside.txt"
-    ));
-    assert!(matches!(
-        extract_member(Cursor::new(&archive), "../outside.txt", &output),
-        Err(ArchiveError::UnsafeMember(name)) if name == "../outside.txt"
-    ));
-    assert!(!output.exists());
-    assert!(!directory.path().join("extracted").exists());
-}
-
-#[test]
-fn legacy_cp437_member_names_remain_addressable_by_their_unicode_name() {
-    let mut archive = fixture(CompressionMethod::Stored, "x.txt");
-    use_cp437_name(&mut archive, b"x.txt");
-    assert_eq!(
-        list_members(Cursor::new(&archive)).unwrap()[0].name,
-        "é.txt"
-    );
-    let directory = tempfile::tempdir().unwrap();
-    let output = directory.path().join("chapter.txt");
-    extract_member(Cursor::new(&archive), "é.txt", &output).unwrap();
-    assert_eq!(std::fs::read(output).unwrap(), b"chapter content");
-}
+use zip::{write::SimpleFileOptions, CompressionMethod};
 
 #[test]
 fn epub_resources_with_legacy_names_follow_unicode_manifest_references() {
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    for (name, content) in [
+    let mut archive = epub_fixture::epub_bytes([
         ("META-INF/container.xml", "<container><rootfiles><rootfile full-path=\"OPS/package.opf\"/></rootfiles></container>"),
         ("OPS/package.opf", "<package><metadata><title>Legacy names</title></metadata><manifest><item id=\"chapter\" href=\"é.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"cover\" href=\"coveré.png\" media-type=\"image/png\"/></manifest><spine><itemref idref=\"chapter\"/></spine></package>"),
         ("OPS/x.xhtml", "<html><body><h1>Opening</h1><p>Preserved text.</p></body></html>"),
         ("OPS/coverx.png", "cover fixture"),
-    ] {
-        writer.start_file(name, options).unwrap();
-        writer.write_all(content.as_bytes()).unwrap();
-    }
-    let mut archive = writer.finish().unwrap().into_inner();
+    ], options);
     use_cp437_name(&mut archive, b"OPS/x.xhtml");
     use_cp437_name(&mut archive, b"OPS/coverx.png");
     let book = converter_core::epub::parse_epub(Cursor::new(archive)).unwrap();

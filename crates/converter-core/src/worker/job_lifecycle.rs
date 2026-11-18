@@ -73,6 +73,7 @@ impl ConversionWorker {
     pub fn run(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
         let _lease = claim_job(&self.config.paths.jobs_dir, &request.job_id)?;
         self.validate_request_source(&request)?;
+        let request = self.capture_request_preferences(request)?;
         self.run_claimed(request)
     }
 
@@ -104,6 +105,7 @@ impl ConversionWorker {
     pub fn resume(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
         let _lease = claim_job(&self.config.paths.jobs_dir, &request.job_id)?;
         self.validate_request_source(&request)?;
+        let request = self.capture_request_preferences(request)?;
         match self.jobs.restart(&request.job_id) {
             Ok(_) => self.run_prepared(request),
             Err(JobError::NotFound(_)) => self.run_claimed(request),
@@ -212,6 +214,7 @@ impl ConversionWorker {
             }
         }
         self.validate_request_source(&request)?;
+        let request = self.capture_request_preferences(request)?;
         // All rejection checks precede the first receipt mutation.
         for audio in receipts {
             discard_chapter_audio_receipt(&audio)?;

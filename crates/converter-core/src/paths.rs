@@ -59,15 +59,6 @@ impl Paths {
     pub fn output_path<P: AsRef<Path>>(&self, child: P) -> Result<PathBuf, PathError> {
         managed_child(&self.output_dir, child.as_ref())
     }
-
-    /// Resolve a path below an arbitrary managed root.
-    pub fn managed_path<P: AsRef<Path>>(
-        &self,
-        root: &Path,
-        child: P,
-    ) -> Result<PathBuf, PathError> {
-        managed_child(root, child.as_ref())
-    }
 }
 
 /// Resolve paths using the current process environment.

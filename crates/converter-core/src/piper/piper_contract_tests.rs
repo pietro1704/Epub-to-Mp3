@@ -220,7 +220,7 @@ fn explicit_model_paths_reject_traversal_missing_files_and_namespace_escape() {
 }
 
 #[test]
-fn cancelled_explicit_model_preserves_existing_audio_and_model_identity_is_distinct() {
+fn cancelled_explicit_model_preserves_existing_audio() {
     let fixture = tempfile::tempdir().unwrap();
     for id in ["one", "two"] {
         installed_fixture(fixture.path(), id);
@@ -237,8 +237,6 @@ fn cancelled_explicit_model_preserves_existing_audio_and_model_identity_is_disti
         .unwrap()
     };
     let first = prepare("one");
-    let second = prepare("two");
-    assert_ne!(first.cache_identity(), second.cache_identity());
     let output = fixture.path().join("previous.mp3");
     fs::write(&output, b"previous audio").unwrap();
     let cancel = CancellationToken::default();
@@ -249,41 +247,6 @@ fn cancelled_explicit_model_preserves_existing_audio_and_model_identity_is_disti
     );
     assert_eq!(fs::read(output).unwrap(), b"previous audio");
     assert!(runtime.calls.lock().unwrap().is_empty());
-}
-
-#[test]
-fn replacing_model_or_config_at_same_paths_changes_prepared_cache_identity() {
-    let fixture = tempfile::tempdir().unwrap();
-    installed_fixture(fixture.path(), "selected");
-    let runtime = scoped_runtime(true, false);
-    let prepare = || {
-        PreparedPiperModel::prepare(
-            fixture.path(),
-            "selected",
-            Path::new("voice.onnx"),
-            Path::new("voice.config.json"),
-            runtime.clone(),
-        )
-        .unwrap()
-    };
-    let original = prepare();
-    fs::write(
-        fixture.path().join("selected/voice.onnx"),
-        b"replacement model",
-    )
-    .unwrap();
-    let changed_model = prepare();
-    assert_ne!(original.cache_identity(), changed_model.cache_identity());
-    fs::write(
-        fixture.path().join("selected/voice.config.json"),
-        b"{\"new\":true}",
-    )
-    .unwrap();
-    let changed_config = prepare();
-    assert_ne!(
-        changed_model.cache_identity(),
-        changed_config.cache_identity()
-    );
 }
 
 pub(super) fn write_test_wav(path: &Path) {

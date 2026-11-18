@@ -8,9 +8,6 @@ project(espeak-ng
 
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(COMPILE_INTONATIONS "Intonation compilation" ON)
-option(ENABLE_TESTS "Intonation compilation" ON)
-
-include(CTest)
 
 include(cmake/deps.cmake)
 include(cmake/config.cmake)
@@ -22,10 +19,6 @@ include(cmake/docs.cmake)
 
 include(cmake/package.cmake)
 include(CPack)
-
-if(ENABLE_TESTS AND NOT CMAKE_CROSSCOMPILING)
-  add_subdirectory(tests)
-endif()
 
 message(STATUS "Configuration:")
 message(STATUS "  shared: ${BUILD_SHARED_LIBS}")

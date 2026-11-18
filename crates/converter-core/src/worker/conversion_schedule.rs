@@ -4,13 +4,9 @@ use super::{
     ChapterAudioReceipt, ConversionRequest, ConversionWorker, OutputManifest, WorkerError,
 };
 use crate::{audio, cache};
-use rayon::prelude::*;
 use std::{
     fs, io,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
+    sync::{atomic::AtomicUsize, Mutex},
 };
 
 impl ConversionWorker {
@@ -18,30 +14,11 @@ impl ConversionWorker {
         &self,
         request: &ConversionRequest,
     ) -> Result<OutputManifest, WorkerError> {
-        if !self.pronunciation.rules.is_empty() && request.tts_preferences.is_none() {
-            return Err(WorkerError::Unsupported(
-                "Pronunciation requires an explicit captured TTS selection".into(),
-            ));
-        }
-        if self
-            .control
-            .as_ref()
-            .is_some_and(|control| control.listening_plan().is_some())
-            && request.tts_preferences.is_none()
-        {
-            return Err(WorkerError::Unsupported(
-                "Versioned listening requires captured TTS preferences".into(),
-            ));
-        }
-        if request.tts_preferences.is_none()
-            && request
-                .engine
-                .as_deref()
-                .is_some_and(|e| !matches!(e, "auto" | "piper" | "edge" | "system"))
-        {
-            return Err(WorkerError::Piper("Unsupported conversion engine".into()));
-        }
-        self.consecutive_edge_failures.store(0, Ordering::Release);
+        let preferences = request.tts_preferences.as_ref().ok_or_else(|| {
+            WorkerError::Unsupported(
+                "Conversion execution requires captured TTS preferences".into(),
+            )
+        })?;
         self.fallback_chapters
             .lock()
             .expect("fallback chapter lock")
@@ -114,14 +91,12 @@ impl ConversionWorker {
             .map(|(_, chapter)| chapter.text.chars().count())
             .sum();
         if total == 0 || source_text_chars == 0 {
-            return Err(WorkerError::Piper(
-                "selected chapters have no readable text".into(),
-            ));
+            return Err(WorkerError::NoReadableText);
         }
         if let Some(control) = &self.control {
             control
                 .attach(&chapters.iter().map(|(index, _)| *index).collect::<Vec<_>>())
-                .map_err(|error| WorkerError::Piper(error.to_string()))?;
+                .map_err(WorkerError::Control)?;
         }
         let language_analysis = crate::language::analyze_book(
             book.chapters.iter().map(|chapter| chapter.text.as_str()),
@@ -147,39 +122,8 @@ impl ConversionWorker {
             .language
             .as_deref()
             .or(language_analysis.confirmed.as_deref());
-        let parallelism = if request.tts_preferences.is_some()
-            || (request.no_parallel && !self.execution_options.max_performance)
-        {
-            1
-        } else {
-            let configured = std::env::var("RUST_CHAPTER_PARALLELISM")
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .filter(|value| *value > 0)
-                .unwrap_or_else(|| {
-                    std::thread::available_parallelism()
-                        .map(|v| v.get())
-                        .unwrap_or(1)
-                });
-            let cap = std::env::var("RUST_CHAPTER_PARALLELISM_CAP")
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .filter(|value| *value > 0)
-                .unwrap_or(8);
-            self.execution_options.chapter_parallelism(
-                request.no_parallel,
-                configured,
-                self.config.max_parallel,
-                cap,
-            )
-        };
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(parallelism)
-            .build()
-            .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
         let completed = AtomicUsize::new(0);
-        let system_notice_emitted = std::sync::atomic::AtomicBool::new(false);
         let chapter_context = ChapterExecutionContext {
             request: request,
             book: &book,
@@ -190,16 +134,13 @@ impl ConversionWorker {
             total: total,
             results: &results,
             completed: &completed,
-            system_notice_emitted: &system_notice_emitted,
+            preferences,
         };
         let process_chapter = |position, source_index, chapter| {
             self.process_chapter(&chapter_context, position, source_index, chapter)
         };
         if let Some(control) = &self.control {
-            while let Some(source_index) = control
-                .take()
-                .map_err(|error| WorkerError::Piper(error.to_string()))?
-            {
+            while let Some(source_index) = control.take().map_err(WorkerError::Control)? {
                 let Some((position, (_, chapter))) = chapters
                     .iter()
                     .enumerate()
@@ -210,13 +151,10 @@ impl ConversionWorker {
                 process_chapter(position, source_index, chapter)?;
             }
         } else {
-            pool.install(|| {
-                chapters.par_iter().enumerate().try_for_each(
-                    |(position, (source_index, chapter))| {
-                        process_chapter(position, *source_index, chapter)
-                    },
-                )
-            })?;
+            // Typed voice policy and its prepared sessions advance in source order.
+            for (position, (source_index, chapter)) in chapters.iter().enumerate() {
+                process_chapter(position, *source_index, chapter)?;
+            }
         }
         if self.cancel.is_cancelled() || self.jobs.is_cancellation_requested(&request.job_id)? {
             return Err(WorkerError::Cancelled);
@@ -236,9 +174,10 @@ impl ConversionWorker {
             .map(|chapter| chapter.text_chars + chapter.text_offset)
             .sum();
         if output_text_chars != source_text_chars {
-            return Err(WorkerError::Piper(format!(
-                "text coverage mismatch: source={source_text_chars}, output={output_text_chars}"
-            )));
+            return Err(WorkerError::TextCoverage {
+                source_chars: source_text_chars,
+                output_chars: output_text_chars,
+            });
         }
         let cover = if cfg!(target_os = "android") {
             None
@@ -311,8 +250,7 @@ impl ConversionWorker {
             fallback_used,
             // Typed jobs must publish zero explicitly so persisted clients clear
             // an earlier failure counter. Only historical metadata is absent.
-            tts_policy_state: (request.tts_preferences.is_some() || !policy.is_initial())
-                .then_some(policy),
+            tts_policy_state: Some(policy),
 
             job_id: request.job_id.clone(),
             title: book.title,

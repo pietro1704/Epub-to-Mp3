@@ -1,5 +1,5 @@
 use super::WorkerError;
-use crate::{config::AppConfig, piper};
+use crate::piper;
 use std::path::{Path, PathBuf};
 
 /// Where a job's request is persisted for restart, retry and in-place repair.
@@ -33,24 +33,13 @@ pub(super) fn ensure_android_piper_runtime(
     status: piper::PiperRuntimeStatus,
 ) -> Result<(), WorkerError> {
     if !status.runtime_loaded || !status.abi_compatible {
-        return Err(WorkerError::Piper(
+        return Err(WorkerError::Piper(piper::PiperError::RuntimeUnavailable(
             "Embedded Piper runtime is unavailable or ABI-incompatible on Android".into(),
-        ));
+        )));
     }
     Ok(())
 }
 
-pub(super) fn select_engine(request: Option<&str>, config: &AppConfig) -> String {
-    match request
-        .unwrap_or(&config.engine)
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "piper" => "piper".into(),
-        "system" => "system".into(),
-        _ => "edge".into(),
-    }
-}
 pub(super) fn sanitize(value: &str) -> String {
     let mut s = value
         .chars()

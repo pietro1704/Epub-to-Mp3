@@ -240,7 +240,7 @@ mod tests {
                 &|| false,
             )
             .unwrap();
-        let mp3 = crate::platform_tts::encode_wav(&std::fs::read(&out).unwrap()).unwrap();
+        let mp3 = crate::pcm::encode_wav_mp3(&std::fs::read(&out).unwrap()).unwrap();
         assert!(!mp3.is_empty());
         if let Some(directory) = std::env::var_os("EPUB_TEST_NATIVE_OUTPUT_DIR") {
             let directory = std::path::PathBuf::from(directory);

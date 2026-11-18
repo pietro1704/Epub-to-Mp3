@@ -25,7 +25,6 @@ fn native_runtime_revision_is_pinned_and_independent_of_the_package_version() {
         ("piper", "piper"),
         ("edge", "edge-websocket"),
         ("system", "platform-speech"),
-        ("kokoro", "kokoro"),
     ] {
         assert_eq!(native_revision(provider, runtime), NATIVE_RUNTIME_REVISION);
     }

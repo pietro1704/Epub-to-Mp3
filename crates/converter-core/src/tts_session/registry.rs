@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::Arc;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TtsRegistry {
     providers: Vec<Arc<dyn TtsProvider>>,
 }
@@ -53,18 +53,25 @@ impl TtsRegistry {
                     "Requested provider/runtime adapter is not registered",
                 )
             })?;
-        selection.validate(&provider.descriptor(), language)?;
+        if selection.version != CONTRACT_VERSION {
+            return Err(TtsFailure::new(
+                FailureKind::InvalidSelection,
+                "Unsupported synthesis contract",
+            ));
+        }
+        provider.validate_selection(selection, language)?;
         let session = provider.prepare(selection, language)?;
         let resolved = &session.identity().selection;
         let descriptor = provider.descriptor();
-        resolved.validate(&descriptor, language)?;
+        provider.validate_selection(resolved, language)?;
         if session.identity().runtime_revision != descriptor.revision {
             return Err(TtsFailure::new(
                 FailureKind::InvalidSelection,
                 "Adapter returned an unrecognized runtime revision",
             ));
         }
-        if resolved.provider != selection.provider
+        if resolved.version != selection.version
+            || resolved.provider != selection.provider
             || resolved.runtime != selection.runtime
             || resolved.model_id != selection.model_id
             || resolved.options != selection.options

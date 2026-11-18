@@ -1,4 +1,6 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::c_char;
+
+mod ffi_boundary;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,30 +17,8 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 static RUNTIME: std::sync::OnceLock<std::sync::Mutex<Option<Piper>>> = std::sync::OnceLock::new();
 
 #[cfg(feature = "piper-inference")]
-static MODEL_PATH: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
-    std::sync::OnceLock::new();
-
-#[cfg(feature = "piper-inference")]
 pub fn set_espeak_data_directory(path: &Path) -> Result<(), String> {
     espeak_rs::set_espeak_data_directory(path).map_err(|error| error.to_string())
-}
-
-#[cfg(feature = "piper-inference")]
-pub fn configured_model_path() -> Option<String> {
-    MODEL_PATH
-        .get()
-        .and_then(|value| value.lock().ok()?.clone())
-}
-
-#[cfg(feature = "piper-inference")]
-#[allow(improper_ctypes_definitions)]
-#[no_mangle]
-pub extern "C" fn piper_runtime_set_model_path(path: &str) {
-    MODEL_PATH
-        .get_or_init(|| std::sync::Mutex::new(None))
-        .lock()
-        .expect("Piper model path lock poisoned")
-        .replace(path.to_owned());
 }
 
 fn error(buffer: *mut c_char, length: u32, message: &str) {
@@ -63,23 +43,35 @@ pub struct piper_runtime_status_t {
 
 #[no_mangle]
 pub extern "C" fn piper_runtime_status() -> piper_runtime_status_t {
-    let ready = INITIALIZED.load(Ordering::Acquire);
-    piper_runtime_status_t {
-        runtime_loaded: u8::from(
-            cfg!(feature = "piper-inference") && cfg!(feature = "onnxruntime"),
-        ),
-        model_available: u8::from(ready),
-        abi_compatible: 1,
-        engine_ready: u8::from(
-            ready && cfg!(feature = "piper-inference") && cfg!(feature = "onnxruntime"),
-        ),
-    }
+    ffi_boundary::guard(
+        piper_runtime_status_t {
+            runtime_loaded: 0,
+            model_available: 0,
+            abi_compatible: 0,
+            engine_ready: 0,
+        },
+        || {
+            let ready = INITIALIZED.load(Ordering::Acquire);
+            piper_runtime_status_t {
+                runtime_loaded: u8::from(
+                    cfg!(feature = "piper-inference") && cfg!(feature = "onnxruntime"),
+                ),
+                model_available: u8::from(ready),
+                abi_compatible: 1,
+                engine_ready: u8::from(
+                    ready && cfg!(feature = "piper-inference") && cfg!(feature = "onnxruntime"),
+                ),
+            }
+        },
+    )
 }
 
 /// Reports that the embedded runtime ABI is available to platform loaders.
 #[no_mangle]
 pub extern "C" fn piper_runtime_register_core() -> i32 {
-    i32::from(cfg!(feature = "piper-inference") && cfg!(feature = "onnxruntime"))
+    ffi_boundary::guard(0, || {
+        i32::from(cfg!(feature = "piper-inference") && cfg!(feature = "onnxruntime"))
+    })
 }
 
 #[no_mangle]
@@ -89,16 +81,16 @@ pub extern "C" fn piper_runtime_init(
     error_buffer: *mut c_char,
     error_len: u32,
 ) -> i32 {
-    let result = std::panic::catch_unwind(|| {
-        let model = unsafe { CStr::from_ptr(model) }.to_string_lossy();
-        let config = unsafe { CStr::from_ptr(config) }.to_string_lossy();
-        if !Path::new(model.as_ref()).is_file() {
+    let result = ffi_boundary::guard(Err("Piper runtime initialization panicked".into()), || {
+        let model = unsafe { ffi_boundary::input(model, "model") }?;
+        let config = unsafe { ffi_boundary::input(config, "config") }?;
+        if !Path::new(model).is_file() {
             return Err("Piper model is missing".to_owned());
         }
-        if !Path::new(config.as_ref()).is_file() {
+        if !Path::new(config).is_file() {
             return Err("Piper voice config is missing".to_owned());
         }
-        let identity = [model.as_ref(), config.as_ref()]
+        let identity = [model, config]
             .iter()
             .map(|path| {
                 let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
@@ -117,7 +109,7 @@ pub extern "C" fn piper_runtime_init(
         if INITIALIZED.load(Ordering::Acquire) && selected.as_deref() == Some(identity.as_str()) {
             return Ok(());
         }
-        let config_data = fs::read_to_string(config.as_ref())
+        let config_data = fs::read_to_string(config)
             .map_err(|error| format!("Piper voice config cannot be read: {error}"))?;
         let config_json: serde_json::Value = serde_json::from_str(&config_data)
             .map_err(|error| format!("Piper voice config is invalid JSON: {error}"))?;
@@ -134,12 +126,12 @@ pub extern "C" fn piper_runtime_init(
                 .map_err(|error| error.to_string())?
                 .with_execution_providers([ep::CPU::default().build()])
                 .map_err(|error| error.to_string())?
-                .commit_from_file(model.as_ref())
+                .commit_from_file(model)
                 .map_err(|error| error.to_string())?;
         }
         #[cfg(feature = "piper-inference")]
         {
-            let piper = Piper::new(Path::new(model.as_ref()), Path::new(config.as_ref()))
+            let piper = Piper::new(Path::new(model), Path::new(config))
                 .map_err(|error| error.to_string())?;
             RUNTIME
                 .get_or_init(|| std::sync::Mutex::new(None))
@@ -151,20 +143,12 @@ pub extern "C" fn piper_runtime_init(
         Ok::<(), String>(())
     });
     match result {
-        Ok(Ok(())) => {
+        Ok(()) => {
             INITIALIZED.store(true, Ordering::Release);
             1
         }
-        Ok(Err(message)) => {
+        Err(message) => {
             error(error_buffer, error_len, &message);
-            0
-        }
-        Err(_) => {
-            error(
-                error_buffer,
-                error_len,
-                "Piper runtime initialization panicked",
-            );
             0
         }
     }
@@ -177,30 +161,26 @@ pub extern "C" fn piper_synthesize(
     error_buffer: *mut c_char,
     error_len: u32,
 ) -> i32 {
-    let result = std::panic::catch_unwind(|| {
+    let result = ffi_boundary::guard(Err("Piper synthesis panicked".into()), || {
         if !INITIALIZED.load(Ordering::Acquire) {
             return Err("Piper runtime is not initialized".to_owned());
         }
-        let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
+        let text = unsafe { ffi_boundary::input(text, "text") }?;
+        let output_path = unsafe { ffi_boundary::input(output, "output") }?;
         #[cfg(feature = "piper-inference")]
         {
-            let output_path = unsafe { CStr::from_ptr(output) }.to_string_lossy();
-            synthesize_cancellable(text.as_ref(), Path::new(output_path.as_ref()), &|| false)
+            synthesize_cancellable(text, Path::new(output_path), &|| false)
         }
         #[cfg(not(feature = "piper-inference"))]
         {
-            let _ = output;
-            synthesize_cancellable(text.as_ref(), Path::new(""), &|| false)
+            let _ = output_path;
+            synthesize_cancellable(text, Path::new(""), &|| false)
         }
     });
     match result {
-        Ok(Ok(())) => 1,
-        Ok(Err(message)) => {
+        Ok(()) => 1,
+        Err(message) => {
             error(error_buffer, error_len, &message);
-            0
-        }
-        Err(_) => {
-            error(error_buffer, error_len, "Piper synthesis panicked");
             0
         }
     }
@@ -271,16 +251,18 @@ fn synthesize_cancellable_inner(
 
 #[no_mangle]
 pub extern "C" fn piper_runtime_shutdown() {
-    INITIALIZED.store(false, Ordering::Release);
-    if let Ok(mut identity) = SESSION_IDENTITY.lock() {
-        identity.take();
-    }
-    #[cfg(feature = "piper-inference")]
-    if let Some(runtime) = RUNTIME.get() {
-        if let Ok(mut runtime) = runtime.lock() {
-            runtime.take();
+    ffi_boundary::guard((), || {
+        INITIALIZED.store(false, Ordering::Release);
+        if let Ok(mut identity) = SESSION_IDENTITY.lock() {
+            identity.take();
         }
-    }
+        #[cfg(feature = "piper-inference")]
+        if let Some(runtime) = RUNTIME.get() {
+            if let Ok(mut runtime) = runtime.lock() {
+                runtime.take();
+            }
+        }
+    })
 }
 
 #[cfg(feature = "piper-inference")]

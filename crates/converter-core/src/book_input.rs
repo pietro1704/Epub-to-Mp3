@@ -15,10 +15,6 @@ pub enum BookInputError {
     Pdf(#[from] IngestionError),
 }
 
-pub fn parse_book_source(path: &Path, source: &[u8]) -> Result<Book, BookInputError> {
-    parse_book_source_with_cancel(path, source, &|| false)
-}
-
 pub fn parse_book_source_with_cancel(
     path: &Path,
     source: &[u8],

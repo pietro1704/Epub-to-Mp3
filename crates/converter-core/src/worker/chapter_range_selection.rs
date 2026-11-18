@@ -21,6 +21,10 @@ pub enum ChapterRangeError {
 /// last chapter when `end` is absent. An end that only exists before the start
 /// is therefore an error rather than an empty or reversed selection.
 ///
+/// A parent index with no chapter of its own (`2` for `2.1`, `2.2`) names its
+/// whole group: a range starts at its first subchapter and, being inclusive,
+/// ends at its last.
+///
 /// A bound must name exactly one chapter, so a chapter's own index wins over the
 /// positional reading of a bare number: with indices `1, 2, 2.1, 2.2, 3`, the
 /// bound `3` is the chapter indexed `3`, not zero-based position 3 (`2.2`).
@@ -30,23 +34,35 @@ pub fn chapter_range_positions<'a>(
     end: Option<&str>,
 ) -> Result<std::ops::RangeInclusive<usize>, ChapterRangeError> {
     let indices: Vec<(&str, &str)> = chapters.into_iter().collect();
-    let first =
-        bound_position(&indices, start, 0).ok_or_else(|| ChapterRangeError::StartNotFound {
+    let first = bound_position(&indices, start, 0, Bound::Start).ok_or_else(|| {
+        ChapterRangeError::StartNotFound {
             selector: start.to_owned(),
-        })?;
+        }
+    })?;
     let last = match end {
         None => indices.len() - 1,
-        Some(end) => {
-            bound_position(&indices, end, first).ok_or_else(|| ChapterRangeError::EndNotFound {
+        Some(end) => bound_position(&indices, end, first, Bound::End).ok_or_else(|| {
+            ChapterRangeError::EndNotFound {
                 selector: end.to_owned(),
                 start: start.to_owned(),
-            })?
-        }
+            }
+        })?,
     };
     Ok(first..=last)
 }
 
-fn bound_position(indices: &[(&str, &str)], selector: &str, from: usize) -> Option<usize> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Bound {
+    Start,
+    End,
+}
+
+fn bound_position(
+    indices: &[(&str, &str)],
+    selector: &str,
+    from: usize,
+    bound: Bound,
+) -> Option<usize> {
     // Resolve identity before checking ordering. A literal index before `from`
     // must not be reinterpreted as a positional selector after `from`.
     if let Some(position) = indices.iter().position(|(index, _)| *index == selector) {
@@ -54,10 +70,16 @@ fn bound_position(indices: &[(&str, &str)], selector: &str, from: usize) -> Opti
     }
     // Parent indices and title snippets retain the legacy range selectors.
     let prefix = format!("{selector}.");
-    if let Some(position) = indices
+    let mut subchapters = indices
         .iter()
-        .position(|(index, _)| index.starts_with(&prefix))
-    {
+        .enumerate()
+        .filter(|(_, (index, _))| index.starts_with(&prefix))
+        .map(|(position, _)| position);
+    let parent = match bound {
+        Bound::Start => subchapters.next(),
+        Bound::End => subchapters.last(),
+    };
+    if let Some(position) = parent {
         return (position >= from).then_some(position);
     }
     let normalized = normalize_selector(selector);
@@ -112,6 +134,21 @@ mod tests {
             chapter_range_positions(INDICES, "position:0", Some("position:1")),
             Ok(0..=1)
         );
+    }
+
+    #[test]
+    fn a_parent_index_as_the_end_bound_includes_its_last_subchapter() {
+        let nested = [
+            ("1", "Abertura"),
+            ("2.1", "Frutas"),
+            ("2.2", "Pães"),
+            ("3", "Fim"),
+        ];
+        assert_eq!(chapter_range_positions(nested, "1", Some("2")), Ok(0..=2));
+        assert_eq!(chapter_range_positions(nested, "2.2", Some("2")), Ok(2..=2));
+        // As a start bound the parent still names its first subchapter.
+        assert_eq!(chapter_range_positions(nested, "2", Some("3")), Ok(1..=3));
+        assert_eq!(chapter_range_positions(nested, "2", Some("2")), Ok(1..=2));
     }
 
     #[test]

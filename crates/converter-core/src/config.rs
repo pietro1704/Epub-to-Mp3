@@ -10,9 +10,6 @@ pub struct AppConfig {
     pub paths: Paths,
     pub engine: String,
     pub expected_wpm: u32,
-    pub max_chapter_chars: Option<usize>,
-    pub edge_chunk_chars: usize,
-    pub edge_max_segment_seconds: u32,
     pub max_parallel: usize,
     pub fallback_engine: Option<String>,
 }
@@ -28,9 +25,6 @@ impl AppConfig {
             paths,
             engine: env_string("ENGINE", "auto"),
             expected_wpm: env_parse("EXPECTED_WPM", 200),
-            max_chapter_chars: env_optional_parse("MAX_CHAPTER_CHARS"),
-            edge_chunk_chars: env_parse("EDGE_CHUNK_CHARS", 4_096),
-            edge_max_segment_seconds: env_parse("EDGE_MAX_SEGMENT_SECONDS", 85),
             max_parallel: env_parse(
                 "MAX_PARALLEL",
                 if cfg!(target_os = "android") {
@@ -64,13 +58,6 @@ fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(default)
-}
-
-fn env_optional_parse<T: std::str::FromStr>(key: &str) -> Option<T> {
-    std::env::var(key)
-        .ok()
-        .filter(|value| !value.is_empty())
-        .and_then(|value| value.parse().ok())
 }
 
 fn env_optional_string(key: &str) -> Option<String> {

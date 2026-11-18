@@ -7,7 +7,7 @@ use crate::{
     conversion_control::ConversionControl,
     epub,
     jobs::{ConversionJobStore, JobError, JobRecord, JobState},
-    piper::{self, CancellationToken},
+    piper::CancellationToken,
     platform_tts::PlatformTts,
     tts::{EdgeError, Telemetry},
 };
@@ -15,14 +15,18 @@ use serde::{Deserialize, Serialize};
 use std::{
     io,
     path::PathBuf,
-    sync::{atomic::AtomicUsize, Arc, Mutex},
+    sync::{Arc, Mutex},
 };
 use thiserror::Error;
 
 #[cfg(test)]
-use crate::platform_tts;
+use crate::piper;
 #[cfg(test)]
-use std::{fs, path::Path, sync::atomic::Ordering};
+use std::{
+    fs,
+    path::Path,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -125,7 +129,20 @@ pub enum WorkerError {
     #[error("Edge error: {0}")]
     Edge(#[from] EdgeError),
     #[error("Piper error: {0}")]
-    Piper(String),
+    Piper(#[from] crate::piper::PiperError),
+    #[error("invalid TTS selection: {0}")]
+    InvalidSelection(String),
+    #[error("conversion control error: {0}")]
+    Control(#[from] crate::conversion_control::ConversionControlError),
+    #[error("selected chapters have no readable text")]
+    NoReadableText,
+    #[error("text coverage mismatch: source={source_chars}, output={output_chars}")]
+    TextCoverage {
+        source_chars: usize,
+        output_chars: usize,
+    },
+    #[error(transparent)]
+    Synthesis(#[from] crate::tts_session::TtsFailure),
     #[error("system speech error: {0}")]
     PlatformTts(String),
     #[error("cancelled")]
@@ -161,22 +178,6 @@ pub struct ExecutionOptions {
     pub max_performance: bool,
 }
 
-impl ExecutionOptions {
-    fn chapter_parallelism(
-        self,
-        no_parallel: bool,
-        configured: usize,
-        maximum: usize,
-        cap: usize,
-    ) -> usize {
-        if no_parallel && !self.max_performance {
-            1
-        } else {
-            configured.min(maximum).min(cap).max(1)
-        }
-    }
-}
-
 pub struct ConversionWorker {
     language_overrides: Vec<crate::language::LanguageOverride>,
     source_identity: Mutex<Option<String>>,
@@ -189,22 +190,15 @@ pub struct ConversionWorker {
     pub progress: Option<ProgressSink>,
     pub chapter_completed: Option<ChapterCompletionSink>,
     pub execution_options: ExecutionOptions,
-    pub piper_model: Option<Arc<piper::PreparedPiperModel>>,
     streaming_chunk: Option<VersionedStreamingChunkSink>,
     adaptive: Arc<AdaptiveThroughputController>,
     telemetry: Option<Telemetry>,
     control: Option<ConversionControl>,
     platform_tts: Option<Arc<dyn PlatformTts>>,
     platform_gate: Arc<Mutex<()>>,
-    tts_sessions: Mutex<
-        std::collections::BTreeMap<
-            (String, String, String),
-            Box<dyn crate::tts_session::TtsSession>,
-        >,
-    >,
+    tts_sessions: Mutex<segment_synthesis::PreparedSessions>,
     tts_registry: crate::tts_session::TtsRegistry,
     tts_session_epoch: String,
-    consecutive_edge_failures: AtomicUsize,
     segment_policy: Mutex<crate::tts_preferences::SegmentPolicy>,
     initial_segment_policy: crate::tts_preferences::SegmentPolicy,
     fallback_chapters: Mutex<std::collections::HashSet<usize>>,
@@ -235,7 +229,6 @@ impl ConversionWorker {
             progress: None,
             chapter_completed: None,
             execution_options: ExecutionOptions::default(),
-            piper_model: None,
             streaming_chunk: None,
             adaptive: Arc::new(AdaptiveThroughputController::default()),
             telemetry: None,
@@ -245,7 +238,6 @@ impl ConversionWorker {
             tts_sessions: Default::default(),
             tts_registry: Default::default(),
             tts_session_epoch: crate::tts_session::new_session_id(),
-            consecutive_edge_failures: AtomicUsize::new(0),
             segment_policy: Mutex::new(crate::tts_preferences::SegmentPolicy::default()),
             initial_segment_policy: crate::tts_preferences::SegmentPolicy::default(),
             fallback_chapters: Default::default(),
@@ -260,10 +252,6 @@ impl ConversionWorker {
     /// Composition roots register runtime adapters; orchestration stays unchanged.
     pub fn with_tts_registry(mut self, registry: crate::tts_session::TtsRegistry) -> Self {
         self.tts_registry = registry;
-        self
-    }
-    pub fn with_piper_model(mut self, model: Option<Arc<piper::PreparedPiperModel>>) -> Self {
-        self.piper_model = model;
         self
     }
     /// Carry the Rust-owned failure policy across incremental chapter requests.
@@ -294,17 +282,6 @@ impl ConversionWorker {
         self.streaming_chunk = Some(sink);
         self
     }
-    pub fn with_adaptive_throughput(
-        mut self,
-        controller: Arc<AdaptiveThroughputController>,
-    ) -> Self {
-        self.adaptive = controller;
-        self
-    }
-    pub fn with_tts_telemetry(mut self, telemetry: Telemetry) -> Self {
-        self.telemetry = Some(telemetry);
-        self
-    }
     pub fn with_control(mut self, control: ConversionControl) -> Self {
         self.cancel = control.cancellation_token();
         self.control = Some(control);
@@ -317,7 +294,6 @@ impl ConversionWorker {
     pub fn cancel(&self) {
         self.cancel.cancel();
     }
-    #[allow(dead_code)]
     fn emit(&self, mut event: ProgressEvent) {
         if event.state == "running"
             && self
@@ -355,14 +331,13 @@ mod conversion_schedule;
 mod edge_synthesis_execution;
 mod heading_pauses;
 mod job_lifecycle;
-mod kokoro_model_identity;
 mod language_routing;
 mod native_tts_adapters;
-mod platform_speech_policy;
 mod playback_chunk_delivery;
-mod provider_execution;
 pub mod render_progress;
+mod request_preferences;
 mod segment_audio_cache;
+mod segment_synthesis;
 mod selection_model_paths;
 mod tts_cache_identity;
 mod typed_speech_policy;
@@ -371,7 +346,6 @@ use chapter_audio_receipt::*;
 use chapter_audio_recovery::*;
 use conversion_input_policy::*;
 use edge_synthesis_execution::*;
-use playback_chunk_delivery::*;
 
 #[cfg(test)]
 #[path = "worker/worker_contract_tests.rs"]

@@ -261,11 +261,6 @@ impl EmbeddedConversionSession {
             no_parallel: self.options.no_parallel,
         }
     }
-
-    /// Async-compatible entrypoint for FFI adapters and async hosts.
-    pub async fn convert_async(&self) -> Result<OutputManifest, EmbeddedConversionError> {
-        self.convert()
-    }
 }
 
 fn metadata_from_book(book: &Book) -> EmbeddedBookMetadata {

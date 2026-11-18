@@ -36,17 +36,6 @@ pub fn encode_pcm_f32_mp3(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, 
         .map_err(|error| JsValue::from_str(&error.to_string()))
 }
 
-/// The browser provider supplies bounded PCM WAV; the shared Rust codec owns MP3.
-#[wasm_bindgen]
-pub fn encode_wav_mp3(bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
-    converter_core::pcm::encode_wav_mp3(bytes).map_err(|error| JsValue::from_str(&error))
-}
-
-#[wasm_bindgen]
-pub fn health() -> String {
-    "ok".to_owned()
-}
-
 /// Parse an EPUB supplied by the browser and return its book structure as JSON.
 /// Audio synthesis remains a separate capability until a browser-safe backend
 /// is wired into the shared Rust pipeline.
@@ -83,11 +72,6 @@ fn inspect_epub_json(bytes: &[u8]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn reports_health() {
-        assert_eq!(health(), "ok");
-    }
 
     #[test]
     fn rejects_invalid_epub() {

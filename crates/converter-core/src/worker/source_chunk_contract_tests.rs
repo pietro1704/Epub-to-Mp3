@@ -73,7 +73,7 @@ impl TtsSession for ChunkRecordingSession {
             }],
         }])
         .unwrap();
-        bytes.extend(platform_tts::encode_wav(&test_system_wav()).unwrap());
+        bytes.extend(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap());
         sink.write(&bytes)
     }
 }

@@ -17,3 +17,13 @@ blob `c920a9541609aa59b921b2548158ebcf2a809a31`:
 https://github.com/rhasspy/piper-phonemize/blob/master/src/phonemize.cpp
 The blob identifier records the reviewed file contents; the URL tracks upstream.
 The six clause values and sentence flag come from this snapshot's `translate.h`.
+
+## Retained source scope
+
+The vendored runtime omits upstream `tests/` (previously disabled by the Rust
+build) and `src/windows/` (standalone Visual Studio/COM projects, unused by the
+CMake library build). The retired test option and CTest wiring are removed too.
+Windows CMake support, including `src/compat/getopt.c`, remains intact.
+The CMake install still uses `vim/`, so it is retained together with all language,
+dictionary and phoneme data. Runtime phonemization coverage lives in the
+`espeak-rs` workspace crate, including punctuation and concurrent voice identity.

@@ -60,7 +60,7 @@ fn cancellation_during_repair_preserves_audio_and_releases_the_job_for_retry() {
     let input = root.path().join("source.epub");
     fixtures::book(&input);
     fs::create_dir_all(&paths.piper_models_dir).unwrap();
-    let model = paths.piper_models_dir.join("pt_BR-faber-medium.onnx");
+    let model = paths.piper_models_dir.join("en_US-lessac-medium.onnx");
     fs::write(&model, b"synthetic voice model").unwrap();
     let model_config = model.with_extension("onnx.json");
     fs::write(&model_config, b"{}").unwrap();
@@ -119,6 +119,15 @@ fn cancellation_during_repair_preserves_audio_and_releases_the_job_for_retry() {
         .collect();
     let published_manifest = fs::read(output.join("manifest.json")).unwrap();
     let published_archive = fs::read(output.join(&manifest.archive)).unwrap();
+    // Remove only this fixture's segment cache so repair reaches the provider.
+    fs::remove_dir_all(paths.cache_dir.join("speech-segments-v1")).unwrap();
+    let selected_text = converter_core::epub::parse_epub(fs::File::open(&request.input).unwrap())
+        .unwrap()
+        .chapters[1]
+        .text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     cancel_next_synthesis.store(true, Ordering::Release);
     let result = worker.repair_chapters(request.clone(), &[manifest.chapters[1].source_index]);
     assert!(matches!(result, Err(WorkerError::Cancelled)), "{result:?}");
@@ -132,9 +141,12 @@ fn cancellation_during_repair_preserves_audio_and_releases_the_job_for_retry() {
         !spoken.is_empty(),
         "repair must reach synthesis before cancellation"
     );
-    assert!(spoken
-        .iter()
-        .all(|text| text.contains("quiet walk through town")));
+    assert!(
+        spoken
+            .iter()
+            .all(|text| selected_text
+                .contains(&text.split_whitespace().collect::<Vec<_>>().join(" ")))
+    );
     for (index, path) in audio.iter().enumerate() {
         assert_eq!(fs::read(path).unwrap(), original_audio[index]);
         if index != 1 {
@@ -178,9 +190,12 @@ fn cancellation_during_repair_preserves_audio_and_releases_the_job_for_retry() {
     assert_eq!(resumed.chapters.len(), 3);
     let spoken = calls.lock().unwrap();
     assert!(!spoken.is_empty());
-    assert!(spoken
-        .iter()
-        .all(|text| text.contains("quiet walk through town")));
+    assert!(
+        spoken
+            .iter()
+            .all(|text| selected_text
+                .contains(&text.split_whitespace().collect::<Vec<_>>().join(" ")))
+    );
     assert!(audio
         .iter()
         .all(|path| retained_chapter_audio_is_intact(path)));

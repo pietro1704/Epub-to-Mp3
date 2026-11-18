@@ -258,13 +258,6 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         }
     }
 
-    pub async fn synthesize_ssml(&self, ssml: &str) -> Result<Vec<u8>, EdgeError> {
-        if ssml.trim().is_empty() {
-            return Err(EdgeError::InvalidInput("SSML is empty".into()));
-        }
-        self.synthesize_request(ssml, ssml.len(), 1, 1, None).await
-    }
-
     pub(super) async fn synthesize_text_chunk(
         &self,
         text: &str,

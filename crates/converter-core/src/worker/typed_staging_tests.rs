@@ -63,7 +63,7 @@ fn typed_policy_staging_stays_in_job_output_and_is_cleaned_on_every_exit() {
         if outcome == "success" {
             let manifest = result.unwrap();
             let audio = job_output.join(&manifest.chapters[0].filename);
-            assert!(platform_tts::validate_mp3(&fs::read(audio).unwrap()).is_ok());
+            assert!(crate::pcm::validate_mp3(&fs::read(audio).unwrap()).is_ok());
             assert_eq!(manifest.used_selections[0].engine, "system");
         } else {
             if outcome == "cancelled" {

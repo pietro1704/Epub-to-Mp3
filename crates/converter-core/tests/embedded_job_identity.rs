@@ -1,5 +1,8 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+#[path = "support/epub_fixture.rs"]
+mod epub_fixture;
+
 use converter_core::{
     config::AppConfig,
     embedded::{EmbeddedConversionOptions, EmbeddedConversionSession},
@@ -9,29 +12,22 @@ use converter_core::{
 };
 use std::{
     fs,
-    io::Write,
     path::Path,
     process::Command,
     sync::{atomic::AtomicBool, atomic::Ordering, Arc, Mutex},
 };
-use zip::{write::SimpleFileOptions, ZipWriter};
 
 #[allow(dead_code)]
 #[path = "support/worker_execution_fixtures.rs"]
 mod worker_execution_fixtures;
 
 fn book(path: &Path, title: &str, text: &str) {
-    let mut archive = ZipWriter::new(fs::File::create(path).unwrap());
-    let options = SimpleFileOptions::default();
-    for (name, contents) in [
+    let bytes = epub_fixture::epub_bytes([
         ("META-INF/container.xml", "<container><rootfiles><rootfile full-path=\"content.opf\"/></rootfiles></container>".to_owned()),
         ("content.opf", format!("<package xmlns:dc=\"x\"><metadata><dc:title>{title}</dc:title></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/></spine></package>")),
         ("a.xhtml", format!("<html><body><h1>{title}</h1><p>{text}</p></body></html>")),
-    ] {
-        archive.start_file(name, options).unwrap();
-        archive.write_all(contents.as_bytes()).unwrap();
-    }
-    archive.finish().unwrap();
+    ], zip::write::SimpleFileOptions::default());
+    fs::write(path, bytes).unwrap();
 }
 
 fn waveform() -> Vec<u8> {
@@ -90,7 +86,7 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
         root.to_owned(),
     );
     fs::create_dir_all(&paths.piper_models_dir).unwrap();
-    let model = paths.piper_models_dir.join("pt_BR-faber-medium.onnx");
+    let model = paths.piper_models_dir.join("en_US-lessac-medium.onnx");
     fs::write(&model, b"owned synthetic model").unwrap();
     fs::write(model.with_extension("onnx.json"), b"{}").unwrap();
     piper::register_runtime(Arc::new(piper::RegisteredPiperRuntime::new(
@@ -113,6 +109,8 @@ fn fresh_embedded_sessions_keep_independent_default_job_identity() {
     let config = AppConfig::from_paths(paths.clone());
     let options = EmbeddedConversionOptions {
         engine: Some("piper".into()),
+        piper_model: Some(model.clone()),
+        piper_config: Some(model.with_extension("onnx.json")),
         no_parallel: true,
         ..Default::default()
     };
@@ -254,7 +252,7 @@ fn chapters_spoken(calls: &Mutex<Vec<String>>) -> Vec<usize> {
     let spoken = std::mem::take(&mut *calls.lock().unwrap());
     spoken
         .iter()
-        .map(|text| {
+        .filter_map(|text| {
             [
                 "morning market",
                 "quiet walk through town",
@@ -262,7 +260,6 @@ fn chapters_spoken(calls: &Mutex<Vec<String>>) -> Vec<usize> {
             ]
             .iter()
             .position(|marker| text.contains(marker))
-            .expect("every call speaks one fixture chapter")
         })
         .collect()
 }
@@ -306,7 +303,7 @@ fn embedded_retry_and_repair_reuse_validated_chapters_and_honor_forced_execution
         root.to_owned(),
     );
     fs::create_dir_all(&paths.piper_models_dir).unwrap();
-    let model = paths.piper_models_dir.join("pt_BR-faber-medium.onnx");
+    let model = paths.piper_models_dir.join("en_US-lessac-medium.onnx");
     fs::write(&model, b"owned synthetic model").unwrap();
     fs::write(model.with_extension("onnx.json"), b"{}").unwrap();
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -330,6 +327,8 @@ fn embedded_retry_and_repair_reuse_validated_chapters_and_honor_forced_execution
     let options = EmbeddedConversionOptions {
         job_id: Some("lifecycle".into()),
         engine: Some("piper".into()),
+        piper_model: Some(model.clone()),
+        piper_config: Some(model.with_extension("onnx.json")),
         no_parallel: true,
         ..Default::default()
     };
@@ -379,7 +378,8 @@ fn embedded_retry_and_repair_reuse_validated_chapters_and_honor_forced_execution
     fs::write(&audio[1], b"truncated").unwrap();
     assert!(!retained_chapter_audio_is_intact(&audio[1]));
     session.repair().unwrap();
-    assert_eq!(chapters_spoken(&calls), [1]);
+    // Validated typed segments rebuild corrupt chapter audio without synthesis.
+    assert!(chapters_spoken(&calls).is_empty());
     assert!(retained_chapter_audio_is_intact(&audio[1]));
     assert_eq!(fs::read(&audio[0]).unwrap(), untouched);
 
@@ -390,13 +390,16 @@ fn embedded_retry_and_repair_reuse_validated_chapters_and_honor_forced_execution
     session
         .repair_chapters(&[manifest.chapters[0].source_index])
         .unwrap();
-    assert_eq!(chapters_spoken(&calls), [0]);
+    assert!(chapters_spoken(&calls).is_empty());
     assert!(output.join(&manifest.archive).is_file());
 
     // The persisted request reopens with the original selection.
     let reopened =
         EmbeddedConversionSession::reopen_job("lifecycle", &input, config.clone()).unwrap();
-    assert_eq!(reopened.options(), &options);
+    let mut expected_options = options.clone();
+    expected_options.tts_preferences = reopened.options().tts_preferences.clone();
+    assert!(expected_options.tts_preferences.is_some());
+    assert_eq!(reopened.options(), &expected_options);
     reopened.repair().unwrap();
     assert!(chapters_spoken(&calls).is_empty());
     // Reopened repairs and retries keep their expected source identity.

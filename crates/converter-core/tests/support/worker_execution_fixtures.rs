@@ -1,8 +1,11 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use converter_core::piper;
-use std::{fs, io::Write, path::Path, sync::Mutex};
-use zip::{write::SimpleFileOptions, ZipWriter};
+use std::{fs, path::Path, sync::Mutex};
+use zip::write::SimpleFileOptions;
+
+#[path = "epub_fixture.rs"]
+mod epub_fixture;
 
 pub(super) fn waveform() -> Vec<u8> {
     let pcm = vec![0u8; 16_000];
@@ -24,18 +27,11 @@ pub(super) fn waveform() -> Vec<u8> {
 }
 
 pub(super) fn book(path: &Path) {
-    let mut archive = ZipWriter::new(fs::File::create(path).unwrap());
     let options = SimpleFileOptions::default();
-    archive
-        .start_file("META-INF/container.xml", options)
-        .unwrap();
-    archive
-        .write_all(
-            br#"<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#,
-        )
-        .unwrap();
-    archive.start_file("content.opf", options).unwrap();
-    archive.write_all(br#"<package xmlns:dc="x"><metadata><dc:title>Flags fixture</dc:title></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/><itemref idref="b"/><itemref idref="c"/></spine></package>"#).unwrap();
+    let mut entries = vec![
+        ("META-INF/container.xml".to_owned(), r#"<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#.to_owned()),
+        ("content.opf".to_owned(), r#"<package xmlns:dc="x"><metadata><dc:title>Flags fixture</dc:title></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/><itemref idref="b"/><itemref idref="c"/></spine></package>"#.to_owned()),
+    ];
     for (name, heading, text) in [
         (
             "a",
@@ -53,14 +49,9 @@ pub(super) fn book(path: &Path) {
             "The final chapter takes the family beside the river in the evening. They sit beneath the trees, share a simple meal, and watch the boats move slowly past the bridge. As the sun sets, they return to their house and talk about the day.",
         ),
     ] {
-        archive
-            .start_file(format!("{name}.xhtml"), options)
-            .unwrap();
-        archive
-            .write_all(format!("<html><body><h1>{heading}</h1><p>{text}</p></body></html>").as_bytes())
-            .unwrap();
+        entries.push((format!("{name}.xhtml"), format!("<html><body><h1>{heading}</h1><p>{text}</p></body></html>")));
     }
-    archive.finish().unwrap();
+    fs::write(path, epub_fixture::epub_bytes(entries, options)).unwrap();
 }
 
 pub(super) struct ExplicitRuntime {

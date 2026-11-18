@@ -288,6 +288,15 @@ pub fn encode_pcm_f32(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, TtsF
 
 pub trait TtsProvider: Send + Sync {
     fn descriptor(&self) -> ProviderDescriptor;
+    /// Catalog adapters use the shared contract. Native adapters may also
+    /// validate explicitly supplied local models through their own model seam.
+    fn validate_selection(
+        &self,
+        selection: &SessionSelection,
+        language: &str,
+    ) -> Result<(), TtsFailure> {
+        selection.validate(&self.descriptor(), language)
+    }
     fn prepare(
         &self,
         selection: &SessionSelection,

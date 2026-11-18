@@ -14,7 +14,6 @@ pub fn runtime_for(provider: &str) -> Option<&'static str> {
         } else {
             "platform-speech"
         }),
-        "kokoro" => Some("kokoro"),
         _ => None,
     }
 }
@@ -135,7 +134,6 @@ pub fn builtin_descriptors() -> Vec<ProviderDescriptor> {
         ("piper", "piper", AudioFormat::WavPcm16, false),
         ("edge", "edge-websocket", AudioFormat::Mp3, true),
         ("system", "platform-speech", AudioFormat::WavPcm16, false),
-        ("kokoro", "kokoro", AudioFormat::WavPcm16, false),
     ]
     .into_iter()
     .map(|(provider, runtime, format, online)| ProviderDescriptor {

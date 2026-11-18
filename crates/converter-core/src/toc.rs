@@ -1,6 +1,5 @@
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TocItem {
@@ -109,25 +108,6 @@ pub fn parse_nav(xml: &str) -> Result<Vec<TocItem>, quick_xml::Error> {
         }
     }
     Ok(out)
-}
-
-pub fn minimum_levels(items: &[TocItem]) -> HashMap<String, u32> {
-    let mut out = HashMap::new();
-    fn walk(x: &TocItem, o: &mut HashMap<String, u32>) {
-        let k = x.href.split('#').next().unwrap_or("");
-        if !k.is_empty() {
-            o.entry(k.to_string())
-                .and_modify(|v| *v = (*v).min(x.level))
-                .or_insert(x.level);
-        }
-        for c in &x.children {
-            walk(c, o)
-        }
-    }
-    for x in items {
-        walk(x, &mut out)
-    }
-    out
 }
 
 #[cfg(test)]

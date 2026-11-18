@@ -36,7 +36,7 @@ fn forced_replacement_preserves_audio_and_receipt_on_failure_or_cancellation() {
 }
 
 #[test]
-fn platform_fallback_actual_worker_publishes_receipt_and_reports_cached_voice() {
+fn migrated_platform_fallback_publishes_receipt_but_regenerates_opaque_voice() {
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("book.epub");
     platform_test_book(&input);
@@ -71,7 +71,7 @@ fn platform_fallback_actual_worker_publishes_receipt_and_reports_cached_voice() 
     let manifest = worker.run(request.clone()).unwrap();
     assert_eq!(manifest.chapters.len(), 1);
     let audio = output_dir.join(&manifest.chapters[0].filename);
-    assert!(platform_tts::validate_mp3(&fs::read(&audio).unwrap()).is_ok());
+    assert!(crate::pcm::validate_mp3(&fs::read(&audio).unwrap()).is_ok());
     let receipt: ChapterAudioReceipt =
         cache::read_json(chapter_audio_receipt_path(&audio)).unwrap();
     assert_eq!(receipt.provider.as_deref(), Some("system"));
@@ -79,9 +79,9 @@ fn platform_fallback_actual_worker_publishes_receipt_and_reports_cached_voice() 
     // A missing job record still permits recovery of durable chapter artifacts.
     worker.jobs.delete(&request.job_id).unwrap();
     worker.resume(request).unwrap();
-    assert_eq!(spoken.lock().unwrap().len(), calls);
+    assert!(spoken.lock().unwrap().len() > calls);
     assert!(
-        events
+        !events
             .lock()
             .unwrap()
             .iter()
@@ -167,7 +167,7 @@ fn chapter_receipt_publishes_actual_tts_usage_atomically() {
         ensure_chapter_audio(&audio, &key, |pending| {
             fs::write(
                 pending,
-                platform_tts::encode_wav(&test_system_wav()).unwrap(),
+                crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap(),
             )?;
             cache::atomic_write_json(
                 pending.with_extension("tts-usage.json"),
@@ -265,7 +265,8 @@ fn retained_assembly_repair_preserves_identity_and_rejects_tampering() {
     ensure_chapter_audio(&path, "captured-voice", |pending| {
         fs::write(pending, [segment.as_slice(), segment.as_slice()].concat())?;
         Ok(())
-    }).unwrap();
+    })
+    .unwrap();
     let original = fs::read(&path).unwrap();
     prepare_retained_audio(&path).unwrap();
     assert_ne!(fs::read(&path).unwrap(), original);
@@ -275,5 +276,8 @@ fn retained_assembly_repair_preserves_identity_and_rejects_tampering() {
     fs::write(&path, &original).unwrap();
     assert!(prepare_retained_audio(&path).is_err());
     assert_eq!(fs::read(&path).unwrap(), original);
-    assert_eq!(fs::read(chapter_audio_receipt_path(&path)).unwrap(), receipt);
+    assert_eq!(
+        fs::read(chapter_audio_receipt_path(&path)).unwrap(),
+        receipt
+    );
 }

@@ -18,7 +18,7 @@ fn explicit_preferences_retry_primary_after_invalid_audio_and_publish_mixed_segm
         if count.fetch_add(1, Ordering::AcqRel) == 0 {
             Ok(b"malformed primary MP3".to_vec())
         } else {
-            Ok(platform_tts::encode_wav(&test_system_wav()).unwrap())
+            Ok(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap())
         }
     }));
     let preferences = TtsPreferences {
@@ -64,7 +64,7 @@ fn explicit_preferences_retry_primary_after_invalid_audio_and_publish_mixed_segm
             .collect::<Vec<_>>(),
         vec!["system", "edge"]
     );
-    platform_tts::validate_mp3(&fs::read(out).unwrap()).unwrap();
+    crate::pcm::validate_mp3(&fs::read(out).unwrap()).unwrap();
 }
 #[test]
 fn strict_preferences_do_not_use_registered_system_fallback() {
@@ -81,7 +81,9 @@ fn strict_preferences_do_not_use_registered_system_fallback() {
             texts: spoken.clone(),
         }));
     worker.test_edge = Some(Arc::new(|_| {
-        Err(WorkerError::Piper("fixture voice failed".into()))
+        Err(WorkerError::Piper(crate::piper::PiperError::Synthesis(
+            "fixture voice failed".into(),
+        )))
     }));
     let preferences = TtsPreferences {
         policy_version: None,

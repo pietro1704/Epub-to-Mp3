@@ -111,7 +111,7 @@ async fn manifest_rejects_empty_artifact_list_without_network_access() {
     let root = tempfile::tempdir().unwrap();
     let store = ModelStore::new(root.path());
     let manifest = ModelManifest {
-        model_id: "kokoro-82m".to_owned(),
+        model_id: "pt_BR-faber-medium".to_owned(),
         revision: None,
         artifacts: Vec::new(),
     };
@@ -124,7 +124,7 @@ async fn manifest_rejects_path_traversal_before_network_access() {
     let root = tempfile::tempdir().unwrap();
     let store = ModelStore::new(root.path());
     let manifest = ModelManifest {
-        model_id: "kokoro-82m".to_owned(),
+        model_id: "pt_BR-faber-medium".to_owned(),
         revision: None,
         artifacts: vec![ModelArtifact {
             name: "../escape.bin".to_owned(),
@@ -141,7 +141,7 @@ async fn manifest_rejects_insecure_url_before_network_access() {
     let root = tempfile::tempdir().unwrap();
     let store = ModelStore::new(root.path());
     let manifest = ModelManifest {
-        model_id: "kokoro-82m".to_owned(),
+        model_id: "pt_BR-faber-medium".to_owned(),
         revision: None,
         artifacts: vec![ModelArtifact {
             name: "model.onnx".to_owned(),
@@ -191,15 +191,15 @@ fn a_voice_is_installed_only_with_both_verified_artifacts() {
 
 #[test]
 fn builds_verified_manifest_from_catalog() {
-    let manifest = ModelStore::catalog_manifest("kokoro-82m").unwrap();
-    assert_eq!(manifest.artifacts.len(), 1);
+    let manifest = ModelStore::catalog_manifest("pt_BR-faber-medium").unwrap();
+    assert_eq!(manifest.artifacts.len(), 2);
     assert_eq!(manifest.artifacts[0].sha256.len(), 64);
     assert_eq!(
         manifest.revision.as_deref(),
         crate::model_catalog::model_revision(
             MODELS
                 .iter()
-                .find(|model| model.id == "kokoro-82m")
+                .find(|model| model.id == "pt_BR-faber-medium")
                 .unwrap()
         )
         .as_deref()

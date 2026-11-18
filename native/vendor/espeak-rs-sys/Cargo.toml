@@ -19,7 +19,6 @@ include = [
     "espeak-ng/vim/",
     "espeak-ng/cmake/",
     "espeak-ng/phsource/",
-    "espeak-ng/tests/",
     "espeak-ng/src/",
     "espeak-ng/espeak-ng-data/",
     "espeak-ng/dictsource/**",
@@ -30,7 +29,6 @@ include = [
     "wrapper.h",
     "!espeak-ng/dictsource/extra/**",
     "!espeak-ng/dictsource/fo_list",
-    "!espeak-ng/src/windows/Debug/*.wav",
 ]
 autolib = false
 autobins = false

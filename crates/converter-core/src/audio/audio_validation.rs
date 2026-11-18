@@ -1,5 +1,4 @@
 //! Decode and inspect complete native audio before accepting an artifact.
-use super::audio_process::{require_external_audio_support, run_audio_process, ProcessSpec};
 use super::mpeg_frame_validation::{validate_mpeg_bounds, AudioSegmentSource};
 use super::wave_bounds::validate_wave_bounds;
 use super::AudioError;
@@ -12,24 +11,7 @@ pub fn probe_duration(path: impl AsRef<Path>) -> Result<f64, AudioError> {
     if let Some(info) = native_audio_info(path)? {
         return Ok(info.duration);
     }
-    require_external_audio_support()?;
-    probe_duration_external(path)
-}
-
-fn probe_duration_external(path: &Path) -> Result<f64, AudioError> {
-    let output = run_audio_process(&ProcessSpec::new("ffprobe").args([
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=nw=1:nk=1",
-        &path.to_string_lossy(),
-    ]))?;
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| AudioError::Validation(format!("invalid duration for {}", path.display())))
+    Err(invalid_audio("unsupported audio format or codec"))
 }
 
 pub fn probe_sample_rate(path: impl AsRef<Path>) -> Result<u32, AudioError> {
@@ -37,26 +19,7 @@ pub fn probe_sample_rate(path: impl AsRef<Path>) -> Result<u32, AudioError> {
     if let Some(info) = native_audio_info(path)? {
         return Ok(info.sample_rate);
     }
-    require_external_audio_support()?;
-    probe_sample_rate_external(path)
-}
-
-fn probe_sample_rate_external(path: &Path) -> Result<u32, AudioError> {
-    let output = run_audio_process(&ProcessSpec::new("ffprobe").args([
-        "-v",
-        "error",
-        "-select_streams",
-        "a:0",
-        "-show_entries",
-        "stream=sample_rate",
-        "-of",
-        "default=nw=1:nk=1",
-        &path.to_string_lossy(),
-    ]))?;
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u32>()
-        .map_err(|_| AudioError::Validation(format!("invalid sample rate for {}", path.display())))
+    Err(invalid_audio("unsupported audio format or codec"))
 }
 
 pub(super) struct NativeAudioInfo {
@@ -114,13 +77,14 @@ pub(super) fn native_audio_info(path: &Path) -> Result<Option<NativeAudioInfo>, 
     if is_mpeg && prefix[0] == 0xff && prefix[1] & 0xe0 == 0xe0 {
         let bits = u32::from_be_bytes(prefix[..4].try_into().unwrap());
         if (bits >> 17) & 3 != 1 || (bits >> 12) & 15 == 0 {
-            // Preserve desktop/Android support for other MPEG layers and
-            // free-format bitrate streams through the existing capability.
-            return Ok(None);
+            // Other MPEG layers use the registered in-process decoder; the
+            // strict frame-extent validator below is specific to Layer III.
+            is_mpeg = false;
         }
     }
     if !is_wave && !is_mpeg {
-        return Ok(None);
+        file.seek(SeekFrom::Start(0))?;
+        return decode_native_audio(Box::new(file));
     }
     if is_wave {
         validate_wave_bounds(&mut file)?;
