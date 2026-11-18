@@ -45,28 +45,6 @@ final class WidgetSnapshotTests: XCTestCase {
         }
     }
 
-    func testContinueReadingUsesExplicitIdentityAndDoesNotBorrowOtherBooksTiming() throws {
-        try withDefaults { defaults in
-            try seedBooks(defaults)
-            let provider = ContinueReadingProvider()
-            XCTAssertEqual(provider.loadContinueReading(defaults: defaults).bookId, "book-7")
-            defaults.set("book-2", forKey: "widget.lastReadBookId")
-            defaults.set(4, forKey: "widget.lastReadChapterIndex")
-            defaults.set(10, forKey: "widget.lastReadTotalChapters")
-            defaults.set("Capítulo cinco", forKey: "widget.lastReadChapterLabel")
-            defaults.set("book-7", forKey: "currentlyPlayingBookId")
-            defaults.set(90, forKey: "widget.nowPlayingBookRemainingSeconds")
-            let entry = provider.loadContinueReading(defaults: defaults)
-            XCTAssertEqual(entry.bookId, "book-2")
-            XCTAssertEqual(entry.chapterIndex, 4)
-            XCTAssertEqual(entry.chapterLabel, "Capítulo cinco")
-            XCTAssertEqual(entry.progressPercent, 50)
-            XCTAssertEqual(entry.bookRemainingSeconds, 0)
-            defaults.set("missing", forKey: "widget.lastReadBookId")
-            XCTAssertNil(provider.loadContinueReading(defaults: defaults).bookId)
-        }
-    }
-
     func testLibrarySortsAndBoundsEntriesAndRecoversFromMalformedPayload() throws {
         try withDefaults { defaults in
             try seedBooks(defaults)
@@ -76,7 +54,6 @@ final class WidgetSnapshotTests: XCTestCase {
             defaults.set(Data("malformed".utf8), forKey: "library.books.v1")
             XCTAssertTrue(provider.loadLibrary(defaults: defaults).books.isEmpty)
             XCTAssertNil(NowPlayingProvider().loadNowPlaying(defaults: defaults).bookId)
-            XCTAssertNil(ContinueReadingProvider().loadContinueReading(defaults: defaults).bookId)
             try seedBooks(defaults)
             XCTAssertEqual(provider.loadLibrary(defaults: defaults).books.count, 6)
         }

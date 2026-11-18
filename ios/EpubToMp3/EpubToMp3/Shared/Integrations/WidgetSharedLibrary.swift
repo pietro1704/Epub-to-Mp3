@@ -34,10 +34,6 @@ enum WidgetSharedLibrary {
     static let nowPlayingChapterRemainingKey = "widget.nowPlayingChapterRemainingSeconds"
     static let nowPlayingBookRemainingKey = "widget.nowPlayingBookRemainingSeconds"
     static let nowPlayingTotalChaptersKey = "widget.nowPlayingTotalChapters"
-    static let lastReadBookIdKey = "widget.lastReadBookId"
-    static let lastReadChapterIndexKey = "widget.lastReadChapterIndex"
-    static let lastReadTotalChaptersKey = "widget.lastReadTotalChapters"
-    static let lastReadChapterLabelKey = "widget.lastReadChapterLabel"
 
     static func defaults() -> UserDefaults? { UserDefaults(suiteName: appGroupID) }
 

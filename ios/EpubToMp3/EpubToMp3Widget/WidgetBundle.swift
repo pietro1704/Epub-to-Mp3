@@ -7,7 +7,6 @@ struct EpubToMp3WidgetBundle: WidgetBundle {
         if #available(iOS 17.0, *) {
             EpubToMp3Widget()               // legacy kind — keeps existing home-screen widgets alive
             NowPlayingWidget()
-            ContinueReadingWidget()
             LibraryWidget()
         }
         if #available(iOS 16.1, *) {

@@ -246,7 +246,6 @@ targets:
         attributes: [CodeSignOnCopy]
 
       - path: EpubToMp3Widget/WidgetNowPlayingTimeline.swift
-      - path: EpubToMp3Widget/WidgetContinueReadingTimeline.swift
       - path: EpubToMp3Widget/WidgetLibraryTimeline.swift
 
     postBuildScripts:
