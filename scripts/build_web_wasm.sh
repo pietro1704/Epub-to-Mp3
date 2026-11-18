@@ -19,7 +19,7 @@ rm -f "$output_dir"/converter_wasm.{js,d.ts} "$output_dir"/converter_wasm_bg.was
 RUSTC="$(mise exec -- rustup which rustc)" \
   mise exec -- cargo build --locked -p converter-wasm --target wasm32-unknown-unknown --release --jobs 1
 mise exec -- wasm-bindgen \
-  target/wasm32-unknown-unknown/release/converter_wasm.wasm \
+  "${CARGO_TARGET_DIR:-${CARGO_BUILD_TARGET_DIR:-target}}/wasm32-unknown-unknown/release/converter_wasm.wasm" \
   --target web \
   --out-dir "$output_dir"
 

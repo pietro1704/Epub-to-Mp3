@@ -43,15 +43,24 @@ class NativeFaberEntrypointsTest < Minitest::Test
     RUBY
     # Keep this driver fixture independent of host caches and disk capacity;
     # the real storage policy has its own fixture suite.
-    File.write(File.join(@scripts, 'mac_build_budget.rb'), <<~RUBY)
+    File.write(File.join(@scripts, 'mac_build_budget.rb'), <<~'RUBY')
       module MacBuildBudget
-        def self.check
-          'Fixture: build storage budget exceeded' if ENV['FIXTURE_STORAGE_BLOCKED'] == '1'
+        ROOT = File.expand_path('..', __dir__)
+        def self.check(*destinations)
+          return 'Fixture: build storage budget exceeded' if ENV['FIXTURE_STORAGE_BLOCKED'] == '1'
+          blocked = ENV['FIXTURE_FULL_VOLUME']
+          'Fixture: destination volume is full' if destinations.any? { |path| File.expand_path(path) == blocked }
         end
 
         def self.interval
           10
         end
+      end
+      if $PROGRAM_NAME == __FILE__
+        abort 'Expected check and a destination' unless ARGV.shift == 'check' && ARGV.size == 1
+        error = MacBuildBudget.check(*ARGV)
+        warn error if error
+        exit(error ? 75 : 0)
       end
     RUBY
     File.write(File.join(@scripts, 'prepare_onnxruntime_macos.rb'), <<~RUBY)
@@ -117,6 +126,35 @@ class NativeFaberEntrypointsTest < Minitest::Test
       assert_equal 75, status.exitstatus, "#{driver}: #{output}#{error}"
       assert_includes error, 'Fixture: build storage budget exceeded'
       refute File.exist?(@events), "#{driver} started preparation or a compiler after storage refusal"
+    end
+  end
+
+  def test_drivers_refuse_each_full_output_volume
+    {
+      'build_converter_ffi_android.rb' => %w[target/piper-android target/espeak-data],
+      'build_flutter_android.rb' => %w[flutter_app/build],
+      'build_flutter_desktop.rb' => %w[flutter_app/build]
+    }.each do |driver, destinations|
+      destinations.each do |destination|
+        volume = File.join(@directory, destination)
+        _, error, status = invoke(driver, { 'FIXTURE_FULL_VOLUME' => volume })
+        assert_equal 75, status.exitstatus, "#{driver}: #{error}"
+        assert_includes error, 'destination volume is full'
+        refute File.exist?(@events), "#{driver} started work on the full volume"
+      end
+    end
+  end
+
+  def test_flutter_tasks_refuse_a_full_output_volume_before_tools_or_device_selection
+    %w[flutter:run flutter:run-desktop flutter:test native-tts:android:test].each do |name|
+      metadata, error, status = Open3.capture3('mise', 'tasks', 'info', name, '--json', chdir: ROOT)
+      assert status.success?, error
+      body = JSON.parse(metadata).fetch('run').join("\n")
+      environment = @environment.merge('FIXTURE_FULL_VOLUME' => File.join(@directory, 'flutter_app/build'))
+      _, error, status = Open3.capture3(environment, '/bin/bash', '-euo', 'pipefail', '-c', body, chdir: @directory)
+      assert_equal 75, status.exitstatus, "#{name}: #{error}"
+      assert_includes error, 'destination volume is full'
+      refute File.exist?(@events), "#{name} started before the storage check"
     end
   end
 

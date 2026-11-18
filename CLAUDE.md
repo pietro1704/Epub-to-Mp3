@@ -27,6 +27,12 @@ requires an explicit user action, except that the HTTP `converter-server` downlo
 missing catalog voice on demand when a conversion needs it; preserve existing models
 and never require a paid provider.
 
+## Build storage
+
+For Mac and Arch app builds, use free space on the build output volume as the
+only storage limit. Reuse compatible caches of any size. The Mac Intel compiler
+and Simulator safeguards follow the execution policy.
+
 ## Navigation
 
 - Engineering skill selection or generic Matt workflow conflicts: read

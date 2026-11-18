@@ -59,6 +59,13 @@ class BuildWebWasmTest < Minitest::Test
     assert_equal "generated\n", File.read(@artifact)
   end
 
+  def test_bindgen_reads_the_selected_cargo_target_directory
+    target = File.join(@root, "separate cargo volume")
+    _, error, status = run_build("CARGO_TARGET_DIR" => target)
+    assert status.success?, error
+    assert_includes File.read(@events), "wasm-bindgen #{target}/wasm32-unknown-unknown/release/converter_wasm.wasm"
+  end
+
   def test_mismatch_fails_before_compilation_and_preserves_existing_artifacts
     _, error, status = run_build("FIXTURE_VERSION" => "0.2.130")
     refute status.success?

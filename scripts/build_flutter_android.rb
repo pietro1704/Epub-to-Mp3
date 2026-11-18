@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # Native packaging is a task dependency; keep the APK build/audit under one lease.
 require_relative 'native_job'
-NativeJob.build_entrypoint(__FILE__, ARGV)
+NativeJob.build_entrypoint(__FILE__, ARGV, build_dir: File.expand_path('../flutter_app/build', __dir__))
 require 'rbconfig'
 
 root = File.expand_path('..', __dir__)

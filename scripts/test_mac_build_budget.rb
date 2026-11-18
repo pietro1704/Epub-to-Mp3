@@ -7,19 +7,20 @@ require "open3"
 require "rbconfig"
 require "timeout"
 require_relative "mac_build_budget"
+require_relative "native_job"
 
 class MacBuildBudgetTest < Minitest::Test
   def test_read_only_check_retains_budget_refusal_status
     with_stub(:check, nil) { assert_equal 0, MacBuildBudget.main(["check"]) }
-    with_stub(:check, "Fixture: cache budget exceeded") do
+    with_stub(:check, "Fixture: destination full") do
       _, error = capture_io { assert_equal 75, MacBuildBudget.main(["check"]) }
-      assert_match(/Fixture: cache budget exceeded/, error)
+      assert_match(/Fixture: destination full/, error)
     end
   end
 
   def setup
     @dir = File.realpath(Dir.mktmpdir("mac-build-budget-"))
-    @limits = { "version" => 1, "minimum_free_gib" => 20, "maximum_cache_gib" => 12,
+    @limits = { "version" => 1, "minimum_free_gib" => 20,
                 "check_interval_seconds" => 1 }
   end
 
@@ -42,11 +43,11 @@ class MacBuildBudgetTest < Minitest::Test
     [0, 75].each do |expected|
       _, error, status = Open3.capture3({ "PATH" => "#{bin}:#{ENV.fetch('PATH')}",
         "GUARD_TEST_TRACE" => trace, "GUARD_TEST_STATUS" => expected.to_s,
-        "IOS_DISK_GUARD_IOS_BUILD_DIR" => @dir, "IOS_DISK_GUARD_MAX_TOTAL_MB" => "0" },
+        "IOS_DERIVED_DATA_PATH" => @dir, "IOS_DISK_GUARD_MAX_TOTAL_MB" => "0" },
         "bash", File.join(__dir__, "ios_disk_guard.sh"), chdir: @dir)
       assert_equal expected, status.exitstatus, error
       assert_equal ["-C", File.expand_path("..", __dir__), "exec", "--", "ruby",
-                    File.join(__dir__, "mac_build_budget.rb"), "check"], File.readlines(trace, chomp: true)
+                    File.join(__dir__, "mac_build_budget.rb"), "check", @dir], File.readlines(trace, chomp: true)
       assert_equal "retained cache bytes", File.binread(artifact)
     end
   end
@@ -63,89 +64,57 @@ class MacBuildBudgetTest < Minitest::Test
     FileUtils.remove_entry(@dir)
   end
 
-  def with_du_failure(error, output: nil, before_return: nil)
-    original = Open3.method(:capture3)
-    _, _, failed = original.call(RbConfig.ruby, "-e", "exit 1")
-    Open3.define_singleton_method(:capture3) do |*argv|
-      result = original.call(*argv)
-      next result unless argv.first == "du"
-      before_return&.call
-      [output || result.first, error, failed]
+  def test_floor_and_host_scope
+    floor = 20 * MacBuildBudget::GIB
+    assert_nil MacBuildBudget.evaluate(@limits, free_bytes: floor, destination: @dir)
+    assert_match(/Free disk below 20 GiB/, MacBuildBudget.evaluate(@limits, free_bytes: floor - 1, destination: @dir))
+    release = File.join(@dir, "arch-release")
+    assert MacBuildBudget.build_host?("arm64-darwin", arch_release: release)
+    refute MacBuildBudget.build_host?("x86_64-linux", arch_release: release)
+    File.write(release, "")
+    assert MacBuildBudget.build_host?("x86_64-linux", arch_release: release)
+    refute MacBuildBudget.build_host?("mingw32", arch_release: release)
+  end
+
+  def test_future_directory_uses_the_resolved_parent_volume_without_creating_output
+    parent = File.join(@dir, "target disk")
+    Dir.mkdir(parent)
+    link = File.join(@dir, "linked")
+    File.symlink(parent, link)
+    destination = File.join(link, "future", "nested")
+    snapshot = MacBuildBudget.metrics(destination)
+    assert_equal parent, snapshot.fetch(:measured_path)
+    assert_equal destination, snapshot.fetch(:destination)
+    assert_kind_of Integer, snapshot.fetch(:free_bytes)
+    refute File.exist?(File.join(parent, "future"))
+  end
+
+  def test_invalid_output_or_unreadable_space_fails_closed
+    invalid = File.join(@dir, "invalid")
+    File.symlink("missing", invalid)
+    assert_match(/inspection failed/, MacBuildBudget.check(File.join(invalid, "child"), host: "darwin"))
+    File.unlink(invalid)
+    File.write(invalid, "file")
+    assert_match(/inspection failed/, MacBuildBudget.check(File.join(invalid, "child"), host: "darwin"))
+    with_stub(:capture, "incomplete row") do
+      assert_match(/Missing available space/, MacBuildBudget.check(@dir, host: "darwin"))
     end
-    with_stub(:worktrees, [@dir]) do
-      with_stub(:xcode_caches, []) { yield }
-    end
+  end
+
+  def test_compiler_flags_and_explicit_destination_select_the_output
+    cargo = %w[mise -C] + [@dir] + %w[exec -- cargo build --target-dir artifacts]
+    assert_equal [File.join(@dir, "artifacts")], NativeJob.build_directories(cargo, nil, inherited: false)
+    assert_equal [@dir], NativeJob.build_directories(cargo, @dir, inherited: false)
+    assert_equal [@dir], NativeJob.build_directories(["xcodebuild", "-derivedDataPath", @dir], nil, inherited: false)
+    assert_equal [@dir], NativeJob.build_directories(["swift", "build", "--scratch-path=#{@dir}"], nil, inherited: false)
+    previous = ENV["CARGO_TARGET_DIR"]
+    apple = ENV["APPLE_DERIVED_DATA_PATH"]
+    ENV["CARGO_TARGET_DIR"] = @dir
+    ENV["APPLE_DERIVED_DATA_PATH"] = File.join(@dir, "unrelated-apple-output")
+    assert_equal [@dir], NativeJob.build_directories(%w[mise exec -- cargo build], nil, inherited: false)
   ensure
-    Open3.define_singleton_method(:capture3, original) if original
-  end
-
-  def test_removed_compiler_child_keeps_complete_storage_measurement
-    cache = File.join(@dir, "target")
-    FileUtils.mkdir_p(File.join(cache, "deps"))
-    File.write(File.join(cache, "artifact"), "x" * 4096)
-    removed = File.join(cache, "deps", "rustc-removed")
-    with_du_failure("du: #{removed}: No such file or directory\n") do
-      snapshot = MacBuildBudget.metrics
-      assert_equal [cache], snapshot.fetch(:paths)
-      assert_operator snapshot.fetch(:cache_bytes), :>=, 4096
-      # Isolate vanished compiler files from the host's current free capacity.
-      assert_nil MacBuildBudget.evaluate(@limits, **snapshot.merge(free_bytes: 30 * 1024**3))
-    end
-  end
-
-  def test_incomplete_du_summary_still_blocks
-    cache = File.join(@dir, "target")
-    FileUtils.mkdir_p(cache)
-    with_du_failure("du: #{cache}/removed: No such file or directory\n", output: "") do
-      assert_raises(RuntimeError) { MacBuildBudget.metrics }
-    end
-  end
-
-  def test_missing_root_existing_child_and_other_du_errors_still_block
-    cache = File.join(@dir, "target")
-    FileUtils.mkdir_p(cache)
-    existing = File.join(cache, "existing")
-    File.write(existing, "preserve")
-    ["du: #{cache}: No such file or directory\n",
-     "du: #{existing}: No such file or directory\n",
-     "du: #{cache}/private: Permission denied\n",
-     "du: /outside/removed: No such file or directory\n"].each do |error|
-      with_du_failure(error) { assert_raises(RuntimeError) { MacBuildBudget.metrics } }
-    end
-    assert_equal "preserve", File.read(existing)
-  end
-
-  def test_replaced_cache_identity_still_blocks
-    cache = File.join(@dir, "target")
-    FileUtils.mkdir_p(cache)
-    replace = lambda do
-      File.rename(cache, File.join(@dir, "old-target"))
-      Dir.mkdir(cache)
-    end
-    with_du_failure("du: #{cache}/removed: No such file or directory\n", before_return: replace) do
-      assert_raises(RuntimeError) { MacBuildBudget.metrics }
-    end
-  end
-
-  def test_boundary_and_over_budget_refusal
-    assert_nil MacBuildBudget.evaluate(@limits, free_bytes: 20 * MacBuildBudget::GIB, cache_bytes: 12 * MacBuildBudget::GIB)
-    assert_match(/Free disk/, MacBuildBudget.evaluate(@limits, free_bytes: 20 * MacBuildBudget::GIB - 1, cache_bytes: 0))
-    assert_match(/caches exceed/, MacBuildBudget.evaluate(@limits, free_bytes: 30 * MacBuildBudget::GIB, cache_bytes: 12 * MacBuildBudget::GIB + 1))
-    assert_nil MacBuildBudget.check(host: "x86_64-linux")
-  end
-
-  def test_new_xcode_index_is_counted_before_workspace_metadata_exists
-    cache = File.join(@dir, "fresh-index")
-    Dir.mkdir(cache)
-    File.write(File.join(cache, "index"), "x" * 4096)
-    with_stub(:worktrees, [@dir]) do
-      with_stub(:xcode_caches, [cache]) do
-        assert_empty MacBuildBudget.legacy_caches
-        snapshot = MacBuildBudget.metrics
-        assert_includes snapshot.fetch(:paths), cache
-        assert_operator snapshot.fetch(:cache_bytes), :>, 0
-      end
-    end
+    ENV["CARGO_TARGET_DIR"] = previous
+    ENV["APPLE_DERIVED_DATA_PATH"] = apple
   end
 
   def test_active_lease_prevents_cleanup
@@ -198,29 +167,40 @@ class MacBuildBudgetTest < Minitest::Test
   end
 
   def fixture
-    skip "Native launcher storage enforcement is macOS-specific" unless RUBY_PLATFORM.include?("darwin")
+    skip "Build storage enforcement is specific to macOS and Arch" unless MacBuildBudget.build_host?
     scripts = File.join(@dir, "scripts")
     bin = File.join(@dir, "bin")
     FileUtils.mkdir_p([scripts, bin, File.join(@dir, "config"), File.join(@dir, "target"),
                       File.join(@dir, ".build")])
     %w[native_job.rb mac_build_budget.rb].each { |name| FileUtils.cp(File.join(__dir__, name), scripts) }
-    File.write(File.join(scripts, "native_build_preflight.rb"), "module NativeBuildPreflight; def self.check = nil; end\n")
+    # Nested drivers validate the production lock path, isolated in this fixture.
+    launcher = File.join(scripts, "native_job.rb")
+    File.write(launcher, File.read(launcher).sub(NativeJob::LOCK_PATH, File.join(@dir, "lease")))
+    File.write(File.join(scripts, "native_build_preflight.rb"), "module NativeBuildPreflight; def self.check; nil; end; end\n")
     File.write(File.join(@dir, "config/mac-build-budget.json"), JSON.generate(@limits))
     @free = File.join(@dir, "free-kib")
     @marker = File.join(@dir, "child")
     File.write(@free, (30 * 1024**2).to_s)
-    {
-      "git" => 'printf "worktree %s\n\n" "$BUDGET_FIXTURE_ROOT"',
-      "df" => 'printf "Filesystem 1024-blocks Used Available Capacity Mounted\nfixture 999999999 0 %s 0%% /\n" "$(cat "$BUDGET_FREE_STATE")"',
-      "du" => 'shift; for cache do printf "%s\t%s\n" "${BUDGET_CACHE_KIB:-0}" "$cache"; done',
-      "plutil" => 'printf "unrelated-project\n"'
-    }.each do |name, body|
-      path = File.join(bin, name)
-      File.write(path, "#!/bin/sh\n#{body}\n")
+    @trace = File.join(@dir, "df-paths")
+    df = File.join(bin, "df")
+    File.write(df, <<~'SH')
+      #!/bin/sh
+      [ "$1" = "-Pk" ] || exit 2
+      printf '%s\n' "$2" >> "$BUDGET_TRACE"
+      printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+      available=$(cat "$BUDGET_FREE_STATE")
+      if [ "$2" = "${BUDGET_LOW_VOLUME:-}" ]; then available=1; fi
+      if [ "$2" = "${BUDGET_DRIVER_OUTPUT:-}" ] && [ -f "$BUDGET_DRIVER_STARTED" ]; then available=1; fi
+      printf 'fixture 999999999 0 %s 0%% /\n' "$available"
+    SH
+    File.chmod(0o755, df)
+    %w[git du].each do |command|
+      path = File.join(bin, command)
+      File.write(path, "#!/bin/sh\nexit 23\n")
       File.chmod(0o755, path)
     end
     @env = { "PATH" => "#{bin}:#{ENV.fetch('PATH')}", "BUDGET_FIXTURE_ROOT" => @dir,
-             "BUDGET_FREE_STATE" => @free, "EPUB_NATIVE_LEASE_FD" => nil, "EPUB_NATIVE_LEASE_PATH" => nil }
+             "BUDGET_FREE_STATE" => @free, "BUDGET_TRACE" => @trace, "EPUB_NATIVE_LEASE_FD" => nil, "EPUB_NATIVE_LEASE_PATH" => nil }
     @command = [RbConfig.ruby, File.join(scripts, "native_job.rb"), "--lock-path", File.join(@dir, "lease"),
                 "build", "--", RbConfig.ruby, "-e"]
   end
@@ -235,12 +215,21 @@ class MacBuildBudgetTest < Minitest::Test
     refute File.exist?(@marker)
   end
 
-  def test_cache_limit_blocks_before_child
+  def test_every_destination_is_checked_without_enumerating_caches_or_worktrees
     fixture
-    _, error, status = Open3.capture3(@env.merge("BUDGET_CACHE_KIB" => (13 * 1024**2).to_s),
-                                     *@command, "File.write(ARGV.fetch(0), 'ran')", @marker)
+    target = File.join(@dir, "target")
+    second = File.join(@dir, ".build")
+    command = @command.dup.insert(4, "--build-dir", target, "--build-dir", File.join(second, "new"))
+    File.write(@free, (20 * 1024**2).to_s)
+    _, error, status = Open3.capture3(@env, *command, "File.write(ARGV.fetch(0), 'ran')", @marker)
+    assert status.success?, error
+    assert_equal "ran", File.read(@marker)
+    assert_equal [target, second], File.readlines(@trace, chomp: true)
+    File.unlink(@marker)
+    _, error, status = Open3.capture3(@env.merge("BUDGET_LOW_VOLUME" => second), *command,
+                                      "File.write(ARGV.fetch(0), 'ran')", @marker)
     assert_equal 75, status.exitstatus, error
-    assert_match(/caches exceed/, error)
+    assert_includes error, File.join(second, "new")
     refute File.exist?(@marker)
   end
 
@@ -263,15 +252,36 @@ class MacBuildBudgetTest < Minitest::Test
 
   def test_monitor_terminates_its_child_when_disk_floor_is_crossed
     fixture
+    target = File.join(@dir, "target")
+    command = @command.dup.insert(4, "--build-dir", target)
     program = 'File.write(ARGV.fetch(0), Process.pid.to_s); File.write(ARGV.fetch(1), "0"); sleep 30'
-    _, error, status = Timeout.timeout(8) { Open3.capture3(@env, *@command, program, @marker, @free) }
+    _, error, status = Timeout.timeout(8) { Open3.capture3(@env, *command, program, @marker, @free) }
     assert_equal 75, status.exitstatus, error
     assert_match(/Free disk below/, error)
+    assert_equal [target, target], File.readlines(@trace, chomp: true)
     pid = Integer(File.read(@marker))
     assert_raises(Errno::ESRCH) { Process.kill(0, pid) }
   end
 
+  def test_nested_driver_monitors_its_additional_destination
+    fixture
+    target = File.join(@dir, "target")
+    driver = File.join(@dir, "driver.rb")
+    File.write(driver, <<~'RUBY')
+      require_relative 'scripts/native_job'
+      NativeJob.build_entrypoint(__FILE__, ARGV, build_dir: ENV.fetch('BUDGET_DRIVER_OUTPUT'))
+      File.write(ENV.fetch('BUDGET_DRIVER_STARTED'), Process.pid.to_s)
+      sleep 3
+    RUBY
+    env = @env.merge("BUDGET_DRIVER_OUTPUT" => target, "BUDGET_DRIVER_STARTED" => @marker)
+    _, error, status = Open3.capture3(env, *@command.take(6), RbConfig.ruby, driver)
+    assert_equal 75, status.exitstatus, error
+    assert_includes error, target
+    assert_raises(Errno::ESRCH) { Process.kill(0, Integer(File.read(@marker))) }
+  end
+
   def test_explicit_parallel_compiler_request_is_refused_before_launch
+    skip "Mac compiler policy" unless RUBY_PLATFORM.include?("darwin")
     fixture
     compiler = File.join(@dir, "bin", "xcodebuild")
     File.write(compiler, "#!/bin/sh\nprintf ran > \"$BUDGET_MARKER\"\n")
@@ -290,7 +300,7 @@ class MacBuildBudgetTest < Minitest::Test
     assert_nil NativeJob.parallelism_error(["xcodebuild", "-showdestinations", "-json", "-jobs", "1"])
   end
 
-  def test_device_and_variant_build_caches_are_counted_without_being_pruned
+  def test_device_and_variant_build_caches_are_preserved_by_cleanup
     caches = %w[.build-device ios/EpubToMp3/.build-device ios/EpubToMp3/.build-release].map do |relative|
       path = File.join(@dir, relative)
       FileUtils.mkdir_p(path)
@@ -299,7 +309,6 @@ class MacBuildBudgetTest < Minitest::Test
     end
     with_stub(:worktrees, [@dir]) do
       with_stub(:xcode_caches, []) do
-        assert_equal caches.sort, MacBuildBudget.metrics.fetch(:paths).sort
         with_stub(:capture, "") { MacBuildBudget.prune(lock: File.join(@dir, "lease")) }
         caches.each { |path| assert File.file?(File.join(path, "artifact")) }
       end
@@ -316,7 +325,7 @@ class MacBuildBudgetTest < Minitest::Test
   def test_apple_build_tasks_route_through_the_serial_guard
     %w[mac:build ios:build ios:device:build converter-ffi:build].each do |name|
       body = task_body(name)
-      assert_match(/(?:native_job\.rb["']?\s+build\s+--|native_build_command\.rb["']?\s+--)/, body, name)
+      assert_match(/(?:native_job\.rb["']?\s+(?:--build-dir\s+"[^"]+"\s+)*build\s+--|native_build_command\.rb["']?\s+(?:--build-dir\s+"[^"]+"\s+)*--)/, body, name)
       assert_match(/(?:-jobs|--jobs)(?:["']\s*,\s*["']|\s+)1/, body, name)
       refute_match(/-parallelizeTargets/, body, name)
       _, error, status = Open3.capture3("/bin/bash", "-n", stdin_data: body)
@@ -345,7 +354,7 @@ class MacBuildBudgetTest < Minitest::Test
       File.chmod(0o755, path)
     end
     environment = @env.merge("BUDGET_RUBY" => RbConfig.ruby, "BUDGET_MARKER" => @marker,
-                             "MISE_PROJECT_ROOT" => @dir, "IOS_DEST" => "fixture-only", "TMPDIR" => @dir)
+                             "MISE_PROJECT_ROOT" => @dir, "APPLE_DERIVED_DATA_PATH" => File.join(@dir, "target"), "IOS_DEST" => "fixture-only", "TMPDIR" => @dir)
     [0, 17].each do |compiler_status|
       _, error, status = Open3.capture3(environment.merge("BUDGET_COMPILER_STATUS" => compiler_status.to_s),
                                        "/bin/bash", "-euo", "pipefail", "-c", body, chdir: @dir)

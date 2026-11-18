@@ -141,9 +141,7 @@ module MacValidate
       capture('codesign', '--verify', '--deep', '--strict', app)
       run!('open', app)
     when 'build'
-      # Existing DerivedData is mandatory: no hidden second project cache.
-      raise 'DerivedData directory must already exist' unless File.directory?(derived)
-      status = NativeJob.run(phase: 'build', command: [RbConfig.ruby, __FILE__,
+      status = NativeJob.run(phase: 'build', build_dir: derived, command: [RbConfig.ruby, __FILE__,
         '_build', root, derived, configuration])
       return status unless status.zero?
       raise 'Sources changed during build' unless identity(root, configuration) == expected
@@ -160,7 +158,7 @@ if $PROGRAM_NAME == __FILE__
       root, derived, configuration = ARGV
       raise 'Invalid guarded build arguments' unless ARGV.length == 3 && %w[Debug Release].include?(configuration)
       # This private child entrypoint also authenticates the inherited lease.
-      NativeJob.build_entrypoint(__FILE__, ['_build', *ARGV])
+      NativeJob.build_entrypoint(__FILE__, ['_build', *ARGV], build_dir: derived)
       Dir.chdir(File.join(root, 'ios/EpubToMp3')) do
         MacValidate.run!('xcodegen', 'generate')
         MacValidate.run!(*MacValidate.build_command(derived, configuration))

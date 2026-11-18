@@ -56,9 +56,9 @@ Admission policies are explicit:
 | `--observe-resources` | 5 seconds | Normal pressure; CPU, memory percentage and existing swap are measured for the authorized observation | 180 seconds |
 
 All policies require at least 20 GiB free disk, valid identity and telemetry,
-the exclusive native lease and the existing 12 GiB build-cache ceiling before
-boot. Reported free memory is the `memory_pressure -Q` metric, not literal
-unused RAM. Observation and stable-swap flags are mutually exclusive.
+and the exclusive native lease before boot. Reported free memory is the
+`memory_pressure -Q` metric, not literal unused RAM. Observation and
+stable-swap flags are mutually exclusive.
 
 Sampling targets a five-second cadence. A full snapshot has a 12-second deadline,
 including an eight-second limit for `top`; under load that cadence is not

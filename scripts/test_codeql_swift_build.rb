@@ -19,7 +19,8 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
     FileUtils.mkdir_p([@bin, File.join(@root, 'scripts')])
     FileUtils.cp(File.join(ROOT, 'scripts/apple_target_clang.sh'), File.join(@root, 'scripts'))
     File.write(File.join(@root, 'scripts/native_job.rb'), <<~'RUBY')
-      abort 'Unexpected fixture lease invocation' unless ARGV.shift(2) == ['build', '--']
+      expected = ['--build-dir', ENV.fetch('CARGO_TARGET_DIR'), '--build-dir', 'target/espeak-data', 'build', '--']
+      abort 'Unexpected fixture lease invocation' unless ARGV.shift(expected.length) == expected
       File.open(ENV.fetch('FIXTURE_LEASE'), 'a+') do |file|
         abort 'Fixture lease unavailable' unless file.flock(File::LOCK_EX | File::LOCK_NB)
         exec(*ARGV, 9 => file)
@@ -77,6 +78,7 @@ class IosDeviceTaskEnvironmentTest < Minitest::Test
     task = source.match(/^\[tasks\."converter-ffi:ios-device"\]\n.*?^run = '''\n(.*?)^'''/m)
     refute_nil task, 'real iOS device task must exist'
     Open3.capture3({ 'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'MISE_PROJECT_ROOT' => @root,
+                    'CARGO_TARGET_DIR' => File.join(@root, 'cargo output'),
                     'FIXTURE_BIN' => @bin, 'FIXTURE_CALLS' => @calls, 'FIXTURE_LEASE' => @lease,
                     'FIXTURE_HOST_STATUS' => host_status, 'FIXTURE_DEVICE_STATUS' => device_status, 'CLANG_WRAPPER' => nil,
                     'CC_x86_64_apple_darwin' => nil, 'CFLAGS_x86_64_apple_darwin' => nil,

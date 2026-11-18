@@ -2,7 +2,7 @@
 require "tmpdir"
 unless Gem.win_platform?
   require_relative 'native_job'
-  NativeJob.build_entrypoint(__FILE__, ARGV)
+  NativeJob.build_entrypoint(__FILE__, ARGV, build_dir: File.expand_path('../flutter_app/build', __dir__))
 end
 
 platform = ARGV.fetch(0)
