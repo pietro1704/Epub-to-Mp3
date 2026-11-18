@@ -56,9 +56,15 @@ jobs:
           # Digests are published by the provider release API. Gyan is a Windows
           # binary provider linked by https://ffmpeg.org/download.html.
           $ortZip = Join-Path $owned 'ort.zip'
-          Get-VerifiedFile 'https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-win-x64-1.24.4.zip' $ortZip 74442783 'd2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357'
-          Expand-Archive -LiteralPath $ortZip -DestinationPath (Join-Path $owned 'ort')
+          # Official CPU NuGet package; rebuild the former release-archive layout.
+          Get-VerifiedFile 'https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.24.4/microsoft.ml.onnxruntime.1.24.4.nupkg' $ortZip 125194303 '4b978d5065b85e7004b6c6f60ca494bd978fbe6836cbf0a0b52d82b61ab99638'
+          $ortPackage = Join-Path $owned 'ort-nupkg'
+          Expand-Archive -LiteralPath $ortZip -DestinationPath $ortPackage
           $ort = Join-Path $owned 'ort/onnxruntime-win-x64-1.24.4'
+          New-Item -ItemType Directory -Force (Join-Path $ort 'lib') | Out-Null
+          Copy-Item (Join-Path $ortPackage 'runtimes/win-x64/native/*') (Join-Path $ort 'lib')
+          Copy-Item -Recurse (Join-Path $ortPackage 'build/native/include') (Join-Path $ort 'include')
+          if ((Get-FileHash -Algorithm SHA256 (Join-Path $ort 'lib/onnxruntime.dll')).Hash.ToLowerInvariant() -ne 'b95efb2113b603bbbf3f191061c5516a871ed546893c820e4f3b7b6c358dbf2a') { throw 'ORT runtime DLL checksum mismatch' }
           if (!(Test-Path (Join-Path $ort 'lib/onnxruntime.lib'))) { throw 'Missing ORT import library' }
           if (!(Test-Path (Join-Path $ort 'lib/onnxruntime.dll'))) { throw 'Missing ORT runtime DLL' }
           "ORT_LIB_LOCATION=$(Join-Path $ort 'lib')" >> $env:GITHUB_ENV
@@ -205,11 +211,7 @@ jobs:
           set -euo pipefail
           owned="$RUNNER_TEMP/ah13-dart-faber"
           mkdir -p "$owned/ort" "$owned/models/pt_BR-faber-medium"
-          archive="$owned/onnxruntime-linux-x64-1.24.4.tgz"
-          curl --fail --location --retry 3 --max-time 180 \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz -o "$archive"
-          echo '3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747  '"$archive" | sha256sum --check --status
-          tar -xzf "$archive" -C "$owned/ort"
+          bash scripts/fetch_onnxruntime_linux.sh "$owned/ort"
           runtime="$owned/ort/onnxruntime-linux-x64-1.24.4/lib"
           test -f "$runtime/libonnxruntime.so"
           echo "ORT_LIB_LOCATION=$runtime" >> "$GITHUB_ENV"

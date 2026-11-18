@@ -52,13 +52,7 @@ jobs:
           mise exec -- ruby scripts/test_package_linux_onnxruntime.rb 2>&1 | tee .reports/cli-faber/linux-package-tests.log
       - name: Install the checksum-pinned host ONNX Runtime
         run: |
-          archive="$RUNNER_TEMP/cli-onnxruntime-linux-x64-1.24.4.tgz"
-          curl --fail --location --retry 3 \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz \
-            --output "$archive"
-          echo '3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747  '"$archive" | sha256sum --check --status
-          mkdir -p "$RUNNER_TEMP/cli-onnxruntime"
-          tar -xzf "$archive" -C "$RUNNER_TEMP/cli-onnxruntime"
+          bash scripts/fetch_onnxruntime_linux.sh "$RUNNER_TEMP/cli-onnxruntime"
           library_directory="$RUNNER_TEMP/cli-onnxruntime/onnxruntime-linux-x64-1.24.4/lib"
           test -f "$library_directory/libonnxruntime.so"
           echo "ORT_LIB_LOCATION=$library_directory" >> "$GITHUB_ENV"
@@ -123,7 +117,7 @@ jobs:
           fi
       - name: Remove the explicitly downloaded temporary runtime
         if: always()
-        run: rm -rf "$RUNNER_TEMP/cli-onnxruntime" "$RUNNER_TEMP/cli-onnxruntime-linux-x64-1.24.4.tgz"
+        run: rm -rf "$RUNNER_TEMP/cli-onnxruntime"
       - name: Remove only the owned public-entrypoint preferences directory
         if: always()
         run: |
