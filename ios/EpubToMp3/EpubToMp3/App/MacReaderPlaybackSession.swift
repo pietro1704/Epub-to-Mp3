@@ -242,7 +242,9 @@ final class MacReaderPlaybackSession {
             guard localPlaybackGeneration == nil, player.snapshot == nil,
                   UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == bookID
                     || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
-                  let snapshot = embeddedSnapshot ?? restoredSnapshot else {
+                  let snapshot = LocalAudioPlaybackRestoration.snapshot(
+                    bookID: bookID, conversionJobID: conversionJobID,
+                    retained: embeddedSnapshot, converted: restoredSnapshot) else {
                 return
             }
             player.play(

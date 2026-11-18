@@ -50,7 +50,12 @@ enum IOSReaderPlaybackPreparation {
             } else {
                 restoredSnapshot = nil
             }
-            guard let snapshot = embeddedSnapshot ?? restoredSnapshot else {
+            guard player.snapshot == nil,
+                  UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == bookID
+                    || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
+                  let snapshot = LocalAudioPlaybackRestoration.snapshot(
+                    bookID: bookID, conversionJobID: conversionJobID,
+                    retained: embeddedSnapshot, converted: restoredSnapshot) else {
                 return
             }
             let queueOffset = AudioPlayer.restoredPlayableChapterOffset(

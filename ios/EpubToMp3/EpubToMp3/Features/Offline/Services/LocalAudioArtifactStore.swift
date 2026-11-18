@@ -9,8 +9,9 @@ actor LocalAudioArtifactStore {
     static let shared = LocalAudioArtifactStore()
     nonisolated static let didChangeNotification = Notification.Name("LocalAudioArtifactStore.didChange")
 
-    private static let schemaVersion = 1
-    private let files: LocalAudioArtifactFiles
+    static let schemaVersion = 1
+    // Persistence is also used by the actor's import implementation.
+    let files: LocalAudioArtifactFiles
     private var root: URL { files.root }
     private var fileManager: FileManager { files.fileManager }
 
@@ -249,7 +250,8 @@ actor LocalAudioArtifactStore {
             outputs: nil,
             logUrl: nil,
             error: nil,
-            lastActivityAt: manifest.updatedAt.timeIntervalSince1970
+            lastActivityAt: manifest.updatedAt.timeIntervalSince1970,
+            chapterIndexBase: 0
         )
     }
 
