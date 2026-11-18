@@ -377,11 +377,14 @@ jobs:
           key: npm-rails-web-${{ runner.os }}-${{ hashFiles('ruby_app/rails_gateway/browser_runtime/package-lock.json', 'web/package-lock.json') }}
           restore-keys: npm-rails-web-${{ runner.os }}-
       - name: Build the browser runtime tree from Rust and the pinned TTS libraries
-        run: mise run rails:web:runtime-build
-      - name: Require that nothing generated is tracked or left unignored
         run: |
-          git status --porcelain
-          test -z "$(git status --porcelain)"
+          git status --porcelain=v1 -z --untracked-files=all > "$RUNNER_TEMP/runtime-tree.before"
+          mise run rails:web:runtime-build
+      - name: Verify that the build only produced ignored artifacts
+        run: |
+          git status --porcelain=v1 -z --untracked-files=all > "$RUNNER_TEMP/runtime-tree.after"
+          cmp "$RUNNER_TEMP/runtime-tree.before" "$RUNNER_TEMP/runtime-tree.after"
+          test -z "$(git ls-files -- ruby_app/rails_gateway/config/runtime_manifest.json ruby_app/rails_gateway/public/runtime)"
           test -s ruby_app/rails_gateway/config/runtime_manifest.json
       - name: Install gateway gems
         working-directory: ruby_app/rails_gateway
