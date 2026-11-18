@@ -1,160 +1,62 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:flutter_app/services/conversion/epub_metadata_reader.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Builds a minimal valid EPUB archive in memory and returns the ZIP bytes.
-List<int> _buildMinimalEpub({
-  String title = 'Test Book',
-  String author = 'Test Author',
-  bool includeCover = true,
-  String coverMeta = 'epub2', // 'epub2', 'epub3', or 'none'
-}) {
-  final archive = Archive();
-
-  // mimetype (uncompressed, first entry — EPUB spec)
-  archive.addFile(ArchiveFile(
-    'mimetype',
-    'application/epub+zip'.length,
-    utf8.encode('application/epub+zip'),
-  ));
-
-  // META-INF/container.xml
-  const containerXml = '''<?xml version="1.0"?>
-<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"
-           version="1.0">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf"
-              media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>''';
-  archive.addFile(ArchiveFile(
-    'META-INF/container.xml',
-    utf8.encode(containerXml).length,
-    utf8.encode(containerXml),
-  ));
-
-  // Cover metadata in OPF
-  final coverMetaTag = switch (coverMeta) {
-    'epub2' => '<meta name="cover" content="cover-img"/>',
-    _ => '',
-  };
-
-  final coverProperties = coverMeta == 'epub3' ? ' properties="cover-image"' : '';
-  final coverItemId = coverMeta == 'epub3' ? 'cover-img-3' : 'cover-img';
-  final coverItem = includeCover
-      ? '<item id="$coverItemId" href="images/cover.png" media-type="image/png"$coverProperties/>'
-      : '';
-
-  final opfXml = '''<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:title>$title</dc:title>
-    <dc:creator>$author</dc:creator>
-    $coverMetaTag
-  </metadata>
-  <manifest>
-    $coverItem
-    <item id="chapter1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
-  </manifest>
-</package>''';
-  archive.addFile(ArchiveFile(
-    'OEBPS/content.opf',
-    utf8.encode(opfXml).length,
-    utf8.encode(opfXml),
-  ));
-
-  // Minimal PNG (1x1 red pixel)
-  if (includeCover) {
-    final pngBytes = _minimal1x1Png();
-    archive.addFile(ArchiveFile(
-      'OEBPS/images/cover.png',
-      pngBytes.length,
-      pngBytes,
-    ));
-  }
-
-  return ZipEncoder().encode(archive);
-}
-
-/// 1x1 red PNG — smallest valid PNG image.
-List<int> _minimal1x1Png() {
-  return base64Decode(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4'
-    'nGP4z8BQDwAEgAF/pooBPQAAAABJRU5ErkJggg==',
-  );
-}
-
-Future<File> _writeTempFile(String name, List<int> bytes) async {
-  final dir = await Directory.systemTemp.createTemp('epub_meta_test_');
-  final f = File('${dir.path}/$name');
-  await f.writeAsBytes(bytes);
-  return f;
-}
-
+// EPUB parsing (EPUB 2/3 covers, missing covers, invalid archives) is covered
+// by converter-core and converter-ffi tests. These tests cover the Dart
+// boundary: what is requested, how the Rust JSON is mapped and error handling.
 void main() {
-  test('returns empty metadata for non-existent file', () async {
-    final result = await readEpubMetadata('/tmp/does_not_exist_12345.epub');
-    expect(result.title, isNull);
-    expect(result.author, isNull);
-    expect(result.coverBase64, isNull);
-  });
-
-  test('returns empty metadata for non-ZIP file', () async {
-    final f = await _writeTempFile('bad.epub', utf8.encode('not a zip'));
-    final result = await readEpubMetadata(f.path);
-    expect(result.title, isNull);
-    expect(result.author, isNull);
-    expect(result.coverBase64, isNull);
-  });
-
-  test('returns empty metadata for PDF path', () async {
-    final f = await _writeTempFile('doc.pdf', [0x25, 0x50, 0x44, 0x46]);
-    final result = await readEpubMetadata(f.path);
-    expect(result.title, isNull);
-  });
-
-  test('extracts title and author from minimal EPUB', () async {
-    final bytes = _buildMinimalEpub(
-      title: 'Dom Casmurro',
-      author: 'Machado de Assis',
-      includeCover: false,
-      coverMeta: 'none',
-    );
-    final f = await _writeTempFile('dom.epub', bytes);
-    final result = await readEpubMetadata(f.path);
+  test('maps the Rust library metadata JSON', () async {
+    final requested = <String>[];
+    final result = await readEpubMetadataFrom('/books/Casmurro.EPUB', (path) async {
+      requested.add(path);
+      return jsonEncode({
+        'title': 'Dom Casmurro',
+        'author': 'Machado de Assis',
+        'language': 'pt-BR',
+        'coverMimeType': 'image/png',
+        'coverBase64': 'iVBORw0KGgo=',
+      });
+    });
+    expect(requested, ['/books/Casmurro.EPUB']);
     expect(result.title, 'Dom Casmurro');
     expect(result.author, 'Machado de Assis');
+    expect(result.coverBase64, 'iVBORw0KGgo=');
+  });
+
+  test('absent and blank fields stay empty', () async {
+    final result = await readEpubMetadataFrom(
+      '/books/untitled.epub',
+      (_) async => jsonEncode({'title': '  ', 'author': null, 'coverBase64': null}),
+    );
+    expect(result.title, isNull);
+    expect(result.author, isNull);
     expect(result.coverBase64, isNull);
   });
 
-  test('extracts EPUB2 cover via meta name=cover', () async {
-    final bytes = _buildMinimalEpub(coverMeta: 'epub2');
-    final f = await _writeTempFile('cover2.epub', bytes);
-    final result = await readEpubMetadata(f.path);
-    expect(result.coverBase64, isNotNull);
-    expect(result.coverBase64!.isNotEmpty, isTrue);
-    // Verify it decodes to valid bytes
-    final decoded = base64Decode(result.coverBase64!);
-    expect(decoded.length, greaterThan(0));
+  test('non-EPUB paths are not sent to the reader', () async {
+    var called = false;
+    final result = await readEpubMetadataFrom('/books/scan.pdf', (_) async {
+      called = true;
+      return '{}';
+    });
+    expect(called, isFalse);
+    expect(result.title, isNull);
   });
 
-  test('extracts EPUB3 cover via properties=cover-image', () async {
-    final bytes = _buildMinimalEpub(coverMeta: 'epub3');
-    final f = await _writeTempFile('cover3.epub', bytes);
-    final result = await readEpubMetadata(f.path);
-    expect(result.coverBase64, isNotNull);
-    final decoded = base64Decode(result.coverBase64!);
-    expect(decoded.length, greaterThan(0));
-  });
-
-  test('handles EPUB with no cover gracefully', () async {
-    final bytes = _buildMinimalEpub(includeCover: false, coverMeta: 'epub2');
-    final f = await _writeTempFile('nocover.epub', bytes);
-    final result = await readEpubMetadata(f.path);
-    expect(result.title, 'Test Book');
-    expect(result.coverBase64, isNull);
+  test('reader failures and invalid output yield empty metadata', () async {
+    for (final source in <LibraryMetadataSource>[
+      (_) async => null,
+      (_) async => '',
+      (_) async => 'not json',
+      (_) async => '[1, 2]',
+      (_) async => throw StateError('library unavailable'),
+    ]) {
+      final result = await readEpubMetadataFrom('/books/broken.epub', source);
+      expect(result.title, isNull);
+      expect(result.author, isNull);
+      expect(result.coverBase64, isNull);
+    }
   });
 }

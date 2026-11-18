@@ -95,10 +95,6 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       }
       if (!_isCurrentConversion(generation)) return;
       _localJob = job;
-      final bookLocale = SpeechTextPolicy.detectLocale(
-        ft.chapters.map((chapter) => chapter.text),
-      );
-      debugPrint('BookOpenScreen: verified book locale=$bookLocale');
 
       // Rebuild the queue from files already recorded as completed. A process
       // death therefore resumes at the first pending chapter, not chapter 0.
