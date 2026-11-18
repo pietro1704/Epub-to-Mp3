@@ -172,6 +172,56 @@ class HfSnapshotTest < Minitest::Test
     refute main.success?
   end
 
+  def test_rails_layout_restores_tracked_runtime_inputs_without_generated_wasm
+    rails = 'ruby_app/rails_gateway'
+    dockerfile = "FROM scratch\nCOPY #{rails} /rails\n"
+    write('.hf-runtime', "rails\n")
+    write('Dockerfile', dockerfile)
+    write("#{rails}/Gemfile", "source 'https://rubygems.org'")
+    write("#{rails}/Gemfile.lock", 'fixture')
+    write("#{rails}/browser_runtime/package.json", '{}')
+    write("#{rails}/browser_runtime/package-lock.json", '{}')
+    write("#{rails}/browser_runtime/prepare_tts_runtime.mjs", 'fixture')
+    write("#{rails}/bin/build-runtime-wasm", "#!/bin/sh\n")
+    write("#{rails}/bin/assemble-runtime", "#!/bin/sh\n")
+    write("#{rails}/browser_runtime/workers/piper_worker.js", 'fixture')
+    write("#{rails}/public/sample.epub", @inputs.fetch('web/public/sample.epub'))
+    File.chmod(0o755, File.join(@source, rails, 'bin/assemble-runtime'))
+    git!('add', '-A', chdir: @source)
+    git!('commit', '-m', 'tracked Rails layout', chdir: @source)
+    write("#{rails}/public/runtime/generated.wasm", "\0asm".b)
+
+    snapshot!
+    output, status = push
+    assert status.success?, output
+    clone = File.join(@directory, 'Rails rollback clone')
+    git!('clone', '--no-checkout', "file://#{@remote}", clone, chdir: @directory)
+    git!('lfs', 'install', '--local', chdir: clone)
+    git!('checkout', 'main', chdir: clone)
+    assert_equal dockerfile, File.read(File.join(clone, 'Dockerfile'))
+    assert File.executable?(File.join(clone, rails, 'bin/assemble-runtime'))
+    assert_equal @inputs.fetch('web/public/sample.epub'), File.binread(File.join(clone, rails, 'public/sample.epub'))
+    refute File.exist?(File.join(clone, rails, 'public/runtime'))
+    refute File.exist?(File.join(clone, 'web'))
+    refute File.exist?(File.join(clone, 'ios'))
+  end
+
+  def test_untracked_runtime_marker_preserves_legacy_react_rollback
+    write('.hf-runtime', "rails\n")
+    snapshot!
+    assert File.file?(File.join(@snapshot, 'web/package.json'))
+    refute File.exist?(File.join(@snapshot, '.hf-runtime'))
+  end
+
+  def test_unknown_tracked_runtime_fails_before_snapshot_creation
+    write('.hf-runtime', "other\n")
+    git!('add', '.hf-runtime', chdir: @source)
+
+    error = assert_raises(RuntimeError) { snapshot! }
+    assert_includes error.message, 'Unsupported HF runtime layout'
+    refute Dir.exist?(File.join(@snapshot, '.git'))
+  end
+
   def test_missing_lfs_input_cannot_be_uploaded_as_a_pointer
     write('web/src/wasm/converter_wasm_bg.wasm', "version https://git-lfs.github.com/spec/v1\noid sha256:#{'a' * 64}\nsize 8\n")
     error = assert_raises(RuntimeError) { snapshot! }

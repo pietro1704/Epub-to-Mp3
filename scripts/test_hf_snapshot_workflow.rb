@@ -76,6 +76,31 @@ class HfSnapshotWorkflowTest < Minitest::Test
     assert_equal @bytes, File.binread(File.join(clone, WASM))
   end
 
+  def test_actual_rollback_snapshots_only_the_validated_target
+    workflow = YAML.safe_load(File.read(File.join(REPOSITORY, '.github/workflows/rollback-hf.yml')))
+    steps = workflow.fetch('jobs').fetch('rollback').fetch('steps')
+    generation = steps.find { |step| step.fetch('name', '') == 'Build HF-only repo snapshot' }
+    assert_equal '${{ steps.validated.outputs.sha }}', generation.fetch('env').fetch('VALIDATED_SHA')
+    FileUtils.cp(File.join(REPOSITORY, 'scripts/hf_snapshot.rb'), @temporary)
+    write('local-only.txt', 'untracked data')
+
+    @env['VALIDATED_SHA'] = '0' * 40
+    _stdout, _stderr, status = Open3.capture3(
+      @env, 'bash', '-euo', 'pipefail', '-c', generation.fetch('run'),
+      chdir: @source, unsetenv_others: true
+    )
+    refute status.success?
+    refute File.exist?(@environment_file), 'An unvalidated checkout must not prepare a snapshot'
+
+    @env['VALIDATED_SHA'] = command!('git', 'rev-parse', 'HEAD', chdir: @source).strip
+    command!('bash', '-euo', 'pipefail', '-c', generation.fetch('run'), chdir: @source)
+    snapshot = File.readlines(@environment_file, chomp: true).fetch(0).delete_prefix('HF_SYNC_DIR=')
+    assert snapshot.start_with?("#{@temporary}/")
+    refute File.exist?(File.join(snapshot, 'local-only.txt'))
+    assert_match(/\Aversion https:\/\/git-lfs.github.com\/spec\/v1\n/,
+                 command!('git', 'show', "HEAD:#{WASM}", chdir: snapshot))
+  end
+
   private
 
   def copy_real_snapshot_task
