@@ -1,7 +1,7 @@
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/screens/jobs_list_screen.dart';
-import 'package:flutter_app/services/local_conversion_job.dart';
+import 'package:flutter_app/services/conversion/local_conversion_job.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
@@ -9,8 +9,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
-import 'package:flutter_app/services/desktop_embedded_converter.dart';
-import 'package:flutter_app/services/embedded_converter.dart';
+import 'package:flutter_app/services/conversion/desktop_embedded_converter.dart';
+import 'package:flutter_app/services/conversion/embedded_converter.dart';
 
 // This tiny ABI fixture blocks inside native conversion, proving the UI isolate
 // remains responsive and can cancel without transferring native sessions.

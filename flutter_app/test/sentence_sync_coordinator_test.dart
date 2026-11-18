@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
-import 'package:flutter_app/services/sentence_sync_coordinator.dart';
-import 'package:flutter_app/services/sync_engine.dart';
+import 'package:flutter_app/services/playback/sentence_sync_coordinator.dart';
+import 'package:flutter_app/services/playback/sync_engine.dart';
 
 void main() {
   final fulltext = EbookFulltext(

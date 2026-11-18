@@ -5,9 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'dart:convert';
-import 'package:flutter_app/services/embedded_converter.dart';
-import 'package:flutter_app/services/local_conversion_job.dart';
-import 'package:flutter_app/services/rust_playback_conversion.dart';
+import 'package:flutter_app/services/conversion/embedded_converter.dart';
+import 'package:flutter_app/services/conversion/local_conversion_job.dart';
+import 'package:flutter_app/services/conversion/rust_playback_conversion.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 part 'rust_playback_voice_policy_cases.dart';

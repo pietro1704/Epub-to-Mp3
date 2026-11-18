@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_app/models/bookmark.dart';
-import 'package:flutter_app/services/bookmark_store.dart';
+import 'package:flutter_app/services/storage/bookmark_store.dart';
 
 void main() {
   late BookmarkStore store;

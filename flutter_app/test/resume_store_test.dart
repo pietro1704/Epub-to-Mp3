@@ -1,4 +1,4 @@
-import 'package:flutter_app/services/resume_store.dart';
+import 'package:flutter_app/services/storage/resume_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

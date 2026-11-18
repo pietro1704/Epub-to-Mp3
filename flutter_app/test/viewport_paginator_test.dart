@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
-import 'package:flutter_app/services/viewport_paginator.dart';
+import 'package:flutter_app/services/reader/viewport_paginator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

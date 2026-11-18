@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/book_entity.dart';
-import '../services/epub_metadata_reader.dart';
-import '../services/library_store.dart';
+import '../services/conversion/epub_metadata_reader.dart';
+import '../services/storage/library_store.dart';
 import '../state/providers.dart';
 import '../views/tag_editor_sheet.dart';
 

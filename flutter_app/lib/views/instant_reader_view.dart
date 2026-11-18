@@ -10,9 +10,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
-import '../services/audio_player_service.dart';
-import '../services/sentence_sync_coordinator.dart';
-import '../services/sync_engine.dart';
+import '../services/playback/audio_player_service.dart';
+import '../services/playback/sentence_sync_coordinator.dart';
+import '../services/playback/sync_engine.dart';
 import '../state/providers.dart';
 
 import 'reader_settings_sheet.dart';

@@ -1,4 +1,4 @@
-import '../models/ebook_fulltext.dart';
+import '../../models/ebook_fulltext.dart';
 import 'embedded_conversion_contract.dart';
 import 'embedded_conversion_result.dart';
 

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show TextRange;
 
-import '../../services/audio_player_interface.dart';
+import '../../services/playback/audio_player_interface.dart';
 import 'measured_speech_alignment.dart';
 
 /// One binding belongs to one exact reader book and source chapter. Async

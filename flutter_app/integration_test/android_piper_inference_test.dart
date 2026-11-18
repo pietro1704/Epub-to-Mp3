@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/main.dart' as app;
 import 'package:flutter_app/models/tts_catalog.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
-import 'package:flutter_app/services/embedded_converter.dart';
+import 'package:flutter_app/services/conversion/embedded_converter.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 

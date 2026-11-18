@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter_app/services/local_conversion_job.dart';
+import 'package:flutter_app/services/conversion/local_conversion_job.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:flutter_app/models/tts_preferences.dart';

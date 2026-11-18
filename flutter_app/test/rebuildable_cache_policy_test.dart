@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_app/services/rebuildable_cache_policy.dart';
+import 'package:flutter_app/services/storage/rebuildable_cache_policy.dart';
 
 void main() {
   test('evicts only oldest rebuildable entries to fit the bounded budget', () {

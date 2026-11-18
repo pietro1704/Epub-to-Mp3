@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_app/models/job_snapshot.dart';
-import 'package:flutter_app/services/audio_player_interface.dart';
+import 'package:flutter_app/services/playback/audio_player_interface.dart';
 
 /// Test double — pure Dart, no native plugins.
 class FakeAudioPlayerService extends AudioPlayerInterface {

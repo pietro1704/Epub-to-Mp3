@@ -5,7 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../l10n/app_localizations.dart';
 import '../../state/providers.dart';
 import '../../screens/library_screen.dart' show libraryStoreProvider;
-import '../../services/local_conversion_job.dart';
+import '../../services/conversion/local_conversion_job.dart';
 import 'local_audio_storage.dart';
 
 class LocalAudioStorageScreen extends ConsumerStatefulWidget {

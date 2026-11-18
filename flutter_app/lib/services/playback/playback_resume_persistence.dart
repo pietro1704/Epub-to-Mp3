@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_player_service.dart';
-import 'resume_store.dart';
+import '../storage/resume_store.dart';
 
 /// Saves the active local queue position while the app is playing or leaving
 /// the foreground, so a rebuilt queue can resume after a process restart.

@@ -1,4 +1,4 @@
-part of 'desktop_embedded_converter.dart';
+part of '../conversion/desktop_embedded_converter.dart';
 
 typedef _ControlJsonNative = ffi.Bool Function(ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>);
 typedef _ControlJsonDart = bool Function(ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>);

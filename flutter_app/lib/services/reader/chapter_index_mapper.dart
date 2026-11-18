@@ -1,4 +1,4 @@
-import '../models/job_snapshot.dart';
+import '../../models/job_snapshot.dart';
 
 /// Translates between the **EPUB chapter axis** (sparse, zero-based,
 /// includes pending + skipped chapters) and the **playable axis**

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:flutter_app/services/epub_metadata_reader.dart';
+import 'package:flutter_app/services/conversion/epub_metadata_reader.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Builds a minimal valid EPUB archive in memory and returns the ZIP bytes.

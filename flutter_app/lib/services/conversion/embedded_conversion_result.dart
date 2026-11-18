@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../models/tts_preferences.dart';
+import '../../models/tts_preferences.dart';
 import 'embedded_conversion_contract.dart';
 
 class ConvertedChapterAudio {

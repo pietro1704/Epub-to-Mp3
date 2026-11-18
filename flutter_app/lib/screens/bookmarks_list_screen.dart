@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/bookmark.dart';
-import '../services/bookmark_store.dart';
+import '../services/storage/bookmark_store.dart';
 import '../state/providers.dart';
 
 class BookmarksListScreen extends ConsumerStatefulWidget {

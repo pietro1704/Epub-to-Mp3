@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
-import 'package:flutter_app/services/reader_chapter_resolver.dart';
+import 'package:flutter_app/services/reader/reader_chapter_resolver.dart';
 
 void main() {
   group('ReaderChapterResolver (sparse playable layout)', () {

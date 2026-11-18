@@ -12,17 +12,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'l10n/app_localizations.dart';
 import 'screens/library_screen.dart' show libraryStoreProvider;
 import 'screens/root_screen.dart';
-import 'services/audio_player_service.dart';
-import 'services/desktop_audio_backend.dart';
-import 'services/background_audio_handler.dart';
+import 'services/playback/audio_player_service.dart';
+import 'services/playback/desktop_audio_backend.dart';
+import 'services/playback/background_audio_handler.dart';
 import 'services/app_deep_link.dart';
 import 'services/incoming_document_service.dart';
-import 'services/widget_playback_snapshot.dart';
-import 'services/offline_cache_eviction.dart';
+import 'services/playback/widget_playback_snapshot.dart';
+import 'services/storage/offline_cache_eviction.dart';
 import 'state/providers.dart';
-import 'services/embedded_converter.dart';
-import 'services/desktop_embedded_converter.dart';
-import 'services/tts_model_adapter_registry.dart';
+import 'services/conversion/embedded_converter.dart';
+import 'services/conversion/desktop_embedded_converter.dart';
+import 'services/conversion/tts_model_adapter_registry.dart';
 import 'views/reader_theme_colors.dart';
 
 Future<void> main() async {

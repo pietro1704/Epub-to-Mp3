@@ -1,7 +1,7 @@
 import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_app/services/desktop_embedded_converter.dart';
+import 'package:flutter_app/services/conversion/desktop_embedded_converter.dart';
 
 void main() {
   final libraryPath = Platform.environment['TTS_TEST_FFI_LIBRARY'];

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../models/tts_preferences.dart';
+import '../../models/tts_preferences.dart';
 
 enum LocalConversionJobStatus { pending, running, completed, failed, cancelled }
 

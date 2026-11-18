@@ -1,7 +1,7 @@
 // Parity test for LibraryStore mirror.
 import 'dart:io';
 
-import 'package:flutter_app/services/library_store.dart';
+import 'package:flutter_app/services/storage/library_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

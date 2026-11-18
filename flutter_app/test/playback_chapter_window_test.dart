@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_app/services/playback_chapter_window.dart';
+import 'package:flutter_app/services/playback/playback_chapter_window.dart';
 
 void main() {
   test('keeps only the current chapter and one chapter ahead eligible', () {

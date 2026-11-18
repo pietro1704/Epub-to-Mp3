@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../models/ebook_fulltext.dart';
+import '../../models/ebook_fulltext.dart';
 import 'embedded_converter.dart';
 import 'local_conversion_job.dart';
-import '../models/tts_preferences.dart';
-import 'playback_chapter_window.dart';
-import 'listening_schedule.dart';
-import 'growing_chapter_audio_source.dart';
+import '../../models/tts_preferences.dart';
+import '../playback/playback_chapter_window.dart';
+import '../playback/listening_schedule.dart';
+import '../playback/growing_chapter_audio_source.dart';
 
 /// Converts only chapters in the moving Listen window through converter-ffi.
 /// Chapter indices remain source positions so jobs, resume data, and FFI ranges

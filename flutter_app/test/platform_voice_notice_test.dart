@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
-import 'package:flutter_app/services/platform_voice_notice.dart';
+import 'package:flutter_app/services/playback/platform_voice_notice.dart';
 import 'dart:async';
 
 void main() {

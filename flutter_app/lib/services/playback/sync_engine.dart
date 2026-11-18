@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import '../models/ebook_fulltext.dart';
+import '../../models/ebook_fulltext.dart';
 
 /// Pure-Dart port of `ios/.../Services/SyncEngine.swift`.
 ///

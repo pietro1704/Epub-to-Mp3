@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_app/services/app_deep_link.dart';
-import 'package:flutter_app/services/widget_playback_snapshot.dart';
+import 'package:flutter_app/services/playback/widget_playback_snapshot.dart';
 
 void main() {
   group('AppDeepLink', () {

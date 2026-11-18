@@ -21,7 +21,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/book_entity.dart';
+import '../../models/book_entity.dart';
 
 class EpubMetadata {
   final String? title;

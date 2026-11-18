@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_app/services/embedded_converter.dart';
+import 'package:flutter_app/services/conversion/embedded_converter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../integration_test/support/android_conversion_output.dart';

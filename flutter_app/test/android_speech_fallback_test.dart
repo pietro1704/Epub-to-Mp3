@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_app/services/android_speech_fallback.dart';
+import 'package:flutter_app/services/playback/android_speech_fallback.dart';
 
 class _FakeSpeechAdapter implements SpeechPlatformAdapter {
   _FakeSpeechAdapter({this.available = true, this.locales = const ['en-US']});
