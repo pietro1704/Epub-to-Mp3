@@ -23,7 +23,9 @@ at bounded recovery points. Explicit per-job selections remain authoritative.
 Edge fallback requires explicit consent and is disabled by default. Web native
 fallback is listening-only; MP3 export requires Piper. Installed eSpeak NG is
 an accepted Linux fallback with its backend/voice identified. Model installation
-requires an explicit user action; preserve existing models and never require a paid provider.
+requires an explicit user action, except that the HTTP `converter-server` downloads a
+missing catalog voice on demand when a conversion needs it; preserve existing models
+and never require a paid provider.
 
 ## Navigation
 
