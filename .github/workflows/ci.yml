@@ -354,6 +354,9 @@ jobs:
         run: |
           mise install
           mise exec -- rustup component add rustfmt
+      # Formatting needs no build; fail before the cache restore and test build.
+      - name: Rust formatting
+        run: mise exec -- cargo fmt --all -- --check
       - name: Test vendored source cache refresh
         run: |
           mise exec -- rustc --edition=2021 --test native/vendor/espeak-rs-sys/source_copy.rs -o "$RUNNER_TEMP/espeak-source-copy-tests"
@@ -389,9 +392,13 @@ jobs:
       # Rust audio runs in process; the only test that requires ffmpeg runs in
       # native-fallback.yml, which installs it there.
       - name: Install eSpeak-NG phoneme data
+        timeout-minutes: 4
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends espeak-ng-data
+          set -euo pipefail
+          sudo /usr/bin/ruby scripts/normalize_ubuntu_package_mirror.rb
+          apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+          sudo apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends espeak-ng-data
           phoneme_table="$(dpkg -L espeak-ng-data | sed -n '/\/espeak-ng-data\/phontab$/p' | head -n 1)"
           test -n "$phoneme_table"
           test -f "$phoneme_table"
@@ -402,8 +409,6 @@ jobs:
         run: mise run migration:build-and-gate
       - name: Test Rust workspace
         run: mise exec -- cargo test --workspace --locked
-      - name: Rust formatting
-        run: mise exec -- cargo fmt --all -- --check
       - name: Install Piper smoke model
         if: inputs.full_validation == true
         run: |
