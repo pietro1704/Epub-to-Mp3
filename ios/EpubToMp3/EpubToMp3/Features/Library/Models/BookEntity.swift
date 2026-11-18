@@ -42,18 +42,6 @@ enum BookFileType: String, Codable, Hashable, CaseIterable, Sendable {
         default: return true
         }
     }
-
-    /// MOBI/AZW3 (unpacking library maturity) and CBR (the `unrar` binary's
-    /// licensing makes it unsuitable to embed in the app bundle) can only be
-    /// parsed/converted through the server — the native client HTTP bridge
-    /// path doesn't support them at all yet. For CBR this only affects
-    /// *reading* (comics never convert to audio either way).
-    var requiresServerConversion: Bool {
-        switch self {
-        case .mobi, .azw3, .cbr: return true
-        default: return false
-        }
-    }
 }
 
 /// One book in the user's local library. Anchored on the EPUB file the

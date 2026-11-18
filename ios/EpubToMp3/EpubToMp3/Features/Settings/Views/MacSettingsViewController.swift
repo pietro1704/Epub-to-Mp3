@@ -251,7 +251,7 @@ final class MacSettingsViewController: NSViewController {
         onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
         speechModelPanel.render()
         statusLabel.stringValue = embeddedRuntimeStatusLabel
-        storageLabel.stringValue = formatStorage(StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes))
+        storageLabel.stringValue = formatStorage(StorageUsageScanner.current())
     }
 
     private var embeddedRuntimeStatusLabel: String {
@@ -259,8 +259,7 @@ final class MacSettingsViewController: NSViewController {
     }
 
     private func formatStorage(_ usage: StorageUsageSnapshot) -> String {
-        "\(ByteCountFormatter.string(fromByteCount: usage.totalBytes, countStyle: .file)) / "
-            + ByteCountFormatter.string(fromByteCount: usage.budgetBytes, countStyle: .file)
+        ByteCountFormatter.string(fromByteCount: usage.totalBytes, countStyle: .file)
     }
 
     @objc private func fontSizeChanged(_ sender: NSSlider) {

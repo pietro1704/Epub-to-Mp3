@@ -3,20 +3,16 @@ import Foundation
 
 enum SettingsSection: Int, CaseIterable {
     case runtime
-    case backend
     case playback
     case reader
     case storage
     case advanced
     case about
     @MainActor
-    func rowCount(speechModels: SpeechModelLibraryViewState, disclosure: SpeechModelSettingsDisclosure = .init(),
-                  backendWarningVisible: Bool = false) -> Int {
+    func rowCount(speechModels: SpeechModelLibraryViewState, disclosure: SpeechModelSettingsDisclosure = .init()) -> Int {
         switch self {
         case .runtime:
             return RuntimeSettingsRows.rowCount(speechModels: speechModels, disclosure: disclosure)
-        case .backend:
-            return backendWarningVisible ? 2 : 1
         case .playback:
             return 2
         case .reader:
@@ -24,7 +20,7 @@ enum SettingsSection: Int, CaseIterable {
         case .storage:
             return 8
         case .advanced:
-            return 4
+            return SettingsCellPresentation.AdvancedRow.allCases.count
         case .about:
             return 3
         }
@@ -34,8 +30,6 @@ enum SettingsSection: Int, CaseIterable {
         switch self {
         case .runtime:
             return L10n.string("settings.audioEngine")
-        case .backend:
-            return L10n.string("settings.remoteBackend")
         case .playback:
             return L10n.string("settings.playback")
         case .reader:
@@ -53,8 +47,6 @@ enum SettingsSection: Int, CaseIterable {
         switch self {
         case .runtime:
             return L10n.string("settings.audioEngineFooter")
-        case .backend:
-            return settings.remoteBackendControlsEnabled ? L10n.string("settings.remoteBackendFooterIOS") : nil
         case .playback:
             return L10n.string("settings.playbackFooter")
         case .reader:

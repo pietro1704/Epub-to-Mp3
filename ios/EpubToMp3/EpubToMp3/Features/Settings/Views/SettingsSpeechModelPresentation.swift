@@ -61,9 +61,11 @@ extension SettingsScreenController {
             rowOverride: .model(entry), existingCell: existingCell)
     }
 
-    /// The summary is the only runtime row in Settings and the third in the destination.
+    /// The summary is the only runtime row in Settings and follows the primary
+    /// voice row in the destination.
     var modelSummaryPath: IndexPath {
-        IndexPath(row: voiceModelsOnly ? 2 : 0, section: SettingsSection.runtime.rawValue)
+        let destinationRow = SpeechModelSettingsDisclosure().rows(modelCount: 0).firstIndex(of: .summary) ?? 0
+        return IndexPath(row: voiceModelsOnly ? destinationRow : 0, section: SettingsSection.runtime.rawValue)
     }
 
     func applyInstallEvent(_ event: SpeechModelInstallEvent) {

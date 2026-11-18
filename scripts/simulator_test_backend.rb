@@ -31,8 +31,6 @@ class SimulatorTestBackend < SimulatorBackend
   # Closed, task-scoped native control/geometry regression batch. The resource,
   # identity, deadline and cleanup admission rules are unchanged.
   APPLE_EXPERIENCE_METHODS = %w[
-    EpubToMp3Tests/BackendSettingsRowsTests/testAbsentWarningDoesNotReserveAnEmptyLastRow
-    EpubToMp3Tests/BackendSettingsRowsTests/testDisabledRemoteBackendHasOneVisibleURLCellEvenWithInvalidURL
     EpubToMp3Tests/PlatformSettingsCellTests/testReusingAnInformationCellReleasesItsPreviousSwitch
     EpubToMp3Tests/PlatformSettingsCellTests/testPlatformRowIsReadOnlyInformation
     EpubToMp3Tests/VoiceModelSettingsNavigationTests/testVoiceModelsPushTheirOwnDestinationAndReturnWithoutInlineExpansion

@@ -206,23 +206,15 @@ final class AppSettingsObservationTests: XCTestCase {
         XCTAssertEqual(s.readerLineSpacing, 12, accuracy: 0.001)
     }
 
-    // MARK: useEmbeddedRuntime — read paths must not block on backend URL
-    //
-    // Regression for the "Reader needs the backend" bug: the reader
-    // pipeline (EpubMetadataReader + PythonBridge.parseEpub on iOS,
-    // embedded Python runtime on macOS) is fully on-device. The
-    // `useEmbeddedRuntime` flag must default to `true` on a fresh
-    // install so first-launch users never see the "Configure the URL"
-    // wall and `canReadOffline` mirrors the flag exactly.
+    // MARK: Offline reading
 
-    func testEmbeddedRuntimeDefaultsToOnForFreshInstall() {
+    func testFreshInstallReadsOfflineWithoutABackend() {
         let suite = UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         let s = AppSettings(defaults: defaults)
-        XCTAssertTrue(s.useEmbeddedRuntime,
-                      "Fresh installs must default to the embedded runtime so the reader never asks for a backend URL.")
         XCTAssertTrue(s.canReadOffline,
-                      "canReadOffline must mirror useEmbeddedRuntime — it gates the BookOpenView audio bootstrap copy.")
+                      "The reader is fully on-device and never asks for a backend URL.")
     }
 
     func testReaderLayoutDefaultsToPaginatedForFreshInstall() {
@@ -231,67 +223,5 @@ final class AppSettingsObservationTests: XCTestCase {
         let s = AppSettings(defaults: defaults)
         XCTAssertEqual(s.readerLayout, .paginated,
                        "Fresh installs must default to paginated mode, not scrolling.")
-    }
-
-    func testLegacyEmbeddedOffValueCannotDisableRuntimeAfterRelaunch() {
-        let suite = UUID().uuidString
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        do {
-            let s = AppSettings(defaults: defaults)
-            s.useEmbeddedRuntime = false
-        }
-        let reloaded = AppSettings(defaults: defaults)
-        XCTAssertTrue(reloaded.useEmbeddedRuntime,
-                      "A legacy off-value cannot restore the retired remote production runtime.")
-        XCTAssertTrue(reloaded.canReadOffline)
-        XCTAssertEqual(defaults.object(forKey: "useEmbeddedRuntime") as? Bool, true,
-                       "The initializer canonicalizes the retired runtime preference to embedded.")
-    }
-
-    func testEmbeddedRuntimeChangeFiresObservation() {
-        let s = makeSettings()
-        observe(\.useEmbeddedRuntime, on: s, message: "useEmbeddedRuntime observed") {
-            s.useEmbeddedRuntime = false
-        }
-    }
-
-    /// The reader must not depend on the backend URL when the embedded
-    /// runtime is on. Concretely: with no `backendURL` and no
-    /// `canReadOffline` is still `true`, so the
-    /// `BookOpenView` open flow won't gate parsing on a network
-    /// resource.
-    func testReaderCanReadOfflineEvenWithBlankBackendURL() {
-        let s = makeSettings()
-        s.useEmbeddedRuntime = true
-        s.backendURL = ""
-        XCTAssertNil(s.resolvedBaseURL,
-                     "Pre-condition: no URL resolvable.")
-        XCTAssertTrue(s.canReadOffline,
-                      "Reader must remain available without any backend URL when the embedded runtime is on.")
-    }
-
-    /// The embedded runtime remains authoritative while a remote URL is
-    /// retained only as inert migration data.
-    func testEmbeddedRuntimeRemainsAuthoritativeWithRemoteURL() {
-        let s = makeSettings()
-        s.useEmbeddedRuntime = true
-        s.backendURL = "http://localhost:8000"
-        XCTAssertNil(s.resolvedBaseURL,
-                     "A legacy endpoint never restores remote production routing.")
-        XCTAssertEqual(s.backendURL, "http://localhost:8000")
-        XCTAssertTrue(s.useEmbeddedRuntime,
-                      "Embedded runtime must remain authoritative even when a remote URL is present.")
-    }
-
-    func testLegacyRuntimeFlagCannotEnableRetiredRemoteControls() {
-        let s = makeSettings()
-
-        s.useEmbeddedRuntime = true
-        XCTAssertFalse(s.remoteBackendControlsEnabled)
-
-        s.useEmbeddedRuntime = false
-        XCTAssertFalse(s.remoteBackendControlsEnabled)
-        XCTAssertTrue(s.canReadOffline)
     }
 }

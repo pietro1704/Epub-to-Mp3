@@ -3,9 +3,8 @@ import XCTest
 /// Security regression tests for the app's transport-security exceptions.
 ///
 /// The reader renders EPUB content with TextKit and does not embed a
-/// WKWebView. The app therefore must not opt into arbitrary network loads in
-/// web content; only the narrowly-scoped local-network exception is retained
-/// for the local backend and macOS sidecar.
+/// WKWebView, and conversion runs in the embedded Rust core without a local
+/// HTTP backend. The app therefore declares no ATS exception at all.
 final class AppTransportSecurityTests: XCTestCase {
     private func infoPlistSource() throws -> String {
         let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -22,9 +21,11 @@ final class AppTransportSecurityTests: XCTestCase {
         )
     }
 
-    func testInfoPlistRetainsOnlyLocalNetworkingException() throws {
+    func testInfoPlistDeclaresNoTransportSecurityException() throws {
         let source = try infoPlistSource()
-        XCTAssertTrue(source.contains("NSAllowsLocalNetworking"))
-        XCTAssertTrue(source.contains("<true/>"))
+        XCTAssertFalse(source.contains("NSAppTransportSecurity"),
+                       "No local backend remains, so ATS must keep its secure defaults.")
+        XCTAssertFalse(source.contains("NSAllowsLocalNetworking"))
+        XCTAssertFalse(source.contains("NSAllowsArbitraryLoads"))
     }
 }

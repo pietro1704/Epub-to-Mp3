@@ -9,13 +9,6 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<!-- Backend may run on http://localhost:8000 (mise run web) or
-		     a private LAN IP — bypass ATS for loopback/.local only. -->
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
 	<!-- iPadOS trackpad / Magic Mouse hover + scrub support for the
 	     player scrubber and library list. -->
 	<key>UIApplicationSupportsIndirectInputEvents</key>

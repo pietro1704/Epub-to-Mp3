@@ -44,7 +44,6 @@ final class SettingsStorageActionTests: XCTestCase {
         let library = LibraryStore(defaults: defaults)
         let originalBooks = library.books
         let originalPlayback = player.snapshot
-        let originalBudget = settings.offlineCacheBudgetBytes
         let controller = SettingsScreenController(settings: settings,
             library: library, player: player, playbackClock: PlaybackClock(),
             diagnosticsSession: StreamingDiagnosticsSession())
@@ -100,7 +99,6 @@ final class SettingsStorageActionTests: XCTestCase {
         XCTAssertNil(controller.presentedViewController)
         XCTAssertEqual(library.books, originalBooks)
         XCTAssertEqual(player.snapshot, originalPlayback)
-        XCTAssertEqual(settings.offlineCacheBudgetBytes, originalBudget)
     }
 }
 #endif

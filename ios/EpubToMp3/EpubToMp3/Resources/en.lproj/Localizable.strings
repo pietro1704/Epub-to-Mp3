@@ -144,13 +144,8 @@
 "settings.modelRemove.notInstalled" = "This model is not installed.";
 "settings.useBuiltInEngine" = "Use built-in audio engine";
 "settings.useBuiltInEngineDescription" = "Synthesises chapters on this device. No backend needed.";
-"settings.allowCellularAudio" = "Allow cellular audio conversion";
-"settings.allowCellularAudioDescription" = "By default, chapter conversion waits for Wi-Fi.";
 "settings.audioEngineFooter" = "Faber medium works offline after installation. Edge requires internet. The secondary voice is used only for isolated failed segments.";
-"settings.remoteBackend" = "Remote backend";
-"settings.urlNotValid" = "URL is not valid";
 "settings.remoteBackendFooterMac" = "Used when the embedded server is off. Common targets: a `mise run web` instance on this machine, or a Hugging Face Space URL.";
-"settings.remoteBackendFooterIOS" = "Examples: a `mise run web` instance on your laptop, or a Hugging Face Space URL.";
 "settings.reader" = "Reader";
 "settings.fontSize" = "Font size";
 "settings.font" = "Font";
@@ -164,10 +159,6 @@
 "settings.advanced" = "Advanced";
 "settings.manualConversion" = "Manual conversion";
 "settings.manualConversionDescription" = "Customise engine, voice, language and chapter range";
-"settings.recentJobs" = "Recent jobs";
-"settings.recentJobsDescription" = "Conversion history and live progress";
-"settings.telemetry" = "Telemetry";
-"settings.telemetryDescription" = "Per-engine speed and quality metrics";
 "settings.clearCache" = "Clear downloaded audio";
 "settings.clearCacheDescription" = "Delete all locally cached MP3s";
 "settings.clearCacheConfirmTitle" = "Clear downloaded audio?";
@@ -378,7 +369,6 @@
 
 /* === ConvertView === */
 "convert.title" = "Convert";
-"conversion.log" = "Conversion log";
 "convert.file" = "File";
 "convert.selected" = "Selected";
 "convert.noFilePicked" = "No file picked.";
@@ -479,44 +469,17 @@
 /* === JobDetailView === */
 "jobDetail.title" = "Job detail";
 "jobDetail.job" = "Job";
-"jobDetail.id" = "ID";
 "jobDetail.state" = "State";
 "jobDetail.book" = "Book";
 "jobDetail.progress" = "Progress";
-"jobDetail.streaming" = "Streaming";
-"jobDetail.live" = "Live";
-"jobDetail.idle" = "Idle";
-"jobDetail.eventsReceived" = "Events received";
-"jobDetail.downloadAll" = "Download all";
-"jobDetail.openLogs" = "Open logs";
-"jobDetail.latestEventPayload" = "Latest event payload";
-"jobDetail.waitingFirstEvent" = "Waiting for first event…";
-"jobDetail.error.configureBackend" = "Configure backend URL in Settings.";
 
 /* === JobsListView === */
 "jobs.title" = "Jobs";
-"jobs.cannotReachBackend" = "Cannot reach backend";
 "jobs.noConversions" = "No conversions yet";
 "jobs.noConversionsDescription" = "Run a conversion via the CLI or web app to populate the history.";
 "jobs.historyReadLimit" = "Recent history exceeds the read limit.";
 "jobs.refresh" = "Refresh jobs";
 "jobs.chaptersAbbrev" = "%d ch";
-
-/* === LogsView === */
-"logs.title" = "Logs · %@";
-"logs.empty" = "No log output yet.";
-"logs.error.noBackend" = "No backend configured.";
-"logs.pauseAutoRefresh" = "Pause auto-refresh";
-"logs.resumeAutoRefresh" = "Resume auto-refresh";
-
-/* === TelemetryView === */
-"telemetry.engines" = "Engines";
-"telemetry.noSamples" = "No telemetry samples yet.";
-"telemetry.charsPerSecond" = "%@ chars/s";
-"telemetry.chaptersCount" = "%d chapters";
-"telemetry.lastFetched" = "Last fetched";
-"telemetry.rawPayload" = "Raw payload";
-"telemetry.refresh" = "Refresh telemetry";
 
 /* === ConversionStatusSheet === */
 "conversionStatus.title" = "Conversion Status";
@@ -575,14 +538,9 @@
 "reader.search.currentChapter" = "Search this chapter while the rest of the book becomes available.";
 "reader.search.unavailable" = "Search isn't available in this document view.";
 "reader.search.noResults" = "No matches found";
-"bookDetail.read" = "Read";
 "bookDetail.download" = "Download";
 "bookDetail.listenStart" = "Listen";
-"bookDetail.listenUnavailableComic" = "Comics can't be converted to audio";
-"bookDetail.listenResume" = "Resume audio";
-"bookDetail.notStarted" = "Not started";
 "bookDetail.progressPercent" = "%d%% complete";
-"bookDetail.progressChapter" = "Converting chapter %1$d of %2$d";
 "bookDetail.downloadRequiresConversion" = "Convert this book to audio first.";
 
 /* === LocalEpubReaderView === */
@@ -591,17 +549,12 @@
 "localEpubReader.fileOnDisk" = "File on disk";
 
 /* === SettingsView === */
-"settings.url" = "URL";
 
 /* === Widget === */
 "widget.nowPlaying" = "Now Playing";
 "widget.paused" = "Paused";
 "widget.noAudiobookPlaying" = "No audiobook playing";
 "widget.openBookToListen" = "Open a book to start listening";
-"widget.noBookInProgress" = "No book in progress";
-"widget.continue" = "Continue";
-"widget.continueReading" = "Continue Reading";
-"widget.openBookToRead" = "Open a book to start reading";
 "widget.percentComplete" = "%d%% complete";
 "widget.libraryEmpty" = "Your library is empty";
 "widget.importEpubToStart" = "Import an EPUB to get started";
@@ -650,18 +603,14 @@
 "settings.streamingDiagnosticsConfirmMessage" = "For 5 minutes, send random temporary request IDs to the configured backend to correlate streaming diagnostics. No book titles, text, or audio are uploaded as diagnostic data. Permission expires automatically and is off after restarting the app.";
 "settings.enableStreamingDiagnostics" = "Enable for 5 minutes";
 "settings.exportPerformanceDiagnosticsError" = "Performance diagnostics could not be exported.";
-"jobs.historyDetailUnavailable" = "This session does not include a live job ID.";
 "settings.autoScrollHint" = "Double-tap to toggle automatic scrolling.";
 "settings.openOptionHint" = "Double-tap to choose this setting.";
 "settings.destructiveActionHint" = "Double-tap to permanently delete downloaded audio.";
 "readerSettings.toggleHint" = "Double-tap to toggle this setting.";
 "readerSettings.chooseOptionHint" = "Double-tap to choose an option.";
-"jobs.refreshHint" = "Double-tap to refresh the conversion list.";
-"jobs.openJobHint" = "Double-tap to open job details.";
 "convert.chooseFileHint" = "Double-tap to choose an EPUB or PDF.";
 "convert.pickFileFirstHint" = "Choose a book before starting conversion.";
 "convert.startConversionHint" = "Double-tap to start conversion.";
-"jobDetail.actionHint" = "Double-tap to perform this action.";
 "toc.removeDownload" = "Remove download";
 "toc.removeDownloadMessage" = "Remove the downloaded MP3 for \"%@\"? You can download it again later.";
 "toc.untitledChapter" = "Untitled chapter";
@@ -685,8 +634,6 @@
 "settings.systemTts" = "System voice (Luciana when available)";
 "settings.systemVoice" = "Installed system voice";
 
-"bookRecovery.resume" = "Resume conversion";
-"bookRecovery.partial" = "Conversion interrupted — %d of %d chapters ready";
 "bookProgress.estimate" = "%d%% generated · about %d min remaining";
 "pronunciation.title" = "Pronunciation for this book";
 "pronunciation.instructions" = "One correction per line: original = spoken. Case-sensitive. Changes apply to new narration; the book text stays unchanged.";
@@ -697,8 +644,6 @@
 "voiceAudition.stop" = "Stop sample";
 "voiceAudition.finished" = "Sample finished";
 "voiceAudition.failed" = "The sample could not be played.";
-"bookRecovery.interrupted" = "Conversion interrupted — resume to recover verified chapters";
-"bookAudio.coverage" = "Book audio";
 "bookAudio.partial" = "Partial audio — %d of %d full chapters";
 
 "reader.link.goToPosition" = "Go to position";
@@ -743,7 +688,6 @@
 "error.pdfOpen" = "Could not open %@. The PDF may be damaged.";
 "error.pdfEncrypted" = "%@ is password-protected. Remove the password before importing.";
 "error.pdfNoText" = "%@ has no selectable text. Scanned PDFs need text recognition before conversion.";
-"error.invalidServer" = "The server address is invalid. Check Settings.";
 "error.http" = "The server returned error %d. Please try again.";
 "error.response" = "The response could not be read. Please try again.";
 "error.network" = "Could not connect. Check your connection and try again.";
@@ -774,7 +718,6 @@
 
 /* Widget configuration, playback intents, and Share Extension */
 "widget.playbackDescription" = "Control playback or jump back into your audiobook.";
-"widget.continueReadingDescription" = "Jump back into the book you were reading.";
 "widget.libraryDescription" = "Quick access to your recent audiobooks.";
 "widget.lockScreenDescription" = "Glanceable now-playing info on your lock screen.";
 "widget.remainingTimes" = "%1$@ remaining · book %2$@";

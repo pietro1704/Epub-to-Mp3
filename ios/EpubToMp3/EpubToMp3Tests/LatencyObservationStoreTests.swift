@@ -42,6 +42,27 @@ final class LatencyObservationStoreTests: XCTestCase {
         XCTAssertTrue(store.snapshot().allSatisfy { $0.streamRequest == nil })
     }
 
+    func testReceiptRejectsNonOpaquePublicationIdentity() throws {
+        for publication in ["Private_Book_Title", "/private/audio.mp3", "", "１２３",
+                            String(repeating: "1", count: 21), String(repeating: "a", count: 65_536)] {
+            XCTAssertNil(LatencyObservation.StreamRequestReceipt(
+                journeyID: UUID(), requestID: UUID(), publicationID: publication))
+        }
+    }
+
+    func testProducerObservationKeepsItsOwnClockAndExcludesUnknownMetadata() throws {
+        let producer = try JSONDecoder().decode(LatencyObservation.ProducerObservation.self, from: Data(
+            #"{"version":1,"attemptId":"FE0D56D1-3661-49DB-89D4-324A355FB35A","segmentReadyElapsedNanoseconds":40,"artifactPublishedElapsedNanoseconds":55,"bookTitle":"Private title"}"#.utf8))
+        XCTAssertEqual(producer.attemptID, UUID(uuidString: "FE0D56D1-3661-49DB-89D4-324A355FB35A"))
+        XCTAssertEqual(producer.segmentReadyElapsedNanoseconds, 40)
+        XCTAssertEqual(producer.artifactPublishedElapsedNanoseconds, 55)
+        let exported = try JSONSerialization.jsonObject(with: JSONEncoder().encode(producer)) as? [String: Any]
+        XCTAssertEqual(Set(try XCTUnwrap(exported).keys), Set([
+            "version", "attemptId", "segmentReadyElapsedNanoseconds",
+            "artifactPublishedElapsedNanoseconds"
+        ]))
+    }
+
     private func producer() throws -> LatencyObservation.ProducerObservation {
         try JSONDecoder().decode(LatencyObservation.ProducerObservation.self, from: Data(
             #"{"version":1,"attemptId":"FE0D56D1-3661-49DB-89D4-324A355FB35A","segmentReadyElapsedNanoseconds":9000,"artifactPublishedElapsedNanoseconds":9500}"#.utf8))

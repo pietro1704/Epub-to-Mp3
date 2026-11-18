@@ -35,18 +35,3 @@ struct SessionRecord: Codable, Identifiable, Hashable, Sendable {
         case mode
     }
 }
-
-/// Envelope returned by `GET /api/sessions`.
-struct SessionsResponse: Codable {
-    let sessions: [SessionRecord]
-    let count: Int
-}
-
-/// One line of an SSE stream payload coming from `/api/jobs/{id}/stream`.
-/// The backend emits a JSON `JobSnapshot` per `data:` line; we surface the
-/// raw text here for the slice and let later versions decode the full snapshot.
-struct JobEvent: Identifiable, Hashable {
-    let id = UUID()
-    let receivedAt: Date
-    let rawPayload: String
-}

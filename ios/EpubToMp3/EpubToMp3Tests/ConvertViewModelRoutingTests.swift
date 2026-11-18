@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class ConvertViewModelRoutingTests: XCTestCase {
-    func testLegacyRemoteFlagStillRoutesTheExactFileAndRangeThroughEmbeddedExecutor() async {
+    func testSubmitRoutesTheExactFileAndRangeThroughEmbeddedExecutor() async {
         let input = URL(fileURLWithPath: "/fixture-only/Book with spaces.epub")
         var captured: (URL, Int32, Int32)?
         var requestedJobID: String?
@@ -14,7 +14,7 @@ final class ConvertViewModelRoutingTests: XCTestCase {
         }))
         model.selectedFile = input
         model.chapters = "8-9"
-        await model.submit(client: nil, useEmbeddedRuntime: false)
+        await model.submit()
         XCTAssertEqual(captured?.0, input)
         XCTAssertEqual(captured?.1, 8)
         XCTAssertEqual(captured?.2, 9)
@@ -46,7 +46,7 @@ final class ConvertViewModelRoutingTests: XCTestCase {
             throw CancellationError()
         }))
         model.selectedFile = URL(fileURLWithPath: "/fixture-only/input.epub")
-        await model.submit(useEmbeddedRuntime: true)
+        await model.submit()
         XCTAssertNil(model.submittedJobId)
         XCTAssertNil(model.error)
         XCTAssertEqual(model.session.phase, .cancelled)

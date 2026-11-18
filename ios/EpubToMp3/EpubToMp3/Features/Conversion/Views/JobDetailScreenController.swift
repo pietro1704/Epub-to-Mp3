@@ -2,56 +2,26 @@
 import Combine
 import UIKit
 
+/// Shows the completed result of a manual embedded conversion.
 @MainActor
 final class JobDetailScreenController: UITableViewController {
     private enum Section: Int, CaseIterable {
         case job
         case chapters
         case actions
-        case error
-        case payload
-    }
-
-    private enum Action: CaseIterable {
-        case play
-        case download
-        case cancelDownloads
-        case clearDownloads
-        case logs
     }
 
     private let miniPlayerClearance = MiniPlayerScrollClearance()
-    private let jobId: String
-    private var settings: AppSettings
-    private var library: LibraryStore
-    private var player: AudioPlayer
-    private var playbackClock: PlaybackClock
+    private let localSnapshot: JobSnapshot
+    private let player: AudioPlayer
+    private let playbackClock: PlaybackClock
     private let viewModel = JobDetailViewModel()
     private var viewModelObserver: AnyCancellable?
-    private var playbackGeneration: UUID?
-    private var streamDeliveryGeneration: UUID?
-    private let streamingClient: (any JobStreamingClient)?
-    private let autoPlayOnFirstPlayableSegment: Bool
-    private let localSnapshot: JobSnapshot?
 
-    init(
-        jobId: String,
-        settings: AppSettings,
-        library: LibraryStore,
-        player: AudioPlayer,
-        playbackClock: PlaybackClock,
-        streamingClient: (any JobStreamingClient)? = nil,
-        autoPlayOnFirstPlayableSegment: Bool = false,
-        localSnapshot: JobSnapshot? = nil
-    ) {
-        self.jobId = jobId
-        self.settings = settings
-        self.library = library
+    init(localSnapshot: JobSnapshot, player: AudioPlayer, playbackClock: PlaybackClock) {
+        self.localSnapshot = localSnapshot
         self.player = player
         self.playbackClock = playbackClock
-        self.streamingClient = streamingClient
-        self.autoPlayOnFirstPlayableSegment = autoPlayOnFirstPlayableSegment
-        self.localSnapshot = localSnapshot
         super.init(style: .insetGrouped)
         title = L10n.string("jobDetail.title")
     }
@@ -59,11 +29,6 @@ final class JobDetailScreenController: UITableViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    private var client: (any JobStreamingClient)? {
-        if let streamingClient { return streamingClient }
-        return settings.resolvedBaseURL.map(APIClient.init(baseURL:))
     }
 
     override func viewDidLayoutSubviews() {
@@ -90,96 +55,21 @@ final class JobDetailScreenController: UITableViewController {
             }
         }
         viewModel.onSnapshot = { [weak self] snapshot in
-            guard let self, self.playbackGeneration == self.player.remotePlaybackGeneration else { return }
-            if self.player.snapshot?.jobId == snapshot.jobId {
-                self.player.updateSnapshot(snapshot)
-                self.playbackGeneration = self.player.remotePlaybackGeneration
-                return
-            }
-            guard !snapshot.isTerminal, let baseURL = self.settings.resolvedBaseURL else { return }
-            if self.player.beginRemoteStreaming(snapshot: snapshot, backendBaseURL: baseURL) {
-                self.playbackGeneration = self.player.remotePlaybackGeneration
-                self.streamDeliveryGeneration = self.player.remoteSegmentGeneration
-                if self.autoPlayOnFirstPlayableSegment {
-                    self.player.resume()
-                }
-            }
-        }
-        viewModel.onStreamRequestAuthorization = { [weak self] jobID, chapterIndex, segmentIndex in
-            guard let self, let generation = self.streamDeliveryGeneration else { return nil }
-            return self.player.streamRequestAuthorization(jobID: jobID, generation: generation,
-                                                         chapterIndex: chapterIndex, segmentIndex: segmentIndex)
-        }
-        viewModel.onStreamChunk = { [weak self] data, chapterIndex, segmentIndex, publication, receipt in
-            guard let self, let generation = self.streamDeliveryGeneration else { return false }
-            return await self.player.enqueueRemoteSegmentAsync(
-                data: data,
-                jobID: self.jobId,
-                generation: generation,
-                chapterIndex: chapterIndex,
-                segmentIndex: segmentIndex,
-                publication: publication,
-                receipt: receipt
-            )
-        }
-        viewModel.onStreamFinished = { [weak self] snapshot in
-            guard let self, self.player.snapshot?.jobId == snapshot.jobId,
-                  self.playbackGeneration == self.player.remotePlaybackGeneration else { return }
-            self.player.finishStreaming(snapshot: snapshot)
-            self.playbackGeneration = self.player.remotePlaybackGeneration
+            // A player already attached to this job adopts the completed
+            // chapter list; another active book is never interrupted.
+            guard let self, self.player.snapshot?.jobId == snapshot.jobId else { return }
+            self.player.updateSnapshot(snapshot)
         }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        playbackGeneration = player.remotePlaybackGeneration
-        streamDeliveryGeneration = player.remoteSegmentGeneration
-        if let localSnapshot {
-            viewModel.showLocalSnapshot(localSnapshot)
-        } else {
-            viewModel.start(client: client, jobId: jobId)
-        }
+        viewModel.showLocalSnapshot(localSnapshot)
         tableView.reloadData()
     }
 
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        if isMovingFromParent || navigationController == nil {
-            viewModel.stop()
-            playbackGeneration = nil
-            streamDeliveryGeneration = nil
-        }
-    }
-
-    func update(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock) {
-        if self.player !== player {
-            playbackGeneration = nil
-            streamDeliveryGeneration = nil
-        }
-        self.settings = settings
-        self.library = library
-        self.player = player
-        self.playbackClock = playbackClock
-        if isViewLoaded {
-            tableView.reloadData()
-        }
-    }
-
     override func numberOfSections(in tableView: UITableView) -> Int {
-        Section.allCases.filter { section in
-            switch section {
-            case .job:
-                return true
-            case .payload:
-                return localSnapshot == nil
-            case .chapters:
-                return !(viewModel.snapshot?.playableChapters ?? []).isEmpty
-            case .actions:
-                return availableActions.isEmpty == false || viewModel.downloadProgressLabel != nil
-            case .error:
-                return viewModel.errorMessage != nil
-            }
-        }.count
+        visibleSections.count
     }
 
     private var visibleSections: [Section] {
@@ -187,30 +77,28 @@ final class JobDetailScreenController: UITableViewController {
             switch section {
             case .job:
                 return true
-            case .payload:
-                return localSnapshot == nil
             case .chapters:
-                return !(viewModel.snapshot?.playableChapters ?? []).isEmpty
+                return !playableChapters.isEmpty
             case .actions:
-                return availableActions.isEmpty == false || viewModel.downloadProgressLabel != nil
-            case .error:
-                return viewModel.errorMessage != nil
+                return canPlay
             }
         }
     }
+
+    private var playableChapters: [JobSnapshot.Chapter] {
+        viewModel.snapshot?.playableChapters ?? []
+    }
+
+    private var canPlay: Bool { !playableChapters.isEmpty }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch visibleSections[section] {
         case .job:
             return jobRows.count
         case .chapters:
-            return viewModel.snapshot?.playableChapters.count ?? 0
+            return playableChapters.count
         case .actions:
-            return availableActions.count + (viewModel.downloadProgressLabel == nil ? 0 : 1)
-        case .error:
-            return 1
-        case .payload:
-            return 1
+            return canPlay ? 1 : 0
         }
     }
 
@@ -222,10 +110,6 @@ final class JobDetailScreenController: UITableViewController {
             return L10n.string("player.chapters")
         case .actions:
             return nil
-        case .error:
-            return L10n.string("player.error.title")
-        case .payload:
-            return L10n.string("jobDetail.latestEventPayload")
         }
     }
 
@@ -236,45 +120,14 @@ final class JobDetailScreenController: UITableViewController {
         case .chapters:
             return chapterCell(for: indexPath.row)
         case .actions:
-            return actionCell(for: indexPath.row)
-        case .error:
-            return errorCell()
-        case .payload:
-            return payloadCell()
+            return playCell(for: indexPath.row)
         }
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         defer { tableView.deselectRow(at: indexPath, animated: true) }
-        guard visibleSections[indexPath.section] == .actions else { return }
-        let actions = availableActions
-        guard indexPath.row < actions.count else { return }
-        switch actions[indexPath.row] {
-        case .play:
-            openPlayer()
-        case .download:
-            viewModel.downloadAll(baseURL: settings.resolvedBaseURL)
-        case .cancelDownloads:
-            viewModel.cancelDownloads()
-        case .clearDownloads:
-            viewModel.clearDownloads()
-        case .logs:
-            openLogs()
-        }
-        tableView.reloadData()
-    }
-
-    private var availableActions: [Action] {
-        guard viewModel.snapshot?.playableChapters.isEmpty == false else { return [] }
-        if localSnapshot != nil { return [.play] }
-        var actions: [Action] = [.play, .download, .logs]
-        if viewModel.downloadState == .downloading {
-            actions.insert(.cancelDownloads, at: 2)
-        }
-        if viewModel.downloadState == .completed {
-            actions.insert(.clearDownloads, at: 2)
-        }
-        return actions
+        guard visibleSections[indexPath.section] == .actions, canPlay else { return }
+        openPlayer()
     }
 
     private func jobCell(for row: Int) -> UITableViewCell {
@@ -293,46 +146,21 @@ final class JobDetailScreenController: UITableViewController {
     }
 
     private var jobRows: [(String, String)] {
-        if let localSnapshot {
-            return [
-                (L10n.string("jobDetail.book"), localSnapshot.bookTitle ?? ""),
-                (L10n.string("jobDetail.state"), L10n.string("convert.completed")),
-                (L10n.string("jobDetail.progress"), "100%"),
-            ]
-        }
-        var rows = [
-            (L10n.string("jobDetail.id"), jobId),
-            (L10n.string("jobDetail.state"), ConversionStatusPresentation.label(viewModel.snapshot?.state)),
-            (L10n.string("jobDetail.eventsReceived"), "\(viewModel.receivedCount)"),
+        [
+            (L10n.string("jobDetail.book"), localSnapshot.bookTitle ?? ""),
+            (L10n.string("jobDetail.state"), L10n.string("convert.completed")),
+            (L10n.string("jobDetail.progress"), "100%"),
         ]
-        if let title = viewModel.snapshot?.bookTitle {
-            rows.insert((L10n.string("jobDetail.book"), title), at: 2)
-        }
-        if let engine = viewModel.snapshot?.engine {
-            rows.append((L10n.string("settings.audioEngineChoice"), AudioEnginePreference(rawValue: engine)?.displayName ?? engine))
-        }
-        if let voice = viewModel.snapshot?.activeVoiceDisplayName {
-            rows.append((L10n.string("convert.voiceOptional"), voice))
-        }
-        if let pct = viewModel.snapshot?.progressPercent {
-            rows.append((L10n.string("jobDetail.progress"), String(format: "%.0f%%", pct)))
-        }
-        if let coverage = viewModel.snapshot?.bookAudioCoverageLabel {
-            rows.append((L10n.string("bookAudio.coverage"), coverage))
-        }
-        rows.append((
-            L10n.string("jobDetail.streaming"),
-            viewModel.isStreaming ? L10n.string("jobDetail.live") : L10n.string("jobDetail.idle")
-        ))
-        return rows
     }
 
     private func chapterCell(for row: Int) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Subtitle", for: IndexPath(row: row, section: 0))
-        guard let chapter = viewModel.snapshot?.playableChapters[row] else { return cell }
+        let chapters = playableChapters
+        guard chapters.indices.contains(row) else { return cell }
+        let chapter = chapters[row]
         var content = cell.defaultContentConfiguration()
         content.text = chapter.displayTitle
-        content.secondaryText = localSnapshot == nil ? chapter.downloadUrl : L10n.string("convert.completed")
+        content.secondaryText = L10n.string("convert.completed")
         content.secondaryTextProperties.numberOfLines = 1
         cell.contentConfiguration = content
         cell.accessoryType = chapter.isCompleted ? .checkmark : .none
@@ -340,82 +168,27 @@ final class JobDetailScreenController: UITableViewController {
         return cell
     }
 
-    private func actionCell(for row: Int) -> UITableViewCell {
+    private func playCell(for row: Int) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Subtitle", for: IndexPath(row: row, section: 0))
         var content = cell.defaultContentConfiguration()
-        let actions = availableActions
-        if row < actions.count {
-            switch actions[row] {
-            case .play:
-                content.text = L10n.string("player.play")
-                content.image = UIImage(systemName: "play.circle.fill")
-            case .download:
-                content.text = L10n.string("jobDetail.downloadAll")
-                content.image = UIImage(systemName: "arrow.down.circle")
-            case .cancelDownloads:
-                content.text = L10n.string("chapterList.cancelDownloads")
-                content.image = UIImage(systemName: "xmark.circle")
-            case .clearDownloads:
-                content.text = L10n.string("chapterList.removeDownloads")
-                content.image = UIImage(systemName: "trash")
-            case .logs:
-                content.text = L10n.string("jobDetail.openLogs")
-                content.image = UIImage(systemName: "doc.text.magnifyingglass")
-            }
-            cell.accessoryType = .disclosureIndicator
-        } else {
-            content.text = viewModel.downloadProgressLabel
-            content.secondaryText = nil
-            content.textProperties.color = .secondaryLabel
-            cell.accessoryType = .none
-            cell.selectionStyle = .none
-        }
+        content.text = L10n.string("player.play")
+        content.image = UIImage(systemName: "play.circle.fill")
+        cell.accessoryType = .disclosureIndicator
         cell.contentConfiguration = content
         return cell
     }
 
-    private func errorCell() -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Subtitle", for: IndexPath(row: 0, section: 0))
-        var content = cell.defaultContentConfiguration()
-        content.text = viewModel.errorMessage
-        content.image = UIImage(systemName: "exclamationmark.triangle")
-        content.imageProperties.tintColor = .systemRed
-        cell.contentConfiguration = content
-        cell.selectionStyle = .none
-        cell.accessibilityLabel = content.text
-        cell.accessibilityValue = content.secondaryText
-        return cell
-    }
-
-    private func payloadCell() -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Subtitle", for: IndexPath(row: 0, section: 0))
-        var content = cell.defaultContentConfiguration()
-        content.text = viewModel.latestPayload.isEmpty
-            ? String(localized: "jobDetail.waitingFirstEvent")
-            : viewModel.latestPayload
-        content.textProperties.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedSystemFont(ofSize: 12, weight: .regular))
-        content.textProperties.numberOfLines = 0
-        cell.contentConfiguration = content
-        cell.selectionStyle = .none
-        return cell
-    }
-
+    /// Plays the local chapter files of this result. Manual conversions are
+    /// not imported into the library, so this is their only playback entry.
     private func openPlayer() {
         guard let snapshot = viewModel.snapshot else { return }
         navigationController?.pushViewController(
             PlayerScreenController(
                 snapshot: snapshot,
-                backendBaseURL: settings.resolvedBaseURL,
+                backendBaseURL: nil,
                 player: player,
                 playbackClock: playbackClock
             ),
-            animated: true
-        )
-    }
-
-    private func openLogs() {
-        navigationController?.pushViewController(
-            LogsScreenController(settings: settings, jobId: jobId),
             animated: true
         )
     }

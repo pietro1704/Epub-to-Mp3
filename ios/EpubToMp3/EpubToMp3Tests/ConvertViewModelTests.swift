@@ -226,14 +226,10 @@ final class ConvertViewModelTests: XCTestCase {
     }
 
     @MainActor
-    func testMissingClientAndFileProduceActionableErrors() async {
+    func testMissingFileProducesActionableError() async {
         let model = ConvertViewModel()
 
-        await model.submit(client: nil)
-        XCTAssertEqual(model.error, L10n.string("convert.error.pickFileFirst"))
-
-        let client = APIClient(baseURL: URL(string: "http://127.0.0.1:1")!)
-        await model.submit(client: client)
+        await model.submit()
         XCTAssertEqual(model.error, L10n.string("convert.error.pickFileFirst"))
     }
 

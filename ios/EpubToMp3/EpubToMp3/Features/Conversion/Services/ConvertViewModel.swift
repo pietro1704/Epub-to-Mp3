@@ -45,20 +45,12 @@ final class ConvertViewModel {
         }
     }
 
-    func submit(
-        client: APIClient? = nil,
-        useEmbeddedRuntime: Bool = false,
-        player: AudioPlayer? = nil
-    ) async {
+    func submit(player: AudioPlayer? = nil) async {
         guard !isSubmitting else { return }
         guard let file = selectedFile else {
             session.reportValidationFailure(L10n.string("convert.error.pickFileFirst"))
             return
         }
-        // Keep the legacy parameters source-compatible for callers during the
-        // migration, but never resolve or use an HTTP client on Apple.
-        _ = client
-        _ = useEmbeddedRuntime
         _ = player // Manual conversion never owns or changes the playback session.
 
         do {

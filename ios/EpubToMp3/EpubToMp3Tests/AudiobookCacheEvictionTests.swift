@@ -1,44 +1,34 @@
 // AudiobookCacheEvictionTests.swift
 //
-// Unit tests for `AudiobookCacheEviction`.
+// Unit tests for the retained legacy audiobook-folder bookkeeping:
+//   - `AudiobookCacheEviction.touchLastAccess(jobId:)` sidecar writes
+//   - `AudiobookDownloadStorage.locallyDownloadedIndices(for:)` disk truth
 //
-// All tests run entirely on a temporary directory that replaces the real
-// app-owned audiobook root via the explicit `root:` eviction helpers
-// — but since `audiobooksRoot()` is a nonisolated static that calls
-// FileManager directly, we instead build synthetic on-disk fixtures inside
-// a temp folder and call the internal scan/eviction helpers through the
-// public API that accepts explicit entries.
-//
-// The public API under test:
-//   - `scanEntries()`      — reads real folders/manifests
-//   - `runEviction(...)`   — pure LRU+TTL logic driven by scanEntries
-//   - `touchLastAccess(jobId:)` / `readLastAccess(for:)` via sidecar file
-//   - `totalCachedBytes()` — sum from manifests
-//   - `deleteAudiobook(jobId:)` — best-effort removal
+// Every test runs on a temporary root installed through
+// `AudiobookDownloadStorage.rootOverrideForTesting`, so no test touches the
+// user's live Documents directory.
 
 import XCTest
 @testable import EpubToMp3
 
 final class AudiobookCacheEvictionTests: XCTestCase {
+    var tempRoot: URL!
 
-
-    // MARK: - Real-root round-trips (locallyDownloadedIndices / staleOfflineBookIds)
-    //
-    // These two helpers operate on the app-owned audiobook root, so we exercise them end-to-end with unique jobIds and
-    // clean up via deleteAudiobook.
-
-    func makeBook(
-        id: String, lastJobId: String?, cachedOffline: Bool
-    ) -> BookEntity {
-        BookEntity(
-            id: id, title: id, bookmark: Data(),
-            displayFilename: "\(id).epub", addedAt: Date(),
-            lastJobId: lastJobId, cachedOffline: cachedOffline
-        )
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CacheEvictionTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        AudiobookDownloadStorage.rootOverrideForTesting = tempRoot
     }
 
-    /// Plant a manifest + selected MP3 files on the REAL audiobooks root.
-    func plantRealAudiobook(
+    override func tearDownWithError() throws {
+        AudiobookDownloadStorage.rootOverrideForTesting = nil
+        try? FileManager.default.removeItem(at: tempRoot)
+        try super.tearDownWithError()
+    }
+
+    private func plantRealAudiobook(
         jobId: String, entries: [(index: Int, fileName: String, onDisk: Bool)]
     ) throws {
         let folder = AudiobookDownloadStorage.audiobookFolder(for: jobId)
@@ -59,175 +49,44 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         ))
     }
 
-
-
-
-
-    // MARK: - Helpers
-
-    /// Isolated temp folder used as the audiobooks root.
-    var tempRoot: URL!
-
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-        tempRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CacheEvictionTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
-        AudiobookDownloadStorage.rootOverrideForTesting = tempRoot
+    func testLocallyDownloadedIndicesVerifiesFilesOnDisk() throws {
+        let jobId = "test-local-\(UUID().uuidString)"
+        defer { AudiobookDownloadStorage.deleteAudiobook(jobId: jobId) }
+        try plantRealAudiobook(jobId: jobId, entries: [
+            (index: 0, fileName: "a.mp3", onDisk: true),
+            (index: 2, fileName: "b.mp3", onDisk: true),
+            (index: 5, fileName: "gone.mp3", onDisk: false) // manifest says yes, disk says no
+        ])
+        XCTAssertEqual(AudiobookDownloadStorage.locallyDownloadedIndices(for: jobId), [0, 2])
     }
 
-    override func tearDownWithError() throws {
-        AudiobookDownloadStorage.rootOverrideForTesting = nil
-        try? FileManager.default.removeItem(at: tempRoot)
-        try super.tearDownWithError()
-    }
-
-    /// Plant a fake audiobook folder + manifest under `tempRoot`.
-    func plantAudiobook(
-        jobId: String,
-        totalBytes: Int64,
-        downloadedAt: Date,
-        lastAccessedAt: Date? = nil
-    ) throws {
-        let folder = tempRoot.appendingPathComponent(jobId, isDirectory: true)
-            .appendingPathComponent("chapters", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-
-        // Write a minimal MP3 stub.
-        let mp3 = folder.appendingPathComponent("chapter_0.mp3")
-        try Data(repeating: 0xFF, count: 512).write(to: mp3)
-
-        // Write manifest. Use ISO-8601 encoding so the decoder (also ISO-8601)
-        // can round-trip the Date values without returning nil.
-        let manifest = AudiobookManifest(
-            jobId: jobId,
-            bookTitle: "Book \(jobId)",
-            chapters: [
-                AudiobookManifest.ChapterEntry(
-                    index: 0,
-                    title: "Chapter 1",
-                    mp3FileName: "chapter_0.mp3",
-                    mp3Bytes: totalBytes,
-                    downloadedAt: downloadedAt
-                )
-            ],
-            totalBytes: totalBytes,
-            completedAt: downloadedAt
+    func testLocallyDownloadedIndicesEmptyWithoutManifest() {
+        XCTAssertEqual(
+            AudiobookDownloadStorage.locallyDownloadedIndices(for: "test-missing-\(UUID().uuidString)"),
+            []
         )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(manifest)
-        let manifestURL = tempRoot
+    }
+
+    func testTouchLastAccessWritesSidecar() throws {
+        let jobId = "touchtest-\(UUID().uuidString.prefix(6))"
+        let folder = AudiobookDownloadStorage.audiobooksRoot()
             .appendingPathComponent(jobId, isDirectory: true)
-            .appendingPathComponent("manifest.json")
-        try data.write(to: manifestURL, options: .atomic)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
 
-        // Optionally write a last_access sidecar.
-        if let la = lastAccessedAt {
-            let sidecar = tempRoot
-                .appendingPathComponent(jobId, isDirectory: true)
-                .appendingPathComponent("last_access")
-            let iso = ISO8601DateFormatter().string(from: la)
-            try iso.write(to: sidecar, atomically: true, encoding: .utf8)
-        }
+        // ISO8601DateFormatter truncates to whole seconds, so `parsed` may be
+        // up to 1 second before `before`. Allow a 1-second window on the lower bound.
+        let before = Date().addingTimeInterval(-1)
+        AudiobookCacheEviction.touchLastAccess(jobId: jobId)
+        let after = Date()
+
+        let sidecar = folder.appendingPathComponent("last_access")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sidecar.path),
+                      "touchLastAccess must create a last_access sidecar file")
+        let raw = try String(contentsOf: sidecar, encoding: .utf8)
+        let parsed = ISO8601DateFormatter().date(from: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        XCTAssertNotNil(parsed)
+        XCTAssertGreaterThanOrEqual(parsed!, before, "timestamp must be within 1s of call time")
+        XCTAssertLessThanOrEqual(parsed!, after.addingTimeInterval(1))
     }
-
-    /// Run eviction against our temp root by scanning it directly.
-    func runTestEviction(
-        budgetBytes: Int64,
-        ttlSeconds: TimeInterval,
-        activeJobIds: Set<String> = []
-    ) -> [String] {
-        // We can't redirect AudiobookDownloadStorage.audiobooksRoot() to tempRoot without
-        // subclassing the actor, so we exercise the eviction algorithm using the
-        // public helpers that operate on AudiobookCacheEntry values, and validate
-        // by checking files exist / are removed.
-        //
-        // Strategy: use the eviction algorithm's internal logic directly by
-        // building entries from `tempRoot` manually and calling `deleteAudiobook`.
-        //
-        // Since `AudiobookCacheEviction.scanEntries()` reads from
-        // `AudiobookDownloadStorage.audiobooksRoot()`, we cannot redirect it without
-        // modifying production code. Instead we test the algorithm via the
-        // *structural* helpers:
-        //   - Read manifests from tempRoot ourselves.
-        //   - Apply LRU+TTL algorithm.
-        //   - Call deleteAudiobook (which uses AudiobookDownloadStorage.audiobooksRoot).
-        //
-        // For that last step we instead remove from tempRoot directly in tests,
-        // validating that the algorithm selects the right eviction candidates.
-
-        let fm = FileManager.default
-        guard let contents = try? fm.contentsOfDirectory(
-            at: tempRoot,
-            includingPropertiesForKeys: nil,
-            options: .skipsHiddenFiles
-        ) else { return [] }
-
-        // Build entries from tempRoot manifests.
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        var entries: [AudiobookCacheEntry] = []
-        for folder in contents where folder.hasDirectoryPath {
-            let jobId = folder.lastPathComponent
-            let manifestURL = folder.appendingPathComponent("manifest.json")
-            guard let data = try? Data(contentsOf: manifestURL),
-                  let manifest = try? decoder.decode(AudiobookManifest.self, from: data)
-            else { continue }
-
-            let sidecar = folder.appendingPathComponent("last_access")
-            var lastAccess: Date = manifest.completedAt ?? Date.distantPast
-            if let raw = try? String(contentsOf: sidecar, encoding: .utf8),
-               let d = ISO8601DateFormatter().date(from: raw.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                lastAccess = d
-            }
-            entries.append(AudiobookCacheEntry(
-                jobId: jobId,
-                totalBytes: manifest.totalBytes,
-                lastAccessedAt: lastAccess,
-                downloadedAt: manifest.completedAt ?? Date.distantPast
-            ))
-        }
-
-        // LRU sort (oldest first).
-        entries.sort { $0.lastAccessedAt < $1.lastAccessedAt }
-        var evicted: [String] = []
-        let now = Date()
-
-        // TTL pass.
-        for entry in entries where !activeJobIds.contains(entry.jobId) {
-            let age = now.timeIntervalSince(entry.lastAccessedAt)
-            if age > ttlSeconds {
-                let folder = tempRoot.appendingPathComponent(entry.jobId, isDirectory: true)
-                if (try? fm.removeItem(at: folder)) != nil {
-                    evicted.append(entry.jobId)
-                }
-            }
-        }
-        entries.removeAll { evicted.contains($0.jobId) }
-
-        // Budget pass (LRU).
-        var totalBytes = entries.reduce(Int64(0)) { $0 + $1.totalBytes }
-        for entry in entries where !activeJobIds.contains(entry.jobId) {
-            guard totalBytes > budgetBytes else { break }
-            let folder = tempRoot.appendingPathComponent(entry.jobId, isDirectory: true)
-            if (try? fm.removeItem(at: folder)) != nil {
-                totalBytes -= entry.totalBytes
-                evicted.append(entry.jobId)
-            }
-        }
-        return evicted
-    }
-
-    // MARK: - Tests
-
-
-
-
-
-
-
-
-
-
 }

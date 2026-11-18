@@ -71,9 +71,9 @@ settings:
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
     INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
-    # NSAppTransportSecurity is a dict — INFOPLIST_KEY_* only supports
-    # scalar/list values, so the dict goes in a real Info.plist file
-    # merged via INFOPLIST_FILE. xcodegen merges this with the
+    # Dict/array keys (UIBackgroundModes, UIApplicationSceneManifest, ...)
+    # cannot be expressed as INFOPLIST_KEY_* scalars, so they live in a real
+    # Info.plist file merged via INFOPLIST_FILE. xcodegen merges this with the
     # auto-generated INFOPLIST_KEY_* entries at build time.
     INFOPLIST_FILE: EpubToMp3/Resources/Info.plist
     INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Pietro Pugliesi"

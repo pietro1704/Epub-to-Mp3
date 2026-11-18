@@ -86,17 +86,11 @@ final class DeviceAcceptanceUITests: XCTestCase {
         guard assertControl(settings, app: app) else { return }
         settings.tap()
         audit(app, surface: "\(language)-settings-top")
-        let recent = app.cells.containing(.staticText, identifier: portuguese ? "Trabalhos recentes" : "Recent jobs").firstMatch
+        let diagnostics = app.cells["settings.exportPerformanceDiagnostics"].firstMatch
         let settingsTable = app.tables.firstMatch
-        scrollTo(recent, in: settingsTable)
-        guard assertControl(recent, app: app) else { return }
+        scrollTo(diagnostics, in: settingsTable)
+        guard assertControl(diagnostics, app: app) else { return }
         audit(app, surface: "\(language)-settings-advanced")
-        recent.tap()
-        let refresh = app.buttons[portuguese ? "Atualizar trabalhos" : "Refresh jobs"].firstMatch
-        guard assertControl(refresh, app: app) else { return }
-        refresh.tap()
-        XCTAssertTrue(app.activityIndicators.firstMatch.waitForNonExistence(timeout: 15), "Local history refresh must settle.")
-        audit(app, surface: "\(language)-jobs-local-history")
 
         guard assertControl(convert, app: app) else { return }
         convert.tap()

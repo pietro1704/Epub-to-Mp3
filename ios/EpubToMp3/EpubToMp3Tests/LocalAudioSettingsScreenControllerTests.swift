@@ -25,21 +25,12 @@ final class LocalAudioSettingsScreenControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testSettingsExposesWiFiPolicyAndPerBookDownloadManagement() {
+    func testSettingsExposesPerBookDownloadManagement() {
         let settings = AppSettings(defaults: defaults)
         let controller = makeSettingsController(settings: settings)
         let navigation = UINavigationController(rootViewController: controller)
         navigation.loadViewIfNeeded()
         controller.loadViewIfNeeded()
-
-        let cellularCell = controller.tableView(
-            controller.tableView,
-            cellForRowAt: IndexPath(row: 1, section: 0)
-        ) as? IOSSwitchCell
-        XCTAssertEqual(cellularCell?.accessibilityIdentifier, "settings.allowCellularAudio")
-        cellularCell?.toggleSwitch.isOn = true
-        cellularCell?.toggleSwitch.sendActions(for: .valueChanged)
-        XCTAssertTrue(settings.allowCellularAudioConversion)
 
         let managementIndexPath = IndexPath(row: 4, section: SettingsSection.storage.rawValue)
         let managementCell = controller.tableView(controller.tableView, cellForRowAt: managementIndexPath)
@@ -90,7 +81,7 @@ final class LocalAudioSettingsScreenControllerTests: XCTestCase {
         let controller = makeSettingsController(settings: AppSettings(defaults: defaults))
         controller.loadViewIfNeeded()
         XCTAssertEqual(controller.tableView(controller.tableView,
-            numberOfRowsInSection: SettingsSection.advanced.rawValue), 4)
+            numberOfRowsInSection: SettingsSection.advanced.rawValue), 2)
         for key in ["settings.clearTemporaryAudio", "settings.clearAllDownloads", "settings.manageDownloads"] {
             let positions = (0..<controller.numberOfSections(in: controller.tableView)).flatMap { section in
                 (0..<controller.tableView(controller.tableView, numberOfRowsInSection: section)).compactMap { row -> Int? in

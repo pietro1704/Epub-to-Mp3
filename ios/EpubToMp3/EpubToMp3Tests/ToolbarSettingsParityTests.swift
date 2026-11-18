@@ -439,13 +439,11 @@ final class ToolbarSettingsParityTests: XCTestCase {
         s.readerLayout = .paginated
         s.readerTheme = .sepia
         s.readerAutoScroll = false
-        s.backendURL = "http://my-backend"
         s.readerOverrideFontFamily = true
         s.restoreOriginal()
         XCTAssertEqual(s.readerLayout, .paginated)
         XCTAssertEqual(s.readerTheme, .sepia)
         XCTAssertFalse(s.readerAutoScroll)
-        XCTAssertEqual(s.backendURL, "http://my-backend")
         XCTAssertFalse(s.readerOverrideFontFamily)
     }
 }
