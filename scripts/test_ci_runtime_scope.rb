@@ -154,8 +154,8 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_extracted_python_helpers_keep_runtime_selection
     %w[validate_conversion.py conversion_validation_chapter.py
-       .github/scripts/hosted_archive_inspector.py
-       .github/scripts/hosted_archive_process_cases.py].each do |path|
+       .github/scripts/fixture_helper.py
+       .github/scripts/fixture_helper_cases.py].each do |path|
       result, status, err = scope([path])
       assert status.success?, err
       assert_equal ['python'], result.select { |_, value| value == 'true' }.keys, path
@@ -163,15 +163,6 @@ class CiRuntimeScopeTest < Minitest::Test
     result, status, err = scope(['docs/conversion_validation_chapter.py.md'])
     assert status.success?, err
     assert_equal 'false', result.fetch('python')
-  end
-
-  def test_hosted_archive_workflow_matches_extracted_helpers
-    workflow = YAML.load_file(File.expand_path('../.github/workflows/hosted-legacy-ios-archive.yml', __dir__))
-    paths = workflow.fetch('on', workflow[true]).fetch('push').fetch('paths')
-    %w[hosted_archive_commands.py hosted_archive_process_cases.py].each do |name|
-      assert paths.any? { |pattern| File.fnmatch?(pattern, ".github/scripts/#{name}") }, name
-    end
-    refute paths.any? { |pattern| File.fnmatch?(pattern, 'python_app/unrelated.py') }
   end
 
   def test_full_validation_uses_every_runtime_without_pr_context

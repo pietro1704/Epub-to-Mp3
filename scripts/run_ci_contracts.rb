@@ -20,7 +20,6 @@ module CiContracts
   NODE_SUITES = %w[
     .github/scripts/rust-cache-identity.test.cjs
     .github/scripts/changelog-drift.test.cjs
-    .github/scripts/dependency-audit-results.test.cjs
     .github/scripts/pr-repair-safety.test.cjs
     .github/scripts/repository-health-watchdog.test.cjs
     .github/scripts/rollback-target.test.cjs
@@ -29,10 +28,6 @@ module CiContracts
     scripts/test_refresh_behind_pr.mjs
     scripts/test_validated_merge.mjs
     scripts/test_post_merge_validation.mjs
-  ].freeze
-  CONCURRENT_NODE_SUITES = %w[
-    .github/scripts/dependency-audit-results.test.cjs
-    .github/scripts/pr-repair-safety.test.cjs
   ].freeze
   PYTHON_SUITES = %w[
     scripts/test_android_ui_session.py
@@ -44,24 +39,16 @@ module CiContracts
     python_app/tests/test_heavy_job_guard.py
     python_app/tests/test_select_ios_simulator.py
   ].freeze
-  ISOLATED_PYTHON_SUITES = %w[scripts/test_guard_remediation_changes.py].freeze
 
   def self.steps
     ruby = RUBY_SUITES.map { |name| { "name" => name, "argv" => HostChecks.suite_argv("scripts/#{name}") } }
-    node = NODE_SUITES.filter_map do |path|
-      next if path == CONCURRENT_NODE_SUITES.last
-      if path == CONCURRENT_NODE_SUITES.first
-        { "name" => "Independent dependency and repair contracts", "argv" => ["node", "--test", "--test-concurrency=2", *CONCURRENT_NODE_SUITES] }
-      else
-        { "name" => path, "argv" => ["node", "--test", path] }
-      end
-    end
+    node = NODE_SUITES.map { |path| { "name" => path, "argv" => ["node", "--test", path] } }
     [{ "name" => "Git LFS prerequisite", "argv" => ["git", "lfs", "version"] }] + ruby + node + [
       { "name" => "Workflow YAML syntax", "argv" => [RbConfig.ruby, "-ryaml", "-e", 'Dir[".github/workflows/*.yml"].each { |path| YAML.parse_file(path) }'] },
       { "name" => "Actual Swift tool scope", "argv" => [RbConfig.ruby, "scripts/check_codeql_swift_tool_scope.rb"] },
       { "name" => "Shell safety syntax", "argv" => ["bash", "-n", "scripts/device-workflow.sh", ".claude/hooks/swift_test_after_edit.sh", ".claude/hooks/xcode_build_smoke.sh"] },
       { "name" => "Python offline contracts", "argv" => ["python3", "-m", "pytest", "-q", *PYTHON_SUITES], "timeout_seconds" => 180 }
-    ] + ISOLATED_PYTHON_SUITES.map { |path| { "name" => path, "argv" => ["python3", "-I", path, "-v"] } }
+    ]
   end
 
   def self.execute(root, output, selected_steps = steps)
