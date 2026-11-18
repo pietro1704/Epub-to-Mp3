@@ -49,6 +49,7 @@ void main() {
         });
         messenger.setMockMethodCallHandler(voice, (_) async => null);
         messenger.setMockMethodCallHandler(native, (call) async {
+          if (call.method == 'ttsModels') return null;
           if (call.method == 'status') return {'engineReady': true};
           expect(call.method, 'convert');
           conversions++;

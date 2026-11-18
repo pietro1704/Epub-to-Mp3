@@ -131,7 +131,11 @@ class MirrorAppSettings with PlaybackSettings {
   @override
   final SharedPreferences _prefs;
 
-  TtsPreferences get ttsPreferences {
+  TtsPreferences get ttsPreferences =>
+      configuredTtsPreferences ?? const TtsPreferences.appDefaults();
+
+  /// An explicit setting, including a migrated legacy provider.
+  TtsPreferences? get configuredTtsPreferences {
     final raw = _prefs.getString('ttsPreferences');
     if (raw != null) {
       try {
@@ -149,9 +153,7 @@ class MirrorAppSettings with PlaybackSettings {
     }
     // A recorded legacy provider is an explicit preference, even without a
     // secondary key. New defaults never mutate that earlier choice.
-    return engine == null
-        ? const TtsPreferences.appDefaults()
-        : const TtsPreferences();
+    return engine == null ? null : const TtsPreferences();
   }
 
   Future<void> setTtsPreferences(TtsPreferences value) async {

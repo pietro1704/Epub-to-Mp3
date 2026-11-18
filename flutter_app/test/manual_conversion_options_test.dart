@@ -162,6 +162,20 @@ void main() {
       messenger.setMockMethodCallHandler(noticesChannel, (_) async => null);
       messenger.setMockMethodCallHandler(converterChannel, (call) async {
         calls.add(call);
+        if (call.method == 'ttsModels') {
+          return jsonEncode({
+            'schema_version': 3,
+            'entries': [],
+            'providers': [],
+            'default_selection': {
+              'version': 2,
+              'provider': 'piper',
+              'runtime': 'piper',
+              'model_id': 'fixture-model',
+              'model_revision': 'fixture-revision',
+            },
+          });
+        }
         if (call.method == 'status') {
           return {'runtimeLoaded': true, 'engineReady': true};
         }
@@ -228,7 +242,7 @@ void main() {
         await tester.tap(find.text('Start conversion'));
         await tester.pumpAndSettle();
 
-        expect(calls.map((call) => call.method), ['status', 'convert']);
+        expect(calls.map((call) => call.method), ['ttsModels', 'status', 'convert']);
         final arguments = Map<String, dynamic>.from(
           calls.last.arguments as Map,
         );
@@ -242,6 +256,11 @@ void main() {
         expect(arguments.containsKey('includeCover'), isFalse);
         expect(arguments.containsKey('normalizeAudio'), isFalse);
         final options = jsonDecode(arguments['optionsJson'] as String) as Map;
+        final preferences = options['tts_preferences'] as Map;
+        final primary = preferences['primary'] as Map;
+        expect(options['contract_version'], 2);
+        expect(primary['model_id'], 'fixture-model');
+        expect(primary['session']['model_revision'], 'fixture-revision');
         expect(options['language'], 'pt');
         expect(options['models_root'], '${directory.path}/tts-models');
         expect(find.text('manual-options-result'), findsOneWidget);
@@ -271,6 +290,7 @@ void main() {
           channel,
           (call) async {
             calls.add(call);
+            if (call.method == 'ttsModels') return null;
             if (call.method == 'status') {
               return {
                 'runtimeLoaded': true,
@@ -303,7 +323,9 @@ void main() {
           await tester.pumpAndSettle();
           expect(
             calls.map((call) => call.method),
-            unavailableAtStatus ? ['status'] : ['status', 'convert'],
+            unavailableAtStatus
+                ? ['ttsModels', 'status']
+                : ['ttsModels', 'status', 'convert'],
           );
           expect(
             find.textContaining(

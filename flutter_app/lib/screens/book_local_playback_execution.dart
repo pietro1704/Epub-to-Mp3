@@ -46,13 +46,28 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
 
       final existingJob = await coordinator.store.load(widget.bookId, jobId);
       if (!_isCurrentConversion(generation)) return;
-      var ttsSnapshot = ref.read(settingsProvider).ttsPreferences;
+      final settings = ref.read(settingsProvider);
+      var ttsSnapshot = settings.ttsPreferences;
       final converter = ref.read(embeddedConverterProvider);
-      if ((existingJob == null || existingJob.status == LocalConversionJobStatus.cancelled) &&
-          converter is ListeningScheduleFactory) {
-        final catalog = TtsCatalog.decode(await converter.ttsModels());
-        if (!_isCurrentConversion(generation)) return;
-        ttsSnapshot = catalog.captureNewPreferences(ttsSnapshot);
+      final isNewJob = existingJob == null ||
+          existingJob.status == LocalConversionJobStatus.cancelled;
+      if (isNewJob) {
+        final configured = settings.configuredTtsPreferences;
+        if (converter is ListeningScheduleFactory) {
+          final catalog = TtsCatalog.decode(await converter.ttsModels());
+          if (!_isCurrentConversion(generation)) return;
+          ttsSnapshot = catalog.captureNewPreferences(
+            configured ?? catalog.recommendedPreferences,
+          );
+        } else if (configured == null && converter is AndroidEmbeddedConverter) {
+          try {
+            final catalog = await ref.read(ttsCatalogProvider.future);
+            ttsSnapshot = catalog.recommendedPreferences;
+          } catch (error) {
+            debugPrint('Listening voice catalog unavailable: $error');
+          }
+          if (!_isCurrentConversion(generation)) return;
+        }
       }
       final ttsSupport = await getApplicationSupportDirectory();
       if (!_isCurrentConversion(generation)) return;

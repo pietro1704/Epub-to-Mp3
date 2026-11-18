@@ -17,6 +17,7 @@ import 'library_screen.dart' show libraryStoreProvider;
 
 import '../state/providers.dart';
 import '../l10n/app_localizations.dart';
+import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
 
 part 'conversion_options_section.dart';
@@ -201,6 +202,12 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       });
       return;
     }
+    final engine = _engine;
+    final voice = _voice;
+    final allowSecondary = _allowSecondary;
+    final language = _language;
+    final includeCover = _includeCover;
+    final normalizeAudio = _normalizeAudio;
     final startedAt = DateTime.now().toUtc();
     final jobStore = ref.read(localConversionJobStoreProvider);
     final matchingBooks = ref
@@ -216,21 +223,36 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       _usedSelections = const [];
     });
     try {
-      final saved = ref.read(settingsProvider).ttsPreferences;
-      final manualPrimary = _engine == 'piper'
-          ? TtsSelection.faber
-          : TtsSelection(engine: 'edge', voice: _voice);
-      final selected = _engine == 'preferences'
+      final settings = ref.read(settingsProvider);
+      final configured = settings.configuredTtsPreferences;
+      TtsCatalog? catalog;
+      if (engine == 'piper' || (engine == 'preferences' && configured == null)) {
+        try {
+          catalog = await ref.read(ttsCatalogProvider.future);
+        } catch (error) {
+          debugPrint('Conversion voice catalog unavailable: $error');
+        }
+        if (!mounted) return;
+      }
+      final saved =
+          configured ?? catalog?.recommendedPreferences ?? settings.ttsPreferences;
+      final recommended = catalog?.defaultSelection;
+      final piperPrimary = recommended != null && recommended.engine == 'piper'
+          ? recommended
+          : TtsSelection.faber;
+      final manualPrimary = engine == 'piper'
+          ? piperPrimary
+          : TtsSelection(engine: 'edge', voice: voice);
+      final selected = engine == 'preferences'
           ? saved
           : TtsPreferences(
               primary: manualPrimary,
               secondary:
-                  _allowSecondary &&
-                      jsonEncode(saved.secondary?.toJson()) !=
-                          jsonEncode(manualPrimary.toJson())
+                  allowSecondary &&
+                      saved.secondary?.representsSameRequest(manualPrimary) != true
                   ? saved.secondary
                   : null,
-              allowOnlineFallback: _allowSecondary && saved.allowOnlineFallback,
+              allowOnlineFallback: allowSecondary && saved.allowOnlineFallback,
               policyVersion: saved.policyVersion,
             );
       final request = ConversionRequest(
@@ -238,11 +260,11 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         ttsPreferences: selected,
         engine: selected.primary.engine,
         voice: selected.primary.voice ?? selected.primary.modelId ?? '',
-        language: _language,
+        language: language,
         chapterStart: start,
         chapterEnd: end,
-        includeCover: _includeCover,
-        normalizeAudio: _normalizeAudio,
+        includeCover: includeCover,
+        normalizeAudio: normalizeAudio,
       );
       final starter =
           widget.startConversion ??

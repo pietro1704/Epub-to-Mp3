@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
+import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
 import '../services/playback/audio_player_service.dart';
 import '../services/playback/background_audio_handler.dart';
