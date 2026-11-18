@@ -4,10 +4,20 @@ import 'tts_preferences.dart';
 import 'tts_session_selection.dart';
 
 class TtsCatalog {
-  TtsCatalog._(this.models, this.providers, this.androidApi);
+  TtsCatalog._(
+    this.models,
+    this.providers,
+    this.androidApi,
+    this.defaultSelection,
+  );
   final List<Map<String, dynamic>> models;
   final List<Map<String, dynamic>> providers;
   final int? androidApi;
+  final TtsSelection? defaultSelection;
+
+  TtsPreferences get recommendedPreferences => TtsPreferences.appDefaults(
+    primary: defaultSelection ?? TtsSelection.faber,
+  );
   factory TtsCatalog.decode(String json) {
     final decoded = jsonDecode(json);
     if (decoded is! Map || decoded['schema_version'] != 3) {
@@ -34,9 +44,25 @@ class TtsCatalog {
       });
     });
     final target = decoded['target'];
-    return TtsCatalog._(List.unmodifiable(models),
+    final defaultValue = decoded['default_selection'];
+    final session = defaultValue == null
+        ? null
+        : TtsSessionSelection.fromJson(
+            Map<String, dynamic>.from(defaultValue as Map),
+          );
+    return TtsCatalog._(
+      List.unmodifiable(models),
       List.unmodifiable(providers.map((value) => Map<String, dynamic>.from(value as Map))),
-      decoded['android_api'] as int? ?? (target is Map ? target['android_api'] as int? : null));
+      decoded['android_api'] as int? ?? (target is Map ? target['android_api'] as int? : null),
+      session == null
+          ? null
+          : TtsSelection(
+              engine: session.provider,
+              modelId: session.modelId,
+              voice: session.voice,
+              session: session,
+            ),
+    );
   }
   /// Capture new jobs only. Persisted requests keep their original wire identity.
   TtsPreferences captureNewPreferences(TtsPreferences preferences, {String? target}) {

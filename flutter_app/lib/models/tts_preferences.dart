@@ -60,9 +60,8 @@ class TtsPreferences {
     this.policyVersion = 1,
   });
   /// New app preferences only; legacy jobs retain their captured strict policy.
-  const TtsPreferences.appDefaults()
-    : primary = TtsSelection.faber,
-      secondary = TtsSelection.system,
+  const TtsPreferences.appDefaults({this.primary = TtsSelection.faber})
+    : secondary = TtsSelection.system,
       allowOnlineFallback = false,
       policyVersion = 2;
   final TtsSelection primary;

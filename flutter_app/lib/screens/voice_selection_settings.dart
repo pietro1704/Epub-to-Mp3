@@ -8,10 +8,11 @@ class VoiceSelectionSettings extends ConsumerWidget {
     final t = AppLocalizations.of(context)!;
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
-    final preferences = settings.ttsPreferences;
-    final catalogSelections =
-        ref.watch(_ttsCatalogSelections).asData?.value ??
-        const <TtsSelection>[];
+    final catalog = ref.watch(ttsCatalogProvider).asData?.value;
+    final recommended = catalog?.recommendedPreferences ??
+        const TtsPreferences.appDefaults();
+    final preferences = settings.configuredTtsPreferences ?? recommended;
+    final catalogSelections = catalog?.selections() ?? const <TtsSelection>[];
     Map<String, TtsSelection> uniqueOptions(Iterable<TtsSelection> candidates) {
       final result = <String, TtsSelection>{};
       for (final selection in candidates) {
@@ -27,7 +28,7 @@ class VoiceSelectionSettings extends ConsumerWidget {
     final primaryOptions = uniqueOptions([
       preferences.primary,
       ...catalogSelections,
-      TtsSelection.faber,
+      recommended.primary,
       TtsSelection.edge,
       TtsSelection.system,
     ]);
@@ -35,7 +36,7 @@ class VoiceSelectionSettings extends ConsumerWidget {
       [
         ?preferences.secondary,
         ...catalogSelections,
-        TtsSelection.faber,
+        recommended.primary,
         TtsSelection.edge,
         TtsSelection.system,
       ].where(
@@ -120,9 +121,9 @@ class VoiceSelectionSettings extends ConsumerWidget {
               SwitchListTile(
                 title: Text(t.ttsAllowOnlineSecondary),
                 subtitle: Text(t.ttsOnlineSecondaryDescription),
-                value: settings.ttsPreferences.allowOnlineFallback,
+                value: preferences.allowOnlineFallback,
                 onChanged: (value) {
-                  final prefs = settings.ttsPreferences;
+                  final prefs = preferences;
                   notifier.setTtsPreferences(
                     TtsPreferences(
                       primary: prefs.primary,
@@ -141,7 +142,7 @@ class VoiceSelectionSettings extends ConsumerWidget {
         TextButton(
           key: const ValueKey('tts-use-recommended-defaults'),
           onPressed: () =>
-              notifier.setTtsPreferences(const TtsPreferences.appDefaults()),
+              notifier.setTtsPreferences(recommended),
           child: Text(t.ttsUseRecommendedDefaults),
         ),
       ],

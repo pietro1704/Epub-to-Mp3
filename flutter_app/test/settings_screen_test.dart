@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter_app/models/tts_catalog.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
@@ -13,12 +14,16 @@ Future<void> _pump(
   WidgetTester t, {
   Map<String, Object> prefsData = const {},
   Locale? locale,
+  TtsCatalog? catalog,
 }) async {
   SharedPreferences.setMockInitialValues(prefsData);
   final prefs = await SharedPreferences.getInstance();
   await t.pumpWidget(
     ProviderScope(
-      overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+      overrides: [
+        sharedPrefsProvider.overrideWithValue(prefs),
+        if (catalog != null) ttsCatalogProvider.overrideWith((ref) => catalog),
+      ],
       child: MaterialApp(
         locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -32,6 +37,42 @@ Future<void> _pump(
 
 void main() {
   group('SettingsScreen M3', () {
+    testWidgets('reset uses the catalog recommendation for existing preferences', (t) async {
+      final catalog = TtsCatalog.decode(jsonEncode({
+        'schema_version': 3,
+        'entries': [],
+        'providers': [],
+        'default_selection': {
+          'version': 2,
+          'provider': 'piper',
+          'runtime': 'piper',
+          'model_id': 'fixture-model',
+          'model_revision': 'fixture-revision',
+        },
+      }));
+      await _pump(
+        t,
+        catalog: catalog,
+        prefsData: {
+          'ttsPreferences': jsonEncode(const TtsPreferences().toJson()),
+        },
+      );
+      final settings = AppSettings(await SharedPreferences.getInstance());
+      expect(settings.ttsPreferences.primary.modelId, TtsSelection.faber.modelId);
+      expect(settings.ttsPreferences.secondary, isNull);
+
+      final reset = find.byKey(const ValueKey('tts-use-recommended-defaults'));
+      await t.scrollUntilVisible(reset, 150, scrollable: find.byType(Scrollable).first);
+      await t.tap(reset);
+      await t.pumpAndSettle();
+
+      final saved = settings.ttsPreferences;
+      expect(saved.primary.modelId, 'fixture-model');
+      expect(saved.primary.session?.modelRevision, 'fixture-revision');
+      expect(saved.secondary?.engine, 'system');
+      expect(saved.allowOnlineFallback, isFalse);
+    });
+
     testWidgets(
       'fresh speech defaults choose Faber and offline native fallback',
       (t) async {

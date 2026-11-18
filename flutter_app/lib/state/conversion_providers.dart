@@ -6,6 +6,19 @@ final embeddedConverterProvider = Provider<EmbeddedConverter>((ref) {
   return EmbeddedConverterRegistry.current;
 });
 
+final ttsCatalogProvider = FutureProvider.autoDispose<TtsCatalog>(
+  (ref) async {
+    final converter = ref.watch(embeddedConverterProvider);
+    final pending = ref.keepAlive();
+    try {
+      return TtsCatalog.decode(await converter.ttsModels());
+    } finally {
+      pending.close();
+    }
+  },
+  retry: (_, _) => null,
+);
+
 /// Reload persisted local history when entering Jobs, including after a
 /// conversion finishes while the IndexedStack keeps the tab mounted.
 final localConversionJobStoreProvider = Provider<LocalConversionJobStore>((
