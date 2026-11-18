@@ -95,7 +95,7 @@ final class LibraryPDFCoverRefreshTests: XCTestCase {
         try await fixture.store.flushPersistence()
     }
 
-    func testVisibleDetailReceivesRefreshedCoverWithoutRecreation() async throws {
+    func testVisibleLibraryReceivesRefreshedCoverWithoutRecreation() async throws {
         guard ProcessInfo.processInfo.environment["EPUB_PDF_GUI_ACCEPTANCE"] == "1" else {
             throw XCTSkip("Opt-in visible PDF cover refresh acceptance")
         }
@@ -103,11 +103,9 @@ final class LibraryPDFCoverRefreshTests: XCTestCase {
         defer { fixture.cleanup() }
         let policy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.regular)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage:
-            UserDefaultsResumeStorage(defaults: fixture.defaults)))
-        let controller = MacBookDetailViewController(book: fixture.book, library: fixture.store,
-            settings: AppSettings(defaults: fixture.defaults), player: player,
-            playerPresentation: PlayerPresentation(defaults: fixture.defaults), onRead: { _ in }, onShowJobs: {})
+        let controller = MacLibraryViewController(library: fixture.store,
+            bookmarkStore: BookmarkStore(defaults: fixture.defaults, storageKey: "bookmarks"),
+            onOpenBook: { _ in }, onDownloadBook: { _ in }, onConvertBook: { _ in })
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 1000, height: 700),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -115,7 +113,6 @@ final class LibraryPDFCoverRefreshTests: XCTestCase {
         window.contentMinSize = NSSize(width: 1000, height: 700)
         window.setContentSize(NSSize(width: 1000, height: 700))
         defer {
-            player.stop()
             window.orderOut(nil); window.contentViewController = nil; window.close()
             NSApp.setActivationPolicy(policy)
         }
@@ -137,7 +134,7 @@ final class LibraryPDFCoverRefreshTests: XCTestCase {
         for _ in 0..<100 where !showsRefreshedCover() {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        XCTAssertTrue(showsRefreshedCover(), "The original detail controller must receive the new cover")
+        XCTAssertTrue(showsRefreshedCover(), "The existing library grid must receive the new cover")
         XCTAssertTrue(window.isVisible)
         XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, ProcessInfo.processInfo.processIdentifier)
         let content = try XCTUnwrap(window.contentView)

@@ -108,88 +108,54 @@ extension NativeResponsiveScreenTests {
 
 #if os(iOS)
 #else
-    func testMacManualTtsDialogSupportsInheritanceAndStrictOverrideBeforeCancel() throws {
+    func testMacConvertScreenTtsOverrideStartsStrictAndKeepsInheritedPreferences() throws {
         let settings = AppSettings(defaults: defaults)
         settings.allowOnlineAudioFallback = true
         settings.secondaryAudioEngine = .edge
         let original = settings.ttsPreferences
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         var conversions = 0
-        let controller = MacBookDetailViewController(book: book, library: LibraryStore(defaults: defaults),
-            settings: settings, player: player, playerPresentation: PlayerPresentation(defaults: defaults),
-            onRead: { _ in }, onShowJobs: {}, conversionExecutor: { _, _, _, _, _, _, _ in
-                conversions += 1
-                XCTFail("Cancelling the actual dialog must not submit synthesis.")
-                throw CancellationError()
-            })
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentViewController = controller
-        window.makeKeyAndOrderFront(nil)
-        defer { player.stop(); window.orderOut(nil); window.contentViewController = nil; window.close() }
-        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "bookDetail.convert" })
-        for publicEntry in [false, true] {
-            var inspected = false
-            let deadline = Date().addingTimeInterval(3)
-            let timer = Timer(timeInterval: 0.02, repeats: true) { timer in
-                MainActor.assumeIsolated {
-                    guard let modal = NSApp.modalWindow else {
-                        if Date() > deadline { timer.invalidate(); NSApp.abortModal(); XCTFail("The native conversion dialog did not open.") }
-                        return
-                    }
-                    defer { timer.invalidate(); NSApp.abortModal(); modal.orderOut(nil) }
-                    guard let surface = modal.contentView,
-                          let choice = self.descendants(surface).compactMap({ $0 as? NSPopUpButton })
-                            .first(where: { $0.accessibilityIdentifier() == "convert.tts.primary" }),
-                          let secondary = self.descendants(surface).compactMap({ $0 as? NSButton })
-                            .first(where: { $0.accessibilityIdentifier() == "convert.tts.useSecondary" }),
-                          let action = choice.action else {
-                        XCTFail("The actual modal must expose primary and secondary controls.")
-                        return
-                    }
-                    inspected = true
-                    XCTAssertEqual(choice.titleOfSelectedItem, L10n.string("convert.usePreferences"))
-                    XCTAssertEqual(secondary.state, .on)
-                    XCTAssertFalse(secondary.isEnabled)
-                    choice.selectItem(withTitle: "Edge")
-                    XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
-                    XCTAssertEqual(choice.titleOfSelectedItem, "Edge")
-                    XCTAssertEqual(secondary.state, .off, "An override must begin strict even when defaults have a secondary.")
-                    XCTAssertFalse(secondary.isEnabled, "The saved Edge secondary duplicates this manual primary.")
-                    choice.selectItem(withTitle: AudioEnginePreference.piper.displayName)
-                    XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
-                    secondary.performClick(nil)
-                    XCTAssertEqual(secondary.state, .on)
-                    choice.selectItem(withTitle: L10n.string("convert.usePreferences"))
-                    XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
-                    XCTAssertEqual(secondary.state, .on)
-                    XCTAssertFalse(secondary.isEnabled)
-                    XCTAssertEqual(settings.ttsPreferences, original)
-                }
-            }
-            RunLoop.main.add(timer, forMode: .modalPanel)
-            defer { timer.invalidate() }
-            if publicEntry { controller.convertWholeBook() } else { button.performClick(nil) }
-            XCTAssertTrue(inspected, "Both the detail button and library conversion entry must present the modal.")
-            XCTAssertNil(NSApp.modalWindow)
-            XCTAssertEqual(conversions, 0)
-            XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences, original)
-        }
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, _, _, _, _, _, _ in
+            conversions += 1
+            XCTFail("Changing manual voice controls must not submit synthesis.")
+            throw CancellationError()
+        }))
+        let controller = MacConvertScreenController(settings: settings, library: LibraryStore(defaults: defaults),
+                                                   viewModel: model)
+        _ = controller.view
+        let choice = controller.form.engine
+        let secondary = controller.form.secondary
+        let action = try XCTUnwrap(choice.action)
+        XCTAssertEqual(choice.titleOfSelectedItem, L10n.string("convert.usePreferences"))
+        XCTAssertEqual(secondary.state, .on)
+        XCTAssertFalse(secondary.isEnabled)
+        choice.selectItem(withTitle: "Edge")
+        XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
+        XCTAssertEqual(choice.titleOfSelectedItem, "Edge")
+        XCTAssertEqual(secondary.state, .off, "An override must begin strict even when defaults have a secondary.")
+        XCTAssertFalse(secondary.isEnabled, "The saved Edge secondary duplicates this manual primary.")
+        choice.selectItem(withTitle: AudioEnginePreference.piper.displayName)
+        XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
+        XCTAssertTrue(secondary.isEnabled)
+        secondary.performClick(nil)
+        XCTAssertEqual(secondary.state, .on)
+        choice.selectItem(withTitle: L10n.string("convert.usePreferences"))
+        XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
+        XCTAssertEqual(secondary.state, .on)
+        XCTAssertFalse(secondary.isEnabled)
+        XCTAssertEqual(conversions, 0)
+        XCTAssertEqual(settings.ttsPreferences, original)
+        XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences, original)
     }
 #endif
 
 #if os(iOS)
 #else
-    func testBookDetailActionsRemainReachableInShortWindow() throws {
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        defer { player.stop() }
-        let controller = MacBookDetailViewController(book: book, library: LibraryStore(defaults: defaults),
-            settings: AppSettings(defaults: defaults), player: player,
-            playerPresentation: PlayerPresentation(defaults: defaults), onRead: { _ in }, onShowJobs: {})
+    func testMacConvertScreenActionsRemainReachableInShortWindow() throws {
+        let controller = MacConvertScreenController(settings: AppSettings(defaults: defaults),
+                                                   library: LibraryStore(defaults: defaults))
+        _ = controller.view
         try verifyMacScrolling(controller, sizes: [NSSize(width: 520, height: 300), NSSize(width: 900, height: 700)],
-                               lastTitle: L10n.string("conversion.log"))
+                               lastTitle: controller.form.submit.title)
     }
 #endif
 }

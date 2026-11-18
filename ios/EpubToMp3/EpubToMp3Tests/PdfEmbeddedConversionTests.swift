@@ -74,23 +74,21 @@ final class PdfEmbeddedConversionTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.audioEngine = .system
         settings.secondaryAudioEngine = nil
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let output = RustConversionOutputStore(root: root.appendingPathComponent("outputs"), notificationCenter: NotificationCenter())
         let completed = expectation(description: "Visible PDF conversion completes")
         var converted: RustConversionCoordinator.Result?
         var conversionError: String?
-        let controller = MacBookDetailViewController(book: book, library: library, settings: settings,
-            player: player, playerPresentation: PlayerPresentation(defaults: defaults), onRead: { _ in }, onShowJobs: {},
-            conversionExecutor: { url, job, first, last, options, progress, chapter in
-                defer { completed.fulfill() }
-                do {
-                    let result = try await RustConversionCoordinator(outputStore: output).convert(
-                        bookURL: url, jobID: job, chapterStart: first, chapterEnd: last,
-                        options: options, onProgress: progress, onChapterCompleted: chapter)
-                    converted = result
-                    return result
-                } catch { conversionError = error.localizedDescription; throw error }
-            })
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { url, job, first, last, options, progress, chapter in
+            defer { completed.fulfill() }
+            do {
+                let result = try await RustConversionCoordinator(outputStore: output).convert(
+                    bookURL: url, jobID: job, chapterStart: first, chapterEnd: last,
+                    options: options, onProgress: progress, onChapterCompleted: chapter)
+                converted = result
+                return result
+            } catch { conversionError = error.localizedDescription; throw error }
+        }))
+        let controller = MacConvertScreenController(settings: settings, library: library, viewModel: model)
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 1000, height: 700),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "PDF to MP3 — installed system voice acceptance"
@@ -113,33 +111,22 @@ final class PdfEmbeddedConversionTests: XCTestCase {
         XCTAssertEqual(running.processIdentifier, ProcessInfo.processInfo.processIdentifier)
         window.makeKeyAndOrderFront(nil)
         NSRunningApplication.current.activate(options: .activateAllWindows)
-        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "bookDetail.convert" })
-        var accepted = false
-        let confirmation = Timer(timeInterval: 0.05, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                guard let modal = NSApp.modalWindow else { return }
-                if !accepted { accepted = true; NSApp.stopModal(withCode: .alertFirstButtonReturn) }
-                else { NSApp.abortModal() }
-                modal.orderOut(nil)
-            }
-        }
-        RunLoop.main.add(confirmation, forMode: .modalPanel)
         defer {
-            confirmation.invalidate(); player.stop()
             window.orderOut(nil); window.contentViewController = nil; window.close()
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: root)
             try? FileManager.default.removeItem(at: source)
         }
+        // Selecting the library book opens it through the library, which refreshes the legacy PDF cover.
+        await controller.selectLibraryBook(book.id, startImmediately: false)
+        XCTAssertEqual(controller.selectedBookID, book.id)
+        let button = controller.form.submit
         window.contentView?.layoutSubtreeIfNeeded()
         button.scrollToVisible(button.bounds)
         window.contentView?.layoutSubtreeIfNeeded()
         XCTAssertTrue(window.isVisible)
         XCTAssertGreaterThan(button.visibleRect.height, 0)
         button.performClick(nil)
-        XCTAssertTrue(accepted)
         window.makeKeyAndOrderFront(nil)
         NSRunningApplication.current.activate(options: .activateAllWindows)
         for _ in 0..<20 where NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
@@ -158,10 +145,7 @@ final class PdfEmbeddedConversionTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: source), original)
         let refreshedBook = try XCTUnwrap(library.books.first(where: { $0.id == book.id }))
         XCTAssertEqual(refreshedBook.pdfCoverVersion, PdfMetadataReader.coverVersion)
-        let refreshedImage = try XCTUnwrap(refreshedBook.coverPNG.flatMap(NSImage.init(data:)))
-        XCTAssertTrue(descendants(controller.view).compactMap { $0 as? NSImageView }.contains {
-            $0.image?.tiffRepresentation == refreshedImage.tiffRepresentation
-        }, "The existing detail window must display the refreshed persisted cover")
+        XCTAssertNotNil(refreshedBook.coverPNG.flatMap(NSImage.init(data:)), "The refreshed PDF cover must be persisted")
         let audio = try AVAudioPlayer(contentsOf: audioURL)
         XCTAssertTrue(audio.play())
         try await Task.sleep(nanoseconds: 1_000_000_000)

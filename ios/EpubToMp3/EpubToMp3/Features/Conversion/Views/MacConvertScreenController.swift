@@ -11,6 +11,11 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     private let resolveBookFile: (String) async throws -> URL
     private let presentPronunciation: (String, NSViewController) -> Void
     private var observation: AnyCancellable?
+    private var audioRemovalObservation: AnyCancellable?
+    /// The library book whose conversion is running, and whether its audio was
+    /// explicitly removed meanwhile; a removed book's job must not be recorded again.
+    private var convertingBookID: String?
+    private var audioRemovedDuringConversion = false
     private var selectionID = UUID()
     private var conversionSelectionID: UUID?
     private var sourceError: String?
@@ -54,6 +59,18 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         updatePreferences()
         observation = viewModel.session.objectWillChange.receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refresh() }
+        audioRemovalObservation = NotificationCenter.default.publisher(for: RustConversionOutputStore.willRemoveAudio)
+            .sink { [weak self] notification in
+                let bookID = notification.userInfo?["bookID"] as? String
+                MainActor.assumeIsolated { self?.audioWillBeRemoved(bookID: bookID) }
+            }
+        refresh()
+    }
+
+    private func audioWillBeRemoved(bookID: String?) {
+        guard let convertingBookID, bookID == nil || bookID == convertingBookID else { return }
+        audioRemovedDuringConversion = true
+        viewModel.cancel()
         refresh()
     }
 
@@ -157,9 +174,14 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         sourceError = nil
         resultSnapshot = nil
         resultDirectory = nil
+        convertingBookID = bookID
+        audioRemovedDuringConversion = false
         await viewModel.submit()
+        let audioRemoved = audioRemovedDuringConversion
+        convertingBookID = nil
+        audioRemovedDuringConversion = false
         guard selectionID == selection, viewModel.selectedFile == file else { return }
-        if let result = viewModel.session.result {
+        if !audioRemoved, let result = viewModel.session.result {
             do {
                 resultSnapshot = try result.snapshot()
                 resultDirectory = result.outputDirectory

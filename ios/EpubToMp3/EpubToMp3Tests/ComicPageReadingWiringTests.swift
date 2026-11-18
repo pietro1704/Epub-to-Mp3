@@ -45,16 +45,39 @@ final class ComicPageReadingWiringTests: XCTestCase {
         XCTAssertTrue(harness.composition.contentScrollView.documentView === harness.composition.comicPageImageView)
     }
 
-    func testBookDetailDisablesComicListeningAndReenablesTextListening() {
-        let content = MacBookDetailContent()
-        let comic = BookEntity(id: "comic-capability", title: "Comic", bookmark: Data(), displayFilename: "comic.cbz", addedAt: .distantPast, fileType: .cbz)
-        content.render(book: comic, localConversionProgress: nil)
-        XCTAssertFalse(content.listenButton.isEnabled)
-        XCTAssertEqual(content.listenButton.title, L10n.string("bookDetail.listenUnavailableComic"))
-        let text = BookEntity(id: "text-capability", title: "Text", bookmark: Data(), displayFilename: "book.epub", addedAt: .distantPast, fileType: .epub)
-        content.render(book: text, localConversionProgress: nil)
-        XCTAssertTrue(content.listenButton.isEnabled)
-        XCTAssertEqual(content.listenButton.title, L10n.string("bookDetail.listenStart"))
+    func testMacReaderListeningIsUnavailableForComicsAndKeptForText() throws {
+        let suite = "comic-listening-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let readingKey = ReaderSessionState.currentlyReadingBookIDKey
+        let savedReading = UserDefaults.standard.object(forKey: readingKey)
+        let comic = BookEntity(id: "comic-capability", title: "Comic", bookmark: Data([1]), displayFilename: "comic.cbz", addedAt: .distantPast, fileType: .cbz)
+        let text = BookEntity(id: "text-capability", title: "Text", bookmark: Data([1]), displayFilename: "book.epub", addedAt: .distantPast, fileType: .epub)
+        defaults.set(try JSONEncoder().encode([comic, text]), forKey: "library")
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defer {
+            player.stop()
+            if let savedReading { UserDefaults.standard.set(savedReading, forKey: readingKey) }
+            else { UserDefaults.standard.removeObject(forKey: readingKey) }
+            defaults.removePersistentDomain(forName: suite)
+        }
+        var executorCalls = 0
+        let session = MacReaderPlaybackSession(settings: AppSettings(defaults: defaults),
+            library: LibraryStore(defaults: defaults, defaultsKey: "library"), player: player,
+            playerPresentation: PlayerPresentation(defaults: defaults),
+            conversionExecutor: { _, _, _, _, _, _, _, _, _ in
+                executorCalls += 1
+                throw CancellationError()
+            })
+        UserDefaults.standard.set(comic.id, forKey: readingKey)
+        session.start(owner: self)
+        XCTAssertNil(session.localPlaybackGeneration, "Comics have no text to narrate")
+        XCTAssertNil(player.snapshot)
+        UserDefaults.standard.set(text.id, forKey: readingKey)
+        session.start(owner: self)
+        XCTAssertEqual(session.localPlaybackBookID, text.id, "Text books keep the reader Listen action")
+        // Retire the pending generation so the unreadable fixture cannot present an alert.
+        session.cancel(stopPlayer: false)
+        XCTAssertEqual(executorCalls, 0)
     }
 #endif
 

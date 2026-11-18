@@ -11,6 +11,7 @@ final class MacConvertScreenControllerTests: XCTestCase {
         let book: BookEntity
         let source: URL
         let directory: URL
+        let defaults: UserDefaults
     }
 
     private func fixture() throws -> Fixture {
@@ -26,7 +27,7 @@ final class MacConvertScreenControllerTests: XCTestCase {
             try? FileManager.default.removeItem(at: source)
         }
         return Fixture(settings: AppSettings(defaults: defaults), library: library, book: book,
-                       source: source, directory: directory)
+                       source: source, directory: directory, defaults: defaults)
     }
 
     private func result(jobID: String, directory: URL) -> RustConversionCoordinator.Result {
@@ -234,6 +235,36 @@ final class MacConvertScreenControllerTests: XCTestCase {
         await controller.submit()
         XCTAssertEqual(calls, 2)
         XCTAssertEqual(model.session.phase, .completed)
+    }
+
+    func testAudioRemovalDuringLibraryConversionDoesNotRecordTheRemovedJob() async throws {
+        let fixture = try fixture()
+        let gate = ManualConversionGate()
+        defer { gate.release() }
+        let started = expectation(description: "Manual writer is waiting for output")
+        var returned = false
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, _, _, _ in
+            started.fulfill()
+            await gate.wait()
+            returned = true
+            return self.result(jobID: jobID, directory: fixture.directory)
+        }))
+        let controller = MacConvertScreenController(settings: fixture.settings, library: fixture.library, viewModel: model)
+        let pending = Task { await controller.selectLibraryBook(fixture.book.id) }
+        await fulfillment(of: [started], timeout: 1)
+        NotificationCenter.default.post(name: RustConversionOutputStore.willRemoveAudio,
+                                        object: nil, userInfo: ["bookID": fixture.book.id])
+        gate.release()
+        await pending.value
+        XCTAssertTrue(returned)
+        XCTAssertNotEqual(model.session.phase, .completed)
+        XCTAssertNil(fixture.library.books.first(where: { $0.id == fixture.book.id })?.lastJobId,
+                     "An output removed while conversion was pending must not be recorded again")
+        try await fixture.library.flushPersistence()
+        let reloaded = LibraryStore(defaults: fixture.defaults, defaultsKey: "library",
+                                    importDirectory: fixture.directory)
+        XCTAssertNil(reloaded.books.first(where: { $0.id == fixture.book.id })?.lastJobId)
+        XCTAssertTrue(controller.form.revealResult.isHidden)
     }
 
     func testInvalidCompletedManifestDoesNotRecordSuccessfulLibraryConversion() async throws {

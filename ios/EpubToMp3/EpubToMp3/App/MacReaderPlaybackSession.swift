@@ -30,7 +30,9 @@ final class MacReaderPlaybackSession {
         playerPresentation.dismissFullPlayer()
         let defaults = UserDefaults.standard
         guard let bookID = defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
-              let book = library.books.first(where: { $0.id == bookID }) else { return }
+              let book = library.books.first(where: { $0.id == bookID }),
+              // Comics are read visually; there is no text to narrate (matches iOS reader listening).
+              book.fileType.supportsAudioConversion else { return }
         let chapterIndex = chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
         let chapterStart = Int32(exactly: chapterIndex) ?? 0
         let pageRatio = pageRatioOverride ?? (defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double)
