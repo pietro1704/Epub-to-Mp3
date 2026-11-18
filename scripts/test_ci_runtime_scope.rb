@@ -332,7 +332,7 @@ end
 
   def test_foundation_run_moves_to_the_apple_pr_gate_without_faber_duplication
     app = @workflow.fetch('jobs').fetch('apple-app')
-    integrated = "inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master'"
+    integrated = "inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@')"
     assert_equal "needs.changes.outputs.apple == 'true' && !(#{integrated})", app.fetch('if')
     assert_equal "${{ #{integrated} }}", @workflow.fetch('jobs').fetch('pr-gate').fetch('steps').first.fetch('env').fetch('INTEGRATED_VALIDATION')
     assert_equal './.github/workflows/faber-integration.yml', app.fetch('uses')

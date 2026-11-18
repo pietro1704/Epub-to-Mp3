@@ -573,7 +573,9 @@ jobs:
 
   android-jvm:
     # The integrated Faber APK job already executes the same JVM suite.
-    if: needs.changes.outputs.android == 'true' && !(inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master')
+    # Post-merge validation arrives as push or workflow_dispatch (GITHUB_TOKEN
+    # merges); in a called workflow github.workflow_ref names the caller.
+    if: needs.changes.outputs.android == 'true' && !(inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@'))
     name: Android JVM tests
     needs: [changes]
     timeout-minutes: ${{ inputs.full_validation == true && 30 || 12 }}
@@ -665,7 +667,7 @@ jobs:
   apple-app:
     name: Apple app tests
     needs: [changes]
-    if: needs.changes.outputs.apple == 'true' && !(inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master')
+    if: needs.changes.outputs.apple == 'true' && !(inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@'))
     uses: ./.github/workflows/faber-integration.yml
     with:
       macos_only: true
@@ -728,7 +730,7 @@ jobs:
       - name: Require every selected runtime and reject missing scope evidence
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          INTEGRATED_VALIDATION: ${{ inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+          INTEGRATED_VALIDATION: ${{ inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@') }}
         shell: ruby {0}
         run: |
           require 'json'

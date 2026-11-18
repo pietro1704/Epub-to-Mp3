@@ -74,7 +74,7 @@ class CiRuntimeScopeTest
     assert gate(selected, {}, true).success?
     refute gate(selected, { 'android-jvm' => 'success' }, true).success?
     job = @workflow.fetch('jobs').fetch('android-jvm')
-    integrated = "inputs.full_validation == true && github.event_name == 'push' && github.ref == 'refs/heads/master'"
+    integrated = "inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@')"
     assert_equal "needs.changes.outputs.android == 'true' && !(#{integrated})", job.fetch('if')
     assert_equal '${{ inputs.full_validation == true && 30 || 12 }}', job.fetch('timeout-minutes')
     assert_equal 'python,ruby,flutter,java', job.fetch('env').fetch('MISE_ENABLE_TOOLS')
