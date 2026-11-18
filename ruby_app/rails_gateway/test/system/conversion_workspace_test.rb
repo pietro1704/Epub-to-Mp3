@@ -160,7 +160,7 @@ class ConversionWorkspaceTest < ApplicationSystemTestCase
     assert_selector "header.hero", text: "📚 Book 1/3"
     within("#panel-progress") do
       assert_selector ".batch-queue", text: "In queue: 2 books"
-      within(all(".batch-queue__item").first) { assert_button "Move up", disabled: true }
+      assert_selector ".batch-queue__item:first-child button:disabled", exact_text: "Move up"
       accept_confirm(/skip this book/) { click_button "Skip to next" }
     end
     assert_selector "header.hero", text: "📚 Book 2/3", wait: 15

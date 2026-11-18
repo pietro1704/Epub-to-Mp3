@@ -17,7 +17,7 @@ class CrossClientStorageTest < ApplicationSystemTestCase
       react = "#{origin}/react-reference/index.html"
       rails = "#{origin}/"
       visit react
-      attach_file("file", Rails.root.join("public/sample.epub"), make_visible: true)
+      attach_file("file", Rails.root.join("public/sample.epub"))
       find(".form-advanced summary").click
       fill_in "chapters", with: "1"
       click_button "Convert now"
