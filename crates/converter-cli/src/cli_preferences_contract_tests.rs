@@ -443,28 +443,36 @@ fn fallback_catalog_capture_preserves_revision_and_rejects_engine_conflicts() {
         [
             "convert",
             "book.epub",
+            "--engine",
+            "system",
             "--fallback-engine",
             engine,
             "--fallback-model",
-            "kokoro-82m",
+            "pt_BR-faber-medium",
         ]
         .map(str::to_owned)
     };
-    let raw = args("kokoro");
+    let raw = args("piper");
     let preferences = effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).unwrap();
     let secondary = preferences.secondary.unwrap();
-    assert_eq!(secondary.engine, "kokoro");
-    assert_eq!(secondary.model_id.as_deref(), Some("kokoro-82m"));
+    assert_eq!(secondary.engine, "piper");
+    assert_eq!(secondary.model_id.as_deref(), Some("pt_BR-faber-medium"));
     let session = secondary.session.unwrap();
-    assert_eq!(session.runtime, "kokoro");
+    assert_eq!(session.runtime, "piper");
     assert!(session
         .model_revision
         .as_ref()
         .is_some_and(|revision| !revision.is_empty()));
-    for engine in ["none", "system", "edge", "piper"] {
+    for engine in ["none", "system", "edge", "kokoro"] {
         let raw = args(engine);
         assert!(effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).is_err());
     }
-    let raw = ["convert", "book.epub", "--fallback-model", "kokoro-82m"].map(str::to_owned);
+    let raw = [
+        "convert",
+        "book.epub",
+        "--fallback-model",
+        "pt_BR-faber-medium",
+    ]
+    .map(str::to_owned);
     assert!(effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).is_err());
 }

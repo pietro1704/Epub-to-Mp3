@@ -32,14 +32,23 @@ impl RetryRounds {
 /// this invocation does not own could disturb another worker.
 fn retryable(error: &EmbeddedConversionError) -> bool {
     match error {
+        EmbeddedConversionError::Conversion(WorkerError::Synthesis(failure)) => {
+            !failure.terminal()
+                && failure.kind != converter_core::tts_session::FailureKind::InvalidSelection
+        }
         EmbeddedConversionError::Conversion(error) => !matches!(
             error,
             WorkerError::Cancelled
+                | WorkerError::Piper(converter_core::piper::PiperError::Cancelled)
                 | WorkerError::PlaybackWindowChanged
                 | WorkerError::Unsupported(_)
                 | WorkerError::BookInput(_)
                 | WorkerError::Epub(_)
                 | WorkerError::Job(_)
+                | WorkerError::InvalidSelection(_)
+                | WorkerError::Control(_)
+                | WorkerError::NoReadableText
+                | WorkerError::TextCoverage { .. }
         ),
         _ => false,
     }
@@ -79,7 +88,9 @@ mod tests {
     fn only_failures_another_round_can_change_are_retried() {
         let conversion = EmbeddedConversionError::Conversion;
         for transient in [
-            WorkerError::Piper("synthesis failed".into()),
+            WorkerError::Piper(converter_core::piper::PiperError::Synthesis(
+                "synthesis failed".into(),
+            )),
             WorkerError::PlatformTts("voice unavailable".into()),
             WorkerError::Io(std::io::Error::other("disk")),
         ] {
@@ -87,9 +98,23 @@ mod tests {
         }
         for permanent in [
             WorkerError::Cancelled,
+            WorkerError::Piper(converter_core::piper::PiperError::Cancelled),
             WorkerError::PlaybackWindowChanged,
             WorkerError::Unsupported("language".into()),
             WorkerError::Job(converter_core::jobs::JobError::InvalidJobId),
+            WorkerError::InvalidSelection("voice language".into()),
+            WorkerError::Control(
+                converter_core::conversion_control::ConversionControlError::AlreadyAttached,
+            ),
+            WorkerError::NoReadableText,
+            WorkerError::TextCoverage {
+                source_chars: 10,
+                output_chars: 9,
+            },
+            WorkerError::Synthesis(converter_core::tts_session::TtsFailure::new(
+                converter_core::tts_session::FailureKind::InvalidSelection,
+                "voice",
+            )),
         ] {
             assert!(!retryable(&conversion(permanent)));
         }

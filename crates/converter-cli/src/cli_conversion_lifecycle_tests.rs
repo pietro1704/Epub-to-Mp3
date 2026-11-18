@@ -7,12 +7,14 @@
 use converter_core::worker::OutputManifest;
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
 };
-use zip::{write::SimpleFileOptions, ZipWriter};
+use zip::write::SimpleFileOptions;
+
+#[path = "../../converter-core/tests/support/epub_fixture.rs"]
+mod epub_fixture;
 
 #[path = "../../converter-core/tests/support/pdf_fixture.rs"]
 mod pdf_fixture;
@@ -130,7 +132,6 @@ pub(super) struct Fixture {
 }
 
 pub(super) fn write_epub(path: &Path, chapters: &[(&str, &str)]) {
-    let mut archive = ZipWriter::new(fs::File::create(path).unwrap());
     let items: String = (0..chapters.len())
         .map(|n| {
             format!("<item id=\"c{n}\" href=\"c{n}.xhtml\" media-type=\"application/xhtml+xml\"/>")
@@ -149,13 +150,11 @@ pub(super) fn write_epub(path: &Path, chapters: &[(&str, &str)]) {
             format!("<html><body><h1>{title}</h1><p>{text}</p></body></html>"),
         ));
     }
-    for (name, contents) in files {
-        archive
-            .start_file(name, SimpleFileOptions::default())
-            .unwrap();
-        archive.write_all(contents.as_bytes()).unwrap();
-    }
-    archive.finish().unwrap();
+    fs::write(
+        path,
+        epub_fixture::epub_bytes(files, SimpleFileOptions::default()),
+    )
+    .unwrap();
 }
 
 impl Fixture {

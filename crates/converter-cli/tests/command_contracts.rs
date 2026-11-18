@@ -1,36 +1,30 @@
-use std::{fs, io::Write, path::Path, process::Command};
-use zip::{write::SimpleFileOptions, ZipWriter};
+#[path = "../../converter-core/tests/support/epub_fixture.rs"]
+mod epub_fixture;
+
+use std::{fs, path::Path, process::Command};
 
 #[path = "../../converter-core/tests/support/pdf_fixture.rs"]
 mod pdf_fixture;
 
 fn epub(path: &Path) {
-    let mut archive = ZipWriter::new(fs::File::create(path).unwrap());
-    for (name, contents) in [
+    let bytes = epub_fixture::epub_bytes([
         ("META-INF/container.xml", "<container><rootfiles><rootfile full-path=\"content.opf\"/></rootfiles></container>"),
         ("content.opf", "<package xmlns:dc=\"x\"><metadata><dc:title>Command fixture</dc:title></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/></spine></package>"),
         ("a.xhtml", "<html><body><h1>Readable chapter</h1><p>Preserved EPUB content.</p></body></html>"),
-    ] {
-        archive.start_file(name, SimpleFileOptions::default()).unwrap();
-        archive.write_all(contents.as_bytes()).unwrap();
-    }
-    archive.finish().unwrap();
+    ], zip::write::SimpleFileOptions::default());
+    fs::write(path, bytes).unwrap();
 }
 
 /// Three spine documents without a TOC: chapter indices 1, 2 and 3.
 fn epub_with_three_chapters(path: &Path) {
-    let mut archive = ZipWriter::new(fs::File::create(path).unwrap());
-    for (name, contents) in [
+    let bytes = epub_fixture::epub_bytes([
         ("META-INF/container.xml", "<container><rootfiles><rootfile full-path=\"content.opf\"/></rootfiles></container>"),
         ("content.opf", "<package xmlns:dc=\"x\"><metadata><dc:title>Range fixture</dc:title></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"b\" href=\"b.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"c\" href=\"c.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/><itemref idref=\"b\"/><itemref idref=\"c\"/></spine></package>"),
         ("a.xhtml", "<html><body><h1>Opening</h1><p>First chapter content.</p></body></html>"),
         ("b.xhtml", "<html><body><h1>Middle</h1><p>Second chapter content.</p></body></html>"),
         ("c.xhtml", "<html><body><h1>Closing</h1><p>Third chapter content.</p></body></html>"),
-    ] {
-        archive.start_file(name, SimpleFileOptions::default()).unwrap();
-        archive.write_all(contents.as_bytes()).unwrap();
-    }
-    archive.finish().unwrap();
+    ], zip::write::SimpleFileOptions::default());
+    fs::write(path, bytes).unwrap();
 }
 
 fn command(root: &Path, args: &[&str]) -> std::process::Output {
