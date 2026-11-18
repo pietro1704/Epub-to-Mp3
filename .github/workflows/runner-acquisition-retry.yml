@@ -1,6 +1,7 @@
 name: Retry unacquired hosted runners
 
-# GitHub occasionally fails a job before any runner starts it. Re-run such a
+# GitHub occasionally ends a job before any runner starts it; the job is then
+# reported as cancelled (not failed) with the acquisition annotation. Re-run such a
 # run once; the re-run keeps the same head SHA, so the exact-head PR gate and
 # post-merge validation must still succeed for that head.
 on:
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   retry:
     name: Re-run jobs that never acquired a hosted runner
-    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1
+    if: contains(fromJSON('["failure", "cancelled"]'), github.event.workflow_run.conclusion) && github.event.workflow_run.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -73,11 +74,11 @@ jobs:
               echo "Runner was never acquired: $job_name"
               unacquired=$((unacquired + 1))
             else
-              echo "Failed after acquiring a runner: $job_name"
+              echo "Failed or cancelled after acquiring a runner: $job_name"
               other=$((other + 1))
             fi
           done < <(gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/attempts/1/jobs?per_page=100" \
-            --jq '.jobs[] | select(.conclusion == "failure") | [.id, .name] | @tsv')
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .name] | @tsv')
 
           if (( unacquired > 0 && other == 0 )); then
             echo "Re-running $unacquired unacquired job(s) and their dependents once."

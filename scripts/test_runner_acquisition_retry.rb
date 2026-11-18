@@ -63,7 +63,9 @@ class RunnerAcquisitionRetryTest < Minitest::Test
     assert_equal({ 'workflows' => ['CI', 'Post-merge validation'], 'types' => ['completed'] }, events.fetch('workflow_run'))
     assert_equal({}, @workflow.fetch('permissions'))
     assert_equal({ 'actions' => 'write', 'checks' => 'read', 'contents' => 'read', 'pull-requests' => 'read' }, job.fetch('permissions'))
-    assert_equal "github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1", job.fetch('if')
+    assert_equal %q{contains(fromJSON('["failure", "cancelled"]'), github.event.workflow_run.conclusion) && github.event.workflow_run.run_attempt == 1}, job.fetch('if')
+    # Observed on PR #1188: an unacquired macOS job ends as cancelled, not failed.
+    assert_includes job.fetch('steps').first.fetch('run'), 'select(.conclusion == "failure" or .conclusion == "cancelled")'
     assert_equal 5, job.fetch('timeout-minutes')
     refute job.fetch('steps').any? { |step| step.key?('uses') }, 'No checkout or third-party code runs with actions: write'
   end
