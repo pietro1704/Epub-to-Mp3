@@ -1,0 +1,87 @@
+name: Retry unacquired hosted runners
+
+# GitHub occasionally fails a job before any runner starts it. Re-run such a
+# run once; the re-run keeps the same head SHA, so the exact-head PR gate and
+# post-merge validation must still succeed for that head.
+on:
+  workflow_run:
+    workflows: ["CI", "Post-merge validation"]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: runner-acquisition-retry-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    name: Re-run jobs that never acquired a hosted runner
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      checks: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Re-run once only when every failure is a runner acquisition failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          marker='The job was not acquired by Runner of type hosted even after multiple attempts'
+          # These jobs fail only because a job they require failed.
+          aggregators='["PR gate", "Validated merged source"]'
+
+          run="$(gh api "repos/$REPO/actions/runs/$RUN_ID")"
+          if [[ "$(jq -r '.run_attempt' <<< "$run")" != 1 ]]; then
+            echo 'The run was already re-run; leaving it unchanged.'
+            exit 0
+          fi
+          # A re-run of a superseded head would join, and could cancel, the
+          # current head's concurrency group.
+          if [[ "$RUN_EVENT" == pull_request ]]; then
+            if [[ -z "$PR_NUMBER" ]]; then
+              echo 'No same-repository pull request is attached; leaving the run unchanged.'
+              exit 0
+            fi
+            current="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')"
+          else
+            current="$(gh api "repos/$REPO/commits/master" --jq '.sha')"
+          fi
+          if [[ "$current" != "$HEAD_SHA" ]]; then
+            echo "Head $HEAD_SHA is no longer current ($current); leaving the run unchanged."
+            exit 0
+          fi
+
+          unacquired=0
+          other=0
+          while IFS=$'\t' read -r job_id job_name; do
+            [[ -n "$job_id" ]] || continue
+            if jq -e --arg name "$job_name" 'index($name) != null' <<< "$aggregators" > /dev/null; then
+              continue
+            fi
+            messages="$(gh api --paginate "repos/$REPO/check-runs/$job_id/annotations?per_page=100" --jq '.[].message')"
+            if grep -Fq "$marker" <<< "$messages"; then
+              echo "Runner was never acquired: $job_name"
+              unacquired=$((unacquired + 1))
+            else
+              echo "Failed after acquiring a runner: $job_name"
+              other=$((other + 1))
+            fi
+          done < <(gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/attempts/1/jobs?per_page=100" \
+            --jq '.jobs[] | select(.conclusion == "failure") | [.id, .name] | @tsv')
+
+          if (( unacquired > 0 && other == 0 )); then
+            echo "Re-running $unacquired unacquired job(s) and their dependents once."
+            gh run rerun "$RUN_ID" --failed --repo "$REPO"
+          else
+            echo "No automatic re-run (unacquired=$unacquired, other failures=$other)."
+          fi
