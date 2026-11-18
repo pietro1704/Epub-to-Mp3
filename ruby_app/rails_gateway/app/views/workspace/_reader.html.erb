@@ -1,0 +1,66 @@
+<section class="reader" data-controller="reader" hidden aria-label="<%= t('status.readerTitle') %>"
+         data-action="keydown->reader#keyDown click->reader#followLink"
+         data-reader-page-value="<%= t('status.readerPageLabel') %>"
+         data-reader-matches-value="<%= t('status.readerSearchPosition') %>"
+         data-reader-following-value="<%= t('status.readerFollowAudioOn') %>"
+         data-reader-manual-value="<%= t('status.readerFollowAudioOff') %>"
+         data-reader-stylesheet-value="<%= asset_path('reader_content.css') %>">
+  <div data-reader-target="inline">
+    <div class="reader__content" data-reader-target="content" data-theme="paper">
+      <header class="reader__header">
+        <div><h3 data-reader-target="title"></h3><p data-reader-target="author"></p></div>
+        <div class="reader__actions">
+          <button type="button" data-reader-target="popup" data-action="reader#popup"><%= t('status.readerOpenPopup') %></button>
+          <button type="button" data-reader-target="exitPopup" data-action="reader#exitPopup" hidden><%= t('status.readerExitPopup') %></button>
+          <button type="button" data-action="reader#close"><%= t('status.readerClose') %></button>
+        </div>
+      </header>
+      <div class="reader__controls">
+        <label><%= t('status.searchPlaceholder') %><input type="search" data-reader-target="search" data-action="input->reader#search"></label>
+        <span role="status" data-reader-target="matches"></span>
+        <button type="button" data-reader-target="previousMatch" data-action="reader#previousMatch"><%= t('status.searchPrev') %></button>
+        <button type="button" data-reader-target="nextMatch" data-action="reader#nextMatch"><%= t('status.searchNext') %></button>
+      </div>
+      <div class="reader__controls">
+        <label><%= t('status.readerThemeLabel') %>
+          <select aria-label="<%= t('status.readerThemeLabel') %>" data-reader-target="preference" data-preference="theme" data-action="change->reader#preference">
+            <% %w[paper mist ink].each do |theme| %><option value="<%= theme %>"><%= t("status.readerTheme#{theme.capitalize}") %></option><% end %>
+          </select>
+        </label>
+        <label><%= t('status.readerFontFamilyLabel') %>
+          <select aria-label="<%= t('status.readerFontFamilyLabel') %>" data-reader-target="preference" data-preference="fontFamily" data-action="change->reader#preference">
+            <option value="serif"><%= t('status.readerFontFamilySerif') %></option>
+            <option value="sans"><%= t('status.readerFontFamilySans') %></option>
+          </select>
+        </label>
+        <% [ ['fontScale', 'readerFontSizeLabel', 0.9, 1.4, 0.05], ['lineHeight', 'readerLineHeightLabel', 1.45, 2.1, 0.05], ['widthRem', 'readerWidthLabel', 34, 68, 2] ].each do |key, label, min, max, step| %>
+          <label><%= t("status.#{label}") %><input type="range" min="<%= min %>" max="<%= max %>" step="<%= step %>" data-reader-target="preference" data-preference="<%= key %>" data-action="input->reader#preference"></label>
+        <% end %>
+        <label><input type="checkbox" data-reader-target="preference" data-preference="followAudio" data-action="change->reader#preference"><%= t('status.readerFollowAudioLabel') %></label>
+        <span data-reader-target="follow"></span>
+      </div>
+      <div class="reader__layout">
+        <nav aria-label="<%= t('status.readerChaptersTitle') %>" class="reader__chapters" data-reader-target="chapters"></nav>
+        <div>
+          <p role="status" data-reader-target="loading" hidden><%= t('status.readerLoading') %></p>
+          <div role="alert" data-reader-target="error" hidden>
+            <p><%= t('status.readerUnavailable') %></p><p data-reader-target="errorDetail"></p>
+            <button type="button" data-action="reader#retry"><%= t('status.readerRetryLoad') %></button>
+          </div>
+          <p data-reader-target="empty" hidden><%= t('status.readerEmpty') %></p>
+          <div class="reader__pager">
+            <button type="button" data-reader-target="previous" data-action="reader#previous"><%= t('status.readerPrevPage') %></button>
+            <span role="status" data-reader-target="pageLabel"></span>
+            <button type="button" data-reader-target="next" data-action="reader#next"><%= t('status.readerNextPage') %></button>
+          </div>
+          <h4 data-reader-target="chapterName"></h4>
+          <article class="reader__article" tabindex="0" aria-label="<%= t('status.readerTitle') %>" data-reader-target="article" hidden>
+            <div data-reader-target="host"></div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </div>
+  <dialog class="reader__dialog" data-reader-target="dialog" aria-label="<%= t('status.readerTitle') %>" data-action="cancel->reader#cancelPopup"></dialog>
+  <template data-reader-target="chapterRow"><button type="button" data-action="reader#selectChapter"></button></template>
+</section>

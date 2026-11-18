@@ -1,0 +1,34 @@
+<%# Status of the active job (P-27) and its event log (P-28). %>
+<div class="status-panel" data-controller="conversion-status"
+     data-conversion-status-strings-value="<%= conversion_strings_json %>">
+  <p data-conversion-status-target="placeholder"><%= t("status.placeholder") %></p>
+  <div class="status-panel__header">
+    <span class="status-panel__phase" role="status" data-conversion-status-target="phase"></span>
+    <span data-conversion-status-target="batch"></span>
+    <small data-conversion-status-target="job"></small>
+  </div>
+  <p><strong data-conversion-status-target="book"></strong></p>
+  <p><span><%= t("status.etaLabel") %>:</span> <strong data-conversion-status-target="eta"></strong></p>
+  <p><span><%= t("status.summaryChapters") %>:</span> <span data-conversion-status-target="chapters"></span></p>
+  <div class="status-panel__progress">
+    <span id="status-progress-label"><%= t("status.progressLabel") %></span>
+    <strong data-conversion-status-target="percent"></strong>
+    <div class="hero__progress-bar" role="progressbar" aria-labelledby="status-progress-label"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-conversion-status-target="bar">
+      <div class="hero__progress-fill" data-conversion-status-target="fill"></div>
+    </div>
+  </div>
+  <div role="alert" data-conversion-status-target="failure" hidden>
+    <p data-conversion-status-target="error"></p>
+    <p data-conversion-status-target="hint"></p>
+  </div>
+  <div class="status-panel__actions">
+    <button type="button" data-conversion-status-target="cancel" data-action="conversion-status#cancel"><%= t("status.cancelButton") %></button>
+    <button type="button" data-conversion-status-target="skip" data-action="conversion-status#skip" hidden><%= t("status.skipButton") %></button>
+    <button type="button" aria-expanded="false" aria-controls="status-log" data-conversion-status-target="logToggle"
+            data-action="conversion-status#toggleLog"><%= t("status.toggleShow") %></button>
+  </div>
+  <section id="status-log" aria-label="<%= t("status.terminalLogLabel") %>" hidden data-conversion-status-target="logPanel">
+    <ol class="status-panel__log" aria-live="polite" data-conversion-status-target="log"></ol>
+  </section>
+</div>

@@ -1,0 +1,21 @@
+<section class="job-library" aria-labelledby="resumable-jobs-title" hidden data-controller="job-library"
+         data-job-library-strings-value="<%= conversion_strings_json %>">
+  <h3 id="resumable-jobs-title"><%= t("resumableJobs.title") %></h3>
+  <p><%= t("resumableJobs.subtitle") %></p>
+  <p role="status" data-job-library-target="loading"><%= t("resumableJobs.loading") %></p>
+  <ul class="job-library__list" data-job-library-target="list" aria-live="polite"></ul>
+  <template data-job-library-target="row">
+    <li class="job-library__item">
+      <strong data-field="title"></strong>
+      <span data-field="state"></span>
+      <span data-field="progress"></span>
+      <small data-field="engine"></small>
+      <small data-field="voice"></small>
+      <small data-field="language"></small>
+      <div class="job-library__actions">
+        <button type="button" data-action="job-library#resume"><%= t("resumableJobs.resumeButton") %></button>
+        <button type="button" data-action="job-library#remove"><%= t("resumableJobs.removeButton") %></button>
+      </div>
+    </li>
+  </template>
+</section>

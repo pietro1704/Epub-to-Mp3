@@ -1,0 +1,17 @@
+/* Trusted presentation rules; book markup and CSS are supplied by Rust. */
+.reader-root {
+  color: var(--reader-text); font-family: var(--reader-font-family, Georgia, serif);
+  font-size: calc(1rem * var(--reader-font-scale, 1.05)); line-height: var(--reader-line-height, 1.75);
+  overflow-wrap: anywhere; word-break: normal;
+}
+p, blockquote, ol, ul, figure, pre { margin: 0 0 1.1rem; }
+h1, h2, h3, h4, h5, h6 { line-height: 1.2; margin: 1.2em 0 0.7em; }
+blockquote { border-left: 3px solid currentColor; padding-left: 1rem; }
+pre { white-space: pre-wrap; }
+img { max-width: 100%; height: auto; }
+table { display: block; overflow-x: auto; border-collapse: collapse; }
+th, td { border: 1px solid var(--reader-border); padding: 0.3rem; }
+a { color: inherit; }
+[data-reader-search] { background: #f9e68b; color: #241c00; }
+[data-reader-audio] { background: #a9dfc4; color: #102b1c; }
+.is-current-search { outline: 2px solid currentColor; outline-offset: 1px; }

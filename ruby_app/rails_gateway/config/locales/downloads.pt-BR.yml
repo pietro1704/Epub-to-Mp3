@@ -1,0 +1,30 @@
+pt-BR:
+  downloadLibrary:
+    recent: Conversões recentes
+    ready: Livros prontos para download
+    downloadAll: Baixar todos os capítulos
+    open: Abrir downloads
+    listen: Ver áudios
+    remove: Remover
+    current: Sessão atual
+    history: Sessões anteriores
+    viewing: Ouvindo capítulos de “{title}”
+    back: Ver downloads atuais
+    placeholder: Assim que a conversão terminar, os áudios ficam disponíveis aqui para ouvir ou baixar.
+    missing: Conversão concluída, mas os arquivos não puderam ser carregados. Verifique as conversões recentes ou inicie uma nova.
+    reset: Começar uma nova conversão
+    clear: Limpar tudo
+    chapterDownload: Baixar MP3
+    chapter: 1 capítulo pronto
+    chapters: "{count} capítulos prontos"
+    noTitle: Livro sem título
+    readError: Não foi possível carregar os downloads salvos.
+    removeError: Não foi possível remover a conversão salva.
+    shareTitle: Compartilhe seu audiolivro
+    nativeShare: Compartilhar…
+    whatsApp: Enviar no WhatsApp
+    copy: Copiar link
+    copied: Link copiado!
+    copyError: Não foi possível copiar. Tente manualmente.
+    nativeUnavailable: Seu navegador não abriu o menu de compartilhamento. Use copiar link.
+    shareMessage: "Terminei de converter “{title}” em audiobook com o EPUB to MP3. Ouça aqui:"

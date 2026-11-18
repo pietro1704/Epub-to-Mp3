@@ -1,0 +1,16 @@
+pt-BR:
+  nativeSpeech:
+    label: Narração com voz do sistema
+    notice: Piper indisponível. A voz do sistema serve apenas para ouvir; exportar MP3 exige Piper.
+    chapter: Capítulo para ouvir
+    listen: Ouvir com voz instalada do sistema
+    pause: Pausar
+    resume: Continuar
+    stop: Parar
+    retry: Tentar conversão com Piper novamente
+    starting: Preparando voz do sistema
+    paused: Narração do sistema pausada
+    completed: Narração do sistema concluída
+    unavailable: A voz do sistema não está disponível neste navegador.
+    failed: Não foi possível narrar com a voz instalada. Verifique as vozes offline do sistema ou tente novamente com Piper.
+    retryFailure: Não foi possível retomar a conversão com Piper. Tente novamente.

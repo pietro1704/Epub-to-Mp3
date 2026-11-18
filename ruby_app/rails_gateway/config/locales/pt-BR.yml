@@ -1,0 +1,234 @@
+# Keys keep the hierarchy and names of the React dictionaries in web/src/i18n
+# so both clients can be compared key by key. Only the keys the shell renders
+# are present; later slices add the rest.
+pt-BR:
+  topBar:
+    ariaLabel: "Preferências de tema e idioma"
+    themeLabel: "Tema"
+    themeLight: "Claro"
+    themeDark: "Escuro"
+    themeAuto: "Auto"
+    localeLabel: "Idioma"
+    localeEnglish: "Inglês"
+    localePortuguese: "Português"
+    localeAuto: "Auto"
+  hero:
+    badge: "Livro em áudio"
+    subtitle: "Abra o livro e converta localmente com Piper. A voz instalada do sistema serve apenas para ouvir; exportar MP3 exige Piper."
+  tabs:
+    ariaLabel: "Conversion flow"
+    setup:
+      label: "1. Preparar conversão"
+      description: "Envie o livro e escolha voz, notas e capítulos."
+      panelTitle: "Envie seu livro"
+      panelDescription: "Faça o upload e escolha como o áudio deve soar."
+      savedBatchTitle:
+        one: "📋 Fila salva com {count} livro pendente"
+        other: "📋 Fila salva com {count} livros pendentes"
+      savedBatchDismiss: "Descartar"
+      savedBatchNeedsReupload:
+        one: "⚠️ {count} livro precisa ser reenviado (arquivo não pode ser salvo)"
+        other: "⚠️ {count} livros precisam ser reenviados (arquivo não pode ser salvo)"
+    progress:
+      label: "2. Acompanhar andamento"
+      description: "Acompanhe a conversão local do livro neste dispositivo."
+      panelTitle: "Status da conversão"
+      panelDescription: "Aqui ficam as mensagens mais recentes."
+      activeBadge: "Convertendo agora"
+    downloads:
+      label: "3. Ouvir e baixar"
+      description: "Os capítulos prontos aparecem aqui para download imediato."
+      panelTitle: "Seus arquivos MP3"
+      panelDescription: "Baixe os capítulos convertidos ou inicie outra conversão."
+  layout:
+    footer: ""
+    loading: "Carregando..."
+    helpToggle: "Ajuda & Sistema"
+    helpTitle: "Ajuda e monitoramento"
+    helpClose: "Fechar painel"
+    localRuntime: "Conversão local"
+    localInstallHelp: "Para preparar a voz offline, use “Instalar Faber medium” no formulário."
+  form:
+    fileLabel: "Arquivo do livro (EPUB)"
+    fileHint: "Escolha ou arraste arquivos EPUB aqui, com até 100 MB cada. Os arquivos ficam neste dispositivo."
+    fileQueueLabel: "Fila de livros"
+    fileQueueEmpty: "Nenhum livro na fila. Adicione quantos quiser antes de converter."
+    fileQueueRemove: "Remover"
+    fileQueueMoveUp: "Mover para cima"
+    fileQueueMoveDown: "Mover para baixo"
+    fileQueueReorderHint: "Arraste ou use as setas para alterar a ordem. Os livros serão convertidos de cima para baixo."
+    useSampleButton: "Usar livro de exemplo"
+    addFolderButton: "Adicionar pasta inteira"
+    autoUploadPending: "Inspecionando livro…"
+    autoUploadReady: "Metadados detectados. Pronto."
+    inspectionFailed: "Não foi possível inspecionar este livro."
+    errorNoFile: "Escolha um arquivo EPUB antes de converter."
+    errorFileTooLarge: "O arquivo excede o limite de 100 MB."
+    errorUnsupportedFile: "Apenas arquivos EPUB são aceitos."
+    errorSampleLoad: "Não foi possível carregar o livro de exemplo."
+    validatingSelection: "Aguardando inspeção dos livros…"
+    submitIdle: "Converter agora"
+    chaptersLabel: "Quais capítulos você quer ouvir? (opcional)"
+    chaptersPlaceholder: "Ex.: 2 ou 1-3 (deixe em branco para todos)"
+    chaptersHint: "Use um número de capítulo ou um intervalo inclusivo. O app usa todos os capítulos se você deixar vazio."
+    languageLabel: "Idioma do áudio"
+    languageHint: "Automático usa o idioma do livro e, depois, português (Brasil)."
+    languageOptions:
+      auto: "Automático"
+      pt: "Português (Brasil)"
+      en: "Inglês (Estados Unidos)"
+    ttsPreferences:
+      capability: "Modelos Piper compatíveis funcionam localmente após a instalação. Edge não está disponível neste navegador."
+  status:
+    readerTitle: "Leitor sincronizado"
+    readerOpen: "Abrir leitor"
+    readerClose: "Fechar leitor"
+    readerOpenPopup: "Abrir em popup"
+    readerExitPopup: "Sair do popup"
+    readerChaptersTitle: "Capítulos"
+    readerLoading: "Carregando texto do EPUB…"
+    readerUnavailable: "Não foi possível carregar o texto do livro. Tente novamente em instantes."
+    readerRetryLoad: "Tentar carregar novamente"
+    readerEmpty: "Selecione um capítulo para começar a ler."
+    readerPageLabel: "Página {current} de {total}"
+    readerPrevPage: "Página anterior"
+    readerNextPage: "Próxima página"
+    searchPlaceholder: "Buscar no texto completo…"
+    readerSearchPosition: "Ocorrência {current} de {total}"
+    searchPrev: "Ocorrência anterior"
+    searchNext: "Próxima ocorrência"
+    readerFollowAudioLabel: "Seguir áudio"
+    readerFollowAudioOn: "Seguindo a narração"
+    readerFollowAudioOff: "Leitura manual"
+    readerThemeLabel: "Tema do leitor"
+    readerThemePaper: "Papel"
+    readerThemeMist: "Bruma"
+    readerThemeInk: "Tinta"
+    readerFontFamilyLabel: "Fonte"
+    readerFontFamilySerif: "Serifa"
+    readerFontFamilySans: "Sem serifa"
+    readerFontSizeLabel: "Tamanho da fonte"
+    readerLineHeightLabel: "Espaçamento"
+    readerWidthLabel: "Largura da coluna"
+    phases:
+      idle: "Pronto para começar"
+      submitting: "Enviando arquivo…"
+      polling: "Lendo e convertendo…"
+      success: "Tudo pronto!"
+      error: "Ops, algo deu errado"
+      cancelling: "Cancelando…"
+      cancelled: "Cancelado"
+    placeholder: "Envie um arquivo para acompanhar o passo a passo aqui."
+    errorPrefix: "Detalhes: {message}"
+    toggleShow: "Mostrar saída do terminal"
+    toggleHide: "Ocultar saída do terminal"
+    terminalLogLabel: "Log do Terminal"
+    etaCalculating: "calculando…"
+    etaSoon: "quase pronto"
+    etaDone: "concluído"
+    cancelButton: "Parar conversão"
+    cancelButtonPending: "Cancelando…"
+    skipButton: "Pular para próximo"
+    summaryChapters: "Capítulos totais"
+    chaptersProgress: "{completed} de {total} capítulos"
+    chapterStatuses:
+      pending: "Na fila"
+      processing: "Convertendo"
+      completed: "Concluído"
+      skipped: "Ignorado"
+      failed: "Falhou"
+      cancelled: "Cancelado"
+      retrying: "Tentando novamente"
+    errorCategoryHints:
+      rate_limit: "Limite de requisições atingido. Tente novamente em alguns minutos."
+      timeout: "A conversão demorou mais do que o esperado. Tente um engine diferente."
+      network: "Falha de rede. Verifique sua conexão e tente novamente."
+      engine_unavailable: "Nenhum engine TTS disponível. Instale um modelo de voz compatível em Configurações ou habilite o Edge-TTS."
+      audio_truncation: "Áudio gerado mais curto que o esperado. Tente diminuir o capítulo."
+      incomplete_segments: "Segmentos de áudio incompletos. O Edge-TTS pode estar sobrecarregado."
+      invalid_audio: "Arquivo de áudio inválido gerado. Tente outro engine."
+      cancelled: "Conversão cancelada pelo usuário."
+      file_not_found: "Arquivo não encontrado. Faça o upload novamente."
+      auth: "Erro de autenticação com o serviço TTS."
+    jobLabel: "Código do pedido: %{jobId}"
+    progressLabel: "Progresso geral"
+    etaLabel: "Tempo estimado"
+    bookFallbackTitle: "Livro carregado"
+    bookFallbackAuthor: "Autor desconhecido"
+  activeConversion:
+    title: "Conversão em andamento"
+    currentLabel: "Livro em processamento"
+    etaLabel: "Tempo estimado"
+    queueHint: "Qualquer novo arquivo enviado aqui entra na fila logo após este livro terminar."
+    description: "Você pode continuar adicionando livros normalmente. Eles serão processados na sequência."
+    viewProgress: "Ver andamento"
+    cancel: "Cancelar conversão"
+    skip: "Pular para próximo"
+  queue:
+    displayCurrentLabel: "Convertendo agora"
+    displayQueueLabel:
+      one: "Na fila: {count} livro"
+      other: "Na fila: {count} livros"
+    displayResumeButton: "▶ Retomar fila"
+    displayClearButton: "Limpar fila"
+    displayPausedBadge: "Pausada"
+    displayMoveUp: "Mover para cima"
+    displayMoveDown: "Mover para baixo"
+  resumableJobs:
+    title: "Retomar conversões inacabadas"
+    subtitle: "Detectamos livros parcialmente convertidos. Clique para continuar de onde parou."
+    empty: "Nenhuma conversão pendente para retomar."
+    loading: "Carregando conversões pendentes..."
+    resumeButton: "Continuar agora"
+    removeButton: "Remover"
+    progressLabel: "{completed} de {total} capítulos"
+    engineLabel: "Motor: {value}"
+    voiceLabel: "Voz: {value}"
+    languageLabel: "Idioma: {value}"
+  recentJobs:
+    stateLabels:
+      queued: "Na fila"
+      running: "Convertendo"
+      finished: "Concluído"
+      failed: "Falhou"
+      cancelled: "Cancelado"
+      interrupted: "Interrompido"
+  flow:
+    jobStarted: "Convertendo “{title}”…"
+    jobEvent: "{message}"
+    jobQueued: "Pedido recebido. Aguardando narração…"
+    jobRunning: "Narrando neste dispositivo…"
+    jobFinished: "Conversão finalizada."
+    jobInterrupted: "Conversão interrompida."
+    resuming: "🔄 Retomando conversão interrompida…"
+    failure: "Pedido com erro: {message}"
+    error: "Erro: {message}"
+    defaultFailure: "A conversão falhou"
+    cancelled: "Pedido cancelado pelo usuário."
+    skipConfirm: "Deseja pular este livro e continuar com o próximo da fila?"
+    cancelConfirm: "Cancelar agora interrompe a conversão atual e remove os arquivos gerados. Deseja continuar?"
+    batchPosition: "📚 Livro {index}/{total}"
+    batchCancelled:
+      one: "Fila interrompida. {remaining} livro ainda não foi convertido."
+      other: "Fila interrompida. {remaining} livros ainda não foram convertidos."
+    backendOffline: "Servidor de conversão indisponível"
+    backendOfflineDetails: "Não foi possível contatar o runtime de conversão Rust. Verifique se o runtime local está disponível e recarregue a página."
+
+  chapterList:
+    title: Progresso por capítulo
+    current: Ver atual
+    expand: Expandir tudo
+    collapse: Recolher tudo
+    showText: Mostrar todo texto
+    hideText: Ocultar texto
+    top: Ir ao topo
+    download: Baixar texto completo
+    search: Buscar no texto
+    previous: Ocorrência anterior
+    next: Próxima ocorrência
+    match: ocorrência
+    matches: ocorrências
+    text: Texto
+    segment: Segmento
+    audio: Áudio do capítulo completo
+    unavailable: "[texto indisponível]"

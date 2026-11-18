@@ -51,7 +51,7 @@ class CiRuntimeScopeTest < Minitest::Test
   def test_documentation_changes_skip_runtimes_and_host_contracts_but_not_packaging
     result, status, err, contracts = scope(['docs/guide.md'])
     assert status.success?, err
-    assert_equal %w[rust web flutter android wasm apple].to_h { |name| [name, 'false'] }, result
+    assert_equal %w[rust web flutter android wasm apple rails].to_h { |name| [name, 'false'] }, result
     assert_equal 'false', contracts
     guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
     refute guard.key?('if')
@@ -59,7 +59,7 @@ class CiRuntimeScopeTest < Minitest::Test
     boundary = guard.fetch('steps').find { |step| step['name'] == 'Check production packaging boundary' }
     refute boundary.key?('if')
     assert_equal 'bash scripts/guard_no_python_production.sh', boundary.fetch('run')
-    %w[rust web flutter android wasm apple contracts].each do |name|
+    %w[rust web flutter android wasm apple rails contracts].each do |name|
       assert_equal "${{ steps.scope.outputs.#{name} }}", @workflow.fetch('jobs').fetch('changes').fetch('outputs').fetch(name)
     end
   end
@@ -103,7 +103,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[rust flutter android-jvm web apple-app]
+    runtimes = %w[rust flutter android-jvm web apple-app rails-web]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -112,26 +112,26 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_platform_and_shared_runtime_dependencies
     { 'web/src/app.tsx' => %w[web], 'flutter_app/lib/main.dart' => %w[flutter],
-      'scripts/host_tool.py' => [], 'crates/converter-server/src/main.rs' => %w[rust],
+      'ruby_app/rails_gateway/config/routes.rb' => %w[rails], 'scripts/host_tool.py' => [], 'crates/converter-server/src/main.rs' => %w[rust],
       'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
       'ios/EpubToMp3/Package.swift' => %w[apple],
       'native/piper-runtime/src/lib.rs' => %w[rust apple flutter android],
       'crates/converter-ffi/src/lib.rs' => %w[rust apple flutter android],
-      'Cargo.lock' => %w[rust apple flutter android web wasm],
-      'Cargo.toml' => %w[rust apple flutter android web wasm],
-      'rust-toolchain.toml' => %w[rust apple flutter android web wasm],
-      'mise.toml' => %w[rust apple flutter android web wasm],
-      'mise.lock' => %w[rust apple flutter android web wasm],
-      '.github/workflows/ci.yml' => %w[rust apple flutter android web wasm],
-      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android web wasm],
+      'Cargo.lock' => %w[rust apple flutter android web wasm rails],
+      'Cargo.toml' => %w[rust apple flutter android web wasm rails],
+      'rust-toolchain.toml' => %w[rust apple flutter android web wasm rails],
+      'mise.toml' => %w[rust apple flutter android web wasm rails],
+      'mise.lock' => %w[rust apple flutter android web wasm rails],
+      '.github/workflows/ci.yml' => %w[rust apple flutter android web wasm rails],
+      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android web wasm rails],
       '.github/workflows/browser-runtime.yml' => %w[web wasm],
-      '.github/workflows/faber-integration.yml' => %w[rust apple flutter android web wasm],
+      '.github/workflows/faber-integration.yml' => %w[rust apple flutter android web wasm rails],
       '.github/workflows/converter-ffi.yml' => %w[rust apple flutter android],
-      '.github/actions/rust-build-cache/action.yml' => %w[rust apple flutter android web wasm],
-      'scripts/build_web_wasm.sh' => %w[web wasm],
+      '.github/actions/rust-build-cache/action.yml' => %w[rust apple flutter android web wasm rails],
+      'scripts/build_web_wasm.sh' => %w[web wasm rails],
       'Cargo.lock.notes.md' => [],
-      'crates/converter-core/src/lib.rs' => %w[rust apple flutter web wasm],
-      'crates/converter-wasm/src/lib.rs' => %w[rust web wasm],
+      'crates/converter-core/src/lib.rs' => %w[rust apple flutter web wasm rails],
+      'crates/converter-wasm/src/lib.rs' => %w[rust web wasm rails],
       'web/src/wasm/converter_wasm.js' => %w[web wasm] }.each do |path, expected|
       result, status, err = scope([path])
       assert status.success?, err
@@ -149,7 +149,7 @@ class CiRuntimeScopeTest < Minitest::Test
     # --no-renames makes both the removed and new names visible to classification.
     result, status, err = scope(['crates/converter-core/src/deleted.rs', 'docs/moved.md'])
     assert status.success?, err
-    assert_equal %w[apple flutter rust wasm web], result.select { |_, value| value == 'true' }.keys.sort
+    assert_equal %w[apple flutter rails rust wasm web], result.select { |_, value| value == 'true' }.keys.sort
   end
 
   def test_full_validation_uses_every_runtime_without_pr_context
@@ -179,7 +179,7 @@ class CiRuntimeScopeTest < Minitest::Test
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
     { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web',
-      'apple-app' => 'apple' }.each do |job, name|
+      'apple-app' => 'apple', 'rails-web' => 'rails' }.each do |job, name|
       selected = scopes[name] == 'true' && !(%w[apple-app android-jvm].include?(job) && integrated == true)
       needs[job] = { 'result' => selected ? 'success' : 'skipped' }
     end
@@ -189,7 +189,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_native_app_gate_rejects_failures_and_integrated_validation_avoids_duplicate_app_runs
-    scopes = %w[rust web flutter android wasm apple].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
+    scopes = %w[rust web flutter android wasm apple rails].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'apple-app' => result).success? }
     assert gate(scopes, {}, true).success?
@@ -198,9 +198,12 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_gate_accepts_only_confirmed_scopes_and_matching_results
-    scopes = %w[rust web flutter android wasm apple].to_h { |name| [name, 'false'] }.merge('web' => 'true')
+    scopes = %w[rust web flutter android wasm apple rails].to_h { |name| [name, 'false'] }.merge('web' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'web' => result).success? }
+    rails = scopes.merge('rails' => 'true')
+    assert gate(rails).success?
+    %w[failure cancelled skipped].each { |result| refute gate(rails, 'rails-web' => result).success? }
     refute gate(scopes, 'changes' => 'failure').success?
     %w[failure cancelled skipped].each do |result|
       refute gate(scopes, 'production-packaging-guard' => result).success?

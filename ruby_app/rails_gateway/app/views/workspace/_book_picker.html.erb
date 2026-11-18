@@ -1,0 +1,59 @@
+<form data-book-picker-narration-policy-outlet="#narration-policy" class="book-picker" data-controller="book-picker" data-turbo="false"
+      data-action="downloads:reset@window->book-picker#reset submit->book-picker#submit dragover->book-picker#dragOver drop->book-picker#drop"
+      data-book-picker-uploading-value="<%= t('form.autoUploadPending') %>"
+      data-book-picker-ready-value="<%= t('form.autoUploadReady') %>"
+      data-book-picker-failed-value="<%= t('form.inspectionFailed') %>"
+      data-book-picker-idle-value="<%= t('form.submitIdle') %>"
+      data-book-picker-busy-value="<%= t('form.validatingSelection') %>"
+      data-book-picker-oversized-value="<%= t('form.errorFileTooLarge') %>"
+      data-book-picker-unsupported-value="<%= t('form.errorUnsupportedFile') %>"
+      data-book-picker-sample-failed-value="<%= t('form.errorSampleLoad') %>"
+      data-book-picker-missing-value="<%= t('form.errorNoFile') %>">
+  <label for="book-files"><%= t('form.fileLabel') %></label>
+  <%# No name: even without JS, the form cannot transmit file bytes. %>
+  <input id="book-files" type="file" accept=".epub,application/epub+zip" multiple
+         aria-describedby="book-files-hint" data-book-picker-target="files" data-action="change->book-picker#choose">
+  <p id="book-files-hint"><%= t('form.fileHint') %></p>
+  <div class="book-picker__actions">
+    <button type="button" data-action="book-picker#sample"><%= t('form.useSampleButton') %></button>
+    <button type="button" data-action="book-picker#folder"><%= t('form.addFolderButton') %></button>
+    <input type="file" accept=".epub,application/epub+zip" multiple webkitdirectory directory hidden
+           aria-label="<%= t('form.addFolderButton') %>" data-book-picker-target="folder" data-action="change->book-picker#choose">
+  </div>
+  <section aria-labelledby="book-queue-label">
+    <h3 id="book-queue-label"><%= t('form.fileQueueLabel') %> (<span data-book-picker-target="count" aria-live="polite">0</span>)</h3>
+    <p data-book-picker-target="empty"><%= t('form.fileQueueEmpty') %></p>
+    <p><%= t('form.fileQueueReorderHint') %></p>
+    <ol class="book-queue" data-book-picker-target="list" aria-live="polite"></ol>
+    <template data-book-picker-target="row">
+      <li class="book-queue__item" draggable="true" data-action="dragstart->book-picker#dragStart">
+        <strong data-field="name"></strong>
+        <span data-field="title"></span>
+        <span data-field="author"></span>
+        <small data-field="size"></small>
+        <span data-field="status" role="status"></span>
+        <span data-field="error" role="alert" hidden></span>
+        <div class="book-picker__actions">
+          <button type="button" data-action="book-picker#read"><%= t('status.readerOpen') %></button>
+          <button type="button" data-action="book-picker#up"><%= t('form.fileQueueMoveUp') %></button>
+          <button type="button" data-action="book-picker#down"><%= t('form.fileQueueMoveDown') %></button>
+          <button type="button" data-action="book-picker#remove"><%= t('form.fileQueueRemove') %></button>
+        </div>
+      </li>
+    </template>
+  </section>
+  <div class="book-picker__options">
+    <label for="chapters"><%= t('form.chaptersLabel') %></label>
+    <input id="chapters" type="text" inputmode="numeric" autocomplete="off" placeholder="<%= t('form.chaptersPlaceholder') %>"
+           aria-describedby="chapters-hint" data-book-picker-target="chapters">
+    <p id="chapters-hint"><%= t('form.chaptersHint') %></p>
+    <label for="language"><%= t('form.languageLabel') %></label>
+    <select id="language" aria-describedby="language-hint" data-book-picker-target="language">
+      <% %w[auto pt en].each do |code| %><option value="<%= code %>"><%= t("form.languageOptions.#{code}") %></option><% end %>
+    </select>
+    <p id="language-hint"><%= t('form.languageHint') %></p>
+  </div>
+  <%= render "setup/narration_policy" %>
+  <p role="alert" data-book-picker-target="error" hidden></p>
+  <button type="submit" data-book-picker-target="submit"><%= t('form.submitIdle') %></button>
+</form>

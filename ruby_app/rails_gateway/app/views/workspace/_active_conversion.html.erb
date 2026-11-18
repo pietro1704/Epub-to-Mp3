@@ -1,0 +1,14 @@
+<%# Shown on the setup tab while a job runs (P-18). %>
+<section class="active-conversion" aria-labelledby="active-conversion-title" hidden
+         data-controller="conversion-status" data-conversion-status-strings-value="<%= conversion_strings_json %>">
+  <h3 id="active-conversion-title"><%= t("activeConversion.title") %></h3>
+  <p><span><%= t("activeConversion.currentLabel") %>:</span> <strong data-conversion-status-target="book"></strong></p>
+  <p role="status" data-conversion-status-target="phase"></p>
+  <p><span><%= t("activeConversion.etaLabel") %>:</span> <strong data-conversion-status-target="eta"></strong></p>
+  <p><%= t("activeConversion.description") %> <%= t("activeConversion.queueHint") %></p>
+  <div class="active-conversion__actions">
+    <button type="button" data-action="conversion-status#viewProgress"><%= t("activeConversion.viewProgress") %></button>
+    <button type="button" data-conversion-status-target="cancel" data-action="conversion-status#cancel"><%= t("activeConversion.cancel") %></button>
+    <button type="button" data-conversion-status-target="skip" data-action="conversion-status#skip" hidden><%= t("activeConversion.skip") %></button>
+  </div>
+</section>

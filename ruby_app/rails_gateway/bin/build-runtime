@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Builds the whole generated runtime tree from source and publishes it under
+# public/runtime/<id>/ (gitignored). Compiles Rust: run it through the
+# `rails:web:runtime-build` mise task, which holds the native build lease.
+#
+# Steps: Rust/WASM bindings, pinned browser TTS libraries, then assembly with
+# the first-party module workers from browser_runtime/workers/.
+set -euo pipefail
+
+gateway_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT
+
+bash "$gateway_root/bin/build-runtime-wasm" "$staging/wasm"
+
+(cd "$gateway_root/browser_runtime" && npm ci --ignore-scripts --prefer-offline --no-audit --no-fund)
+node "$gateway_root/browser_runtime/prepare_tts_runtime.mjs" "$staging/tts"
+
+ruby "$gateway_root/bin/assemble-runtime" --wasm "$staging/wasm" --tts "$staging/tts" --workers "$gateway_root/browser_runtime/workers"

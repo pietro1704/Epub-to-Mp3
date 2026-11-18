@@ -41,6 +41,7 @@ jobs:
       wasm: ${{ steps.scope.outputs.wasm }}
       apple: ${{ steps.scope.outputs.apple }}
       contracts: ${{ steps.scope.outputs.contracts }}
+      rails: ${{ steps.scope.outputs.rails }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,7 +56,7 @@ jobs:
         shell: ruby {0}
         run: |
           require 'open3'
-          scopes = %w[rust web flutter android wasm apple].to_h { |name| [name, false] }
+          scopes = %w[rust web flutter android wasm apple rails].to_h { |name| [name, false] }
           contracts = true
           if ENV.fetch('FULL_VALIDATION') == 'true'
             scopes.transform_values! { true }
@@ -78,6 +79,7 @@ jobs:
               scopes['web'] ||= wasm || path.start_with?('web/') || path.match?(/\Ascripts\/(?:build_web|check_direct_runtime)/)
               scopes['flutter'] ||= orchestration || shared_build || shared_core || native_abi || path.start_with?('flutter_app/') || path.match?(/\Ascripts\/(?:build_flutter|build_converter_ffi_android|package_converter_ffi_android|check_direct_runtime)/)
               scopes['android'] ||= orchestration || shared_build || native_abi || path.start_with?('flutter_app/android/') || %w[flutter_app/pubspec.yaml flutter_app/pubspec.lock].include?(path) || path.match?(/\Ascripts\/(?:build_flutter_android|build_converter_ffi_android|package_converter_ffi_android|fetch_onnxruntime_android|android_jni_exports)/)
+              scopes['rails'] ||= orchestration || shared_build || shared_core || path.start_with?('ruby_app/', 'crates/converter-wasm/') || path == 'scripts/build_web_wasm.sh'
               scopes['wasm'] ||= wasm
               scopes['apple'] ||= orchestration || shared_build || shared_core || native_abi || path.start_with?('ios/EpubToMp3/')
             end
@@ -338,6 +340,61 @@ jobs:
         working-directory: web
         run: mise exec -- npm run build
 
+  rails-web:
+    if: needs.changes.outputs.rails == 'true'
+    name: Rails web
+    needs: [changes]
+    timeout-minutes: ${{ inputs.full_validation == true && 30 || 15 }}
+    runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: ruby,node,npm,rust,github:wasm-bindgen/wasm-bindgen
+      RAILS_ENV: test
+      # Tests run against the runtime tree built below, not the local fixture module.
+      CONVERTER_RUNTIME: built
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install mise
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        with:
+          version: 2026.11.3
+          install: false
+      - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Install Rust WASM target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Cache npm downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-rails-web-${{ runner.os }}-${{ hashFiles('ruby_app/rails_gateway/browser_runtime/package-lock.json', 'web/package-lock.json') }}
+          restore-keys: npm-rails-web-${{ runner.os }}-
+      - name: Build the browser runtime tree from Rust and the pinned TTS libraries
+        run: mise run rails:web:runtime-build
+      - name: Require that nothing generated is tracked or left unignored
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+          test -s ruby_app/rails_gateway/config/runtime_manifest.json
+      - name: Install gateway gems
+        working-directory: ruby_app/rails_gateway
+        run: mise exec -- bundle install --jobs 4 --retry 3
+      - name: Prepare the test database
+        working-directory: ruby_app/rails_gateway
+        run: mise exec -- bin/rails db:prepare
+      - name: Install the React reference client for the IndexedDB compatibility test
+        working-directory: web
+        run: mise exec -- npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+      - name: Run Rails and browser runtime build tests against the built runtime
+        run: mise run rails:web:test
+
   flutter:
     if: needs.changes.outputs.flutter == 'true'
     name: Flutter
@@ -562,7 +619,7 @@ jobs:
 
   pr-gate:
     name: PR gate
-    needs: [changes, production-packaging-guard, rust, flutter, android-jvm, web, apple-app]
+    needs: [changes, production-packaging-guard, rust, flutter, android-jvm, web, apple-app, rails-web]
     if: always()
     timeout-minutes: 1
     runs-on: ubuntu-24.04
@@ -582,7 +639,7 @@ jobs:
           wasm = scopes.fetch('wasm')
           abort 'Missing scope evidence: wasm' unless %w[true false].include?(wasm)
           abort 'WASM validation requires the Web job' if wasm == 'true' && scopes.fetch('web') != 'true'
-          { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web', 'apple-app' => 'apple' }.each do |job, scope|
+          { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web', 'apple-app' => 'apple', 'rails-web' => 'rails' }.each do |job, scope|
             selected = scopes.fetch(scope)
             abort "Missing scope evidence: #{scope}" unless %w[true false].include?(selected)
             # Full post-merge validation already requires the complete Faber matrix.

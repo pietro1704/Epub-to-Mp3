@@ -2,5 +2,21 @@
 /tmp/
 /log/
 /storage/*.sqlite3
+/storage/*.sqlite3_*
 /config/master.key
 /config/credentials/*.key
+
+# Generated browser runtime (decision D34): built from Rust and the pinned
+# browser packages in CI and in the image, never committed.
+/public/runtime/
+/config/runtime_manifest.json
+/browser_runtime/node_modules/
+# Precompiled Propshaft output.
+/public/assets/
+
+# The repository ignores Python-style lib/ directories; these hold Ruby sources.
+!/lib/
+!/test/lib/
+
+# The top-level download cache rule also matches the Rails source directory.
+!/app/views/downloads/

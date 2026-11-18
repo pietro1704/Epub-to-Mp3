@@ -1,31 +1,234 @@
-# Files in the config/locales directory are used for internationalization and
-# are automatically loaded by Rails. If you want to use locales other than
-# English, add the necessary files in this directory.
-#
-# To use the locales, use `I18n.t`:
-#
-#     I18n.t "hello"
-#
-# In views, this is aliased to just `t`:
-#
-#     <%= t("hello") %>
-#
-# To use a different locale, set it with `I18n.locale`:
-#
-#     I18n.locale = :es
-#
-# This would use the information in config/locales/es.yml.
-#
-# To learn more about the API, please read the Rails Internationalization guide
-# at https://guides.rubyonrails.org/i18n.html.
-#
-# Be aware that YAML interprets the following case-insensitive strings as
-# booleans: `true`, `false`, `on`, `off`, `yes`, `no`. Therefore, these strings
-# must be quoted to be interpreted as strings. For example:
-#
-#     en:
-#       "yes": yup
-#       enabled: "ON"
-
+# Keys keep the hierarchy and names of the React dictionaries in web/src/i18n
+# so both clients can be compared key by key. Only the keys the shell renders
+# are present; later slices add the rest.
 en:
-  hello: "Hello world"
+  topBar:
+    ariaLabel: "Theme and language preferences"
+    themeLabel: "Theme"
+    themeLight: "Light"
+    themeDark: "Dark"
+    themeAuto: "Auto"
+    localeLabel: "Language"
+    localeEnglish: "English"
+    localePortuguese: "Portuguese"
+    localeAuto: "Auto"
+  hero:
+    badge: "Audio book"
+    subtitle: "Open your book and convert locally with Piper. Installed system voices are listening-only; MP3 export requires Piper."
+  tabs:
+    ariaLabel: "Conversion flow"
+    setup:
+      label: "1. Prepare conversion"
+      description: "Upload the book and choose voice, footnotes, and chapters."
+      panelTitle: "Upload your book"
+      panelDescription: "Send the file and define how the audio should sound."
+      savedBatchTitle:
+        one: "📋 Saved queue with {count} book pending"
+        other: "📋 Saved queue with {count} books pending"
+      savedBatchDismiss: "Dismiss"
+      savedBatchNeedsReupload:
+        one: "⚠️ {count} book needs to be re-uploaded (file cannot be saved)"
+        other: "⚠️ {count} books need to be re-uploaded (file cannot be saved)"
+    progress:
+      label: "2. Track progress"
+      description: "Follow the local book conversion on this device."
+      panelTitle: "Conversion status"
+      panelDescription: "The latest messages show up here."
+      activeBadge: "Running"
+    downloads:
+      label: "3. Listen & download"
+      description: "Finished chapters become available for instant download."
+      panelTitle: "Your MP3 files"
+      panelDescription: "Download the chapters or start another conversion."
+  layout:
+    footer: ""
+    loading: "Loading..."
+    helpToggle: "Help & System"
+    helpTitle: "Help and monitoring"
+    helpClose: "Close panel"
+    localRuntime: "Local conversion"
+    localInstallHelp: "To prepare the offline voice, choose “Install Faber medium” in the form."
+  form:
+    fileLabel: "Book file (EPUB)"
+    fileHint: "Choose or drop EPUB files here, up to 100 MB each. Files stay on this device."
+    fileQueueLabel: "Queued books"
+    fileQueueEmpty: "No books queued yet. Add as many as you like before converting."
+    fileQueueRemove: "Remove"
+    fileQueueMoveUp: "Move up"
+    fileQueueMoveDown: "Move down"
+    fileQueueReorderHint: "Drag or use the arrows to reorder. Books convert from top to bottom."
+    useSampleButton: "Use sample book"
+    addFolderButton: "Add entire folder"
+    autoUploadPending: "Inspecting book…"
+    autoUploadReady: "Metadata detected. Ready."
+    inspectionFailed: "Unable to inspect this book."
+    errorNoFile: "Choose an EPUB file before converting."
+    errorFileTooLarge: "File exceeds the 100 MB limit."
+    errorUnsupportedFile: "Only EPUB files are supported."
+    errorSampleLoad: "Unable to load the sample book."
+    validatingSelection: "Waiting for book inspection…"
+    submitIdle: "Convert now"
+    chaptersLabel: "Which chapters do you want? (optional)"
+    chaptersPlaceholder: "Example: 2 or 1-3 (leave blank for all)"
+    chaptersHint: "Use one chapter number or an inclusive range. All chapters are used if left blank."
+    languageLabel: "Audio language"
+    languageHint: "Automatic uses the language of the book, then Portuguese (Brazil)."
+    languageOptions:
+      auto: "Automatic"
+      pt: "Portuguese (Brazil)"
+      en: "English (United States)"
+    ttsPreferences:
+      capability: "Compatible Piper models run locally after installation. Edge is unavailable in this browser."
+  status:
+    readerTitle: "Synced reader"
+    readerOpen: "Open reader"
+    readerClose: "Close reader"
+    readerOpenPopup: "Open popup"
+    readerExitPopup: "Exit popup"
+    readerChaptersTitle: "Chapters"
+    readerLoading: "Loading EPUB text…"
+    readerUnavailable: "Could not load the book text. Please try again in a moment."
+    readerRetryLoad: "Retry loading"
+    readerEmpty: "Select a chapter to start reading."
+    readerPageLabel: "Page {current} of {total}"
+    readerPrevPage: "Previous page"
+    readerNextPage: "Next page"
+    searchPlaceholder: "Search in full text…"
+    readerSearchPosition: "Match {current} of {total}"
+    searchPrev: "Previous match"
+    searchNext: "Next match"
+    readerFollowAudioLabel: "Follow audio"
+    readerFollowAudioOn: "Following narration"
+    readerFollowAudioOff: "Manual reading"
+    readerThemeLabel: "Reader theme"
+    readerThemePaper: "Paper"
+    readerThemeMist: "Mist"
+    readerThemeInk: "Ink"
+    readerFontFamilyLabel: "Font"
+    readerFontFamilySerif: "Serif"
+    readerFontFamilySans: "Sans-serif"
+    readerFontSizeLabel: "Font size"
+    readerLineHeightLabel: "Line height"
+    readerWidthLabel: "Column width"
+    phases:
+      idle: "Ready to start"
+      submitting: "Uploading file…"
+      polling: "Reading and converting…"
+      success: "All done!"
+      error: "Something went wrong"
+      cancelling: "Cancelling…"
+      cancelled: "Cancelled"
+    placeholder: "Upload a file to follow the step-by-step updates here."
+    errorPrefix: "Details: {message}"
+    toggleShow: "Show terminal output"
+    toggleHide: "Hide terminal output"
+    terminalLogLabel: "Terminal Log"
+    etaCalculating: "calculating…"
+    etaSoon: "almost there"
+    etaDone: "finished"
+    cancelButton: "Stop conversion"
+    cancelButtonPending: "Cancelling…"
+    skipButton: "Skip to next"
+    summaryChapters: "Total chapters"
+    chaptersProgress: "{completed} of {total} chapters"
+    chapterStatuses:
+      pending: "Queued"
+      processing: "Converting"
+      completed: "Done"
+      skipped: "Skipped"
+      failed: "Failed"
+      cancelled: "Cancelled"
+      retrying: "Retrying"
+    errorCategoryHints:
+      rate_limit: "Rate limit reached. Please try again in a few minutes."
+      timeout: "Conversion took too long. Try a different engine."
+      network: "Network error. Check your connection and try again."
+      engine_unavailable: "No TTS engine available. Install a compatible voice model in Settings or enable Edge-TTS."
+      audio_truncation: "Generated audio is shorter than expected. Try a shorter chapter."
+      incomplete_segments: "Incomplete audio segments. Edge-TTS may be overloaded."
+      invalid_audio: "Invalid audio file generated. Try a different engine."
+      cancelled: "Conversion cancelled by user."
+      file_not_found: "File not found. Please upload again."
+      auth: "Authentication error with the TTS service."
+    jobLabel: "Request ID: %{jobId}"
+    progressLabel: "Overall progress"
+    etaLabel: "Estimated time"
+    bookFallbackTitle: "Uploaded book"
+    bookFallbackAuthor: "Unknown author"
+  activeConversion:
+    title: "Conversion in progress"
+    currentLabel: "Currently processing"
+    etaLabel: "Estimated time"
+    queueHint: "Any new upload here is queued right after this book is done."
+    description: "Feel free to keep adding titles—everything waits in the queue."
+    viewProgress: "View progress"
+    cancel: "Cancel conversion"
+    skip: "Skip to next"
+  queue:
+    displayCurrentLabel: "Converting now"
+    displayQueueLabel:
+      one: "In queue: {count} book"
+      other: "In queue: {count} books"
+    displayResumeButton: "▶ Resume queue"
+    displayClearButton: "Clear queue"
+    displayPausedBadge: "Paused"
+    displayMoveUp: "Move up"
+    displayMoveDown: "Move down"
+  resumableJobs:
+    title: "Resume pending conversions"
+    subtitle: "Pick up requests with cached chapters without uploading again."
+    empty: "No conversions waiting to resume."
+    loading: "Loading pending conversions..."
+    resumeButton: "Resume now"
+    removeButton: "Remove"
+    progressLabel: "{completed} of {total} chapters"
+    engineLabel: "Engine: {value}"
+    voiceLabel: "Voice: {value}"
+    languageLabel: "Language: {value}"
+  recentJobs:
+    stateLabels:
+      queued: "Queued"
+      running: "Converting"
+      finished: "Finished"
+      failed: "Failed"
+      cancelled: "Cancelled"
+      interrupted: "Interrupted"
+  flow:
+    jobStarted: "Converting “{title}”…"
+    jobEvent: "{message}"
+    jobQueued: "Request received. Waiting for narration…"
+    jobRunning: "Narrating on this device…"
+    jobFinished: "Finished conversion."
+    jobInterrupted: "Conversion interrupted."
+    resuming: "🔄 Resuming interrupted conversion…"
+    failure: "Request failed: {message}"
+    error: "Error: {message}"
+    defaultFailure: "Conversion failed"
+    cancelled: "Request cancelled by the user."
+    skipConfirm: "Do you want to skip this book and continue with the next one in the queue?"
+    cancelConfirm: "Cancelling now stops the current conversion and removes generated files. Continue?"
+    batchPosition: "📚 Book {index}/{total}"
+    batchCancelled:
+      one: "Batch stopped. {remaining} book is still pending."
+      other: "Batch stopped. {remaining} books are still pending."
+    backendOffline: "Conversion server unavailable"
+    backendOfflineDetails: "Unable to reach the Rust conversion runtime. Check that the local runtime is available and reload the page."
+
+  chapterList:
+    title: Chapter progress
+    current: Go to current
+    expand: Expand all
+    collapse: Collapse all
+    showText: Show full text
+    hideText: Hide text
+    top: Back to top
+    download: Download full text
+    search: Search text
+    previous: Previous match
+    next: Next match
+    match: match
+    matches: matches
+    text: Text
+    segment: Segment
+    audio: Full chapter audio
+    unavailable: "[text unavailable]"

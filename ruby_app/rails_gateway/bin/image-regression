@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Builds the Rails web image from the repository root and checks what the
+# Hugging Face Space depends on: health, the document, every referenced
+# asset, the generated runtime tree and its media types, the exposed
+# listener, the unprivileged user and the absence of build tools and voice
+# model weights.
+#
+#   bin/image-regression            # builds, runs, checks, removes the container
+#   IMAGE=name bin/image-regression # checks an image that is already built
+#
+# Requires docker, curl and jq. It compiles Rust inside Docker.
+set -euo pipefail
+
+gateway_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+workspace_root="$(cd "$gateway_root/../.." && pwd)"
+image="${IMAGE:-}"
+container="rails-web-image-regression-$$"
+host_port="${HOST_PORT:-17861}"
+origin="http://127.0.0.1:$host_port"
+work="$(mktemp -d)"
+
+fail() {
+  echo "image regression failed: $*" >&2
+  docker logs --tail 100 "$container" 2>&1 || true
+  exit 1
+}
+cleanup() {
+  docker rm --force "$container" >/dev/null 2>&1 || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+if [[ -z "$image" ]]; then
+  image="rails-web-image-regression"
+  docker build --file "$gateway_root/Dockerfile" --tag "$image" "$workspace_root"
+fi
+
+docker run --detach --name "$container" --publish "127.0.0.1:$host_port:7860" \
+  --env SECRET_KEY_BASE="$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')" "$image" >/dev/null
+
+ready=false
+for _ in $(seq 1 30); do
+  if curl --max-time 3 --fail --silent "$origin/api/health" > "$work/health.json"; then ready=true; break; fi
+  sleep 2
+done
+[[ "$ready" == true ]] || fail "health endpoint did not become ready"
+jq -e '.status == "healthy" and .contract_version == "1" and .backend == "rails"' "$work/health.json" >/dev/null ||
+  fail "unexpected health contract: $(cat "$work/health.json")"
+
+# header URL NAME prints one response header value, lower-cased name match.
+header() {
+  curl --max-time 10 --silent --head "$1" | tr -d '\r' | awk -F': ' -v name="$2" 'tolower($1) == name { print $2; exit }'
+}
+# served URL TYPE_PATTERN requires 200, a non-empty body, the media type and immutable caching.
+served() {
+  local url="$1" pattern="$2" status content_type
+  status="$(curl --max-time 20 --silent --output "$work/body" --write-out '%{http_code}' "$url")"
+  content_type="$(header "$url" content-type)"
+  [[ "$status" == 200 && -s "$work/body" ]] || fail "$url returned $status"
+  [[ "$content_type" =~ $pattern ]] || fail "$url has content type '$content_type'"
+  [[ "$(header "$url" cache-control)" == "public, max-age=31536000, immutable" ]] || fail "$url is not immutable"
+  echo "ok $url ($content_type)"
+}
+
+for language in en pt-BR; do
+  status="$(curl --max-time 10 --silent --header "Accept-Language: $language" --output "$work/index.html" --write-out '%{http_code}' "$origin/")"
+  [[ "$status" == 200 ]] || fail "document returned $status for $language"
+  grep -q '<main class="content-shell"' "$work/index.html" || fail "document has no main landmark for $language"
+done
+[[ "$(header "$origin/" content-type)" == text/html* ]] || fail "document is not HTML"
+[[ "$(header "$origin/" cache-control)" == "no-cache" ]] || fail "document is cacheable"
+[[ -z "$(header "$origin/" cross-origin-opener-policy)$(header "$origin/" cross-origin-embedder-policy)" ]] ||
+  fail "document enables cross-origin isolation"
+[[ "$(header "$origin/" content-security-policy)" == *"frame-ancestors 'self' https://huggingface.co"* ]] ||
+  fail "document cannot be embedded by Hugging Face"
+
+assets="$(grep -Eo '"/assets/[^"]+\.(js|css)"' "$work/index.html" | tr -d '"' | sort -u)"
+[[ -n "$assets" ]] || fail "document references no digested asset"
+while IFS= read -r asset; do
+  case "$asset" in
+    *.js) served "$origin$asset" '^(text|application)/javascript' ;;
+    *.css) served "$origin$asset" '^text/css' ;;
+  esac
+done <<< "$assets"
+
+runtime_base="$(grep -Eo '<meta name="converter-runtime-base" content="[^"]+"' "$work/index.html" | sed -E 's/.*content="([^"]+)"/\1/')"
+[[ "$runtime_base" =~ ^/runtime/[0-9a-f]{64}/$ ]] || fail "document announces no runtime tree: '$runtime_base'"
+served "$origin${runtime_base}wasm/converter_wasm_bg.wasm" '^application/wasm'
+served "$origin${runtime_base}wasm/converter_wasm.js" '^text/javascript'
+served "$origin${runtime_base}tts/ort.wasm.min.mjs" '^text/javascript'
+served "$origin${runtime_base}tts/ort-wasm-simd-threaded.mjs" '^text/javascript'
+served "$origin${runtime_base}tts/ort-wasm-simd-threaded.wasm" '^application/wasm'
+served "$origin${runtime_base}tts/piper_phonemize.js" '^text/javascript'
+served "$origin${runtime_base}tts/piper_phonemize.wasm" '^application/wasm'
+served "$origin${runtime_base}tts/piper_phonemize.data" '^application/octet-stream'
+for worker in piper_worker.js piper_model.js piper_runtime.js; do
+  served "$origin${runtime_base}workers/$worker" '^text/javascript'
+done
+
+docker exec "$container" sh -c 'test "$(id -u)" = 1000' || fail "container runs as a privileged user"
+# 1EB4 is port 7860; the wildcard listener is IPv4 or dual-stack IPv6.
+docker exec "$container" sh -c "awk 'NR > 1 && \$4 == \"0A\" && (\$2 == \"00000000:1EB4\" || \$2 == \"00000000000000000000000000000000:1EB4\") { found = 1 } END { exit !found }' /proc/net/tcp /proc/net/tcp6" ||
+  fail "nothing listens on every interface at port 7860"
+docker exec "$container" sh -c 'test -z "$(find /rails -name "*.onnx" -print -quit)"' || fail "image contains voice model weights"
+docker exec "$container" sh -c '! command -v node && ! command -v cargo && ! command -v converter-server' >/dev/null ||
+  fail "image contains build tools or converter-server"
+docker exec "$container" sh -c 'test ! -e /rails/browser_runtime && test ! -e /rails/test' || fail "image contains build inputs"
+
+echo "Rails web image regression passed for $image"

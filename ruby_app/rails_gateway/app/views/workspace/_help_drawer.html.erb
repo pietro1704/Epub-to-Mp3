@@ -1,0 +1,20 @@
+<div class="help-drawer__overlay" role="button" tabindex="0" aria-label="<%= t("layout.helpClose") %>" hidden
+     data-help-drawer-target="overlay"
+     data-action="click->help-drawer#close keydown.enter->help-drawer#close keydown.space->help-drawer#close:prevent"></div>
+<aside id="help-drawer" class="help-drawer" aria-hidden="true" inert data-help-drawer-target="drawer">
+  <div class="help-drawer__header">
+    <strong><%= t("layout.helpTitle") %></strong>
+    <button type="button" class="help-drawer__close" aria-label="<%= t("layout.helpClose") %>"
+            data-action="help-drawer#close">×</button>
+  </div>
+  <section aria-label="<%= t("layout.localRuntime") %>">
+    <h2><%= t("layout.localRuntime") %></h2>
+    <p><%= t("form.ttsPreferences.capability") %></p>
+    <p><%= t("layout.localInstallHelp") %></p>
+    <p><%= t("status.phases.idle") %></p>
+    <%# Filled from browser job state once a job exists; the patterns come from the server locale. %>
+    <p role="alert" hidden></p>
+    <p hidden data-pattern="<%= t("status.jobLabel", jobId: "%{jobId}") %>"></p>
+    <p hidden data-pattern="<%= t("status.progressLabel") %>: %{percent}%"></p>
+  </section>
+</aside>

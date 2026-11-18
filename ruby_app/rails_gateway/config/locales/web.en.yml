@@ -1,0 +1,214 @@
+# Web dictionary keys shared with the React client during migration (P-41).
+---
+en:
+  locale: en
+  hero:
+    title: Turn your EPUB or PDF into MP3 in just a few clicks
+    highlights:
+    - title: Local Piper
+      description: Your primary voice is preserved. Install the model when you choose to enable offline conversion.
+    - title: True multilingual
+      description: Detects language changes per chapter and switches voices with zero configuration.
+    - title: Resume conversions
+      description: Smart caching resumes interrupted jobs and skips chapters already rendered.
+  tabs:
+    setup:
+      savedBatchResume: Resume queue
+    progress:
+      backButton: "← Back"
+      viewDownloads: View Downloads →
+    downloads:
+      footer: ''
+      backButton: "← Back"
+      followConversion: Follow conversion →
+  flow:
+    jobCreated: Request %{jobId} received. Waiting for narration…
+    loadingCache: "\U0001F4E6 Loading cached progress for this conversion..."
+    completion:
+      one: Finished conversion with 1 audio file(s).
+      other: Finished conversion with %{count} audio file(s).
+    defaultError: Unexpected error
+    cancelRequested: "\U0001F6D1 Cancel request received. Finishing current step…"
+    skipped: Current book skipped, continuing with queue.
+    cancelFailed: 'Unable to cancel: %{message}'
+    cachedRestoredSuccess: Restored from local cache — downloads may be unavailable if the server was restarted.
+    notificationErrorTitle: Conversion failed
+    notificationErrorBody: Check the log for more details.
+    notificationCancelTitle: Conversion cancelled
+    notificationCancelBody: Conversion cancelled and removed. You can start a new conversion whenever you want.
+  activeConversion:
+    engineLabel: Engine
+    voiceLabel: Voice
+    languageLabel: Language
+  form:
+    ttsPreferences:
+      primary: Primary voice
+      secondary: Secondary voice
+      none: None
+      inherit: Use preferences
+      reserve: Allow secondary for this conversion
+      install: Install selected model
+      installed: Selected model installed
+      installing: Installing…
+      system: System TTS — listening only; MP3 requires Piper
+      nativeNotice: Piper unavailable. System narration is for listening only; MP3 export requires Piper.
+      nativeListen: Listen with installed system voice
+      nativePause: Pause
+      nativeResume: Resume
+      nativeStop: Stop
+      nativeRetry: Retry Piper conversion
+      nativeUnavailable: System speech is unavailable in this browser.
+      nativeFailure: The installed voice could not narrate this text. Check offline system voices or retry with Piper.
+      nativeRetryFailure: Could not resume Piper conversion. Try again.
+      nativeStates:
+        idle: System narration stopped
+        starting: Preparing system voice
+        playing: Listening with system voice
+        paused: System narration paused
+        completed: System narration completed
+        failed: System narration failed
+      unavailable: unavailable in this browser
+      manualVoice: Voice for this conversion
+    fileQueueWithCurrent: '"%{title}" is converting now. New uploads will start right after.'
+    fileQueueCount:
+      one: 1 book
+      other: "%{count} books"
+    languagePlaceholder: Choose the primary language
+    languageNotRequired: This engine detects the language automatically.
+    languageAutoDetected: Language will be automatically detected from the book.
+    languageOptions:
+      es: Spanish (Latin America)
+      fr: French
+      de: German
+    autoUploadHint: We extract title and cover automatically once you pick a file. That upload is reused during conversion.
+    uploadingFile: Uploading file to detect cover…
+    submitBusy: Convert now
+  queue:
+    title: Queue more books
+    subtitle: Files you add here reuse the Step 1 settings and run right after the current book.
+    inputLabel: Select additional EPUB/PDF files
+    hint: Keep watching the progress while the next books wait in the background.
+    addFolderButton: Choose folder
+    success:
+      one: 1 book added to the queue.
+      other: "%{count} books added to the queue."
+    errorFallback: Unable to add to the queue. Please try again.
+    phaseActive: In progress
+    phaseSuccess: Ready for next batch
+    displayMoreLabel:
+      one: "+ 1 more"
+      other: "+ %{count} more"
+    displayShowLess: Show less
+  status:
+    summaryTitle: Run summary
+    summaryProgress: Progress
+    chapterProgressTitle: Chapter progress
+    expandAllChapters: Expand all
+    collapseAllChapters: Collapse all
+    showAllText: Show full text
+    hideAllText: Hide text
+    scrollToTop: Back to top
+    downloadFullText: Download full text
+    searchCount:
+      one: 1 match
+      other: "%{count} matches"
+    readerReadButton: Read book
+    readerStillExtracting: Still extracting the book text… this can take a few seconds.
+    readerExtractionFailed: Could not extract any chapter from this file. Please check that the EPUB/PDF is valid.
+    readerNowReading: Now reading
+    readerWaitingSegment: Waiting for next segment
+    readerPlaying: Playing
+    readerPaused: Paused
+    readerSegmentLabel: Segment %{index}
+    readerChapterCount:
+      one: chapter
+      other: chapters
+    readerAudioOnChapter: Audio on ch. %{index}
+    chapterGoToCurrent: Go to current
+    chapterGoToCurrentTitle: Go to current chapter
+    chapterFullAudio: 'Full chapter:'
+    chapterSegmentsTitle: Chapter segments
+    chapterSegmentCount:
+      zero: no segments yet
+      one: 1 segments
+      other: "%{count} segments"
+    chapterSegmentsNone: No segments available
+    chapterSegmentsWaiting: Waiting for segments...
+    chapterSegmentsLoading: Loading segments...
+    chapterSegmentTitle: Segment %{index}
+    chapterSegmentShowText: Show text
+    chapterSegmentHideText: Hide text
+    chapterSegmentText: Text
+    chapterSegmentsEmpty: No segments available yet.
+    chapterAudioUnsupported: Your browser does not support audio playback.
+    chapterEngineLabel: 'Engine: %{ENGINE}'
+    uploadingFiles: Uploading books…
+    ttsEngineLabel: TTS Engine
+  resumableJobs:
+    toggleMore:
+      expanded: Show less
+      collapsed: View all
+    justNow: just now
+    minutesAgo: "%{m} min ago"
+    hoursAgo: "%{h}h ago"
+    daysAgo:
+      one: 1 day ago
+      other: "%{d} days ago"
+  recentJobs:
+    title: "⚡ Recent conversions"
+    subtitle: Pick up where you left off or download any finished job stored on the server.
+    resumeButton: Resume
+    downloadButton: Download ZIP
+    viewAudiosButton: Listen
+    viewAudiosHint: Jump to tab 3 and play individual chapters
+    empty: No finished conversions yet.
+    justNow: just now
+    minutesAgo: "%{m} min ago"
+    hoursAgo: "%{h}h ago"
+    daysAgo:
+      one: 1 day ago
+      other: "%{d} days ago"
+    stateLabels:
+      cancelling: Cancelling
+    completedAtLabel: Finished on %{value}
+    durationLabel: 'Total time: %{value}'
+    removeButton: Remove
+  downloads:
+    placeholder: When the conversion finishes, the audio files will show up here to play or download.
+    noDownloadsAfterSuccess: Conversion finished, but the files could not be loaded. Check recent conversions or start a new one.
+    resetWithDownloads: Start another conversion
+    resetWithoutDownloads: Clear form
+    audioNotSupported: Your browser does not support audio playback.
+    downloadChapter: "⬇ Download MP3"
+    viewingJobTitle: Listening to “%{title}”
+    viewingJobSubtitle: These files came from a finished conversion. Jump back anytime to see the current downloads.
+    viewingJobBackToCurrent: Back to current downloads
+    readyListTitle: Books ready to download
+    readyListSubtitle: Includes titles finished in this queue and earlier sessions.
+    readyListAction: Open downloads
+    readyListDownloadAll: Download all (ZIP)
+    readyListDownloadAllHint: Opens each book ZIP in a new tab.
+    readyListItem:
+      one: 1 chapter ready
+      other: "%{count} chapters ready"
+    readyListAriaLabel: Available audiobooks
+    readyListTagCurrent: Current session
+    readyListTagPast: Past sessions
+    removeButton: Remove
+    shareTitle: Share your audiobook
+    shareSubtitle: Send “%{book}” to a friend or save the link for later listening.
+    shareWhatsapp: Share on WhatsApp
+    shareCopyLink: Copy link
+    shareCopied: Link copied!
+    shareCopyError: Could not copy. Please copy manually.
+    shareNative: Share…
+    shareNativeUnavailable: Your browser could not open the share sheet. Use copy link instead.
+    shareUnavailable: A link will appear here as soon as an output is available.
+    shareMessage: 'I just turned “%{book}” into an audiobook with EPUB to MP3. Listen here:'
+    readyListCompletedAt: Finished on %{value}
+    readyListDuration: 'Total time: %{value}'
+    durationHours: "%{value}h"
+    durationMinutes: "%{value}m"
+    durationSeconds: "%{value}s"
+  layout:
+    closeNotification: Close notification

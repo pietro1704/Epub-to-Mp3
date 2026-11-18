@@ -15,10 +15,19 @@ Rails.application.configure do
   # loading is working properly before deploying your code.
   config.eager_load = ENV["CI"].present?
 
-  # Configure public file server for tests with cache-control for performance.
-  config.public_file_server.headers = { "cache-control" => "public, max-age=3600" }
+  # Un-versioned public files revalidate; /assets and /runtime are immutable.
+  config.public_file_server.headers = { "cache-control" => "no-cache" }
+
+  # Tests use a hand-written fixture runtime unless the real tree was built.
+  unless ENV["CONVERTER_RUNTIME"] == "built"
+    config.x.converter_runtime.manifest_path = Rails.root.join("tmp/runtime_fixture/runtime_manifest.json").to_s
+    config.x.converter_runtime.root = Rails.root.join("tmp/runtime_fixture/runtime").to_s
+  end
 
   # Show full error reports.
+  # Test-only page modules (the conversion fixture); never on production asset paths.
+  config.assets.paths << Rails.root.join("test/javascript")
+
   config.consider_all_requests_local = true
   config.cache_store = :null_store
 

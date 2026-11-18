@@ -1,0 +1,16 @@
+en:
+  nativeSpeech:
+    label: System narration fallback
+    notice: "Piper unavailable. System narration is for listening only; MP3 export requires Piper."
+    chapter: Chapter to narrate
+    listen: Listen with installed system voice
+    pause: Pause
+    resume: Resume
+    stop: Stop
+    retry: Retry Piper conversion
+    starting: Preparing system voice
+    paused: System narration paused
+    completed: System narration completed
+    unavailable: System speech is unavailable in this browser.
+    failed: The installed voice could not narrate this text. Check offline system voices or retry with Piper.
+    retryFailure: Could not resume Piper conversion. Try again.

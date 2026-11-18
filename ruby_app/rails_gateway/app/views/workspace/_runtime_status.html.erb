@@ -1,0 +1,8 @@
+<%# Shown in the server-selected locale until the Rust/WASM runtime answers. %>
+<div class="panel__body" aria-busy="true" data-controller="converter-runtime">
+  <div class="app-loading" role="status" data-converter-runtime-target="loading"><%= t("layout.loading") %></div>
+  <div role="alert" hidden data-converter-runtime-target="failure">
+    <strong><%= t("flow.backendOffline") %></strong>
+    <span><%= t("flow.backendOfflineDetails") %></span>
+  </div>
+</div>

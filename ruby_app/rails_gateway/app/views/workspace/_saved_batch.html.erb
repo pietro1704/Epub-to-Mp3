@@ -1,0 +1,7 @@
+<%# A batch left by an earlier page. Its files cannot be stored, so it can only be dismissed (ADR Q-07). %>
+<div class="saved-batch" role="status" hidden data-controller="saved-batch"
+     data-saved-batch-strings-value="<%= conversion_strings_json %>">
+  <span data-saved-batch-target="title"></span>
+  <button type="button" data-action="saved-batch#dismiss"><%= t("tabs.setup.savedBatchDismiss") %></button>
+  <span class="saved-batch__warning" data-saved-batch-target="reupload" hidden></span>
+</div>

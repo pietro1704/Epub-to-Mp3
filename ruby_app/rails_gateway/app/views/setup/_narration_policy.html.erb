@@ -1,0 +1,17 @@
+<fieldset id="narration-policy" data-controller="narration-policy model-install"
+          data-narration-policy-strings-value="<%= t("form.ttsPreferences").to_json %>"
+          data-model-install-strings-value="<%= t("form.ttsPreferences").slice(:installing, :installed).merge(storageBlocked: t("narration.storageBlocked")).to_json %>"
+          data-action="change->narration-policy#change reset@document->narration-policy#onFormReset">
+  <legend><%= t("narration.legend") %></legend>
+  <p><%= t("form.ttsPreferences.capability") %></p>
+  <label><%= t("form.ttsPreferences.primary") %> <select disabled data-narration-policy-target="primary"></select></label>
+  <label><%= t("form.ttsPreferences.secondary") %> <select disabled data-narration-policy-target="secondary"></select></label>
+  <label><input type="checkbox" checked data-narration-policy-target="inherit"><%= t("form.ttsPreferences.inherit") %></label>
+  <div hidden data-narration-policy-target="override">
+    <label><%= t("form.ttsPreferences.manualVoice") %> <select data-narration-policy-target="manual"></select></label>
+    <label><input type="checkbox" data-narration-policy-target="reserve"><%= t("form.ttsPreferences.reserve") %></label>
+  </div>
+  <button type="button" disabled data-model-install-target="button" data-action="model-install#install"><%= t("form.ttsPreferences.install") %></button>
+  <output data-model-install-target="status"></output>
+  <p role="alert" hidden data-narration-policy-target="error"></p>
+</fieldset>

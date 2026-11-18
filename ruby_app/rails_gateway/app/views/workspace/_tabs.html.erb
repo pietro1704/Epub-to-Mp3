@@ -1,0 +1,49 @@
+<%# One document: every panel stays mounted and only its hidden state changes. %>
+<section class="tabs" data-controller="tabs downloads"
+         data-downloads-strings-value="<%= t("downloadLibrary").to_json %>">
+  <div class="tabs__list" role="tablist" data-action="keydown->tabs#navigate" aria-label="<%= t("tabs.ariaLabel") %>">
+    <% workspace_tabs.each do |tab| %>
+      <%= button_tag type: :button, id: tab.trigger_id, role: "tab", class: workspace_tab_classes(tab),
+            disabled: !tab.enabled, data: { tabs_target: "trigger", tab: tab.id, action: "tabs#select" },
+            aria: { selected: tab.selected, controls: tab.panel_id, disabled: !tab.enabled } do %>
+        <span class="tabs__header"><span class="tabs__label"><%= t("tabs.#{tab.id}.label") %></span>
+          <% if tab.id == "progress" %>
+            <span class="tabs__badge" data-tabs-target="badge" hidden><%= t("tabs.progress.activeBadge") %></span>
+          <% end %>
+        </span>
+        <span class="tabs__description"><%= t("tabs.#{tab.id}.description") %></span>
+      <% end %>
+    <% end %>
+  </div>
+  <div class="tabs__panels">
+    <% workspace_tabs.each do |tab| %>
+      <%= tag.div role: "tabpanel", id: tab.panel_id, class: "tabs__panel", hidden: !tab.selected,
+            data: { tabs_target: "panel", tab: tab.id }, aria: { labelledby: tab.trigger_id } do %>
+        <section class="panel">
+          <h2 class="panel__title"><%= t("tabs.#{tab.id}.panelTitle") %></h2>
+          <p class="panel__description"><%= t("tabs.#{tab.id}.panelDescription") %></p>
+          <% case tab.id %>
+          <% when "setup" %>
+            <%= render "workspace/runtime_status" %>
+            <%= render "workspace/saved_batch" %>
+            <%= render "workspace/resumable_jobs" %>
+            <%= render "setup/recent_jobs" %>
+            <%= render "workspace/active_conversion" %>
+            <%= render "workspace/batch_queue" %>
+            <%= render "workspace/book_picker" %>
+            <%= render "workspace/reader" %>
+          <% when "progress" %>
+            <%= render "workspace/batch_queue" %>
+            <%= render "workspace/status" %>
+            <%= render "progress/player" %>
+            <%= render "progress/chapters" %>
+            <%= render "progress/native_fallback" %>
+          <% else %>
+            <%= render "downloads/ready_list" %>
+            <%= render "downloads/panel" %>
+          <% end %>
+        </section>
+      <% end %>
+    <% end %>
+  </div>
+</section>
