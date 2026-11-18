@@ -110,9 +110,21 @@ changes and new benchmarks require their own task scope.
 
 ## Git and publication
 
-Use one scoped feature branch from current `master` and one PR per coherent
-change. Finish the authorized local checks and any requested real-app journey
-before commit. Commit/push and PR creation are authorized by default for verified
+Use one feature branch and one PR per coherent change. Start independent changes
+from current `master` and continue them while earlier PRs are open. For a
+dependent change, branch from the prerequisite PR's head, open a stacked PR
+against that branch, and record the prerequisite PR and exact base SHA in the
+description. Update the recorded SHA when restacking. Keep the child PR in
+draft while it targets the prerequisite.
+
+After the prerequisite merges, transplant the child-only commits onto current
+`master` using the recorded base SHA. Retarget the PR to `master`, review the
+resulting diff, rerun affected checks, and mark it ready after local validation.
+The updated head must pass its own required CI before merging. A hold or explicit
+acceptance requirement still applies to the change it covers.
+
+Finish the authorized local checks and any requested real-app journey before
+commit. Commit/push and PR creation are authorized by default for verified
 scoped changes; incomplete work stays local. When the owned branch is behind
 `origin/master`, preserve edits, fetch, rebase, resolve conflicts and rerun affected
 checks. Publish a rebased branch with an explicit expected-tip `--force-with-lease`
@@ -140,9 +152,9 @@ validated merging. Administrative bypass requires explicit approval for that PR.
 Release, website/Hugging Face publication and issue closure retain their own
 authorization boundaries.
 
-Never wait for GitHub CI or watch/poll runs and pull requests. Inspect relevant
-existing PR state and CI only in response to a new message from Pietro; after
-that bounded inspection, defer further status queries until his next message.
+Continue available work while GitHub CI and merges run. Inspect relevant PR
+state and CI in one bounded pass in response to a new message from Pietro, then
+defer further status queries until his next message.
 A push, PR creation, elapsed time, local task completion or CI notification does
 not authorize another query. Keep protected automatic merge active and report
 pending/unobserved results precisely. When a user-triggered inspection confirms

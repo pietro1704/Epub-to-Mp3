@@ -39,8 +39,9 @@ and Simulator safeguards follow the execution policy.
   [project skill adapter](docs/agents/skill-routing.md).
 - Execution, local/remote platforms, native safety and delivery authorization:
   read [execution policy](docs/agents/execution-policy.md) before executing work.
-- PR delivery: all ready PRs to `master` have standing automatic-merge
-  authorization under that policy; keep the repository merge workflow enabled.
+- PR delivery: keep working while PRs are open. Stack dependent PRs and follow
+  the [delivery policy](docs/agents/execution-policy.md#git-and-publication)
+  for retargeting, required checks, and automatic merge to `master`.
 - Multi-file changes, regressions and integration: read
   [delivery workflow](docs/agent-workflow.md).
 - Review: read [coding standards](CODING_STANDARDS.md).
