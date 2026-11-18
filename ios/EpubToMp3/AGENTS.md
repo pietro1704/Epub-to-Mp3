@@ -42,6 +42,4 @@ real adapters require one.
 
 Reader regressions belong in native XCTest or UI tests. Test the behavior at
 the reader seam; do not parse Swift source as a substitute for runtime
-evidence. Changes under the reader production surface require a corresponding
-native test change in the same commit. The repository pre-commit hook checks
-this pairing.
+evidence.

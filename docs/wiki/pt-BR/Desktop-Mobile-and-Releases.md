@@ -3,8 +3,8 @@
 Clientes Apple usam UIKit/AppKit nativos com FFI Rust embutida. Comece pelo
 [guia Apple](../../../ios/EpubToMp3/README.md) e pela
 [validação macOS](../../agents/macos-validation.md). A tarefa completa `mac:build`
-compila pré-requisitos FFI; `sidecar:build` é tarefa de servidor independente,
-não dependência do aplicativo Apple.
+compila pré-requisitos FFI; o servidor HTTP Rust independente não é dependência
+do aplicativo Apple.
 
 Flutter atende Linux/Windows/Android com adaptadores Rust nativos registrados.
 Siga o [guia Flutter](../../../flutter_app/README.md); arquivos de compatibilidade

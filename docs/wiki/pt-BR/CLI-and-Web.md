@@ -14,9 +14,9 @@ mise run convert -- livro.epub --show-structure
 ```
 
 Os exemplos seguem o código atual da tarefa/parser; não são evidência de execução.
-A CLI rejeita conversão e inspeção de estrutura de PDF. O
-[contrato PDF](../../pdf-conversion.md) separado do core embutido não amplia o
-suporte da CLI. Use flags `--chapter` repetidas para vários IDs literais;
+A CLI converte e inspeciona (`--show-structure`) EPUB e PDF com camada de texto
+pelo mesmo despacho de fontes; um PDF sem texto extraível falha antes de iniciar
+o job. Veja o [contrato PDF](../../pdf-conversion.md). Use flags `--chapter` repetidas para vários IDs literais;
 `position:N` seleciona explicitamente uma posição baseada em zero.
 Consulte parser/help para batch,
 saída, verificação e preferências, sem copiar flags Python ou presumir suporte a
@@ -37,4 +37,4 @@ pré-requisitos ausentes e gerencia processos de desenvolvimento. Use somente pa
 jornada de servidor explícita após inspecionar `scripts/dev.sh` e o escopo.
 `converter-server` e o cliente HTTP retido são adaptadores de compatibilidade;
 rotas/payloads pertencem ao código atual do servidor Rust e cliente escolhido.
-Receitas Python/FastAPI e `hf_app.py` são legado, não a inicialização padrão.
+O servidor Python/FastAPI legado e o `hf_app.py` foram removidos.

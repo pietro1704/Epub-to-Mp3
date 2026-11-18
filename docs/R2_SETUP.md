@@ -9,8 +9,7 @@ Before proposing setup, inspect the exact deployed revision and its storage
 adapter. The current Rust server/container path must explicitly consume the
 chosen configuration; setting historical `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
 `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` and `R2_PUBLIC_URL` variables alone does
-not implement an integration. The legacy Python `/api/cleanup` endpoint removes
-local output directories; it does not establish R2 TTL or a hosted cron job.
+not implement an integration, R2 TTL or a hosted cron job.
 
 If R2 setup is explicitly requested, prepare the adapter/configuration change
 and an evidence-backed deployment plan first. Account creation, bucket creation,

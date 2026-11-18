@@ -1,131 +1,64 @@
 #!/usr/bin/env bash
 #
-# EPUB/PDF to MP3 Audiobook Converter - Turbo Mode
+# Convert EPUB/PDF books to MP3 audiobooks with the native Rust CLI.
 #
 # Usage:
 #   ./convert book.epub
-#   ./convert "path/to/book.pdf"
-#   ./convert --menu book.epub
-#   ./convert book.epub --chapter 5
+#   ./convert "Book title"            # fuzzy lookup in ~/Downloads
+#   ./convert book.pdf --chapter 5
+#   ./convert --help
 #
-# Features:
-# - Auto hardware detection & optimization
-# - Maximum speed settings (turbo mode)
-# - Verbose output enabled
-# - Smart engine selection (auto mode)
-#
+# Delegates to `mise run convert`, which packages the CLI under the native
+# build guard and runs it from the repository root. Existing relative paths
+# are made absolute first so they keep resolving from the caller's directory.
 
-set -euo pipefail  # Exit on error + catch unset vars
+set -euo pipefail
 
-# Resolve the repository root so the wrapper works from any subdirectory.
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+if ! command -v mise >/dev/null 2>&1; then
+    echo "mise not found. Install mise (https://mise.jdx.dev) to use ./convert." >&2
+    exit 1
+fi
+
+arguments=()
+literal_value=false
+caller_path_value=false
+for argument in "$@"; do
+    if $literal_value; then
+        arguments+=("$argument")
+        literal_value=false
+        continue
+    fi
+    if $caller_path_value; then
+        # Output and manifest paths may not exist yet; they still belong to the
+        # caller's directory, not the repository root the task runs from.
+        caller_path_value=false
+        if [[ "$argument" != /* ]]; then
+            argument="$PWD/$argument"
+        fi
+        arguments+=("$argument")
+        continue
+    fi
+    case "$argument" in
+        --output-dir|--batch-file)
+            caller_path_value=true
+            arguments+=("$argument")
+            continue
+            ;;
+    esac
+    # Selectors and provider values are literals even when a local path has
+    # the same name. Path-valued options still resolve from the caller's cwd.
+    case "$argument" in
+        --engine|--fallback-engine|--voice|--fallback-voice|--chapter|--section|--tts-preferences-json|--from-chapter-to-end|--from-chapter-to-chapter|--retry-failed)
+            literal_value=true
+            ;;
+    esac
+    if [[ "$argument" != /* && "$argument" != -* && -e "$argument" ]]; then
+        argument="$(cd -- "$(dirname -- "$argument")" && pwd)/$(basename -- "$argument")"
+    fi
+    arguments+=("$argument")
+done
+
 cd "$SCRIPT_DIR"
-
-MISE_BIN=$(command -v mise || true)
-if [ -z "$MISE_BIN" ]; then
-    echo "❌ mise not found. Install mise (https://mise.jdx.dev) to use ./convert."
-    exit 1
-fi
-
-VENV_DIR=".venv"
-PYTHON_BIN="$VENV_DIR/bin/python"
-PIPER_BIN="$VENV_DIR/bin/piper"
-
-# Ensure virtualenv & deps are provisioned via mise
-if [ ! -x "$PYTHON_BIN" ] || [ ! -x "$PIPER_BIN" ]; then
-    echo "📦 Preparing environment with mise (install task)..."
-    "$MISE_BIN" run install
-fi
-
-# Keep local Piper opt-in; users must explicitly install/select a model.
-export ENABLE_PIPER="${ENABLE_PIPER:-0}"
-
-# Invoke the venv interpreter DIRECTLY rather than `mise exec -- python`.
-# `mise exec` resolves the interpreter from the caller's shell/mise state,
-# which can point at a stale or mismatched Python (e.g. an interactive shell
-# still holding a deleted/old .venv in VIRTUAL_ENV) — that surfaced as
-# `ModuleNotFoundError: No module named 'psutil'` even though the freshly
-# provisioned .venv had the dep. Using $PYTHON_BIN (validated above) makes the
-# wrapper independent of shell state. Fall back to mise exec only if, somehow,
-# the venv python is not executable.
-if [ -x "$PYTHON_BIN" ]; then
-    PYTHON_CMD=("$PYTHON_BIN" "python_app/convert")
-else
-    PYTHON_CMD=("$MISE_BIN" "exec" "--" "python" "python_app/convert")
-fi
-
-if [ $# -eq 0 ]; then
-    echo "❌ Error: No arguments provided"
-    echo ""
-    echo "Usage:"
-    echo "  ./convert book.epub"
-    echo "  ./convert \"path/to/book.pdf\""
-    echo "  ./convert --menu book.epub"
-    echo "  ./convert book.epub --chapter 5"
-    echo "  ./convert clear-cache                    # Clear all cache"
-    echo ""
-    exit 1
-fi
-
-for arg in "$@"; do
-    case "$arg" in
-        -h|--help)
-            "${PYTHON_CMD[@]}" "$@"
-            exit $?
-            ;;
-    esac
-done
-
-if [ "$1" = "clear-cache" ] || [ "$1" = "--clear-cache" ]; then
-    "${PYTHON_CMD[@]}" "$@"
-    exit $?
-fi
-
-# Print header
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  🚀 EPUB/PDF TO MP3 CONVERTER - TURBO MODE               ║"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo ""
-
-# Check which flags are already present
-ENGINE_PRESENT=0
-VERBOSE_PRESENT=0
-for arg in "$@"; do
-    case "$arg" in
-        --engine|--engine=*)
-            ENGINE_PRESENT=1
-            ;;
-        --verbose|-v)
-            VERBOSE_PRESENT=1
-            ;;
-    esac
-done
-
-EXTRA_ARGS=()
-# Default to auto engine unless user specified one
-if [ "$ENGINE_PRESENT" -eq 0 ]; then
-    EXTRA_ARGS+=(--engine auto)
-fi
-if [ "$VERBOSE_PRESENT" -eq 0 ]; then
-    EXTRA_ARGS+=(--verbose)
-fi
-
-exit_code=0
-
-# Run through the dedicated CLI entrypoint so options like --menu can appear
-# before the input path without being mistaken for a filename.
-if "${PYTHON_CMD[@]}" "$@" "${EXTRA_ARGS[@]}"; then
-    exit_code=0
-else
-    exit_code=$?
-fi
-
-if [ "$exit_code" -ne 0 ]; then
-    exit "$exit_code"
-fi
-
-# Print completion
-echo ""
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  ✅ CONVERSION COMPLETE!                                  ║"
-echo "╚════════════════════════════════════════════════════════════╝"
+exec mise run convert -- ${arguments[@]+"${arguments[@]}"}

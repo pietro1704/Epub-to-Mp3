@@ -9,7 +9,7 @@ require 'shellwords'
 require 'rubygems/package'
 
 class MinitestBootstrapTest < Minitest::Test
-  WORKFLOWS = %w[native-hook-safety.yml ci.yml ruby-rust-integration.yml].freeze
+  WORKFLOWS = %w[native-hook-safety.yml ci.yml].freeze
 
   def test_real_gem_install_preserves_existing_toolchain_launcher
     Dir.mktmpdir('minitest bootstrap ') do |root|

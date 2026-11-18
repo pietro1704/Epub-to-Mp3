@@ -66,7 +66,7 @@ This is a foreign-context lifetime guarantee, not full worker cancellation.
 
 Host tests do not establish physical packaging, full conversion, model readiness,
 frontend routing or playback behavior. Remaining gates are recorded in
-`docs/plans/2026-10-08-app-quality-performance.md`.
+`docs/archive/plans/2026-10-08-app-quality-performance.md`.
 
 ## Apple build destinations
 

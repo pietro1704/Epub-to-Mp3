@@ -27,9 +27,7 @@ offline use. Text-to-speech conversion runs locally through the embedded shared 
 runtime; Settings selects supported installed or explicitly consented providers. Conversion must stream chapter audio as
 it becomes available, preserve chapter structure, and read the complete book,
 including footnotes, typography changes, paragraphs, spacing, and meaningful
-layout cues. Shared parsing and conversion behavior belongs in Rust. Retained Python parsing
-fixtures may serve as migration references; they are not an Apple runtime
-dependency or an unquestioned fidelity oracle.
+layout cues. Shared parsing and conversion behavior belongs in Rust.
 
 The main Apple application surfaces use UIKit/AppKit; WidgetKit and related
 extensions may use their required SwiftUI APIs. Follow Apple Human Interface

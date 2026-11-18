@@ -7,11 +7,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # ── Resolve new version ───────────────────────────────────────────────────────
-CURRENT=$(python3 -c "
-import re
-text = open('python_app/version.py').read()
-print(re.search(r'__version__ = \"(.+)\"', text).group(1))
-")
+# The root Cargo.toml workspace version is the single product version source.
+CURRENT=$(ruby -e 'print File.read("Cargo.toml")[/^\[workspace\.package\][^\[]*?^version = "([^"]+)"/m, 1].to_s')
+[[ -n "$CURRENT" ]] || { echo "Cannot read [workspace.package] version from Cargo.toml" >&2; exit 1; }
 BUMP="${1:-patch}"
 
 if [[ "$BUMP" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -35,9 +33,23 @@ echo "Bumping $CURRENT → $NEW"
 sed -i.bak "s/\"version\": \".*\"/\"version\": \"$NEW\"/" web/package.json
 rm -f web/package.json.bak
 
-# ── Update python_app/version.py ─────────────────────────────────────────────
-sed -i.bak "s/__version__ = \".*\"/__version__ = \"$NEW\"/" python_app/version.py
-rm -f python_app/version.py.bak
+# ── Update Cargo.toml and the workspace members recorded in Cargo.lock ────────
+CURRENT="$CURRENT" NEW="$NEW" ruby - <<'RUBY'
+current = ENV.fetch("CURRENT")
+updated = ENV.fetch("NEW")
+manifest = File.read("Cargo.toml")
+section = manifest[/^\[workspace\.package\][^\[]*/m] or abort("Cargo.toml has no [workspace.package]")
+File.write("Cargo.toml", manifest.sub(section, section.sub(/^version = "#{Regexp.escape(current)}"$/, %(version = "#{updated}"))))
+members = Dir["{crates,benches,native}/**/Cargo.toml"].filter_map do |path|
+  text = File.read(path)
+  text[/^name = "([^"]+)"/, 1] if text.match?(/^version\.workspace = true$/)
+end
+lock = File.read("Cargo.lock")
+members.each do |name|
+  lock = lock.sub(/^name = "#{Regexp.escape(name)}"\nversion = "#{Regexp.escape(current)}"$/, %(name = "#{name}"\nversion = "#{updated}"))
+end
+File.write("Cargo.lock", lock)
+RUBY
 
 # ── Generate / update CHANGELOG.md ───────────────────────────────────────────
 if command -v git-cliff &>/dev/null; then
@@ -50,7 +62,8 @@ fi
 # ── Commit + tag ─────────────────────────────────────────────────────────────
 git add \
   web/package.json \
-  python_app/version.py \
+  Cargo.toml \
+  Cargo.lock \
   CHANGELOG.md 2>/dev/null || true
 
 git commit -m "chore: bump version to $NEW"

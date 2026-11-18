@@ -30,9 +30,7 @@ Arch. Assign one shared-Rust editing owner when delegation is authorized.
 
 For a reported job failure, use the local diagnosing-bugs skill. Reconstruct
 request identity, first causal failure, retries, active provider and terminal
-state from actual evidence before proposing a fix. For legacy Python CLI/server
-maintenance only, read [legacy gotchas](../../docs/legacy-agent-reference.md)
-and inspect the corresponding compatibility path; Python is not an Apple sidecar.
+state from actual evidence before proposing a fix.
 
 Deliver the bounded runtime map or change, affected adapters, checks actually
 executed, and unresolved platform acceptance. Test new behavior at its owning

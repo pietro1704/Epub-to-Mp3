@@ -2,7 +2,7 @@ name: Release Desktop
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  # Required so mise can activate the .venv from mise.toml (virtualenv feature)
+  # Keep mise experimental features enabled for the release jobs
   MISE_EXPERIMENTAL: "1"
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && (inputs.checkout_ref != '' && inputs.checkout_ref || format('refs/tags/{0}', inputs.tag)) || github.ref }}
@@ -182,14 +182,6 @@ jobs:
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: 1.99.1
-
-      - name: Build Rust macOS sidecar
-        run: |
-          cargo build --release -p converter-server
-          mkdir -p dist
-          cp target/release/converter-server dist/epub-to-mp3-server
-          chmod 755 dist/epub-to-mp3-server
-          ls -lh dist/epub-to-mp3-server
 
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3

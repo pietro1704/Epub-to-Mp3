@@ -41,7 +41,7 @@ Tests belong to the runtime they exercise:
 - Tooling scripts: executable host tests for argument, process, and report behavior.
 - Web/TypeScript: the web suite for active Rust/WASM client behavior.
 - Flutter/Dart: Flutter tests for bindings, state and UI behavior.
-- Legacy Python: its own compatibility suite; Python/Ruff execute in CI.
+- Host Python scripts: their pytest suites under `scripts/`; Python/Ruff execute in CI.
 
 A host test may validate tooling around a native run; parsing Swift source cannot
 prove native behavior. Use XCTest for native UI automation, never osascript or

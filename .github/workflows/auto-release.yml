@@ -49,18 +49,18 @@ jobs:
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           import re
+          import tomllib
           from pathlib import Path
 
-          python_version = re.search(
-              r'__version__ = "(.+)"',
-              Path("python_app/version.py").read_text(encoding="utf-8"),
-          ).group(1)
+          product_version = tomllib.loads(
+              Path("Cargo.toml").read_text(encoding="utf-8")
+          )["workspace"]["package"]["version"]
           web_version = json.loads(
               Path("web/package.json").read_text(encoding="utf-8")
           )["version"]
 
           versions = {
-              "python_app/version.py": python_version,
+              "Cargo.toml": product_version,
               "web/package.json": web_version,
           }
           unique_versions = set(versions.values())
@@ -68,16 +68,16 @@ jobs:
               details = ", ".join(f"{path}={version}" for path, version in versions.items())
               raise SystemExit(f"Version mismatch across manifests: {details}")
 
-          if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", python_version):
+          if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", product_version):
               raise SystemExit("Committed release version must be a numeric major.minor.patch")
 
           changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
-          if f"## [{python_version}]" not in changelog:
+          if f"## [{product_version}]" not in changelog:
               raise SystemExit(
-                  f"CHANGELOG.md is missing an entry for version {python_version}"
+                  f"CHANGELOG.md is missing an entry for version {product_version}"
               )
 
-          print(f"base_version={python_version}")
+          print(f"base_version={product_version}")
           PY
 
       - name: Determine next version

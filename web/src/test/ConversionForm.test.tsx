@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../services/TtsCatalog', () => ({
@@ -11,21 +11,7 @@ import { renderWithProviders } from './testUtils';
 
 describe('ConversionForm', () => {
   beforeEach(() => localStorage.clear());
-  it('routes a Tauri Open Books menu event through actual File upload without HTTP path IDs', async () => {
-    const listeners = new Map<string, (event: { payload: unknown }) => void>();
-    const native = vi.fn();
-    Object.defineProperty(window, '__TAURI__', {
-      configurable: true,
-      value: {
-        core: { invoke: native },
-        event: {
-          listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => {
-            listeners.set(name, handler);
-            return () => listeners.delete(name);
-          }),
-        },
-      },
-    });
+  it('submits an uploaded File by its upload ID without HTTP path IDs', async () => {
     const network = vi.spyOn(globalThis, 'fetch');
     try {
       const user = userEvent.setup();
@@ -41,14 +27,7 @@ describe('ConversionForm', () => {
       renderWithProviders(
         <ConversionForm isSubmitting={false} onSubmit={submit} onUploadFile={upload} />,
       );
-      await waitFor(() => expect(listeners.has('tauri-open-books')).toBe(true));
       const input = screen.getByLabelText(/arquivo do livro/i);
-      const picker = vi.spyOn(input, 'click').mockImplementation(() => undefined);
-      await act(async () => {
-        listeners.get('tauri-open-books')?.({ payload: null });
-      });
-      expect(picker).toHaveBeenCalledTimes(1);
-      picker.mockRestore();
       const file = new File(['EPUB fixture'], 'local.epub', { type: 'application/epub+zip' });
       await user.upload(input, file);
       await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
@@ -67,10 +46,8 @@ describe('ConversionForm', () => {
       expect(submit.mock.calls[0][0].file).toBeNull();
       expect(upload).toHaveBeenCalledTimes(1);
       expect(network).not.toHaveBeenCalled();
-      expect(native).not.toHaveBeenCalled();
     } finally {
       network.mockRestore();
-      delete window.__TAURI__;
     }
   });
 

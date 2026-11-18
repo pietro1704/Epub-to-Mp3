@@ -23,7 +23,5 @@
 @import './ui_health.css';
 @import './reader_surface.css';
 @import './reader_responsive.css';
-@import './desktop_surfaces.css';
-@import './desktop_controls.css';
-@import './desktop_status.css';
+@import './shell_status.css';
 @import './telemetry.css';

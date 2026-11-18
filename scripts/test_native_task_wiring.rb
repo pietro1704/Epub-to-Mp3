@@ -12,7 +12,7 @@ require_relative "mise_task_bodies"
 # Apple service, Python runtime, Simulator, app, or device is invoked.
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
-  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check sidecar:build piper:build-runtime web:wasm-build].freeze
+  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check piper:build-runtime web:wasm-build].freeze
   TASKS = MiseTaskBodies.load(ROOT, %w[ios:run ios:test ios:device:test ios:build ios:device:build ios:simulator:test ios:simulator:run ios:simulator:resume ios:simulator:smoke:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS)
 
   def setup
@@ -238,11 +238,11 @@ class NativeTaskWiringTest < Minitest::Test
     assert_unlocked
   end
 
-  def test_rust_server_preserves_piper_environment_and_releases_lease_before_launch
+  def test_rust_server_preserves_piper_model_and_releases_lease_before_launch
     _, error, status = run_task("rust:server", "FIXTURE_SIM_STATE" => "Shutdown", "FIXTURE_CARGO_STATUS" => "0")
     assert status.success?, error
     assert_equal ["cargo", "server"], events.map { |event| event.split(/[ |]/).first }
-    assert_equal "server||127.0.0.1:8000|#{@dir}/.venv/bin/piper|#{@dir}/models/piper/en_US-lessac-medium.onnx", events.last
+    assert_equal "server||127.0.0.1:8000||#{@dir}/models/piper/en_US-lessac-medium.onnx", events.last
     assert_unlocked
   end
 

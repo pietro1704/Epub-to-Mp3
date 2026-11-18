@@ -1,3 +1,0 @@
-{"data": {"state": "queued"}, "event": "job"}
-{"data": {"id": "<id>", "index": 0}, "event": "chunk"}
-{"data": {"state": "finished"}, "event": "job"}

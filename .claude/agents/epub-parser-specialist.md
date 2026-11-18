@@ -7,8 +7,7 @@ model: sonnet
 Own source-to-chapter fidelity. Follow [project instructions](../../AGENTS.md) and
 [execution policy](../../docs/agents/execution-policy.md) before actions.
 For runtime work, read [runtime navigation](../../docs/agents/runtime-navigation.md).
-Discover the current Rust parser and its consumers before editing. Use the
-legacy reference only for an explicitly affected Python compatibility parser.
+Discover the current Rust parser and its consumers before editing.
 
 Start with the supplied book and reported chapter/range. Compare spine order,
 NCX/EPUB3 nav hierarchy, file/fragment anchors, extracted text, announced titles

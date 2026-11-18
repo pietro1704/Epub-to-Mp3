@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 PORT="${RUST_PORT:-18000}"
-FIXTURE="${E2E_EPUB:-$ROOT/python_app/tests/fixtures/epubs/test_multifeature.epub}"
+FIXTURE="${E2E_EPUB:-$ROOT/tests/fixtures/epubs/test_multifeature.epub}"
 TMP="$(mktemp -d)"
 cleanup() { [[ -n "${RUST_PID:-}" ]] && kill "$RUST_PID" 2>/dev/null || true; rm -rf "$TMP"; }
 trap cleanup EXIT

@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "converter-cli"
-version = "0.1.0"
+version = "0.5.8"
 dependencies = [
  "converter-core",
  "converter-ffi",
@@ -467,7 +467,7 @@ dependencies = [
 
 [[package]]
 name = "converter-core"
-version = "0.1.0"
+version = "0.5.8"
 dependencies = [
  "futures-util",
  "hex",
@@ -504,7 +504,7 @@ dependencies = [
 
 [[package]]
 name = "converter-ffi"
-version = "0.1.0"
+version = "0.5.8"
 dependencies = [
  "base64 0.22.1",
  "converter-core",
@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "converter-server"
-version = "0.1.0"
+version = "0.5.8"
 dependencies = [
  "axum",
  "converter-core",
@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "converter-wasm"
-version = "0.1.0"
+version = "0.5.8"
 dependencies = [
  "converter-core",
  "serde_json",
@@ -2268,7 +2268,7 @@ dependencies = [
 
 [[package]]
 name = "rust-migration-bench"
-version = "0.1.0"
+version = "0.5.8"
 dependencies = [
  "converter-core",
  "criterion",

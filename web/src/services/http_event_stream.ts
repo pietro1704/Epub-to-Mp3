@@ -98,9 +98,9 @@ export async function pollWithEventSource(
     let idleTimer: number | null = null;
     let retryCount = 0;
     const retryDelaysMs = [2000, 4000, 8000] as const;
-    // Tauri WKWebView on macOS keeps the SSE TCP connection open during
-    // long backend silences (e.g. Edge slow mode) but never fires onmessage
-    // or onerror — the UI freezes. The backend heartbeat is a ":" comment
+    // WKWebView on macOS has been observed keeping the SSE TCP connection
+    // open during long backend silences (e.g. Edge slow mode) without firing
+    // onmessage or onerror — the UI freezes. The backend heartbeat is a ":" comment
     // and is invisible to EventSource. We add a client-side idle watchdog:
     // if no message arrives within this window, force a reconnect.
     const IDLE_WATCHDOG_MS = 25000;

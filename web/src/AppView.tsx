@@ -1,7 +1,6 @@
 import { Suspense } from 'react';
 import Hero from './components/Hero';
 import Layout from './components/Layout';
-import { isTauri } from './lib/tauri';
 import type { ConversionFormValues } from './types/conversion';
 import {
   RecentJobsPanel,
@@ -11,7 +10,6 @@ import {
   ConversionHistoryPanel,
   ConfirmDialog,
   ComponentFallback,
-  StartupLogView,
 } from './ApplicationPresentation';
 import type { AppScope } from './useApplicationWorkspaces';
 
@@ -28,11 +26,6 @@ export function AppView({
   isHelpOpen,
   t,
   apiHealthLabel,
-  tauriStarting,
-  tauriStartupLog,
-  setStartupLogsExpanded,
-  startupLogsExpanded,
-  tauriEngineError,
   savedBatch,
   resumeBatch,
   dismissSavedBatch,
@@ -69,8 +62,7 @@ export function AppView({
 }: AppScope): JSX.Element {
   const showSetupPanels = activeTab === 'setup' && state.phase === 'idle';
 
-  // In Tauri mode the banner is replaced by a more specific engine error message.
-  const showOfflineBanner = showSetupPanels && healthStatus === 'fail' && !isTauri();
+  const showOfflineBanner = showSetupPanels && healthStatus === 'fail';
 
   return (
     <Layout>
@@ -102,42 +94,6 @@ export function AppView({
           <strong>{t.flow.backendOffline}</strong>
           <span>{t.flow.backendOfflineBanner}</span>
           <span>API: {apiHealthLabel}</span>
-        </div>
-      )}
-      {isTauri() && tauriStarting && showSetupPanels && (
-        <div className="startup-log-panel" role="status">
-          <div className="startup-log-panel__header">
-            <span className="startup-log-panel__spinner" aria-hidden="true" />
-            <strong>Starting conversion engine…</strong>
-            <span className="startup-log-panel__hint">
-              {tauriStartupLog.length === 0
-                ? 'First launch may download ffmpeg (~60 MB)'
-                : tauriStartupLog[tauriStartupLog.length - 1]}
-            </span>
-            <button
-              type="button"
-              className="startup-log-panel__toggle"
-              onClick={() => setStartupLogsExpanded((v) => !v)}
-              aria-expanded={startupLogsExpanded}
-            >
-              {startupLogsExpanded ? 'Hide logs ▲' : 'Show logs ▼'}
-            </button>
-          </div>
-          {startupLogsExpanded && (
-            <StartupLogView
-              lines={tauriStartupLog.length > 0 ? tauriStartupLog : [t.layout.tauriEngineWaiting]}
-            />
-          )}
-        </div>
-      )}
-      {isTauri() && !tauriStarting && tauriEngineError && showSetupPanels && (
-        <div className="api-offline-banner" role="alert">
-          <strong>{t.layout.tauriEngineErrorTitle}</strong>
-          <span>{tauriEngineError}</span>
-          <span>
-            {t.layout.tauriEngineRebuild}{' '}
-            <code>mise run desktop:sidecar &amp;&amp; mise run desktop:build</code>
-          </span>
         </div>
       )}
       {showSetupPanels &&

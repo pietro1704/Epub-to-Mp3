@@ -21,8 +21,7 @@ This map describes ownership; it is not evidence that a migration or test passed
 
 Apple clients share the embedded core/FFI pipeline. Configure online/offline
 behavior through providers/models. New shared behavior belongs in Rust and is
-exposed through each relevant adapter; Python server orchestration is transitional
-compatibility code, not the product architecture.
+exposed through each relevant adapter.
 
 See [Rust audio runtime](../rust-audio-runtime.md) for in-process audio validation,
 cover attachment, supported provider outputs and fixture provenance.
@@ -66,6 +65,5 @@ state/report. Command availability does not prove a device run passed.
 
 mise.toml owns project tasks. scripts/device-workflow.sh bootstraps the native
 tools/DeviceWorkflow CLI; it shares the heavy-job lease with existing guards.
-Python/Ruff checks remain in CI; local Apple verification uses native tools.
-For legacy Python CLI/server maintenance only, read
-[legacy-agent-reference.md](../legacy-agent-reference.md).
+Python/Ruff checks for host scripts remain in CI; local Apple verification uses
+native tools.

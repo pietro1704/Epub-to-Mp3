@@ -68,7 +68,6 @@ fi
 
 artifact_found=0
 for artifact in \
-  dist/epub-to-mp3-server \
   target/release/converter-cli \
   target/release/converter-server; do
   if [[ -e "$artifact" ]]; then
@@ -77,7 +76,7 @@ for artifact in \
   fi
 done
 if (( artifact_found == 0 )); then
-  fail "No generated Rust production artifact found (expected dist/ or target/release/)"
+  fail "No generated Rust production artifact found (expected target/release/)"
 fi
 
 if [[ -d target ]]; then

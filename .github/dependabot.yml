@@ -1,21 +1,6 @@
 version: 2
 
 updates:
-  # ── Python ────────────────────────────────────────────────────────────────
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
-    labels: ["dependencies", "python"]
-    commit-message:
-      prefix: "chore(deps):"
-    # Security updates are always opened regardless of this limit
-    groups:
-      python-non-security:
-        dependency-type: "production"
-        update-types: ["minor", "patch"]
-
   # ── npm ───────────────────────────────────────────────────────────────────
   - package-ecosystem: "npm"
     directory: "/web"

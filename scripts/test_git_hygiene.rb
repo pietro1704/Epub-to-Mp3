@@ -41,7 +41,7 @@ class GitHygieneTest < Minitest::Test
     end
     refute ignored?(".env.example")
     refute ignored?("web/.env.production.example")
-    %w[web/.env.desktop web/.env.mobile web/.env.production].each do |path|
+    %w[web/.env.production].each do |path|
       refute ignored?(path), "public Vite profile is hidden: #{path}"
     end
     assert ignored?("web/.env.local")
@@ -89,9 +89,9 @@ class GitHygieneTest < Minitest::Test
       .agents/skills/example/agents/openai.yaml
       .agents/skills/example/scripts/check.sh
       .codex/skills/goal-plan-execute/SKILL.md
-      .claude/skills/example/SKILL.md .claude/hooks/session_start.sh
+      .claude/skills/example/SKILL.md
       .claude/settings.json .hermes/skills/handoff
-      docs/plans/shared-engineering-plan.md
+      docs/archive/plans/shared-engineering-plan.md
       .vscode/extensions.json .vscode/settings.json .vscode/tasks.json
     ].each { |path| refute ignored?(path), "shared asset is hidden: #{path}" }
     assert ignored?(".vscode/local-machine.json")

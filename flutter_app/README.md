@@ -9,10 +9,8 @@ in Rust, with platform adapters for UI, files, speech and playback.
 `lib/services/conversion/embedded_converter.dart` defines the seam; desktop uses direct
 `converter-ffi`, Android uses its registered native platform channel/JNI path.
 `RustPlaybackConversionService` handles the moving Listen window over that seam.
-The retained `api_client.dart`, Python bridge source/assets and backend settings
-are compatibility surfaces, not proof that normal local conversion uses HTTP or
-Python. Missing native artifacts are explicit failures, not permission to select
-a different backend silently.
+Missing native artifacts are explicit failures, not permission to select a
+different backend silently.
 
 ## Development and platform ownership
 
@@ -69,5 +67,4 @@ explicit action. Tests should exercise registered runtime behavior, success and
 relevant error/cancellation/book-chapter identity. Source registration alone does
 not establish device, audio, packaging or release acceptance.
 
-See [behavior map](MIRROR-MAP.md) for cross-client ownership and historical
-`PYTHON-EMBED-*` paths for compatibility context, not current setup recipes.
+See [behavior map](MIRROR-MAP.md) for cross-client ownership.

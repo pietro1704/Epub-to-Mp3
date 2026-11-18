@@ -1,8 +1,7 @@
 # Deployment and Hugging Face Spaces
 
 The current `Dockerfile` builds React/Vite and the Rust `converter-server`, then
-runs that binary in a minimal Debian image. `hf_app.py` remains legacy material,
-not the production container entry point. Inspect the exact deployed revision,
+runs that binary in a minimal Debian image. Inspect the exact deployed revision,
 selected client mode and workflow before diagnosing a hosted service.
 
 The container declares `PORT=7860`, `HOST=0.0.0.0` and

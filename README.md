@@ -62,8 +62,7 @@ open EpubToMp3.xcodeproj
 ```
 
 The Apple app calls `converter-core` through `converter-ffi` in-process.
-`mise run sidecar:build` builds the separate compatibility HTTP server; it is
-not an Apple runtime dependency. Mac compilation uses the project build guard
+The Rust HTTP server (`converter-server`) is not an Apple runtime dependency. Mac compilation uses the project build guard
 and one compiler job; preserve compatible artifacts rather than rebuilding them
 for inspection.
 
@@ -140,20 +139,14 @@ the guarded tasks and keep Android work on Arch.
 The `convert` task invokes the build and packaging path even for usage output;
 inspect its prerequisites before running it as a help command.
 
-### Legacy Python compatibility setup
-
-```bash
-pip install -r requirements.txt
-brew install ffmpeg espeak-ng   # macOS; use apt on Linux
-```
-
 ---
 
 ## CLI Usage
 
 ```bash
-# Native Rust CLI (canonical production entrypoint)
+# Native Rust CLI (canonical production entrypoint; ./convert is a shortcut)
 mise run convert -- convert book.epub
+./convert book.epub
 
 # Force a specific engine
 mise run convert -- convert book.epub --engine edge
@@ -171,13 +164,11 @@ mise run convert -- convert book1.epub book2.epub --batch ~/epub-folder/
 
 ```
 
-The Python CLI remains in `python_app/` as the migration oracle until
-differential coverage and the final cutover validation are complete.
-The native CLI explicitly rejects PDF conversion and structure inspection. The
-shared embedded core supports text-layer PDF through a separate client boundary;
-see the [PDF contract](docs/pdf-conversion.md). Reader format support is also a
-separate capability. Unsupported legacy CLI flags are rejected explicitly;
-`--verify` verifies the output after conversion.
+The native CLI converts EPUB and text-layer PDF; see the
+[PDF contract](docs/pdf-conversion.md). A book name that matches no file is
+looked up by fuzzy title in `~/Downloads`. Reader format support is a separate
+capability. Unsupported legacy CLI flags are rejected explicitly; `--verify`
+verifies the output after conversion.
 
 Chapter selections are literal values; use repeated `--chapter` options rather
 than a comma-separated list. `position:N` explicitly selects a zero-based
@@ -188,12 +179,6 @@ Cache clearing is destructive: with a book conversion, `--clear-cache` removes
 without an additional prompt. The worker's job-ID output directories are a
 separate layout. Inspect the targets and preserve required audio before an
 intentionally authorized clear.
-
-### Legacy Python autocomplete
-
-[shell-completion.zsh](shell-completion.zsh) describes the Python compatibility
-CLI and includes Python-only options. Its registrations also cover `convert`;
-inspect aliases before sourcing it for an explicitly selected legacy workflow.
 
 ---
 
@@ -206,7 +191,7 @@ mise run rust:server                   # Native Rust server (canonical)
 The Docker deployment builds `converter-server` and serves the browser bundle.
 Its HTTP conversion endpoints are compatibility routes with their own provider
 capabilities; they are not required for the browser's local WASM conversion or
-for native clients. Python server/entrypoint sources remain compatibility material.
+for native clients.
 
 Frontend dev server (hot reload):
 
@@ -216,76 +201,23 @@ cd web && npm run dev
 
 ---
 
-## Legacy Python/HF API endpoints
+## HTTP API
 
-These routes document the compatibility server, not the required client
-architecture contract. Do not assume native clients depend on them; inspect
-the Rust server and migration audit for the current product path.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/convert` | Upload EPUB/PDF and start conversion |
-| `GET` | `/api/jobs/{job_id}` | Conversion status + SSE progress stream |
-| `POST` | `/api/jobs/{job_id}/cancel` | Cancel a queued/running job |
-| `GET` | `/api/outputs/{job_id}/{filename}` | Download MP3 / ZIP |
-| `GET` | `/api/voices` | Curated voice list for the frontend |
-| `GET` | `/api/telemetry` | Aggregated engine throughput (chars/s) |
-| `GET` | `/api/health` | Health check |
-| `GET` | `/api/sessions` | Conversion session log |
-| `DELETE` | `/api/sessions` | Clear session log |
-
-Uploads are capped at **100 MB** by default. Override:
-
-```bash
-export MAX_UPLOAD_MB=200          # backend
-export VITE_MAX_UPLOAD_MB=200     # frontend build
-```
-
----
-
-## Key Environment Variables
-
-### Legacy Python/HF Edge-TTS tuning
-
-```bash
-EDGE_CHUNK_CHARS=12000           # Characters per request
-EDGE_MAX_CONCURRENCY=12          # Parallel requests (HF: 1)
-EDGE_MAX_SEGMENT_SECONDS=85      # Max audio segment duration
-CHAPTER_PARALLEL_COUNT=0         # 0 = auto-detect from CPU cores
-```
-
-### Legacy Python/HF engine fallback thresholds
-
-```bash
-EDGE_MIN_CHARS_PER_SECOND=45     # Example local slow-mode trigger (HF differs)
-EDGE_SLOW_RATIO_THRESHOLD=2.5    # Example local elapsed/estimated ratio (HF differs)
-```
-
-### Legacy Python/HF oversized-chapter handling
-
-```bash
-MAX_CHAPTER_CHARS=0              # Skip chapters larger than N chars (0 = disabled)
-                                  # Auto-warns when a chapter is >5× median size
-```
-
-### Legacy Python/HF local engine
-
-```bash
-PIPER_MAX_PROCS=0                # 0 = auto-detect from CPU
-```
+`converter-server` routes are defined in
+[crates/converter-server/src/main.rs](crates/converter-server/src/main.rs)
+(health, contract, uploads, conversion jobs with progress stream, cancel,
+resume, outputs and chapter streams). Uploads are capped at 100 MB. The
+browser's local WASM conversion and the native clients do not depend on them.
 
 ---
 
 ## Development
 
 ```bash
-mise run test           # Python unit/integration + Web lint/tests/build; not a full Rust/Flutter/Apple gate
-mise run test:unit      # Python unit tests only
+mise run test           # Web lint + tests + build; not a full Rust/Flutter/Apple gate
 mise run test:web       # Web lint + tests + build
-mise run clean          # Potentially destructive; inspect targets, back up first, and run only when explicitly requested
-mise run trim-log       # Trim conversions.jsonl to last 500 entries
-mise run hooks-test     # Validate Claude Code hook scripts
-mise run audit          # Scan Python dependencies for CVEs
+mise run hooks-test     # Validate Git hooks and the host workflow gate
+mise run audit          # Scan npm dependencies for CVEs
 ```
 
 `mise run test` does not certify Rust, Flutter, or Apple behavior. Inspect
@@ -304,10 +236,6 @@ mise run audit          # Scan Python dependencies for CVEs
 Preferences are captured per job. A fallback must report its active provider and
 voice without silently changing the configured primary. Web platform speech is
 for listening only and cannot be used to claim an MP3 export succeeded.
-
-The legacy Python compatibility engine has separate Edge-first configuration,
-including `ENGINE_CHAIN_FALLBACK` and `FALLBACK_ENGINE_OVERRIDE`. Those variables
-do not define the native app, Rust CLI or browser defaults.
 
 ---
 
@@ -336,8 +264,6 @@ Epub-to-Mp3/
 ├── ios/EpubToMp3/           # Native Apple client
 ├── flutter_app/             # Non-Apple client with embedded Rust bindings
 ├── web/                     # Local browser WASM/Piper surface and compatibility adapters
-├── python_app/              # Python compatibility/migration path
-├── hf_app.py                # Legacy Python HF compatibility entrypoint
 ├── Dockerfile               # Rust server and browser bundle deployment
 ├── docs/adr/                # Accepted architecture decisions
 └── scripts/                 # Audits, validation and build helpers

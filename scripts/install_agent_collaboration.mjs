@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const allowed = new Set([
   'CLAUDE.md', 'AGENTS.md', 'mise.toml', '.agents/collaboration.json',
-  'docs/agents/mac-arch-collaboration.md', 'docs/agents/retro-collaboration-controls.md',
+  'docs/agents/mac-arch-collaboration.md',
   'docs/agents/collaboration-operations.md',
   ...['agent_collaboration', 'install_agent_collaboration', 'collaboration_doctor', 'revalidate_collaboration']
     .flatMap(name => [`scripts/${name}.mjs`, `scripts/test_${name}.mjs`]),

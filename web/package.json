@@ -6,9 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "npx tsc --noEmit -p tsconfig.build.json && vite build",
-    "build:desktop": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode desktop",
-    "build:mobile": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode mobile && npx cap sync",
-    "build:mobile:bundle": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode mobile",
     "preview": "vite preview",
     "lint": "eslint --max-warnings=0 .",
     "format": "prettier --write .",
@@ -16,17 +13,10 @@
     "test": "npm run test:dependency-security && NODE_OPTIONS='--max-old-space-size=4096' vitest run",
     "test:dependency-security": "node --test scripts/minimatch.node-tests.mjs scripts/zod.node-tests.mjs",
     "test:watch": "vitest",
-    "cap:ios": "npx cap open ios",
-    "cap:android": "npx cap open android",
     "predev": "node scripts/prepare-tts-runtime.mjs",
-    "prebuild": "node scripts/prepare-tts-runtime.mjs",
-    "prebuild:desktop": "node scripts/prepare-tts-runtime.mjs",
-    "prebuild:mobile:bundle": "node scripts/prepare-tts-runtime.mjs"
+    "prebuild": "node scripts/prepare-tts-runtime.mjs"
   },
   "dependencies": {
-    "@capacitor/android": "^8.6.2",
-    "@capacitor/core": "^8.6.2",
-    "@capacitor/ios": "^8.6.2",
     "@diffusionstudio/piper-wasm": "1.0.0",
     "@mintplex-labs/piper-tts-web": "1.0.5",
     "clsx": "^2.1.1",
@@ -49,7 +39,6 @@
     }
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.6.2",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "1.65.1",
     "@testing-library/jest-dom": "^7.0.1",

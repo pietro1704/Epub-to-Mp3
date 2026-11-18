@@ -17,12 +17,12 @@ module CiContracts
     test_download_converter_ffi_macos.rb
     test_ubuntu_package_mirror.rb test_rust_build_cache.rb test_build_web_wasm.rb
     test_runner_acquisition_retry.rb
+    test_convert_entrypoint.rb test_version_source.rb test_espeak_runtime_assets.rb
   ]).uniq.freeze
   NODE_SUITES = %w[
     .github/scripts/rust-cache-identity.test.cjs
     .github/scripts/changelog-drift.test.cjs
     .github/scripts/pr-repair-safety.test.cjs
-    .github/scripts/repository-health-watchdog.test.cjs
     .github/scripts/rollback-target.test.cjs
     scripts/test_guarded_pr_merge.mjs
     scripts/test_pr_gate_policy.mjs
@@ -34,11 +34,23 @@ module CiContracts
     scripts/test_android_ui_session.py
     scripts/test_capture_native_test_metadata.py
     scripts/test_simulator_resource_monitor.py
-    python_app/tests/test_feature_ab_cache_isolation.py
-    python_app/tests/test_feature_ab_regression.py
-    python_app/tests/test_guard_ios_simulator_resources.py
-    python_app/tests/test_heavy_job_guard.py
-    python_app/tests/test_select_ios_simulator.py
+    scripts/test_android_target_selection.py
+    scripts/test_apple_latency_evidence.py
+    scripts/test_codeql_workflow.py
+    scripts/test_development_run_tasks.py
+    scripts/test_guard_ios_simulator_resources.py
+    scripts/test_heavy_job_guard.py
+    scripts/test_ios_device_mise_tasks.py
+    scripts/test_ios_disk_guard.py
+    scripts/test_mac_run_task.py
+    scripts/test_mise_python_environment.py
+    scripts/test_mobile_file_associations.py
+    scripts/test_performance_evidence_gate.py
+    scripts/test_performance_evidence_sources.py
+    scripts/test_seed_ios_development_book.py
+    scripts/test_select_ios_simulator.py
+    scripts/test_sync_hf_workflow.py
+    scripts/test_widget_embed_config.py
   ].freeze
 
   def self.steps
@@ -47,7 +59,7 @@ module CiContracts
     [{ "name" => "Git LFS prerequisite", "argv" => ["git", "lfs", "version"] }] + ruby + node + [
       { "name" => "Workflow YAML syntax", "argv" => [RbConfig.ruby, "-ryaml", "-e", 'Dir[".github/workflows/*.yml"].each { |path| YAML.parse_file(path) }'] },
       { "name" => "Actual Swift tool scope", "argv" => [RbConfig.ruby, "scripts/check_codeql_swift_tool_scope.rb"] },
-      { "name" => "Shell safety syntax", "argv" => ["bash", "-n", "scripts/device-workflow.sh", ".claude/hooks/swift_test_after_edit.sh", ".claude/hooks/xcode_build_smoke.sh"] },
+      { "name" => "Shell safety syntax", "argv" => ["bash", "-n", "scripts/device-workflow.sh"] },
       { "name" => "Python offline contracts", "argv" => ["python3", "-m", "pytest", "-q", *PYTHON_SUITES], "timeout_seconds" => 180 }
     ]
   end

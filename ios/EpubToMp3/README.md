@@ -19,7 +19,7 @@ Read [execution policy](../../docs/agents/execution-policy.md) and
 `mac:validate` mode against an explicitly identified existing DerivedData tree;
 inspection, packaging, guarded incremental compilation and GUI validation are
 separate modes. `mac:build` is the full app task and depends on the host
-`converter-ffi:build`, not `sidecar:build`. Inspect current task prerequisites
+`converter-ffi:build`, not the Rust HTTP server. Inspect current task prerequisites
 before starting a dependency rebuild.
 
 `project.yml` defines the generated Xcode project, targets, deployments,
@@ -46,7 +46,7 @@ Playback requires an explicit user gesture.
 ## Shared Apple resources
 
 App Group `group.com.pietrocode.epubtomp3` connects main-app and widget state.
-`EpubToMp3/Models/ConversionActivityAttributes.swift` is shared with the widget;
+`EpubToMp3/Shared/Integrations/ConversionActivityAttributes.swift` is shared with the widget;
 ActivityKit Codable identity and target membership must stay consistent when
 changing it. Inspect `project.yml` and current widget sources for platform
 availability rather than inferring that all application UI uses the widget's UI

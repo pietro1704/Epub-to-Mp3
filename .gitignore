@@ -7,14 +7,10 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
-develop-eggs/
 dist/
 downloads/
-eggs/
-.eggs/
 lib/
 lib64/
-!web/src/lib/
 !flutter_app/lib/
 !flutter_app/lib/**
 parts/
@@ -27,10 +23,8 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
+# Build manifests
 *.manifest
-*.spec
-!desktop.spec
 !flutter_app/windows/runner/runner.exe.manifest
 
 # Installer logs
@@ -39,10 +33,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 .reports/
-.reports/device/
-.reports/mobile-audio/
 htmlcov/
-.tox/
 .nox/
 .coverage
 .coverage.*
@@ -66,8 +57,6 @@ ENV/
 !.env.template
 !.env.*.example
 # Checked-in Vite profiles contain public API routing only.
-!/web/.env.desktop
-!/web/.env.mobile
 !/web/.env.production
 .venv/
 .venv*/
@@ -75,7 +64,6 @@ env.bak/
 venv.bak/
 
 # Caches and temp files
-.cache/
 .jobs/
 .uploads/
 .job_inputs/
@@ -84,7 +72,6 @@ output/.jobs/
 output/.uploads/
 output/.job_inputs/
 output/.source_backups/
-.mise-cache/
 *.log
 log_*.txt
 *.tmp
@@ -129,7 +116,7 @@ Thumbs.db
 
 # EBook files (for testing - uncomment if needed)
 *.epub
-!python_app/tests/fixtures/epubs/*.epub
+!tests/fixtures/epubs/*.epub
 !web/public/sample.epub
 *.pdf
 *.mobi
@@ -150,8 +137,6 @@ converted/
 
 # TTS models and temporary files
 /models/
-!python_app/models/*.onnx
-!ios/EpubToMp3/EpubToMp3/Models/
 *.pt
 *.pth
 *.bin
@@ -187,11 +172,7 @@ web/dist/
 preview_*
 temp_*
 tmp_*
-.cache
 .env.local
-
-# Local build artifacts
-releases/
 
 # Claude Code runtime artifacts
 .claude/settings.local.json
@@ -209,20 +190,13 @@ buildServer.json
 /.hermes/tools/
 /.hermes/snapshots/
 
-# iOS embedded-Python spike (feat/ios-python-embed) — vendored Python
-# runtime is ~150 MB; bootstrapped by
-# ios/EpubToMp3/scripts/bootstrap-ios-python.sh
-ios/EpubToMp3/EpubToMp3/Vendor/Python/
-ios/EpubToMp3/EpubToMp3/Vendor/site-packages/
+# Former iOS embedded-Python runtime copies (~150 MB); local data only.
 ios/EpubToMp3/Vendor/Python/
 ios/EpubToMp3/Vendor/site-packages/
 ios/EpubToMp3/Vendor/python-stdlib/
 
-# Piper voice models for iOS (slice 1b) — fetched by
-# ios/EpubToMp3/scripts/fetch-piper-models.sh, ~80 MB total
+# Local Piper voice model copies for iOS
 ios/EpubToMp3/Vendor/piper-models/
-.claude/mirror-queue.txt
-.worktrees/
 target/
 # Local Hermes QA artifacts
 .hermes-run/

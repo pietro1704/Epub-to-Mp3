@@ -4,7 +4,8 @@ This map explains ownership and navigation, not runtime readiness. The organizat
 inventory was taken on 2026-11-03 at
 `bf1be38df8a60ff2efefc7399c3d4d152cb36936`: 5,256 tracked paths from
 `git ls-files -z`, including four symlinks. Counts below describe that baseline,
-before this map was added. Ignored books, models, audio, caches and private
+before this map was added; the legacy Python application and other retired paths
+were removed later by the repository cleanup. Ignored books, models, audio, caches and private
 execution evidence are outside the inventory.
 
 The [six-phase audit plan](https://github.com/pietro1704/Epub-to-Mp3/pull/1072)
@@ -24,11 +25,12 @@ establish acceptance for that checkpoint or the later audit phases.
 | Browser client | [Web guide](../web/README.md) and [WASM boundary](wasm-capability-boundary.md) |
 | Embedded native packages | [FFI artifact contract](converter-ffi-artifacts.md) and [iOS integration](../ios/EpubToMp3/docs/converter-ffi-ios.md) |
 | Local user documentation | [Wiki source index](wiki/README.md), in English and Brazilian Portuguese |
-| Historical consolidation results | [Reconciled checkpoint](../RESUME_CONSOLIDATION.md) and [historical reports](consolidation/historical-reports.md) |
+| Historical consolidation results | [Reconciled checkpoint](archive/root/RESUME_CONSOLIDATION.md) and [historical reports](archive/consolidation/historical-reports.md) |
 
 Guides describe their own scope and may retain dated examples. Read the canonical
-contract and actual task definition before executing an example. Simulator
-acceptance remains blocked by quarantine; Android work remains paused. The map
+contract and actual task definition before executing an example. Generic
+Simulator execution remains quarantined except the supervised SE1/iOS 15.2 route
+in the execution policy; Android work remains paused. The map
 does not authorize dependency compilation, installs, cleanup or publication.
 
 ## Tracked product families
@@ -45,7 +47,6 @@ audit records its evidence. Keep the current paths for these families.
 | `native/` (2,237) | Piper runtime adapter and patched dependencies | `native/piper-runtime` is project code; `native/vendor` is dependency source/data selected by Cargo patches. See provenance below. |
 | `flutter_app/` (345) | Non-Apple client, tests and platform packaging | [pubspec.yaml](../flutter_app/pubspec.yaml), platform manifests and `cmake/` select sources/assets. `lib/`, `test/`, `integration_test/`, Linux/Windows/Android packaging and generated bindings are distinct families. |
 | `web/` (267) | Browser app and compatibility adapters | [package.json](../web/package.json), Vite/TypeScript configuration and `crates/converter-wasm` feed browser/Docker tasks. `src/wasm/` contains generated artifacts. |
-| `python_app/` (603) | Legacy compatibility and migration oracle | [pyproject.toml](../pyproject.toml), compatibility requirements and entrypoints select `src/` and tests/fixtures. Preserve until consumers and differential acceptance are reconciled. |
 | `ruby_app/` (67) | Rust HTTP client and Ruby/Rails gateways | [Ruby guide](../ruby_app/README.md), Gemfiles and gateway routes; conversion domain behavior stays in Rust. |
 
 ## Supporting families
@@ -58,15 +59,14 @@ path has no direct production import.
 | --- | --- | --- |
 | `scripts/` (202) | Host tooling; mise tasks, CI, native packaging and verification invoke script entrypoints and executable regressions | Keep paths; audit affected tool behavior with its host suite |
 | `tools/` (14) | Native device tooling; `DeviceWorkflow/Package.swift` selects library, CLI and tests consumed by `scripts/device-workflow.sh` | Keep; host tests cannot replace device acceptance |
-| `tests/` (13), `benches/` (2), `benchmarks/` (2) | Shared audio/parity fixtures, Cargo benchmark and retained JSON reports; runtime tests and migration/performance comparisons consume them | Preserve fixture identity and dated evidence |
+| `tests/` (13), `benches/` (2), `benchmarks/` (1) | Shared audio/parity fixtures, Cargo benchmark and retained JSON reports; runtime tests and migration/performance comparisons consume them | Preserve fixture identity and dated evidence |
 | `voice_samples/` (1) | Tracked README describes optional fixture/preview audio; ignored recordings are outside the census | Preserve retained samples; no audio generation, playback or cleanup |
 | `config/` (1), `.cargo/` (1) | Mac storage guard and Cargo configuration; native supervisor and workspace commands consume them | Preserve enforcement; inspect before build changes |
 | `.github/` (65), `.githooks/` (2) | CI, artifact production, protected delivery and local Git gates | Keep existing exact-head merge mechanism; workflow presence is not a passing check |
-| `aur/` (2) | Arch packaging metadata, canonical `PKGBUILD` and derived `.SRCINFO` | Validate on the owning platform before packaging changes |
 | `.agents/` (23), `.claude/` (61), `.codex/` (1), `.hermes/` (3) | Harness routing, shared skills, hooks and specialist locators; Hermes paths alias `.agents/skills/` | Preserve aliases; configuration maintenance has its own routing |
 | `.vscode/` (3) | Editor task, setting and extension integration | Keep; not an authoritative runtime contract |
 | `docs/` (253) | Authored guidance, dated plans and retained research/evidence | Classify by document status as below |
-| Root manifests and entrypoints | `mise.toml`, Cargo manifests/lockfile, Dockerfile, `convert`, `convert-rust`, Python launchers/requirements, validation/benchmark helpers, `desktop.spec`, `shell-completion.zsh` | Keep consumer paths; Python/Web/Ruby full functional audits are outside the Swift/Rust/Flutter sequence |
+| Root manifests and entrypoints | `mise.toml`, Cargo manifests/lockfile (the workspace version is the product version), Dockerfile, `convert` (Rust CLI wrapper) | Keep consumer paths; Web/Ruby full functional audits are outside the Swift/Rust/Flutter sequence |
 | Remaining root files | Contracts, changelogs, security guidance, editor/tool/delivery settings, retained plans and the two uncertain artifacts below | Classify individually; filenames or age do not establish non-use |
 
 The root `AGENTS.md` is a symlink to `CLAUDE.md`. The three tracked Hermes skill
@@ -131,17 +131,12 @@ Do not split them solely to satisfy a source-file threshold.
 | Current path | Classification and consumers | Proposed destination/action |
 | --- | --- | --- |
 | `README.md` and this map | Public product entry and ownership navigation | Keep paths; link the map from README |
-| `CONTEXT.md`, `CODING_STANDARDS.md`, `CLAUDE.md`, `docs/agents/` outside `history/` | Current contracts and operational routing | Keep canonical paths; link rather than duplicate policy |
+| `CONTEXT.md`, `CODING_STANDARDS.md`, `CLAUDE.md`, `docs/agents/` | Current contracts and operational routing | Keep canonical paths; link rather than duplicate policy |
 | `docs/adr/` | Dated architectural decisions, with section-specific supersession | Keep; the 2026-10-02 reactive-state ADR retains accepted state design but supersedes its old Edge defaults |
 | `docs/wiki/`, client READMEs, Apple `docs/` | Local user/developer guidance | Keep; reconcile product facts with canonical source, in both wiki languages when affected |
-| `docs/plans/`, `docs/research/`, `docs/bugs/`, dated root `docs/*.md` | Proposals, observations, experiments or dated reports | Keep provenance; status must not imply current runtime acceptance |
-| `docs/agents/history/` | Explicit historical snapshots of former guides/skills/specialists | Keep historical evidence separate from active routing |
-| `docs/consolidation/`, `RESUME_CONSOLIDATION.md` | Prior consolidation inventory/results and reconciled 2026-11-02 checkpoint | Keep; reconcile the index's obsolete pending claims against its checkpoint |
-| `APP_REMAINING_WORK.md`, `QA_FIX_PLAN.md`, `READER_LAYOUT_RESUME_HTML_PLAN.md` | Already marked historical on 2026-10-21; referenced by backlog/bootstrap/QA reports | Keep; trace and update references before any later move |
-| `AUDIT-0.4.0.md` | Read-only 2026-05-10 triage; linked by changelog/backlog | Keep historical location pending a complete reference/move proposal |
-| `CLAUDE-MINI-PROMPT.md`, `CLAUDE-PROJECT-BRIEF.md` | Optional task scaffold and bootstrap locator, not historical audit results | Keep; these point to current contracts rather than establish product facts |
+| [`docs/archive/`](archive/README.md) | Historical plans, research, bug notes, consolidation reports, former agent guides/specialists, dated reports and superseded root/Apple planning documents | Read-only history; status there never implies current runtime acceptance |
 
-This first slice proposes no source or historical-document relocation. Existing
+Historical documents were relocated to `docs/archive/` by the repository cleanup. Existing
 Apple/Rust/Flutter roots remain the target structure. No consequential structural
 decision has been justified by the inventory alone. Any later move proposal must
 name every exact old/new path, implicit packaging consumer, validation and rollback
@@ -158,7 +153,7 @@ All observations below are static; no native behavior was exercised.
 | ORG-001 / navigation improvement / P3 | Root README had a partial structure list; no ownership index connected product, tool, generated/vendor and historical families | Integrated in [#1073](https://github.com/pietro1704/Epub-to-Mp3/pull/1073), merge `e58dea2a0f9f99cf5f07c07fabeccfe07ac2412f`; content/link checks, independent review and exact-head PR gate passed |
 | ORG-002 / confirmed documentation drift / P3 | README's iOS table named absent `InstantReaderView`/`PlayerReaderView` and placed `ConversionActivityAttributes` in `Models/`; current source and `project.yml` select `Shared/Integrations/ConversionActivityAttributes.swift` | Integrated in [#1074](https://github.com/pietro1704/Epub-to-Mp3/pull/1074), merge `7eaa70918892685e5fdf4cc2a1ffb1a9bec86437`; documentation checks/review and exact-head PR gate passed. No native behavior change or runtime acceptance claimed |
 | ORG-003 / confirmed documentation drift / P3 | Consolidation index claimed a single worktree and left Flutter/optional proposals/PDF cover pending; `RESUME_CONSOLIDATION.md` reconciles deliveries through #1065 | Index now identifies the dated checkpoint and integrated responsibilities, preserves unadopted proposals and pending combined-app/iPhone/SE1 acceptance; documentation review is distinct from executing those runtime checks |
-| ORG-004 / removal candidates, unproven / P3 | Tracked `libtest.rlib` (5,614 bytes) and `log.txt` (1,276 bytes); provenance, implicit consumers and reproducibility unresolved | Trace packaging/history/consumers; present exact removal, impact and recovery for user confirmation before deletion |
+| ORG-004 / removed / P3 | Tracked `libtest.rlib` (5,614 bytes) and `log.txt` (1,276 bytes) had no consumer in source, packaging, workflows or tasks | Deleted by the repository cleanup with owner approval; recoverable from Git history |
 | ORG-005 / provenance investigation / P3 | Vendored patch/license/refresh boundaries above remain only partially documented | Establish exact upstream/local ownership and immutable refresh inputs before proposing a dependency change |
 | ORG-006 / confirmed documentation drift / P3 | Ingestion notes still deferred the implemented PDF parser; CLI examples promised comma-separated selections, understated build/clear side effects and mixed Python completions with Rust | Align core/CLI boundaries, repeated selectors, explicit positions, build/clear semantics and bilingual wiki facts with current source; documented commands remain unexecuted examples |
 
