@@ -37,6 +37,7 @@ concurrency:
 jobs:
   gate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       sha: ${{ steps.validated.outputs.sha }}
     steps:
@@ -93,6 +94,7 @@ jobs:
           name: release-docker
           path: ${{ runner.temp }}/release-image.tar
           if-no-files-found: error
+          retention-days: 7
 
   # ── Android APK (Flutter) ─────────────────────────────────────────────────────
   android:
@@ -149,6 +151,7 @@ jobs:
           name: release-android
           path: EpubToMp3_android.apk
           if-no-files-found: error
+          retention-days: 7
 
   # ──────────────────────────────────────────────────────────────────────
   # SwiftUI native Apple build (macOS .app + iOS .ipa unsigned)
@@ -236,6 +239,7 @@ jobs:
           name: release-apple
           path: ios/EpubToMp3/EpubToMp3-macos-*.zip
           if-no-files-found: error
+          retention-days: 7
 
   # ──────────────────────────────────────────────────────────────────────
   # Flutter desktop builds (Linux + Windows)
@@ -320,10 +324,12 @@ jobs:
             flutter_app/EpubToMp3-flutter-*.tar.gz
             flutter_app/EpubToMp3-flutter-*.zip
           if-no-files-found: error
+          retention-days: 7
 
   publish:
     needs: [gate, docker, android, swiftui-apple, flutter-desktop]
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: write
       packages: write

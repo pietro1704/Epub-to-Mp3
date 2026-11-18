@@ -173,6 +173,7 @@ jobs:
           name: dart-rust-faber-windows
           path: .reports/windows-faber
           if-no-files-found: warn
+          retention-days: 14
       - name: Remove only the owned temporary runtime, decoder and models
         if: always()
         run: |
@@ -256,6 +257,7 @@ jobs:
           name: dart-rust-faber-linux
           path: .reports/desktop-faber
           if-no-files-found: warn
+          retention-days: 14
       - name: Remove only the owned temporary runtime and model
         if: always()
         run: rm -rf "$RUNNER_TEMP/ah13-dart-faber"

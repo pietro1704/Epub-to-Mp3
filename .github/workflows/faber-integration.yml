@@ -91,6 +91,7 @@ jobs:
           name: faber-jni-contracts
           path: .reports/tts-preferences
           if-no-files-found: ignore
+          retention-days: 14
 
   android-package:
     if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
@@ -230,6 +231,7 @@ jobs:
             flutter_app/build/app/test-results
             .reports/tts-preferences/android-inference.log
           if-no-files-found: warn
+          retention-days: 14
 
       - name: Build the private-fixture APK for physical Android verification
         id: device-fixture-apk
@@ -289,6 +291,7 @@ jobs:
           name: faber-android-device-fixture
           path: .reports/android-device-fixture
           if-no-files-found: error
+          retention-days: 14
 
       - name: Retain the normal Android UI APK and build identity
         if: success() && steps.main-ui-apk.outcome == 'success'
@@ -297,6 +300,7 @@ jobs:
           name: faber-android-ui
           path: .reports/android-ui
           if-no-files-found: error
+          retention-days: 14
 
   macos-preferences:
     name: Faber macOS preferences and installation (${{ matrix.arch }})
@@ -312,6 +316,8 @@ jobs:
       EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Require the canonical hosted Xcode 16.4 toolchain
         run: |
           test "$(uname -m)" = "$EXPECTED_ARCH"
@@ -571,6 +577,7 @@ jobs:
           name: ${{ inputs.macos_only == true && 'apple-app-gate' || 'faber-macos-prefs' }}-${{ matrix.arch }}
           path: .reports/tts-preferences
           if-no-files-found: warn
+          retention-days: 14
 
   browser-runtime:
     if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}

@@ -29,6 +29,7 @@ env:
 jobs:
   gate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       sha: ${{ steps.validated.outputs.sha }}
     steps:
@@ -46,6 +47,7 @@ jobs:
     needs: gate
     name: Check TestFlight credentials
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       available: ${{ steps.check.outputs.available }}
 
@@ -211,6 +213,7 @@ jobs:
           name: EpubToMp3-iOS-IPA
           path: ${{ env.EXPORT_PATH }}/*.ipa
           if-no-files-found: error
+          retention-days: 14
 
       - name: Revalidate immediately before TestFlight publication
         if: inputs.upload_to_testflight

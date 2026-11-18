@@ -61,3 +61,4 @@ jobs:
           name: faber-browser-runtime
           path: .reports/tts-preferences
           if-no-files-found: warn
+          retention-days: 14

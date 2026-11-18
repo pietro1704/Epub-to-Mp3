@@ -82,3 +82,4 @@ jobs:
           name: native-ffi-test-isolation
           path: .reports/ffi-test-isolation
           if-no-files-found: warn
+          retention-days: 14

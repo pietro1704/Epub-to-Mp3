@@ -25,6 +25,7 @@ permissions:
 jobs:
   drift:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     # Informational only — never gate merges on this job.
     continue-on-error: true
     steps:

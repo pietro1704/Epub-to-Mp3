@@ -145,6 +145,7 @@ jobs:
           name: packaged-cli-faber-evidence
           path: .reports/cli-faber
           if-no-files-found: warn
+          retention-days: 14
       - name: Archive only the verified Linux CLI product
         if: success()
         env:
@@ -201,3 +202,4 @@ jobs:
           name: packaged-cli-faber-linux-x86_64
           path: .reports/cli-package
           if-no-files-found: error
+          retention-days: 14
