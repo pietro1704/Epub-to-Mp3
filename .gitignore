@@ -116,9 +116,12 @@ Thumbs.db
 # Audio files and output
 *.mp3
 !tests/fixtures/audio/mono-24000-48k.mp3
+# Reviewed in-process audio regression fixtures (legacy cover output, FLAC stream).
+!crates/converter-core/tests/fixtures/legacy-*.mp3
 *.wav
 !native/vendor/espeak-rs-sys/espeak-ng/phsource/**/*.wav
 *.flac
+!crates/converter-core/tests/fixtures/reference-stream.flac
 *.m4a
 *.ogg
 *.wma
