@@ -380,8 +380,10 @@ jobs:
       - name: Identify the actual Rust compiler
         id: rust-toolchain
         run: echo "identity=$(mise exec -- rustc -vV | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - name: Cache Rust build artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Pull requests restore master's entries; only master saves (cache quota).
+      - name: Restore Rust build artifacts
+        id: rust-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -425,6 +427,16 @@ jobs:
       - name: Piper Embedded runtime smoke test
         if: inputs.full_validation == true
         run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
+      - name: Save Rust build artifacts on master
+        if: github.ref == 'refs/heads/master' && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            native/piper-runtime/target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
   web:
     if: needs.changes.outputs.web == 'true'
     name: Web
@@ -473,8 +485,9 @@ jobs:
       - name: Verify generated WASM runtime contracts
         if: needs.changes.outputs.wasm == 'true'
         run: mise run web:wasm-contract:test
-      - name: Cache npm downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore npm downloads
+        id: npm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
@@ -482,6 +495,12 @@ jobs:
       - name: Install web dependencies
         working-directory: web
         run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
+      - name: Save npm downloads on master
+        if: github.ref == 'refs/heads/master' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
       - name: Run full web tests
         working-directory: web
         run: mise exec -- npm test -- --maxWorkers=2
@@ -527,12 +546,21 @@ jobs:
           print("Flutter CI tools: python, flutter")
           '
 
+      # Key tool caches by the installed versions, not by unrelated mise.toml task edits.
+      - name: Identify cached toolchain versions
+        id: tool-versions
+        run: |
+          set -euo pipefail
+          tools="$(mise ls --current --json)"
+          echo "mise=$(mise --version | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "flutter=$(jq -er '.flutter[0].version' <<< "$tools")" >> "$GITHUB_OUTPUT"
+
       - name: Cache Flutter SDK
         id: flutter-sdk-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/mise/installs/flutter
-          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-mise-${{ steps.tool-versions.outputs.mise }}-flutter-${{ steps.tool-versions.outputs.flutter }}
 
       - name: Install toolchain
         env:
@@ -540,23 +568,31 @@ jobs:
         run: mise install
 
       - name: Retain installed Flutter SDK
-        if: steps.flutter-sdk-cache.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/master' && steps.flutter-sdk-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/mise/installs/flutter
-          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-mise-${{ steps.tool-versions.outputs.mise }}-flutter-${{ steps.tool-versions.outputs.flutter }}
 
-      - name: Cache Pub downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Pub downloads
+        id: pub-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
-          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
+          key: pub-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-
 
       - name: Install Flutter dependencies
         id: flutter-dependencies
         working-directory: flutter_app
         run: mise exec -- flutter pub get
+
+      - name: Save Pub downloads on master
+        if: github.ref == 'refs/heads/master' && steps.pub-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.pub-cache
+          key: ${{ steps.pub-cache.outputs.cache-primary-key }}
 
       - name: Run Flutter analyzer
         id: flutter-analyze
@@ -602,35 +638,46 @@ jobs:
           version: 2026.11.3
           cache: false
           install: false
+      # Key tool caches by the installed versions, not by unrelated mise.toml task edits.
+      - name: Identify cached toolchain versions
+        id: tool-versions
+        run: |
+          set -euo pipefail
+          tools="$(mise ls --current --json)"
+          echo "mise=$(mise --version | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "flutter=$(jq -er '.flutter[0].version' <<< "$tools")" >> "$GITHUB_OUTPUT"
+          echo "java=$(jq -er '.java[0].version' <<< "$tools")" >> "$GITHUB_OUTPUT"
       - name: Cache Flutter SDK
         id: flutter-sdk-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/mise/installs/flutter
-          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-mise-${{ steps.tool-versions.outputs.mise }}-flutter-${{ steps.tool-versions.outputs.flutter }}
       - name: Install scoped project tools
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
       - name: Retain installed Flutter SDK
-        if: steps.flutter-sdk-cache.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/master' && steps.flutter-sdk-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/mise/installs/flutter
-          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}
-      - name: Cache Pub downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          key: flutter-sdk-${{ runner.os }}-${{ runner.arch }}-mise-${{ steps.tool-versions.outputs.mise }}-flutter-${{ steps.tool-versions.outputs.flutter }}
+      # Restore only: post-merge master skips this job; the Flutter job and the
+      # Faber Android APK job save these entries on master.
+      - name: Restore Pub downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
-          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock') }}-
-      - name: Cache Gradle dependency downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          key: pub-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-${{ hashFiles('flutter_app/pubspec.yaml', 'flutter_app/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-
+      - name: Restore Gradle dependency downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.gradle/caches/modules-2
             ~/.gradle/wrapper/dists
-          key: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'flutter_app/android/**/*.gradle.kts', 'flutter_app/android/gradle.properties', 'flutter_app/android/gradle/wrapper/gradle-wrapper.properties', 'flutter_app/pubspec.lock') }}
+          key: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.tool-versions.outputs.flutter }}-java-${{ steps.tool-versions.outputs.java }}-${{ hashFiles('flutter_app/android/**/*.gradle.kts', 'flutter_app/android/gradle.properties', 'flutter_app/android/gradle/wrapper/gradle-wrapper.properties', 'flutter_app/pubspec.lock') }}
           restore-keys: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-
       - name: Resolve Flutter plugins and hosted Android SDK
         run: |
