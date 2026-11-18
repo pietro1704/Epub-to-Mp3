@@ -129,6 +129,7 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeConvertWithOptions(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int, optionsJson: String, streaming: Boolean): String?
     external fun nativePiperSynthesizeWithOptions(text: String, output: String, optionsJson: String): Boolean
     external fun nativeParse(inputPath: String): String?
+    external fun nativeLibraryMetadata(inputPath: String): String?
     external fun nativeJobLog(jobId: String): String?
     external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
     external fun nativeTtsCatalogV3(): String?

@@ -168,6 +168,7 @@ jobs:
           required_symbols = ['converter_session_open', 'converter_session_free',
                               'converter_session_set_desktop_platform_tts_v1',
                               'converter_session_convert_streaming_job_options_json_v1',
+                              'converter_book_library_metadata_json_v1',
                               'converter_string_free']
           for symbol in required_symbols:
               if not re.search(r'\b' + re.escape(symbol) + r'$', exports, re.MULTILINE):
