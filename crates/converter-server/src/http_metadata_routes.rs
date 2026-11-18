@@ -21,7 +21,7 @@ pub(super) async fn contract() -> impl IntoResponse {
         Json(ContractResponse {
             version: API_CONTRACT_VERSION,
             backend: "rust",
-            capabilities: vec!["uploads", "jobs", "sse", "epub", "edge", "piper"],
+            capabilities: vec!["uploads", "jobs", "sse", "epub", "edge", "piper", "models"],
         }),
     )
 }

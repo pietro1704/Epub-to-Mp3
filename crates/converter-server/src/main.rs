@@ -3,8 +3,10 @@ mod http_conversion_routes;
 mod http_input_paths;
 mod http_job_routes;
 mod http_metadata_routes;
+mod http_model_routes;
 mod http_output_routes;
 mod http_runtime_state;
+mod http_speech_selection;
 mod http_upload_routes;
 
 use axum::extract::DefaultBodyLimit;
@@ -15,10 +17,13 @@ use converter_core::config::AppConfig;
 use http_conversion_routes::create_job;
 use http_job_routes::{cancel, log, recent_jobs, resumable_jobs, resume_job, status, stream_job};
 use http_metadata_routes::{contract, health, metadata};
+use http_model_routes::{catalog_installer, install_model, models};
 use http_output_routes::{chapters, fulltext, output};
 use http_runtime_state::{load_snapshots, AppState};
 use http_upload_routes::{local_upload, upload};
+use std::ffi::OsStr;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
@@ -26,14 +31,6 @@ use tower_http::services::ServeDir;
 // Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
 const API_CONTRACT_VERSION: &str = "1";
-
-const TERMINAL_STATES: &[&str] = &[
-    "finished",
-    "completed",
-    "failed",
-    "interrupted",
-    "cancelled",
-];
 
 fn app(config: AppConfig) -> Router {
     let recovered_jobs = load_snapshots(&config);
@@ -48,6 +45,8 @@ fn app(config: AppConfig) -> Router {
         )
         .route("/api/uploads/local", post(local_upload))
         .route("/api/convert", post(create_job))
+        .route("/api/models", get(models))
+        .route("/api/models/{id}/install", post(install_model))
         .route("/api/jobs/resumable", get(resumable_jobs))
         .route("/api/jobs/recent", get(recent_jobs))
         .route("/api/jobs/{id}", get(status))
@@ -62,6 +61,8 @@ fn app(config: AppConfig) -> Router {
         .with_state(AppState {
             config,
             jobs: Arc::new(RwLock::new(recovered_jobs)),
+            model_installs: Default::default(),
+            model_installer: catalog_installer(),
         })
 }
 fn server_bind_address(
@@ -75,8 +76,21 @@ fn server_bind_address(
     format!("{host}:{port}").parse()
 }
 
+/// Register the embedded Piper runtime shared with the CLI. Voice models are
+/// installed only by an explicit action, never at startup or by a conversion.
+fn register_speech_runtime(espeak_data: Option<&OsStr>) -> Result<(), String> {
+    // Online voices and model downloads share one process-wide TLS provider.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    converter_ffi::piper_runtime_register_embedded();
+    match espeak_data {
+        Some(directory) => converter_ffi::configure_piper_data_directory(Path::new(directory)),
+        None => Ok(()),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    register_speech_runtime(std::env::var_os("ESPEAK_DATA_DIRECTORY").as_deref())?;
     let config = AppConfig::from_env();
     let address = server_bind_address(
         std::env::var("HOST").ok().as_deref(),

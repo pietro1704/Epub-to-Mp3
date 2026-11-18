@@ -6,21 +6,23 @@ use axum::{
 };
 use converter_core::{
     config::AppConfig,
+    model_store::ModelStoreError,
     tts_preferences::TtsPreferences,
-    worker::{ConversionRequest, ConversionWorker, OutputManifest},
+    worker::{ConversionRequest, ConversionWorker, OutputManifest, ProgressEvent},
 };
 use futures_util::StreamExt;
 use tokio::sync::{broadcast, RwLock};
 
-use super::http_conversion_routes::apply_manifest;
+use super::http_conversion_routes::{apply_manifest, create_job, record_progress};
 use super::http_input_paths::uuid;
-use super::http_job_routes::{cancel, is_terminal, resume_job, stream_job};
+use super::http_job_routes::{cancel, resume_job, stream_job};
+use super::http_model_routes::{install_model, models};
 use super::http_output_routes::{chapters, output};
 use super::http_runtime_state::{
     initial_job, load_snapshots, persist_snapshot, snapshot_path, AppState, CreateJob, Job,
-    JobSnapshot, SseMessage,
+    JobPhase, JobSnapshot, ModelInstaller, SseMessage, MAX_LOG_LINES,
 };
-use super::{app, server_bind_address};
+use super::{app, register_speech_runtime, server_bind_address};
 
 async fn post_conversion(config: AppConfig, body: serde_json::Value) -> String {
     let body = body.to_string();
@@ -60,6 +62,31 @@ async fn http_fixture_request(config: AppConfig, request: &[u8]) -> String {
     response
 }
 
+/// Place the default voice's artifacts where conversion looks for them. The
+/// invalid EPUB fixtures stop every job before a model is opened.
+fn place_default_voice(config: &AppConfig) {
+    let directory = config
+        .paths
+        .models_dir
+        .join("tts")
+        .join(converter_core::tts_preferences::FABER_MODEL_ID);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("model.onnx"), b"fixture").unwrap();
+    std::fs::write(directory.join("model.onnx.json"), b"{}").unwrap();
+}
+
+/// Tests never reach the network: installing a voice fails unless a test
+/// supplies its own installer.
+fn refusing_installer() -> ModelInstaller {
+    Arc::new(|_, model_id| {
+        Box::pin(async move {
+            Err(ModelStoreError::UnknownModel(format!(
+                "{model_id} is unavailable in tests"
+            )))
+        })
+    })
+}
+
 struct TestRoot(PathBuf);
 impl TestRoot {
     fn new() -> Self {
@@ -75,6 +102,8 @@ impl TestRoot {
         AppState {
             config,
             jobs: Arc::new(RwLock::new(HashMap::new())),
+            model_installs: Default::default(),
+            model_installer: refusing_installer(),
         }
     }
 }
@@ -86,6 +115,8 @@ impl Drop for TestRoot {
 
 #[path = "http_configuration_contract_tests.rs"]
 mod configuration;
+#[path = "http_job_creation_contract_tests.rs"]
+mod job_creation;
 #[path = "http_lifecycle_contract_tests.rs"]
 mod lifecycle;
 #[path = "http_outputs_contract_tests.rs"]

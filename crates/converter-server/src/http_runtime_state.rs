@@ -1,11 +1,14 @@
 //! Compatibility HTTP contracts and durable snapshot state; not the embedded client runtime.
 use converter_core::config::AppConfig;
+use converter_core::model_store::ModelStoreError;
 use converter_core::tts_preferences::TtsPreferences;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
@@ -14,7 +17,15 @@ use tokio::sync::RwLock;
 pub(super) struct AppState {
     pub(super) config: AppConfig,
     pub(super) jobs: Arc<RwLock<HashMap<String, Job>>>,
+    /// Serializes model installations within this process.
+    pub(super) model_installs: Arc<tokio::sync::Mutex<()>>,
+    pub(super) model_installer: ModelInstaller,
 }
+
+pub(super) type ModelInstall = Pin<Box<dyn Future<Output = Result<(), ModelStoreError>> + Send>>;
+/// Installs one catalog voice into a model root. Production downloads and
+/// verifies it; tests replace the network.
+pub(super) type ModelInstaller = Arc<dyn Fn(PathBuf, &'static str) -> ModelInstall + Send + Sync>;
 #[derive(Clone)]
 pub(super) struct Job {
     pub(super) snapshot: JobSnapshot,
@@ -28,11 +39,38 @@ pub(super) enum SseMessage {
     Chapter(JobSnapshot),
 }
 
+/// HTTP lifecycle of a job, serialized as the strings existing clients and
+/// persisted snapshots already use. `Interrupted` is HTTP-only: an active job
+/// whose worker did not survive a server restart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum JobPhase {
+    Queued,
+    Running,
+    Cancelling,
+    Cancelled,
+    /// Snapshots written by earlier servers may say `completed`.
+    #[serde(alias = "completed")]
+    Finished,
+    Failed,
+    Interrupted,
+}
+
+impl JobPhase {
+    pub(super) fn is_active(self) -> bool {
+        matches!(self, Self::Queued | Self::Running | Self::Cancelling)
+    }
+
+    pub(super) fn is_terminal(self) -> bool {
+        !self.is_active()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct JobSnapshot {
     pub(super) job_id: String,
-    pub(super) state: String,
+    pub(super) state: JobPhase,
     pub(super) events: Vec<String>,
     pub(super) raw_log: Vec<String>,
     pub(super) chapters_total: u32,
@@ -55,6 +93,36 @@ pub(super) struct JobSnapshot {
     pub(super) ui_language: String,
     pub(super) no_parallel: bool,
 }
+/// Progress lines retained per job. Every SSE update carries the snapshot, so
+/// an unbounded log would grow each message with the length of the book.
+pub(super) const MAX_LOG_LINES: usize = 500;
+
+fn push_bounded(lines: &mut Vec<String>, line: String) {
+    if lines.len() >= MAX_LOG_LINES {
+        lines.drain(..=lines.len() - MAX_LOG_LINES);
+    }
+    lines.push(line);
+}
+
+impl JobSnapshot {
+    pub(super) fn push_event(&mut self, line: String) {
+        push_bounded(&mut self.events, line);
+    }
+
+    pub(super) fn push_progress(&mut self, line: String) {
+        push_bounded(&mut self.events, line.clone());
+        push_bounded(&mut self.raw_log, line);
+    }
+
+    /// Retain the captured voices so a later resume repeats the same selection
+    /// instead of the engine that happened to be active when the job stopped.
+    pub(super) fn record_selection(&mut self, preferences: &TtsPreferences) {
+        self.engine = Some(preferences.primary.engine.clone());
+        self.voice = preferences.primary.voice.clone();
+        self.tts_preferences = Some(preferences.clone());
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ChapterProgress {
@@ -140,7 +208,7 @@ pub(super) struct FulltextChapter {
 pub(super) fn initial_job(id: String, f: &CreateJob) -> JobSnapshot {
     JobSnapshot {
         job_id: id,
-        state: "queued".into(),
+        state: JobPhase::Queued,
         events: vec!["Conversion queued".into()],
         raw_log: Vec::new(),
         chapters_total: 0,
@@ -174,6 +242,17 @@ pub(super) fn initial_job(id: String, f: &CreateJob) -> JobSnapshot {
         .into(),
         no_parallel: f.no_parallel.unwrap_or(false),
     }
+}
+
+/// The selection the shared worker captured for a job, from its durable
+/// record. Snapshots written before typed preferences were stored keep only an
+/// `engine` that progress events overwrite, so that field cannot be trusted.
+pub(super) fn recorded_preferences(config: &AppConfig, job_id: &str) -> Option<TtsPreferences> {
+    let record = converter_core::jobs::ConversionJobStore::new(&config.paths.jobs_dir)
+        .ok()?
+        .load(job_id)
+        .ok()?;
+    serde_json::from_value(record.metadata.get("tts_preferences")?.clone()).ok()
 }
 
 pub(super) fn snapshot_path(config: &AppConfig, job_id: &str) -> PathBuf {
@@ -212,12 +291,10 @@ pub(super) fn load_snapshots(config: &AppConfig) -> HashMap<String, Job> {
         let Ok(mut snapshot) = serde_json::from_slice::<JobSnapshot>(&bytes) else {
             continue;
         };
-        if matches!(snapshot.state.as_str(), "queued" | "running" | "cancelling") {
-            snapshot.state = "interrupted".into();
+        if snapshot.state.is_active() {
+            snapshot.state = JobPhase::Interrupted;
             snapshot.error = Some("Server restarted before the conversion completed".into());
-            snapshot
-                .events
-                .push("Conversion interrupted by server restart".into());
+            snapshot.push_event("Conversion interrupted by server restart".into());
             let _ = persist_snapshot(config, &snapshot);
         }
         let (events, _) = broadcast::channel(64);

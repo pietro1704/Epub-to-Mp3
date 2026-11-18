@@ -1,6 +1,5 @@
 //! Job-scoped chapter/fulltext/output delivery and canonical path checks.
 use super::http_input_paths::{find_job_input, safe_leaf};
-use super::http_job_routes::is_terminal;
 use super::http_runtime_state::{AppState, FulltextChapter, FulltextResponse};
 use axum::extract::Path as AxumPath;
 use axum::extract::State;
@@ -94,18 +93,23 @@ pub(super) async fn fulltext(
         return StatusCode::NOT_FOUND.into_response();
     };
     let Some(input) = find_job_input(&state.config, &id).await else {
-        return if is_terminal(&job.snapshot.state) {
+        return if job.snapshot.state.is_terminal() {
             StatusCode::NOT_FOUND
         } else {
             StatusCode::SERVICE_UNAVAILABLE
         }
         .into_response();
     };
-    let Ok(file) = std::fs::File::open(input) else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
-    };
-    let Ok(book) = parse_epub(std::io::BufReader::new(file)) else {
-        return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+    // Parsing a whole book is blocking work; keep it off the async runtime.
+    let parsed = tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::open(input).map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+        parse_epub(std::io::BufReader::new(file)).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)
+    })
+    .await;
+    let book = match parsed {
+        Ok(Ok(book)) => book,
+        Ok(Err(status)) => return status.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     let chapters = book
         .chapters

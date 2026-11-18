@@ -84,22 +84,22 @@ class HfSnapshotTest < Minitest::Test
     binaries.each { |path, bytes| assert_equal bytes, File.binread(File.join(clone, path)), path }
   end
 
-  def test_local_sherpa_patch_keeps_its_complete_tracked_source_and_manifest_bytes
-    vendor = 'native/vendor/sherpa-onnx-sys'
+  def test_local_piper_patch_keeps_its_complete_tracked_source_and_manifest_bytes
+    vendor = 'native/vendor/piper-rs'
     repository = File.expand_path('..', __dir__)
     paths = git!('ls-files', '-z', '--', vendor, chdir: repository).split("\0")
-    refute_empty paths, 'the local Sherpa patch must have tracked source inputs'
-    %W[#{vendor}/Cargo.toml #{vendor}/build.rs #{vendor}/src/lib.rs #{vendor}/LICENSE].each do |path|
+    refute_empty paths, 'the local Piper patch must have tracked source inputs'
+    %W[#{vendor}/Cargo.toml #{vendor}/UPSTREAM.md #{vendor}/src/lib.rs].each do |path|
       assert_includes paths, path
     end
     inputs = paths.to_h { |path| [path, File.binread(File.join(repository, path))] }
     inputs.merge!(
-      'Cargo.toml' => "[workspace]\nmembers = []\n[patch.crates-io]\nsherpa-onnx-sys = { path = \"#{vendor}\" }\n",
-      'Cargo.lock' => "version = 4\n\n[[package]]\nname = \"sherpa-onnx-sys\"\nversion = \"1.13.8\"\n"
+      'Cargo.toml' => "[workspace]\nmembers = []\n[patch.crates-io]\npiper-rs = { path = \"#{vendor}\" }\n",
+      'Cargo.lock' => "version = 4\n\n[[package]]\nname = \"piper-rs\"\nversion = \"0.2.0\"\n"
     )
     inputs.each { |path, bytes| write(path, bytes) }
     git!('add', '-A', chdir: @source)
-    git!('commit', '-m', 'fixture local Sherpa patch', chdir: @source)
+    git!('commit', '-m', 'fixture local Piper patch', chdir: @source)
 
     snapshot!
 
@@ -107,7 +107,7 @@ class HfSnapshotTest < Minitest::Test
       assert_equal inputs.fetch(path), File.binread(File.join(@snapshot, path)), path
     end
     assert_equal paths.sort, git!('ls-files', '-z', '--', vendor, chdir: @snapshot).split("\0").sort,
-                 'the snapshot must contain every tracked file of the local Sherpa patch'
+                 'the snapshot must contain every tracked file of the local Piper patch'
     inputs.each do |path, bytes|
       assert_equal bytes, File.binread(File.join(@snapshot, path)), path
     end
@@ -123,15 +123,15 @@ class HfSnapshotTest < Minitest::Test
     refute master.success?
   end
 
-  def test_tracked_sherpa_leaf_symlink_cannot_copy_private_fixture_bytes
-    path = 'native/vendor/sherpa-onnx-sys/src/private.rs'
+  def test_tracked_piper_leaf_symlink_cannot_copy_private_fixture_bytes
+    path = 'native/vendor/piper-rs/src/private.rs'
     sentinel = File.join(@directory, 'private-sentinel')
     bytes = 'private-sentinel-must-not-enter-snapshot'
     File.binwrite(sentinel, bytes)
     FileUtils.mkdir_p(File.dirname(File.join(@source, path)))
     File.symlink(sentinel, File.join(@source, path))
     git!('add', '-A', chdir: @source)
-    git!('commit', '-m', 'fixture tracked Sherpa symlink', chdir: @source)
+    git!('commit', '-m', 'fixture tracked Piper symlink', chdir: @source)
 
     error = assert_raises(RuntimeError) { snapshot! }
     assert_includes error.message, "Unsafe snapshot input: #{path}"
@@ -141,11 +141,11 @@ class HfSnapshotTest < Minitest::Test
     assert_equal bytes, File.binread(sentinel)
   end
 
-  def test_tracked_sherpa_model_weights_cannot_enter_the_snapshot
-    path = 'native/vendor/sherpa-onnx-sys/model.ONNX'
+  def test_tracked_piper_model_weights_cannot_enter_the_snapshot
+    path = 'native/vendor/piper-rs/model.ONNX'
     write(path, "\0private-fixture-weights")
     git!('add', '-A', chdir: @source)
-    git!('commit', '-m', 'fixture tracked Sherpa weights', chdir: @source)
+    git!('commit', '-m', 'fixture tracked Piper weights', chdir: @source)
 
     error = assert_raises(RuntimeError) { snapshot! }
     assert_includes error.message, "Model weights must not enter the snapshot: #{path}"

@@ -1,8 +1,10 @@
 //! Job status/SSE, cancellation and resumption at the compatibility boundary.
-use super::http_conversion_routes::{preferences_error, start_worker, validate_server_preferences};
+use super::http_conversion_routes::{start_worker, Launch};
 use super::http_input_paths::safe_leaf;
-use super::http_runtime_state::{persist_snapshot, AppState, JobSnapshot, SseMessage};
-use super::TERMINAL_STATES;
+use super::http_runtime_state::{
+    persist_snapshot, recorded_preferences, AppState, JobPhase, JobSnapshot, SseMessage,
+};
+use super::http_speech_selection::SpeechSelection;
 use axum::extract::Path as AxumPath;
 use axum::extract::State;
 use axum::http::header;
@@ -14,7 +16,6 @@ use axum::response::sse::Sse;
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::Json;
-use converter_core::worker::ConversionRequest;
 use converter_core::worker::ConversionWorker;
 use futures_util::stream::{self, StreamExt};
 use std::convert::Infallible;
@@ -38,7 +39,7 @@ pub(super) async fn stream_job(
         Some(job) => (job.snapshot.clone(), job.events.subscribe()),
         None => return StatusCode::NOT_FOUND.into_response(),
     };
-    let initially_terminal = is_terminal(&initial.state);
+    let initially_terminal = initial.state.is_terminal();
     let first =
         stream::once(async move { Ok::<Event, Infallible>(snapshot_event(&initial, false)) });
     let updates = stream::unfold(
@@ -49,11 +50,11 @@ pub(super) async fn stream_job(
             }
             match receiver.recv().await {
                 Ok(SseMessage::Snapshot(snapshot)) => {
-                    let terminal = is_terminal(&snapshot.state);
+                    let terminal = snapshot.state.is_terminal();
                     Some((Ok(snapshot_event(&snapshot, false)), (receiver, terminal)))
                 }
                 Ok(SseMessage::Chapter(snapshot)) => {
-                    let terminal = is_terminal(&snapshot.state);
+                    let terminal = snapshot.state.is_terminal();
                     Some((Ok(snapshot_event(&snapshot, true)), (receiver, terminal)))
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => Some((
@@ -77,19 +78,18 @@ pub(super) async fn cancel(
     State(state): State<AppState>,
 ) -> Response {
     match state.jobs.write().await.get_mut(&id) {
-        Some(job) if is_terminal(&job.snapshot.state) => (
+        Some(job) if job.snapshot.state.is_terminal() => (
             StatusCode::OK,
             Json(serde_json::json!({"status": job.snapshot.state})),
         )
             .into_response(),
         Some(job) => {
             let mut snapshot = job.snapshot.clone();
-            snapshot.state = if snapshot.state == "queued" {
-                "cancelled"
+            snapshot.state = if snapshot.state == JobPhase::Queued {
+                JobPhase::Cancelled
             } else {
-                "cancelling"
-            }
-            .into();
+                JobPhase::Cancelling
+            };
             if let Err(error) = persist_snapshot(&state.config, &snapshot) {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -120,15 +120,9 @@ pub(super) async fn resume_job(
     let Some(job) = jobs.get_mut(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Err(error) = validate_server_preferences(
-        job.snapshot.tts_preferences.as_ref(),
-        job.snapshot.language.as_deref(),
-    ) {
-        return preferences_error(error);
-    }
     if matches!(
-        job.snapshot.state.as_str(),
-        "queued" | "running" | "finished" | "completed"
+        job.snapshot.state,
+        JobPhase::Queued | JobPhase::Running | JobPhase::Finished
     ) {
         return (
             StatusCode::OK,
@@ -136,7 +130,7 @@ pub(super) async fn resume_job(
         )
             .into_response();
     }
-    if job.worker_active || job.snapshot.state == "cancelling" {
+    if job.worker_active || job.snapshot.state == JobPhase::Cancelling {
         return StatusCode::CONFLICT.into_response();
     }
     let Ok(mut entries) = tokio::fs::read_dir(state.config.paths.job_inputs_dir.join(&id)).await
@@ -153,28 +147,40 @@ pub(super) async fn resume_job(
     let Some(input) = input else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    // Only a job that will actually restart needs a usable voice selection.
+    let recorded = match job.snapshot.tts_preferences {
+        Some(_) => None,
+        None => recorded_preferences(&state.config, &id),
+    };
+    let plan = match (SpeechSelection {
+        preferences: job.snapshot.tts_preferences.as_ref().or(recorded.as_ref()),
+        engine: job.snapshot.engine.as_deref(),
+        voice: job.snapshot.voice.as_deref(),
+        language: job.snapshot.language.as_deref(),
+    })
+    .plan(&state.config)
+    {
+        Ok(plan) => plan,
+        Err(error) => return error.into_response(),
+    };
     let worker = match ConversionWorker::new(state.config.clone()) {
         Ok(worker) => worker,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     let mut snapshot = job.snapshot.clone();
-    snapshot.state = "queued".into();
+    snapshot.state = JobPhase::Queued;
     snapshot.error = None;
+    snapshot.record_selection(&plan.preferences);
     if persist_snapshot(&state.config, &snapshot).is_err() {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
-    let request = ConversionRequest {
+    let launch = Launch {
+        plan,
         input,
         job_id: id,
-        engine: snapshot.engine.clone(),
-        voice: snapshot.voice.clone(),
         language: snapshot.language.clone(),
-        piper_model: None,
-        piper_config: None,
-        tts_preferences: snapshot.tts_preferences.clone(),
-        models_root: Some(state.config.paths.models_dir.join("tts")),
-        chapter_indices: None,
         no_parallel: snapshot.no_parallel,
+        resuming: true,
     };
     job.snapshot = snapshot;
     job.cancellation = Default::default();
@@ -183,10 +189,10 @@ pub(super) async fn resume_job(
     let cancellation = job.cancellation.clone();
     let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
     drop(jobs);
-    start_worker(state, worker, request, sender, cancellation, true);
+    start_worker(state, worker, launch, sender, cancellation);
     (
         StatusCode::OK,
-        Json(serde_json::json!({"status": "queued"})),
+        Json(serde_json::json!({"status": JobPhase::Queued})),
     )
         .into_response()
 }
@@ -212,12 +218,7 @@ pub(super) async fn resumable_jobs(State(state): State<AppState>) -> Response {
         .read()
         .await
         .values()
-        .filter(|job| {
-            matches!(
-                job.snapshot.state.as_str(),
-                "queued" | "running" | "cancelling" | "interrupted"
-            )
-        })
+        .filter(|job| job.snapshot.state.is_active() || job.snapshot.state == JobPhase::Interrupted)
         .map(|job| job.snapshot.clone())
         .collect::<Vec<_>>();
     let count = jobs.len();
@@ -249,7 +250,4 @@ pub(super) fn snapshot_event(snapshot: &JobSnapshot, chapter: bool) -> Event {
     } else {
         event
     }
-}
-pub(super) fn is_terminal(state: &str) -> bool {
-    TERMINAL_STATES.contains(&state)
 }
