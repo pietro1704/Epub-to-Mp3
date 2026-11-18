@@ -1,6 +1,9 @@
+#[path = "../../tests/support/epub_fixture.rs"]
+mod epub_fixture;
+
 use super::{first_heading, html_to_text_projection, parse_epub};
-use std::io::{Cursor, Write};
-use zip::{write::SimpleFileOptions, ZipWriter};
+use std::io::Cursor;
+use zip::write::SimpleFileOptions;
 
 #[test]
 fn extracts_heading_and_text_without_language_specific_rules() {
@@ -11,39 +14,29 @@ fn extracts_heading_and_text_without_language_specific_rules() {
 
 #[test]
 fn parses_prefixed_epub_namespaces_and_preserves_content() {
-    let mut cursor = Cursor::new(Vec::new());
-    {
-        let mut zip = ZipWriter::new(&mut cursor);
-        let options = SimpleFileOptions::default();
-        zip.start_file("META-INF/container.xml", options).unwrap();
-        zip.write_all(br#"<c:container xmlns:c="urn:oasis:names:tc:opendocument:xmlns:container"><c:rootfiles><c:rootfile full-path="OPS/package.opf"/></c:rootfiles></c:container>"#).unwrap();
-        zip.start_file("OPS/package.opf", options).unwrap();
-        zip.write_all(br#"<opf:package xmlns:opf="http://www.idpf.org/2007/opf"><opf:metadata><dc:title xmlns:dc="x">Livro</dc:title></opf:metadata><opf:manifest><opf:item id="chapter" href="chapter.xhtml" media-type="APPLICATION/XHTML+XML"/></opf:manifest><opf:spine><opf:itemref idref="chapter"/></opf:spine></opf:package>"#).unwrap();
-        zip.start_file("OPS/chapter.xhtml", options).unwrap();
-        zip.write_all(br#"<x:html xmlns:x="http://www.w3.org/1999/xhtml"><x:body><x:h2>Chapter</x:h2><x:p>Readable content.</x:p></x:body></x:html>"#).unwrap();
-        zip.finish().unwrap();
-    }
-    let book = parse_epub(Cursor::new(cursor.into_inner())).unwrap();
+    let bytes = epub_fixture::epub_bytes([
+        ("META-INF/container.xml", br#"<c:container xmlns:c="urn:oasis:names:tc:opendocument:xmlns:container"><c:rootfiles><c:rootfile full-path="OPS/package.opf"/></c:rootfiles></c:container>"#.as_slice()),
+        ("OPS/package.opf", br#"<opf:package xmlns:opf="http://www.idpf.org/2007/opf"><opf:metadata><dc:title xmlns:dc="x">Livro</dc:title></opf:metadata><opf:manifest><opf:item id="chapter" href="chapter.xhtml" media-type="APPLICATION/XHTML+XML"/></opf:manifest><opf:spine><opf:itemref idref="chapter"/></opf:spine></opf:package>"#.as_slice()),
+        ("OPS/chapter.xhtml", br#"<x:html xmlns:x="http://www.w3.org/1999/xhtml"><x:body><x:h2>Chapter</x:h2><x:p>Readable content.</x:p></x:body></x:html>"#.as_slice()),
+    ], SimpleFileOptions::default());
+    let book = parse_epub(Cursor::new(bytes)).unwrap();
     assert_eq!(book.chapters.len(), 1);
     assert_eq!(book.chapters[0].text, "Chapter Readable content.");
 }
 
 fn zip_compatibility_book(compression: zip::CompressionMethod, include_chapter: bool) -> Vec<u8> {
-    let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(compression);
-    archive
-        .start_file("META-INF/container.xml", options)
-        .unwrap();
-    archive.write_all(br#"<container><rootfiles><rootfile full-path="OPS/package.opf"/></rootfiles></container>"#).unwrap();
-    archive.start_file("OPS/package.opf", options).unwrap();
-    archive.write_all(br#"<package><metadata><title>ZIP compatibility</title></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#).unwrap();
+    let mut entries = vec![
+        ("META-INF/container.xml", br#"<container><rootfiles><rootfile full-path="OPS/package.opf"/></rootfiles></container>"#.as_slice()),
+        ("OPS/package.opf", br#"<package><metadata><title>ZIP compatibility</title></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#.as_slice()),
+    ];
     if include_chapter {
-        archive.start_file("OPS/chapter.xhtml", options).unwrap();
-        archive
-            .write_all(b"<html><body><h1>Opening</h1><p>Preserved content.</p></body></html>")
-            .unwrap();
+        entries.push((
+            "OPS/chapter.xhtml",
+            b"<html><body><h1>Opening</h1><p>Preserved content.</p></body></html>".as_slice(),
+        ));
     }
-    archive.finish().unwrap().into_inner()
+    epub_fixture::epub_bytes(entries, options)
 }
 
 #[test]

@@ -1,6 +1,4 @@
 //! Verified, atomic storage for downloadable TTS models.
-#[cfg(feature = "kokoro-sherpa-runtime")]
-mod model_archive_installation;
 mod model_inspection;
 mod model_install_operation;
 mod model_installation;

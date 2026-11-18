@@ -233,7 +233,6 @@ fn main() {
     // General
     config
         .profile(&profile)
-        .define("ENABLE_TESTS", "OFF")
         .define(
             "COMPILE_INTONATIONS",
             if cfg!(feature = "compile-espeak-intonations") {

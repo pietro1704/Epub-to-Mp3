@@ -92,6 +92,10 @@ pub enum SelectionReason {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Compatibility {
+    /// Static runtime support is distinct from installed-model readiness.
+    pub runtime_available: bool,
+    pub platforms: Vec<ModelPlatform>,
+    pub minimum_android_api: Option<u32>,
     pub compatible: bool,
     pub reasons: Vec<CompatibilityReason>,
 }

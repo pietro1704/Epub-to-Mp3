@@ -10,16 +10,13 @@ use converter_core::{
 };
 use std::{
     fs,
-    io::Write,
-    path::Path,
     process::Command,
     sync::{Arc, Mutex},
 };
-use zip::{write::SimpleFileOptions, ZipWriter};
 
 #[path = "support/worker_execution_fixtures.rs"]
 mod worker_execution_fixtures;
-use worker_execution_fixtures::{book, waveform, ExplicitRuntime};
+use worker_execution_fixtures::{book, waveform};
 
 #[test]
 fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
@@ -62,7 +59,7 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
         root.to_owned(),
     );
     fs::create_dir_all(&paths.piper_models_dir).unwrap();
-    let model = paths.piper_models_dir.join("pt_BR-faber-medium.onnx");
+    let model = paths.piper_models_dir.join("en_US-lessac-medium.onnx");
     fs::write(&model, b"owned synthetic model").unwrap();
     fs::write(model.with_extension("onnx.json"), b"{}").unwrap();
     let downloads = root.join("download.mp3");
@@ -115,8 +112,8 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
                 engine: Some("piper".into()),
                 voice: None,
                 language: None,
-                piper_model: None,
-                piper_config: None,
+                piper_model: Some(model.clone()),
+                piper_config: Some(model.with_extension("onnx.json")),
                 chapter_indices: Some(vec!["position:1".into()]),
                 no_parallel: true,
             })
@@ -149,8 +146,8 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
                 input: input.clone(),
                 job_id: job.into(),
                 engine: Some("piper".into()),
-                piper_model: None,
-                piper_config: None,
+                piper_model: Some(model.clone()),
+                piper_config: Some(model.with_extension("onnx.json")),
                 voice: None,
                 language: None,
                 chapter_indices: Some(vec!["position:1".into()]),
@@ -159,7 +156,7 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
             .unwrap();
         assert_eq!(result.chapters.len(), 1);
         assert_eq!(result.chapters[0].source_index, 1);
-        assert_eq!(calls.lock().unwrap().len(), usize::from(enabled));
+        assert_eq!(!calls.lock().unwrap().is_empty(), enabled);
         let resulting_audio = fs::read(&selected_audio).unwrap();
         assert!(!resulting_audio.is_empty());
         if !enabled {
@@ -182,8 +179,16 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
             .starts_with(".conversion-stage-")));
     }
     assert_eq!(
-        *calls.lock().unwrap(),
-        vec![parsed.chapters[1].text.clone()]
+        calls
+            .lock()
+            .unwrap()
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>(),
+        parsed.chapters[1]
+            .text
+            .split_whitespace()
+            .collect::<Vec<_>>()
     );
     assert_eq!(fs::read(input).unwrap(), source);
     assert_eq!(fs::read(model).unwrap(), b"owned synthetic model");
@@ -231,7 +236,7 @@ fn cancellation_from_final_chapter_completion_preserves_resumable_audio() {
         root.to_owned(),
     );
     fs::create_dir_all(&paths.piper_models_dir).unwrap();
-    let model = paths.piper_models_dir.join("pt_BR-faber-medium.onnx");
+    let model = paths.piper_models_dir.join("en_US-lessac-medium.onnx");
     let config = model.with_extension("onnx.json");
     fs::write(&model, b"owned synthetic model").unwrap();
     fs::write(&config, b"{}").unwrap();
@@ -276,7 +281,8 @@ fn cancellation_from_final_chapter_completion_preserves_resumable_audio() {
         no_parallel: true,
     };
     let result = worker.run(request.clone());
-    assert_eq!(*calls.lock().unwrap(), 1);
+    let synthesis_calls = *calls.lock().unwrap();
+    assert!(synthesis_calls > 0);
     let completed_audio = completed.lock().unwrap();
     assert_eq!(completed_audio.len(), 1);
     assert!(audio::validate_audio(&completed_audio[0], 1).unwrap() > 0.0);
@@ -314,7 +320,7 @@ fn cancellation_from_final_chapter_completion_preserves_resumable_audio() {
     );
     assert_eq!(
         *calls.lock().unwrap(),
-        1,
+        synthesis_calls,
         "resume must reuse the validated completed chapter"
     );
     println!("TERMINAL_CANCEL_ASSERTIONS_COMPLETED");

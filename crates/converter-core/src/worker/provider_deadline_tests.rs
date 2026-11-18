@@ -1,4 +1,5 @@
 use super::*;
+use crate::tts_session::*;
 use std::time::{Duration, Instant};
 
 fn isolated(name: &str, timeout: &str) -> bool {
@@ -45,18 +46,38 @@ fn fixture(runtime: crate::piper::RegisteredPiperRuntime) -> (tempfile::TempDir,
     )
 }
 
-fn synthesize(worker: &ConversionWorker, output: &Path) -> Result<(), WorkerError> {
-    worker.synthesize_with_timeout(
-        "piper",
+fn synthesize(worker: &ConversionWorker, output: &Path) -> Result<(), TtsFailure> {
+    let request = preference_test_request();
+    let descriptor = builtin_descriptors()
+        .into_iter()
+        .find(|item| item.provider == "piper")
+        .unwrap();
+    let selection = SessionSelection {
+        version: CONTRACT_VERSION,
+        provider: descriptor.provider.clone(),
+        runtime: descriptor.runtime.clone(),
+        model_id: Some(crate::tts_preferences::FABER_MODEL_ID.into()),
+        model_revision: None,
+        voice: None,
+        options: Default::default(),
+    };
+    let mut sink = AudioSink::new(
+        descriptor.capabilities.audio_formats[0].clone(),
+        MAX_SEGMENT_BYTES,
+    );
+    let registry = super::super::native_tts_adapters::native_registry(worker, &request)?;
+    let mut session = registry.prepare(&selection, "pt-BR")?;
+    session.synthesize(
         "Deadline fixture",
-        output,
-        0,
-        None,
-        None,
-        None,
-        None,
-        &std::sync::atomic::AtomicBool::new(false),
-    )
+        &SynthesisContext {
+            language: "pt-BR",
+            cancelled: &|| worker.cancel.is_cancelled(),
+            replaced: &|| false,
+        },
+        &mut sink,
+    )?;
+    fs::write(output, sink.into_mp3()?).unwrap();
+    Ok(())
 }
 
 #[test]
@@ -80,7 +101,10 @@ fn expired_piper_deadline_does_not_start_or_wait_for_provider() {
     let started = Instant::now();
     assert!(matches!(
         synthesize(&worker, &output),
-        Err(WorkerError::Piper(_))
+        Err(TtsFailure {
+            kind: FailureKind::Synthesis,
+            ..
+        })
     ));
     assert!(
         started.elapsed() < Duration::from_millis(250),
@@ -114,7 +138,7 @@ fn active_deadline_reclaims_provider_and_allows_next_request() {
     let output = fixture.path().join("speech.wav");
     let started = Instant::now();
     assert!(
-        matches!(synthesize(&worker, &output), Err(WorkerError::Piper(message)) if message == "chapter synthesis timed out")
+        matches!(synthesize(&worker, &output), Err(TtsFailure { message, .. }) if message == "Piper error: Piper synthesis timed out")
     );
     assert!(started.elapsed() < Duration::from_millis(1800));
     assert!(exited.load(Ordering::SeqCst));
@@ -159,7 +183,10 @@ fn cancellation_keeps_identity_and_reclaims_active_provider() {
         });
         assert!(matches!(
             synthesize(&worker, &output),
-            Err(WorkerError::Cancelled)
+            Err(TtsFailure {
+                kind: FailureKind::Cancelled,
+                ..
+            })
         ));
     });
     assert!(started.elapsed() < Duration::from_millis(500));
@@ -169,7 +196,10 @@ fn cancellation_keeps_identity_and_reclaims_active_provider() {
     )));
     assert!(matches!(
         synthesize(&worker, &output),
-        Err(WorkerError::Cancelled)
+        Err(TtsFailure {
+            kind: FailureKind::Cancelled,
+            ..
+        })
     ));
 }
 
@@ -188,7 +218,7 @@ fn late_audio_is_discarded_and_provider_errors_are_preserved() {
     }));
     let output = fixture.path().join("speech.wav");
     assert!(
-        matches!(synthesize(&worker, &output), Err(WorkerError::Piper(message)) if message == "chapter synthesis timed out")
+        matches!(synthesize(&worker, &output), Err(TtsFailure { message, .. }) if message == "Piper error: Piper synthesis timed out")
     );
     assert!(!output.exists());
     assert!(!fs::read_dir(fixture.path()).unwrap().any(|entry| entry
@@ -200,6 +230,6 @@ fn late_audio_is_discarded_and_provider_errors_are_preserved() {
         |_, _, _| Err(crate::piper::PiperError::EmptyOutput),
     )));
     assert!(
-        matches!(synthesize(&worker, &output), Err(WorkerError::Piper(message)) if message.contains("empty or missing"))
+        matches!(synthesize(&worker, &output), Err(TtsFailure { message, .. }) if message.contains("empty or missing"))
     );
 }

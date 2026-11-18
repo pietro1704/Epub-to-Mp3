@@ -127,15 +127,9 @@ fn model_catalog_v3_is_deterministic_and_keeps_domain_states_separate() {
     assert_eq!(faber["readiness"]["state"], "not_inspected");
     assert_eq!(faber["selection"]["selectable"], false);
 
-    let kokoro = entries
+    assert!(entries
         .iter()
-        .find(|entry| entry["identity"]["model_id"] == "kokoro-82m")
-        .unwrap();
-    assert_eq!(kokoro["compatibility"]["compatible"], false);
-    assert!(kokoro["compatibility"]["reasons"]
-        .as_array()
-        .unwrap()
-        .contains(&serde_json::json!("unsupported_language")));
+        .all(|entry| entry["identity"]["model_id"] != "kokoro-82m"));
 }
 
 #[test]
@@ -168,11 +162,7 @@ fn model_catalog_v2_preserves_representative_legacy_entries() {
     assert_eq!(placeholder["revision"], "");
     assert_eq!(placeholder["runtime_available"], true);
 
-    let kokoro = find("kokoro-82m");
-    assert_eq!(kokoro["engine"], "kokoro");
-    assert_eq!(kokoro["languages"], serde_json::json!(["en"]));
-    assert_eq!(kokoro["runtime_available"], false);
-    assert_eq!(kokoro["artifacts"].as_array().unwrap().len(), 1);
+    assert!(models.iter().all(|model| model["engine"] != "kokoro"));
 }
 
 #[test]

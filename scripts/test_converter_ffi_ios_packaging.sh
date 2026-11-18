@@ -32,8 +32,8 @@ xcrun clang -target "$arch-apple-ios15.0-simulator" -dynamiclib \
 expect_rejection "$bundle_root/incomplete.dylib" "$arch" 7
 # A legacy library can expose every generic ABI symbol while lacking Piper.
 for symbol in converter_session_open converter_session_metadata_json converter_session_free \
-    converter_string_free converter_last_error converter_tts_models_json \
-    converter_tts_default_engine converter_session_convert_json converter_audio_prepare_v1; do
+    converter_string_free converter_last_error converter_tts_catalog_json_v3 \
+    converter_tts_default_engine converter_session_convert_streaming_job_options_json_v1 converter_audio_prepare_v1; do
   printf 'void %s(void) {}\n' "$symbol"
 done > "$bundle_root/non-piper.c"
 xcrun clang -target "$arch-apple-ios15.0-simulator" -dynamiclib \

@@ -5,8 +5,6 @@ struct ConverterModelCatalog {
     var available = false
     var freeString: ConverterStringFree = { _ in }
     var lastError: ConverterLastError = { nil }
-    var modelsJSON: ConverterTtsModels = { nil }
-    var catalogJSON: ConverterTtsModels? = nil
     var catalogJSONV3: ConverterTtsCatalogV3? = nil
     var catalogProbeJSONV3: ConverterTtsCatalogProbeV3? = nil
     var defaultEngine: ConverterTtsDefaultEngine = { _, _, _ in nil }
@@ -28,14 +26,7 @@ struct ConverterModelCatalog {
     var installOperationFree: ConverterModelInstallOperationFree?
 
     func ttsCatalog() throws -> TtsCatalog {
-        guard available, let read = catalogJSON, let value = read() else {
-            throw EmbeddedConverterError.artifactUnavailable
-        }
-        defer { freeString(value) }
-        guard let json = String(validatingCString: value) else {
-            throw EmbeddedConverterError.artifactUnavailable
-        }
-        return try TtsCatalog.decode(Data(json.utf8))
+        try TtsCatalog.decode(readSnapshotData(target: .current(), modelRoot: ""))
     }
 
     func speechModelSnapshot(
@@ -50,12 +41,16 @@ struct ConverterModelCatalog {
             guard let probe = catalogProbeJSONV3 else { throw EmbeddedConverterError.artifactUnavailable }
             return try readProbedSnapshot(target: target, directory: espeakDataDirectory, probe: probe)
         }
-        guard let read = catalogJSONV3 else { throw EmbeddedConverterError.artifactUnavailable }
+        return try SpeechModelSnapshot.decode(readSnapshotData(target: target, modelRoot: target.modelsRoot.path))
+    }
+
+    private func readSnapshotData(target: SpeechModelLibraryTarget, modelRoot: String) throws -> Data {
+        guard available, let read = catalogJSONV3 else { throw EmbeddedConverterError.artifactUnavailable }
         let result = target.language.withCString { languagePointer in
             target.platform.withCString { platformPointer in
                 target.architecture.withCString { architecturePointer in
                     target.osVersion.withCString { osVersionPointer in
-                        target.modelsRoot.path.withCString { rootPointer in
+                        modelRoot.withCString { rootPointer in
                             read(languagePointer, platformPointer, target.androidAPI,
                                  architecturePointer, osVersionPointer, rootPointer)
                         }
@@ -63,7 +58,7 @@ struct ConverterModelCatalog {
                 }
             }
         }
-        return try decodeSnapshot(result)
+        return try ownedCatalogData(result)
     }
 
     private func readProbedSnapshot(
@@ -86,23 +81,16 @@ struct ConverterModelCatalog {
     }
 
     private func decodeSnapshot(_ result: UnsafeMutablePointer<CChar>?) throws -> SpeechModelSnapshot {
+        try SpeechModelSnapshot.decode(ownedCatalogData(result))
+    }
+
+    private func ownedCatalogData(_ result: UnsafeMutablePointer<CChar>?) throws -> Data {
         guard let value = result else {
             throw EmbeddedConverterError.conversionFailed(readError())
         }
         defer { freeString(value) }
         guard let json = String(validatingCString: value) else {
-            throw EmbeddedConverterError.conversionFailed(readError())
-        }
-        return try SpeechModelSnapshot.decode(Data(json.utf8))
-    }
-
-    func ttsModels() throws -> Data {
-        guard available, let value = modelsJSON() else {
-            throw EmbeddedConverterError.artifactUnavailable
-        }
-        defer { freeString(value) }
-        guard let json = String(validatingCString: value) else {
-            throw EmbeddedConverterError.artifactUnavailable
+            throw EmbeddedConverterError.artifactInvalid("Model catalog contains invalid UTF-8")
         }
         return Data(json.utf8)
     }

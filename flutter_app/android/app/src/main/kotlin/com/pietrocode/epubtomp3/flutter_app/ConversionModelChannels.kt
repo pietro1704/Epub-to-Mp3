@@ -23,7 +23,7 @@ internal class ConversionModelChannels(
                         result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
                     } else {
                         runNative(result) {
-                            val value = nativeTtsCatalogV2()
+                            val value = nativeTtsCatalogV3()
                             runOnUiThread {
                                 if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
                                 else result.success(org.json.JSONObject(value).put("android_api", android.os.Build.VERSION.SDK_INT).toString())

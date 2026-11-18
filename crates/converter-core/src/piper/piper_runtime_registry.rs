@@ -83,14 +83,21 @@ pub(super) fn runtime_slot() -> &'static RwLock<Option<Arc<dyn PiperRuntime>>> {
 }
 
 pub fn register_runtime(runtime: Arc<dyn PiperRuntime>) {
-    *runtime_slot().write().expect("Piper runtime lock poisoned") = Some(runtime);
+    let previous = {
+        let mut slot = runtime_slot()
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let previous = slot.replace(runtime);
+        // Explicit registration replaces the complete possibly poisoned state.
+        runtime_slot().clear_poison();
+        previous
+    };
+    // Provider destruction must not run under the process-wide registry lock.
+    drop(previous);
 }
 
 pub fn piper_runtime_status() -> PiperRuntimeStatus {
-    runtime_slot()
-        .read()
-        .expect("Piper runtime lock poisoned")
-        .as_ref()
+    registered_runtime()
         .map(|runtime| runtime.status())
         .unwrap_or(PiperRuntimeStatus {
             runtime_loaded: false,
@@ -111,10 +118,7 @@ pub fn piper_runtime_init(model: &Path, config: &Path) -> Result<(), PiperError>
     if !config.is_file() {
         return Err(PiperError::MissingConfig(config.to_path_buf()));
     }
-    let runtime = runtime_slot()
-        .read()
-        .expect("Piper runtime lock poisoned")
-        .clone()
+    let runtime = registered_runtime()
         .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
     runtime.init(model, config)
 }
@@ -126,10 +130,7 @@ pub fn piper_synthesize(text: &str, output: &Path) -> Result<PathBuf, PiperError
     if text.trim().is_empty() {
         return Err(PiperError::EmptyOutput);
     }
-    let runtime = runtime_slot()
-        .read()
-        .expect("Piper runtime lock poisoned")
-        .clone()
+    let runtime = registered_runtime()
         .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
     runtime.synthesize(text, output, &|| false)?;
     validate_wav(output)?;
@@ -140,12 +141,49 @@ pub fn piper_runtime_shutdown() {
     let _transaction = MODEL_TRANSACTION
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(runtime) = runtime_slot()
-        .read()
-        .expect("Piper runtime lock poisoned")
-        .as_ref()
-        .cloned()
-    {
+    if let Some(runtime) = registered_runtime() {
         runtime.shutdown();
+    }
+}
+
+#[cfg(test)]
+mod registry_recovery_tests {
+    use super::*;
+
+    #[test]
+    fn poisoned_registry_rejects_calls_and_explicit_registration_recovers() {
+        if std::env::var_os("CONVERTER_POISONED_REGISTRY_CHILD").is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "piper::piper_runtime_registry::registry_recovery_tests::poisoned_registry_rejects_calls_and_explicit_registration_recovers", "--nocapture"])
+                .env("CONVERTER_POISONED_REGISTRY_CHILD", "1")
+                .output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        register_runtime(Arc::new(RegisteredPiperRuntime::new(|_, _, _| Ok(()))));
+        assert!(std::thread::spawn(|| {
+            let _slot = runtime_slot().write().unwrap();
+            panic!("poison the registration transaction");
+        })
+        .join()
+        .is_err());
+        assert!(registered_runtime().is_none());
+        assert!(!piper_runtime_status().engine_ready);
+        let output = Path::new("unused-poisoned-registry.wav");
+        assert!(matches!(
+            piper_synthesize("test", output),
+            Err(PiperError::RuntimeUnavailable(_))
+        ));
+        assert!(!output.exists());
+        piper_runtime_shutdown();
+        register_runtime(Arc::new(RegisteredPiperRuntime::new(|_, _, _| Ok(()))));
+        assert!(registered_runtime().is_some());
+        assert!(piper_runtime_status().engine_ready);
+        assert!(!runtime_slot().is_poisoned());
     }
 }

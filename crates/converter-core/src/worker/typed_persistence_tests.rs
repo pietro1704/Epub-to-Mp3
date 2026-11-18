@@ -16,7 +16,7 @@ fn fallback_metadata_tracks_actual_role_when_primary_and_secondary_resolve_to_sa
             if count.fetch_add(1, Ordering::AcqRel) == 0 && fail_primary {
                 Err(WorkerError::Edge(EdgeError::Timeout))
             } else {
-                Ok(platform_tts::encode_wav(&test_system_wav()).unwrap())
+                Ok(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap())
             }
         }));
         let mut request = preference_test_request();
@@ -226,7 +226,12 @@ fn typed_failure_policy_survives_separate_single_chapter_requests() {
     let spoken = Arc::new(Mutex::new(Vec::new()));
     for chapter in 0..3 {
         let input = temp.path().join(format!("chapter-{chapter}.epub"));
-        platform_test_book_with_heading(&input, &format!("Unique chapter {chapter}."), "pt-BR", None);
+        platform_test_book_with_heading(
+            &input,
+            &format!("Unique chapter {chapter}."),
+            "pt-BR",
+            None,
+        );
         let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
             std::iter::empty::<(String, String)>(),
             temp.path().to_path_buf(),

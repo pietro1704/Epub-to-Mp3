@@ -11,15 +11,10 @@ pub struct PreparedPiperModel {
     model: PathBuf,
     config: PathBuf,
     runtime: Arc<dyn PiperRuntime>,
-    cache_identity: String,
     _model_usage: crate::model_store::model_usage::ModelUsageLease,
 }
 
 impl PreparedPiperModel {
-    pub(crate) fn cache_identity(&self) -> String {
-        self.cache_identity.clone()
-    }
-
     pub fn prepare(
         root: &Path,
         model_id: &str,
@@ -79,15 +74,8 @@ impl PreparedPiperModel {
                 "runtime does not support per-request model paths".into(),
             ));
         }
-        // Hash once during explicit preparation, not once for every chapter.
-        let model_hash =
-            crate::cache::sha256_file(&model).map_err(|error| PiperError::Io(error.to_string()))?;
-        let config_hash = crate::cache::sha256_file(&config)
-            .map_err(|error| PiperError::Io(error.to_string()))?;
-        let cache_identity = format!("piper:{model:?}:{config:?}:{model_hash}:{config_hash}");
         let prepared = Self {
             _model_usage: model_usage,
-            cache_identity,
             model,
             config,
             runtime,

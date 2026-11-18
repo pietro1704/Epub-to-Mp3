@@ -91,7 +91,6 @@ None of the generation/build commands below was run for this inventory.
 | `native/vendor/piper-rs/` | [UPSTREAM.md](../native/vendor/piper-rs/UPSTREAM.md): crates.io 0.2.0, upstream `d70b0970a87453f3476b5fd6cf9edf329be8b445`; MIT declared in manifest, no separate upstream license file | Local ONNX version, cancellation and configuration patches; preserve patch behavior when refreshing upstream |
 | `native/vendor/espeak-rs/` | Manifest declares 0.2.0, MIT and the Piper upstream repository; `LICENSE` retained | Local clause/punctuation wrapper; exact upstream diff and refresh recipe need investigation |
 | `native/vendor/espeak-rs-sys/` | `.cargo_vcs_info.json` records `d70b0970a87453f3476b5fd6cf9edf329be8b445`; [UPSTREAM.md](../native/vendor/espeak-rs-sys/UPSTREAM.md) describes the local C bridge | Rust package declares MIT; surrounding eSpeak C/bridge is GPL-3.0-or-later. Embedded eSpeak revision/license inventory and refresh procedure still need reconciliation |
-| `native/vendor/sherpa-onnx-sys/` | Manifest declares 1.13.8/Apache-2.0; root Cargo patch cites upstream ZIP-security commit `1a9d234ab95567eba8c2e89873a87d70b79633e2` | Retain LICENSE and local archive/build handling; verify full patch provenance before refresh |
 
 Dependency refresh is not simply rerunning a generator. Retrieve the recorded
 upstream version, compare and reapply the reviewed local changes, retain license

@@ -24,7 +24,7 @@ async fn active_sse_stays_open_until_a_terminal_chapter_event() {
             .is_err()
     );
     let mut terminal = snapshot;
-    terminal.state = "cancelled".into();
+    terminal.state = JobPhase::Cancelled;
     events.send(SseMessage::Chapter(terminal)).unwrap();
     let event = tokio::time::timeout(Duration::from_millis(100), stream.next())
         .await
@@ -43,7 +43,7 @@ async fn initially_finished_job_emits_one_snapshot_then_closes_sse() {
     let root = TestRoot::new();
     let state = root.state();
     let mut snapshot = initial_job("finished-job".into(), &CreateJob::default());
-    snapshot.state = "finished".into();
+    snapshot.state = JobPhase::Finished;
     let (events, _) = broadcast::channel(8);
     state.jobs.write().await.insert(
         "finished-job".into(),
@@ -73,7 +73,7 @@ async fn restarted_jobs_are_discoverable_through_the_resumable_api() {
     let queued = initial_job("restart-job".into(), &CreateJob::default());
     persist_snapshot(&state.config, &queued).unwrap();
     let mut completed = initial_job("complete-job".into(), &CreateJob::default());
-    completed.state = "completed".into();
+    completed.state = JobPhase::Finished;
     persist_snapshot(&state.config, &completed).unwrap();
     let response = http_fixture_request(
         state.config,
@@ -113,8 +113,9 @@ async fn resume_executes_the_worker_with_a_fresh_cancellation_token() {
         previous_result,
         Err(converter_core::worker::WorkerError::Epub(_))
     ));
+    place_default_voice(&state.config);
     let mut snapshot = initial_job("resume-job".into(), &CreateJob::default());
-    snapshot.state = "cancelled".into();
+    snapshot.state = JobPhase::Cancelled;
     snapshot.error = Some("Previous attempt cancelled".into());
     let cancellation = converter_core::piper::CancellationToken::default();
     cancellation.cancel();
@@ -132,12 +133,12 @@ async fn resume_executes_the_worker_with_a_fresh_cancellation_token() {
     assert_eq!(response.status(), StatusCode::OK);
     let initial = receiver.recv().await.unwrap();
     assert!(
-        matches!(initial, SseMessage::Snapshot(ref s) if s.state == "queued" && s.error.is_none())
+        matches!(initial, SseMessage::Snapshot(ref s) if s.state == JobPhase::Queued && s.error.is_none())
     );
     let terminal = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             if let SseMessage::Snapshot(snapshot) = receiver.recv().await.unwrap() {
-                if is_terminal(&snapshot.state) {
+                if snapshot.state.is_terminal() {
                     break snapshot;
                 }
             }
@@ -146,7 +147,8 @@ async fn resume_executes_the_worker_with_a_fresh_cancellation_token() {
     .await
     .expect("resume must launch the actual conversion worker");
     assert_eq!(
-        terminal.state, "failed",
+        terminal.state,
+        JobPhase::Failed,
         "invalid EPUB must reach parsing rather than remain queued or reuse the cancelled token"
     );
     assert!(terminal
@@ -159,7 +161,7 @@ async fn resume_executes_the_worker_with_a_fresh_cancellation_token() {
         .is_cancelled());
     assert_eq!(
         load_snapshots(&state.config)["resume-job"].snapshot.state,
-        "failed"
+        JobPhase::Failed
     );
 }
 
@@ -168,7 +170,7 @@ async fn resume_missing_input_keeps_the_terminal_snapshot() {
     let root = TestRoot::new();
     let state = root.state();
     let mut snapshot = initial_job("missing-input".into(), &CreateJob::default());
-    snapshot.state = "interrupted".into();
+    snapshot.state = JobPhase::Interrupted;
     let (events, mut receiver) = broadcast::channel(8);
     state.jobs.write().await.insert(
         snapshot.job_id.clone(),
@@ -183,7 +185,7 @@ async fn resume_missing_input_keeps_the_terminal_snapshot() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(
         state.jobs.read().await["missing-input"].snapshot.state,
-        "interrupted"
+        JobPhase::Interrupted
     );
     assert!(matches!(
         receiver.try_recv(),
@@ -196,7 +198,7 @@ async fn resume_waits_for_the_previous_worker_to_stop() {
     let root = TestRoot::new();
     let state = root.state();
     let mut snapshot = initial_job("cancelled-job".into(), &CreateJob::default());
-    snapshot.state = "cancelled".into();
+    snapshot.state = JobPhase::Cancelled;
     let (events, mut receiver) = broadcast::channel(8);
     state.jobs.write().await.insert(
         snapshot.job_id.clone(),
@@ -211,7 +213,7 @@ async fn resume_waits_for_the_previous_worker_to_stop() {
     assert_eq!(response.status(), StatusCode::CONFLICT);
     assert_eq!(
         state.jobs.read().await["cancelled-job"].snapshot.state,
-        "cancelled"
+        JobPhase::Cancelled
     );
     assert!(matches!(
         receiver.try_recv(),
@@ -224,7 +226,7 @@ async fn resume_running_job_does_not_reset_it() {
     let root = TestRoot::new();
     let state = root.state();
     let mut snapshot = initial_job("running-job".into(), &CreateJob::default());
-    snapshot.state = "running".into();
+    snapshot.state = JobPhase::Running;
     let (events, mut receiver) = broadcast::channel(8);
     state.jobs.write().await.insert(
         snapshot.job_id.clone(),
@@ -239,7 +241,7 @@ async fn resume_running_job_does_not_reset_it() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         state.jobs.read().await["running-job"].snapshot.state,
-        "running"
+        JobPhase::Running
     );
     assert!(matches!(
         receiver.try_recv(),
@@ -266,7 +268,7 @@ async fn queued_cancellation_survives_snapshot_recovery() {
     let response = cancel(AxumPath("cancel-job".into()), State(state.clone())).await;
     assert_eq!(response.status(), StatusCode::OK);
     let recovered = load_snapshots(&state.config);
-    assert_eq!(recovered["cancel-job"].snapshot.state, "cancelled");
+    assert_eq!(recovered["cancel-job"].snapshot.state, JobPhase::Cancelled);
     assert!(recovered["cancel-job"].snapshot.error.is_none());
 }
 
@@ -290,10 +292,106 @@ async fn cancellation_persistence_failure_does_not_report_success() {
     let response = cancel(AxumPath("cancel-job".into()), State(state.clone())).await;
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let jobs = state.jobs.read().await;
-    assert_eq!(jobs["cancel-job"].snapshot.state, "queued");
+    assert_eq!(jobs["cancel-job"].snapshot.state, JobPhase::Queued);
     assert!(!jobs["cancel-job"].cancellation.is_cancelled());
     assert!(matches!(
         receiver.try_recv(),
         Err(broadcast::error::TryRecvError::Empty)
     ));
+}
+
+#[test]
+fn progress_log_keeps_only_the_most_recent_lines() {
+    let snapshot = initial_job("long-job".into(), &CreateJob::default());
+    let (events, _receiver) = broadcast::channel(8);
+    let jobs = RwLock::new(HashMap::from([(
+        "long-job".to_owned(),
+        Job {
+            snapshot,
+            events: events.clone(),
+            cancellation: Default::default(),
+            worker_active: true,
+        },
+    )]));
+    let total = MAX_LOG_LINES + 25;
+    for line in 0..total {
+        let event: ProgressEvent = serde_json::from_value(serde_json::json!({
+            "jobId":"long-job", "state":"running", "chapterIndex":1, "chaptersTotal":3,
+            "chaptersCompleted":1, "percent":33.0, "engine":"piper",
+            "message":format!("line {line}")
+        }))
+        .unwrap();
+        record_progress(&jobs, &events, event);
+    }
+    let jobs = jobs.blocking_read();
+    let snapshot = &jobs["long-job"].snapshot;
+    assert_eq!(snapshot.state, JobPhase::Running);
+    assert_eq!(snapshot.raw_log.len(), MAX_LOG_LINES);
+    assert_eq!(snapshot.events.len(), MAX_LOG_LINES);
+    assert_eq!(
+        snapshot.raw_log.first().unwrap(),
+        &format!("line {}", total - MAX_LOG_LINES)
+    );
+    assert_eq!(
+        snapshot.raw_log.last().unwrap(),
+        &format!("line {}", total - 1)
+    );
+}
+
+#[test]
+fn progress_after_a_cancellation_request_keeps_the_job_cancelling() {
+    let mut snapshot = initial_job("stopping-job".into(), &CreateJob::default());
+    snapshot.state = JobPhase::Cancelling;
+    let (events, _receiver) = broadcast::channel(8);
+    let jobs = RwLock::new(HashMap::from([(
+        "stopping-job".to_owned(),
+        Job {
+            snapshot,
+            events: events.clone(),
+            cancellation: Default::default(),
+            worker_active: true,
+        },
+    )]));
+    let event: ProgressEvent = serde_json::from_value(serde_json::json!({
+        "jobId":"stopping-job", "state":"running", "chapterIndex":1, "chaptersTotal":3,
+        "chaptersCompleted":1, "percent":33.0, "engine":"piper", "message":"late segment"
+    }))
+    .unwrap();
+    record_progress(&jobs, &events, event);
+    let jobs = jobs.blocking_read();
+    let snapshot = &jobs["stopping-job"].snapshot;
+    assert_eq!(snapshot.state, JobPhase::Cancelling);
+    assert_eq!(snapshot.raw_log, ["late segment"]);
+}
+
+#[test]
+fn persisted_and_wire_job_states_keep_their_existing_strings() {
+    let root = TestRoot::new();
+    let state = root.state();
+    let phases = [
+        (JobPhase::Queued, "queued"),
+        (JobPhase::Running, "running"),
+        (JobPhase::Cancelling, "cancelling"),
+        (JobPhase::Cancelled, "cancelled"),
+        (JobPhase::Finished, "finished"),
+        (JobPhase::Failed, "failed"),
+        (JobPhase::Interrupted, "interrupted"),
+    ];
+    for (phase, text) in phases {
+        assert_eq!(serde_json::to_value(phase).unwrap(), text);
+        let active = matches!(text, "queued" | "running" | "cancelling");
+        assert_eq!((phase.is_active(), phase.is_terminal()), (active, !active));
+    }
+    // A snapshot written by an earlier server keeps loading and is rewritten
+    // only when the job changes; the stored file is not migrated in place.
+    let mut legacy =
+        serde_json::to_value(initial_job("legacy-job".into(), &CreateJob::default())).unwrap();
+    legacy["state"] = "completed".into();
+    std::fs::create_dir_all(&state.config.paths.jobs_dir).unwrap();
+    let path = snapshot_path(&state.config, "legacy-job");
+    let stored = serde_json::to_vec(&legacy).unwrap();
+    std::fs::write(&path, &stored).unwrap();
+    let recovered = load_snapshots(&state.config);
+    assert_eq!(recovered["legacy-job"].snapshot.state, JobPhase::Finished);
+    assert_eq!(std::fs::read(&path).unwrap(), stored);
 }

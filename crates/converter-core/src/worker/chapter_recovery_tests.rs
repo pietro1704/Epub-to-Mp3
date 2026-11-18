@@ -21,7 +21,7 @@ fn native_policy_reuses_pure_piper_but_rejects_opaque_native_receipts_and_recove
         ensure_chapter_audio(&source, "stable-v2-key", |pending| {
             fs::write(
                 pending,
-                platform_tts::encode_wav(&test_system_wav()).unwrap(),
+                crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap(),
             )?;
             cache::atomic_write_json(
                 pending.with_extension("tts-usage.json"),
@@ -69,7 +69,7 @@ fn app_policy_uses_short_system_passages_until_primary_recovers() {
         if edge_calls.fetch_add(1, Ordering::SeqCst) < 2 {
             Err(WorkerError::Edge(EdgeError::Timeout))
         } else {
-            Ok(platform_tts::encode_wav(&test_system_wav()).unwrap())
+            Ok(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap())
         }
     }));
     let preferences = TtsPreferences {
@@ -117,7 +117,10 @@ fn worker_reuses_proven_audio_and_publishes_the_matching_archive() {
         std::collections::HashMap::<String, String>::new(),
         root.path().to_path_buf(),
     );
-    let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+    let mut worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+    worker.test_edge = Some(Arc::new(|_| {
+        Ok(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap())
+    }));
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/public/sample.epub");
     let source = fs::read(&input).unwrap();
     let book = epub::parse_epub(std::io::Cursor::new(&source)).unwrap();
@@ -130,20 +133,6 @@ fn worker_reuses_proven_audio_and_publishes_the_matching_archive() {
     let chapter = &book.chapters[0];
     let output = worker.config.paths.output_dir.join("proven-existing-audio");
     let audio = output.join(format!("0001-{}.mp3", sanitize(&chapter.name)));
-    let key = chapter_audio_request_key(
-        &cache::sha256_bytes(&source),
-        &chapter.index,
-        &chapter.text,
-        "piper",
-        None,
-        Some("en"),
-    )
-    .unwrap();
-    ensure_chapter_audio(&audio, &key, |pending| {
-        fs::write(pending, b"completed synthesis")?;
-        Ok(())
-    })
-    .unwrap();
     let cached_text = worker
         .config
         .paths
@@ -157,7 +146,7 @@ fn worker_reuses_proven_audio_and_publishes_the_matching_archive() {
         models_root: None,
         input,
         job_id: "proven-existing-audio".into(),
-        engine: Some("piper".into()),
+        engine: Some("edge".into()),
         voice: None,
         language: Some("en".into()),
         piper_model: None,
@@ -165,7 +154,16 @@ fn worker_reuses_proven_audio_and_publishes_the_matching_archive() {
         chapter_indices: Some(vec!["0".into()]),
         no_parallel: true,
     };
-    let manifest = worker.run(request.clone()).unwrap();
+    let initial = worker.run(request.clone()).unwrap();
+    assert_eq!(initial.chapters.len(), 1);
+    let original_audio = fs::read(&audio).unwrap();
+    let receipt: ChapterAudioReceipt =
+        cache::read_json(chapter_audio_receipt_path(&audio)).unwrap();
+    let key = receipt.request_key;
+    cache::atomic_write_json(&cached_text, &"x".repeat(chapter.text.chars().count())).unwrap();
+    worker.test_edge = Some(Arc::new(|_| Err(WorkerError::Edge(EdgeError::Timeout))));
+    worker.jobs.delete(&request.job_id).unwrap();
+    let manifest = worker.resume(request.clone()).unwrap();
     assert_eq!(
         cache::read_json::<String>(&cached_text).unwrap(),
         chapter.text
@@ -187,7 +185,7 @@ fn worker_reuses_proven_audio_and_publishes_the_matching_archive() {
     let mut entry = archive.by_name(&manifest.chapters[0].filename).unwrap();
     let mut bytes = Vec::new();
     std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
-    assert_eq!(bytes, b"completed synthesis");
+    assert_eq!(bytes, original_audio);
     let changed_output = worker.config.paths.output_dir.join("changed-option-audio");
     fs::create_dir_all(&changed_output).unwrap();
     let changed_audio = changed_output.join(audio.file_name().unwrap());
@@ -225,7 +223,7 @@ fn recovery_cancelled_after_staging_does_not_publish_artifacts() {
     ensure_chapter_audio(&source, "recovery-cancel", |pending| {
         fs::write(
             pending,
-            platform_tts::encode_wav(&test_system_wav()).unwrap(),
+            crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap(),
         )?;
         Ok(())
     })
@@ -275,7 +273,7 @@ fn recovery_cancelled_after_staging_does_not_publish_artifacts() {
 }
 
 #[test]
-fn recovered_cache_cancellation_never_announces_a_completed_chapter() {
+fn opaque_recovery_cancellation_never_announces_a_completed_chapter() {
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("book.epub");
     platform_test_book(&input);
@@ -292,8 +290,7 @@ fn recovered_cache_cancellation_never_announces_a_completed_chapter() {
     let mut request = preference_test_request();
     request.input = input;
     request.job_id = "cancel-predecessor".into();
-    // Legacy artifacts keep their captured recovery contract. Typed native jobs
-    // reject an opaque system voice and are verified separately.
+    // Migrated requests cannot reuse an opaque system-voice receipt.
     request.tts_preferences = None;
     request.engine = Some("edge".into());
     predecessor.test_edge = Some(Arc::new(|_| Err(WorkerError::Edge(EdgeError::Timeout))));
@@ -311,21 +308,28 @@ fn recovered_cache_cancellation_never_announces_a_completed_chapter() {
     let stop = cancel.clone();
     let completions = Arc::new(AtomicUsize::new(0));
     let observed = completions.clone();
-    let successor = ConversionWorker::new(config.clone())
+    struct CancelledSystem(CancellationToken);
+    impl PlatformTts for CancelledSystem {
+        fn synthesize_wav(
+            &self,
+            _: &str,
+            _: &str,
+            _: &Path,
+            _: &(dyn Fn() -> bool + Sync),
+        ) -> Result<(), String> {
+            self.0.cancel();
+            Err("cancelled".into())
+        }
+    }
+    let mut successor = ConversionWorker::new(config.clone())
         .unwrap()
-        .with_platform_tts(Arc::new(TestSystem {
-            texts: spoken.clone(),
-        }))
+        .with_platform_tts(Arc::new(CancelledSystem(stop)))
         .with_control(control)
         .with_cancellation(cancel)
-        .with_progress(Arc::new(move |event| {
-            if event.message.starts_with("Playing cached audio") {
-                stop.cancel();
-            }
-        }))
         .with_chapter_completed(Arc::new(move |_| {
             observed.fetch_add(1, Ordering::AcqRel);
         }));
+    successor.test_edge = Some(Arc::new(|_| Err(WorkerError::Edge(EdgeError::Timeout))));
     request.job_id = "cancel-successor".into();
     assert!(matches!(
         successor.run(request),

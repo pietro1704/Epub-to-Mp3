@@ -7,16 +7,16 @@ final class ConverterModelCatalogTests: XCTestCase {
         let catalog = ConverterModelCatalog(
             available: true,
             freeString: { free($0) },
-            modelsJSON: { strdup("{\"models\":[{\"id\":\"literal-model-id\"}]}") }
+            catalogJSONV3: { _, _, _, _, _, _ in strdup(TtsCatalogFixture.json) }
         )
-        let json = try catalog.ttsModels()
-        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: [[String: String]]])
-        XCTAssertEqual(payload["models"]?.first?["id"], "literal-model-id")
+        let result = try catalog.ttsCatalog()
+        XCTAssertEqual(result.models.first?.id, "model-a")
+        XCTAssertEqual(result.models.first?.revision, "sha-a")
     }
 
     func testUnavailableCatalogAndMissingMutationSymbolsFailClosed() {
         let unavailable = ConverterModelCatalog()
-        XCTAssertThrowsError(try unavailable.ttsModels()) { error in
+        XCTAssertThrowsError(try unavailable.ttsCatalog()) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
         let readOnly = ConverterModelCatalog(available: true)

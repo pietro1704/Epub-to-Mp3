@@ -66,6 +66,32 @@ class PackageConverterFfiMacOSTest < Minitest::Test
     assert_equal @package, verify!
   end
 
+  def test_native_inspection_requires_current_conversion_and_catalog_exports
+    library = File.join(@root, 'target/x86_64-apple-darwin/release/libconverter_ffi.dylib')
+    symbols = %w[_converter_session_open _converter_session_free _converter_string_free
+                 _converter_session_convert_streaming_job_options_json_v1 _converter_tts_catalog_json_v3]
+    command = lambda do |*arguments|
+      case arguments[1, 2]
+      when ['lipo', '-archs'] then 'x86_64'
+      when ['otool', '-l'] then 'minos 12.0'
+      when ['otool', '-L'] then "#{library}:\n  @rpath/libonnxruntime.dylib (compatibility version 0.0.0)\n"
+      when ['nm', '-gU'] then symbols.map { |symbol| "00000000 T #{symbol}\n" }.join
+      else raise "Unexpected inspection command: #{arguments.inspect}"
+      end
+    end
+    original_command = ConverterFfiMacOSPackage.method(:command)
+    ConverterFfiMacOSPackage.define_singleton_method(:command, command)
+    begin
+      ConverterFfiMacOSPackage.inspect_macho(library)
+      symbols.delete('_converter_tts_catalog_json_v3')
+      symbols.push('_converter_bytes_free')
+      error = assert_raises(RuntimeError) { ConverterFfiMacOSPackage.inspect_macho(library) }
+      assert_includes error.message, '_converter_tts_catalog_json_v3'
+    ensure
+      ConverterFfiMacOSPackage.define_singleton_method(:command, original_command)
+    end
+  end
+
   def test_cache_identity_matches_previous_recipe_and_invalidates_toolchain_or_flags
     clang = File.join(@tmp, 'clang')
     File.write(clang, 'compiler fixture')

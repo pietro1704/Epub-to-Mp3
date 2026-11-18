@@ -129,6 +129,7 @@ let tests = [
     "EpubFixture.swift",
     "ReaderConversionChapterMapTests.swift",
     "ReaderListeningControlTests.swift",
+    "TtsCatalogFixture.swift",
     "ReaderBookSearchTests.swift",
     "ReaderInternalLinkTargetTests.swift",
     "EpubSourceDocumentTests.swift",

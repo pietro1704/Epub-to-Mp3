@@ -134,13 +134,15 @@ unsafe extern "C" fn android_audio_chunk(
     length: usize,
     context: *mut c_void,
 ) -> bool {
-    if context.is_null() || audio.is_null() || length == 0 {
-        return false;
-    }
-    // The C ABI joins every conversion worker before this borrowed context is dropped.
-    (&*context.cast::<AndroidAudioChunks>()).dispatch(
-        chapter,
-        index,
-        std::slice::from_raw_parts(audio, length),
-    )
+    ffi_guard("android_audio_chunk", false, || {
+        if context.is_null() || audio.is_null() || length == 0 {
+            return false;
+        }
+        // The C ABI joins every conversion worker before this borrowed context is dropped.
+        (&*context.cast::<AndroidAudioChunks>()).dispatch(
+            chapter,
+            index,
+            std::slice::from_raw_parts(audio, length),
+        )
+    })
 }

@@ -94,6 +94,9 @@ impl SpeechModelLibrary {
                     },
                     licence: model.metadata.licence,
                     compatibility: Compatibility {
+                        runtime_available: model.runtime_available,
+                        platforms: model.platforms.to_vec(),
+                        minimum_android_api: model.minimum_android_api,
                         compatible,
                         reasons: compatibility_reasons,
                     },

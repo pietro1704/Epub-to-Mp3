@@ -1,26 +1,21 @@
 //! Typed audio post-processing and archive facade.
 mod audio_archive;
-mod audio_encoding;
-mod audio_process;
 mod audio_validation;
 mod cover_image_validation;
+mod cover_tiff_validation;
 mod mp3_assembly;
 mod mp3_metadata;
 mod mpeg_frame_validation;
 mod wave_bounds;
 
-pub use audio_archive::create_archive;
-pub use audio_encoding::{add_silence_padding, concatenate, wav_to_mp3, Padding};
-pub use audio_process::ProcessSpec;
+pub use audio_archive::{create_archive, validate_archive};
 pub use audio_validation::{probe_duration, probe_sample_rate, validate_audio};
 pub use mp3_assembly::{finalize_mp3, mp3_needs_finalization};
-pub use mp3_metadata::{embed_cover, write_metadata, ChapterMetadata};
+pub use mp3_metadata::{embed_cover, ChapterMetadata};
 
 use std::io;
 use thiserror::Error;
 
-#[cfg(test)]
-use audio_process::resolve_program_in;
 #[cfg(test)]
 pub(crate) use audio_validation::collect_rusty_mp3_output;
 #[cfg(test)]
@@ -38,12 +33,6 @@ pub enum AudioError {
     Io(#[from] io::Error),
     #[error("invalid audio configuration: {0}")]
     InvalidConfig(String),
-    #[error("{program} failed with status {status}: {stderr}")]
-    Process {
-        program: String,
-        status: String,
-        stderr: String,
-    },
     #[error("audio validation failed: {0}")]
     Validation(String),
     #[error("archive error: {0}")]
@@ -329,49 +318,5 @@ mod tests {
             2,
             "failed archive creation must not leave temporary files"
         );
-    }
-
-    #[test]
-    fn zero_padding_is_noop() {
-        assert_eq!(
-            Padding {
-                intro_ms: 0,
-                outro_ms: 0,
-                ..Default::default()
-            },
-            Padding {
-                intro_ms: 0,
-                outro_ms: 0,
-                sample_rate: 16_000,
-                channels: 1
-            }
-        );
-    }
-    #[test]
-    fn process_is_typed() {
-        assert_eq!(
-            ProcessSpec::new("ffmpeg").arg("-y").args(["-i", "input"]),
-            ProcessSpec {
-                program: "ffmpeg".into(),
-                args: vec!["-y".into(), "-i".into(), "input".into()]
-            }
-        );
-    }
-
-    #[test]
-    fn resolves_probe_from_package_manager_paths_when_app_path_is_restricted() {
-        let path_dir = tempfile::tempdir().unwrap();
-        let fallback_dir = tempfile::tempdir().unwrap();
-        let expected = fallback_dir.path().join("ffprobe");
-        fs::write(&expected, b"test executable placeholder").unwrap();
-
-        let resolved = resolve_program_in(
-            "ffprobe",
-            None,
-            [path_dir.path().to_path_buf()],
-            [fallback_dir.path().to_path_buf()],
-        );
-
-        assert_eq!(resolved, expected);
     }
 }

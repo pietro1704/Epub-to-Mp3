@@ -12,8 +12,12 @@ class DesktopTtsModelAdapterError implements Exception {
   String toString() => 'DesktopTtsModelAdapterError: $message';
 }
 
-typedef _ModelsNative = ffi.Pointer<Utf8> Function();
-typedef _ModelsDart = ffi.Pointer<Utf8> Function();
+typedef _CatalogNative = ffi.Pointer<Utf8> Function(
+  ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Uint32,
+  ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _CatalogDart = ffi.Pointer<Utf8> Function(
+  ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int,
+  ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 typedef _InstallNative =
     ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 typedef _InstallDart =
@@ -52,12 +56,9 @@ typedef _JobLogDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
 final class DesktopTtsModelAdapter {
   DesktopTtsModelAdapter({ffi.DynamicLibrary? library})
     : _library = library ?? _openLibrary() {
-    _models = _library.lookupFunction<_ModelsNative, _ModelsDart>(
-      'converter_tts_models_json',
+    _catalog = _library.lookupFunction<_CatalogNative, _CatalogDart>(
+      'converter_tts_catalog_json_v3',
     );
-    if (_library.providesSymbol('converter_tts_catalog_json_v2')) {
-      _catalog = _library.lookupFunction<_ModelsNative, _ModelsDart>('converter_tts_catalog_json_v2');
-    }
     _install = _library.lookupFunction<_InstallNative, _InstallDart>(
       'converter_tts_model_install_catalog_manifest',
     );
@@ -83,8 +84,7 @@ final class DesktopTtsModelAdapter {
   }
 
   final ffi.DynamicLibrary _library;
-  late final _ModelsDart _models;
-  _ModelsDart? _catalog;
+  late final _CatalogDart _catalog;
   late final _InstallDart _install;
   late final _RemoveDart _remove;
   late final _MetadataDart _metadata;
@@ -98,7 +98,14 @@ final class DesktopTtsModelAdapter {
         return _readOwned(result);
       });
 
-  String modelsJson() => _readOwned((_catalog ?? _models)());
+  String modelsJson() => using((arena) => _readOwned(_catalog(
+    Platform.localeName.toNativeUtf8(allocator: arena),
+    Platform.operatingSystem.toNativeUtf8(allocator: arena),
+    0,
+    ffi.Abi.current().toString().toNativeUtf8(allocator: arena),
+    Platform.operatingSystemVersion.toNativeUtf8(allocator: arena),
+    ''.toNativeUtf8(allocator: arena),
+  )));
 
   String installedReadyEngine({
     required String language,

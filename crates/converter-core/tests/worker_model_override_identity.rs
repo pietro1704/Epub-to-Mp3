@@ -7,7 +7,6 @@ use converter_core::{
 };
 use std::{
     fs,
-    path::Path,
     process::Command,
     sync::{Arc, Mutex},
 };
@@ -17,13 +16,13 @@ mod worker_execution_fixtures;
 use worker_execution_fixtures::{book, ExplicitRuntime};
 
 #[test]
-fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it() {
+fn explicit_selection_never_reuses_another_models_audio() {
     const GUARD: &str = "EPUB_OVERRIDE_IDENTITY_CHILD";
     if std::env::var(GUARD).as_deref() != Ok("1") {
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
-                "explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it",
+                "explicit_selection_never_reuses_another_models_audio",
                 "--nocapture",
                 "--test-threads=1",
             ])
@@ -62,18 +61,6 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         text_calls: Mutex::new(Vec::new()),
     });
     piper::register_runtime(runtime.clone());
-    let prepare_a = || {
-        Arc::new(
-            piper::PreparedPiperModel::prepare(
-                &models,
-                "prepared-A",
-                Path::new("model.onnx"),
-                Path::new("model.onnx.json"),
-                runtime.clone(),
-            )
-            .unwrap(),
-        )
-    };
     let paths = paths::resolve_paths_from(
         [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
         root.to_owned(),
@@ -104,9 +91,7 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
             chapter_indices: Some(vec!["position:1".into()]),
             no_parallel: true,
         };
-        let worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
-            .unwrap()
-            .with_piper_model(Some(prepare_a()));
+        let worker = ConversionWorker::new(AppConfig::from_paths(paths.clone())).unwrap();
         runtime.model_calls.lock().unwrap().clear();
         runtime.text_calls.lock().unwrap().clear();
         let manifest = worker.run(request.clone()).unwrap();
@@ -125,8 +110,10 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
                 serde_json::json!(model_b)
             );
         }
-        assert!(!runtime.text_calls.lock().unwrap().is_empty());
-        assert!(!runtime.model_calls.lock().unwrap().is_empty());
+        // Migrated explicit paths and typed selection resolve to the same B
+        // identity, so the second form reuses the first form's validated segments.
+        assert_eq!(runtime.text_calls.lock().unwrap().is_empty(), typed);
+        assert_eq!(runtime.model_calls.lock().unwrap().is_empty(), typed);
         assert!(runtime
             .model_calls
             .lock()
@@ -140,11 +127,9 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         let receipt = audio.with_extension("mp3.complete.json");
         let prior_audio = fs::read(&audio).unwrap();
         let prior_receipt = fs::read(&receipt).unwrap();
-        // An ignored prepared default must not contribute its model digest to B's cache.
+        // An unrelated installed model must not contribute its digest to B's cache.
         fs::write(&model_a, format!("changed unused A for {job}")).unwrap();
-        let replay = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
-            .unwrap()
-            .with_piper_model(Some(prepare_a()));
+        let replay = ConversionWorker::new(AppConfig::from_paths(paths.clone())).unwrap();
         replay.jobs.delete(job).unwrap();
         runtime.model_calls.lock().unwrap().clear();
         runtime.text_calls.lock().unwrap().clear();
@@ -162,7 +147,6 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         }
         let recovered_worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
             .unwrap()
-            .with_piper_model(Some(prepare_a()))
             .with_control(recovery);
         runtime.model_calls.lock().unwrap().clear();
         runtime.text_calls.lock().unwrap().clear();
@@ -185,7 +169,6 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         recovery.set_recovery_job(job).unwrap();
         let forced_worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
             .unwrap()
-            .with_piper_model(Some(prepare_a()))
             .with_control(recovery)
             .with_execution_options(ExecutionOptions {
                 force_reprocess: true,
@@ -227,7 +210,6 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         }
         let predecessor_a_manifest = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
             .unwrap()
-            .with_piper_model(Some(prepare_a()))
             .run(predecessor_a.clone())
             .unwrap();
         let predecessor_a_audio = paths
@@ -241,7 +223,7 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         wrong_model_recovery
             .set_recovery_job(&predecessor_a.job_id)
             .unwrap();
-        if typed {
+        {
             // B's independently verified segments remain reusable even when
             // the requested predecessor belongs to A. Its chapter receipt
             // must still describe B, rather than adopting A's receipt.
@@ -253,7 +235,6 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
                 .unwrap();
             let cached_worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
                 .unwrap()
-                .with_piper_model(Some(prepare_a()))
                 .with_control(cached_recovery);
             runtime.model_calls.lock().unwrap().clear();
             runtime.text_calls.lock().unwrap().clear();
@@ -293,7 +274,6 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         }
         let override_worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
             .unwrap()
-            .with_piper_model(Some(prepare_a()))
             .with_control(wrong_model_recovery);
         runtime.model_calls.lock().unwrap().clear();
         runtime.text_calls.lock().unwrap().clear();

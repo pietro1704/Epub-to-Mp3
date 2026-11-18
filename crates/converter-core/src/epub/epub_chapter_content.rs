@@ -3,7 +3,7 @@ use super::epub_package::local_name;
 use crate::toc::TocItem;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 fn flatten_toc(item: &TocItem) -> Vec<&TocItem> {
     let mut items = vec![item];
@@ -180,18 +180,6 @@ fn is_block_element(name: &[u8]) -> bool {
             | b"tr"
             | b"ul"
     )
-}
-
-#[allow(dead_code)]
-fn _dedupe_anchor_keys(items: &[TocItem]) -> HashSet<String> {
-    items
-        .iter()
-        .flat_map(|x| {
-            let mut v = vec![x.href.split('#').next().unwrap_or("").to_string()];
-            v.extend(_dedupe_anchor_keys(&x.children));
-            v
-        })
-        .collect()
 }
 
 /// Project block ends onto the existing normalized Unicode-scalar text axis.

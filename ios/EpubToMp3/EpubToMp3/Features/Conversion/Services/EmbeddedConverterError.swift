@@ -13,7 +13,7 @@ enum EmbeddedConverterError: Error, LocalizedError, Equatable {
         case .artifactInvalid(let reason): return "Embedded converter artifact is invalid: \(reason)"
         case .conversionFailed(let reason): return "Embedded conversion failed: \(reason)"
         case .optionsABIUnavailable:
-            return "Explicit conversion options require converter_session_convert_job_options_json_v1; rebuild and embed a compatible Rust converter."
+            return "Explicit conversion options require converter_session_convert_streaming_job_options_json_v1; rebuild and embed a compatible Rust converter."
         }
     }
 }

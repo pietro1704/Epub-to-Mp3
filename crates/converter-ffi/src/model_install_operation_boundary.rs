@@ -20,8 +20,14 @@ pub unsafe extern "C" fn converter_tts_model_install_operation_create(
     root: *const c_char,
     available_bytes: u64,
 ) -> *mut ConverterModelInstallOperation {
-    clear_last_error();
-    create_model_install_operation(model_id, root, available_bytes, false)
+    ffi_guard(
+        "converter_tts_model_install_operation_create",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            create_model_install_operation(model_id, root, available_bytes, false)
+        },
+    )
 }
 
 #[no_mangle]
@@ -30,8 +36,14 @@ pub unsafe extern "C" fn converter_tts_model_install_operation_recover(
     root: *const c_char,
     available_bytes: u64,
 ) -> *mut ConverterModelInstallOperation {
-    clear_last_error();
-    create_model_install_operation(model_id, root, available_bytes, true)
+    ffi_guard(
+        "converter_tts_model_install_operation_recover",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            create_model_install_operation(model_id, root, available_bytes, true)
+        },
+    )
 }
 
 unsafe fn create_model_install_operation(
@@ -103,14 +115,22 @@ unsafe fn create_model_install_operation(
 pub unsafe extern "C" fn converter_tts_model_install_operation_plan_json(
     handle: *const ConverterModelInstallOperation,
 ) -> *mut c_char {
-    operation_json(handle, |operation| serde_json::to_string(&operation.plan()))
+    ffi_guard(
+        "converter_tts_model_install_operation_plan_json",
+        std::ptr::null_mut(),
+        || operation_json(handle, |operation| serde_json::to_string(&operation.plan())),
+    )
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_model_install_operation_event_json(
     handle: *const ConverterModelInstallOperation,
 ) -> *mut c_char {
-    operation_json(handle, |operation| serde_json::to_string(operation.event()))
+    ffi_guard(
+        "converter_tts_model_install_operation_event_json",
+        std::ptr::null_mut(),
+        || operation_json(handle, |operation| serde_json::to_string(operation.event())),
+    )
 }
 
 #[no_mangle]
@@ -119,11 +139,17 @@ pub unsafe extern "C" fn converter_tts_model_install_operation_record_progress(
     artifact_index: usize,
     downloaded_bytes: u64,
 ) -> bool {
-    operation_mut(handle, |operation| {
-        operation
-            .record_download_progress(artifact_index, downloaded_bytes)
-            .map(|_| ())
-    })
+    ffi_guard(
+        "converter_tts_model_install_operation_record_progress",
+        false,
+        || {
+            operation_mut(handle, |operation| {
+                operation
+                    .record_download_progress(artifact_index, downloaded_bytes)
+                    .map(|_| ())
+            })
+        },
+    )
 }
 
 #[no_mangle]
@@ -132,44 +158,56 @@ pub unsafe extern "C" fn converter_tts_model_install_operation_accept_download(
     artifact_index: usize,
     downloaded_path: *const c_char,
 ) -> bool {
-    clear_last_error();
-    let path = match c_string(downloaded_path, "downloaded artifact path") {
-        Ok(value) => PathBuf::from(value),
-        Err(error) => {
-            fail::<()>(error);
-            return false;
-        }
-    };
-    operation_mut(handle, |operation| {
-        operation.accept_download(artifact_index, &path).map(|_| ())
-    })
+    ffi_guard(
+        "converter_tts_model_install_operation_accept_download",
+        false,
+        || {
+            clear_last_error();
+            let path = match c_string(downloaded_path, "downloaded artifact path") {
+                Ok(value) => PathBuf::from(value),
+                Err(error) => {
+                    fail::<()>(error);
+                    return false;
+                }
+            };
+            operation_mut(handle, |operation| {
+                operation.accept_download(artifact_index, &path).map(|_| ())
+            })
+        },
+    )
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_model_install_operation_publish(
     handle: *const ConverterModelInstallOperation,
 ) -> *mut c_char {
-    clear_last_error();
-    if handle.is_null() {
-        return fail("invalid null model install operation".into());
-    }
-    let operation = &*handle;
-    let mut operation = operation
-        .operation
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    match operation.publish() {
-        Ok(installed) => installed
-            .first()
-            .and_then(|item| item.path.parent())
-            .map(|path| path.to_string_lossy().into_owned())
-            .and_then(|path| CString::new(path).ok())
-            .map_or_else(
-                || fail("model install operation produced no target path".into()),
-                CString::into_raw,
-            ),
-        Err(error) => fail(error.to_string()),
-    }
+    ffi_guard(
+        "converter_tts_model_install_operation_publish",
+        std::ptr::null_mut(),
+        || {
+            clear_last_error();
+            if handle.is_null() {
+                return fail("invalid null model install operation".into());
+            }
+            let operation = &*handle;
+            let mut operation = operation
+                .operation
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match operation.publish() {
+                Ok(installed) => installed
+                    .first()
+                    .and_then(|item| item.path.parent())
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .and_then(|path| CString::new(path).ok())
+                    .map_or_else(
+                        || fail("model install operation produced no target path".into()),
+                        CString::into_raw,
+                    ),
+                Err(error) => fail(error.to_string()),
+            }
+        },
+    )
 }
 
 #[no_mangle]
@@ -178,57 +216,63 @@ pub unsafe extern "C" fn converter_tts_model_install_operation_fail(
     kind: *const c_char,
     message: *const c_char,
 ) -> bool {
-    clear_last_error();
-    let kind = match c_string(kind, "model install failure kind") {
-        Ok(value) => value,
-        Err(error) => {
-            fail::<()>(error);
-            return false;
-        }
-    };
-    let message = match c_string(message, "model install failure message") {
-        Ok(value) => value,
-        Err(error) => {
-            fail::<()>(error);
-            return false;
-        }
-    };
-    operation_mut(handle, |operation| operation.fail(&kind, &message))
+    ffi_guard("converter_tts_model_install_operation_fail", false, || {
+        clear_last_error();
+        let kind = match c_string(kind, "model install failure kind") {
+            Ok(value) => value,
+            Err(error) => {
+                fail::<()>(error);
+                return false;
+            }
+        };
+        let message = match c_string(message, "model install failure message") {
+            Ok(value) => value,
+            Err(error) => {
+                fail::<()>(error);
+                return false;
+            }
+        };
+        operation_mut(handle, |operation| operation.fail(&kind, &message))
+    })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_model_install_operation_cancel(
     handle: *const ConverterModelInstallOperation,
 ) {
-    if handle.is_null() {
-        return;
-    }
-    let handle = &*handle;
-    handle
-        .cancellation
-        .store(true, std::sync::atomic::Ordering::Release);
-    let mut operation = handle
-        .operation
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Err(error) = operation.cancel() {
-        fail::<()>(error.to_string());
-    }
+    ffi_guard("converter_tts_model_install_operation_cancel", (), || {
+        if handle.is_null() {
+            return;
+        }
+        let handle = &*handle;
+        handle
+            .cancellation
+            .store(true, std::sync::atomic::Ordering::Release);
+        let mut operation = handle
+            .operation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Err(error) = operation.cancel() {
+            fail::<()>(error.to_string());
+        }
+    })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_model_install_operation_free(
     handle: *mut ConverterModelInstallOperation,
 ) {
-    if handle.is_null() {
-        return;
-    }
-    let handle = Box::from_raw(handle);
-    ACTIVE_MODEL_INSTALLS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .remove(&handle.registry_key);
+    ffi_guard("converter_tts_model_install_operation_free", (), || {
+        if handle.is_null() {
+            return;
+        }
+        let handle = Box::from_raw(handle);
+        ACTIVE_MODEL_INSTALLS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&handle.registry_key);
+    })
 }
 
 unsafe fn operation_json(

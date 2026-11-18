@@ -116,7 +116,6 @@ class CiRuntimeScopeTest < Minitest::Test
       'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
       'ios/EpubToMp3/Package.swift' => %w[apple],
       'native/piper-runtime/src/lib.rs' => %w[rust apple flutter android],
-      'crates/converter-ffi/include/converter_tts_session.h' => %w[rust apple flutter android],
       'crates/converter-ffi/src/lib.rs' => %w[rust apple flutter android],
       'Cargo.lock' => %w[rust apple flutter android web wasm],
       'Cargo.toml' => %w[rust apple flutter android web wasm],

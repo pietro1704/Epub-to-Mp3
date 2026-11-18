@@ -43,65 +43,21 @@ pub(super) unsafe fn convert_job_json(
         output_parent.to_path_buf(),
     ));
     config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
-    let mut options = options;
     if let Err(error) = options.validate_contract() {
         return fail(error);
     }
-    if let Some(preferences) = &options.tts_preferences {
-        if let Err(error) = preferences.validate(options.language.as_deref()) {
-            return fail(error);
-        }
-        options.engine = Some(preferences.primary.engine.clone());
-        options.voice = preferences.primary.voice.clone();
-        options.model_id = preferences.primary.model_id.clone();
-    }
-    if options.engine.as_deref().is_some_and(|engine| {
-        !converter_core::tts_session::builtin_descriptors()
-            .iter()
-            .any(|descriptor| descriptor.provider == *engine)
-    }) {
-        return fail("Unsupported conversion engine".to_owned());
-    }
-    let engine = if options.tts_preferences.is_some() {
-        options.engine.clone().expect("typed primary provider")
-    } else {
-        embedded_engine_from_value(options.engine.as_deref())
+    let selection = match options.selection_input().resolve(
+        &config.paths.piper_models_dir,
+        session.platform_tts.is_some(),
+    ) {
+        Ok(selection) => selection,
+        Err(error) => return fail(error),
     };
-
-    let requires_piper = engine == "piper"
-        || options
-            .tts_preferences
-            .as_ref()
-            .and_then(|p| p.secondary.as_ref())
-            .is_some_and(|s| s.engine == "piper");
-    if options.models_root.is_none()
-        && options
-            .tts_preferences
-            .as_ref()
-            .is_some_and(|p| p.continues_native())
-    {
-        options.models_root = Some(config.paths.piper_models_dir.to_string_lossy().into_owned());
-    }
-    let (piper_model, piper_config) = if requires_piper {
-        if engine != "piper" {
-            options.model_id = options
-                .tts_preferences
-                .as_ref()
-                .and_then(|p| p.secondary.as_ref())
-                .and_then(|s| s.model_id.clone());
-        }
-        let (model, config) = match resolve_piper_model_paths(&options) {
-            Ok(paths) => paths,
-            Err(error) => return fail(error),
-        };
+    if selection.piper_model.is_some() {
         #[cfg(feature = "piper-runtime")]
         if let Some(directory) = options.espeak_data_directory.as_deref() {
             if let Err(error) = piper_runtime::set_espeak_data_directory(Path::new(directory)) {
-                if !options
-                    .tts_preferences
-                    .as_ref()
-                    .is_some_and(|p| p.continues_native())
-                {
+                if !selection.preferences.continues_native() {
                     return fail(error);
                 }
             }
@@ -110,10 +66,7 @@ pub(super) unsafe fn convert_job_json(
         piper_runtime_register_embedded();
         #[cfg(not(feature = "piper-runtime"))]
         piper_runtime_register_unavailable();
-        (Some(model), Some(config))
-    } else {
-        (None, None)
-    };
+    }
     let queued_audio = options.audio_chunks.clone();
     let pronunciation = options.pronunciation.clone();
     let language_overrides = options.language_overrides.clone();
@@ -127,15 +80,15 @@ pub(super) unsafe fn convert_job_json(
         control
     };
     let request = converter_core::worker::ConversionRequest {
-        tts_preferences: options.tts_preferences,
-        models_root: options.models_root.map(std::path::PathBuf::from),
+        tts_preferences: Some(selection.preferences.clone()),
+        models_root: selection.models_root,
         input: session.session.input_path().to_path_buf(),
         job_id: job_id.clone(),
-        engine: Some(engine),
-        voice: options.voice,
+        engine: Some(selection.preferences.primary.engine.clone()),
+        voice: selection.preferences.primary.voice.clone(),
         language: options.language,
-        piper_model,
-        piper_config,
+        piper_model: selection.piper_model,
+        piper_config: selection.piper_config,
         chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
         no_parallel: chapter_start >= 0 || control.is_some(),
     };

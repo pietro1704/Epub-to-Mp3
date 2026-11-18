@@ -4,11 +4,16 @@ use std::path::Path;
 mod cli_arguments;
 mod cli_book_inputs;
 mod cli_cache_commands;
+mod cli_chapter_ranges;
 mod cli_environment;
+mod cli_help;
 mod conversion_command;
+mod conversion_retry;
+mod existing_output_verification;
 mod model_commands;
 mod output_reporting;
 mod tts_preferences_command;
+use cli_help::print_help;
 use conversion_command::run_cli_command;
 
 const SUPPORTED_EXTENSIONS: &[&str] = &["epub", "pdf"];
@@ -30,9 +35,21 @@ struct CliOptions {
     output_dir: Option<String>,
     chapters: Vec<String>,
     sections: Vec<String>,
+    /// `--from-chapter-to-end` or `--from-chapter-to-chapter`, never both.
+    chapter_range: Option<cli_chapter_ranges::ChapterRange>,
     show_structure: bool,
     clean_cache: bool,
+    /// Ignore cached audio and synthesize the selected chapters again.
+    force_reprocess: bool,
+    /// Whole-job retry rounds after a failed conversion; absent means none.
+    retry_failed_rounds: Option<u32>,
+    /// One more retry pass after the automatic rounds.
+    retry_failed_manual: bool,
     verify: bool,
+    /// Audit the newest existing output of each book without converting.
+    verify_only: bool,
+    /// Audit, then reconvert only the chapters that failed the audit.
+    fix: bool,
     no_parallel: bool,
     yes: bool,
     menu: bool,
@@ -57,9 +74,15 @@ impl Default for CliOptions {
             output_dir: None,
             chapters: Vec::new(),
             sections: Vec::new(),
+            chapter_range: None,
             show_structure: false,
             clean_cache: false,
+            force_reprocess: false,
+            retry_failed_rounds: None,
+            retry_failed_manual: false,
             verify: false,
+            verify_only: false,
+            fix: false,
             no_parallel: false,
             yes: false,
             menu: false,
@@ -88,11 +111,13 @@ fn main() {
     }
 }
 
-fn print_help() {
-    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB files, directories, loose multiword names, and fuzzy matches. PDF ingestion is not supported.\n\nPreferences: preferences show | preferences set JSON\nModels: models list | models install MODEL_ID | models remove MODEL_ID --yes\nOptions: --tts-preferences-json JSON (per-job snapshot; exclusive of other TTS options)\n         --engine {{edge,piper,system}} --fallback-engine {{none,edge,piper,system}} --allow-online-fallback | --no-online-fallback --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clean-cache --verify --batch PATH --batch-file FILE --yes");
-}
-
+#[cfg(test)]
+mod cli_conversion_lifecycle_tests;
 #[cfg(test)]
 mod cli_execution_contract_tests;
+#[cfg(test)]
+mod cli_existing_output_tests;
+#[cfg(test)]
+mod cli_option_contract_tests;
 #[cfg(test)]
 mod cli_preferences_contract_tests;

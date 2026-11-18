@@ -1,48 +1,4 @@
 #[test]
-fn third_consecutive_edge_failure_stops_before_more_native_speech() {
-    let temp = tempfile::tempdir().unwrap();
-    let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
-        std::iter::empty::<(String, String)>(),
-        temp.path().to_path_buf(),
-    ));
-    let spoken = Arc::new(Mutex::new(Vec::new()));
-    let mut worker = ConversionWorker::new(config)
-        .unwrap()
-        .with_platform_tts(Arc::new(TestSystem {
-            texts: Arc::clone(&spoken),
-        }));
-    let requests = Arc::new(AtomicUsize::new(0));
-    let count = Arc::clone(&requests);
-    worker.test_edge = Some(Arc::new(move |_| {
-        count.fetch_add(1, Ordering::AcqRel);
-        Err(WorkerError::Edge(EdgeError::Timeout))
-    }));
-    let text = "A sentence that must not become a fully offline book. ".repeat(40);
-    let pieces = platform_tts::segments(&text).unwrap();
-    let error = worker
-        .synthesize_platform_policy(
-            "edge",
-            &text,
-            &temp.path().join("audio.mp3"),
-            0,
-            None,
-            None,
-            &std::sync::atomic::AtomicBool::new(false),
-            &std::sync::atomic::AtomicBool::new(false),
-            "job",
-            1,
-            0,
-        )
-        .unwrap_err();
-    assert!(
-        matches!(error, WorkerError::PlatformTts(ref message) if message.contains("Check your internet"))
-    );
-    assert_eq!(requests.load(Ordering::Acquire), 3);
-    assert_eq!(spoken.lock().unwrap().join(" "), pieces[..2].join(" "));
-    assert!(!temp.path().join("audio.provider").exists());
-}
-
-#[test]
 fn persistent_edge_outage_fails_real_job_without_publishing_partial_audio() {
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("book.epub");
@@ -77,7 +33,7 @@ fn persistent_edge_outage_fails_real_job_without_publishing_partial_audio() {
     };
     assert!(matches!(
         worker.run(request),
-        Err(WorkerError::PlatformTts(_))
+        Err(WorkerError::Synthesis(_))
     ));
     assert_eq!(
         worker.jobs.load("outage-job").unwrap().state,
@@ -122,20 +78,8 @@ fn invalid_system_wav_never_reaches_playback() {
             panic!("Invalid speech reached playback")
         }));
     assert!(matches!(
-        worker.synthesize_platform_policy(
-            "system",
-            "Text",
-            &temp.path().join("audio.mp3"),
-            0,
-            None,
-            None,
-            &std::sync::atomic::AtomicBool::new(false),
-            &std::sync::atomic::AtomicBool::new(false),
-            "job",
-            1,
-            0
-        ),
-        Err(WorkerError::PlatformTts(_))
+        synthesize_native_fixture(&worker, "system", "Text", &temp.path().join("audio.mp3")),
+        Err(WorkerError::Synthesis(_))
     ));
 }
 #[test]
@@ -154,21 +98,7 @@ fn cancelled_worker_does_not_wait_for_busy_native_speech_lock() {
     let _busy = worker.platform_gate.lock().unwrap();
     let output = temp.path().join("audio.mp3");
     std::thread::scope(|scope| {
-        let waiting = scope.spawn(|| {
-            worker.synthesize_platform_policy(
-                "system",
-                "Text",
-                &output,
-                0,
-                None,
-                None,
-                &std::sync::atomic::AtomicBool::new(false),
-                &std::sync::atomic::AtomicBool::new(false),
-                "job",
-                1,
-                0,
-            )
-        });
+        let waiting = scope.spawn(|| synthesize_native_fixture(&worker, "system", "Text", &output));
         std::thread::sleep(std::time::Duration::from_millis(50));
         worker.cancel();
         let started = std::time::Instant::now();
@@ -182,84 +112,12 @@ fn cancelled_worker_does_not_wait_for_busy_native_speech_lock() {
 }
 
 #[test]
-fn moved_playback_window_never_invokes_system() {
-    let temp = tempfile::tempdir().unwrap();
-    let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
-        std::iter::empty::<(String, String)>(),
-        temp.path().to_path_buf(),
-    ));
-    let spoken = Arc::new(Mutex::new(Vec::new()));
-    let control = ConversionControl::new();
-    let changed = control.clone();
-    let mut worker = ConversionWorker::new(config)
-        .unwrap()
-        .with_platform_tts(Arc::new(TestSystem {
-            texts: Arc::clone(&spoken),
-        }))
-        .with_control(control);
-    worker.test_edge = Some(Arc::new(move |_| {
-        changed.set_playback_window(1, 0);
-        Err(WorkerError::Edge(EdgeError::Timeout))
-    }));
-    assert!(matches!(
-        worker.synthesize_platform_policy(
-            "edge",
-            "Text",
-            &temp.path().join("audio.mp3"),
-            0,
-            None,
-            None,
-            &std::sync::atomic::AtomicBool::new(false),
-            &std::sync::atomic::AtomicBool::new(false),
-            "job",
-            1,
-            0
-        ),
-        Err(WorkerError::PlaybackWindowChanged)
-    ));
-    assert!(spoken.lock().unwrap().is_empty());
-}
-
-#[test]
 fn platform_policy_has_a_distinct_cache_identity() {
     let edge = chapter_audio_request_key("book", "0", "Text", "edge", None, Some("pt-BR")).unwrap();
     let fallback =
         chapter_audio_request_key("book", "0", "Text", "edge+system-v2", None, Some("pt-BR"))
             .unwrap();
     assert_ne!(edge, fallback);
-}
-
-#[test]
-fn cancellation_never_invokes_system_fallback() {
-    let temp = tempfile::tempdir().unwrap();
-    let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
-        std::iter::empty::<(String, String)>(),
-        temp.path().to_path_buf(),
-    ));
-    let spoken = Arc::new(Mutex::new(Vec::new()));
-    let worker = ConversionWorker::new(config)
-        .unwrap()
-        .with_platform_tts(Arc::new(TestSystem {
-            texts: Arc::clone(&spoken),
-        }));
-    worker.cancel();
-    let error = worker
-        .synthesize_platform_policy(
-            "edge",
-            "Hello",
-            &temp.path().join("audio.mp3"),
-            0,
-            None,
-            None,
-            &std::sync::atomic::AtomicBool::new(false),
-            &std::sync::atomic::AtomicBool::new(false),
-            "job",
-            1,
-            0,
-        )
-        .unwrap_err();
-    assert!(matches!(error, WorkerError::Cancelled));
-    assert!(spoken.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -349,23 +207,29 @@ fn stale_playback_chunk_is_rejected_without_publishing_chapter_audio() {
     });
     let stale = std::sync::atomic::AtomicBool::new(false);
 
-    assert!(dispatch_playback_chunk(
-        Some(&control),
-        Some(&sink),
-        0,
-        0,
-        b"current",
-        &stale,
-    ));
+    assert!(
+        playback_chunk_delivery::dispatch_playback_chunk_at_generation(
+            Some(&control),
+            Some(&sink),
+            0,
+            0,
+            b"current",
+            &stale,
+            None,
+        )
+    );
     control.set_playback_window(5, 1);
-    assert!(!dispatch_playback_chunk(
-        Some(&control),
-        Some(&sink),
-        0,
-        1,
-        b"stale",
-        &stale,
-    ));
+    assert!(
+        !playback_chunk_delivery::dispatch_playback_chunk_at_generation(
+            Some(&control),
+            Some(&sink),
+            0,
+            1,
+            b"stale",
+            &stale,
+            None,
+        )
+    );
     control.set_playback_window(0, 1);
     control
         .set_listening_position(crate::tts_session::ListeningPosition {
@@ -374,14 +238,17 @@ fn stale_playback_chunk_is_rejected_without_publishing_chapter_audio() {
             text_offset: 1,
         })
         .unwrap();
-    assert!(!dispatch_playback_chunk(
-        Some(&control),
-        Some(&sink),
-        0,
-        0,
-        b"manual",
-        &stale
-    ));
+    assert!(
+        !playback_chunk_delivery::dispatch_playback_chunk_at_generation(
+            Some(&control),
+            Some(&sink),
+            0,
+            0,
+            b"manual",
+            &stale,
+            None,
+        )
+    );
     assert!(stale.load(Ordering::Acquire));
     assert_eq!(accepted_chunks.load(Ordering::Acquire), 1);
 

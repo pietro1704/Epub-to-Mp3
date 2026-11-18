@@ -35,17 +35,22 @@ fn installed_piper_session_produces_real_audio_with_captured_identity() {
     unsafe {
         let session = converter_session_open(input.as_ptr());
         assert!(!session.is_null());
-        let response = converter_session_convert_job_options_json_v1(
-            session,
-            output.as_ptr(),
-            job.as_ptr(),
-            options.as_ptr(),
-            0,
-            0,
-            None,
-            None,
-            ptr::null_mut(),
-        );
+        let response = {
+            let control = FixtureJobControl::new();
+            converter_session_convert_streaming_job_options_json_v1(
+                session,
+                output.as_ptr(),
+                job.as_ptr(),
+                options.as_ptr(),
+                0,
+                0,
+                None,
+                None,
+                None,
+                ptr::null_mut(),
+                control.0,
+            )
+        };
         if response.is_null() {
             let error = converter_last_error();
             let message = CStr::from_ptr(error).to_string_lossy().into_owned();
@@ -136,17 +141,22 @@ fn installed_catalogue_voices_are_ready_and_synthesize_with_their_exact_identity
             let session = converter_session_open(input.as_ptr());
             assert!(!session.is_null());
             let output = encode(output_root.path().join(&id).to_str().unwrap());
-            let result = converter_session_convert_job_options_json_v1(
-                session,
-                output.as_ptr(),
-                encode(&id).as_ptr(),
-                options.as_ptr(),
-                0,
-                0,
-                None,
-                None,
-                ptr::null_mut(),
-            );
+            let result = {
+                let control = FixtureJobControl::new();
+                converter_session_convert_streaming_job_options_json_v1(
+                    session,
+                    output.as_ptr(),
+                    encode(&id).as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                    control.0,
+                )
+            };
             converter_session_free(session);
             assert!(!result.is_null(), "Failed synthesis for {id}");
             let converted: serde_json::Value =

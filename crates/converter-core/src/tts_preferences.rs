@@ -1,5 +1,6 @@
 //! Shared, platform-independent voice selection and isolated-segment policy.
 use serde::{Deserialize, Serialize};
+mod legacy_selection;
 
 pub const FABER_MODEL_ID: &str = "pt_BR-faber-medium";
 
@@ -55,6 +56,9 @@ impl TtsSelection {
                     .flatten())
     }
     pub fn validate(&self, language: Option<&str>) -> Result<(), String> {
+        if self.engine == "kokoro" {
+            return Err("Unsupported TTS engine: kokoro".into());
+        }
         if self.engine == "piper" {
             crate::model_catalog::validate_piper_quality(
                 self.model_id.as_deref().unwrap_or_default(),

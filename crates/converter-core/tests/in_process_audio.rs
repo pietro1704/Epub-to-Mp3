@@ -51,6 +51,21 @@ fn image_bytes(format: image::ImageFormat) -> Vec<u8> {
 }
 
 fn assert_native_audio(root: &Path) {
+    adpcm_wave_codec_preserves_sample_rate_and_duration();
+    assert_legacy_covers(root);
+    let flac = root.join("flac-without-extension");
+    fs::write(&flac, include_bytes!("fixtures/reference-stream.flac")).unwrap();
+    assert_eq!(probe_sample_rate(&flac).unwrap(), 8000);
+    assert!((probe_duration(&flac).unwrap() - 0.1).abs() < 1e-8);
+    // ID3 cover frames belong to MPEG and WAVE audio. Another decodable
+    // container must be refused rather than gain a foreign tag.
+    let flac_cover = root.join("flac-cover.bmp");
+    fs::write(&flac_cover, include_bytes!("fixtures/reference-cover.bmp")).unwrap();
+    assert!(embed_cover(&flac, &flac_cover).is_err());
+    assert_eq!(
+        fs::read(&flac).unwrap(),
+        include_bytes!("fixtures/reference-stream.flac")
+    );
     let mp3 = root.join("chapter.bin");
     fs::write(&mp3, MPEG).unwrap();
     assert_eq!(probe_sample_rate(&mp3).unwrap(), 44100);
@@ -185,21 +200,96 @@ fn assert_native_audio(root: &Path) {
     assert!((validate_audio(&wav, 100).unwrap() - 0.02).abs() < 1e-8);
 }
 
-#[cfg(not(target_os = "ios"))]
+// Legacy files were produced by the retired cover command from the independent
+// MPEG fixture and these images. They are an oracle, never an invoked encoder.
+fn assert_legacy_covers(root: &Path) {
+    for (extension, mime, cover_bytes, legacy_audio) in [
+        (
+            "bmp",
+            "image/bmp",
+            &include_bytes!("fixtures/reference-cover.bmp")[..],
+            &include_bytes!("fixtures/legacy-bmp.mp3")[..],
+        ),
+        (
+            "gif",
+            "image/gif",
+            &include_bytes!("fixtures/reference-cover.gif")[..],
+            &include_bytes!("fixtures/legacy-gif.mp3")[..],
+        ),
+        (
+            "tiff",
+            "image/tiff",
+            &include_bytes!("fixtures/reference-cover.tiff")[..],
+            &include_bytes!("fixtures/legacy-tiff.mp3")[..],
+        ),
+    ] {
+        let legacy = Tag::read_from2(Cursor::new(legacy_audio)).unwrap();
+        let legacy_cover = legacy.pictures().next().expect("legacy attached cover");
+        assert_eq!(legacy_cover.data, cover_bytes);
+        assert_eq!(legacy_cover.mime_type, mime);
+        let path = root.join(format!("cover-{extension}.mp3"));
+        let cover = root.join(format!("cover.{extension}"));
+        fs::write(&path, MPEG).unwrap();
+        fs::write(&cover, cover_bytes).unwrap();
+        let duration = probe_duration(&path).unwrap();
+        for _ in 0..2 {
+            embed_cover(&path, &cover).unwrap();
+            let tagged = Tag::read_from_path(&path).unwrap();
+            let pictures: Vec<_> = tagged.pictures().collect();
+            assert_eq!(pictures.len(), 1);
+            assert_eq!(pictures[0].data, legacy_cover.data);
+            assert_eq!(pictures[0].mime_type, legacy_cover.mime_type);
+            assert_eq!(pictures[0].picture_type, PictureType::CoverFront);
+            assert_eq!(compressed_payload(&fs::read(&path).unwrap()), MPEG);
+            assert_eq!(probe_sample_rate(&path).unwrap(), 44_100);
+            assert_eq!(probe_duration(&path).unwrap(), duration);
+        }
+        if extension == "tiff" {
+            let retained = fs::read(&path).unwrap();
+            for invalid in [
+                cover_bytes[..cover_bytes.len() - 1].to_vec(),
+                tiff_with_inline_tag(cover_bytes, 256, 9000), // ImageWidth
+                tiff_with_inline_tag(cover_bytes, 279, u32::MAX), // StripByteCounts
+            ] {
+                fs::write(&cover, invalid).unwrap();
+                assert!(embed_cover(&path, &cover).is_err());
+                assert_eq!(fs::read(&path).unwrap(), retained);
+            }
+        }
+    }
+}
+
+fn tiff_with_inline_tag(bytes: &[u8], tag: u16, value: u32) -> Vec<u8> {
+    assert_eq!(&bytes[..4], b"II\x2a\0");
+    let mut modified = bytes.to_vec();
+    let directory = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes(bytes[directory..directory + 2].try_into().unwrap());
+    for index in 0..usize::from(count) {
+        let start = directory + 2 + 12 * index;
+        if u16::from_le_bytes(bytes[start..start + 2].try_into().unwrap()) == tag {
+            assert_eq!(&bytes[start + 4..start + 8], &[1, 0, 0, 0]);
+            modified[start + 8..start + 12].copy_from_slice(&value.to_le_bytes());
+            return modified;
+        }
+    }
+    panic!("missing TIFF reference tag {tag}");
+}
+
 #[test]
-fn unsupported_native_wave_codec_preserves_external_capability() {
+fn adpcm_wave_codec_preserves_sample_rate_and_duration() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("adpcm.wav");
     fs::write(&path, include_bytes!("fixtures/desktop-adpcm.fixture")).unwrap();
     assert_eq!(
-        probe_sample_rate(&path)
-            .expect("desktop ADPCM probing requires the external ffprobe capability"),
+        probe_sample_rate(&path).expect("ADPCM must decode in process"),
         8000
     );
+    let duration = validate_audio(&path, 100).expect("ADPCM must decode in process");
+    // FFmpeg decodes 4082 bytes of mono s16 PCM: 2041 actual samples. The old
+    // ffprobe container estimate rounds up the ADPCM block to 2048 samples.
     assert!(
-        validate_audio(&path, 100)
-            .expect("desktop ADPCM validation requires the external ffmpeg/ffprobe capability")
-            > 0.0
+        (duration - 2041.0 / 8000.0).abs() <= 1.0 / 8000.0,
+        "ADPCM decoded duration: {duration}"
     );
 }
 

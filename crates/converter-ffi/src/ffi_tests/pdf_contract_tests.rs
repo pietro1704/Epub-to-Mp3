@@ -37,17 +37,22 @@ fn pdf_ffi_opens_metadata_and_converts_selected_section_with_platform_callback()
                 .cast_mut()
                 .cast()
         ));
-        let response = converter_session_convert_job_options_json_v1(
-            session,
-            output.as_ptr(),
-            job.as_ptr(),
-            options.as_ptr(),
-            1,
-            1,
-            None,
-            None,
-            ptr::null_mut(),
-        );
+        let response = {
+            let control = FixtureJobControl::new();
+            converter_session_convert_streaming_job_options_json_v1(
+                session,
+                output.as_ptr(),
+                job.as_ptr(),
+                options.as_ptr(),
+                1,
+                1,
+                None,
+                None,
+                None,
+                ptr::null_mut(),
+                control.0,
+            )
+        };
         if response.is_null() {
             let error = converter_last_error();
             let message = CStr::from_ptr(error).to_string_lossy().into_owned();

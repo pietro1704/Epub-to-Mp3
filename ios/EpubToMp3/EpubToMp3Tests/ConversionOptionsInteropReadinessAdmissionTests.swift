@@ -12,6 +12,30 @@ import AppKit
 #endif
 
 extension ConversionOptionsInteropTests {
+    func testActualV3CatalogKeepsDescriptorIdentityAndOfflineInspectionSeparate() throws {
+        let adapter = try runtimeAdapter()
+        let catalog = try adapter.ttsCatalog()
+        XCTAssertEqual(catalog.version, 3)
+        let faber = try XCTUnwrap(catalog.models.first { $0.id == "pt_BR-faber-medium" })
+        XCTAssertEqual(faber.engine, "piper")
+        XCTAssertEqual(faber.runtime, "piper")
+        XCTAssertFalse(faber.revision.isEmpty)
+        XCTAssertEqual(faber.artifacts?.count, 2)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("catalog-identity-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let current = SpeechModelLibraryTarget.current()
+        let target = SpeechModelLibraryTarget(language: "pt-BR", platform: current.platform,
+            androidAPI: 0, architecture: current.architecture, osVersion: current.osVersion,
+            modelsRoot: root)
+        let snapshot = try adapter.speechModelSnapshot(target: target)
+        let inspected = try XCTUnwrap(snapshot.entries.first { $0.identity.modelID == faber.id })
+        XCTAssertEqual(inspected.identity.modelRevision, faber.revision)
+        XCTAssertEqual(inspected.installation.state, .missing)
+        XCTAssertEqual(inspected.readiness.state, .notInspected)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+
     func testCoordinatorRejectsInvalidOptionsBeforeBookOrOutputAccess() async throws {
         let adapter = try runtimeAdapter()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ffi-coordinator-tests-\(UUID().uuidString)")
@@ -24,7 +48,7 @@ extension ConversionOptionsInteropTests {
                                               options: ConversionOptions(engine: "coqui"))
             XCTFail("Unsupported provider unexpectedly accepted")
         } catch {
-            XCTAssertTrue(((error as? EmbeddedConverterError)?.diagnosticDescription ?? error.localizedDescription).contains("unsupported conversion engine"))
+            XCTAssertTrue(((error as? EmbeddedConverterError)?.diagnosticDescription ?? error.localizedDescription).contains("Unsupported conversion engine"))
         }
         XCTAssertEqual(manager.supportLookups, 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
@@ -101,7 +125,7 @@ extension ConversionOptionsInteropTests {
         let original = Data("Original output fixture".utf8)
         try original.write(to: blocked)
         for (options, expected) in [
-            (ConversionOptions(engine: "coqui"), "unsupported conversion engine"),
+            (ConversionOptions(engine: "coqui"), "Unsupported conversion engine"),
             (ConversionOptions(language: "\n"), "language"),
         ] {
             XCTAssertThrowsError(try adapter.convertBook(at: bookURL, outputDirectory: blocked, jobID: "blocked-output",

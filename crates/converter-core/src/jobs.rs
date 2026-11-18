@@ -162,6 +162,24 @@ impl ConversionJobStore {
         Ok(record)
     }
 
+    /// Reset a terminal job for in-place repair without deleting its identity,
+    /// creation time or metadata. The worker must hold the exclusive job lease.
+    pub(crate) fn restart_for_repair(&self, job_id: &str) -> Result<JobRecord, JobError> {
+        let _mutation = self.mutation_guard()?;
+        let mut record = self.load(job_id)?;
+        if record.state.is_active() {
+            return Err(JobError::InvalidTransition(InvalidTransition {
+                from: record.state,
+                to: JobState::Queued,
+            }));
+        }
+        record.state = JobState::Queued;
+        record.progress = serde_json::Value::Null;
+        record.updated_at = unix_now();
+        self.persist(&record)?;
+        Ok(record)
+    }
+
     pub fn update_progress(
         &self,
         job_id: &str,

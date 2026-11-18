@@ -31,20 +31,15 @@ fn controlled_ffi_recovery_regenerates_opaque_native_audio_and_resets_policy_on_
             .unwrap();
             let control = converter_job_control_create();
             assert!(!control.is_null());
-            if let Some(predecessor) = predecessor {
-                let source = CString::new(predecessor).unwrap();
-                assert!(converter_job_control_set_recovery_job(
-                    control,
-                    source.as_ptr()
-                ));
-            }
-            let response = converter_session_convert_controlled_job_options_json_v1(
+            let options = fixture_recovery_options(&options, predecessor);
+            let response = converter_session_convert_streaming_job_options_json_v1(
                 session,
                 output.as_ptr(),
                 job.as_ptr(),
                 options.as_ptr(),
                 0,
                 0,
+                None,
                 None,
                 None,
                 ptr::null_mut(),
@@ -135,20 +130,15 @@ fn controlled_ffi_recovery_rejects_opaque_native_predecessor_without_mutation() 
             let job = CString::new(job).unwrap();
             let control = converter_job_control_create();
             assert!(!control.is_null());
-            if let Some(predecessor) = predecessor {
-                let source = CString::new(predecessor).unwrap();
-                assert!(converter_job_control_set_recovery_job(
-                    control,
-                    source.as_ptr()
-                ));
-            }
-            let response = converter_session_convert_controlled_job_options_json_v1(
+            let options = fixture_recovery_options(&options, predecessor);
+            let response = converter_session_convert_streaming_job_options_json_v1(
                 session,
                 output.as_ptr(),
                 job.as_ptr(),
                 options.as_ptr(),
                 0,
                 0,
+                None,
                 None,
                 None,
                 ptr::null_mut(),

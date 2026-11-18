@@ -174,6 +174,7 @@ fn finished_snapshot_exposes_the_complete_archive() {
     let manifest = OutputManifest {
         synthesis_sessions: Vec::new(),
         source_chapters_total: None,
+        source_sha256: None,
         job_id: "archive-job".into(),
         title: "Book".into(),
         author: "Author".into(),
@@ -221,6 +222,7 @@ fn manifest_archive_cannot_escape_the_job_directory() {
     let manifest = OutputManifest {
         synthesis_sessions: Vec::new(),
         source_chapters_total: None,
+        source_sha256: None,
         job_id: "archive-job".into(),
         title: "Book".into(),
         author: "Author".into(),
@@ -247,6 +249,7 @@ async fn advertised_archive_can_be_downloaded() {
     let manifest = OutputManifest {
         synthesis_sessions: Vec::new(),
         source_chapters_total: None,
+        source_sha256: None,
         job_id: "archive-job".into(),
         title: "Book".into(),
         author: "Author".into(),

@@ -8,7 +8,8 @@ pub use cache_integrity::{
 pub(crate) use cache_persistence::refresh_chapter_text;
 pub use cache_persistence::{atomic_write_json, read_json, safe_cache_path};
 
-use serde::{Deserialize, Serialize};
+#[cfg(test)]
+use serde::Serialize;
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
@@ -33,13 +34,6 @@ pub enum CacheError {
     Json(#[from] serde_json::Error),
     #[error("cache path escapes root")]
     Traversal,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CacheMetadata<T> {
-    pub value: T,
-    pub size: u64,
-    pub mtime_ns: u128,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

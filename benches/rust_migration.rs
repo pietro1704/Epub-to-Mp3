@@ -5,29 +5,48 @@
 //! identifies the baseline and external resource measurements to collect.
 use converter_core::{cache, epub::parse_epub, text, tts::split_protocol_chunks};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::{fs, hint::black_box, io::Cursor};
+use std::{hint::black_box, io::Cursor};
 
-const FIXTURE: &str = "docs/fixtures/rust-migration.epub";
-#[allow(dead_code)]
-const REPORT: &str = "benchmarks/rust-migration-report.json";
+#[path = "../crates/converter-core/tests/support/epub_fixture.rs"]
+mod epub_fixture;
 
 fn fixture_bytes() -> Vec<u8> {
-    fs::read(FIXTURE).unwrap_or_else(|_| synthetic_epub(256 * 1024))
-}
-
-fn synthetic_epub(body_size: usize) -> Vec<u8> {
-    let mut data = Vec::with_capacity(body_size + 4);
-    data.extend_from_slice(b"PK\x03\x04");
-    data.resize(body_size + 4, b'a');
-    data
+    let paragraph = "<p>Performance instrumentation preserves readable chapter text.</p>";
+    let chapter = format!(
+        "<html><body><h1>Chapter One</h1>{}</body></html>",
+        paragraph.repeat(256 * 1024 / paragraph.len())
+    );
+    epub_fixture::epub_bytes(
+        [
+            (
+                "META-INF/container.xml",
+                r#"<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#,
+            ),
+            (
+                "content.opf",
+                r#"<package><metadata><title>Parser benchmark</title></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#,
+            ),
+            ("chapter.xhtml", chapter.as_str()),
+        ],
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+    )
 }
 
 fn parser(c: &mut Criterion) {
     let bytes = fixture_bytes();
+    let book = parse_epub(Cursor::new(&bytes)).expect("benchmark fixture must parse successfully");
+    assert_eq!(book.title, "Parser benchmark");
+    assert_eq!(book.chapters.len(), 1);
+    assert!(book.chapters[0].text.contains("readable chapter text"));
     let mut group = c.benchmark_group("parser");
     group.throughput(Throughput::Bytes(bytes.len() as u64));
     group.bench_function(BenchmarkId::new("epub_parse", bytes.len()), |b| {
-        b.iter(|| black_box(parse_epub(Cursor::new(black_box(bytes.as_slice())))))
+        b.iter(|| {
+            black_box(
+                parse_epub(Cursor::new(black_box(bytes.as_slice())))
+                    .expect("parser benchmark must measure successful parsing"),
+            )
+        })
     });
     group.finish();
 }

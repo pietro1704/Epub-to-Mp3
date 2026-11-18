@@ -1,7 +1,7 @@
 import Foundation
 
 /// Shared descriptors select models without encoding their IDs in client logic.
-struct TtsCatalog: Decodable, Sendable {
+struct TtsCatalog: Sendable {
     let version: UInt32
     let models: [Model]
     let providers: [Provider]?
@@ -27,7 +27,7 @@ struct TtsCatalog: Decodable, Sendable {
             allowOnlineFallback: preferences.allowOnlineFallback, policyVersion: preferences.policyVersion)
     }
 
-    struct Model: Decodable, Sendable {
+    struct Model: Sendable {
         let id: String
         let engine: String
         let runtime: String?
@@ -36,10 +36,6 @@ struct TtsCatalog: Decodable, Sendable {
         let platforms: [String]
         let runtimeAvailable: Bool?
         let artifacts: [Artifact]?
-        enum CodingKeys: String, CodingKey {
-            case id, engine, runtime, revision, languages, platforms, artifacts
-            case runtimeAvailable = "runtime_available"
-        }
 
         func selection(voice: String? = nil) -> TtsSelection? {
             guard let runtime else { return nil }
@@ -59,10 +55,39 @@ struct TtsCatalog: Decodable, Sendable {
     }
 
     static func decode(_ json: Data) throws -> Self {
-        let catalog = try JSONDecoder().decode(Self.self, from: json)
-        guard catalog.version == 2 else {
+        let snapshot = try JSONDecoder().decode(CatalogSnapshot.self, from: json)
+        guard snapshot.schema_version == 3 else {
             throw EmbeddedConverterError.artifactInvalid("Unsupported TTS catalog version")
         }
-        return catalog
+        return Self(version: 3, models: snapshot.entries.map { entry in
+            Model(id: entry.identity.modelID, engine: entry.identity.provider,
+                  runtime: entry.identity.runtime, revision: entry.identity.modelRevision ?? "",
+                  languages: entry.language_evidence.routingTags,
+                  platforms: entry.compatibility.platforms,
+                  runtimeAvailable: entry.compatibility.runtime_available,
+                  artifacts: entry.distribution.artifacts)
+        }, providers: snapshot.providers)
+    }
+
+    private struct CatalogSnapshot: Decodable {
+        let schema_version: UInt32
+        let providers: [Provider]?
+        let entries: [Entry]
+    }
+
+    private struct Entry: Decodable {
+        let identity: SpeechModelSnapshot.Identity
+        let language_evidence: SpeechModelSnapshot.LanguageEvidence
+        let compatibility: Support
+        let distribution: Distribution
+    }
+
+    private struct Support: Decodable {
+        let platforms: [String]
+        let runtime_available: Bool
+    }
+
+    private struct Distribution: Decodable {
+        let artifacts: [Artifact]
     }
 }

@@ -109,6 +109,10 @@ fn cli_sources_only_the_embedded_core_api() {
         include_str!("cli_book_inputs.rs"),
         include_str!("cli_cache_commands.rs"),
         include_str!("output_reporting.rs"),
+        include_str!("cli_help.rs"),
+        include_str!("cli_chapter_ranges.rs"),
+        include_str!("conversion_retry.rs"),
+        include_str!("existing_output_verification.rs"),
     );
     assert!(source.contains("EmbeddedConversionSession"));
     assert!(!source
@@ -128,6 +132,7 @@ fn verification_rejects_missing_chapter_audio() {
     let manifest = converter_core::worker::OutputManifest {
         synthesis_sessions: Vec::new(),
         source_chapters_total: None,
+        source_sha256: None,
         tts_preferences: None,
         used_selections: Vec::new(),
         tts_policy_state: Default::default(),

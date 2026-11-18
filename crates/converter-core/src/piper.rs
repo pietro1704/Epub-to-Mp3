@@ -50,7 +50,6 @@ pub enum PiperError {
     IncompatibleAbi(String),
     MissingModel(PathBuf),
     MissingConfig(PathBuf),
-    InvalidChunkSize,
     EmptyOutput,
     Synthesis(String),
     InvalidWav(String),
@@ -72,7 +71,6 @@ impl std::fmt::Display for PiperError {
             Self::MissingConfig(path) => {
                 write!(f, "Piper voice config not found: {}", path.display())
             }
-            Self::InvalidChunkSize => write!(f, "Piper chunk size must be greater than zero"),
             Self::EmptyOutput => write!(f, "Piper produced an empty or missing WAV output"),
             Self::Synthesis(message) => write!(f, "Piper synthesis failed: {message}"),
             Self::InvalidWav(message) => write!(f, "Piper produced invalid WAV: {message}"),
@@ -83,32 +81,6 @@ impl std::fmt::Display for PiperError {
     }
 }
 impl std::error::Error for PiperError {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StderrClass {
-    None,
-    Warning,
-    MissingModel,
-    MissingPhoneme,
-    Fatal,
-}
-
-pub fn classify_stderr(stderr: &str) -> StderrClass {
-    let lower = stderr.to_ascii_lowercase();
-    if lower.trim().is_empty() {
-        StderrClass::None
-    } else if lower.contains("no such file")
-        || lower.contains("model") && lower.contains("not found")
-    {
-        StderrClass::MissingModel
-    } else if lower.contains("phoneme") || lower.contains("phonemization") {
-        StderrClass::MissingPhoneme
-    } else if lower.contains("error") || lower.contains("fatal") || lower.contains("failed") {
-        StderrClass::Fatal
-    } else {
-        StderrClass::Warning
-    }
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct CancellationToken {
@@ -137,38 +109,6 @@ impl CancellationToken {
         self.deadline
             .is_some_and(|deadline| std::time::Instant::now() >= deadline)
     }
-}
-
-pub fn split_text(text: &str, max_chars: usize) -> Result<Vec<String>, PiperError> {
-    if max_chars == 0 {
-        return Err(PiperError::InvalidChunkSize);
-    }
-    if text.chars().count() <= max_chars {
-        return Ok(vec![text.to_owned()]);
-    }
-    let mut result = Vec::new();
-    let mut remaining = text.trim();
-    while !remaining.is_empty() {
-        let boundary = remaining
-            .char_indices()
-            .take(max_chars + 1)
-            .last()
-            .map(|(i, _)| i)
-            .unwrap_or(remaining.len());
-        let candidate = &remaining[..boundary];
-        let split = candidate
-            .rfind(['.', '!', '?', '\n'])
-            .map(|i| i + candidate[i..].chars().next().unwrap().len_utf8())
-            .or_else(|| candidate.rfind(' ').map(|i| i + 1))
-            .filter(|i| *i > boundary / 2)
-            .unwrap_or(boundary);
-        let chunk = remaining[..split].trim();
-        if !chunk.is_empty() {
-            result.push(chunk.to_owned());
-        }
-        remaining = remaining[split..].trim_start();
-    }
-    Ok(result)
 }
 
 pub fn select_model(config: &PiperConfig, language: Option<&str>) -> Result<PathBuf, PiperError> {

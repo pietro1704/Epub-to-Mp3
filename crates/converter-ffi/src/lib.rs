@@ -103,11 +103,14 @@ fn clear_last_error() {
     LAST_ERROR.with(|error| error.borrow_mut().take());
 }
 
-fn fail<T>(error: String) -> T {
+fn fail<T: Default>(error: String) -> T {
     LAST_ERROR.with(|slot| *slot.borrow_mut() = Some(error));
-    // This function is only called at null-returning ABI boundaries.
-    unsafe { std::mem::zeroed() }
+    // Null pointers, false/zero status and unit are the ABI failure sentinels.
+    T::default()
 }
+
+mod panic_boundary;
+use panic_boundary::ffi_guard;
 
 unsafe fn c_string(value: *const c_char, name: &str) -> Result<String, String> {
     if value.is_null() {
@@ -155,8 +158,6 @@ pub use platform_speech_boundary::*;
 #[cfg(test)]
 use platform_speech_boundary::{platform_cancelled, PlatformCancellation};
 mod conversion_options_boundary;
-use conversion_options_boundary::embedded_engine_from_value;
-use conversion_options_boundary::resolve_piper_model_paths;
 use conversion_options_boundary::EmbeddedConversionOptionsV1;
 pub use conversion_options_boundary::*;
 mod job_control_boundary;
@@ -167,9 +168,8 @@ mod conversion_callback_boundary;
 pub use conversion_callback_boundary::*;
 mod conversion_job_execution;
 use conversion_job_execution::convert_job_json;
-use conversion_job_execution::embedded_chapter_parallelism_cap;
-use conversion_job_execution::positional_chapter_selection;
-use conversion_job_execution::progress_log_line;
+#[cfg(test)]
+use conversion_job_execution::{embedded_chapter_parallelism_cap, progress_log_line};
 mod ffi_memory_boundary;
 pub use ffi_memory_boundary::*;
 mod model_catalog_boundary;

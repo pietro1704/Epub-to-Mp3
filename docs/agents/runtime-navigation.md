@@ -10,7 +10,9 @@ This map describes ownership; it is not evidence that a migration or test passed
 | --- | --- | --- |
 | Rust core | crates/converter-core/src/lib.rs and embedded.rs | Embedded conversion orchestration |
 | Parsing/text | crates/converter-core/src/epub.rs, toc.rs, structure.rs, text.rs | Book structure and synthesis payload |
-| Engines/models | crates/converter-core/src/engine.rs, tts_runtime.rs, model_catalog.rs | Provider/model configuration |
+| Engines/models | crates/converter-core/src/tts_preferences.rs, tts_session/, model_catalog.rs | Provider/model configuration |
+| Embedded selection | crates/converter-core/src/conversion_selection.rs | Capture voice choices and resolve installed model paths before FFI execution |
+| Native synthesis | crates/converter-core/src/worker/native_tts_adapters/, worker/segment_synthesis.rs | Registered Piper/system/Edge providers and validated segment caching |
 | Jobs/artifacts | crates/converter-core/src/jobs.rs, cache.rs, audio.rs, paths.rs | Progress, persistence, cache, output |
 | C ABI | crates/converter-ffi/src/lib.rs | Embedded client boundary |
 | Product CLI | crates/converter-cli/src/ | Direct Rust entry point |
@@ -21,6 +23,9 @@ Apple clients share the embedded core/FFI pipeline. Configure online/offline
 behavior through providers/models. New shared behavior belongs in Rust and is
 exposed through each relevant adapter; Python server orchestration is transitional
 compatibility code, not the product architecture.
+
+See [Rust audio runtime](../rust-audio-runtime.md) for in-process audio validation,
+cover attachment, supported provider outputs and fixture provenance.
 
 ## Apple app
 

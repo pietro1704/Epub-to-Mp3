@@ -68,22 +68,6 @@ fn android_piper_runtime_failure_does_not_require_unconsented_edge() {
 }
 
 #[test]
-fn performance_override_still_respects_configuration_and_platform_caps() {
-    let fast = ExecutionOptions {
-        max_performance: true,
-        ..ExecutionOptions::default()
-    };
-    assert_eq!(
-        ExecutionOptions::default().chapter_parallelism(true, 8, 8, 2),
-        1
-    );
-    assert_eq!(fast.chapter_parallelism(true, 8, 8, 2), 2);
-    assert_eq!(fast.chapter_parallelism(true, 1, 8, 2), 1);
-    assert_eq!(fast.chapter_parallelism(true, 8, 1, 2), 1);
-    assert_eq!(fast.chapter_parallelism(true, 8, 8, 1), 1);
-}
-
-#[test]
 fn positional_chapter_selector_from_ffi_matches_parsed_epub_position() {
     assert!(chapter_selection_matches("position:0", "1", 0));
     assert!(chapter_selection_matches("position:1", "2", 1));

@@ -6,6 +6,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const CONTRACT_VERSION: u32 = 2;
+/// Revision of the built-in native synthesis runtimes, published as
+/// `ProviderDescriptor::revision` and recorded in `ResolvedIdentity::runtime_revision`.
+///
+/// It is part of persisted audio identity: the segment cache key, the chapter
+/// request key, completion receipts and output manifests all carry it. It is
+/// therefore deliberately independent of the package version, so a product
+/// release never invalidates audio users already synthesized. The value is the
+/// workspace version that was in effect when this constant replaced
+/// `CARGO_PKG_VERSION`; change it only when a native runtime change makes
+/// previously synthesized audio unsuitable for reuse.
+pub const NATIVE_RUNTIME_REVISION: &str = "0.1.0";
 pub const MAX_SEGMENT_BYTES: usize = 16 * 1024 * 1024;
 mod recovery;
 pub use recovery::RecoveryAttempt;
@@ -277,6 +288,15 @@ pub fn encode_pcm_f32(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, TtsF
 
 pub trait TtsProvider: Send + Sync {
     fn descriptor(&self) -> ProviderDescriptor;
+    /// Catalog adapters use the shared contract. Native adapters may also
+    /// validate explicitly supplied local models through their own model seam.
+    fn validate_selection(
+        &self,
+        selection: &SessionSelection,
+        language: &str,
+    ) -> Result<(), TtsFailure> {
+        selection.validate(&self.descriptor(), language)
+    }
     fn prepare(
         &self,
         selection: &SessionSelection,

@@ -1,8 +1,8 @@
 use super::{
     cached_chapter_text, chapter_audio_is_complete, chapter_audio_is_reusable,
     chapter_audio_receipt_path, chapter_audio_request_key, ensure_chapter_audio_with_control,
-    recover_chapter_audio_for_generation, sanitize, select_engine, ChapterAudioReceipt,
-    ChapterCompletionEvent, ConversionRequest, ConversionWorker, ProgressEvent, WorkerError,
+    recover_chapter_audio_for_generation, sanitize, ChapterAudioReceipt, ChapterCompletionEvent,
+    ConversionRequest, ConversionWorker, ProgressEvent, WorkerError,
 };
 use crate::{
     audio::{self, ChapterMetadata},
@@ -27,7 +27,7 @@ pub(super) struct ChapterExecutionContext<'a> {
     pub(super) total: usize,
     pub(super) results: &'a Mutex<Vec<(usize, PathBuf, String, ChapterMetadata)>>,
     pub(super) completed: &'a AtomicUsize,
-    pub(super) system_notice_emitted: &'a std::sync::atomic::AtomicBool,
+    pub(super) preferences: &'a crate::tts_preferences::TtsPreferences,
 }
 
 impl ConversionWorker {
@@ -47,7 +47,7 @@ impl ConversionWorker {
         let total = context.total;
         let results = context.results;
         let completed = context.completed;
-        let system_notice_emitted = context.system_notice_emitted;
+        let preferences = context.preferences;
         if self.cancel.is_cancelled() || self.jobs.is_cancellation_requested(&request.job_id)? {
             return Err(WorkerError::Cancelled);
         }
@@ -66,11 +66,6 @@ impl ConversionWorker {
             .control
             .as_ref()
             .and_then(|control| control.listening_plan());
-        if listening.is_some() && request.tts_preferences.is_none() {
-            return Err(WorkerError::Unsupported(
-                "Versioned listening requires captured TTS preferences".into(),
-            ));
-        }
         let generation = listening.as_ref().map(|plan| plan.generation);
         let (text, text_offset) = match &listening {
             Some(plan) => plan
@@ -101,59 +96,20 @@ impl ConversionWorker {
         )
         .map_err(|_| WorkerError::Cancelled)?;
         let language = detected_language.or(chapter_analysis.confirmed.as_deref());
-        let engine = request
-            .tts_preferences
-            .as_ref()
-            .map(|p| p.primary.engine.clone())
-            .unwrap_or_else(|| select_engine(request.engine.as_deref(), &self.config));
+        let engine = &preferences.primary.engine;
         let language = request.language.as_deref().or(language);
-        let explicit_paths = request.piper_model.is_some() || request.piper_config.is_some();
-        let prepared_identity = if request.tts_preferences.is_none() && !explicit_paths {
-            self.piper_model
-                .as_ref()
-                .map(|model| model.cache_identity())
-        } else {
-            None
-        };
-        let explicit_identity =
-            if engine == "piper" && request.tts_preferences.is_none() && explicit_paths {
-                let model = request.piper_model.clone().unwrap_or_else(|| {
-                    self.config
-                        .paths
-                        .piper_models_dir
-                        .join("pt_BR-faber-medium.onnx")
-                });
-                let config = request
-                    .piper_config
-                    .clone()
-                    .unwrap_or_else(|| model.with_extension("onnx.json"));
-                // Legacy recovery must obey today's policy before cached bytes
-                // can bypass runtime preparation or synthesis entirely.
-                crate::piper::validate_model_file_quality(&model, &config)
-                    .map_err(|error| WorkerError::Piper(error.to_string()))?;
-                Some(format!(
-                    "piper:{model:?}:{config:?}:{}:{}",
-                    cache::sha256_file(&model)?,
-                    cache::sha256_file(&config)?
-                ))
-            } else {
-                None
-            };
         let base_request_key = chapter_audio_request_key(
             &book_key,
             &chapter.index,
             &text,
-            if let Some(identity) = explicit_identity
-                .as_deref()
-                .or(prepared_identity.as_deref())
-                .filter(|_| engine == "piper")
-            {
-                identity
-            } else if self.platform_tts.is_some() && engine == "edge" {
+            if self.platform_tts.is_some() && engine == "edge" {
+                // Keep the existing typed request fingerprint stable across this cleanup.
                 "edge+system-v2"
             } else {
-                &engine
+                engine
             },
+            // The typed selection joins the identity in `typed_cache_request_key`;
+            // this field keeps the request's own voice so existing receipts match.
             request.voice.as_deref(),
             language,
         )?;
@@ -173,25 +129,11 @@ impl ConversionWorker {
                 .as_slice(),
             )
         };
-        let base_request_key = if request.tts_preferences.is_some() {
-            super::heading_pauses::request_key(&base_request_key, &heading_ends)
-        } else {
-            base_request_key
-        };
-        let request_key = if let Some(preferences) = &request.tts_preferences {
-            self.typed_cache_request_key(request, preferences, language, &base_request_key)?
-        } else {
-            base_request_key
-        };
-        let reject_opaque_native = request.tts_preferences.is_some();
-        // Recover only after computing the effective provider/model identity.
-        // Legacy unprepared Piper requests still lack a content fingerprint.
-        let recovery_has_model_identity = engine != "piper"
-            || request.tts_preferences.is_some()
-            || explicit_identity.is_some()
-            || prepared_identity.is_some();
+        let base_request_key = super::heading_pauses::request_key(&base_request_key, &heading_ends);
+        let request_key =
+            self.typed_cache_request_key(request, preferences, language, &base_request_key)?;
+        let reject_opaque_native = true;
         if !self.execution_options.force_reprocess
-            && recovery_has_model_identity
             && !chapter_audio_is_reusable(&mp3, &request_key, reject_opaque_native)
         {
             if let Some(predecessor) = self
@@ -263,50 +205,20 @@ impl ConversionWorker {
             Some(source_index),
             |pending| {
                 eprintln!("synthesizing chapter {}/{}", position + 1, total);
-                let synthesis = if let Some(preferences) = &request.tts_preferences {
-                    self.synthesize_preferences_at_generation(
-                        request,
-                        preferences,
-                        &text,
-                        pending,
-                        source_index,
-                        language,
-                        &stale_window_cancelled,
-                        &actual_providers,
-                        total,
-                        generation,
-                        &paragraph_ends,
-                        &heading_ends,
-                    )
-                } else if self.platform_tts.is_some()
-                    && matches!(engine.as_str(), "edge" | "system")
-                {
-                    self.synthesize_platform_policy(
-                        &engine,
-                        &text,
-                        pending,
-                        source_index,
-                        request.voice.as_deref(),
-                        language,
-                        &stale_window_cancelled,
-                        &system_notice_emitted,
-                        &request.job_id,
-                        total,
-                        completed.load(Ordering::Acquire),
-                    )
-                } else {
-                    self.synthesize_with_timeout(
-                        &engine,
-                        &text,
-                        pending,
-                        source_index,
-                        request.voice.as_deref(),
-                        language,
-                        request.piper_model.as_deref(),
-                        request.piper_config.as_deref(),
-                        &stale_window_cancelled,
-                    )
-                };
+                let synthesis = self.synthesize_preferences_at_generation(
+                    request,
+                    preferences,
+                    &text,
+                    pending,
+                    source_index,
+                    language,
+                    &stale_window_cancelled,
+                    &actual_providers,
+                    total,
+                    generation,
+                    &paragraph_ends,
+                    &heading_ends,
+                );
                 if stale_window_cancelled.load(Ordering::Acquire) {
                     return Err(WorkerError::PlaybackWindowChanged);
                 }
@@ -325,35 +237,24 @@ impl ConversionWorker {
                     return Err(WorkerError::Cancelled);
                 }
                 let used_selections = actual_providers.lock().expect("provider lock").clone();
-                let fallback_used = if request.tts_preferences.is_some() {
-                    self.fallback_chapters
-                        .lock()
-                        .expect("fallback chapter lock")
-                        .contains(&source_index)
-                } else {
-                    engine == "edge"
-                        && fs::read_to_string(pending.with_extension("provider"))
-                            .ok()
-                            .is_some_and(|provider| provider.contains("system"))
-                };
+                let fallback_used = self
+                    .fallback_chapters
+                    .lock()
+                    .expect("fallback chapter lock")
+                    .contains(&source_index);
                 // Include actual provider roles in the initial completion receipt,
                 // before either durable chapter artifact is published.
                 cache::atomic_write_json(
                     pending.with_extension("tts-usage.json"),
                     &(used_selections, fallback_used),
                 )?;
-                let provider = if request.tts_preferences.is_some() {
-                    actual_providers
-                        .lock()
-                        .expect("provider lock")
-                        .iter()
-                        .map(|selection| selection.engine.clone())
-                        .collect::<Vec<_>>()
-                        .join("+")
-                } else {
-                    fs::read_to_string(pending.with_extension("provider"))
-                        .unwrap_or_else(|_| engine.clone())
-                };
+                let provider = actual_providers
+                    .lock()
+                    .expect("provider lock")
+                    .iter()
+                    .map(|selection| selection.engine.clone())
+                    .collect::<Vec<_>>()
+                    .join("+");
                 fs::write(pending.with_extension("provider"), provider)?;
                 Ok(())
             },
@@ -364,7 +265,7 @@ impl ConversionWorker {
                     .as_ref()
                     .expect("playback-window cancellation requires conversion control")
                     .requeue(source_index)
-                    .map_err(|error| WorkerError::Piper(error.to_string()))?;
+                    .map_err(WorkerError::Control)?;
                 return Ok(());
             }
             Err(error) => return Err(error),
@@ -376,7 +277,7 @@ impl ConversionWorker {
             {
                 control
                     .requeue(source_index)
-                    .map_err(|error| WorkerError::Piper(error.to_string()))?;
+                    .map_err(WorkerError::Control)?;
                 return Ok(());
             }
         }

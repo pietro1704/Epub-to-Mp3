@@ -1,9 +1,9 @@
-use super::native_tts_adapters::{worker_from_failure, NativeProvider};
+use super::native_tts_adapters::{native_registry, worker_from_failure};
 use super::{
     playback_chunk_delivery::dispatch_playback_chunk_at_generation, ConversionRequest,
     ConversionWorker, ProgressEvent, WorkerError,
 };
-use crate::{platform_tts, tts_session::*};
+use crate::tts_session::*;
 use std::{
     fs,
     path::Path,
@@ -61,16 +61,14 @@ impl ConversionWorker {
         heading_ends: &[usize],
     ) -> Result<(), WorkerError> {
         use std::io::Write;
-        preferences.validate(language).map_err(WorkerError::Piper)?;
+        preferences
+            .validate(language)
+            .map_err(WorkerError::InvalidSelection)?;
         let mut output = fs::File::create(out)?;
         let mut policy = self.segment_policy.lock().expect("segment policy lock");
         // The first short utterance becomes playable before the rest of the chapter.
-        let descriptors: Vec<_> = self
-            .tts_registry
-            .descriptors()
-            .into_iter()
-            .chain(builtin_descriptors())
-            .collect();
+        let registry = native_registry(self, request).map_err(worker_from_failure)?;
+        let descriptors = registry.descriptors();
         let limit = std::iter::once(&preferences.primary)
             .chain(preferences.secondary.iter())
             .filter_map(|selection| {
@@ -110,15 +108,6 @@ impl ConversionWorker {
                 )
                 .map_err(worker_from_failure)?,
         );
-        let adapters: Vec<_> = builtin_descriptors()
-            .into_iter()
-            .filter(|descriptor| !descriptor.targets.iter().any(|target| target == "web"))
-            .map(|descriptor| NativeProvider {
-                worker: self,
-                request,
-                descriptor,
-            })
-            .collect();
         let mut sessions = self.tts_sessions.lock().expect("TTS session lock");
         let mut resolved_sessions = Vec::new();
         let mut segment_receipts = Vec::new();
@@ -159,154 +148,26 @@ impl ConversionWorker {
             let mut attempt =
                 RecoveryAttempt::new(&policy, preferences, self.platform_tts.is_some())
                     .map_err(worker_from_failure)?;
+            let renderer = super::segment_synthesis::SegmentSynthesis {
+                worker: self,
+                request,
+                preferences,
+                registry: &registry,
+                language: language.unwrap_or("pt-BR"),
+                stale,
+                generation,
+                source_index,
+                heading_ends,
+                book_identity: book_identity.as_deref(),
+                segment_cache: &segment_cache,
+            };
             let mut synthesize = |selection: &crate::tts_preferences::TtsSelection,
                                   source_segment: &SourceTextSegment|
              -> Result<Vec<u8>, TtsFailure> {
-                let segment = source_segment.speech();
-                let pause = super::heading_pauses::follows_heading(source_segment, heading_ends);
                 cache_hit.set(false);
-                let context = SynthesisContext {
-                    language: language.unwrap_or("pt-BR"),
-                    cancelled: &|| self.cancel.is_cancelled(),
-                    replaced: &|| {
-                        stale.load(Ordering::Acquire)
-                            || self.control.as_ref().is_some_and(|control| {
-                                !control.generation_is_current(generation)
-                                    || !control.chapter_is_in_playback_window(source_index)
-                            })
-                    },
-                };
-                context.check()?;
-                let key = (
-                    request.job_id.clone(),
-                    context.language.to_owned(),
-                    serde_json::to_string(selection).expect("selection serialization"),
-                );
-                let selected = SessionSelection::from_legacy(selection)?;
-                let registered = self
-                    .tts_registry
-                    .descriptors()
-                    .into_iter()
-                    .find(|descriptor| {
-                        descriptor.provider == selected.provider
-                            && descriptor.runtime == selected.runtime
-                    });
-                let adapter = adapters.iter().find(|adapter| {
-                    adapter.descriptor.provider == selected.provider
-                        && adapter.descriptor.runtime == selected.runtime
-                });
-                let descriptor = registered
-                    .as_ref()
-                    .or_else(|| adapter.map(|adapter| &adapter.descriptor))
-                    .ok_or_else(|| {
-                        TtsFailure::new(FailureKind::Unavailable, "No registered synthesis adapter")
-                    })?;
-                if descriptor.capabilities.online
-                    && selection != &preferences.primary
-                    && !preferences.allow_online_fallback
-                {
-                    return Err(TtsFailure::new(
-                        FailureKind::InvalidSelection,
-                        "Online fallback requires explicit permission",
-                    ));
-                }
-                if !sessions.contains_key(&key) {
-                    let session = if registered.is_some() {
-                        self.tts_registry.prepare(&selected, context.language)?
-                    } else {
-                        adapter
-                            .ok_or_else(|| {
-                                TtsFailure::new(
-                                    FailureKind::Unavailable,
-                                    "No registered synthesis adapter",
-                                )
-                            })?
-                            .prepare(&selected, context.language)?
-                    };
-                    sessions.insert(key.clone(), session);
-                }
-                let session = sessions.get_mut(&key).expect("prepared session");
-                let spoken = self.pronunciation.apply(segment);
-                if spoken.chars().count()
-                    > segment
-                        .chars()
-                        .count()
-                        .saturating_mul(8)
-                        .saturating_add(400)
-                {
-                    return Err(TtsFailure::new(
-                        FailureKind::InvalidSelection,
-                        "Pronunciation expansion exceeds the bounded speech limit",
-                    ));
-                }
-                let segment_key = book_identity.as_deref().and_then(|book| {
-                    // Only rules that change this block invalidate its inner cache.
-                    let speech_identity =
-                        super::heading_pauses::speech_identity(segment, &spoken, pause);
-                    super::segment_audio_cache::key(
-                        book,
-                        context.language,
-                        &speech_identity,
-                        session.identity(),
-                    )
-                });
-                if !self.execution_options.force_reprocess && !self.execution_options.clear_cache {
-                    if let Some(bytes) = segment_key
-                        .as_deref()
-                        .and_then(|key| segment_cache.load(key))
-                    {
-                        context.check()?;
-                        cache_hit.set(true);
-                        return Ok(bytes);
-                    }
-                }
-                let format = descriptor
-                    .capabilities
-                    .audio_formats
-                    .first()
-                    .cloned()
-                    .ok_or_else(|| {
-                        TtsFailure::new(
-                            FailureKind::Unavailable,
-                            "Adapter has no audio-byte format",
-                        )
-                    })?;
-                let mut encoded = Vec::new();
-                let speech_limit = descriptor.capabilities.max_text_chars.min(800);
-                let passages = if spoken.chars().count() <= speech_limit {
-                    vec![spoken]
-                } else {
-                    platform_tts::segments_with_limit(&spoken, speech_limit)?
-                };
-                for passage in passages {
-                    let mut sink = AudioSink::new(format.clone(), MAX_SEGMENT_BYTES);
-                    if let Err(failure) = session.synthesize(&passage, &context, &mut sink) {
-                        sessions.remove(&key);
-                        return Err(failure);
-                    }
-                    context.check()?;
-                    encoded.extend(sink.into_mp3()?);
-                    if encoded.len() > MAX_SEGMENT_BYTES {
-                        return Err(TtsFailure::new(
-                            FailureKind::InvalidAudio,
-                            "Expanded pronunciation exceeds segment limit",
-                        ));
-                    }
-                }
-                super::heading_pauses::append(&mut encoded, pause, &context)?;
-                context.check()?;
-                if let Some(key) = segment_key {
-                    let _lease = self
-                        .control
-                        .as_ref()
-                        .map(|control| control.lease_generation(generation, Some(source_index)))
-                        .transpose()
-                        .map_err(|_| {
-                            TtsFailure::new(FailureKind::Replaced, "Playback window changed")
-                        })?;
-                    let _ = segment_cache.store(&key, &encoded);
-                }
-                Ok(encoded)
+                let (bytes, cached) = renderer.render(&mut sessions, selection, source_segment)?;
+                cache_hit.set(cached);
+                Ok(bytes)
             };
             // A real, useful segment is the health probe. Attempts are serial
             // under the policy lock; no second voice or throwaway audio runs

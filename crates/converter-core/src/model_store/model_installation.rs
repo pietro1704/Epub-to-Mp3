@@ -1,6 +1,4 @@
 //! Model installation and installed-state verification share one transaction owner.
-#[cfg(feature = "kokoro-sherpa-runtime")]
-use super::model_archive_installation::extract_model_archive;
 use super::{InstalledModel, ModelArtifact, ModelManifest, ModelStoreError};
 use crate::model_catalog::TtsModelDescriptor;
 use sha2::{Digest, Sha256};
@@ -98,6 +96,15 @@ impl ModelStore {
         if manifest.artifacts.is_empty() {
             return Err(ModelStoreError::EmptyManifest);
         }
+        if manifest
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.name.ends_with(".tar.bz2"))
+        {
+            return Err(ModelStoreError::InvalidArchive(
+                "Compressed model archives are not supported".into(),
+            ));
+        }
         let staging = self.root.join(format!(".{}.installing", manifest.model_id));
         let target = self.root.join(&manifest.model_id);
         let _ = tokio::fs::remove_dir_all(&staging).await;
@@ -143,19 +150,7 @@ impl ModelStore {
                 if actual != expected {
                     return Err(ModelStoreError::ChecksumMismatch { expected, actual });
                 }
-                if artifact.name.ends_with(".tar.bz2") {
-                    #[cfg(feature = "kokoro-sherpa-runtime")]
-                    {
-                        extract_model_archive(&temporary, &staging)?;
-                        tokio::fs::remove_file(&temporary).await?;
-                    }
-                    #[cfg(not(feature = "kokoro-sherpa-runtime"))]
-                    return Err(ModelStoreError::InvalidArchive(
-                        "archive extraction requires kokoro-sherpa-runtime".to_owned(),
-                    ));
-                } else {
-                    tokio::fs::rename(&temporary, &destination).await?;
-                }
+                tokio::fs::rename(&temporary, &destination).await?;
                 installed.push(InstalledModel {
                     id: manifest.model_id.clone(),
                     path: target.join(path),
@@ -245,14 +240,6 @@ impl ModelStore {
             Ok(value) => Ok(Some(value)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(ModelStoreError::Io(error)),
-        }
-    }
-
-    pub async fn is_installed(&self, model_id: &str, expected_sha256: &str) -> bool {
-        let path = self.model_path(model_id);
-        match tokio::fs::read(path).await {
-            Ok(bytes) => hex::encode(Sha256::digest(bytes)) == expected_sha256.to_ascii_lowercase(),
-            Err(_) => false,
         }
     }
 

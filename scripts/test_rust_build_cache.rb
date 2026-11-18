@@ -46,7 +46,7 @@ class RustBuildCacheTest < Minitest::Test
         'artifact-build' => ['ffi-${{ matrix.rust_target }}', 'cargo build --locked -p converter-ffi --release']
       },
       'rust-dependency-audit.yml' => {
-        'audit' => ['dependency-audit', 'mise exec -- cargo check --locked -p converter-core --features kokoro-sherpa-runtime']
+        'audit' => ['dependency-audit', 'mise exec -- cargo check --locked -p converter-core']
       }
     }
     expected.each do |file, jobs|

@@ -5,17 +5,15 @@ import XCTest
 final class ConverterFFIAdapterTests: XCTestCase {
     func testMissingOverrideRemainsUnavailableWithAValidBundledCatalog() throws {
         let bundled = ConverterFFIAdapter(bundle: Bundle(for: ConverterFFIAdapterTests.self))
-        let catalogData = try bundled.ttsModels()
-        let catalogObject = try JSONSerialization.jsonObject(with: catalogData)
-        let catalog = try XCTUnwrap(catalogObject as? [[String: Any]])
-        XCTAssertTrue(catalog.contains { $0["id"] as? String == "pt_BR-faber-medium" })
+        let catalog = try bundled.ttsCatalog()
+        XCTAssertTrue(catalog.models.contains { $0.id == "pt_BR-faber-medium" })
 
         let fixture = try makeArtifactFixture()
         let marker = fixture.root.appendingPathComponent("preserved.txt")
         let original = try Data(contentsOf: marker)
         let before = try FileManager.default.contentsOfDirectory(atPath: fixture.root.path)
         let missing = ConverterFFIAdapter(libraryURL: fixture.libraryURL)
-        XCTAssertThrowsError(try missing.ttsModels()) { error in
+        XCTAssertThrowsError(try missing.ttsCatalog()) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
         XCTAssertEqual(try Data(contentsOf: marker), original)
@@ -42,7 +40,7 @@ final class ConverterFFIAdapterTests: XCTestCase {
         let markerBytes = try Data(contentsOf: marker)
         let models = fixture.root.appendingPathComponent("models", isDirectory: true)
         let adapter = ConverterFFIAdapter(libraryURL: fixture.libraryURL)
-        XCTAssertThrowsError(try adapter.ttsModels()) { error in
+        XCTAssertThrowsError(try adapter.ttsCatalog()) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
         XCTAssertThrowsError(try adapter.ttsInstalledReadyEngine(language: "en-US", platform: "ios", installedModelIDsJSON: "[]", readyModelIDsJSON: "[]")) { error in

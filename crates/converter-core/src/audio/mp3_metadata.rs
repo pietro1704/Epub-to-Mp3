@@ -1,5 +1,4 @@
 //! Chapter metadata publication and bounded front-cover embedding.
-use super::audio_process::{require_external_audio_support, run_audio_process, ProcessSpec};
 use super::audio_validation::{invalid_audio, native_audio_info, validate_audio};
 use super::cover_image_validation::validate_cover_container;
 use super::AudioError;
@@ -23,14 +22,6 @@ pub struct ChapterMetadata {
 
 fn is_zero(value: &usize) -> bool {
     *value == 0
-}
-
-pub fn write_metadata(
-    path: impl AsRef<Path>,
-    chapters: &[ChapterMetadata],
-) -> Result<(), AudioError> {
-    crate::cache::atomic_write_json(path, chapters)
-        .map_err(|e| AudioError::Io(io::Error::other(e.to_string())))
 }
 
 pub fn embed_cover(input: &Path, cover: &Path) -> Result<(), AudioError> {
@@ -57,30 +48,47 @@ pub fn embed_cover(input: &Path, cover: &Path) -> Result<(), AudioError> {
         image::ImageFormat::Jpeg => "image/jpeg",
         image::ImageFormat::Png => "image/png",
         image::ImageFormat::WebP => "image/webp",
-        _ => {
-            require_external_audio_support()?;
-            return embed_cover_external(input, cover);
-        }
+        image::ImageFormat::Bmp => "image/bmp",
+        image::ImageFormat::Gif => "image/gif",
+        image::ImageFormat::Tiff => "image/tiff",
+        _ => return Err(invalid_audio("unsupported cover image format")),
     };
     validate_cover_container(&bytes, format)?;
-    use image::ImageDecoder;
-    let mut reader = image::ImageReader::with_format(io::Cursor::new(&bytes), format);
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(8192);
-    limits.max_image_height = Some(8192);
-    limits.max_alloc = Some(MAX_DECODE_BYTES);
-    reader.limits(limits);
-    let decoder = reader
-        .into_decoder()
-        .map_err(|error| invalid_audio(format!("invalid cover: {error}")))?;
-    if decoder.total_bytes() > MAX_DECODE_BYTES {
-        return Err(invalid_audio("cover exceeds decoded image budget"));
+    if format == image::ImageFormat::Tiff {
+        // The previous stream-copy path retained TIFF's original color model.
+        // Image's RGB adapter rejects valid subsampled YCbCr TIFF. Validate
+        // its bounded directories and payload extents, then retain its bytes;
+        // cover attachment does not require color conversion or decompression.
+        super::cover_tiff_validation::validate_tiff_cover(&bytes)?;
+    } else {
+        use image::ImageDecoder;
+        let mut reader = image::ImageReader::with_format(io::Cursor::new(&bytes), format);
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(8192);
+        limits.max_image_height = Some(8192);
+        limits.max_alloc = Some(MAX_DECODE_BYTES);
+        reader.limits(limits);
+        let decoder = reader
+            .into_decoder()
+            .map_err(|error| invalid_audio(format!("invalid cover: {error}")))?;
+        if decoder.total_bytes() > MAX_DECODE_BYTES {
+            return Err(invalid_audio("cover exceeds decoded image budget"));
+        }
+        image::DynamicImage::from_decoder(decoder)
+            .map_err(|error| invalid_audio(format!("invalid cover: {error}")))?;
     }
-    image::DynamicImage::from_decoder(decoder)
-        .map_err(|error| invalid_audio(format!("invalid cover: {error}")))?;
     if native_audio_info(input)?.is_none() {
-        require_external_audio_support()?;
-        return embed_cover_external(input, cover);
+        return Err(invalid_audio("unsupported audio format or codec"));
+    }
+    // ID3 frames belong to MPEG and RIFF/WAVE audio. Other decodable containers
+    // carry their own metadata model and would only gain a foreign leading tag.
+    let mut container = [0u8; 12];
+    let count = File::open(input)?.read(&mut container)?;
+    let is_wave = count >= 12 && &container[..4] == b"RIFF" && &container[8..12] == b"WAVE";
+    let is_mpeg = count >= 3
+        && (container.starts_with(b"ID3") || (container[0] == 0xff && container[1] & 0xe0 == 0xe0));
+    if !is_wave && !is_mpeg {
+        return Err(invalid_audio("cover embedding requires MPEG or WAVE audio"));
     }
     let mut tag = match Tag::read_from_path(input) {
         Ok(tag) => tag,
@@ -110,40 +118,5 @@ pub fn embed_cover(input: &Path, cover: &Path) -> Result<(), AudioError> {
         .map_err(|error| AudioError::Io(error.error))?;
     #[cfg(unix)]
     File::open(parent)?.sync_all()?;
-    Ok(())
-}
-
-fn embed_cover_external(input: &Path, cover: &Path) -> Result<(), AudioError> {
-    let temp = input.with_extension(format!("cover-{}.mp3", std::process::id()));
-    let input_s = input.to_string_lossy().into_owned();
-    let cover_s = cover.to_string_lossy().into_owned();
-    let temp_s = temp.to_string_lossy().into_owned();
-    run_audio_process(&ProcessSpec::new("ffmpeg").args([
-        "-y",
-        "-i",
-        &input_s,
-        "-i",
-        &cover_s,
-        "-map",
-        "0:a:0",
-        "-map",
-        "1:v:0",
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        "48k",
-        "-ac",
-        "1",
-        "-ar",
-        "24000",
-        "-c:v",
-        "copy",
-        "-id3v2_version",
-        "3",
-        "-metadata:s:v:0",
-        "title=Cover",
-        &temp_s,
-    ]))?;
-    fs::rename(temp, input)?;
     Ok(())
 }

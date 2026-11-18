@@ -16,13 +16,20 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
     _activity: JObject<'_>,
     request: JString<'_>,
 ) {
-    if let Ok(request) = read_string(&mut env, request) {
-        android_controls()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .entry(request)
-            .or_default();
-    }
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePrepareConversion",
+        (),
+        || {
+            if let Ok(request) = read_string(&mut env, request) {
+                android_controls()
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .entry(request)
+                    .or_default();
+            }
+        },
+    )
 }
 
 #[no_mangle]
@@ -31,16 +38,23 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
     _activity: JObject<'_>,
     request: JString<'_>,
 ) {
-    if let Ok(request) = read_string(&mut env, request) {
-        if let Some(control) = android_controls()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .get(&request)
-            .cloned()
-        {
-            control.cancel();
-        }
-    }
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeCancelConversion",
+        (),
+        || {
+            if let Ok(request) = read_string(&mut env, request) {
+                if let Some(control) = android_controls()
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .get(&request)
+                    .cloned()
+                {
+                    control.cancel();
+                }
+            }
+        },
+    )
 }
 
 struct BorrowedCancellation<'a>(&'a (dyn Fn() -> bool + Sync));
@@ -110,21 +124,17 @@ pub unsafe extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainAct
     _activity: JObject<'_>,
     context: jlong,
 ) -> jboolean {
-    if context == 0 {
-        return 1;
-    }
-    let cancellation = &*(context as *const BorrowedCancellation<'_>);
-    (cancellation.0)() as jboolean
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativePlatformSpeechCancelled(
-    env: JNIEnv<'_>,
-    worker: JObject<'_>,
-    context: jlong,
-) -> jboolean {
-    Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePlatformSpeechCancelled(
-        env, worker, context,
+    super::panic_boundary::jni_guard(
+        _env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePlatformSpeechCancelled",
+        1,
+        || {
+            if context == 0 {
+                return 1;
+            }
+            let cancellation = &*(context as *const BorrowedCancellation<'_>);
+            (cancellation.0)() as jboolean
+        },
     )
 }
 

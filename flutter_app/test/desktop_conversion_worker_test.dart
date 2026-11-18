@@ -47,7 +47,7 @@ static int matches_job_directory(const char* output, const char* job) {
  return end > start && strlen(job) == end - start &&
   strncmp(output + start, job, end - start) == 0;
 }
-typedef struct { atomic_int cancelled; atomic_int queued; char* chunk_path; } FixtureControl;
+typedef struct { atomic_int cancelled; atomic_int queued; int chunks_enabled; char* chunk_path; } FixtureControl;
 static atomic_int native_speech_registered;
 void* converter_session_open(const char* path) { atomic_store(&native_speech_registered, 0); return strdup(path); }
 _Bool converter_session_set_desktop_platform_tts_v1(void* session) {
@@ -63,7 +63,7 @@ void* converter_job_control_create() { return calloc(1, sizeof(FixtureControl));
 void converter_job_control_cancel(atomic_int* control) { atomic_store(control, 1); }
 void converter_job_control_free(FixtureControl* control) { free(control->chunk_path); free(control); }
 
-_Bool converter_job_control_enable_audio_chunks(FixtureControl* control) { return 1; }
+_Bool converter_job_control_enable_audio_chunks(FixtureControl* control) { control->chunks_enabled = 1; return 1; }
 char* converter_job_control_take_audio_chunk_json(FixtureControl* control) {
  if (!atomic_exchange(&control->queued, 0)) return NULL;
  char json[4096];
@@ -75,6 +75,14 @@ char* converter_session_convert_streaming_job_options_json_v1(void* session,
  void* progress, void* chapter, void* chunk, void* context, FixtureControl* control) {
  if (!matches_job_directory(output, job)) return NULL;
  if (strstr(options, "system") && !atomic_load(&native_speech_registered)) return NULL;
+ if (!control->chunks_enabled) {
+  if (!strstr(options, "pt_BR-faber-medium") || start != 2 || end != 3) return NULL;
+  for (int i=0; i<100; i++) {
+   if (atomic_load(&control->cancelled)) return NULL;
+   usleep(2000);
+  }
+  return strdup("{\"manifest\":{\"chapters\":[]}}");
+ }
  mkdir(output, 0700);
  char path[2048];
  snprintf(path, sizeof(path), "%s/chunk-0.mp3", output);
@@ -90,7 +98,7 @@ char* converter_session_convert_streaming_job_options_json_v1(void* session,
  snprintf(result, sizeof(result), "{\"audioPath\":\"%s\",\"manifest\":{\"chapters\":[{\"sourceIndex\":0,\"title\":\"Native stream\"}],\"usedSelections\":[{\"engine\":\"piper\",\"model_id\":\"pt_BR-faber-medium\",\"voice\":null}],\"ttsPolicyState\":{\"opaque\":\"native-state\"}}}", path);
  return strdup(result);
 }
-char* converter_tts_models_json() { return strdup("[]"); }
+char* converter_tts_catalog_json_v3(const char* language, const char* platform, unsigned api, const char* architecture, const char* os, const char* root) { return strdup("{\"schema_version\":3,\"entries\":[],\"providers\":[]}"); }
 char* converter_tts_model_install_catalog_manifest(const char* model, const char* root) {
  if (strcmp(model, "pt_BR-faber-medium") != 0 || !root || !*root) return NULL;
  if (!wait_for_ui_heartbeat(root)) return NULL;
@@ -101,18 +109,7 @@ char* converter_tts_model_metadata(const char* model, const char* root) { return
 char* converter_tts_installed_ready_engine(const char* language, const char* platform, unsigned int api, const char* installed, const char* ready) { return NULL; }
 char* converter_job_log_json(const char* id) { return strdup("[]"); }
 
-char* converter_session_convert_controlled_job_options_json_v1(void* session,
- const char* output, const char* job, const char* options, int start, int end,
- void* progress, void* chapter, void* context, atomic_int* control) {
- if (!matches_job_directory(output, job)) return NULL;
- if (strstr(options, "system") && !atomic_load(&native_speech_registered)) return NULL;
- if (!strstr(options, "pt_BR-faber-medium") || start != 2 || end != 3) return NULL;
- for (int i=0; i<100; i++) {
-   if (atomic_load(control)) return NULL;
-   usleep(2000);
- }
- return strdup("{\"manifest\":{\"chapters\":[]}}");
-}
+
 ''';
 
 // The native operation cannot finish successfully until this isolate handles

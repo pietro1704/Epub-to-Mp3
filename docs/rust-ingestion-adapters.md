@@ -13,9 +13,9 @@ grouping, page-label fallback, resource limits, cancellation and explicit failur
 Outlines can group pages into chapters; one chapter per page is the fallback,
 not the general chapter contract. OCR is not installed or applied implicitly.
 
-The Rust CLI deliberately rejects both PDF conversion and structure inspection;
-core support does not imply every adapter exposes the format. Apple PDF reading
-uses PDFKit, independently of the Rust narration parser.
+The Rust CLI supports text-layer PDF conversion and structure inspection through
+the shared parser. Apple PDF reading uses PDFKit, independently of the Rust
+narration parser.
 
 Legacy Python `pypdf` extraction and its separate Vision/OCR integration remain
 compatibility references. They do not define the implemented native PDF parser
@@ -26,9 +26,8 @@ or authorize adding an OCR dependency.
 Legacy Python server/CLI behavior calls KindleUnpack through the `mobi` package,
 then parses extracted EPUB or HTML. DRM is checked before extraction by the
 caller. The Rust workspace currently has no selected KindleUnpack-compatible
-crate, so the default adapter returns an explicit unsupported-format error for
-all three extensions rather than treating them as EPUB or inventing a parser.
+crate. The Rust CLI rejects these extensions before opening or converting them.
 
-The public Rust traits and typed errors live in
-`crates/converter-core/src/ingestion.rs`. A concrete MOBI-family parser and its
-dependency selection remain deferred; this does not describe the active PDF path.
+PDF ingestion errors live in `crates/converter-core/src/ingestion.rs`. The unused
+placeholder adapter traits have been removed. A concrete MOBI-family parser and
+its dependency selection remain deferred; this does not describe the active PDF path.

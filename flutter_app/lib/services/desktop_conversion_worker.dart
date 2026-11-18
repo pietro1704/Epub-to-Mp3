@@ -10,11 +10,9 @@ class DesktopConversionRequest {
     required this.chapterEnd,
     required this.optionsJson,
     required this.controlAddress,
-    this.streaming = false,
   });
   final String libraryPath, inputPath, outputPath, optionsJson;
   final int chapterStart, chapterEnd, controlAddress;
-  final bool streaming;
 }
 
 Future<String> runDesktopConversionWorker(DesktopConversionRequest request) =>
@@ -86,30 +84,10 @@ String _convertOnWorker(DesktopConversionRequest request) {
       final job = jobId.toNativeUtf8(allocator: arena);
       final captured = jsonEncode(options).toNativeUtf8(allocator: arena);
       final control = ffi.Pointer<ffi.Void>.fromAddress(request.controlAddress);
-      if (request.streaming) {
-        final convert = library
-            .lookupFunction<_StreamingConvertNative, _StreamingConvertDart>(
-              'converter_session_convert_streaming_job_options_json_v1',
-            );
-        return readOwned(
-          convert(
-            session,
-            output,
-            job,
-            captured,
-            request.chapterStart,
-            request.chapterEnd,
-            ffi.nullptr,
-            ffi.nullptr,
-            ffi.nullptr,
-            ffi.nullptr,
-            control,
-          ),
-        );
-      }
-      final convert = library.lookupFunction<_ConvertNative, _ConvertDart>(
-        'converter_session_convert_controlled_job_options_json_v1',
-      );
+      final convert = library
+          .lookupFunction<_StreamingConvertNative, _StreamingConvertDart>(
+            'converter_session_convert_streaming_job_options_json_v1',
+          );
       return readOwned(
         convert(
           session,
@@ -118,6 +96,7 @@ String _convertOnWorker(DesktopConversionRequest request) {
           captured,
           request.chapterStart,
           request.chapterEnd,
+          ffi.nullptr,
           ffi.nullptr,
           ffi.nullptr,
           ffi.nullptr,

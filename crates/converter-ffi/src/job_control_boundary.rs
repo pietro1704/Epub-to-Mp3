@@ -4,10 +4,16 @@ use super::*;
 pub unsafe extern "C" fn converter_job_control_listening_generation_v2(
     control: *const ConverterJobControl,
 ) -> u64 {
-    control
-        .as_ref()
-        .and_then(|control| control.control.listening_plan())
-        .map_or(u64::MAX, |plan| plan.generation)
+    ffi_guard(
+        "converter_job_control_listening_generation_v2",
+        u64::MAX,
+        || {
+            control
+                .as_ref()
+                .and_then(|control| control.control.listening_plan())
+                .map_or(u64::MAX, |plan| plan.generation)
+        },
+    )
 }
 
 /// Versioned, Unicode text-position intent. The Rust scheduler owns prefetch.
@@ -16,20 +22,26 @@ pub unsafe extern "C" fn converter_job_control_set_listening_position_json_v2(
     control: *const ConverterJobControl,
     position_json: *const c_char,
 ) -> bool {
-    clear_last_error();
-    let Some(control) = control.as_ref() else {
-        return fail("Invalid null job control".into());
-    };
-    let result = c_string(position_json, "listening position")
-        .and_then(|json| {
-            serde_json::from_str::<converter_core::tts_session::ListeningPosition>(&json)
-                .map_err(|error| error.to_string())
-        })
-        .and_then(|position| control.control.set_listening_position(position));
-    match result {
-        Ok(()) => true,
-        Err(error) => fail(error),
-    }
+    ffi_guard(
+        "converter_job_control_set_listening_position_json_v2",
+        false,
+        || {
+            clear_last_error();
+            let Some(control) = control.as_ref() else {
+                return fail("Invalid null job control".into());
+            };
+            let result = c_string(position_json, "listening position")
+                .and_then(|json| {
+                    serde_json::from_str::<converter_core::tts_session::ListeningPosition>(&json)
+                        .map_err(|error| error.to_string())
+                })
+                .and_then(|position| control.control.set_listening_position(position));
+            match result {
+                Ok(()) => true,
+                Err(error) => fail(error),
+            }
+        },
+    )
 }
 
 #[no_mangle]
@@ -37,20 +49,26 @@ pub unsafe extern "C" fn converter_job_control_playback_feedback_json_v2(
     control: *const ConverterJobControl,
     feedback_json: *const c_char,
 ) -> bool {
-    clear_last_error();
-    let Some(control) = control.as_ref() else {
-        return fail("Invalid null job control".into());
-    };
-    let result = c_string(feedback_json, "playback feedback")
-        .and_then(|json| {
-            serde_json::from_str::<converter_core::tts_session::PlaybackFeedback>(&json)
-                .map_err(|error| error.to_string())
-        })
-        .and_then(|feedback| control.control.playback_feedback(&feedback));
-    match result {
-        Ok(()) => true,
-        Err(error) => fail(error),
-    }
+    ffi_guard(
+        "converter_job_control_playback_feedback_json_v2",
+        false,
+        || {
+            clear_last_error();
+            let Some(control) = control.as_ref() else {
+                return fail("Invalid null job control".into());
+            };
+            let result = c_string(feedback_json, "playback feedback")
+                .and_then(|json| {
+                    serde_json::from_str::<converter_core::tts_session::PlaybackFeedback>(&json)
+                        .map_err(|error| error.to_string())
+                })
+                .and_then(|feedback| control.control.playback_feedback(&feedback));
+            match result {
+                Ok(()) => true,
+                Err(error) => fail(error),
+            }
+        },
+    )
 }
 
 /// Generation-bound timing observations update the portable prefetch estimate.
@@ -61,21 +79,25 @@ pub unsafe extern "C" fn converter_job_control_observe_generation_v2(
     seconds: f64,
     chars: usize,
 ) -> bool {
-    let Some(control) = control.as_ref() else {
-        return false;
-    };
-    control
-        .control
-        .observe_generation_at(Some(generation), seconds, chars)
+    ffi_guard("converter_job_control_observe_generation_v2", false, || {
+        let Some(control) = control.as_ref() else {
+            return false;
+        };
+        control
+            .control
+            .observe_generation_at(Some(generation), seconds, chars)
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn converter_job_control_create() -> *mut ConverterJobControl {
-    clear_last_error();
-    Box::into_raw(Box::new(ConverterJobControl {
-        control: ConversionControl::new(),
-        audio_chunks: Default::default(),
-    }))
+    ffi_guard("converter_job_control_create", std::ptr::null_mut(), || {
+        clear_last_error();
+        Box::into_raw(Box::new(ConverterJobControl {
+            control: ConversionControl::new(),
+            audio_chunks: Default::default(),
+        }))
+    })
 }
 
 /// Enable bounded file-backed audio events before starting conversion. Keep the
@@ -84,17 +106,19 @@ pub extern "C" fn converter_job_control_create() -> *mut ConverterJobControl {
 pub unsafe extern "C" fn converter_job_control_enable_audio_chunks(
     control: *const ConverterJobControl,
 ) -> bool {
-    let Some(control) = control.as_ref() else {
-        return false;
-    };
-    let Ok(mut queue) = control.audio_chunks.lock() else {
-        return false;
-    };
-    if queue.enabled {
-        return false;
-    }
-    queue.enabled = true;
-    true
+    ffi_guard("converter_job_control_enable_audio_chunks", false, || {
+        let Some(control) = control.as_ref() else {
+            return false;
+        };
+        let Ok(mut queue) = control.audio_chunks.lock() else {
+            return false;
+        };
+        if queue.enabled {
+            return false;
+        }
+        queue.enabled = true;
+        true
+    })
 }
 
 /// Nonblocking poll. Returns an owned JSON string, or null when no event is ready.
@@ -104,74 +128,75 @@ pub unsafe extern "C" fn converter_job_control_enable_audio_chunks(
 pub unsafe extern "C" fn converter_job_control_take_audio_chunk_json(
     control: *const ConverterJobControl,
 ) -> *mut c_char {
-    let Some(control) = control.as_ref() else {
-        return ptr::null_mut();
-    };
-    let Ok(mut queue) = control.audio_chunks.try_lock() else {
-        return ptr::null_mut();
-    };
-    // Retire queued bytes on cancellation, retaining the one-shot overflow error.
-    if control.control.cancellation_token().is_cancelled() {
-        queue.events.clear();
-    }
-    let event = queue
-        .error
-        .take()
-        .map(|error| json!({"error":error}))
-        .or_else(|| {
-            while let Some(event) = queue.events.pop_front() {
-                if event["version"] == 2 {
-                    let generation = event["generation"].as_u64();
-                    if !control.control.generation_is_current(generation) {
-                        continue;
-                    }
-                }
-                return Some(event);
+    ffi_guard(
+        "converter_job_control_take_audio_chunk_json",
+        std::ptr::null_mut(),
+        || {
+            let Some(control) = control.as_ref() else {
+                return ptr::null_mut();
+            };
+            let Ok(mut queue) = control.audio_chunks.try_lock() else {
+                return ptr::null_mut();
+            };
+            // Retire queued bytes on cancellation, retaining the one-shot overflow error.
+            if control.control.cancellation_token().is_cancelled() {
+                queue.events.clear();
             }
-            None
-        });
-    event
-        .and_then(|event| CString::new(event.to_string()).ok())
-        .map_or(ptr::null_mut(), CString::into_raw)
+            let event = queue
+                .error
+                .take()
+                .map(|error| json!({"error":error}))
+                .or_else(|| {
+                    while let Some(event) = queue.events.pop_front() {
+                        if event["version"] == 2 {
+                            let generation = event["generation"].as_u64();
+                            if !control.control.generation_is_current(generation) {
+                                continue;
+                            }
+                        }
+                        return Some(event);
+                    }
+                    None
+                });
+            event
+                .and_then(|event| CString::new(event.to_string()).ok())
+                .map_or(ptr::null_mut(), CString::into_raw)
+        },
+    )
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn converter_job_control_free(control: *mut ConverterJobControl) {
-    if !control.is_null() {
-        drop(Box::from_raw(control));
-    }
+    ffi_guard("converter_job_control_free", (), || {
+        if !control.is_null() {
+            drop(Box::from_raw(control));
+        }
+    })
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn converter_job_control_cancel(control: *const ConverterJobControl) {
-    if let Some(control) = control.as_ref() {
-        control.control.cancel();
-    }
+    ffi_guard("converter_job_control_cancel", (), || {
+        if let Some(control) = control.as_ref() {
+            control.control.cancel();
+        }
+    })
 }
 
-/// Suspends subsequent chapter boundaries without interrupting the current
-/// validated artifact. Cancellation wakes a suspended worker.
-#[no_mangle]
-pub unsafe extern "C" fn converter_job_control_set_paused(
-    control: *const ConverterJobControl,
-    paused: bool,
-) {
-    if let Some(control) = control.as_ref() {
-        control.control.set_paused(paused);
-    }
-}
-
+/// Updates the bounded chapter window used by playback and chunk delivery.
 #[no_mangle]
 pub unsafe extern "C" fn converter_job_control_set_playback_window(
     control: *const ConverterJobControl,
     current_chapter: usize,
     chapters_ahead: usize,
 ) {
-    if let Some(control) = control.as_ref() {
-        control
-            .control
-            .set_playback_window(current_chapter, chapters_ahead);
-    }
+    ffi_guard("converter_job_control_set_playback_window", (), || {
+        if let Some(control) = control.as_ref() {
+            control
+                .control
+                .set_playback_window(current_chapter, chapters_ahead);
+        }
+    })
 }
 
 /// Returns whether a source chapter still belongs to the active playback
@@ -182,9 +207,15 @@ pub unsafe extern "C" fn converter_job_control_chapter_is_in_playback_window(
     control: *const ConverterJobControl,
     chapter_index: usize,
 ) -> bool {
-    control
-        .as_ref()
-        .is_some_and(|control| control.control.chapter_is_in_playback_window(chapter_index))
+    ffi_guard(
+        "converter_job_control_chapter_is_in_playback_window",
+        false,
+        || {
+            control
+                .as_ref()
+                .is_some_and(|control| control.control.chapter_is_in_playback_window(chapter_index))
+        },
+    )
 }
 
 #[no_mangle]
@@ -192,44 +223,18 @@ pub unsafe extern "C" fn converter_job_control_prioritize(
     control: *const ConverterJobControl,
     chapter_index: usize,
 ) -> bool {
-    clear_last_error();
-    let Some(control) = control.as_ref() else {
-        fail::<()>("invalid null job control".to_owned());
-        return false;
-    };
-    match control.control.prioritize(chapter_index) {
-        Ok(()) => true,
-        Err(error) => {
-            fail::<()>(error.to_string());
-            false
-        }
-    }
-}
-
-/// Selects a durable predecessor for a new job before its queue attaches.
-/// The ID is copied; the caller may immediately release its UTF-8 string.
-#[no_mangle]
-pub unsafe extern "C" fn converter_job_control_set_recovery_job(
-    control: *const ConverterJobControl,
-    source_job_id: *const c_char,
-) -> bool {
-    clear_last_error();
-    let Some(control) = control.as_ref() else {
-        fail::<()>("invalid null job control".to_owned());
-        return false;
-    };
-    let source_job_id = match c_string(source_job_id, "recovery job ID") {
-        Ok(value) => value,
-        Err(error) => {
-            fail::<()>(error);
+    ffi_guard("converter_job_control_prioritize", false, || {
+        clear_last_error();
+        let Some(control) = control.as_ref() else {
+            fail::<()>("invalid null job control".to_owned());
             return false;
+        };
+        match control.control.prioritize(chapter_index) {
+            Ok(()) => true,
+            Err(error) => {
+                fail::<()>(error.to_string());
+                false
+            }
         }
-    };
-    match control.control.set_recovery_job(&source_job_id) {
-        Ok(()) => true,
-        Err(error) => {
-            fail::<()>(error.to_string());
-            false
-        }
-    }
+    })
 }

@@ -20,7 +20,7 @@ runs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', 'native/piper-runtime/Cargo.lock', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}-${{ hashFiles('crates/**/*.rs', 'native/piper-runtime/**/*.rs') }}
+        key: rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}-${{ hashFiles('crates/**/*.rs', 'native/piper-runtime/**/*.rs') }}
         restore-keys: |
-          rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', 'native/piper-runtime/Cargo.lock', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}-
+          rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'crates/**/Cargo.toml', 'native/piper-runtime/Cargo.toml', '.cargo/**', 'mise.toml', 'scripts/apple_target_clang.sh') }}-
           rust-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.namespace }}-${{ steps.toolchain.outputs.identity }}-

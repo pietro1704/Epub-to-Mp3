@@ -2,25 +2,6 @@ use super::VersionedStreamingChunkSink;
 use crate::conversion_control::ConversionControl;
 use std::sync::atomic::Ordering;
 
-pub(super) fn dispatch_playback_chunk(
-    control: Option<&ConversionControl>,
-    sink: Option<&VersionedStreamingChunkSink>,
-    chapter_index: usize,
-    chunk_index: usize,
-    bytes: &[u8],
-    stale_window_cancelled: &std::sync::atomic::AtomicBool,
-) -> bool {
-    dispatch_playback_chunk_at_generation(
-        control,
-        sink,
-        chapter_index,
-        chunk_index,
-        bytes,
-        stale_window_cancelled,
-        None,
-    )
-}
-
 pub(super) fn dispatch_playback_chunk_at_generation(
     control: Option<&ConversionControl>,
     sink: Option<&VersionedStreamingChunkSink>,

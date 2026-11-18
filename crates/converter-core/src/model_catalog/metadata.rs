@@ -107,12 +107,6 @@ static PIPER_LESSAC_LANGUAGES: &[ExactLanguageDescriptor] = &[ExactLanguageDescr
     frontend: Some("espeak-ng:en-us"),
     validation: LanguageValidation::ArtifactDeclared,
 }];
-static KOKORO_LANGUAGES: &[ExactLanguageDescriptor] = &[ExactLanguageDescriptor {
-    tag: "en",
-    frontend: None,
-    validation: LanguageValidation::ArtifactDeclared,
-}];
-
 pub(super) static PIPER_FABER_METADATA: ModelMetadata = ModelMetadata {
     presentation: ModelPresentationDescriptor {
         model_name: "Faber",
@@ -131,17 +125,6 @@ pub(super) static PIPER_FABER_METADATA: ModelMetadata = ModelMetadata {
         requires_acceptance: false,
         validation: LicenceValidation::Partial,
     },
-};
-
-pub(super) static KOKORO_METADATA: ModelMetadata = ModelMetadata {
-    presentation: ModelPresentationDescriptor {
-        model_name: "Kokoro 82M",
-        family_name: "Kokoro",
-        quality: QualityTier::Unspecified,
-        voice_choices: &[],
-    },
-    exact_languages: KOKORO_LANGUAGES,
-    licence: UNKNOWN_LICENCE,
 };
 
 pub(super) static PIPER_EDRESSON_METADATA: ModelMetadata = ModelMetadata {

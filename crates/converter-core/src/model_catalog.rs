@@ -96,15 +96,6 @@ pub fn revision_from_hashes<'a>(hashes: impl IntoIterator<Item = &'a str>) -> Op
     (!hashes.is_empty()).then(|| hashes.join(":"))
 }
 
-static KOKORO_ENGLISH_ARTIFACTS: &[TtsArtifactDescriptor] = &[
-    TtsArtifactDescriptor {
-        name: "kokoro-int8-en-v0_19.tar.bz2",
-        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2",
-        sha256: "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
-        bytes: 103_248_205,
-    },
-];
-
 static PIPER_PT_BR_EDRESSON_LOW_ARTIFACTS: &[TtsArtifactDescriptor] = &[
     TtsArtifactDescriptor {
         name: "model.onnx",
@@ -158,24 +149,6 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         artifacts: PIPER_FABER_ARTIFACTS,
         runtime_available: true,
         metadata: &metadata::PIPER_FABER_METADATA,
-    },
-    TtsModelDescriptor {
-        id: "kokoro-82m",
-        engine: "kokoro",
-        languages: &["en"],
-        platforms: &[
-            ModelPlatform::Android,
-            ModelPlatform::Ios,
-            ModelPlatform::Macos,
-            ModelPlatform::Linux,
-            ModelPlatform::Windows,
-        ],
-        minimum_android_api: Some(29),
-        default_rank: 1,
-        download_bytes: 103_248_205,
-        artifacts: KOKORO_ENGLISH_ARTIFACTS,
-        runtime_available: false,
-        metadata: &metadata::KOKORO_METADATA,
     },
     TtsModelDescriptor {
         id: "pt_BR-edresson-low",
@@ -335,24 +308,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn does_not_select_unimplemented_kokoro_runtime() {
+    fn does_not_select_an_unavailable_english_runtime() {
         assert_eq!(default_engine("en-US", ModelPlatform::Macos, None), "none");
     }
 
     #[test]
-    fn does_not_claim_unverified_multilingual_kokoro_voices() {
+    fn does_not_select_a_model_that_has_not_been_installed() {
         assert_eq!(default_engine("pt-BR", ModelPlatform::Macos, None), "none");
-    }
-
-    #[test]
-    fn exposes_verified_kokoro_manifest() {
-        let model = MODELS
-            .iter()
-            .find(|model| model.id == "kokoro-82m")
-            .unwrap();
-        assert_eq!(model.artifacts.len(), 1);
-        assert_eq!(model.artifacts[0].bytes, 103_248_205);
-        assert_eq!(model.artifacts[0].name, "kokoro-int8-en-v0_19.tar.bz2");
     }
 
     #[test]
@@ -381,7 +343,7 @@ mod tests {
                 &["kokoro-82m"],
                 &["kokoro-82m"]
             ),
-            Some("kokoro")
+            None
         );
     }
 

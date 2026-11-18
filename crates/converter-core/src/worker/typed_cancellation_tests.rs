@@ -80,7 +80,7 @@ fn typed_playback_window_change_does_not_count_as_provider_failure() {
     let changed = stale.clone();
     worker.test_edge = Some(Arc::new(move |_| {
         changed.store(true, Ordering::Release);
-        Ok(platform_tts::encode_wav(&test_system_wav()).unwrap())
+        Ok(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap())
     }));
     let mut preferences = crate::tts_preferences::TtsPreferences::default();
     preferences.primary.engine = "edge".into();
@@ -121,7 +121,7 @@ fn typed_provider_returning_audio_after_cancellation_never_publishes_or_falls_ba
     let cancel = worker.cancel.clone();
     worker.test_edge = Some(Arc::new(move |_| {
         cancel.cancel();
-        Ok(platform_tts::encode_wav(&test_system_wav()).unwrap())
+        Ok(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap())
     }));
     worker = worker.with_streaming_chunks(Arc::new(|_, _, _| {
         panic!("cancelled audio must not be delivered")

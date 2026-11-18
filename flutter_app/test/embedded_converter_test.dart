@@ -51,7 +51,7 @@ class FakeConverter implements EmbeddedConverter {
   );
 
   @override
-  Future<String> ttsModels() async => '[]';
+  Future<String> ttsModels() async => '{"schema_version":3,"entries":[],"providers":[]}';
 
   @override
   Future<String> ttsDefaultEngine({

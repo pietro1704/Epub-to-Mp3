@@ -5,11 +5,11 @@ import 'package:flutter_app/models/tts_preferences.dart';
 
 void main() {
   test('catalog configuration adds distinct models on one runtime and survives capture', () {
-    final catalog = TtsCatalog.decode(jsonEncode({'version': 2, 'providers': [
+    final catalog = TtsCatalog.decode(jsonEncode({'schema_version':3, 'providers': [
       {'provider':'provider', 'runtime':'runtime', 'targets':['linux','macos','android','ios','windows'], 'capabilities':{'audio_bytes':true}},
-    ], 'models': [
+    ], 'entries': [
       for (final id in ['model-a', 'model-b'])
-        {'id': id, 'engine': 'provider', 'runtime': 'runtime', 'revision': 'sha-$id', 'runtime_available': true},
+        _entry(id, 'provider', 'runtime', 'sha-$id'),
     ]}));
     final selections = catalog.selections();
     expect(selections.map((s) => s.modelId), ['model-a', 'model-b']);
@@ -22,10 +22,10 @@ void main() {
     expect(() => restored.session!.options['rate'] = '2', throwsUnsupportedError);
   });
   test('new jobs capture catalog revision without mutating legacy preferences', () {
-    final catalog = TtsCatalog.decode(jsonEncode({'version':2, 'providers':[
+    final catalog = TtsCatalog.decode(jsonEncode({'schema_version':3, 'providers':[
       {'provider':'piper','runtime':'piper','targets':['linux'], 'capabilities':{'audio_bytes':true}},
-    ], 'models':[
-      {'id':'pt_BR-faber-medium','engine':'piper','runtime':'piper','revision':'sha','runtime_available':true},
+    ], 'entries':[
+      _entry('pt_BR-faber-medium', 'piper', 'piper', 'sha'),
     ]}));
     const original = TtsPreferences.appDefaults();
     final captured = catalog.captureNewPreferences(original, target:'Linux');
@@ -36,14 +36,15 @@ void main() {
   });
   test('rejects unknown contracts and retains legacy selections', () {
     expect(() => TtsCatalog.decode('{"version":3,"models":[]}'), throwsFormatException);
-    expect(TtsCatalog.decode('[]').selections(), isEmpty);
+    expect(() => TtsCatalog.decode('[]'), throwsFormatException);
+    expect(() => TtsCatalog.decode('{"version":2,"models":[]}'), throwsFormatException);
     expect(TtsSelection.fromJson({'engine':'system'}).session, isNull);
   });
   test('primary change clears an equivalent legacy secondary', () {
-    final versioned = TtsCatalog.decode(jsonEncode({'version':2, 'providers':[
+    final versioned = TtsCatalog.decode(jsonEncode({'schema_version':3, 'providers':[
       {'provider':'piper','runtime':'piper','targets':['linux'], 'capabilities':{'audio_bytes':true}},
-    ], 'models':[
-      {'id':'pt_BR-faber-medium','engine':'piper','runtime':'piper','revision':'sha','runtime_available':true},
+    ], 'entries':[
+      _entry('pt_BR-faber-medium', 'piper', 'piper', 'sha'),
     ]})).selections(target:'Linux').single;
     final preferences = TtsPreferences(primary: const TtsSelection(engine:'piper', modelId:'other'), secondary:TtsSelection.faber);
     expect(preferences.withPrimary(versioned).secondary, isNull);
@@ -51,14 +52,23 @@ void main() {
     expect(preferences.secondary, TtsSelection.faber);
   });
   test('catalog filters unsupported runtime targets and old Android API', () {
-    final catalog = TtsCatalog.decode(jsonEncode({'version':2, 'android_api':28, 'providers':[
+    final catalog = TtsCatalog.decode(jsonEncode({'schema_version':3, 'android_api':28, 'providers':[
       {'provider':'piper','runtime':'piper','targets':['android'], 'capabilities':{'audio_bytes':true}},
-    ],'models':[
-      {'id':'compatible','engine':'piper','runtime':'piper','revision':'sha','runtime_available':true,'platforms':['Android'],'minimum_android_api':28},
-      {'id':'too-new','engine':'piper','runtime':'piper','revision':'sha','runtime_available':true,'platforms':['Android'],'minimum_android_api':29},
+    ],'entries':[
+      _entry('compatible', 'piper', 'piper', 'sha', platforms: ['Android'], minimumAndroidApi: 28),
+      _entry('too-new', 'piper', 'piper', 'sha', platforms: ['Android'], minimumAndroidApi: 29),
     ]}));
     expect(catalog.selections(target:'Android').map((s)=>s.modelId), ['compatible']);
     expect(catalog.selections(target:'Android', androidApi:27), isEmpty);
     expect(catalog.selections(target:'Linux'), isEmpty);
   });
 }
+
+Map<String, Object?> _entry(String id, String provider, String runtime, String revision,
+    {List<String> platforms = const ['Android', 'Ios', 'Macos', 'Linux', 'Windows'],
+    int? minimumAndroidApi}) => {
+  'identity': {'model_id': id, 'provider': provider, 'runtime': runtime, 'model_revision': revision},
+  'language_evidence': {'routing_tags': ['pt'], 'exact_tags': []},
+  'compatibility': {'platforms': platforms, 'runtime_available': true, 'minimum_android_api': minimumAndroidApi},
+  'distribution': {'artifacts': [], 'download_bytes': 0},
+};

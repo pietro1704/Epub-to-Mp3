@@ -28,7 +28,7 @@ fn missing_piper_continues_native_beyond_three_segments_and_cancellation_stops()
         )
         .unwrap();
     assert!(spoken.lock().unwrap().len() > 3);
-    platform_tts::validate_mp3(&fs::read(out).unwrap()).unwrap();
+    crate::pcm::validate_mp3(&fs::read(out).unwrap()).unwrap();
     let snapshot = worker.segment_policy.lock().unwrap().clone();
     worker.cancel.cancel();
     let count = spoken.lock().unwrap().len();
@@ -68,7 +68,7 @@ fn app_policy_uses_configured_secondary_before_system_voice() {
     let edge_calls = calls.clone();
     worker.test_edge = Some(Arc::new(move |_| {
         edge_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(platform_tts::encode_wav(&test_system_wav()).unwrap())
+        Ok(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap())
     }));
     let preferences = TtsPreferences {
         secondary: Some(TtsSelection {
@@ -210,7 +210,7 @@ fn incompatible_book_language_keeps_piper_configured_and_uses_native_only_when_e
                     .iter()
                     .all(|voice| voice.engine == "system"));
                 let audio = fs::read(output.join(&manifest.chapters[0].filename)).unwrap();
-                assert!(platform_tts::validate_mp3(&audio).is_ok());
+                assert!(crate::pcm::validate_mp3(&audio).is_ok());
                 let spoken = spoken.lock().unwrap();
                 assert!(!spoken.is_empty());
                 assert!(spoken.iter().all(|actual| actual == language));

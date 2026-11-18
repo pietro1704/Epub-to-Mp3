@@ -131,15 +131,12 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeParse(inputPath: String): String?
     external fun nativeJobLog(jobId: String): String?
     external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
-    external fun nativeConvertStreaming(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
-    external fun nativeTtsModels(): String?
-    external fun nativeTtsCatalogV2(): String?
+    external fun nativeTtsCatalogV3(): String?
     external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?
     external fun nativeTtsInstalledReadyEngine(language: String, platform: String, androidApi: Int, installedModelIdsJson: String, readyModelIdsJson: String): String?
     external fun nativeTtsModelInstall(modelId: String, url: String, sha256: String, root: String): String?
     external fun nativeTtsModelInstallManifest(modelId: String, artifactsJson: String, root: String): String?
     external fun nativeTtsModelInstallCatalogManifest(modelId: String, root: String): String?
-    external fun nativePiperSynthesize(text: String, output: String): Boolean
     external fun nativeTtsModelMetadata(modelId: String, root: String): String?
     external fun nativeTtsModelRemove(modelId: String, root: String): Boolean
 

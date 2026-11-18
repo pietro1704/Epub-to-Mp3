@@ -127,8 +127,8 @@ fn listening_seek_during_provider_preparation_never_synthesizes_or_streams_old_t
 fn listening_publication_lease_preserves_previous_artifacts_on_seek_and_cancel() {
     let temporary = tempfile::tempdir().unwrap();
     let output = temporary.path().join("chapter.mp3");
-    let old = crate::platform_tts::encode_wav(&test_system_wav()).unwrap();
-    let new = crate::platform_tts::encode_wav(&test_system_wav_at_rate(24000)).unwrap();
+    let old = crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap();
+    let new = crate::pcm::encode_wav_mp3(&test_system_wav_at_rate(24000)).unwrap();
     ensure_chapter_audio(&output, "old", |pending| {
         fs::write(pending, &old)?;
         Ok(())
@@ -307,7 +307,7 @@ fn listening_control_holds_next_chapter_until_time_budget_and_rejects_unknown_ta
 }
 
 #[test]
-fn versioned_listening_rejects_uncaptured_legacy_selection_before_synthesis() {
+fn legacy_selection_is_captured_before_versioned_listening_synthesis() {
     struct Speech {
         control: ConversionControl,
         calls: Arc<AtomicUsize>,
@@ -359,16 +359,15 @@ fn versioned_listening_rejects_uncaptured_legacy_selection_before_synthesis() {
     request.input = input;
     request.tts_preferences = None;
     request.engine = Some("system".into());
-    assert!(
-        matches!(worker.run(request), Err(WorkerError::Unsupported(message))
-        if message.contains("requires captured TTS preferences"))
-    );
-    assert_eq!(calls.load(Ordering::Acquire), 0);
-    assert_eq!(chunks.load(Ordering::Acquire), 0);
+    let manifest = worker.run(request).unwrap();
+    assert_eq!(manifest.tts_preferences.unwrap().primary.engine, "system");
+    assert_eq!(manifest.chapters[0].text_offset, 9);
+    assert_eq!(calls.load(Ordering::Acquire), 1);
+    assert!(chunks.load(Ordering::Acquire) > 0);
 }
 
 #[test]
-fn manual_to_listening_requires_capture_without_publishing_or_retrying_old_audio() {
+fn migrated_manual_selection_retries_current_listening_range_without_stale_audio() {
     struct Speech {
         control: ConversionControl,
         calls: Arc<AtomicUsize>,
@@ -415,9 +414,6 @@ fn manual_to_listening_requires_capture_without_publishing_or_retrying_old_audio
     request.input = input;
     request.tts_preferences = None;
     request.engine = Some("system".into());
-    assert!(
-        matches!(worker.run(request), Err(WorkerError::Unsupported(message))
-        if message.contains("requires captured TTS preferences"))
-    );
-    assert_eq!(calls.load(Ordering::Acquire), 1);
+    assert!(matches!(worker.run(request), Err(WorkerError::Cancelled)));
+    assert_eq!(calls.load(Ordering::Acquire), 2);
 }

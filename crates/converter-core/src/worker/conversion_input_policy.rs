@@ -1,6 +1,14 @@
 use super::WorkerError;
-use crate::{config::AppConfig, piper};
+use crate::piper;
+use std::path::{Path, PathBuf};
 
+/// Where a job's request is persisted for restart, retry and in-place repair.
+pub(crate) fn persisted_request_path(jobs_dir: &Path, job_id: &str) -> PathBuf {
+    jobs_dir.join("requests").join(format!("{job_id}.json"))
+}
+
+/// Whether one `ConversionRequest::chapter_indices` selector names this chapter:
+/// its own index, or its zero-based source position (`position:N` or bare `N`).
 pub(super) fn chapter_selection_matches(value: &str, chapter_index: &str, position: usize) -> bool {
     value == chapter_index
         || value
@@ -25,24 +33,13 @@ pub(super) fn ensure_android_piper_runtime(
     status: piper::PiperRuntimeStatus,
 ) -> Result<(), WorkerError> {
     if !status.runtime_loaded || !status.abi_compatible {
-        return Err(WorkerError::Piper(
+        return Err(WorkerError::Piper(piper::PiperError::RuntimeUnavailable(
             "Embedded Piper runtime is unavailable or ABI-incompatible on Android".into(),
-        ));
+        )));
     }
     Ok(())
 }
 
-pub(super) fn select_engine(request: Option<&str>, config: &AppConfig) -> String {
-    match request
-        .unwrap_or(&config.engine)
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "piper" => "piper".into(),
-        "system" => "system".into(),
-        _ => "edge".into(),
-    }
-}
 pub(super) fn sanitize(value: &str) -> String {
     let mut s = value
         .chars()

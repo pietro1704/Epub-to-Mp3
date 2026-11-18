@@ -67,10 +67,18 @@ fn invalid_path_reports_error() {
 #[test]
 fn shared_model_catalog_and_default_engine_are_exposed() {
     unsafe {
-        let catalog = converter_tts_models_json();
+        let catalog = converter_tts_catalog_json_v3(
+            c"pt-BR".as_ptr(),
+            c"macos".as_ptr(),
+            0,
+            c"x86_64".as_ptr(),
+            c"".as_ptr(),
+            c"".as_ptr(),
+        );
         assert!(!catalog.is_null());
         let value = CStr::from_ptr(catalog).to_str().unwrap();
-        assert!(value.contains("kokoro-82m"));
+        assert!(value.contains("pt_BR-faber-medium"));
+        assert!(!value.contains("kokoro"));
         converter_string_free(catalog);
 
         let language = CString::new("pt-BR").unwrap();
@@ -84,11 +92,18 @@ fn shared_model_catalog_and_default_engine_are_exposed() {
 #[test]
 fn versioned_session_catalog_and_selection_reject_unknown_runtime_without_online_routing() {
     unsafe {
-        let catalog = converter_tts_catalog_json_v2();
+        let catalog = converter_tts_catalog_json_v3(
+            c"pt-BR".as_ptr(),
+            c"macos".as_ptr(),
+            0,
+            c"x86_64".as_ptr(),
+            c"".as_ptr(),
+            c"".as_ptr(),
+        );
         let value: serde_json::Value =
             serde_json::from_str(CStr::from_ptr(catalog).to_str().unwrap()).unwrap();
         converter_string_free(catalog);
-        assert_eq!(value["version"], 2);
+        assert_eq!(value["schema_version"], 3);
         assert_eq!(value["default_selection"]["model_id"], "pt_BR-faber-medium");
         let primary = converter_core::tts_preferences::TtsSelection::default();
         let session = converter_core::tts_session::SessionSelection::from_legacy(&primary).unwrap();
@@ -117,7 +132,7 @@ fn versioned_session_catalog_and_selection_reject_unknown_runtime_without_online
 }
 
 #[test]
-fn versioned_model_catalog_v3_projects_offline_state_and_preserves_v2() {
+fn versioned_model_catalog_v3_separates_descriptors_from_offline_inspection() {
     let root = tempfile::tempdir().unwrap();
     let marker = root.path().join("preserved.txt");
     std::fs::write(&marker, b"preserve").unwrap();
@@ -156,11 +171,43 @@ fn versioned_model_catalog_v3_projects_offline_state_and_preserves_v2() {
         assert_eq!(placeholder["distribution"]["installable"], false);
         assert_eq!(placeholder["selection"]["selectable"], false);
 
-        let legacy = converter_tts_catalog_json_v2();
-        let legacy_value: serde_json::Value =
-            serde_json::from_str(CStr::from_ptr(legacy).to_str().unwrap()).unwrap();
-        converter_string_free(legacy);
-        assert_eq!(legacy_value["version"], 2);
+        let descriptors = converter_tts_catalog_json_v3(
+            c"pt-BR".as_ptr(),
+            c"macos".as_ptr(),
+            0,
+            c"x86_64".as_ptr(),
+            c"".as_ptr(),
+            c"".as_ptr(),
+        );
+        assert!(!descriptors.is_null());
+        let descriptor_value: serde_json::Value =
+            serde_json::from_str(CStr::from_ptr(descriptors).to_str().unwrap()).unwrap();
+        converter_string_free(descriptors);
+        let entries = descriptor_value["entries"].as_array().unwrap();
+        for model in converter_core::model_catalog::MODELS {
+            let entry = entries
+                .iter()
+                .find(|entry| entry["identity"]["model_id"] == model.id)
+                .unwrap();
+            assert_eq!(
+                entry["compatibility"]["platforms"],
+                serde_json::json!(model.platforms)
+            );
+            assert_eq!(
+                entry["compatibility"]["minimum_android_api"],
+                serde_json::json!(model.minimum_android_api)
+            );
+            assert_eq!(
+                entry["compatibility"]["runtime_available"],
+                model.runtime_available
+            );
+            assert_eq!(
+                entry["distribution"]["artifacts"],
+                serde_json::json!(model.artifacts)
+            );
+            assert_eq!(entry["installation"]["state"], "not_inspected");
+            assert_eq!(entry["readiness"]["state"], "not_inspected");
+        }
     }
     assert_eq!(std::fs::read(marker).unwrap(), b"preserve");
 }
@@ -225,11 +272,11 @@ fn explicit_model_probe_does_not_load_or_create_missing_models() {
 
 #[test]
 fn ready_model_selection_requires_runtime_verified_ids() {
-    let language = CString::new("en-US").unwrap();
+    let language = CString::new("pt-BR").unwrap();
     let platform = CString::new("macos").unwrap();
-    let installed = CString::new(r#"["kokoro-82m"]"#).unwrap();
+    let installed = CString::new(r#"["pt_BR-faber-medium"]"#).unwrap();
     let not_ready = CString::new("[]").unwrap();
-    let ready = CString::new(r#"["kokoro-82m"]"#).unwrap();
+    let ready = CString::new(r#"["pt_BR-faber-medium"]"#).unwrap();
     unsafe {
         let engine = converter_tts_installed_ready_engine(
             language.as_ptr(),
@@ -248,14 +295,14 @@ fn ready_model_selection_requires_runtime_verified_ids() {
             installed.as_ptr(),
             ready.as_ptr(),
         );
-        assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "kokoro");
+        assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "piper");
         converter_string_free(engine);
     }
 }
 
 #[test]
 fn manifest_rejects_invalid_json_before_network_access() {
-    let model = CString::new("kokoro-82m").unwrap();
+    let model = CString::new("pt_BR-faber-medium").unwrap();
     let artifacts = CString::new("not-json").unwrap();
     let root = tempfile::tempdir().unwrap();
     let root = CString::new(root.path().to_str().unwrap()).unwrap();
@@ -307,4 +354,42 @@ fn valid_session_returns_metadata_json() {
         converter_string_free(metadata);
         converter_session_free(handle);
     }
+}
+
+#[test]
+fn versioned_conversion_rejects_missing_capture_before_creating_a_job() {
+    let book = fixture();
+    let root = tempfile::tempdir().unwrap();
+    let input = CString::new(book.path().to_str().unwrap()).unwrap();
+    let output = CString::new(root.path().join("invalid-capture").to_str().unwrap()).unwrap();
+    let job = CString::new("invalid-capture").unwrap();
+    let options = CString::new(r#"{"contract_version":2,"language":"pt-BR"}"#).unwrap();
+    unsafe {
+        let session = converter_session_open(input.as_ptr());
+        assert!(!session.is_null());
+        let control = converter_job_control_create();
+        let result = converter_session_convert_streaming_job_options_json_v1(
+            session,
+            output.as_ptr(),
+            job.as_ptr(),
+            options.as_ptr(),
+            0,
+            -1,
+            None,
+            None,
+            None,
+            ptr::null_mut(),
+            control,
+        );
+        assert!(result.is_null());
+        let error = converter_last_error();
+        assert_eq!(
+            CStr::from_ptr(error).to_str().unwrap(),
+            "Version 2 requires captured TTS preferences"
+        );
+        converter_string_free(error);
+        converter_job_control_free(control);
+        converter_session_free(session);
+    }
+    assert!(!root.path().join(".jobs/invalid-capture.json").exists());
 }

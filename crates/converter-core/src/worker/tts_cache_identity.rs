@@ -9,7 +9,9 @@ impl ConversionWorker {
         language: Option<&str>,
         base_request_key: &str,
     ) -> Result<String, WorkerError> {
-        preferences.validate(language).map_err(WorkerError::Piper)?;
+        preferences
+            .validate(language)
+            .map_err(WorkerError::InvalidSelection)?;
         let mut identities = Vec::new();
         for selection in std::iter::once(&preferences.primary).chain(preferences.secondary.iter()) {
             let session = crate::tts_session::SessionSelection::from_legacy(selection)
@@ -72,38 +74,7 @@ impl ConversionWorker {
                 );
                 continue;
             }
-            if selection.engine == "kokoro" {
-                let root = request
-                    .models_root
-                    .as_ref()
-                    .unwrap_or(&self.config.paths.piper_models_dir)
-                    .join(selection.model_id.as_deref().unwrap_or("kokoro-82m"));
-                let installed = super::kokoro_model_identity::validate_provenance(
-                    &root,
-                    selection.model_id.as_deref().unwrap_or("kokoro-82m"),
-                )
-                .and_then(|_| {
-                    super::kokoro_model_identity::extracted_identity(
-                        &root,
-                        cfg!(feature = "kokoro-sherpa-runtime"),
-                    )
-                });
-                match installed {
-                    Ok(artifacts) => identities
-                        .push(serde_json::to_string(&artifacts).map_err(cache::CacheError::from)?),
-                    Err(error)
-                        if preferences.continues_native() || selection != &preferences.primary =>
-                    {
-                        identities.push(format!("unavailable:{error}"));
-                    }
-                    Err(error) => return Err(error),
-                }
-                identities.push(format!(
-                    "unverified-extraction:{}:{:032x}",
-                    request.job_id,
-                    rand::random::<u128>()
-                ));
-            } else if selection.engine != "piper" {
+            if selection.engine != "piper" {
                 if let Some(id) = &selection.model_id {
                     let manifest = crate::model_store::ModelStore::catalog_manifest(id)
                         .map_err(|error| WorkerError::Unsupported(error.to_string()))?;
@@ -138,11 +109,15 @@ impl ConversionWorker {
                         identities.push(format!("missing:{id}"));
                         continue;
                     }
-                    return Err(WorkerError::Piper(format!("Piper model {id} is not installed. Install it in Models or run models install {id}.")));
+                    return Err(WorkerError::Piper(if !model.is_file() {
+                        crate::piper::PiperError::MissingModel(model)
+                    } else {
+                        crate::piper::PiperError::MissingConfig(config)
+                    }));
                 }
                 // Validate before cache/recovery can bypass provider preparation.
                 crate::piper::validate_model_file_quality(&model, &config)
-                    .map_err(|error| WorkerError::Piper(error.to_string()))?;
+                    .map_err(WorkerError::Piper)?;
                 identities.push(cache::sha256_file(model)?);
 
                 identities.push(cache::sha256_file(config)?);
