@@ -31,7 +31,10 @@ impl TtsPreferences {
             // Preserve occasional native recovery only for an explicitly selected
             // legacy Edge primary with an installed adapter. This grants no online fallback.
             secondary: (engine == "edge" && edge_system_fallback).then(|| TtsSelection {
-                engine: "system".into(), model_id: None, voice: None, session: None,
+                engine: "system".into(),
+                model_id: None,
+                voice: None,
+                session: None,
             }),
             ..Self::default()
         };
