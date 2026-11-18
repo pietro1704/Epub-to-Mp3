@@ -9,7 +9,7 @@ safety gate remain defined in [execution policy](execution-policy.md).
 | --- | --- | --- |
 | `inspect` | Read source/toolchain identity and an existing build receipt | None |
 | `package` | Copy the embedded FFI into a disposable fixture, run the actual ONNX bundler and verify signatures and unchanged originals | None |
-| `build` | Generate the project and incrementally build the macOS app in the explicit existing DerivedData directory | Guarded, one job; no Rust task dependency |
+| `build` | Generate the project and incrementally build the macOS app in the selected DerivedData directory | Guarded, one job; no Rust task dependency |
 | `gui` | Check the matching receipt, signature and native preflight, then open the existing app normally | None |
 
 For a linked checkout with the usable native cache, pass `--checkout PATH`.

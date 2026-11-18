@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "optparse"
+require "json"
 require "rbconfig"
 require_relative "native_build_preflight"
 require_relative "mac_build_budget"
@@ -13,6 +14,7 @@ module NativeJob
   CHILD_FD = 9
   FD_ENV = "EPUB_NATIVE_LEASE_FD"
   PATH_ENV = "EPUB_NATIVE_LEASE_PATH"
+  BUILD_DIRS_ENV = "EPUB_NATIVE_BUILD_DIRECTORIES"
 
   # Forward only the authenticated lease when a Ruby driver starts another
   # guarded driver. Explicit mapping preserves it even with close_others:true.
@@ -26,12 +28,20 @@ module NativeJob
   # Ruby build drivers call this before preparation or compiler work. The first
   # invocation becomes a supervised child; that child validates its real inherited
   # lease and rechecks host state without opening a second independent lock.
-  def self.build_entrypoint(file, arguments = [])
+  def self.build_entrypoint(file, arguments = [], build_dir: nil)
+    command = [RbConfig.ruby, File.expand_path(file), *arguments]
     unless ENV[FD_ENV] || ENV[PATH_ENV]
-      exit run(phase: "build", command: [RbConfig.ruby, File.expand_path(file), *arguments])
+      exit run(phase: "build", command: command, build_dir: build_dir)
     end
     lease(LOCK_PATH)
-    error = NativeBuildPreflight.check || MacBuildBudget.check
+    destinations = build_directories([], build_dir, inherited: true)
+    monitored = JSON.parse(ENV.fetch(BUILD_DIRS_ENV, "[]"))
+    # An outer driver may supervise a different output volume. Keep its lease
+    # and add a supervisor for this driver's outputs until this child exits.
+    unless (destinations - monitored).empty?
+      exit run(phase: "build", command: command, build_dir: destinations)
+    end
+    error = NativeBuildPreflight.check || MacBuildBudget.check(*destinations)
     if error
       warn error
       exit 75
@@ -99,7 +109,43 @@ module NativeJob
     nil
   end
 
-  def self.run(phase:, command:, path: LOCK_PATH)
+  def self.option_path(arguments, name)
+    arguments.each_with_index do |part, index|
+      return arguments.fetch(index + 1) if part == name
+      return part.delete_prefix(name + "=") if part.start_with?(name + "=")
+    end
+    nil
+  end
+
+  def self.build_directories(command, explicit, inherited:)
+    return Array(explicit).map { |dir| File.expand_path(dir) }.uniq unless Array(explicit).empty?
+
+    index = command.index { |part| %w[cargo xcodebuild swift].include?(File.basename(part)) }
+    if index
+      # mise -C changes the compiler's working directory before it starts.
+      cwd = Dir.pwd
+      prefix = command.take(index)
+      mise = prefix.index { |part| File.basename(part) == "mise" }
+      cwd = option_path(prefix.drop(mise + 1), "-C") || cwd if mise
+      args = command.drop(index + 1).take_while { |arg| arg != "--" }
+      directory = case File.basename(command[index])
+                  when "cargo"
+                    option_path(args, "--target-dir") || ENV["CARGO_TARGET_DIR"] || ENV["CARGO_BUILD_TARGET_DIR"] ||
+                      File.join(MacBuildBudget::ROOT, "target")
+                  when "xcodebuild"
+                    option_path(args, "-derivedDataPath") || ENV["APPLE_DERIVED_DATA_PATH"]
+                  when "swift"
+                    option_path(args, "--scratch-path") ||
+                      (File.join(option_path(args, "--package-path") || ".", ".build") if %w[build run test].include?(args.first))
+                  end
+      return [File.expand_path(directory, cwd)] if directory && !directory.empty?
+    end
+    return JSON.parse(ENV.fetch(BUILD_DIRS_ENV)) if inherited && ENV[BUILD_DIRS_ENV]
+
+    [Dir.pwd]
+  end
+
+  def self.run(phase:, command:, path: LOCK_PATH, build_dir: nil)
     # Recurrent IGGuC.cpp:2913 panics occurred inside SimMetalHost on this
     # Intel host. A lease cannot make the GPU driver safe. Keep Simulator
     # execution quarantined; neither inherited leases nor environment flags
@@ -115,7 +161,8 @@ module NativeJob
     path = File.expand_path(path)
     handle, inherited = lease(path)
     if phase == "build"
-      error = NativeBuildPreflight.check || MacBuildBudget.check
+      destinations = build_directories(command, build_dir, inherited: inherited)
+      error = NativeBuildPreflight.check || MacBuildBudget.check(*destinations)
       if error
         warn error
         return 75
@@ -126,6 +173,7 @@ module NativeJob
     %w[INT TERM HUP].each { |name| previous[name] = Signal.trap(name) { signal ||= name } }
     environment = { FD_ENV => CHILD_FD.to_s, PATH_ENV => path,
                     "CARGO_BUILD_JOBS" => "1", "CMAKE_BUILD_PARALLEL_LEVEL" => "1" }
+    environment[BUILD_DIRS_ENV] = JSON.generate(destinations) if destinations
     pid = Process.spawn(environment, [command.first, command.first], *command.drop(1), CHILD_FD => handle, pgroup: true)
     status = nil
     cancelled_at = nil
@@ -135,7 +183,7 @@ module NativeJob
     until status
       now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       if phase == "build" && now >= next_storage_check && !storage_error
-        storage_error = MacBuildBudget.check
+        storage_error = MacBuildBudget.check(*destinations)
         if storage_error
           warn storage_error
           signal ||= "TERM"
@@ -173,9 +221,10 @@ module NativeJob
   end
 
   def self.main(arguments)
-    options = { path: LOCK_PATH }
+    options = { path: LOCK_PATH, build_dir: [] }
     parser = OptionParser.new do |opts|
-      opts.banner = "Usage: native_job.rb [--lock-path PATH] build|simulator -- COMMAND [ARGS]"
+      opts.banner = "Usage: native_job.rb [--lock-path PATH] [--build-dir PATH] build|simulator -- COMMAND [ARGS]"
+      opts.on("--build-dir PATH") { |value| options[:build_dir] << value }
       # Explicit fixture isolation; production callers always use LOCK_PATH.
       opts.on("--lock-path PATH") { |value| options[:path] = value }
     end

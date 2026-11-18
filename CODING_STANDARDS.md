@@ -91,7 +91,7 @@ Continue from that evidence. Repeat a state query only after changed evidence
 unchanged state alone does not justify another polling loop or a duplicate run.
 
 Reuse valid incremental artifacts when compatible and report cache reuse.
-Respect the shared build-storage budget. Before cleanup, verify ownership,
+Check free space on the build host’s output volume. Before cleanup, verify ownership,
 tracked status, active processes, and whether the target is a release artifact.
 Preserve inputs, models, .cache/, and output/ unless cleanup is authorized.
 Report retained/removed temporary artifacts after a build/test cycle.

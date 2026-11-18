@@ -68,6 +68,8 @@ class MacValidateTest < Minitest::Test
   def test_debug_build_produces_a_signed_receipt_that_can_launch
     File.write(File.join(@bin, 'xcodegen'), "#!/bin/sh\nexit 0\n")
     File.chmod(0o755, File.join(@bin, 'xcodegen'))
+    FileUtils.remove_entry(@derived)
+    @environment['MAC_VALIDATE_TEST_EXECUTABLE'] = File.join(@app, 'Contents/MacOS/EpubToMp3')
     signature = File.join(@app, 'Contents', 'debug-signature-fixture')
     @environment['MAC_VALIDATE_TEST_SIGNATURE'] = signature
     File.write(File.join(@bin, 'xcodebuild'), <<~SH)
@@ -84,6 +86,8 @@ class MacValidateTest < Minitest::Test
         esac
       done
       [ "$allowed$identity$required$entitlements" = 1111 ] || exit 65
+      mkdir -p "$(dirname "$MAC_VALIDATE_TEST_EXECUTABLE")"
+      echo app > "$MAC_VALIDATE_TEST_EXECUTABLE"
       echo signed > "$MAC_VALIDATE_TEST_SIGNATURE"
     SH
     File.write(File.join(@bin, 'codesign'), "#!/bin/sh\ntest -f \"$MAC_VALIDATE_TEST_SIGNATURE\"\n")
@@ -206,6 +210,7 @@ class MacValidateTest < Minitest::Test
           NativeJob.define_singleton_method(:run, original)
         end
         assert_equal 'build', captured.fetch(:phase)
+        assert_equal @derived, captured.fetch(:build_dir)
         assert_equal '_build', captured.fetch(:command)[2]
         assert_equal [File.realpath(@root), @derived, 'Debug'], captured.fetch(:command).drop(3)
         refute File.exist?(File.join(@derived, 'mac-validation-Debug.json'))

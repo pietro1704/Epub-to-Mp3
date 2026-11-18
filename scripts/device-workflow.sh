@@ -35,7 +35,7 @@ build_native() {
 
 case "$ACTION" in
   prepare)
-    mise exec -- ruby "$ROOT/scripts/native_job.rb" build -- bash -euo pipefail -s -- "$ROOT" "$CACHE" "$RECEIPT_RUBY" <<'PREPARE'
+    mise exec -- ruby "$ROOT/scripts/native_job.rb" --build-dir "$CACHE" build -- bash -euo pipefail -s -- "$ROOT" "$CACHE" "$RECEIPT_RUBY" <<'PREPARE'
 root="$1"
 cache="$2"
 receipt_ruby="$3"

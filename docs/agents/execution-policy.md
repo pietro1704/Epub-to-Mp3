@@ -63,13 +63,13 @@ inside a project command; inspect the global selection with
 
 Every Mac compiler invocation, including bootstrap/interpreter compilation, uses
 `scripts/native_job.rb build` through its guarded project task with one compiler
-job. Its shared storage policy is `config/mac-build-budget.json`: at least
-20 GiB free, at most 12 GiB of project build caches across linked worktrees,
-checked every 10 seconds while running. Inspect `mise run build:storage` before
-creating another cache. A refusal cannot be bypassed with direct compilers or
-flags. `mise run clean:build` removes only superseded project DerivedData under
-the shared lease; preserve usable artifacts and all user/evidence data. Changes
-to enforcement require `mise run build:storage:test`.
+job. Mac and Arch use the free-space floor in `config/mac-build-budget.json`
+on the volume receiving build outputs (20 GiB by default). Check the
+destination with `mise run build:storage -- /path/to/output`. The supervisor
+rechecks available space every 10 seconds. A storage refusal requires restoring
+free space or selecting a build volume with enough capacity. Keep compatible
+caches across worktrees. When cleanup is needed, `mise run clean:build` removes only superseded Mac DerivedData
+under the shared lease. Verify changes with `mise run build:storage:test`.
 
 Generic Intel Simulator execution remains quarantined after recurrent
 `SimMetalHost` / `IGGuC.cpp:2913` kernel panics. `native_job.rb simulator` refuses

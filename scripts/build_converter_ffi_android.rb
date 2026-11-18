@@ -1,14 +1,16 @@
 #!/usr/bin/env ruby
 # Build the shared Piper/JNI artifact under the existing native-work lease.
 require_relative 'native_job'
-NativeJob.build_entrypoint(__FILE__, ARGV)
+root = File.expand_path('..', __dir__)
+build_root = File.join(root, 'target', 'piper-android')
+data_root = File.join(root, 'target', 'espeak-data')
+NativeJob.build_entrypoint(__FILE__, ARGV, build_dir: [build_root, data_root])
 require 'digest'
 require 'json'
 require 'rbconfig'
 require 'fileutils'
 require_relative 'fetch_onnxruntime_android'
 
-root = File.expand_path('..', __dir__)
 Dir.chdir(root)
 ort_directory = AndroidOnnxRuntime.ensure_runtime(already_locked: true)
 host = case RbConfig::CONFIG['host_os']
@@ -21,7 +23,6 @@ toolchain = File.join(ndk, 'toolchains', 'llvm', 'prebuilt', host)
 clang = File.join(toolchain, 'bin', 'aarch64-linux-android24-clang')
 abort "Install the Android NDK first: #{clang}" unless File.executable?(clang)
 target = 'aarch64-linux-android'
-build_root = File.join(root, 'target', 'piper-android')
 # mise may put a standalone rustc before rustup's proxies. Match cargo and rustc
 # explicitly so cross-target standard libraries come from the same toolchain.
 sysroot = IO.popen(['mise', 'exec', '--', 'rustc', '--print', 'sysroot'], &:read).strip
@@ -29,7 +30,7 @@ abort 'Could not resolve the project Rust compiler' unless $?.success? && File.e
 # Host tools create architecture-independent phonemizer data; never run target ELF tools on the Mac.
 data_env = %w[SDKROOT CC CXX AR CFLAGS CXXFLAGS CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_MAKE_PROGRAM ORT_LIB_LOCATION ORT_IOS_LINK BINDGEN_EXTRA_CLANG_ARGS CARGO_ENCODED_RUSTFLAGS].to_h { |key| [key, nil] }
 data_env['RUSTC'] = File.join(sysroot, 'bin', 'rustc')
-exit($?.exitstatus || 1) unless system(data_env, 'mise', 'exec', '--', 'cargo', 'build', '-p', 'espeak-rs-sys', '--features', 'compile-espeak-intonations', '--target-dir', 'target/espeak-data', '--jobs', '1', **NativeJob.child_options)
+exit($?.exitstatus || 1) unless system(data_env, 'mise', 'exec', '--', 'cargo', 'build', '-p', 'espeak-rs-sys', '--features', 'compile-espeak-intonations', '--target-dir', data_root, '--jobs', '1', **NativeJob.child_options)
 environment = data_env.merge(
   'ANDROID_NDK_HOME' => ndk, 'ANDROID_NDK_ROOT' => ndk,
   'PATH' => "#{File.join(toolchain, 'bin')}:#{ENV.fetch('PATH')}",

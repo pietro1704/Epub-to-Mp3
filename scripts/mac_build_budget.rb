@@ -20,7 +20,7 @@ module MacBuildBudget
   def self.policy
     value = JSON.parse(File.read(POLICY))
     raise "Invalid build budget version" unless value["version"] == 1
-    %w[minimum_free_gib maximum_cache_gib check_interval_seconds].each do |key|
+    %w[minimum_free_gib check_interval_seconds].each do |key|
       raise "Invalid build budget #{key}" unless value[key].is_a?(Integer) && value[key].positive?
     end
     value
@@ -48,64 +48,49 @@ module MacBuildBudget
     end
   end
 
-  def self.disk_usage(paths)
-    identities = paths.to_h do |path|
-      stat = File.lstat(path)
-      raise "Cache root is not a directory" unless stat.directory?
-      [path, [stat.dev, stat.ino]]
-    end
-    output, error, status = Open3.capture3("du", "-sk", *paths)
-    rows = output.lines.map { |line| line.chomp.split("\t", 2) }
-    complete = rows.length == paths.length && rows.map(&:last).uniq.length == paths.length &&
-               rows.all? { |quantity, path| quantity.match?(/\A\d+\z/) && paths.include?(path) }
-    raise "Incomplete cache disk-usage summaries" unless complete
-    unchanged = paths.all? do |path|
-      stat = File.lstat(path)
-      stat.directory? && [stat.dev, stat.ino] == identities.fetch(path)
-    end
-    raise "Cache root identity changed during inspection" unless unchanged
-    unless status.success?
-      # A compiler may unlink its temporary child during traversal. Accept only
-      # vanished descendants with complete summaries for unchanged cache roots.
-      errors = error.lines.map(&:chomp)
-      vanished = status.exitstatus == 1 && !errors.empty? && errors.all? do |line|
-        match = line.match(/\Adu: (.+): No such file or directory\z/)
-        next false unless match
-        child = match[1]
-        File.expand_path(child) == child && paths.any? { |path| child.start_with?(path + "/") } &&
-          !File.exist?(child) && !File.symlink?(child)
-      end
-      raise "du inspection failed: #{error.strip}" unless vanished
-    end
-    rows.sum { |quantity, _| Integer(quantity) * 1024 }
+  def self.build_host?(host = RUBY_PLATFORM, arch_release: "/etc/arch-release")
+    host.include?("darwin") || (host.include?("linux") && File.file?(arch_release))
   end
 
-  def self.metrics
-    free = Integer(capture("df", "-Pk", ROOT).lines.last.split.fetch(3)) * 1024
-    paths = worktrees.flat_map do |root|
-      [File.join(root, "target"), *Dir.glob(File.join(root, ".build*")),
-       *Dir.glob(File.join(root, "ios/EpubToMp3/.build*"))]
+  # A compiler can create its output tree after admission. Its nearest existing
+  # directory already identifies the receiving volume, including symlink targets.
+  def self.metrics(destination = ROOT)
+    raise "Empty build destination" if destination.empty?
+    path = File.expand_path(destination)
+    ancestor = path
+    loop do
+      File.lstat(ancestor)
+      break
+    rescue Errno::ENOENT
+      ancestor = File.dirname(ancestor)
     end
-    paths = (paths + xcode_caches).select { |path| File.directory?(path) }.map { |path| File.realpath(path) }.uniq
-    used = paths.empty? ? 0 : disk_usage(paths)
-    { free_bytes: free, cache_bytes: used, paths: paths }
+    ancestor = File.realpath(ancestor)
+    raise "Build destination is not a directory: #{ancestor}" unless File.directory?(ancestor)
+    row = capture("df", "-Pk", ancestor).lines.last.to_s
+    available = row.match(/\A.+?\s+\d+\s+\d+\s+(-?\d+)\s+\d+%\s+/)
+    raise "Missing available space for #{ancestor}" unless available
+    { destination: path, measured_path: ancestor, free_bytes: available[1].to_i * 1024 }
   end
 
-  def self.evaluate(limits, free_bytes:, cache_bytes:, **)
-    return "Free disk below #{limits.fetch('minimum_free_gib')} GiB; build blocked." if free_bytes < limits.fetch("minimum_free_gib") * GIB
-    return "Project build caches exceed #{limits.fetch('maximum_cache_gib')} GiB; build blocked. Inspect build:storage before pruning obsolete caches." if cache_bytes > limits.fetch("maximum_cache_gib") * GIB
+  def self.evaluate(limits, free_bytes:, destination:, **)
+    floor = limits.fetch("minimum_free_gib")
+    "Free disk below #{floor} GiB at #{destination}; build blocked." if free_bytes < floor * GIB
+  end
+
+  def self.check(*destinations, host: RUBY_PLATFORM)
+    return unless build_host?(host)
+    limits = policy
+    (destinations.empty? ? [ROOT] : destinations).each do |destination|
+      error = evaluate(limits, **metrics(destination))
+      return error if error
+    end
     nil
-  end
-
-  def self.check(host: RUBY_PLATFORM)
-    return nil unless host.include?("darwin")
-    evaluate(policy, **metrics)
   rescue StandardError => error
     "Build storage inspection failed (#{error.class}: #{error.message}); build blocked."
   end
 
   def self.interval(host: RUBY_PLATFORM)
-    host.include?("darwin") ? policy.fetch("check_interval_seconds") : 10
+    build_host?(host) ? policy.fetch("check_interval_seconds") : 10
   end
 
   def self.prune(lock: LOCK)
@@ -124,20 +109,25 @@ module MacBuildBudget
   end
 
   def self.main(arguments)
-    if arguments == ["check"]
-      error = check
+    command, *destinations = arguments
+    case command
+    when "check"
+      error = check(*destinations)
       warn error if error
       return error ? 75 : 0
-    end
-    raise "Mac build storage commands require macOS" unless RUBY_PLATFORM.include?("darwin")
-    case arguments
-    when ["status"]
+    when "status"
+      raise "Build storage status requires macOS or Arch Linux" unless build_host?
       limits = policy
-      snapshot = metrics
-      puts JSON.pretty_generate({ policy: limits, **snapshot, blocked: evaluate(limits, **snapshot) })
-    when ["prune"] then prune
-    when ["prune-if-low"] then prune if metrics.fetch(:free_bytes) < policy.fetch("minimum_free_gib") * GIB
-    else raise "Usage: mac_build_budget.rb check|status|prune|prune-if-low"
+      destinations = [ROOT] if destinations.empty?
+      snapshots = destinations.map { |path| metrics(path) }
+      details = snapshots.one? ? snapshots.first : { destinations: snapshots }
+      blocked = snapshots.lazy.map { |snapshot| evaluate(limits, **snapshot) }.find(&:itself)
+      puts JSON.pretty_generate({ policy: limits, **details, blocked: blocked })
+    when "prune", "prune-if-low"
+      raise "Cleanup requires macOS" unless RUBY_PLATFORM.include?("darwin")
+      raise "Cleanup does not accept a destination" unless destinations.empty?
+      prune if command == "prune" || metrics.fetch(:free_bytes) < policy.fetch("minimum_free_gib") * GIB
+    else raise "Usage: mac_build_budget.rb check|status [DIRECTORY ...] | prune|prune-if-low"
     end
     0
   rescue StandardError => error

@@ -24,8 +24,14 @@ class DeviceWorkflowEntrypointTest < Minitest::Test
       printf 'mise' >> "$TEST_TRACE"
       printf ' <%s>' "$@" >> "$TEST_TRACE"
       printf '\n' >> "$TEST_TRACE"
-      [[ "$1" == exec && "$2" == -- && "$3" == ruby && "$4" == "$DEVICE_WORKFLOW_ROOT/scripts/native_job.rb" && "$5" == build && "$6" == -- ]] || exit 98
-      shift 6
+      [[ "$1" == exec && "$2" == -- && "$3" == ruby && "$4" == "$DEVICE_WORKFLOW_ROOT/scripts/native_job.rb" ]] || exit 98
+      shift 4
+      if [[ "$1" == --build-dir ]]; then
+        [[ "$2" == "$DEVICE_WORKFLOW_CACHE" ]] || exit 98
+        shift 2
+      fi
+      [[ "$1" == build && "$2" == -- ]] || exit 98
+      shift 2
       if [[ "$1" == bash ]]; then
         [[ "$2" == -euo && "$3" == pipefail && "$4" == -s && "$5" == -- && "$6" == "$DEVICE_WORKFLOW_ROOT" && "$7" == "$DEVICE_WORKFLOW_CACHE" && "$8" == "$DEVICE_WORKFLOW_RUBY" && "$#" == 8 ]] || exit 98
       else
