@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import '../models/job_snapshot.dart';
@@ -37,6 +38,37 @@ abstract class AudioPlayerInterface {
       ? PlaybackPhase.paused
       : PlaybackPhase.idle;
   Stream<PlaybackPhase> get phases => playing.map((_) => phase);
+
+  /// Emits whenever an observable playback value changes: phase, position or
+  /// queue index. Playback observers subscribe here instead of wiring those
+  /// source streams themselves, so the change definition has one owner.
+  Stream<void> get stateChanges {
+    final subscriptions = <StreamSubscription<dynamic>>[];
+    late final StreamController<void> controller;
+    controller = StreamController<void>(
+      sync: true,
+      onListen: () {
+        final sources = <Stream<dynamic>>[phases, position, currentIndex];
+        for (final source in sources) {
+          subscriptions.add(
+            source.listen(
+              (_) => controller.add(null),
+              onError: controller.addError,
+            ),
+          );
+        }
+      },
+      onCancel: () async {
+        final active = List.of(subscriptions);
+        subscriptions.clear();
+        for (final subscription in active) {
+          await subscription.cancel();
+        }
+      },
+    );
+    return controller.stream;
+  }
+
   Stream<Duration> get position;
   Stream<bool> get playing;
   bool get isPlaying;

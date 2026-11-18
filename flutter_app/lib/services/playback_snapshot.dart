@@ -70,14 +70,12 @@ class PlaybackSnapshot {
 /// Single source of truth for playback UI and system integrations.
 class PlaybackCoordinator {
   PlaybackCoordinator(this.player) {
-    _subscriptions.add(player.phases.listen((_) => _publish()));
-    _subscriptions.add(player.position.listen((_) => _publish()));
-    _subscriptions.add(player.currentIndex.listen((_) => _publish()));
+    _changes = player.stateChanges.listen((_) => _publish());
     _publish();
   }
 
   final AudioPlayerInterface player;
-  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  late final StreamSubscription<void> _changes;
   final _controller = StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot _snapshot = const PlaybackSnapshot.initial();
   bool _disposed = false;
@@ -145,9 +143,7 @@ class PlaybackCoordinator {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    for (final subscription in _subscriptions) {
-      await subscription.cancel();
-    }
+    await _changes.cancel();
     await _controller.close();
   }
 }
