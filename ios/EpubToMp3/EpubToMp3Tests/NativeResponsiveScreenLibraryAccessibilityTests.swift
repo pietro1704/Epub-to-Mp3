@@ -87,13 +87,13 @@ extension NativeResponsiveScreenTests {
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "edge")
 
-        let captured = settings.conversionOptions
+        let captured = NarrationConversionOptions.current(for: settings.ttsPreferences)
         secondary.selectItem(withTitle: "Piper")
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.secondary?.engine, "edge")
         XCTAssertEqual(secondary.titleOfSelectedItem, "Edge")
         // The captured job keeps its own (catalog-captured) preferences.
-        XCTAssertEqual(settings.conversionOptions.ttsPreferences, captured.ttsPreferences)
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences, captured.ttsPreferences)
         secondary.selectItem(withTitle: L10n.string("settings.noSecondary"))
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         XCTAssertNil(AppSettings(defaults: defaults).ttsPreferences.secondary)
