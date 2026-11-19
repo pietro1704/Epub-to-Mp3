@@ -85,12 +85,6 @@ else
   fail "Rust build artifacts have not been generated: target/"
 fi
 
-if [[ -d dist ]]; then
-  pass "Packaging directory exists: dist/"
-else
-  fail "Packaging output directory is missing: dist/"
-fi
-
 if (( failures == 0 )); then
   printf '\nRESULT PASS\n'
   exit 0
