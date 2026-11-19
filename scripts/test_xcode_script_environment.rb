@@ -34,8 +34,16 @@ class XcodeScriptEnvironmentTest < Minitest::Test
       candidate = File.read(spec)
       generated = generate(project)
       phases = generated.fetch('objects').select { |_id, object| object['isa'] == 'PBXShellScriptBuildPhase' }
-      assert_equal 4, phases.size
+      assert_equal 5, phases.size
       phases.each_value { |phase| assert_equal '0', phase['showEnvVarsInLog'].to_s }
+      # The local-dev replacement must precede the checks that inspect the
+      # embedded converter, so they verify the bytes actually shipped locally.
+      names = generated.fetch('objects').values.find { |object| object['isa'] == 'PBXNativeTarget' && object['name'] == 'EpubToMp3' }
+                       .fetch('buildPhases').map { |id| generated.fetch('objects').fetch(id)['name'] }.compact
+      local = names.index('Use local-dev Rust library for local Debug macOS')
+      refute_nil local
+      assert_operator local, :<, names.index('Verify macOS Rust packaging')
+      assert_operator local, :<, names.index('Bundle linked ONNX Runtime')
 
       File.write(spec, candidate.gsub(/^\s+showEnvVars: false\n/, ''))
       original = generate(project)

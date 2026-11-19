@@ -324,6 +324,23 @@ class MacBuildBudgetTest < Minitest::Test
     end
   end
 
+  def test_cleanup_never_removes_shared_rust_outputs
+    # A cold release converter-ffi rebuild takes about 11 minutes on the Intel
+    # Mac; cleanup must keep both the release and the local-dev dylibs.
+    libraries = %w[target/release/libconverter_ffi.dylib target/local-dev/release/libconverter_ffi.dylib].map do |relative|
+      path = File.join(@dir, relative)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, "dylib")
+      path
+    end
+    with_stub(:worktrees, [@dir]) do
+      with_stub(:xcode_caches, []) do
+        with_stub(:capture, "") { MacBuildBudget.prune(lock: File.join(@dir, "lease")) }
+        libraries.each { |path| assert File.file?(path), path }
+      end
+    end
+  end
+
   def task_body(name)
     root = File.expand_path("..", __dir__)
     output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: root)
@@ -332,7 +349,7 @@ class MacBuildBudgetTest < Minitest::Test
   end
 
   def test_apple_build_tasks_route_through_the_serial_guard
-    %w[mac:build ios:build ios:device:build converter-ffi:build].each do |name|
+    %w[mac:build mac:test:local ios:build ios:device:build converter-ffi:build].each do |name|
       body = task_body(name)
       assert_match(/(?:native_job\.rb["']?\s+(?:--build-dir\s+"[^"]+"\s+)*build\s+--|native_build_command\.rb["']?\s+(?:--build-dir\s+"[^"]+"\s+)*--)/, body, name)
       if name == "converter-ffi:build"

@@ -51,6 +51,49 @@ For a GUI journey, bring the app frontmost, exercise normal flows, retain its
 identity/screenshots/logs, and verify shutdown when finished. Opening the window
 alone does not establish playback or conversion acceptance.
 
+## Fast local Debug test loop
+
+For local Mac XCTest iteration, `mise run mac:test:local -- -only-testing:ID ...`
+builds once and runs every selected suite in one guarded `xcodebuild` (Debug,
+`EpubToMp3Mac`, one job). It first runs `converter-ffi:build:local` (not for
+`test-without-building`), which writes
+`target/local-dev/release/libconverter_ffi.dylib`: the release profile with
+local `--config` overrides in its own target directory: workspace crates at
+opt-level 0, incremental, 16 codegen units and no LTO; dependencies keep
+opt-level 3 and one codegen unit.
+A content stamp beside it skips cargo when the Rust inputs are unchanged, also
+across worktrees, and touches files whose content differs from that record so
+cargo cannot treat an edit with an older mtime than the shared output as fresh
+(observed: such a converter-core edit was skipped by cargo). A Debug-only post-build step embeds that
+dylib; it refuses other configurations and restores the release bytes on the
+next build without the setting. Release, packaging, CI, `mac:build` and
+`mac:validate` keep `target/release` and `[profile.release]` unchanged, and a
+local-dev dylib is never a release or acceptance artifact. The copy phase still
+needs some `target/release` dylib; reuse a retained package (below) instead of
+compiling when it is missing. Opt-in test settings such as
+`EPUB2MP3_PIPER_TEST_MODEL_ROOT=PATH` are accepted; compiler flags are not.
+
+Measured on this Intel i5-8259U (4 cores, 8 GiB) through the guarded tasks,
+one job, wall seconds (evidence in the local build-speed report):
+
+| Step | Release route | Local route |
+| --- | --- | --- |
+| Cold Rust build (empty target directory) | 660 | 929 (one-time, shared by worktrees) |
+| No-op Rust task | 13 | 13 (stamp reuse, cargo skipped) |
+| converter-core edit | 111 (cargo 98) | 32 (cargo 14) |
+| converter-ffi edit | 30 (cargo 18.5) | 8.5 (cargo 3, candidate run) |
+| First Rust build from a new worktree | 128 | stamp reuse when inputs match (not timed) |
+| 10 focused tests incl. Faber inference, warm | 23 (`xcodebuild` only) | 36 (whole `mac:test:local`) |
+
+Xcode `build-for-testing` for `EpubToMp3Mac` (Debug): 212 cold, 9 warm, 14
+after one Swift edit; four focused suites with `test`: 9. `xcodegen generate`
+takes about 2.5 seconds and does not slow the next warm build (8.6 vs 13.3),
+so it is not skipped.
+
+Do not delete the shared `target/`: a cold release `converter-ffi` build takes
+about 11 minutes and every worktree shares it. `mise run clean:build` removes
+only superseded Xcode DerivedData and keeps `target/`.
+
 ## Retained Intel FFI packages
 
 After an authenticated producer download, the downloader retains the full

@@ -20,6 +20,7 @@ class NativeFaberEntrypointsTest < Minitest::Test
     'build_flutter_desktop.rb' => ['linux'],
     'verify_tts_preferences.rb' => [],
     'verify_portable_tts.rb' => [],
+    'converter_ffi_local_build.rb' => [],
     'build_onnxruntime_macos.sh' => []
   }.freeze
 
@@ -237,7 +238,7 @@ class NativeFaberEntrypointsTest < Minitest::Test
   end
 
   def test_actual_native_task_bodies_refuse_before_preparation
-    %w[converter-ffi:build native-tts:rust:test converter-ffi:ios-device native-tts:android:test onnxruntime:host].each do |name|
+    %w[converter-ffi:build converter-ffi:build:local native-tts:rust:test converter-ffi:ios-device native-tts:android:test onnxruntime:host].each do |name|
       metadata, error, status = Open3.capture3('mise', 'tasks', 'info', name, '--json', chdir: ROOT)
       assert status.success?, error
       body = JSON.parse(metadata).fetch('run').join("\n")

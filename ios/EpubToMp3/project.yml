@@ -249,6 +249,13 @@ targets:
       - path: EpubToMp3Widget/WidgetLibraryTimeline.swift
 
     postBuildScripts:
+      # Local Debug macOS loop only (`mise run mac:test:local`); a no-op unless
+      # EPUB2MP3_LOCAL_FFI_DYLIB is passed, and it refuses non-Debug builds.
+      - name: Use local-dev Rust library for local Debug macOS
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+        script: |
+          bash "$SRCROOT/../../scripts/use_local_converter_ffi.sh"
       - name: Bundle platform-correct iOS Rust library
         basedOnDependencyAnalysis: false
         showEnvVars: false

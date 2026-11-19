@@ -164,6 +164,11 @@ end
 '
 '''
 
+[tasks."converter-ffi:build:local"]
+description = "Local-only host converter-ffi for the Debug Mac loop (target/local-dev, never release); skips cargo when Rust inputs are unchanged"
+depends = ["onnxruntime:host"]
+run = "mise exec -- ruby scripts/converter_ffi_local_build.rb"
+
 [tasks."piper:phonemes:test"]
 description = "Test Piper punctuation and voice isolation with embedded eSpeak, without ONNX or a model"
 run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo test -p espeak-rs --locked --jobs 1"
@@ -577,6 +582,48 @@ NATIVE_JOB
 [tasks."mac:build:dev"]
 description = "Fast local-iteration macOS build (Debug config — incremental, -Onone, no LTO/dSYM). Not for distribution."
 run = "MAC_BUILD_CONFIG=Debug mise run mac:build"
+
+[tasks."mac:test:local"]
+description = "Local Debug Mac XCTest loop: local-dev Rust dylib (never release), one guarded build, all selected suites in one run"
+run = """
+#!/bin/bash
+set -euo pipefail
+# Accept only test selections, the scheme's opt-in test settings and one
+# xcodebuild action. Compiler flags such as -jobs stay fixed below because the
+# guard sees this bash command, not them.
+action=test
+selections=()
+for argument in "$@"; do
+  case "$argument" in
+    -only-testing:?*|-skip-testing:?*) selections+=("$argument") ;;
+    EPUB2MP3_LOCAL_FFI_DYLIB=*) echo "mac:test:local sets EPUB2MP3_LOCAL_FFI_DYLIB itself" >&2; exit 2 ;;
+    EPUB2MP3_[A-Z0-9_]*=*|APP_FOUNDATION_[A-Z0-9_]*=*|TTS_TEST_[A-Z0-9_]*=*) selections+=("$argument") ;;
+    test|build-for-testing|test-without-building) action="$argument" ;;
+    *) echo "mac:test:local accepts -only-testing:ID, -skip-testing:ID, EPUB2MP3_*/APP_FOUNDATION_*/TTS_TEST_* test settings and test|build-for-testing|test-without-building; got: $argument" >&2; exit 2 ;;
+  esac
+done
+ROOT="${MISE_PROJECT_ROOT:-$PWD}"
+if [[ ! -f "$ROOT/target/release/libconverter_ffi.dylib" ]]; then
+  echo "mac:test:local: the project copy phase still needs target/release/libconverter_ffi.dylib (any version; local-dev replaces it in Debug)." >&2
+  echo "Install a verified one without compiling: mise exec -- ruby scripts/native_job.rb build -- ruby scripts/download_converter_ffi_macos.rb --reuse-local, or run mise run converter-ffi:build." >&2
+  exit 1
+fi
+# Arguments are validated before any Rust work; reruns of already built tests skip it.
+if [[ "$action" != test-without-building ]]; then
+  mise run converter-ffi:build:local
+fi
+mise exec -- ruby "$ROOT/scripts/native_job.rb" --build-dir "$APPLE_DERIVED_DATA_PATH" build -- bash -euo pipefail -s -- "$action" ${selections[@]+"${selections[@]}"} <<'NATIVE_JOB'
+action="$1"; shift
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
+cd "${MISE_PROJECT_ROOT:-.}/ios/EpubToMp3"
+xcodegen generate --quiet
+xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3Mac -configuration Debug \\
+  -destination platform=macOS -derivedDataPath "$APPLE_DERIVED_DATA_PATH" \\
+  -jobs 1 -parallel-testing-enabled NO \\
+  EPUB2MP3_LOCAL_FFI_DYLIB="${MISE_PROJECT_ROOT:-../..}/target/local-dev/release/libconverter_ffi.dylib" \\
+  "$@" "$action"
+NATIVE_JOB
+"""
 
 [tasks."mac:run"]
 description = "Build and launch the native macOS app in Debug for local development"
