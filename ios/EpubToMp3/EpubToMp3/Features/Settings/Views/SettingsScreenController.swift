@@ -26,10 +26,13 @@ final class SettingsScreenController: UITableViewController {
     let termsAcceptance: SpeechModelTermsAcceptanceStore
     let voiceModelsOnly: Bool
     var modelDisclosure = SpeechModelSettingsDisclosure()
-    var speechModelState: SpeechModelLibraryViewState
-    var speechModelsTask: Task<Void, Never>?
-    private var speechModelInstallTasks: [String: Task<Void, Never>] = [:]
-    var speechModelInstallEvents: [String: SpeechModelInstallEvent] = [:]
+    /// Catalogue, install events and confirmed install/remove, shared with the Mac panel.
+    let modelLibrary: SpeechModelLibrarySession
+    var speechModelState: SpeechModelLibraryViewState {
+        get { modelLibrary.state }
+        set { modelLibrary.state = newValue }
+    }
+    var speechModelInstallEvents: [String: SpeechModelInstallEvent] { modelLibrary.installEvents }
     private var storageUsage = StorageUsageScanner.current()
     private let diagnosticsSession: StreamingDiagnosticsSession
     private let confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)?
@@ -48,11 +51,12 @@ final class SettingsScreenController: UITableViewController {
         self.speechModels = speechModels
         self.termsAcceptance = termsAcceptance
         self.voiceModelsOnly = voiceModelsOnly
-        self.speechModelState = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
+        self.modelLibrary = SpeechModelLibrarySession(client: speechModels)
         self.diagnosticsSession = diagnosticsSession ?? .shared
         self.confirmStreamingDiagnostics = confirmStreamingDiagnostics
         super.init(style: .insetGrouped)
         if voiceModelsOnly { modelDisclosure.toggle() }
+        bindModelLibrary()
         title = L10n.string(voiceModelsOnly ? "settings.voiceModels" : "settings.title")
         tabBarItem = UITabBarItem(
             title: L10n.string("nav.settings"),
@@ -92,8 +96,6 @@ final class SettingsScreenController: UITableViewController {
 
     deinit {
         diagnosticsExpiryTask?.cancel()
-        speechModelsTask?.cancel()
-        speechModelInstallTasks.values.forEach { $0.cancel() }
     }
 
     func refreshFromStores() {
@@ -319,46 +321,19 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func confirmInstall(_ entry: SpeechModelSnapshot.Entry) {
-        let title = speechModelState.installTitle(for: entry)
         SettingsAlertPresentation.confirmModelInstall(
             entry, state: speechModelState,
             configuredSelections: settings.configuredNarrationSelections,
             termsAcceptance: termsAcceptance, on: self
         ) { [weak self] acceptedTermsFingerprint in
-            self?.install(entry, title: title, acceptedTermsFingerprint: acceptedTermsFingerprint)
+            self?.install(entry, acceptedTermsFingerprint: acceptedTermsFingerprint)
         }
     }
 
     /// Starts the confirmed installation independently of the presenting screen's lifetime.
     @discardableResult
-    func install(
-        _ entry: SpeechModelSnapshot.Entry,
-        title: String,
-        acceptedTermsFingerprint: String?
-    ) -> Task<Void, Never> {
-        let client = speechModels
-        return Task { [weak self] in
-            do {
-                _ = try await client.install(
-                    modelID: entry.identity.modelID,
-                    acceptedTermsFingerprint: acceptedTermsFingerprint
-                )
-                guard self != nil else { return }
-                if let snapshot = try? await client.snapshot() {
-                    self?.speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-                    self?.observeInstalls(in: snapshot.entries)
-                }
-            } catch is CancellationError {
-                // Cancellation is already rendered by the operation event.
-            } catch {
-                guard let self else { return }
-                let failure = UIAlertController(title: title,
-                    message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
-                failure.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-                present(failure, animated: true)
-            }
-            self?.tableView.reloadData()
-        }
+    func install(_ entry: SpeechModelSnapshot.Entry, acceptedTermsFingerprint: String?) -> Task<Void, Never> {
+        modelLibrary.install(entry, acceptedTermsFingerprint: acceptedTermsFingerprint)
     }
 
     private func confirmRemoval(_ entry: SpeechModelSnapshot.Entry) {
@@ -368,49 +343,22 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func remove(_ entry: SpeechModelSnapshot.Entry) {
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let snapshot = try await speechModels.remove(
-                    modelID: entry.identity.modelID,
-                    configuredSelections: settings.configuredNarrationSelections
-                )
-                speechModelInstallEvents.removeValue(forKey: entry.identity.modelID)
-                speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-                tableView.reloadData()
-            } catch {
-                let alert = UIAlertController(
-                    title: L10n.string("settings.modelRemove.failed"),
-                    message: AppErrorReporter.message(error, context: #function),
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-                present(alert, animated: true)
-            }
-        }
+        modelLibrary.remove(entry, configuredSelections: settings.configuredNarrationSelections)
     }
 
-    func observeInstalls(in entries: [SpeechModelSnapshot.Entry]) {
-        speechModelInstallTasks.values.forEach { $0.cancel() }
-        speechModelInstallTasks.removeAll()
-        let client = speechModels
-        for entry in entries where entry.distribution.installable {
-            let modelID = entry.identity.modelID
-            speechModelInstallTasks[modelID] = Task { [weak self] in
-                guard !Task.isCancelled else { return }
-                let events = await client.watchInstall(modelID: modelID)
-                for await event in events {
-                    guard !Task.isCancelled else { return }
-                    self?.applyInstallEvent(event)
-                    if event.stage == .completed,
-                       let snapshot = try? await client.snapshot() {
-                        guard !Task.isCancelled else { return }
-                        self?.speechModelInstallEvents.removeValue(forKey: modelID)
-                        self?.speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-                    }
-                    if event.stage == .completed { self?.tableView.reloadData() }
-                }
+    private func bindModelLibrary() {
+        modelLibrary.onChange = { [weak self] change in
+            switch change {
+            case let .installProgress(modelID): self?.refreshInstallProgress(modelID: modelID)
+            case .catalog: self?.tableView.reloadData()
             }
+        }
+        modelLibrary.onFailure = { [weak self] title, error, operation in
+            guard let self else { return }
+            let alert = UIAlertController(title: title,
+                message: AppErrorReporter.message(error, context: operation), preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+            present(alert, animated: true)
         }
     }
 

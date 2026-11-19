@@ -27,13 +27,13 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     private let audition = VoiceAuditionPresentation()
     private let speechModels: SpeechModelLibraryClient
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
-    private var state: SpeechModelLibraryViewState
+    /// Catalogue, install events and confirmed install/remove, shared with iOS settings.
+    private let modelLibrary: SpeechModelLibrarySession
+    private var state: SpeechModelLibraryViewState { modelLibrary.state }
     private var disclosure = SpeechModelSettingsDisclosure()
     private let summaryLabel = NSTextField(wrappingLabelWithString: "")
     private lazy var disclosureButton = NSButton(title: "", target: self, action: #selector(toggleModels))
-    private var installEvents: [String: SpeechModelInstallEvent] = [:]
-    private var installTasks: [String: Task<Void, Never>] = [:]
-    private var reloadTask: Task<Void, Never>?
+    private var installEvents: [String: SpeechModelInstallEvent] { modelLibrary.installEvents }
     private struct RenderedRow {
         let label: NSTextField
         let actions: [SpeechModelProductAction]
@@ -49,8 +49,9 @@ final class MacSpeechModelLibraryPanel: NSStackView {
         self.settings = settings
         self.speechModels = speechModels
         self.termsAcceptance = termsAcceptance
-        self.state = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
+        self.modelLibrary = SpeechModelLibrarySession(client: speechModels)
         super.init(frame: .zero)
+        bindModelLibrary()
         if expandedOnOpen { disclosure.toggle() }
         orientation = .vertical
         alignment = .leading
@@ -69,24 +70,22 @@ final class MacSpeechModelLibraryPanel: NSStackView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-        reloadTask?.cancel()
-        installTasks.values.forEach { $0.cancel() }
+    func reload() {
+        modelLibrary.reload()
     }
 
-    func reload() {
-        reloadTask?.cancel()
-        let client = speechModels
-        reloadTask = Task { [weak self] in
-            guard !Task.isCancelled else { return }
-            do {
-                let snapshot = try await client.snapshot()
-                guard !Task.isCancelled else { return }
-                self?.adopt(snapshot)
-                self?.observeInstalls(in: snapshot.entries)
-            } catch {
-                // Keep the last valid snapshot and persisted selections.
+    private func bindModelLibrary() {
+        modelLibrary.onChange = { [weak self] change in
+            guard let self else { return }
+            switch change {
+            case let .installProgress(modelID): updateInstallRow(modelID: modelID)
+            case .catalog:
+                render()
+                onSnapshot?(state)
             }
+        }
+        modelLibrary.onFailure = { [weak self] title, error, _ in
+            self?.presentFailure(title: title, error: error)
         }
     }
 
@@ -304,27 +303,8 @@ final class MacSpeechModelLibraryPanel: NSStackView {
 
     /// Starts the confirmed installation independently of the presenting screen's lifetime.
     @discardableResult
-    func install(
-        _ entry: SpeechModelSnapshot.Entry,
-        acceptedTermsFingerprint: String?
-    ) -> Task<Void, Never> {
-        let client = speechModels
-        let title = state.installTitle(for: entry)
-        return Task { [weak self] in
-            do {
-                _ = try await client.install(
-                    modelID: entry.identity.modelID,
-                    acceptedTermsFingerprint: acceptedTermsFingerprint
-                )
-                guard self != nil else { return }
-                let snapshot = try await client.snapshot()
-                self?.adopt(snapshot)
-            } catch is CancellationError {
-                // The operation event already renders cancellation.
-            } catch {
-                self?.presentFailure(title: title, error: error)
-            }
-        }
+    func install(_ entry: SpeechModelSnapshot.Entry, acceptedTermsFingerprint: String?) -> Task<Void, Never> {
+        modelLibrary.install(entry, acceptedTermsFingerprint: acceptedTermsFingerprint)
     }
 
     private func confirmRemoval(_ entry: SpeechModelSnapshot.Entry) {
@@ -341,19 +321,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     }
 
     private func remove(_ entry: SpeechModelSnapshot.Entry) {
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let snapshot = try await speechModels.remove(
-                    modelID: entry.identity.modelID,
-                    configuredSelections: settings.configuredNarrationSelections
-                )
-                installEvents.removeValue(forKey: entry.identity.modelID)
-                adopt(snapshot)
-            } catch {
-                presentFailure(title: L10n.string("settings.modelRemove.failed"), error: error)
-            }
-        }
+        modelLibrary.remove(entry, configuredSelections: settings.configuredNarrationSelections)
     }
 
     private func present(_ alert: NSAlert, completion: @escaping (Bool) -> Void) {
@@ -377,36 +345,10 @@ final class MacSpeechModelLibraryPanel: NSStackView {
     }
 
     private func adopt(_ snapshot: SpeechModelSnapshot) {
-        state = SpeechModelLibraryViewState(snapshot: snapshot)
+        modelLibrary.state = SpeechModelLibraryViewState(snapshot: snapshot)
         render()
         onSnapshot?(state)
     }
-
-    private func observeInstalls(in entries: [SpeechModelSnapshot.Entry]) {
-        installTasks.values.forEach { $0.cancel() }
-        installTasks.removeAll()
-        let client = speechModels
-        for entry in entries where entry.distribution.installable {
-            let modelID = entry.identity.modelID
-            installTasks[modelID] = Task { [weak self] in
-                guard !Task.isCancelled else { return }
-                let events = await client.watchInstall(modelID: modelID)
-                for await event in events {
-                    guard !Task.isCancelled else { return }
-                    self?.installEvents[modelID] = event
-                    if event.stage == .completed,
-                       let snapshot = try? await client.snapshot() {
-                        guard !Task.isCancelled else { return }
-                        self?.installEvents.removeValue(forKey: modelID)
-                        self?.adopt(snapshot)
-                    } else {
-                        self?.updateInstallRow(modelID: modelID)
-                    }
-                }
-            }
-        }
-    }
-
 }
 
 private extension SpeechModelProductAction {

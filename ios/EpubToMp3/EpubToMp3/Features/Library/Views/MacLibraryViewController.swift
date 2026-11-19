@@ -360,15 +360,8 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         let jobID = library.books.first(where: { $0.id == id })?.lastJobId
         Task {
             do {
-                try await RustConversionOutputStore.shared.removeAudio(bookID: id, legacyJobID: jobID) {
-                    try await LocalAudioArtifactStore.shared.removeAllAudio(bookID: id)
-                    if let jobID { await AudiobookDownloads.shared.clearDownloadedBook(jobId: jobID) }
-                }
-                bookmarkStore.removeAll(for: id)
-                LocalFulltextCache.evict(bookId: id)
-                EpubFontManager.evictCachedFonts(bookID: id)
-                if let jobID { FulltextStore.evict(jobId: jobID) }
-                library.remove(id: id)
+                try await LibraryBookRemoval(library: library, bookmarks: bookmarkStore)
+                    .remove(bookID: id, legacyJobID: jobID)
             } catch {
                 guard let window = view.window else { return }
                 let alert = NSAlert()
