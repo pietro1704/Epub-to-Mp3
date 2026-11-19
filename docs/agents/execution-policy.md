@@ -135,20 +135,29 @@ and not draft, GitHub still enforces branch protection, and a merge queue takes
 over the merge method. Record in each description the prerequisite PR and its
 exact head SHA and keep that SHA current when restacking.
 
-Status of this procedure here: the extension and its documentation were
-reviewed (v0.3.0), but a stack has not yet been created or merged on this
-repository, so whether it is enabled for the repository and how the required
-`PR gate`, the standing auto-merge authorization and the `Merge eligible pull
-requests` workflow treat a PR that targets a branch other than `master` are
-unverified. The standing automatic-merge authorization covers ready PRs that
-target `master`; any other target needs task-specific authorization. Verify on
-the first real stack, then update this paragraph with the observed behavior. If
-`gh stack` is unavailable, keep the dependent change local until its
-prerequisite merges, then branch from current `master` (transplant the
-child-only commits using the recorded base SHA when the work already exists),
-review the resulting diff, rerun affected checks and open the PR ready. The
-updated head must pass its own required CI before merging. A hold or explicit
-acceptance requirement still applies to the change it covers.
+Observed on this repository (first real use, 2026-11-18): `gh stack init
+<branches>` adopts existing branches locally, and `gh stack submit --auto --open`
+pushes atomically and creates ready PRs with the right base; the stack was
+created as a PR on `master`. Two things to know. `submit` is rejected as a stale
+atomic push if a branch of the stack changed on the remote after your last
+fetch (for example a merge-refresh of the PR), so fetch first. `gh stack sync`
+after the bottom PR was squash-merged tried to rebase the merged bottom branch
+onto `master` and conflicted (the stack had never been submitted, so it did not
+know the PR had merged); the branches were restored unchanged. When that
+happens, run `gh stack unstack --local`, transplant the remaining layers with
+`git rebase --onto origin/master <merged-bottom-branch> <top-branch>`, then
+`gh stack init` and `gh stack submit --auto --open` again. Still unverified: a
+stack of two or more open PRs submitted together, whether the required `PR gate`
+and the `Merge eligible pull requests` workflow merge a layer whose base is not
+`master`, and `gh stack sync` after a bottom PR of a submitted stack merges. The
+standing automatic-merge authorization covers ready PRs that target `master`;
+any other target needs task-specific authorization. Update this paragraph after
+each of those is observed. If `gh stack` is unavailable, keep the dependent
+change local until its prerequisite merges, then branch from current `master`
+(transplant the child-only commits using the recorded base SHA when the work
+already exists), review the resulting diff, rerun affected checks and open the
+PR ready. The updated head must pass its own required CI before merging. A hold
+or explicit acceptance requirement still applies to the change it covers.
 
 Finish the authorized local checks and any requested real-app journey before
 commit. Commit/push and PR creation are authorized by default for verified
