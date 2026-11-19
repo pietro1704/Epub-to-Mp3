@@ -496,8 +496,9 @@ jobs:
           export PIPER_ESPEAKNG_DATA_DIRECTORY="$piper_data_directory"
           # Cargo's test loader searches its target directory for dynamic libraries.
           ln -s "$ORT_LIB_LOCATION/libonnxruntime.dylib" target/release/deps/libonnxruntime.dylib
+          # native_job.rb sets CARGO_BUILD_JOBS: the hosted-runner allowance here, 1 elsewhere.
           mise exec -- ruby scripts/native_job.rb build -- cargo test --locked -p piper-runtime --release --lib \
-            --features onnxruntime,piper-inference,heavy-runtime-tests --jobs 1 \
+            --features onnxruntime,piper-inference,heavy-runtime-tests \
             piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
       - name: Run real macOS preference and installation XCTest
         working-directory: ios/EpubToMp3

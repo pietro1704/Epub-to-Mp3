@@ -4,6 +4,7 @@
 require "optparse"
 require "json"
 require "rbconfig"
+require "etc"
 require_relative "native_build_preflight"
 require_relative "mac_build_budget"
 
@@ -15,6 +16,30 @@ module NativeJob
   FD_ENV = "EPUB_NATIVE_LEASE_FD"
   PATH_ENV = "EPUB_NATIVE_LEASE_PATH"
   BUILD_DIRS_ENV = "EPUB_NATIVE_BUILD_DIRECTORIES"
+  # GitHub-hosted runners are disposable VMs without this Mac's kernel-panic
+  # history; the owner approved parallel Cargo/CMake there (2026-11-19). Every
+  # other host, including this Mac, keeps exactly one compiler job.
+  # Environment variables alone can be copied into a local shell, so the hosted
+  # runner's account home is also required. A lower CARGO_BUILD_JOBS set by the
+  # caller (for example a workflow that pins 1) is honored.
+  HOSTED_BUILD_JOBS_CAP = 4
+  HOSTED_RUNNER_HOMES = %w[/Users/runner /home/runner].freeze
+
+  def self.account_home
+    Etc.getpwuid(Process.uid)&.dir
+  rescue ArgumentError
+    nil
+  end
+
+  def self.build_jobs(environment = ENV, processors: Etc.nprocessors, home: account_home)
+    hosted = environment["GITHUB_ACTIONS"] == "true" && environment["RUNNER_ENVIRONMENT"] == "github-hosted" &&
+             !environment["ImageOS"].to_s.empty? && HOSTED_RUNNER_HOMES.include?(home)
+    return 1 unless hosted
+
+    allowance = Integer(processors).clamp(1, HOSTED_BUILD_JOBS_CAP)
+    requested = environment["CARGO_BUILD_JOBS"].to_s
+    requested.match?(/\A[1-9]\d*\z/) ? [allowance, Integer(requested, 10)].min : allowance
+  end
 
   # Forward only the authenticated lease when a Ruby driver starts another
   # guarded driver. Explicit mapping preserves it even with close_others:true.
@@ -104,7 +129,11 @@ module NativeJob
       compact = part.match(/\A-j(-?\d+)\z/) || part.match(/\A--(?:jobs|parallel)=(.+)\z/)
       next unless flag || compact
       number = flag ? arguments[index + 1] : compact[1]
-      return "Mac compilation requires exactly one job" unless number == "1"
+      next if number == "1"
+      # Only Cargo and CMake use the hosted-runner allowance; Xcode and Swift stay serial.
+      hosted = %w[cargo cmake].include?(File.basename(command[compiler])) && build_jobs > 1
+      allowed = hosted && number.to_s.match?(/\A[1-9]\d*\z/) && Integer(number, 10) <= build_jobs
+      return "Mac compilation requires exactly one job" unless allowed
     end
     nil
   end
@@ -172,7 +201,7 @@ module NativeJob
     previous = {}
     %w[INT TERM HUP].each { |name| previous[name] = Signal.trap(name) { signal ||= name } }
     environment = { FD_ENV => CHILD_FD.to_s, PATH_ENV => path,
-                    "CARGO_BUILD_JOBS" => "1", "CMAKE_BUILD_PARALLEL_LEVEL" => "1" }
+                    "CARGO_BUILD_JOBS" => build_jobs.to_s, "CMAKE_BUILD_PARALLEL_LEVEL" => build_jobs.to_s }
     environment[BUILD_DIRS_ENV] = JSON.generate(destinations) if destinations
     pid = Process.spawn(environment, [command.first, command.first], *command.drop(1), CHILD_FD => handle, pgroup: true)
     status = nil

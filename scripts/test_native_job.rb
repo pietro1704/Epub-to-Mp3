@@ -94,6 +94,64 @@ class NativeJobIntegrationTest < Minitest::Test
     assert_unlocked
   end
 
+  LOCAL = { "GITHUB_ACTIONS" => nil, "RUNNER_ENVIRONMENT" => nil, "ImageOS" => nil, "CARGO_BUILD_JOBS" => nil }.freeze
+  HOSTED = { "GITHUB_ACTIONS" => "true", "RUNNER_ENVIRONMENT" => "github-hosted", "ImageOS" => "macos15", "CARGO_BUILD_JOBS" => nil }.freeze
+
+  def test_build_jobs_are_one_except_on_github_hosted_runners_where_they_follow_the_cpus_with_a_cap
+    runner = "/Users/runner"
+    assert_equal 1, NativeJob.build_jobs({}, processors: 8, home: runner)
+    assert_equal 1, NativeJob.build_jobs(HOSTED.merge("RUNNER_ENVIRONMENT" => "self-hosted"), processors: 8, home: runner)
+    %w[GITHUB_ACTIONS RUNNER_ENVIRONMENT ImageOS].each { |key| assert_equal 1, NativeJob.build_jobs(HOSTED.merge(key => nil), processors: 8, home: runner), key }
+    assert_equal 1, NativeJob.build_jobs(HOSTED, processors: 8, home: "/Users/pips"), 'Copied variables on another account stay serial'
+    assert_equal 1, NativeJob.build_jobs(HOSTED, processors: 8, home: nil)
+    { 1 => 1, 3 => 3, 4 => 4, 16 => NativeJob::HOSTED_BUILD_JOBS_CAP }.each do |cpus, jobs|
+      assert_equal jobs, NativeJob.build_jobs(HOSTED, processors: cpus, home: runner)
+      assert_equal jobs, NativeJob.build_jobs(HOSTED, processors: cpus, home: "/home/runner")
+    end
+    assert_equal 1, NativeJob.build_jobs(HOSTED.merge("CARGO_BUILD_JOBS" => "1"), processors: 3, home: runner), 'A pinned 1 is honored'
+    assert_equal 2, NativeJob.build_jobs(HOSTED.merge("CARGO_BUILD_JOBS" => "2"), processors: 3, home: runner)
+    assert_equal 3, NativeJob.build_jobs(HOSTED.merge("CARGO_BUILD_JOBS" => "64"), processors: 3, home: runner)
+    assert_equal 3, NativeJob.build_jobs(HOSTED.merge("CARGO_BUILD_JOBS" => "0"), processors: 3, home: runner)
+  end
+
+  def test_child_receives_one_job_locally_even_with_copied_hosted_variables
+    program = ["-e", 'File.write(ARGV[0], [ENV["CARGO_BUILD_JOBS"], ENV["CMAKE_BUILD_PARALLEL_LEVEL"]].join(","))', @marker]
+    _, error, status = run_job("build", RUBY, *program, env: LOCAL.merge("CARGO_BUILD_JOBS" => "64"))
+    assert status.success?, error
+    assert_equal "1,1", File.read(@marker)
+    _, error, status = run_job("build", RUBY, *program, env: HOSTED.merge("CARGO_BUILD_JOBS" => "64"))
+    assert status.success?, error
+    # On an actual hosted runner the account home matches; anywhere else it stays 1.
+    hosted = NativeJob::HOSTED_RUNNER_HOMES.include?(NativeJob.account_home)
+    expected = hosted ? Etc.nprocessors.clamp(1, NativeJob::HOSTED_BUILD_JOBS_CAP).to_s : "1"
+    assert_equal "#{expected},#{expected}", File.read(@marker)
+  end
+
+  def test_explicit_parallel_cargo_is_allowed_only_within_the_hosted_allowance
+    skip "Mac compiler policy" unless RUBY_PLATFORM.include?("darwin")
+    check = lambda do |env, *command|
+      stub = "processors = Integer(ENV.fetch('FAKE_CPUS', '3')); Etc.define_singleton_method(:nprocessors) { processors }; " \
+             "NativeJob.define_singleton_method(:account_home) { ENV.fetch('FAKE_HOME') }; "
+      output, error, status = Open3.capture3(@env.merge("FAKE_HOME" => "/Users/runner").merge(env), RUBY, "-r", SCRIPT, "-e",
+        "#{stub}print NativeJob.parallelism_error(ARGV).to_s", *command)
+      assert status.success?, error
+      output
+    end
+    assert_match(/exactly one job/, check.call(LOCAL, "cargo", "build", "--jobs", "3"))
+    assert_match(/exactly one job/, check.call(LOCAL, "cargo", "build", "-j2"))
+    assert_match(/exactly one job/, check.call(LOCAL, "cmake", "--build", ".", "--parallel", "3"))
+    assert_empty check.call(LOCAL, "cargo", "build", "--jobs", "1")
+    assert_empty check.call(HOSTED, "cargo", "build", "--jobs", "3")
+    assert_empty check.call(HOSTED, "cargo", "build", "--jobs=2")
+    assert_empty check.call(HOSTED, "cmake", "--build", ".", "--parallel", "3")
+    assert_match(/exactly one job/, check.call(HOSTED.merge("FAKE_HOME" => "/Users/pips"), "cargo", "build", "--jobs", "3"))
+    assert_match(/exactly one job/, check.call(HOSTED.merge("CARGO_BUILD_JOBS" => "1"), "cargo", "build", "--jobs", "3"))
+    assert_match(/exactly one job/, check.call(HOSTED, "cargo", "build", "--jobs", "4"))
+    assert_match(/exactly one job/, check.call(HOSTED, "cargo", "build", "--jobs=-1"))
+    assert_match(/exactly one job/, check.call(HOSTED, "xcodebuild", "build", "-jobs", "3"))
+    assert_match(/disabled on this Mac/, check.call(HOSTED, "xcodebuild", "build", "-parallelizeTargets"))
+  end
+
   def test_success_failure_and_child_signal_preserve_exit_status_and_release
     [0, 17].each do |exit_code|
       _, error, status = run_job("build", RUBY, "-e", "exit #{exit_code}")

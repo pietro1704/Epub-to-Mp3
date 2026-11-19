@@ -150,8 +150,8 @@ if RUBY_PLATFORM.include?("darwin")
   ENV.delete("SDKROOT")
 end
 commands = [
-  ["cargo", "build", "-p", "espeak-rs-sys", "--features", "compile-espeak-intonations", "--target-dir", "target/espeak-data", "--jobs", "1"],
-  ["cargo", "build", "-p", "converter-ffi", "--release", "--features", "piper-runtime", "--jobs", "1"]
+  ["cargo", "build", "-p", "espeak-rs-sys", "--features", "compile-espeak-intonations", "--target-dir", "target/espeak-data", "--jobs", NativeJob.build_jobs.to_s],
+  ["cargo", "build", "-p", "converter-ffi", "--release", "--features", "piper-runtime", "--jobs", NativeJob.build_jobs.to_s]
 ]
 commands.each { |command| exit($?.exitstatus || 1) unless system("mise", "exec", "--", *command) }
 if RUBY_PLATFORM.include?("darwin")
