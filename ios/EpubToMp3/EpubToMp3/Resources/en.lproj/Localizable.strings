@@ -23,16 +23,11 @@
 "mainReader.pickBookDescription" = "Import an EPUB or pick a book from your library to start reading.";
 "mainReader.browseLibrary" = "Browse Library";
 "mainReader.listen" = "Listen";
-"mainReader.listenHelp" = "Open audio player for this book";
-"mainReader.noAudioYet" = "No audio yet";
-"mainReader.noAudioDescription" = "Convert this book first to listen along.";
 
 /* LibraryView */
 "library.title" = "Library";
 "library.unsupportedFormat" = "%@ isn't a supported format.";
 "library.addBook" = "Add Book";
-"library.addBookAccessibility" = "Add book";
-"library.sortLibrary" = "Sort library";
 "library.sortBy" = "Sort by";
 "library.more" = "More library options";
 "library.columns" = "Columns";
@@ -42,29 +37,20 @@
 "library.dateAdded" = "Date added";
 "library.emptyTitle" = "Your library is empty.";
 "library.emptyDescription" = "Tap + to import an EPUB or PDF, or share one from Apple Books, Files, or Safari.";
-"library.drmWarning" = "Books purchased from Apple Books are DRM-protected and cannot be opened by third-party apps.";
 "library.removeFromLibrary" = "Remove from library";
-"library.editTags" = "Edit Tags";
 "library.cancel" = "Cancel";
 "library.removeBook" = "Remove book";
 "library.downloadWholeBook" = "Download entire book";
 "library.convertWholeBook" = "Convert entire book";
-"library.all" = "All";
 "library.allBooks" = "All books";
 "library.importError" = "Import error";
 "library.ok" = "OK";
 "library.searchPlaceholder" = "Search library";
-"library.caching" = "Caching";
-"library.offline" = "Offline";
 
 /* SettingsView */
 "settings.title" = "Settings";
 "settings.embeddedServer" = "Embedded server";
 "settings.embeddedRuntime.ready" = "Ready";
-"settings.embeddedRuntime.starting" = "Starting…";
-"settings.useEmbeddedServer" = "Use embedded server";
-"settings.useEmbeddedServerDescription" = "Runs a private Python instance on a free local port. Recommended.";
-"settings.embeddedServerFooter" = "When the embedded server is on, the app is fully self-contained and works offline. Turn off only if you want to point at a remote backend.";
 "reader.contents" = "Contents";
 "reader.chapterCount" = "%d chapters";
 "reader.close" = "Close book";
@@ -78,9 +64,6 @@
 "settings.audioEngine" = "Audio engine";
 "settings.audioEngineChoice" = "Voice engine";
 "settings.audioEngineChoiceDescription" = "Edge uses online speech. Piper uses the installed local model.";
-"settings.piperInstall" = "Install Faber medium";
-"settings.piperInstalled" = "Faber medium installed";
-"settings.piperNotInstalled" = "Piper model not installed";
 "settings.modelInstall" = "Install %@";
 "settings.modelInstalled" = "%@ installed";
 "settings.modelQuality.low" = "Low";
@@ -142,10 +125,7 @@
 "settings.modelRemove.configured" = "Choose another primary and secondary voice before removing this model.";
 "settings.modelRemove.inUse" = "This model is currently in use and cannot be removed.";
 "settings.modelRemove.notInstalled" = "This model is not installed.";
-"settings.useBuiltInEngine" = "Use built-in audio engine";
-"settings.useBuiltInEngineDescription" = "Synthesises chapters on this device. No backend needed.";
 "settings.audioEngineFooter" = "Faber medium works offline after installation. Edge requires internet. The secondary voice is used only for isolated failed segments.";
-"settings.remoteBackendFooterMac" = "Used when the embedded server is off. Common targets: a `mise run web` instance on this machine, or a Hugging Face Space URL.";
 "settings.reader" = "Reader";
 "settings.fontSize" = "Font size";
 "settings.font" = "Font";
@@ -153,24 +133,10 @@
 "settings.layout" = "Layout";
 "settings.lineSpacing" = "Line spacing";
 "settings.margin" = "Margin";
-"settings.columnWidth" = "Column width";
 "settings.autoScroll" = "Auto-scroll";
 "settings.readerFooter" = "These preferences apply to every book in your library.";
 "settings.advanced" = "Advanced";
-"settings.manualConversion" = "Manual conversion";
-"settings.manualConversionDescription" = "Customise engine, voice, language and chapter range";
-"settings.clearCache" = "Clear downloaded audio";
-"settings.clearCacheDescription" = "Delete all locally cached MP3s";
-"settings.clearCacheConfirmTitle" = "Clear downloaded audio?";
-"settings.clearCacheConfirmMessage" = "All offline MP3s will be deleted. They will be re-downloaded when you play a book.";
 "settings.clearCacheConfirmButton" = "Delete All";
-"settings.clearCacheDone" = "Downloaded audio cleared.";
-"player.clearChapterCache" = "Clear downloaded audio";
-"player.clearChapterCacheConfirm" = "Delete offline copy of this audiobook?";
-"settings.sync" = "Sync";
-"settings.icloudSync" = "iCloud Sync";
-"settings.comingSoon" = "Coming soon";
-"settings.syncFooter" = "Library metadata, reading progress, bookmarks, and tags will sync across your devices via iCloud.";
 "settings.about" = "About";
 "settings.bundleIdentifier" = "Bundle identifier";
 "settings.platform" = "Platform";
@@ -180,7 +146,6 @@
 "player.close" = "Close";
 "player.playbackPosition" = "Playback position";
 "player.previousChapter" = "Previous chapter";
-"player.skipBack15" = "Skip back 15 seconds";
 "player.skipBack.seconds" = "Skip back %d seconds";
 "player.pause" = "Pause";
 "player.play" = "Play";
@@ -189,34 +154,18 @@
 "player.remaining" = "%@ remaining";
 "player.estimatedRemaining" = "About %@ remaining";
 "player.preparingAudio" = "Preparing audio…";
-"player.fullPlayer" = "Full player";
-"player.skipForward15" = "Skip forward 15 seconds";
 "player.skipForward.seconds" = "Skip forward %d seconds";
-"player.skipForward30" = "Skip forward 30 seconds";
 "player.nextChapter" = "Next chapter";
-"menu.playback" = "Playback";
 "player.playbackSpeed" = "Playback speed: %@";
-"player.sleep" = "Sleep";
-"player.sleepTimerOff" = "Sleep timer: off. Tap to set.";
-"player.sleepTimerRemaining" = "Sleep timer: %@ remaining. Tap to cancel.";
-"player.airplay" = "AirPlay";
 "player.chapter" = "Chapter %d";
 "player.chapterOf" = "Chapter %1$d of %2$d";
-"player.coverArt" = "%@ cover art";
-"player.coverTapTutorial" = "Tap cover for lyrics";
-"player.lyricsTapHint" = "Toggles the current sentence overlay.";
-"player.nowReading" = "Now reading";
-"player.lyricsWaiting" = "Waiting for the current sentence…";
-"player.generatingAudio" = "Generating audio";
 "player.chapters" = "Chapters";
-"player.showChapterList" = "Show chapter list";
 
 /* Play-tap divergence dialog (reader on a different chapter than the audio) */
 "player.divergence.title" = "Continue from where?";
 "player.divergence.message" = "The page you're reading isn't where the audio left off.";
 "player.divergence.fromCurrentPage" = "Listen from this page";
 "player.divergence.fromWhereStopped" = "Continue where I left off";
-"player.divergence.fromBeginning" = "From the beginning";
 "common.cancel" = "Cancel";
 
 /* Native reader selection actions. */
@@ -226,32 +175,13 @@
 "common.back" = "Back";
 
 /* BookOpenView — error / empty / preparing states */
-"bookOpen.preparingChapters" = "Preparing chapters…";
-"bookOpen.noContent" = "No content available";
-"bookOpen.noContentDescription" = "This book couldn't be read by the parser. Try re-importing the file or pick a different book.";
 "bookOpen.error" = "Couldn't open this book";
-"bookOpen.locateFile" = "Locate file…";
-"bookOpen.retry" = "Retry";
-"bookOpen.repick" = "Choose file";
 "reader.loading" = "Loading book…";
 "reader.noReadableContent" = "This book has no readable content.";
 "reader.chapter" = "Chapter %d";
 
 "player.error.title" = "Playback issue";
 "common.ok" = "OK";
-"miniPlayer.expandPlayer" = "Expand player — %@, %@";
-
-/* InstantReaderView a11y labels (toolbar + transport row) */
-"instantReader.searchInBook" = "Search in book";
-"instantReader.readerSettings" = "Reader settings";
-"instantReader.tableOfContents" = "Table of contents";
-"instantReader.bookCover" = "Book cover";
-"instantReader.conversionStatus" = "Conversion status";
-"instantReader.playAudio" = "Play audio";
-"instantReader.nextChapter" = "Next chapter";
-"instantReader.playbackPosition" = "Playback position";
-"instantReader.downloaded" = "Downloaded";
-"instantReader.generating" = "Generating";
 
 /* AudioPlayer surfaced errors */
 "player.error.noPlayableChapters" = "This book has no playable chapters yet. Wait for conversion to produce the first chapter, or try a different book.";
@@ -259,21 +189,9 @@
 "player.error.segmentWriteFailed" = "Couldn't save a streaming audio segment to disk. Free up some space and try again.";
 "player.error.missingSnapshot" = "The player has no book loaded. Open a book first.";
 
-/* ChapterListSheet accessibility */
-"chapterList.nowPlaying" = "%@, now playing";
-"chapterList.noAudio" = "%@, no audio available";
-"chapterList.doubleTapToPlay" = "Double tap to play this chapter";
-
 /* PlayerReaderView toolbar */
 "player.toc" = "Table of contents";
-"player.more" = "More";
-"player.search" = "Search";
-"player.bookmarks" = "Bookmarks";
-"player.addBookmark" = "Add bookmark";
-"player.removeBookmark" = "Remove bookmark";
 "player.downloadAll" = "Download for offline";
-"player.downloading" = "Downloading…";
-"player.downloaded" = "Downloaded";
 "player.downloadFailed" = "Download failed";
 "player.exportAudio" = "Share available audio";
 "player.sleepTimer" = "Sleep timer";
@@ -284,13 +202,6 @@
 "player.sleepTimerOption.45" = "45 minutes";
 "player.sleepTimerOption.60" = "1 hour";
 
-/* SplitViewRoot library detail */
-"library.openInReader" = "Open in Reader";
-
-/* MiniPlayerBar */
-"miniPlayer.nowPlaying" = "Now playing: %@, %@. Tap to expand.";
-"miniPlayer.expandHint" = "Swipe up or tap to open full player.";
-
 /* ReaderSettingsSheet */
 "readerSettings.title" = "Reader";
 "readerSettings.theme" = "Theme";
@@ -298,8 +209,6 @@
 "readerSettings.font.book" = "Use book font";
 "readerSettings.family" = "Family";
 "readerSettings.size" = "Size";
-"readerSettings.decreaseFontSize" = "Decrease font size";
-"readerSettings.increaseFontSize" = "Increase font size";
 "readerSettings.layout" = "Layout";
 "readerSettings.mode" = "Mode";
 "readerSettings.lineSpacing" = "Line spacing";
@@ -307,13 +216,8 @@
 "readerSettings.done" = "Done";
 
 /* ReaderView */
-"reader.characters" = "%d characters";
-"reader.previousPage" = "Previous page";
-"reader.nextPage" = "Next page";
 "reader.pageOf" = "%d of %d";
 "reader.toggleControls" = "Toggle controls";
-"reader.followAudio" = "Follow audio";
-"reader.followAudioHint" = "Double tap to jump the reader to the audio's current chapter";
 "reader.nowPlaying" = "Now playing";
 
 /* AppSettings — display names */
@@ -339,29 +243,11 @@
 "font.sans" = "Sans";
 "font.mono" = "Mono";
 
-/* NowPlayingView */
-"nowPlaying.noAudioYet" = "No audio yet";
-"nowPlaying.noAudioDescription" = "'%@' hasn't been converted yet. Open it from the library to start a conversion.";
-"nowPlaying.openInLibrary" = "Open in library";
-"nowPlaying.startNew" = "Start a new audiobook";
-"nowPlaying.startNewDescription" = "Import an EPUB from your library to convert and play it here.";
-
-/* BookOpenView */
-"bookOpen.opening" = "Opening %@…";
-
-/* General */
-"general.cancel" = "Cancel";
-"general.ok" = "OK";
-"general.done" = "Done";
-
 /* === Common (shared verbs/labels) === */
 "common.remove" = "Remove";
-"common.delete" = "Delete";
-"common.retry" = "Retry";
 "common.save" = "Save";
 
 /* === Navigation (sidebar / tab bar) === */
-"nav.read" = "Read";
 "nav.library" = "Library";
 "nav.conversions" = "Conversions";
 "nav.settings" = "Settings";
@@ -375,8 +261,6 @@
 "convert.pickFile" = "Pick EPUB or PDF";
 "convert.changeFile" = "Change file";
 "convert.engine" = "Engine";
-"convert.engine.cloud" = "cloud";
-"convert.engine.offline" = "offline";
 "convert.voiceOptional" = "Voice (optional)";
 "convert.languageOptional" = "Language code (e.g. en, pt) — optional";
 "convert.chapters" = "Chapters";
@@ -387,9 +271,6 @@
 "convert.clearCache" = "Clear cache before run";
 "convert.forceReprocess" = "Force reprocess";
 "convert.maxPerformance" = "Max performance";
-"convert.jobSubmitted" = "Job submitted: %@";
-"convert.openProgress" = "Open progress";
-"convert.submitting" = "Submitting…";
 "convert.preparing" = "Preparing conversion…";
 "convert.converting" = "Converting…";
 "convert.progressPercent" = "Converting… %d%%";
@@ -401,26 +282,12 @@
 "convert.openResult" = "View result";
 "convert.resultTitle" = "Conversion result";
 "convert.startConversion" = "Start conversion";
-"convert.error.engineWarmingUp" = "The audio engine is still starting. Please try again in a moment.";
 "convert.error.pickFileFirst" = "Pick an EPUB or PDF first.";
 "convert.error.busyWithAnotherBook" = "Another conversion is running. Wait for it to finish or cancel it, then convert this book.";
 "convert.error.unsupportedBookType" = "This book has no text to convert to audio.";
 
-/* === LibrarySidebar === */
-"librarySidebar.emptyTitle" = "Library is empty";
-"librarySidebar.emptyDescription" = "Tap the + button above to import an EPUB or PDF.";
-"librarySidebar.importBook" = "Import Book";
-
-/* === LibrarySearchBar === */
-"librarySearch.clear" = "Clear search";
-
-/* === LibraryDropHandler === */
-"libraryDrop.dropHere" = "Drop EPUB or PDF here";
-
 /* === LibraryView === */
-"library.tagLabel" = "Tag: %@";
 "library.addBookHint" = "Choose one or more EPUB or PDF books.";
-"library.filterBooks" = "Sort and filter books";
 "library.bookList" = "Book library";
 "library.tags" = "Tags";
 "player.openFullPlayer" = "Open full player";
@@ -433,29 +300,6 @@
 "reader.kerning" = "Letter spacing";
 "reader.columns" = "Columns";
 
-/* === TagEditorSheet === */
-"tagEditor.tags" = "Tags";
-"tagEditor.removeTag" = "Remove tag %@";
-"tagEditor.newTag" = "New tag";
-"tagEditor.add" = "Add";
-"tagEditor.existingTags" = "Existing tags";
-
-/* === BookmarksListView === */
-"bookmarks.filter" = "Filter";
-"bookmarks.filter.all" = "All";
-"bookmarks.filter.bookmarks" = "Bookmarks";
-"bookmarks.filter.highlights" = "Highlights";
-"bookmarks.note" = "Note";
-"bookmarks.emptyTitle" = "No bookmarks yet";
-"bookmarks.emptyDescription" = "Long-press a paragraph in the reader to add a bookmark or highlight.";
-"bookmarks.a11y.highlight" = "Highlight in %@: %@";
-"bookmarks.a11y.bookmark" = "Bookmark in %@";
-"bookmarks.highlightedText" = "Highlighted text";
-"bookmarks.color" = "Color";
-"bookmarks.colorSelected" = "%@ color, selected";
-"bookmarks.colorOption" = "%@ color";
-"bookmarks.editNote" = "Edit Note";
-
 /* === TocDrawer === */
 "toc.charsCount" = "%d chars";
 "toc.downloaded" = "downloaded";
@@ -465,8 +309,6 @@
 "toc.retryFailed" = "Retry failed chapters";
 "player.downloadChapter" = "Download chapter";
 "toc.textOnly" = "text only";
-"toc.currentlyPlaying" = "Currently playing";
-"toc.currentlyReading" = "Currently reading";
 
 /* === JobDetailView === */
 "jobDetail.title" = "Job detail";
@@ -477,58 +319,17 @@
 
 /* === JobsListView === */
 "jobs.title" = "Jobs";
-"jobs.noConversions" = "No conversions yet";
 "jobs.noConversionsDescription" = "Run a conversion via the CLI or web app to populate the history.";
 "jobs.historyReadLimit" = "Recent history exceeds the read limit.";
 "jobs.refresh" = "Refresh jobs";
 "jobs.chaptersAbbrev" = "%d ch";
 
-/* === ConversionStatusSheet === */
-"conversionStatus.title" = "Conversion Status";
-"conversionStatus.preparing" = "Preparing…";
-"conversionStatus.waitingFirstChunk" = "Waiting for first audio chunk…";
-"conversionStatus.notStarted" = "Conversion not started.";
-"conversionStatus.cancelConversion" = "Cancel conversion";
-"conversionStatus.elapsed" = "%@ elapsed";
-
-/* === ChapterListColumn === */
-"chapterList.loadingChapters" = "Loading chapters…";
-"chapterList.noChaptersYet" = "No chapters yet";
-"chapterList.noChaptersYetDescription" = "The conversion is still warming up. Chapters appear here as they finish.";
-"chapterList.noAudioYetDescription" = "Open the book to start a conversion. Once audio is generated, chapters show up here.";
-"chapterList.completed" = "completed";
-
-/* === InstantReaderView === */
-"instantReader.sleepMinutes" = "%d min";
-"instantReader.sleepActive" = "Active: %@ left";
-"instantReader.notDownloaded" = "Not downloaded";
-"instantReader.fromCurrentChapter" = "From current chapter";
-
-/* === PlayerReaderView === */
-"playerReader.loadingText" = "Loading book text…";
-"playerReader.noText" = "No text available for this chapter.";
-"playerReader.fallbackOffer" = "Audio not ready — read with accessibility voice?";
-"playerReader.fallbackOfferButton" = "Read aloud";
-
 /* === PlayerView === */
 "player.speed" = "Speed";
-"player.systemVolume" = "System volume";
 "player.audiobookFallback" = "Audiobook";
 
-/* === ReaderSearchOverlay === */
-"search.noResults" = "No results";
-
 /* === ReaderView === */
-"reader.seekSentenceHint" = "Double tap to seek audio to this sentence";
-"reader.sentenceMenu.playFromHere" = "Play from here";
-"reader.sentenceMenu.addBookmark" = "Add bookmark";
-"reader.sentenceMenu.removeBookmark" = "Remove bookmark";
-"reader.sentenceMenu.cancel" = "Cancel";
 "reader.selection.playFromHere" = "Play from here";
-"reader.selection.continuePlayback" = "Continue playback";
-"reader.selection.playSentence" = "Play this sentence";
-"reader.selection.playParagraph" = "Play this paragraph";
-"reader.follow" = "Follow";
 "reader.action.highlight" = "Highlight";
 "reader.action.addNote" = "Add Note";
 "reader.note.placeholder" = "Note";
@@ -545,13 +346,6 @@
 "bookDetail.progressPercent" = "%d%% complete";
 "bookDetail.downloadRequiresConversion" = "Convert this book to audio first.";
 
-/* === LocalEpubReaderView === */
-"localEpubReader.couldntRead" = "Couldn't read this book";
-"localEpubReader.noChapters" = "\"%@\" didn't expose any readable chapters. The file may be DRM-locked or its EPUB container may be malformed.";
-"localEpubReader.fileOnDisk" = "File on disk";
-
-/* === SettingsView === */
-
 /* === Widget === */
 "widget.nowPlaying" = "Now Playing";
 "widget.paused" = "Paused";
@@ -562,14 +356,9 @@
 "widget.importEpubToStart" = "Import an EPUB to get started";
 "widget.nothingPlaying" = "Nothing playing";
 "widget.noAudiobook" = "No audiobook";
-"widget.converting" = "Converting";
-"common.moreOptions" = "More options";
 "chapterList.removeDownloads" = "Remove downloads";
 "chapterList.removeDownloadsMessage" = "All downloaded MP3s for this book will be deleted.";
 "chapterList.cancelDownloads" = "Cancel downloads";
-"chapterList.cancelDownloadsMessage" = "The current download will stop. Completed chapters will remain.";
-"chapterList.clearTextCache" = "Clear text cache";
-"chapterList.clearTextCacheMessage" = "Cached chapter text for this book will be cleared.";
 "settings.storage" = "Storage";
 "settings.storageUsage" = "Storage used";
 "settings.offlineAudio" = "Downloaded audiobook audio";
@@ -634,7 +423,6 @@
 
 "conversion.secondaryVoiceUsed" = "Using secondary voice %@ for a failed segment.";
 "settings.systemTts" = "System voice (Luciana when available)";
-"settings.systemVoice" = "Installed system voice";
 
 "bookProgress.estimate" = "%d%% generated · about %d min remaining";
 "pronunciation.title" = "Pronunciation for this book";
@@ -741,7 +529,6 @@
 
 /* Localized navigation, accessibility and actionable failures. */
 "reader.pageTurning" = "Page turning";
-"library.untitled" = "Untitled";
 "intents.noLibrary" = "No books found in your library. Import an EPUB first.";
 "intents.bookNotFound" = "No book matching “%@” found in your library.";
 "Continue Reading" = "Continue Reading";
