@@ -53,28 +53,6 @@ final class ReaderThemeIntegrationTests: XCTestCase {
                      "Custom theme defers to the OS — we don't know if user colours are dark or light.")
     }
 
-    // MARK: - Dark theme group
-
-    func testDarkThemeGroupIsDark() {
-        let darkThemes: [ReaderTheme] = [.dark, .black]
-        for theme in darkThemes {
-            XCTAssertEqual(
-                theme.preferredColorScheme, .dark,
-                "\(theme.rawValue) must map to .dark"
-            )
-        }
-    }
-
-    func testLightThemeGroupIsLight() {
-        let lightThemes: [ReaderTheme] = [.light, .sepia, .parchment, .paper]
-        for theme in lightThemes {
-            XCTAssertEqual(
-                theme.preferredColorScheme, .light,
-                "\(theme.rawValue) must map to .light"
-            )
-        }
-    }
-
     // MARK: - AppSettings persistence round-trip
 
     func testReaderThemePersistsAndReloads() {

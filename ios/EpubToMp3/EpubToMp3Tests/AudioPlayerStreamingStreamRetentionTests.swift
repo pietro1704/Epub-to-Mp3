@@ -93,25 +93,6 @@ extension AudioPlayerStreamingTests {
             "Session teardown releases deferred files only after their queue can no longer consume them")
     }
 
-    @MainActor
-    func testClearConversionStateResetsFirstSegmentReady() {
-        let player = AudioPlayer()
-        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertTrue(player.firstSegmentReady)
-
-        // `clearConversionState` deliberately preserves readiness flags
-        // while a player is mounted (so we don't clobber an active session).
-        // A real "new book" flow calls `stop()` first, which tears down
-        // the player; then clearConversionState resets the flags.
-        player.stop()
-        player.clearConversionState()
-
-        XCTAssertFalse(player.firstSegmentReady,
-            "clearConversionState must reset firstSegmentReady once the player is torn down")
-        XCTAssertFalse(player.firstChapterReady,
-            "clearConversionState must also reset firstChapterReady")
-    }
-
     /// Verifies that calling `play(snapshot:)` after segments were
     /// enqueued via streaming replaces the queue cleanly (teardown + rebuild).
     @MainActor

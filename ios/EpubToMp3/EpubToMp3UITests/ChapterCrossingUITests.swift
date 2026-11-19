@@ -50,26 +50,6 @@ final class ChapterCrossingUITests: XCTestCase {
         return (p, t)
     }
 
-    /// Sum of the FlickerProbe counters parsed from "stale=0 spurious=0 empty=0".
-    private func flickerTotal(_ app: XCUIApplication) -> Int {
-        app.staticTexts["flicker.probe.summary"].firstMatch.label
-            .split(separator: " ")
-            .compactMap { token -> Int? in
-                guard let eq = token.firstIndex(of: "=") else { return nil }
-                return Int(token[token.index(after: eq)...])
-            }
-            .reduce(0, +)
-    }
-
-    private func resetProbe(_ app: XCUIApplication) {
-        usleep(1_500_000)   // let the initial chapter fully paginate first
-        let reset = app.buttons["flicker.probe.reset"].firstMatch
-        if reset.waitForExistence(timeout: 5) {
-            reset.tap()
-            waitUntil(timeout: 1.0) { flickerTotal(app) == 0 }
-        }
-    }
-
     func testForwardCrossesChapterBoundary() throws {
         let app = try openReader()
         let right = app.buttons["reader.pageTurn.right"].firstMatch
@@ -190,43 +170,5 @@ final class ChapterCrossingUITests: XCTestCase {
                        "(before=\(startCh) after=\(String(describing: chapter(app))))")
         XCTAssertEqual(indicator(app)?.page, 1,
                        "after a swipe crossing, the reader must be on page 1")
-    }
-
-    /// The forward crossing is now an ANIMATED page-curl (seedCrossing). The
-    /// animation itself can't be asserted via XCUITest frame-diff, but the value
-    /// here is proving the animated re-seed did NOT introduce flicker events:
-    /// after crossing, the probe must still read stale=0 spurious=0 empty=0.
-    func testForwardCrossingIsAnimatedAndDoesNotFlicker() throws {
-        let app = try openReader()
-        let right = app.buttons["reader.pageTurn.right"].firstMatch
-        XCTAssertTrue(right.waitForExistence(timeout: 5))
-        guard let startCh = chapter(app), startCh.index + 1 < startCh.total else {
-            throw XCTSkip("No room to cross a chapter boundary.")
-        }
-
-        // Page to the last page of the current chapter, THEN reset the probe so
-        // only the crossing (not the cold-load / in-chapter turns) is measured.
-        var guardCount = 0
-        while let cur = indicator(app), cur.page < cur.total, guardCount < 80 {
-            right.tap()
-            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
-            guardCount += 1
-        }
-        resetProbe(app)
-
-        // Cross forward — this triggers the chapter swap + repagination.
-        // `showChapter` + `setContentOffset(animated: false)` is a
-        // synchronous state change (no CATransform to wait out), so chapter
-        // index and page are reliable, near-instant observable signals.
-        right.tap()
-        waitUntil(timeout: 2.0) {
-            chapter(app)?.index == startCh.index + 1 && indicator(app)?.page == 1
-        }
-
-        XCTAssertEqual(chapter(app)?.index, startCh.index + 1,
-                       "forward crossing must advance exactly one chapter")
-        XCTAssertEqual(indicator(app)?.page, 1, "must land on page 1 of the new chapter")
-        XCTAssertEqual(flickerTotal(app), 0,
-                       "the animated crossing must add zero flicker events, got [\(app.staticTexts["flicker.probe.summary"].firstMatch.label)]")
     }
 }

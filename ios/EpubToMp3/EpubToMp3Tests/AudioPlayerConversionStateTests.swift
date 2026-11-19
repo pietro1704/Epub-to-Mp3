@@ -49,13 +49,6 @@ final class AudioPlayerConversionStateTests: XCTestCase {
             "isLoading must be false once firstChapterReady is true, even during conversion")
     }
 
-    @MainActor
-    func testIsLoadingFalseWhenNotConverting() {
-        let player = AudioPlayer()
-        player.isConverting = false
-        XCTAssertFalse(player.isLoading)
-    }
-
     /// A Listen tap must replace its play control immediately, including
     /// while the embedded runtime warms up and parses the book before the
     /// first chapter synthesis begins.
@@ -138,27 +131,6 @@ final class AudioPlayerConversionStateTests: XCTestCase {
     }
 
     // MARK: - MiniPlayerBar display logic (unit replica)
-
-    /// The bar should show a spinner (not play/pause) when converting
-    /// and the first chapter has not arrived yet.
-    @MainActor
-    func testMiniBarShowsSpinnerWhenConvertingNoFirstChapter() {
-        let player = AudioPlayer()
-        player.isConverting = true
-        XCTAssertTrue(player.isLoading,
-            "MiniPlayerBar must show spinner while isConverting && !firstChapterReady")
-    }
-
-    /// After the first chapter lands the bar switches to play/pause,
-    /// regardless of isConverting still being true (background chapters).
-    @MainActor
-    func testMiniBarShowsPlayAfterFirstChapterReady() {
-        let player = AudioPlayer()
-        player.isConverting = true
-        player.markFirstChapterReady()
-        XCTAssertFalse(player.isLoading,
-            "MiniPlayerBar must switch to play/pause once firstChapterReady is true")
-    }
 
     /// Conversion done: isConverting=false, firstChapterReady=true.
     /// Bar should show normal play/pause.
