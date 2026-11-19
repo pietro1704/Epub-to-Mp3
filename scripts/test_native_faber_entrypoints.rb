@@ -7,6 +7,7 @@ require 'open3'
 require 'rbconfig'
 require 'json'
 require 'timeout'
+require 'uri'
 
 # Real drivers/supervisor, isolated preflight and real child processes; no native
 # compiler, download, Apple service, app or device is started by these fixtures.
@@ -341,33 +342,92 @@ class NativeFaberEntrypointsTest < Minitest::Test
     end
   end
 
-  # No network: the transfer and the checksum are injected, as the sleeper is.
-  def test_android_runtime_download_retries_only_transient_failures_a_bounded_number_of_times
+  # No network: the transfer, checksum, clock and sleeper are injected.
+  def android_download(statuses:, bodies: {}, good: 'pinned', **options)
     require_relative 'fetch_onnxruntime_android'
     Dir.mktmpdir('android-ort-download-') do |root|
       archive = File.join(root, 'runtime.aar')
-      run = lambda do |statuses, good_after: nil|
-        calls = 0
-        delays = []
-        runner = lambda do |path|
-          calls += 1
-          assert_equal archive, path
-          refute File.exist?(path), 'A previous attempt must not leave its file behind'
-          File.write(path, "body-#{calls}")
-          statuses.fetch(calls - 1, 0)
-        end
-        verifier = ->(path) { good_after.nil? || File.read(path) == "body-#{good_after}" }
-        ok = AndroidOnnxRuntime.download(archive, sleeper: ->(seconds) { delays << seconds }, runner: runner, verifier: verifier)
-        [ok, calls, delays]
+      calls = []
+      delays = []
+      now = 0.0
+      runner = lambda do |path, url, max_time|
+        assert_operator max_time, :<=, AndroidOnnxRuntime::ATTEMPT_MAX_SECONDS
+        assert_operator max_time, :>=, 1
+        assert_equal archive, path
+        refute File.exist?(path), 'A previous attempt must not leave its file behind'
+        calls << url
+        status = statuses.call(url, calls.size)
+        File.write(path, bodies.fetch(url, good)) if status&.zero?
+        now += 1
+        status
       end
-      assert_equal [true, 1, []], run.call([0])
-      assert_equal [true, 3, [5, 15]], run.call([22, 22, 0]), 'Observed Maven Central 404s are retried'
-      assert_equal [true, 2, [5]], run.call([0, 0], good_after: 2), 'A truncated or wrong body is retried'
-      assert_equal [false, AndroidOnnxRuntime::DOWNLOAD_ATTEMPTS, [5, 15, 30]], run.call([28] * 9)
-      [nil, 23, 63, 2].each do |status|
-        assert_equal [false, 1, []], run.call([status]), "Permanent curl status #{status.inspect} is not retried"
-      end
+      verifier = ->(path) { File.read(path) == good }
+      ok = AndroidOnnxRuntime.download(archive, sleeper: ->(seconds) { delays << seconds; now += seconds }, runner: runner,
+                                       verifier: verifier, clock: -> { now }, **options)
+      { ok: ok, calls: calls, delays: delays, kept: File.exist?(archive) && File.read(archive) }
     end
+  end
+
+  def test_android_runtime_download_falls_back_to_mirrors_of_the_same_pinned_path
+    require_relative 'fetch_onnxruntime_android'
+    urls = AndroidOnnxRuntime::MIRROR_URLS
+    path = URI(AndroidOnnxRuntime::URL).path
+    assert_equal urls.first, AndroidOnnxRuntime::URL, 'The canonical host is tried first and stays in the manifest'
+    assert_equal %w[repo.maven.apache.org maven-central.storage-download.googleapis.com], urls.first(2).map { |url| URI(url).host },
+      'An independent mirror follows the canonical CDN'
+    urls.each { |url| assert_equal path, URI(url).path, url; assert_equal 'https', URI(url).scheme }
+
+    # Observed: the canonical host answers 404 for every attempt.
+    first_down = ->(url, _) { url == urls.first ? 22 : 0 }
+    result = android_download(statuses: first_down)
+    assert result[:ok]
+    assert_equal urls.first(2), result[:calls]
+    assert_equal [], result[:delays]
+
+    # A mirror with the wrong body is rejected; the next one with the pinned body is accepted.
+    result = android_download(statuses: first_down, bodies: { urls[1] => 'tampered' })
+    assert result[:ok]
+    assert_equal urls.first(3), result[:calls]
+    assert_equal 'pinned', result[:kept]
+
+    # Every mirror wrong or down: bounded rounds with backoff, then failure and no archive left.
+    result = android_download(statuses: ->(url, _) { url == urls.last ? 0 : 22 }, bodies: { urls.last => 'tampered' })
+    refute result[:ok]
+    assert_equal urls * AndroidOnnxRuntime::DOWNLOAD_ROUNDS, result[:calls]
+    assert_equal [10, 30], result[:delays]
+    assert_equal false, result[:kept]
+
+    # A transient same-host failure still recovers on a later round.
+    result = android_download(statuses: ->(_, call) { call <= urls.size ? 22 : 0 })
+    assert result[:ok]
+    assert_equal urls + [urls.first], result[:calls]
+    assert_equal [10], result[:delays]
+  end
+
+  def test_android_runtime_download_stops_on_permanent_failures_and_at_the_deadline
+    require_relative 'fetch_onnxruntime_android'
+    [nil, 2, 3, 23, 26, 27].each do |status|
+      result = android_download(statuses: ->(_, _) { status })
+      refute result[:ok]
+      assert_equal 1, result[:calls].size, "Local curl status #{status.inspect} is not retried on other hosts"
+    end
+    # Host-specific failures (HTTP/2 92, framing 16, send 55, TLS 60, redirects 47, size cap 63) reach the next mirror.
+    [16, 47, 55, 60, 63, 92].each do |status|
+      result = android_download(statuses: ->(url, _) { url == AndroidOnnxRuntime::URL ? status : 0 })
+      assert result[:ok], "curl status #{status} on one host must fall back"
+      assert_equal 2, result[:calls].size
+    end
+    result = android_download(statuses: ->(_, _) { 28 }, deadline: 3)
+    refute result[:ok]
+    assert_equal 3, result[:calls].size, 'No attempt starts after the deadline'
+    result = android_download(statuses: ->(_, _) { 28 }, deadline: 12)
+    refute result[:ok]
+    assert_equal AndroidOnnxRuntime::MIRROR_URLS.size, result[:calls].size, 'No backoff that would cross the deadline'
+    assert_equal [], result[:delays]
+times = []
+AndroidOnnxRuntime.download(File.join(Dir.tmpdir, "ort-deadline-#{Process.pid}.aar"), deadline: 50, sleeper: ->(_) {},
+  runner: ->(_, _, max_time) { times << max_time; 28 }, verifier: ->(_) { false }, clock: -> { 0.0 + times.sum })
+assert_equal [50], times, 'An attempt never runs past the wall-clock deadline'
   end
 
   def test_android_runtime_download_keeps_the_pinned_curl_contract
@@ -376,14 +436,18 @@ class NativeFaberEntrypointsTest < Minitest::Test
       trace = File.join(root, 'argv')
       File.write(File.join(root, 'curl'), "#!/bin/bash\nprintf '%s\\n' \"$@\" > \"#{trace}\"\nexit 22\n")
       File.chmod(0o700, File.join(root, 'curl'))
-      script = "require #{File.join(ROOT, 'scripts/fetch_onnxruntime_android').inspect}; print AndroidOnnxRuntime.curl(ARGV.fetch(0))"
-      output, error, status = Open3.capture3({ 'PATH' => "#{root}:#{ENV.fetch('PATH')}" }, RbConfig.ruby, '-e', script, File.join(root, 'a.aar'))
+      mirror = AndroidOnnxRuntime::MIRROR_URLS[1]
+      script = "require #{File.join(ROOT, 'scripts/fetch_onnxruntime_android').inspect}; print AndroidOnnxRuntime.curl(ARGV.fetch(0), ARGV.fetch(1))"
+      output, error, status = Open3.capture3({ 'PATH' => "#{root}:#{ENV.fetch('PATH')}" }, RbConfig.ruby, '-e', script, File.join(root, 'a.aar'), mirror)
       assert status.success?, error
       assert_equal '22', output
       argv = File.readlines(trace, chomp: true)
       %w[--fail --location --max-filesize --output].each { |flag| assert_includes argv, flag }
-      assert_equal AndroidOnnxRuntime::URL, argv.last
+      assert_equal '=https', argv[argv.index('--proto') + 1]
+      assert_equal '=https', argv[argv.index('--proto-redir') + 1]
+      assert_equal mirror, argv.last
       assert_equal AndroidOnnxRuntime::ARCHIVE_SIZE.to_s, argv[argv.index('--max-filesize') + 1]
+      assert_equal '120', argv[argv.index('--max-time') + 1]
       refute_includes argv, '--retry'
     end
   end

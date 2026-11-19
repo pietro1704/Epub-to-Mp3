@@ -13,46 +13,87 @@ module AndroidOnnxRuntime
   ARCHIVE_SIZE = 30_241_654
   ARCHIVE_SHA256 = '82048d1f462218adae4ba76477089ab0ba76093d84f733540066db1a8ba6b827'.freeze
   LIBRARY_SHA256 = 'e40f09d07dc53726b8bfbf48a7907673b8f86718a057655a62790a39874a7302'.freeze
-  URL = "https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/#{VERSION}/onnxruntime-android-#{VERSION}.aar".freeze
   ROOT = File.expand_path('..', __dir__).freeze
   DESTINATION = File.join(ROOT, 'target', 'onnxruntime-android-prebuilt', 'arm64-v8a').freeze
 
-# Maven Central intermittently answers this immutable URL with HTTP 404 from
-# hosted runners (post-merge runs 44426324588, 44466049534, 44555534048 and
-# 44578840995); curl --retry never retries an HTTP 404. Retry only transient
-# transfer failures, and a body that fails the pinned size/SHA-256 check,
-# a bounded number of times: at most 4 x 120 s plus 50 s of backoff.
-DOWNLOAD_ATTEMPTS = 4
-DOWNLOAD_BACKOFF_SECONDS = [5, 15, 30].freeze
-# curl: 6/7 resolve/connect, 18 partial, 22 HTTP error, 28 timeout, 35 TLS, 52/56 empty/receive.
-TRANSIENT_CURL_STATUSES = [6, 7, 18, 22, 28, 35, 52, 56].freeze
+  # Maven Central intermittently answers this immutable path with HTTP 404 from
+  # hosted runners, sometimes for minutes on one CDN edge (post-merge runs
+  # 44426324588, 44466049534, 44555534048, 44578840995 and, after a same-host
+  # retry, 44601184207). Each round tries the same path on every host below;
+  # the Google Cloud mirror comes second because repo1.maven.org usually shares
+  # the canonical CDN edge. Rounds repeat with backoff. Integrity stays pinned:
+  # every body must match the archive size and SHA-256, so a mirror cannot
+  # change what is built, and the runtime manifest keeps the canonical URL.
+  MIRROR_HOSTS = %w[
+    repo.maven.apache.org
+    maven-central.storage-download.googleapis.com
+    repo1.maven.org
+    maven-central-eu.storage-download.googleapis.com
+  ].freeze
+  ARTIFACT_PATH = "/maven2/com/microsoft/onnxruntime/onnxruntime-android/#{VERSION}/onnxruntime-android-#{VERSION}.aar".freeze
+  URL = "https://#{MIRROR_HOSTS.first}#{ARTIFACT_PATH}".freeze
+  MIRROR_URLS = MIRROR_HOSTS.map { |host| "https://#{host}#{ARTIFACT_PATH}".freeze }.freeze
+  DOWNLOAD_ROUNDS = 3
+  DOWNLOAD_BACKOFF_SECONDS = [10, 30].freeze
+  # Wall-clock bound for the whole download: each attempt's --max-time is cut to
+  # the time left, and no attempt or backoff starts past it.
+  DOWNLOAD_DEADLINE_SECONDS = 600
+  ATTEMPT_MAX_SECONDS = 120
+  # Failures of this machine, not of a host: missing curl (nil), curl usage (2),
+  # malformed URL (3), local write/read (23/26) and out of memory (27). Any other
+  # status, including HTTP errors, TLS, HTTP/2 and the size cap, tries the next host.
+  LOCAL_CURL_STATUSES = [nil, 2, 3, 23, 26, 27].freeze
 
-def self.curl(archive)
-  system("curl", "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "15", "--max-time", "120",
-         "--max-filesize", ARCHIVE_SIZE.to_s, "--output", archive, URL, out: $stderr, err: $stderr)
-  $?&.exitstatus
-end
-
-def self.verified_archive?(archive)
-  File.file?(archive) && File.size(archive) == ARCHIVE_SIZE && Digest::SHA256.file(archive).hexdigest == ARCHIVE_SHA256
-end
-
-def self.download(archive, attempts: DOWNLOAD_ATTEMPTS, sleeper: Kernel.method(:sleep), runner: method(:curl),
-                  verifier: method(:verified_archive?))
-  attempts.times do |index|
-    FileUtils.rm_f(archive)
-    status = runner.call(archive)
-    return true if status&.zero? && verifier.call(archive)
-    reason = status&.zero? ? "archive failed checksum verification" : "curl exited #{status.inspect}"
-    return false unless status&.zero? || TRANSIENT_CURL_STATUSES.include?(status)
-    break if index == attempts - 1
-
-    delay = DOWNLOAD_BACKOFF_SECONDS.fetch(index, DOWNLOAD_BACKOFF_SECONDS.last)
-    warn "Android ONNX runtime download attempt #{index + 1}/#{attempts}: #{reason}; retrying in #{delay} s"
-    sleeper.call(delay)
+  def self.curl(archive, url = URL, max_time = ATTEMPT_MAX_SECONDS)
+    system('curl', '--fail', '--location', '--proto', '=https', '--proto-redir', '=https', '--silent', '--show-error',
+           '--connect-timeout', '15', '--max-time', max_time.to_s, '--max-filesize', ARCHIVE_SIZE.to_s,
+           '--output', archive, url, out: $stderr, err: $stderr)
+    $?&.exitstatus
   end
-  false
-end
+
+  def self.verified_archive?(archive)
+    File.file?(archive) && File.size(archive) == ARCHIVE_SIZE && Digest::SHA256.file(archive).hexdigest == ARCHIVE_SHA256
+  end
+
+  def self.monotonic
+    Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  end
+
+  def self.download(archive, urls: MIRROR_URLS, rounds: DOWNLOAD_ROUNDS, deadline: DOWNLOAD_DEADLINE_SECONDS,
+                    sleeper: Kernel.method(:sleep), runner: method(:curl), verifier: method(:verified_archive?),
+                    clock: method(:monotonic))
+    started = clock.call
+    remaining = -> { deadline - (clock.call - started) }
+    give_up = lambda do |reason|
+      warn "Android ONNX runtime download stopped: #{reason}"
+      false
+    end
+    rounds.times do |round|
+      urls.each do |url|
+        left = remaining.call.floor
+        return give_up.call("#{deadline} s deadline reached") if left < 1
+
+        FileUtils.rm_f(archive)
+        status = runner.call(archive, url, [left, ATTEMPT_MAX_SECONDS].min)
+        return true if status&.zero? && verifier.call(archive)
+
+        reason = status&.zero? ? 'archive failed size/SHA-256 verification' : "curl exited #{status.inspect}"
+        return give_up.call("#{reason} from #{url} is a local failure") if LOCAL_CURL_STATUSES.include?(status)
+
+        warn "Android ONNX runtime download from #{url} (round #{round + 1}/#{rounds}): #{reason}"
+      end
+      break if round == rounds - 1
+
+      delay = DOWNLOAD_BACKOFF_SECONDS.fetch(round, DOWNLOAD_BACKOFF_SECONDS.last)
+      return give_up.call("#{deadline} s deadline leaves no room for another round") if remaining.call - delay < 1
+
+      warn "Retrying every Android ONNX runtime host in #{delay} s"
+      sleeper.call(delay)
+    end
+    give_up.call("every host failed in #{rounds} rounds")
+  ensure
+    FileUtils.rm_f(archive) unless File.file?(archive) && verifier.call(archive)
+  end
 
   def self.command(*arguments)
     output, status = Open3.capture2e(*arguments)
