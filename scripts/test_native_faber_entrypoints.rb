@@ -371,6 +371,7 @@ class NativeFaberEntrypointsTest < Minitest::Test
   end
 
   def test_android_runtime_download_keeps_the_pinned_curl_contract
+    require_relative 'fetch_onnxruntime_android'
     Dir.mktmpdir('android-ort-curl-') do |root|
       trace = File.join(root, 'argv')
       File.write(File.join(root, 'curl'), "#!/bin/bash\nprintf '%s\\n' \"$@\" > \"#{trace}\"\nexit 22\n")
