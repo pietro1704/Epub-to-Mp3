@@ -179,6 +179,12 @@ PR gate, standing automatic-merge authorization for ready PRs to `master`
 and no-monitoring default. Keep the repository's existing guarded merge
 workflow enabled; other targets follow the execution policy's authorization rules.
 Comprehensive post-merge validation and publishers are separate from PR checks.
+Post-merge always runs the integrated CI, CodeQL, native-host, audit and
+Ruby-Rust jobs. It skips a platform validation only when every change since the
+newest successful post-merge run of an ancestor is confined to other areas
+(`ios/EpubToMp3/`, `flutter_app/` or modified prose Markdown;
+`scripts/post_merge_scope.mjs`). Any other path runs everything, as does a
+manual dispatch.
 
 After an authorized merge, read back its identity and confirm it belongs to
 `origin/master`. Preserve local overlays, fast-forward local `master`, then remove

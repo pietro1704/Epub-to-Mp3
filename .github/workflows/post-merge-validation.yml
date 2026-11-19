@@ -30,6 +30,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/post_merge_validation.mjs
 
+  # Selects which platform validations this merge needs; see
+  # scripts/post_merge_scope.mjs. Push only; workflow_dispatch runs everything.
+  scope:
+    name: Select post-merge scope
+    needs: merge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      selection: ${{ steps.scope.outputs.selection }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select validations from changes since the last successful ancestor validation
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/post_merge_scope.mjs
+
   ci:
     needs: merge
     uses: ./.github/workflows/ci.yml
@@ -45,19 +66,23 @@ jobs:
       security-events: write
 
   ffi:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['ffi']
     uses: ./.github/workflows/converter-ffi.yml
 
   faber:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['faber']
     uses: ./.github/workflows/faber-integration.yml
 
   flutter:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['flutter']
     uses: ./.github/workflows/flutter-rust-faber.yml
 
   fallback:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['fallback']
     uses: ./.github/workflows/native-fallback.yml
 
   native:
@@ -65,23 +90,28 @@ jobs:
     uses: ./.github/workflows/native-hook-safety.yml
 
   rails-image:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['rails-image']
     uses: ./.github/workflows/rails-image-regression.yml
 
   snapshot:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['snapshot']
     uses: ./.github/workflows/hf-snapshot-regression.yml
 
   cli:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['cli']
     uses: ./.github/workflows/cli-faber-golden.yml
 
   linux:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['linux']
     uses: ./.github/workflows/linux-gui-artifact.yml
 
   isolation:
-    needs: merge
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['isolation']
     uses: ./.github/workflows/native-ffi-test-isolation.yml
 
   audit:
@@ -95,7 +125,7 @@ jobs:
   validated:
     name: Validated merged source
     if: always()
-    needs: [merge, ci, codeql, ffi, faber, flutter, fallback, native, snapshot, rails-image, cli, linux, isolation, audit, ruby]
+    needs: [merge, scope, ci, codeql, ffi, faber, flutter, fallback, native, snapshot, rails-image, cli, linux, isolation, audit, ruby]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

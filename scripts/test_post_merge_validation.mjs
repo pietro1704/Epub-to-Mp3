@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { verifyMergeIdentity, assertValidationResults, inspectMergedSource, REQUIRED_VALIDATIONS } from './post_merge_validation.mjs';
+import { SCOPED, ALWAYS } from './post_merge_scope.mjs';
 
 const repo = 'pietro1704/Epub-to-Mp3';
 const sha = 'a'.repeat(40);
@@ -29,17 +30,43 @@ test('PR heads, unmerged changes and wrong repository or merge identities fail c
   }
 });
 
-test('every required validation must complete successfully before publication', () => {
+const everything = () => Object.fromEntries(Object.keys(SCOPED).map(name => [name, true]));
+function results(selection = everything()) {
   const needs = Object.fromEntries(REQUIRED_VALIDATIONS.map(name => [name, { result: 'success' }]));
+  needs.scope = { result: 'success', outputs: { selection: JSON.stringify(selection) } };
+  return needs;
+}
+
+test('every required validation must complete successfully before publication', () => {
+  const needs = results();
   assert.equal(assertValidationResults(needs), true);
   for (const result of ['failure', 'cancelled', 'skipped', 'in_progress', undefined]) {
     assert.throws(() => assertValidationResults({ ...needs, codeql: { result } }));
+    assert.throws(() => assertValidationResults({ ...needs, faber: { result } }), 'A selected scoped job must pass');
   }
   for (const value of [undefined, [], {}, { ci: { result: 'success' } }]) assert.throws(() => assertValidationResults(value));
   for (const name of REQUIRED_VALIDATIONS) {
     const incomplete = { ...needs }; delete incomplete[name];
     assert.throws(() => assertValidationResults(incomplete), /Missing required validation/);
   }
+});
+
+test('only a job the scope did not select may be skipped, and a selection must be complete', () => {
+  const selection = { ...everything(), flutter: false, linux: false };
+  const needs = results(selection);
+  for (const name of ['flutter', 'linux']) needs[name] = { result: 'skipped' };
+  assert.equal(assertValidationResults(needs), true);
+  assert.throws(() => assertValidationResults({ ...needs, faber: { result: 'skipped' } }), /faber/);
+  assert.throws(() => assertValidationResults({ ...needs, flutter: { result: 'failure' } }), /flutter/, 'A job that ran must pass');
+  for (const always of ['ci', 'codeql', 'native', 'audit', 'ruby', 'merge']) {
+    assert.throws(() => assertValidationResults({ ...needs, [always]: { result: 'skipped' } }), new RegExp(always));
+  }
+  for (const outputs of [undefined, {}, { selection: 'not json' }, { selection: '[]' },
+    { selection: JSON.stringify({ ...selection, codeql: false }) }, { selection: JSON.stringify({ faber: true }) },
+    { selection: JSON.stringify({ ...selection, faber: 'false' }) }]) {
+    assert.throws(() => assertValidationResults({ ...needs, scope: { result: 'success', outputs } }));
+  }
+  assert.throws(() => assertValidationResults({ ...needs, scope: { result: 'failure', outputs: needs.scope.outputs } }), /scope/);
 });
 
 test('read-only inspection rejects incomplete pages and propagates unavailable metadata', () => {
@@ -150,7 +177,7 @@ test('postmerge graph contains every runtime and aggregates all called workflows
 test('the Rails image regression runs for the integrated SHA before validation succeeds', () => {
   const post = workflow('post-merge-validation.yml');
   const job = post.jobs['rails-image'];
-  assert.equal(job?.needs, 'merge');
+  assert.deepEqual(job?.needs, ['merge', 'scope']);
   assert.equal(job.uses, './.github/workflows/rails-image-regression.yml');
   assert.ok(post.jobs.validated.needs.includes('rails-image'));
   const image = workflow('rails-image-regression.yml').jobs.image;
@@ -158,4 +185,19 @@ test('the Rails image regression runs for the integrated SHA before validation s
   assert.equal(checkout.with.ref, '${{ github.sha }}');
   assert.equal(checkout.with['persist-credentials'], false);
   assert.ok(image.steps.some(step => step.run === 'ruby_app/rails_gateway/bin/image-regression'));
+});
+
+test('postmerge runs every always-on job and gates each scoped job on its scope output', () => {
+  const post = workflow('post-merge-validation.yml');
+  assert.deepEqual([...ALWAYS, ...Object.keys(SCOPED)].sort(), [...REQUIRED_VALIDATIONS].sort());
+  for (const name of ALWAYS) assert.equal(post.jobs[name].if, undefined, `${name} must always run`);
+  for (const name of Object.keys(SCOPED)) {
+    assert.deepEqual(post.jobs[name].needs, ['merge', 'scope'], name);
+    assert.equal(post.jobs[name].if, `fromJSON(needs.scope.outputs.selection)['${name}']`, name);
+  }
+  assert.deepEqual(post.jobs.scope.outputs, { selection: '${{ steps.scope.outputs.selection }}' });
+  const checkout = post.jobs.scope.steps[0];
+  assert.equal(checkout.with.ref, '${{ github.sha }}');
+  assert.equal(checkout.with['fetch-depth'], 0);
+  assert.equal(post.jobs.scope.steps.at(-1).run, 'node scripts/post_merge_scope.mjs');
 });

@@ -1,13 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { REQUIRED, SCOPED } from './post_merge_scope.mjs';
 
 const ensure = (condition, message) => { if (!condition) throw new Error(message); };
 const SHA = /^[a-f0-9]{40}$/;
-export const REQUIRED_VALIDATIONS = Object.freeze([
-  'merge', 'ci', 'codeql', 'ffi', 'faber', 'flutter', 'fallback', 'native',
-  'snapshot', 'rails-image', 'cli', 'linux', 'isolation', 'audit', 'ruby',
-]);
+export const REQUIRED_VALIDATIONS = REQUIRED;
 
 export function verifyMergeIdentity({ repo, sha, event, ref, master, comparison, pulls }) {
   ensure(typeof repo === 'string' && /^[\w.-]+\/[\w.-]+$/.test(repo), 'Invalid repository');
@@ -25,8 +23,17 @@ export function verifyMergeIdentity({ repo, sha, event, ref, master, comparison,
 export function assertValidationResults(needs) {
   ensure(needs && typeof needs === 'object' && !Array.isArray(needs), 'Missing validation results');
   ensure(REQUIRED_VALIDATIONS.every(name => Object.hasOwn(needs, name)), 'Missing required validation');
+  let selection;
+  try { selection = JSON.parse(needs.scope?.outputs?.selection); } catch { selection = null; }
+  ensure(selection && typeof selection === 'object' && !Array.isArray(selection), 'Missing scope selection');
+  const scoped = Object.keys(SCOPED).sort();
+  ensure(JSON.stringify(Object.keys(selection).sort()) === JSON.stringify(scoped)
+    && Object.values(selection).every(value => typeof value === 'boolean'), 'Invalid scope selection');
   for (const [name, job] of Object.entries(needs)) {
-    ensure(job && job.result === 'success', `Required validation did not succeed: ${name}`);
+    // Only a job the scope did not select may be skipped; a selected job must pass.
+    const skippable = Object.hasOwn(selection, name) && selection[name] === false;
+    const accepted = skippable ? ['success', 'skipped'] : ['success'];
+    ensure(job && accepted.includes(job.result), `Required validation did not succeed: ${name}`);
   }
   return true;
 }
