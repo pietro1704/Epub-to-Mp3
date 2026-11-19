@@ -34,10 +34,13 @@ final class LocalAudioPlaybackRestorationTests: XCTestCase {
         XCTAssertEqual(result.chaptersCompleted, 0)
     }
 
-    func testUnknownLegacyIndexAxisDoesNotMergeUnprovenChapterIdentities() {
-        let retained = snapshot(job: "embedded-book", chapters: [chapter(0)])
+    func testUnknownLegacyIndexAxisDoesNotMergeAndNeverMasksRetainedAudio() {
+        let retained = snapshot(job: "embedded-book", chapters: [chapter(0), chapter(1)])
         let legacy = snapshot(job: "job", chapters: [chapter(1)], base: nil)
-        XCTAssertEqual(restore(retained, legacy), legacy)
+        // Unproven chapter identities are not merged, and complete retained audio
+        // keeps the precedence it had before restoration was composed.
+        XCTAssertEqual(restore(retained, legacy), retained)
+        XCTAssertEqual(restore(nil, legacy), legacy)
     }
 
     func testOtherBookAndOtherJobCannotEnterRestoredQueue() {

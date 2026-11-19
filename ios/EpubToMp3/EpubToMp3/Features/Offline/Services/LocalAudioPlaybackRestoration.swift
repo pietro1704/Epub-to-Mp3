@@ -18,9 +18,14 @@ enum LocalAudioPlaybackRestoration {
             return candidate
         }
         guard let converted else { return retained }
-        guard let retained, converted.chapterIndexBase == 0, validIndices(converted) else {
-            return converted
-        }
+        guard let retained else { return converted }
+        // A job whose chapter indices are not on the declared axis cannot be
+        // merged. Retained audio keeps the precedence it always had over such a
+        // snapshot instead of being dropped.
+        guard converted.chapterIndexBase == 0 else { return retained }
+        // Declared but ambiguous indices (repeated structural index 0 in older
+        // jobs) stay with the job's own snapshot and are never merged.
+        guard validIndices(converted) else { return converted }
         // The current job owns conflicting chapters and their timing/offset
         // metadata. Retained audio fills gaps; it never masks a newer job.
         var chapters = converted.playableChapters
