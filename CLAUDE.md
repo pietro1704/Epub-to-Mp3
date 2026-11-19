@@ -39,8 +39,9 @@ and Simulator safeguards follow the execution policy.
   [project skill adapter](docs/agents/skill-routing.md).
 - Execution, local/remote platforms, native safety and delivery authorization:
   read [execution policy](docs/agents/execution-policy.md) before executing work.
-- PR delivery: keep working while PRs are open. Stack dependent PRs and follow
-  the [delivery policy](docs/agents/execution-policy.md#git-and-publication)
+- PR delivery: keep working while PRs are open. Never open or leave a PR in
+  draft. Stack dependent PRs with GitHub native Stacked PRs (`gh stack`) and
+  follow the [delivery policy](docs/agents/execution-policy.md#git-and-publication)
   for retargeting, required checks, and automatic merge to `master`.
 - Multi-file changes, regressions and integration: read
   [delivery workflow](docs/agent-workflow.md).
