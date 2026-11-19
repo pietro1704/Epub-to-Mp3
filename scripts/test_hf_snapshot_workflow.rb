@@ -101,6 +101,51 @@ class HfSnapshotWorkflowTest < Minitest::Test
                  command!('git', 'show', "HEAD:#{WASM}", chdir: snapshot))
   end
 
+  # The rollback is the emergency path and also publishes a chosen validated
+  # commit. It must publish the way sync-hf does: HTTPS with the token supplied
+  # only through GIT_ASKPASS and scripts/hf_push.sh, which lets the Git LFS
+  # pre-push hook upload the binaries. A plain `git push` would leave LFS
+  # pointers on the Space, and the SSH route fails when hf.co:22 is unreachable.
+  def test_rollback_publishes_the_validated_target_through_hf_push_with_the_token_only
+    workflow = YAML.safe_load(File.read(File.join(REPOSITORY, '.github/workflows/rollback-hf.yml')))
+    steps = workflow.fetch('jobs').fetch('rollback').fetch('steps')
+    helper = steps.find { |step| step.fetch('name', '') == 'Snapshot trusted publication helper' }
+    assert_includes helper.fetch('run'), 'scripts/hf_push.sh', 'The trusted hf_push.sh must be snapshotted from the default branch'
+    push = steps.find { |step| step.fetch('name', '') == 'Push rollback to Hugging Face' }
+    refute_nil push
+    refute_includes push.fetch('run'), 'ssh', 'The push must not depend on SSH to hf.co'
+    refute push.fetch('env').key?('HF_SSH_PRIVATE_KEY')
+
+    bin = File.join(@root, 'fakebin')
+    FileUtils.mkdir_p(bin)
+    calls = File.join(@root, 'calls.log')
+    snapshot = File.join(@temporary, 'hf-rollback.fixture')
+    FileUtils.mkdir_p(snapshot)
+    File.write(File.join(bin, 'node'), "#!/bin/sh\necho \"node $*\" >> '#{calls}'\n")
+    File.write(File.join(@temporary, 'hf_push.sh'), <<~SH)
+      #!/bin/bash
+      echo "hf_push $1 $2 askpass-user=$("$GIT_ASKPASS" 'Username for x') askpass-secret=$("$GIT_ASKPASS" 'Password for x') prompt=$GIT_TERMINAL_PROMPT" >> '#{calls}'
+    SH
+    FileUtils.chmod(0o755, [File.join(bin, 'node'), File.join(@temporary, 'hf_push.sh')])
+    env = @env.merge('PATH' => "#{bin}:#{@env.fetch('PATH')}", 'HF_SYNC_DIR' => snapshot, 'GITHUB_REPOSITORY' => 'owner/repo',
+                     'VALIDATED_SHA' => 'a' * 40, 'HF_TOKEN' => 'fixture-token')
+
+    _out, err, status = Open3.capture3(env, 'bash', '-euo', 'pipefail', '-c', push.fetch('run'), chdir: @root, unsetenv_others: true)
+    assert status.success?, err
+    log = File.readlines(calls, chomp: true)
+    assert_match(%r{\Anode .*validated_merge\.mjs --repo owner/repo --ref #{'a' * 40}\z}, log.fetch(0))
+    refute_includes log.fetch(0), '--latest', 'Publishing a chosen validated commit must not require it to be the latest'
+    assert_equal "hf_push #{snapshot} https://huggingface.co/spaces/pi1704/epub-to-mp3 askpass-user=user askpass-secret=fixture-token prompt=0",
+                 log.fetch(1)
+    refute_includes File.read(calls), 'ssh'
+
+    FileUtils.rm_f(calls)
+    _out, err, status = Open3.capture3(env.merge('HF_TOKEN' => ''), 'bash', '-euo', 'pipefail', '-c', push.fetch('run'),
+                                       chdir: @root, unsetenv_others: true)
+    refute status.success?, 'Without a token the push must fail'
+    refute File.exist?(calls), "Nothing may be validated or published without a token:\n#{err}"
+  end
+
   REGRESSION_WORKFLOW = '.github/workflows/hf-snapshot-regression.yml'.freeze
 
   def test_regression_requires_the_rails_layout
