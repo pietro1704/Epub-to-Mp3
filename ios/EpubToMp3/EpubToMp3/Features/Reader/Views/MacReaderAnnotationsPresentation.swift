@@ -1,4 +1,4 @@
-#if os(macOS) && !targetEnvironment(simulator)
+#if os(macOS)
 import AppKit
 import PDFKit
 
