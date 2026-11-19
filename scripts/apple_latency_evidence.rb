@@ -42,13 +42,32 @@ module AppleLatencyEvidence
   # Mirrors Python json.loads(bytes): encoding detection, NaN/Infinity literals and,
   # like the object_pairs_hook used by the Python original, duplicate-key rejection.
   def decode_json(raw)
-    JSON.parse(decode_text(raw), allow_nan: true, allow_duplicate_key: false, max_nesting: false)
+    text = decode_text(raw)
+    reject_comments(text)
+    JSON.parse(text, allow_nan: true, allow_duplicate_key: false, max_nesting: false)
   rescue JSON::ParserError => e
     raise DuplicateKey if e.message.start_with?("duplicate key")
 
     raise InvalidJson
   rescue SystemStackError, EncodingError
     raise InvalidJson
+  end
+
+  # Python json rejects comments; the json gem bundled with Ruby 4.0 (2.18)
+  # accepts them and has no option to refuse them. A slash is never valid
+  # JSON outside a string, so reject any.
+  def reject_comments(text)
+    in_string = escaped = false
+    text.each_char do |char|
+      if in_string
+        if escaped then escaped = false
+        elsif char == "\\" then escaped = true
+        elsif char == '"' then in_string = false
+        end
+      elsif char == '"' then in_string = true
+      elsif char == "/" then raise InvalidJson
+      end
+    end
   end
 
   def decode_text(raw)
