@@ -230,21 +230,32 @@ final class MacReaderTextPresentation {
     // MARK: - Pagination (viewport snap) + progress restoration
 
     /// In `.paginated` mode, after a trackpad/scroll-wheel gesture ends,
-    /// rounds the scroll position to the nearest multiple of the viewport
-    /// height so it lands on a "page" boundary. `.scrolling` mode is
-    /// untouched (free continuous scroll).
+    /// snaps the scroll position to the nearest page start so it lands on a
+    /// "page" boundary. `.scrolling` mode is untouched (free continuous
+    /// scroll).
     func handleScrollDidEndLiveScroll(_ notification: Notification) {
         guard settings.readerLayout == .paginated,
               let documentView = contentScrollView.documentView else { return }
         let clipView = contentScrollView.contentView
-        let pageHeight = clipView.bounds.height
-        guard pageHeight > 0 else { return }
-        let page = (clipView.bounds.origin.y / pageHeight).rounded()
-        let maxY = max(0, documentView.frame.height - pageHeight)
-        let snappedY = min(max(page * pageHeight, 0), maxY)
+        let maxY = max(0, documentView.frame.height - clipView.bounds.height)
+        guard let snappedY = Self.pageSnapOffset(
+            for: clipView.bounds.origin.y, pageHeight: clipView.bounds.height, maximumOffset: maxY
+        ) else { return }
         clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: snappedY))
         contentScrollView.reflectScrolledClipView(clipView)
         persistReadingProgress()
+    }
+
+    /// Page starts are multiples of the viewport height plus the final page,
+    /// which starts at the maximum offset so a chapter tail shorter than a
+    /// full page stays reachable. Returns the page start nearest to `offset`.
+    static func pageSnapOffset(for offset: CGFloat, pageHeight: CGFloat, maximumOffset: CGFloat) -> CGFloat? {
+        guard pageHeight > 0 else { return nil }
+        let maximum = max(0, maximumOffset)
+        let clamped = min(max(offset, 0), maximum)
+        let lower = min((clamped / pageHeight).rounded(.down) * pageHeight, maximum)
+        let upper = min(lower + pageHeight, maximum)
+        return clamped - lower < upper - clamped ? lower : upper
     }
 
     func persistReadingProgress() {
