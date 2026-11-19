@@ -1,4 +1,4 @@
-#if os(macOS) && !targetEnvironment(simulator)
+#if os(macOS)
 import AppKit
 
 /// Applies the selected reader theme to AppKit's opaque text surface.
