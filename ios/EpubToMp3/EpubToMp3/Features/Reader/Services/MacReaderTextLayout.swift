@@ -1,4 +1,4 @@
-#if os(macOS) && !targetEnvironment(simulator)
+#if os(macOS)
 import AppKit
 
 /// Sizes an AppKit reader text view to its live scroll viewport after each
