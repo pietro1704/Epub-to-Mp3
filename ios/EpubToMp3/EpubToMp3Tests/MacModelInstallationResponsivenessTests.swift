@@ -59,7 +59,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettings(defaults: defaults)
         settings.selectPrimaryNarration(.edgeDefault)
-        let original = settings.conversionOptions
+        let original = NarrationConversionOptions.current(for: settings.ttsPreferences)
         let installer = BlockingModelInstaller()
         defer { installer.release() }
         let speechModels = try makeSpeechModels {
@@ -94,7 +94,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         XCTAssertTrue(result.heartbeat, "The MainActor must run while installation is still blocked")
         XCTAssertEqual(result.modelID, "pt_BR-faber-medium")
         XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(settings.conversionOptions, original, "Installing a voice must not change saved selections")
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences), original, "Installing a voice must not change saved selections")
         XCTAssertNotNil(button.target)
     }
 
@@ -105,7 +105,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.selectSecondaryNarration(.edgeDefault)
         settings.allowOnlineAudioFallback = true
-        let original = settings.conversionOptions
+        let original = NarrationConversionOptions.current(for: settings.ttsPreferences)
         let installer = BlockingModelInstaller()
         defer { installer.release() }
         let message = "Owned fixture installation failed"
@@ -154,7 +154,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         XCTAssertTrue(result.heartbeat)
         XCTAssertEqual(result.modelID, "pt_BR-faber-medium")
         XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(settings.conversionOptions, original)
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences), original)
         XCTAssertNil(NSApp.modalWindow, "Dismiss the owned fixture alert before finishing")
     }
 
@@ -163,7 +163,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettings(defaults: defaults)
-        let original = settings.conversionOptions
+        let original = NarrationConversionOptions.current(for: settings.ttsPreferences)
         let installer = BlockingModelInstaller()
         defer { installer.release() }
         let speechModels = try makeSpeechModels { installer.install(modelID: $0, root: $1) }
@@ -196,7 +196,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         button.performClick(nil)
         await fulfillment(of: [cancelled], timeout: 5)
         XCTAssertEqual(installer.result().count, 0)
-        XCTAssertEqual(settings.conversionOptions, original)
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences), original)
         XCTAssertNil(NSApp.modalWindow)
     }
 
