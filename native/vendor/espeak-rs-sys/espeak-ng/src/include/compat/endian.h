@@ -20,7 +20,17 @@
 #define ENDIAN_H_COMPAT_SHIM
 #pragma once
 
-#if __has_include_next(<endian.h>)
+/* MSVC does not define __has_include_next, and toolset 19.52 and later reject the
+ * unknown macro inside #if (C7780) instead of reading it as 0. Test for the
+ * macro first and nest the real test, so that an undefined macro falls through
+ * to the fallback below, exactly as it used to. */
+#if defined(__has_include_next)
+#	if __has_include_next(<endian.h>)
+#		define ESPEAK_COMPAT_ENDIAN_NEXT 1
+#	endif
+#endif
+
+#if defined(ESPEAK_COMPAT_ENDIAN_NEXT)
 #	pragma GCC system_header // Silence "warning: #include_next is a GCC extension"
 #	include_next <endian.h>
 #elif __has_include(<sys/endian.h>)
