@@ -74,10 +74,10 @@ final class FaberNativeInferenceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: book) }
         let control = try adapter.makePlaybackControl()
         control.updatePlaybackWindow(currentChapter: 0, chaptersAhead: 1)
-        var options = ConversionOptions.selectedEngine(.piper, modelsRoot: models)
+        var options = ConversionOptions.selectedEngine(TtsSelection.piperEngine, modelsRoot: models)
         options.language = "pt-BR"
         options.espeakDataDirectory = resources.path
-        options.ttsPreferences = TtsPreferences(primary: .selected(.piper), secondary: nil, allowOnlineFallback: false)
+        options.ttsPreferences = TtsPreferences(primary: .defaultPiper, secondary: nil, allowOnlineFallback: false)
         let chunks = FaberInferenceEvidence()
         var providers: [RustConversionCoordinator.ConversionProgressEvent] = []
         var completed: [RustConversionCoordinator.ChapterCompletionEvent] = []

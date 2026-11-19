@@ -63,7 +63,7 @@ extension ConversionOptionsInteropTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = RustConversionOutputStore(root: root, notificationCenter: NotificationCenter())
         var options = ConversionOptions(engine: "system", language: "en-US")
-        options.ttsPreferences = TtsPreferences(primary: .selected(.system), secondary: nil,
+        options.ttsPreferences = TtsPreferences(primary: .systemDefault, secondary: nil,
             allowOnlineFallback: false, policyVersion: 2)
         let result = try await RustConversionCoordinator(adapter: runtimeAdapter(), outputStore: store)
             .convert(bookURL: source, options: options)

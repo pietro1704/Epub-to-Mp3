@@ -29,7 +29,7 @@ extension AppSettings {
         secondaryTtsSelection = selection
     }
     var conversionOptions: ConversionOptions {
-        var options = ConversionOptions.selectedEngine(audioEngine, modelsRoot: LocalSpeechModelReadiness.ttsModelsRoot())
+        var options = ConversionOptions.selectedEngine(audioEngine.rawValue, modelsRoot: LocalSpeechModelReadiness.ttsModelsRoot())
         options.ttsPreferences = ttsPreferences
         if let catalog = try? ConverterFFIAdapter().ttsCatalog() {
             #if os(macOS)

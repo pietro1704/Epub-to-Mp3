@@ -19,11 +19,11 @@ final class SpeechModelPresentationStore: @unchecked Sendable {
         if let modelID, let entry = state.entries.first(where: { $0.identity.modelID == modelID }) {
             return state.displayName(for: entry)
         }
-        if engine == "piper" { return "Piper" }
+        if engine == TtsSelection.piperEngine { return TtsSelection.displayName(forEngine: TtsSelection.piperEngine) }
         if let voice, !voice.isEmpty {
             return voice.components(separatedBy: " (").first ?? voice
         }
-        return engine.map { AudioEnginePreference(rawValue: $0)?.displayName ?? $0 }
+        return engine.map { TtsSelection.displayName(forEngine: $0) ?? $0 }
     }
 
     func activeVoices(_ value: String, engine: String?) -> String {

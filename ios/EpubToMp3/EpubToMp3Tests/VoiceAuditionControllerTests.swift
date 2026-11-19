@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class VoiceAuditionControllerTests: XCTestCase {
     func testSuccessfulAuditionAndExplicitStopPreserveCapturedSelection() async {
-        let selection = TtsSelection.selected(.piper)
+        let selection = TtsSelection.defaultPiper
         var played: [URL] = []
         let output = URL(fileURLWithPath: "/fixture/preview.mp3")
         let controller = VoiceAuditionController(renderer: { received, language in
@@ -19,7 +19,7 @@ final class VoiceAuditionControllerTests: XCTestCase {
         await controller.start(selection: selection, language: "pt-BR").value
         XCTAssertEqual(controller.state, .playing)
         XCTAssertEqual(played, [output])
-        XCTAssertEqual(selection, .selected(.piper))
+        XCTAssertEqual(selection, .defaultPiper)
         controller.stop()
         XCTAssertEqual(controller.state, .idle)
     }
@@ -28,7 +28,7 @@ final class VoiceAuditionControllerTests: XCTestCase {
         var played = false
         let controller = VoiceAuditionController(renderer: { _, _ in throw CocoaError(.fileReadCorruptFile) },
             playback: { _ in played = true; return true })
-        await controller.start(selection: .selected(.piper), language: "pt-BR").value
+        await controller.start(selection: .defaultPiper, language: "pt-BR").value
         guard case .failed = controller.state else { return XCTFail("Failure must remain visible") }
         XCTAssertFalse(played)
         controller.stop()
@@ -40,7 +40,7 @@ final class VoiceAuditionControllerTests: XCTestCase {
             rendered = true
             return URL(fileURLWithPath: "/fixture/preview.mp3")
         }, playback: { _ in XCTFail("Cancelled audition cannot play"); return true })
-        let task = controller.start(selection: .selected(.piper), language: "pt-BR")
+        let task = controller.start(selection: .defaultPiper, language: "pt-BR")
         controller.stop()
         await task.value
         XCTAssertFalse(rendered)
@@ -51,7 +51,7 @@ final class VoiceAuditionControllerTests: XCTestCase {
         let controller = VoiceAuditionController(renderer: { _, _ in
             URL(fileURLWithPath: "/fixture/decoded-preview.mp3")
         }, playback: { _ in false })
-        await controller.start(selection: .selected(.piper), language: "pt-BR").value
+        await controller.start(selection: .defaultPiper, language: "pt-BR").value
         guard case .failed = controller.state else { return XCTFail("Playback failure must remain visible") }
         controller.stop()
     }
@@ -71,9 +71,9 @@ final class VoiceAuditionControllerTests: XCTestCase {
             }
             return URL(fileURLWithPath: "/fixture/current.mp3")
         }, playback: { played.append($0.lastPathComponent); return true })
-        let first = controller.start(selection: .selected(.piper), language: "pt-BR")
+        let first = controller.start(selection: .defaultPiper, language: "pt-BR")
         await fulfillment(of: [entered], timeout: 2)
-        await controller.start(selection: .selected(.piper), language: "en-US").value
+        await controller.start(selection: .defaultPiper, language: "en-US").value
         firstResult?.resume(returning: URL(fileURLWithPath: "/fixture/retired.mp3"))
         await first.value
         XCTAssertEqual(played, ["current.mp3"])

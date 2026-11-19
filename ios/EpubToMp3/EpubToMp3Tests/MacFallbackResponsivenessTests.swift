@@ -112,7 +112,7 @@ final class MacFallbackResponsivenessTests: XCTestCase {
 
         let settings = AppSettings(defaults: defaults)
         settings.audioEngine = .piper
-        settings.selectSecondaryNarration(.selected(.system))
+        settings.selectSecondaryNarration(.systemDefault)
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let presentation = PlayerPresentation(defaults: defaults)
         var control: ConverterPlaybackControl?

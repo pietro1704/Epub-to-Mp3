@@ -123,6 +123,7 @@ let tests = [
     "BookPronunciationTests.swift",
     "VoiceAuditionControllerTests.swift",
     "PlatformSpeechSynthesizerTests.swift",
+    "TtsSelectionEngineRulesTests.swift",
     "ConversionHistoryReaderTests.swift",
     "ConversionChapterSelectionTests.swift",
     "ConversionCallbackBoundaryTests.swift",

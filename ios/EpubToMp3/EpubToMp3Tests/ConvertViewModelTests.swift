@@ -37,7 +37,7 @@ final class ConvertViewModelTests: XCTestCase {
             captured = options
             return self.manualResult(jobID: jobID)
         }))
-        let preferences = TtsPreferences(primary: .selected(.piper), secondary: nil, allowOnlineFallback: false)
+        let preferences = TtsPreferences(primary: .defaultPiper, secondary: nil, allowOnlineFallback: false)
         let candidate = TtsRecoveryCandidate(name: "English", selection: TtsSelection(engine: "piper", modelID: "en_US-ljspeech-high", voice: nil))
         model.selectedFile = URL(fileURLWithPath: "/fixture.pdf")
         model.inheritedPreferences = preferences
@@ -146,7 +146,7 @@ final class ConvertViewModelTests: XCTestCase {
         let pending = Task { await model.submit() }
         await fulfillment(of: [started], timeout: 2)
         model.inheritedPreferences = TtsPreferences(
-            primary: .selected(.piper), secondary: nil, allowOnlineFallback: false
+            primary: .defaultPiper, secondary: nil, allowOnlineFallback: false
         )
         release.finish()
         await pending.value

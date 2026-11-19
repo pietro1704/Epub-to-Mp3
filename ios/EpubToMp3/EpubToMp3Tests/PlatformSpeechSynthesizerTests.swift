@@ -92,8 +92,8 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
 
     func testFaberIsAvailableAsAnExplicitOfflineProvider() {
         XCTAssertEqual(AudioEnginePreference.supportedPreferences, [.piper, .system, .edge])
-        XCTAssertEqual(ConversionOptions.selectedEngine(.piper).engine, "piper")
-        XCTAssertEqual(ConversionOptions.selectedEngine(.piper).modelID, "pt_BR-faber-medium")
+        XCTAssertEqual(ConversionOptions.selectedEngine(TtsSelection.piperEngine).engine, "piper")
+        XCTAssertEqual(ConversionOptions.selectedEngine(TtsSelection.piperEngine).modelID, "pt_BR-faber-medium")
     }
 
     func testLucianaIsPreferredEvenWhenOnlyEnhancedVersionIsInstalled() {
@@ -130,14 +130,14 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
     }
 
     func testNativeFallbackPolicyRoundTripsWithoutChangingPrimaryIdentity() throws {
-        let preferences = TtsPreferences(primary: .selected(.piper), secondary: .selected(.system),
+        let preferences = TtsPreferences(primary: .defaultPiper, secondary: .systemDefault,
                                          allowOnlineFallback: false, policyVersion: 2)
         let data = try JSONEncoder().encode(preferences)
         XCTAssertEqual(try JSONDecoder().decode(TtsPreferences.self, from: data), preferences)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["policy_version"] as? Int, 2)
-        XCTAssertEqual(ConversionOptions.selectedEngine(.system).engine, "system")
-        XCTAssertNil(ConversionOptions.selectedEngine(.system).modelID)
+        XCTAssertEqual(ConversionOptions.selectedEngine(TtsSelection.systemEngine).engine, "system")
+        XCTAssertNil(ConversionOptions.selectedEngine(TtsSelection.systemEngine).modelID)
         XCTAssertEqual(preferences.primary.modelID, "pt_BR-faber-medium")
         XCTAssertFalse(preferences.allowOnlineFallback)
     }

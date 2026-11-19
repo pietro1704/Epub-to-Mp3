@@ -79,9 +79,9 @@ final class TtsMissingVoiceRecoveryTests: XCTestCase {
 
     func testSystemRecoveryServesOneRequestAsSecondaryVoiceWithoutChangingTheBookLanguage() async throws {
         var original = ConversionOptions(engine: "piper", language: "en-US")
-        original.ttsPreferences = TtsPreferences(primary: .selected(.piper), secondary: nil,
+        original.ttsPreferences = TtsPreferences(primary: .defaultPiper, secondary: nil,
                                                  allowOnlineFallback: false, policyVersion: 2)
-        let system = TtsRecoveryCandidate(name: "Installed system voice", selection: .selected(.system))
+        let system = TtsRecoveryCandidate(name: "Installed system voice", selection: .systemDefault)
         let recovered = original.recovering(with: system, language: "pt-BR")
         XCTAssertEqual(recovered.engine, "piper")
         XCTAssertEqual(recovered.language, "en-US", "Recovery never rewrites the book language")

@@ -24,7 +24,7 @@ final class TtsCatalogTests: XCTestCase {
         let primary = TtsSelection(engine: "piper", modelID: "model-a", voice: nil,
             session: TtsSessionSelection(provider: "piper", runtime: "piper", modelID: "model-a", modelRevision: "sha-a", voice: nil))
         var options = ConversionOptions()
-        options.ttsPreferences = TtsPreferences(primary: primary, secondary: .selected(.system), allowOnlineFallback: false, policyVersion: 2)
+        options.ttsPreferences = TtsPreferences(primary: primary, secondary: .systemDefault, allowOnlineFallback: false, policyVersion: 2)
         XCTAssertTrue(options.requiresSessionABI)
         let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(options.encodedJSON().utf8)) as? [String: Any])
         XCTAssertEqual(fields["contract_version"] as? Int, 2)
@@ -37,7 +37,7 @@ final class TtsCatalogTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettings(defaults: defaults)
         settings.allowOnlineAudioFallback = true
-        settings.selectSecondaryNarration(.selected(.edge))
+        settings.selectSecondaryNarration(.edgeDefault)
         settings.allowOnlineAudioFallback = false
         XCTAssertNil(settings.ttsPreferences.secondary)
         XCTAssertNil(AppSettings(defaults: defaults).ttsPreferences.secondary)

@@ -122,7 +122,7 @@ final class AppSettings: ObservableObject {
             if !allowOnlineAudioFallback && secondaryAudioEngine == .edge {
                 secondaryAudioEngine = nil
             }
-            if !allowOnlineAudioFallback && secondaryTtsSelection?.engine == "edge" {
+            if secondaryTtsSelection?.isAllowedAsFallback(allowOnlineFallback: allowOnlineAudioFallback) == false {
                 secondaryTtsSelection = nil
             }
         }

@@ -52,9 +52,9 @@ final class BookLanguageDecisionTests: XCTestCase {
 
     func testCompatibleSecondaryRecoveryKeepsPrimaryAndAutomaticLanguage() {
         var options = ConversionOptions()
-        options.ttsPreferences = TtsPreferences(primary: .selected(.piper), secondary: nil,
+        options.ttsPreferences = TtsPreferences(primary: .defaultPiper, secondary: nil,
             allowOnlineFallback: false, policyVersion: 3)
-        let candidate = TtsRecoveryCandidate(name: "English", selection: .selected(.system))
+        let candidate = TtsRecoveryCandidate(name: "English", selection: .systemDefault)
         let result = options.recovering(with: candidate, language: "en-US")
         XCTAssertEqual(result.ttsPreferences?.primary, options.ttsPreferences?.primary)
         XCTAssertEqual(result.ttsPreferences?.secondary, candidate.selection)

@@ -122,7 +122,7 @@ extension NativeResponsiveScreenTests {
             defaultSelection: inspected.defaultSelection, target: inspected.target, entries: entries
         )
         let speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-        let faberTitle = speechModelState.displayName(for: .selected(.piper))
+        let faberTitle = speechModelState.displayName(for: .defaultPiper)
         let controller = MacSettingsViewController(
             settings: settings,
             library: LibraryStore(defaults: defaults),

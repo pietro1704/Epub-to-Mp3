@@ -142,7 +142,7 @@ final class MacSpeechModelProductActionsTests: XCTestCase {
         let suite = "MacModelProductActions.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let settings = AppSettings(defaults: defaults)
-        settings.selectPrimaryNarration(.selected(.system))
+        settings.selectPrimaryNarration(.systemDefault)
         settings.selectSecondaryNarration(nil)
         let target = SpeechModelLibraryTarget(
             language: "pt-BR", platform: "macos", androidAPI: 0,

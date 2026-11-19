@@ -40,8 +40,8 @@ final class NativeSettingsProjectionTests: XCTestCase {
             let settings = AppSettings(defaults: defaults)
             XCTAssertTrue(settings.allowAutomaticSystemVoiceFallback)
             XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
-            settings.selectPrimaryNarration(.selected(.piper))
-            var english = TtsSelection.selected(.piper)
+            settings.selectPrimaryNarration(.defaultPiper)
+            var english = TtsSelection.defaultPiper
             english.modelID = "en_US-ljspeech-high"
             settings.selectSecondaryNarration(english)
             let primary = settings.ttsPreferences.primary
@@ -70,7 +70,7 @@ final class NativeSettingsProjectionTests: XCTestCase {
         withDefaults { defaults in
             let settings = AppSettings(defaults: defaults)
             settings.allowAutomaticSystemVoiceFallback = false
-            settings.selectSecondaryNarration(.selected(.system))
+            settings.selectSecondaryNarration(.systemDefault)
             XCTAssertEqual(settings.ttsPreferences.policyVersion, 3)
             XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
             settings.selectSecondaryNarration(nil)
