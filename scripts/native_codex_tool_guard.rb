@@ -11,10 +11,10 @@ module NativeCodexToolGuard
   INSPECTION = %w[rg grep sed cat head tail less git ls find stat file pgrep ps readlink realpath].freeze
   QUERIES = %w[-version -list -showsdks -showdestinations -showBuildSettings].freeze
   NATIVE_TASKS = %w[
-    converter-ffi:build native-tts:rust:test converter-ffi:ios-device
+    converter-ffi:build converter-ffi:build:local native-tts:rust:test converter-ffi:ios-device
     converter-ffi:ios-device:verify converter-ffi:ios-simulator
     converter-ffi:ios-packaging:test apple:chapter-callback:test
-    mac:build mac:build:dev mac:run ios:build ios:device:run ios:device:build
+    mac:build mac:build:dev mac:test:local mac:run ios:build ios:device:run ios:device:build
     ios:run ios:simulator:smoke:build ios:simulator:smoke:test ios:simulator:run
     ios:simulator:resume ios:simulator:test ios:device:test ios:device:benchmark
     ios:device:workflow:test apple:foundation:test apple:foundation:ffi:test
