@@ -5,14 +5,14 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, parseArgs } from 'node:util';
 export const ACTIONS_APP_ID = 15368;
-export const REQUIRED_CHECKS = { strict: true, checks: [{ context: 'PR gate', app_id: ACTIONS_APP_ID }] };
+export const REQUIRED_CHECKS = { strict: false, checks: [{ context: 'PR gate', app_id: ACTIONS_APP_ID }] };
 const ensure = (condition, message) => { if (!condition) throw new Error(message); };
 export function assertPrGatePolicy(protection) {
   const policy = protection?.required_status_checks;
   ensure(protection?.enforce_admins?.enabled === true, 'Master protection must apply to administrators');
-  ensure(policy?.strict === true && Array.isArray(policy.checks) && policy.checks.length === 1
+  ensure(typeof policy?.strict === 'boolean' && Array.isArray(policy.checks) && policy.checks.length === 1
     && policy.checks[0]?.context === 'PR gate' && policy.checks[0]?.app_id === ACTIONS_APP_ID,
-  'Master must require only PR gate from GitHub Actions with an up-to-date base');
+  'Master must require only PR gate from GitHub Actions');
   ensure(Array.isArray(policy.contexts) && policy.contexts.length === 1 && policy.contexts[0] === 'PR gate',
     'Required status contexts do not match PR gate');
   return true;
@@ -109,7 +109,7 @@ export function configurePrGate({ repo, apply = false, invoke = invokeGh }) {
   const after = read();
   assertPrGatePolicy(after);
   ensure(isDeepStrictEqual(baseline, unrelatedProtection(after)), 'Other master protections changed during configuration; inspect before merging');
-  return { repo, branch: 'master', verified: true, changed: !matches, context: 'PR gate', app_id: ACTIONS_APP_ID, strict: true };
+  return { repo, branch: 'master', verified: true, changed: !matches, context: 'PR gate', app_id: ACTIONS_APP_ID, strict: after.required_status_checks.strict };
 }
 export function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: { repo: { type: 'string' }, apply: { type: 'boolean', default: false } }, strict: true });

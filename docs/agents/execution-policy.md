@@ -189,8 +189,8 @@ The merge workflow's refresh of behind PRs only applies if the setting is turned
 back on.
 Keep repository auto-merge enabled and the `Merge eligible pull requests`
 workflow active. It uses the trusted master merge helper to verify the current
-head, up-to-date base and server protection before squash merging. Drafts,
-conflicts, requested changes, stale bases and unverified heads remain blocked;
+head, mergeability and server protection before squash merging. Drafts,
+conflicts, requested changes and unverified heads remain blocked;
 resolve the blocker and validate the new head before merging. Other targets
 require task-specific authorization. `--auto` alone is not proof of deferred,
 validated merging. Administrative bypass requires explicit approval for that PR.
