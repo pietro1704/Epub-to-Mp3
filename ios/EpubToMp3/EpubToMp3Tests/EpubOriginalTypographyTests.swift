@@ -27,6 +27,64 @@ extension EpubHtmlRendererTests {
     }
 
     @MainActor
+    func testCssAbsoluteUnitsRenderAsNativePointsAndReaderOverridesStillWin() throws {
+        let settings = makeSettings()
+        let html = """
+        <p style='font-size:24px'>Pixels.</p><p style='font-size:0.25in'>Inches.</p>\
+        <p style='font-size:1.5em'>Relative.</p><p>Default.</p>
+        """
+        let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: html, css: nil, settings: settings)))
+        func size(_ text: String, in string: NSAttributedString) throws -> CGFloat {
+            let location = (string.string as NSString).range(of: text).location
+            return try XCTUnwrap(string.attribute(.font, at: location, effectiveRange: nil) as? PlatformFont).pointSize
+        }
+        XCTAssertEqual(try size("Pixels", in: rendered), 18, accuracy: 0.5, "A CSS px is 0.75 point.")
+        XCTAssertEqual(try size("Inches", in: rendered), 18, accuracy: 0.5)
+        XCTAssertEqual(try size("Relative", in: rendered), try size("Default", in: rendered) * 1.5, accuracy: 0.5)
+
+        settings.readerOverrideFontSize = true
+        settings.readerLineSpacing = 9
+        let overridden = ns(try XCTUnwrap(EpubHtmlRenderer.render(
+            html: "<p style='font-size:18pt;line-height:30pt'>Override.</p>", css: nil, settings: settings)))
+        #if canImport(UIKit)
+        let expected = UIFontMetrics(forTextStyle: .body).scaledValue(for: settings.readerPointSize)
+        #else
+        let expected = settings.readerPointSize
+        #endif
+        XCTAssertEqual(try size("Override", in: overridden), expected, accuracy: 0.5)
+        let style = try XCTUnwrap(overridden.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+        XCTAssertTrue(settings.readerOverrideLineSpacing)
+        XCTAssertEqual(style.lineSpacing, 9)
+    }
+
+    func testImporterLengthRewriteKeepsUrlsStringsCommentsAndMediaQueries() {
+        XCTAssertEqual(
+            EpubCssLengths.importerCSS(
+                "@media (min-width:600px) { p {margin:-20pt 12px .5in} } /* 12pt */ h1{font:'A 12pt' 1pc;background:url(a12pt.png)}"),
+            "@media (min-width:600px) { p {margin:-20px 9px 36px} } /* 12pt */ h1{font:'A 12pt' 12px;background:url(a12pt.png)}")
+        XCTAssertEqual(EpubCssLengths.importerCSS(".w12px{width:1.5em;height:10%}"), ".w12px{width:1.5em;height:10%}")
+        XCTAssertEqual(
+            EpubCssLengths.importerCSS(#"img[width=12px]{background:url("cover(1).png")} p{font-size:12pt;width:99999999999999999999px}"#),
+            #"img[width=12px]{background:url("cover(1).png")} p{font-size:12px;width:99999999999999999999px}"#)
+        XCTAssertEqual(
+            EpubCssLengths.importerHTML("<p class='x12pt' style=\"font-size:18pt;font-family:'Georgia'\">12pt</p>"),
+            "<p class='x12pt' style=\"font-size:18px;font-family:'Georgia'\">12pt</p>")
+        XCTAssertEqual(
+            EpubCssLengths.importerHTML("<pre>&lt;p style=\"margin:12pt\"&gt;</pre><p style=font-size:18pt>x</p>"),
+            "<pre>&lt;p style=\"margin:12pt\"&gt;</pre><p style=font-size:18px>x</p>",
+            "Text content is never rewritten; unquoted legacy style attributes are.")
+    }
+
+    @MainActor
+    func testParagraphGeometryUsesTheSameAbsoluteUnitMapping() throws {
+        let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
+            html: "<p style='margin-bottom:0.25in;text-indent:16px'>Inches.</p>", css: nil, settings: makeSettings())))
+        let style = try XCTUnwrap(rendered.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+        XCTAssertEqual(style.paragraphSpacing, 18, accuracy: 0.5)
+        XCTAssertEqual(style.firstLineHeadIndent, 12, accuracy: 0.5)
+    }
+
+    @MainActor
     func testNamedFontSelectionPersistsAndOriginalClearsOnlyFamilyOverride() throws {
         let suite = "font-choice-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
