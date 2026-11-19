@@ -144,6 +144,69 @@ class WorkspaceShellSystemTest < ApplicationSystemTestCase
     assert_help_drawer_closed
   end
 
+  test "the help drawer takes keyboard focus while open and returns it to its toggle on every close" do
+    visit root_path
+    toggle = find_button("Help & System")
+
+    toggle.click
+    assert_help_drawer_open
+    assert_help_drawer_close_button_focused
+    page.send_keys(:tab)
+    assert_help_drawer_close_button_focused
+    page.send_keys([ :shift, :tab ])
+    assert_help_drawer_close_button_focused
+
+    page.send_keys(:escape)
+    assert_help_drawer_closed
+    assert_help_toggle_focused
+
+    toggle.click
+    assert_help_drawer_open
+    find(".help-drawer__overlay").click
+    assert_help_drawer_closed
+    assert_help_toggle_focused
+
+    toggle.click
+    assert_help_drawer_open
+    within("#help-drawer") { click_button "Close panel" }
+    assert_help_drawer_closed
+    assert_help_toggle_focused
+
+    toggle.send_keys(:enter)
+    assert_help_drawer_open
+    assert_help_drawer_close_button_focused
+    page.send_keys(:enter)
+    assert_help_drawer_closed
+    assert_help_toggle_focused
+  end
+
+  test "Escape with the help drawer closed leaves focus where it is" do
+    visit root_path
+    page.execute_script("document.querySelector(\"form[aria-label='Theme'] button[value='dark']\").focus()")
+    assert_selector "form[aria-label='Theme'] button:focus", text: "Dark"
+    page.send_keys(:escape)
+
+    assert_selector "form[aria-label='Theme'] button:focus", text: "Dark"
+  end
+
+  test "a page restored by Turbo shows the help drawer closed with its toggle collapsed" do
+    visit root_path
+    mark_document
+    find_button("Help & System").click
+    assert_help_drawer_open
+
+    # A visit to the current URL replaces the history entry; a distinct one is needed to go back.
+    page.execute_script("Turbo.visit(#{root_path(visit: "next").to_json})")
+    assert_current_path root_path(visit: "next")
+    assert_help_drawer_closed
+    page.go_back
+    assert_current_path root_path
+
+    assert_help_drawer_closed
+    assert_equal "false", find_button("Help & System")["aria-expanded"]
+    assert_same_document
+  end
+
   test "the preferences form carries the authenticity token the server requires" do
     with_forgery_protection do
       visit root_path
@@ -175,6 +238,10 @@ class WorkspaceShellSystemTest < ApplicationSystemTestCase
     assert_no_selector ".help-drawer__overlay", visible: :visible
     assert_help_drawer_placement "off screen"
   end
+
+  def assert_help_drawer_close_button_focused = assert_selector("#help-drawer .help-drawer__close:focus")
+
+  def assert_help_toggle_focused = assert_selector(".help-toggle button[aria-controls='help-drawer']:focus")
 
   # The closed drawer is moved off the viewport rather than removed. Both
   # placements require its slide transition to have finished; the open drawer's
