@@ -54,20 +54,6 @@ final class ExtensionLocalizationTests: XCTestCase {
         }
     }
 
-    func testContinueReadingLocalizesOlderPayloadsAndPreservesHostLabel() {
-        var entry = ContinueReadingEntry(date: Date(), title: "Foundation", author: nil,
-                                        chapterIndex: 4, totalChapters: 18, coverData: nil, bookId: "book-1")
-        XCTAssertEqual(entry.chapterLabel, L10n.string("player.chapterOf", 5, 18))
-        entry.localizedChapterLabel = "Capítulo cinco"
-        XCTAssertEqual(entry.chapterLabel, "Capítulo cinco")
-        entry.localizedChapterLabel = ""
-        XCTAssertEqual(entry.chapterLabel, L10n.string("player.chapterOf", 5, 18))
-        let unknownTotal = ContinueReadingEntry(date: Date(), title: "Foundation", author: nil,
-                                               chapterIndex: 4, totalChapters: nil, coverData: nil, bookId: "book-1")
-        XCTAssertEqual(unknownTotal.chapterLabel, L10n.string("player.chapter", 5))
-        XCTAssertNil(ContinueReadingEntry.empty.chapterLabel)
-    }
-
     func testUnknownLocalizationKeyRemainsIdentifiable() throws {
         for language in languages {
             XCTAssertEqual(L10n.string("missing.extension.key", bundle: try localization(language)), "missing.extension.key")

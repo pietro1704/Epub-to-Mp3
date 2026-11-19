@@ -21,7 +21,8 @@ extension NativeResponsiveScreenTests {
         window.isHidden = false
         defer { window.isHidden = true; window.rootViewController = nil }
         controller.view.layoutIfNeeded()
-        for section in [4, 3, 5, 0, 6] {
+        let sections: [SettingsSection] = [.storage, .reader, .advanced, .runtime, .about]
+        for section in sections.map(\.rawValue) {
             for row in 0..<controller.tableView(controller.tableView, numberOfRowsInSection: section) {
                 let index = IndexPath(row: row, section: section)
                 controller.tableView.scrollToRow(at: index, at: .middle, animated: false)

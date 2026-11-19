@@ -376,9 +376,8 @@ final class MainReaderScreenController: UIViewController {
         onBrowseLibrary?()
     }
 
-    // Mirrors `BookDetailScreenController.tapListen()` — the reader is now
-    // the only iOS entry point for starting/resuming playback (Book Detail
-    // no longer sits between the library grid and the reader).
+    // The reader is the only iOS entry point for starting/resuming playback
+    // (Book Detail no longer sits between the library grid and the reader).
     @objc
     private func listenTapped() {
         startListening(presentsFullPlayer: true)

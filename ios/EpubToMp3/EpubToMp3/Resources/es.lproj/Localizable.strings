@@ -141,13 +141,8 @@
 "settings.modelRemove.notInstalled" = "Este modelo no está instalado.";
 "settings.useBuiltInEngine" = "Usar motor de audio integrado";
 "settings.useBuiltInEngineDescription" = "Sintetiza capítulos en este dispositivo. No necesita backend.";
-"settings.allowCellularAudio" = "Permitir conversión de audio con datos móviles";
-"settings.allowCellularAudioDescription" = "De forma predeterminada, la conversión de capítulos espera Wi-Fi.";
 "settings.audioEngineFooter" = "Faber medium funciona sin conexión después de instalarlo. Edge requiere internet. La voz secundaria se usa solo para segmentos aislados que fallen.";
-"settings.remoteBackend" = "Backend remoto";
-"settings.urlNotValid" = "URL no válida";
 "settings.remoteBackendFooterMac" = "Se usa cuando el servidor integrado está apagado. Destinos comunes: una instancia `mise run web` en esta máquina, o una URL de Hugging Face Space.";
-"settings.remoteBackendFooterIOS" = "Ejemplos: una instancia `mise run web` en tu ordenador, o una URL de Hugging Face Space.";
 "settings.reader" = "Lector";
 "settings.fontSize" = "Tamaño de fuente";
 "settings.font" = "Fuente";
@@ -161,10 +156,6 @@
 "settings.advanced" = "Avanzado";
 "settings.manualConversion" = "Conversión manual";
 "settings.manualConversionDescription" = "Personalizar motor, voz, idioma e intervalo de capítulos";
-"settings.recentJobs" = "Trabajos recientes";
-"settings.recentJobsDescription" = "Historial de conversiones y progreso en tiempo real";
-"settings.telemetry" = "Telemetría";
-"settings.telemetryDescription" = "Métricas de velocidad y calidad por motor";
 "settings.clearCache" = "Borrar audio descargado";
 "settings.clearCacheDescription" = "Elimina todos los MP3 guardados localmente";
 "settings.clearCacheConfirmTitle" = "¿Borrar audio descargado?";
@@ -264,21 +255,6 @@
 "player.error.emptySegmentData" = "Un fragmento de audio llegó vacío. La reproducción continuará en el siguiente fragmento.";
 "player.error.segmentWriteFailed" = "No se pudo guardar un fragmento de audio en disco. Libera espacio e inténtalo de nuevo.";
 "player.error.missingSnapshot" = "Ningún libro cargado en el reproductor. Abre un libro primero.";
-
-/* Calentamiento del motor de audio */
-"audioWarmup.starting" = "Iniciando motor de audio…";
-"audioWarmup.loading" = "Cargando runtime de audio…";
-"audioWarmup.ready" = "Motor de audio listo";
-"audioWarmup.failed" = "Falló el motor de audio: %@";
-"audioWarmup.retry" = "No se pudo iniciar el motor de audio. Toca reintentar.";
-"audioWarmup.accessibilityStarting" = "Iniciando motor de audio";
-"audioWarmup.details.title" = "Runtime de audio";
-"audioWarmup.details.status" = "Estado";
-"audioWarmup.details.accessibilityHint" = "Abrir progreso del runtime de audio";
-"audioWarmup.state.idle" = "Inactivo";
-"audioWarmup.state.loading" = "Cargando";
-"audioWarmup.state.ready" = "Listo";
-"audioWarmup.state.failed" = "Falló";
 
 /* ChapterListSheet accesibilidad */
 "chapterList.nowPlaying" = "%@, reproduciendo ahora";
@@ -390,7 +366,6 @@
 
 /* === ConvertView === */
 "convert.title" = "Convertir";
-"conversion.log" = "Registro de conversión";
 "convert.file" = "Archivo";
 "convert.selected" = "Seleccionado";
 "convert.noFilePicked" = "Ningún archivo seleccionado.";
@@ -425,6 +400,8 @@
 "convert.startConversion" = "Iniciar conversión";
 "convert.error.engineWarmingUp" = "El motor de audio aún se está iniciando. Inténtalo de nuevo en un momento.";
 "convert.error.pickFileFirst" = "Elige primero un EPUB o PDF.";
+"convert.error.busyWithAnotherBook" = "Hay otra conversión en curso. Espera a que termine o cancélala y luego convierte este libro.";
+"convert.error.unsupportedBookType" = "Este libro no tiene texto que convertir en audio.";
 
 /* === LibrarySidebar === */
 "librarySidebar.emptyTitle" = "La biblioteca está vacía";
@@ -491,44 +468,17 @@
 /* === JobDetailView === */
 "jobDetail.title" = "Detalle del trabajo";
 "jobDetail.job" = "Trabajo";
-"jobDetail.id" = "ID";
 "jobDetail.state" = "Estado";
 "jobDetail.book" = "Libro";
 "jobDetail.progress" = "Progreso";
-"jobDetail.streaming" = "Transmisión";
-"jobDetail.live" = "En vivo";
-"jobDetail.idle" = "Inactivo";
-"jobDetail.eventsReceived" = "Eventos recibidos";
-"jobDetail.downloadAll" = "Descargar todo";
-"jobDetail.openLogs" = "Abrir registros";
-"jobDetail.latestEventPayload" = "Último payload de evento";
-"jobDetail.waitingFirstEvent" = "Esperando el primer evento…";
-"jobDetail.error.configureBackend" = "Configura la URL del backend en Ajustes.";
 
 /* === JobsListView === */
 "jobs.title" = "Trabajos";
-"jobs.cannotReachBackend" = "No se puede acceder al backend";
 "jobs.noConversions" = "Sin conversiones aún";
 "jobs.noConversionsDescription" = "Ejecuta una conversión mediante la CLI o la app web para llenar el historial.";
 "jobs.historyReadLimit" = "El historial reciente supera el límite de lectura.";
 "jobs.refresh" = "Actualizar trabajos";
 "jobs.chaptersAbbrev" = "%d cap.";
-
-/* === LogsView === */
-"logs.title" = "Registros · %@";
-"logs.empty" = "Aún no hay salida de registro.";
-"logs.error.noBackend" = "No hay backend configurado.";
-"logs.pauseAutoRefresh" = "Pausar actualización automática";
-"logs.resumeAutoRefresh" = "Reanudar actualización automática";
-
-/* === TelemetryView === */
-"telemetry.engines" = "Motores";
-"telemetry.noSamples" = "Aún no hay muestras de telemetría.";
-"telemetry.charsPerSecond" = "%@ caracteres/s";
-"telemetry.chaptersCount" = "%d capítulos";
-"telemetry.lastFetched" = "Última actualización";
-"telemetry.rawPayload" = "Payload sin procesar";
-"telemetry.refresh" = "Actualizar telemetría";
 
 /* === ConversionStatusSheet === */
 "conversionStatus.title" = "Estado de la Conversión";
@@ -588,14 +538,9 @@
 "reader.search.currentChapter" = "Busca en este capítulo mientras el resto del libro está disponible.";
 "reader.search.unavailable" = "La búsqueda no está disponible en esta vista del documento.";
 "reader.search.noResults" = "No se encontraron resultados";
-"bookDetail.read" = "Leer";
 "bookDetail.download" = "Descargar";
 "bookDetail.listenStart" = "Escuchar";
-"bookDetail.listenUnavailableComic" = "Los cómics no se pueden convertir a audio";
-"bookDetail.listenResume" = "Reanudar audio";
-"bookDetail.notStarted" = "Sin comenzar";
 "bookDetail.progressPercent" = "%d%% completado";
-"bookDetail.progressChapter" = "Convirtiendo capítulo %1$d de %2$d";
 "bookDetail.downloadRequiresConversion" = "Convierte este libro a audio primero.";
 
 /* === LocalEpubReaderView === */
@@ -604,17 +549,12 @@
 "localEpubReader.fileOnDisk" = "Archivo en disco";
 
 /* === SettingsView === */
-"settings.url" = "URL";
 
 /* === Widget === */
 "widget.nowPlaying" = "Reproduciendo Ahora";
 "widget.paused" = "En pausa";
 "widget.noAudiobookPlaying" = "Ningún audiolibro reproduciéndose";
 "widget.openBookToListen" = "Abre un libro para empezar a escuchar";
-"widget.noBookInProgress" = "Ningún libro en curso";
-"widget.continue" = "Continuar";
-"widget.continueReading" = "Continuar Leyendo";
-"widget.openBookToRead" = "Abre un libro para empezar a leer";
 "widget.percentComplete" = "%d%% completado";
 "widget.libraryEmpty" = "Tu biblioteca está vacía";
 "widget.importEpubToStart" = "Importa un EPUB para empezar";
@@ -663,7 +603,6 @@
 "settings.streamingDiagnosticsConfirmMessage" = "Durante 5 minutos, enviar identificadores aleatorios y temporales de solicitudes al backend configurado para correlacionar diagnósticos de streaming. No se envían títulos, texto ni audio de libros como datos de diagnóstico. El permiso caduca automáticamente y queda desactivado al reiniciar la app.";
 "settings.enableStreamingDiagnostics" = "Activar durante 5 minutos";
 "settings.exportPerformanceDiagnosticsError" = "No se pudieron exportar los diagnósticos de rendimiento.";
-"jobs.historyDetailUnavailable" = "Esta sesión no incluye un ID de job en vivo.";
 "common.close" = "Cerrar";
 "reader.settings" = "Ajustes de lectura";
 "reader.retry" = "Intentar de nuevo";
@@ -672,12 +611,9 @@
 "settings.destructiveActionHint" = "Toca dos veces para eliminar permanentemente el audio descargado.";
 "readerSettings.toggleHint" = "Toca dos veces para alternar esta configuración.";
 "readerSettings.chooseOptionHint" = "Toca dos veces para elegir una opción.";
-"jobs.refreshHint" = "Toca dos veces para actualizar la lista de conversiones.";
-"jobs.openJobHint" = "Toca dos veces para abrir los detalles.";
 "convert.chooseFileHint" = "Toca dos veces para elegir un EPUB o PDF.";
 "convert.pickFileFirstHint" = "Elige un libro antes de iniciar la conversión.";
 "convert.startConversionHint" = "Toca dos veces para iniciar la conversión.";
-"jobDetail.actionHint" = "Toca dos veces para realizar esta acción.";
 "toc.removeDownload" = "Eliminar descarga";
 "toc.removeDownloadMessage" = "¿Eliminar el MP3 descargado de \"%@\"? Podrás descargarlo de nuevo más tarde.";
 "toc.untitledChapter" = "Capítulo sin título";
@@ -701,8 +637,6 @@
 "settings.systemTts" = "Voz del sistema (Luciana cuando esté disponible)";
 "settings.systemVoice" = "Voz instalada del sistema";
 
-"bookRecovery.resume" = "Reanudar conversión";
-"bookRecovery.partial" = "Conversión interrumpida — %d de %d capítulos listos";
 "bookProgress.estimate" = "%d%% generado · unos %d min restantes";
 "pronunciation.title" = "Pronunciación de este libro";
 "pronunciation.instructions" = "Una corrección por línea: original = pronunciación. Distingue mayúsculas. Se aplica a nuevas narraciones sin cambiar el libro.";
@@ -713,8 +647,6 @@
 "voiceAudition.stop" = "Detener muestra";
 "voiceAudition.finished" = "Muestra terminada";
 "voiceAudition.failed" = "No se pudo reproducir la muestra.";
-"bookRecovery.interrupted" = "Conversión interrumpida — reanude para recuperar capítulos verificados";
-"bookAudio.coverage" = "Audio del libro";
 "bookAudio.partial" = "Audio parcial — %d de %d capítulos completos";
 
 "reader.link.goToPosition" = "Ir a la posición";
@@ -759,7 +691,6 @@
 "error.pdfOpen" = "No se pudo abrir %@. El PDF puede estar dañado.";
 "error.pdfEncrypted" = "%@ está protegido con contraseña. Elimina la contraseña antes de importar.";
 "error.pdfNoText" = "%@ no tiene texto seleccionable. Los PDF escaneados necesitan reconocimiento de texto antes de la conversión.";
-"error.invalidServer" = "La dirección del servidor no es válida. Revisa Ajustes.";
 "error.http" = "El servidor devolvió el error %d. Inténtalo de nuevo.";
 "error.response" = "No se pudo leer la respuesta. Inténtalo de nuevo.";
 "error.network" = "No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.";
@@ -770,8 +701,6 @@
 "convert.stateUnknown" = "Estado no disponible";
 "error.timeout" = "La operación superó el límite de %d segundos. Inténtalo de nuevo.";
 "error.speechTimeout" = "La voz tardó demasiado en responder. Inténtalo de nuevo.";
-"error.exportNoAudio" = "No hay audio completado disponible para exportar.";
-"error.exportTooLarge" = "%@ es demasiado grande para exportar como ZIP estándar.";
 "error.localAudioMissing" = "El audio local no está disponible. Convierte este capítulo de nuevo.";
 "error.localAudioInvalid" = "El audio guardado está vacío o dañado. Convierte este capítulo de nuevo.";
 "error.epubInvalid" = "%@ no es un paquete EPUB válido.";
@@ -792,7 +721,6 @@
 
 /* Widget configuration, playback intents, and Share Extension */
 "widget.playbackDescription" = "Controla la reproducción o vuelve a tu audiolibro.";
-"widget.continueReadingDescription" = "Vuelve al libro que estabas leyendo.";
 "widget.libraryDescription" = "Acceso rápido a tus audiolibros recientes.";
 "widget.lockScreenDescription" = "Consulta la reproducción actual en la pantalla bloqueada.";
 "widget.remainingTimes" = "%1$@ restantes · libro %2$@";

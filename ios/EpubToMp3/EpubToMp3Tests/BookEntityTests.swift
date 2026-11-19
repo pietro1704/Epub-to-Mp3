@@ -90,14 +90,4 @@ final class BookFileTypeTests: XCTestCase {
             )
         }
     }
-
-    func testOnlyMobiAzw3AndCbrRequireServerConversion() {
-        for type in BookFileType.allCases {
-            let expected = (type == .mobi || type == .azw3 || type == .cbr)
-            XCTAssertEqual(
-                type.requiresServerConversion, expected,
-                "\(type) requiresServerConversion mismatch"
-            )
-        }
-    }
 }

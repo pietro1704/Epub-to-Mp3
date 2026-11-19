@@ -3,6 +3,12 @@ import UIKit
 
 @MainActor
 struct SettingsCellPresentation {
+    /// Rows of the Advanced section, in display order.
+    enum AdvancedRow: Int, CaseIterable {
+        case exportPerformanceDiagnostics
+        case streamingDiagnostics
+    }
+
     let tableView: UITableView
     let settings: AppSettings
     let storageUsage: StorageUsageSnapshot
@@ -24,7 +30,7 @@ struct SettingsCellPresentation {
         switch indexPath.row {
         case 0:
             content.text = L10n.string("settings.storageUsage")
-            content.secondaryText = "\(formatBytes(storageUsage.totalBytes)) / \(formatBytes(storageUsage.budgetBytes))"
+            content.secondaryText = formatBytes(storageUsage.totalBytes)
             content.image = UIImage(systemName: "internaldrive")
             cell.selectionStyle = .none
         case 1:
@@ -66,21 +72,13 @@ struct SettingsCellPresentation {
         var content = cell.defaultContentConfiguration()
         cell.accessoryType = .disclosureIndicator
         cell.accessibilityIdentifier = nil
-        switch indexPath.row {
-        case 0:
-            content.text = L10n.string("settings.recentJobs")
-            content.secondaryText = L10n.string("settings.recentJobsDescription")
-            content.image = UIImage(systemName: "clock.arrow.circlepath")
-        case 1:
-            content.text = L10n.string("settings.telemetry")
-            content.secondaryText = L10n.string("settings.telemetryDescription")
-            content.image = UIImage(systemName: "speedometer")
-        case 2:
+        switch AdvancedRow(rawValue: indexPath.row) {
+        case .exportPerformanceDiagnostics:
             content.text = L10n.string("settings.exportPerformanceDiagnostics")
             content.secondaryText = L10n.string("settings.exportPerformanceDiagnosticsDescription")
             content.image = UIImage(systemName: "square.and.arrow.up")
             cell.accessibilityIdentifier = "settings.exportPerformanceDiagnostics"
-        case 3:
+        case .streamingDiagnostics:
             content.text = L10n.string(diagnosticsSession.isActive
                 ? "settings.stopStreamingDiagnostics" : "settings.recordStreamingDiagnostics")
             content.secondaryText = L10n.string(diagnosticsSession.isActive
@@ -88,7 +86,7 @@ struct SettingsCellPresentation {
             content.image = UIImage(systemName: "waveform.path")
             cell.accessibilityIdentifier = "settings.recordStreamingDiagnostics"
             cell.accessoryType = .none
-        default:
+        case .none:
             return UITableViewCell()
         }
         content.secondaryTextProperties.numberOfLines = 2

@@ -474,12 +474,9 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             return
         }
         let detail = JobDetailScreenController(
-            jobId: result.jobID,
-            settings: settings,
-            library: library,
+            localSnapshot: snapshot,
             player: player,
-            playbackClock: playbackClock,
-            localSnapshot: snapshot
+            playbackClock: playbackClock
         )
         detail.title = L10n.string("convert.resultTitle")
         navigationController?.pushViewController(detail, animated: true)

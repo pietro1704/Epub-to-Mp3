@@ -71,9 +71,9 @@ settings:
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
     INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
-    # NSAppTransportSecurity is a dict — INFOPLIST_KEY_* only supports
-    # scalar/list values, so the dict goes in a real Info.plist file
-    # merged via INFOPLIST_FILE. xcodegen merges this with the
+    # Dict/array keys (UIBackgroundModes, UIApplicationSceneManifest, ...)
+    # cannot be expressed as INFOPLIST_KEY_* scalars, so they live in a real
+    # Info.plist file merged via INFOPLIST_FILE. xcodegen merges this with the
     # auto-generated INFOPLIST_KEY_* entries at build time.
     INFOPLIST_FILE: EpubToMp3/Resources/Info.plist
     INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Pietro Pugliesi"
@@ -178,7 +178,7 @@ settings:
       LLVM_LTO: YES_THIN
       # NOTE: ENABLE_PREVIEWS stays ON (inherited from base) for Release.
       # The codebase has #Preview blocks that reference fixtures gated by
-      # `#if DEBUG` (Views/PreviewFixtures.swift). Flipping previews off
+      # `#if DEBUG`. Flipping previews off
       # in Release would compile the #Preview body but strip the symbols
       # it depends on, breaking the Release link. The metadata overhead
       # is negligible vs the breakage risk.
@@ -246,7 +246,6 @@ targets:
         attributes: [CodeSignOnCopy]
 
       - path: EpubToMp3Widget/WidgetNowPlayingTimeline.swift
-      - path: EpubToMp3Widget/WidgetContinueReadingTimeline.swift
       - path: EpubToMp3Widget/WidgetLibraryTimeline.swift
 
     postBuildScripts:
@@ -415,49 +414,6 @@ targets:
           SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
           GCC_TREAT_WARNINGS_AS_ERRORS: "NO"
 
-  EpubToMp3MacUITests:
-    type: bundle.ui-testing
-    supportedDestinations: [macOS]
-    deploymentTarget:
-      macOS: "14.0"
-    sources:
-      - path: EpubToMp3MacUITests
-    dependencies:
-      - target: EpubToMp3
-    settings:
-      base:
-        SUPPORTED_PLATFORMS: macosx
-        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.macuitests
-        ENABLE_APP_SANDBOX: NO
-        MACOSX_DEPLOYMENT_TARGET: "14.0"
-        TEST_TARGET_NAME: EpubToMp3
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_FILE: ""
-        SWIFT_VERSION: "5.0"
-        SWIFT_STRICT_CONCURRENCY: minimal
-        SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
-      configs:
-        Debug:
-          # Ad-hoc local XCTest bundles have no team for library validation.
-          ENABLE_HARDENED_RUNTIME: NO
-
-  EpubToMp3DeviceAudiobookUITests:
-    type: bundle.ui-testing
-    supportedDestinations: [iOS]
-    deploymentTarget:
-      iOS: "15.0"
-    sources:
-      - path: EpubToMp3DeviceAudiobookUITests
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.iphonejourneyuitests
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_FILE: ""
-        CODE_SIGN_ENTITLEMENTS: ""
-        CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: Apple Development
-        SWIFT_STRICT_CONCURRENCY: minimal
-
   EpubToMp3UITests:
     type: bundle.ui-testing
     supportedDestinations: [iOS]
@@ -618,7 +574,7 @@ schemes:
       config: Debug
     archive:
       config: Release
-  # Split-out schemes so unit / UI / integration tests can run
+  # Split-out schemes so unit / integration tests can run
   # independently instead of always paying for the full EpubToMp3Tests +
   # EpubToMp3UITests bundle. Each points at its own dedicated .xctestplan
   # (single plan, no picker) rather than duplicating target lists here.
@@ -637,18 +593,6 @@ schemes:
       testPlans:
         - path: EpubToMp3-Unit.xctestplan
           defaultPlan: true
-  EpubToMp3-UITests:
-    build:
-      targets:
-        EpubToMp3: all
-        EpubToMp3UITests: [test]
-    run:
-      config: Debug
-    test:
-      config: Debug
-      testPlans:
-        - path: EpubToMp3-UI.xctestplan
-          defaultPlan: true
   EpubToMp3-IntegrationTests:
     build:
       targets:
@@ -661,32 +605,6 @@ schemes:
       testPlans:
         - path: EpubToMp3-Integration.xctestplan
           defaultPlan: true
-  EpubToMp3PhysicalAudiobookJourney:
-    build:
-      targets:
-        EpubToMp3DeviceAudiobookUITests: [test]
-    test:
-      config: Debug
-      environmentVariables:
-        EPUB2MP3_PHYSICAL_AUDIOBOOK_ACCEPTANCE: "$(EPUB2MP3_PHYSICAL_AUDIOBOOK_ACCEPTANCE)"
-        EPUB2MP3_PHYSICAL_APP_BUNDLE_ID: "$(EPUB2MP3_PHYSICAL_APP_BUNDLE_ID)"
-      targets:
-        - EpubToMp3DeviceAudiobookUITests
-
-  EpubToMp3MacJourney:
-    build:
-      targets:
-        EpubToMp3: all
-        EpubToMp3MacUITests: [test]
-    test:
-      config: Debug
-      environmentVariables:
-        MAC_AUDIOBOOK_ACCEPTANCE_ROOT: "$(MAC_AUDIOBOOK_ACCEPTANCE_ROOT)"
-        MAC_AUDIOBOOK_APP_DATA: "$(MAC_AUDIOBOOK_APP_DATA)"
-        MAC_AUDIOBOOK_ALLOW_FABER_DOWNLOAD: "$(MAC_AUDIOBOOK_ALLOW_FABER_DOWNLOAD)"
-      targets:
-        - EpubToMp3MacUITests
-
   EpubToMp3Mac:
     build:
       targets:
@@ -703,6 +621,7 @@ schemes:
         EPUB2MP3_NATIVE_TTS_TEST: "$(EPUB2MP3_NATIVE_TTS_TEST)"
         APP_FOUNDATION_LIVE_EDGE: "$(APP_FOUNDATION_LIVE_EDGE)"
         APP_FOUNDATION_FFI_LIBRARY: "$(APP_FOUNDATION_FFI_LIBRARY)"
+        EPUB2MP3_CONVERTER_ACCEPTANCE: "$(EPUB2MP3_CONVERTER_ACCEPTANCE)"
         EPUB2MP3_PIPER_TEST_MODEL_ROOT: "$(EPUB2MP3_PIPER_TEST_MODEL_ROOT)"
         EPUB2MP3_MODEL_INSTALL_ACCEPTANCE: "$(EPUB2MP3_MODEL_INSTALL_ACCEPTANCE)"
         TTS_TEST_INSTALLED_MODELS_ROOT: "$(TTS_TEST_INSTALLED_MODELS_ROOT)"

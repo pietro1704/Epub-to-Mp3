@@ -1,159 +1,19 @@
 import Combine
 import Foundation
 
+/// Presents the completed local snapshot produced by an embedded Rust
+/// conversion. Apple clients never stream jobs from a remote backend.
 @MainActor
 final class JobDetailViewModel: ObservableObject {
     @Published private(set) var snapshot: JobSnapshot?
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var latestPayload = ""
-    @Published private(set) var receivedCount = 0
-    @Published private(set) var isStreaming = false
-    @Published private(set) var downloadState: DownloadProgress.State?
-    @Published private(set) var downloadProgressLabel: String?
 
-    /// Delivers every decoded snapshot to the owning screen so a player that
-    /// is already attached to this job can append newly completed chapters
+    /// Delivers every presented snapshot to the owning screen so a player that
+    /// is already attached to this job can adopt the completed chapter list
     /// without coupling this view model to UIKit or AppKit.
     var onSnapshot: ((JobSnapshot) -> Void)?
-    var onStreamRequestAuthorization: ((String, Int, Int) -> StreamingDiagnosticsSession.Authorization?)?
-    var onStreamChunk: (@MainActor (Data, Int, Int, LatencyObservation.StreamPublication?, LatencyObservation.StreamRequestReceipt?) async -> Bool)?
-    var onStreamFinished: ((JobSnapshot) -> Void)?
-
-    private var streamTask: Task<Void, Never>?
-    private var progressTask: Task<Void, Never>?
-    private var remoteStreamTask: Task<Void, Never>?
 
     func showLocalSnapshot(_ snapshot: JobSnapshot) {
-        stop()
         self.snapshot = snapshot
-        errorMessage = nil
-        latestPayload = ""
-        receivedCount = 0
-        downloadState = nil
-        downloadProgressLabel = nil
         onSnapshot?(snapshot)
-    }
-
-    func start(client: (any JobStreamingClient)?, jobId: String) {
-        stop()
-        guard let client else {
-            errorMessage = APIError.invalidBaseURL.localizedDescription
-            return
-        }
-        streamTask = Task { [weak self] in
-            do {
-                let initial = try await client.fetchJob(id: jobId)
-                guard let self, !Task.isCancelled else { return }
-                self.snapshot = initial
-                self.onSnapshot?(initial)
-                self.startRemoteStream(client: client, initial: initial)
-                self.errorMessage = nil
-                self.isStreaming = true
-                for try await event in client.eventStream(jobId: jobId) {
-                    guard !Task.isCancelled else { return }
-                    self.receivedCount += 1
-                    self.latestPayload = event.rawPayload
-                    if let next = APIClient.decodeSnapshot(from: event.rawPayload) {
-                        self.snapshot = next
-                        self.onSnapshot?(next)
-                        if next.isTerminal { self.isStreaming = false }
-                    }
-                }
-                self.isStreaming = false
-            } catch {
-                guard !Task.isCancelled, let strongSelf = self else { return }
-                strongSelf.errorMessage = error.localizedDescription
-                strongSelf.isStreaming = false
-            }
-        }
-        progressTask = Task { [weak self] in
-            for await progress in await AudiobookDownloads.shared.watchProgress(jobId: jobId) {
-                guard let self, !Task.isCancelled else { return }
-                self.downloadState = progress.state
-                self.downloadProgressLabel = progress.totalChapters > 0
-                    ? "\(progress.completedChapters)/\(progress.totalChapters)"
-                    : nil
-            }
-        }
-    }
-
-    func stop() {
-        streamTask?.cancel()
-        progressTask?.cancel()
-        remoteStreamTask?.cancel()
-        streamTask = nil
-        progressTask = nil
-        remoteStreamTask = nil
-        isStreaming = false
-    }
-
-    private func startRemoteStream(client: any JobStreamingClient, initial: JobSnapshot) {
-        remoteStreamTask?.cancel()
-        remoteStreamTask = Task { [weak self] in
-            var seen = Set<String>()
-            var snapshot = initial
-            while !Task.isCancelled {
-                let chapters = snapshot.chapterProgress ?? []
-                for chapter in chapters {
-                    let status = chapter.status?.lowercased()
-                    guard status == "processing" || chapter.isCompleted else { continue }
-                    do {
-                        let manifest = try await client.fetchChapterStream(
-                            jobId: snapshot.jobId, chapterIndex: chapter.index
-                        )
-                        for chunk in manifest.chunks.sorted(by: { $0.index < $1.index }) {
-                            let key = "\(chapter.index):\(chunk.id)"
-                            guard !seen.contains(key) else { continue }
-                            let authorization = self?.onStreamRequestAuthorization?(
-                                snapshot.jobId, chapter.index, chunk.index)
-                            let download = try await client.fetchChapterStreamChunk(
-                                jobId: snapshot.jobId,
-                                chapterIndex: chapter.index,
-                                chunkId: chunk.id,
-                                authorization: authorization
-                            )
-                            guard let self, !Task.isCancelled else { return }
-                            // API chapter indexes are 1-based; AudioPlayer's
-                            // segment queue is explicitly 0-based.
-                            let publication = chunk.observation.flatMap {
-                                LatencyObservation.StreamPublication(publicationID: chunk.id, producer: $0)
-                            }
-                            let accepted = await self.onStreamChunk?(download.data, max(0, chapter.index - 1), chunk.index,
-                                                                     publication, download.receipt) ?? true
-                            guard !Task.isCancelled, accepted else { return }
-                            seen.insert(key)
-                        }
-                    } catch {
-                        // The manifest may not exist until synthesis starts;
-                        // SSE remains authoritative for job errors/completion.
-                    }
-                }
-                if snapshot.isTerminal {
-                    guard let self, !Task.isCancelled else { return }
-                    self.onStreamFinished?(snapshot)
-                    return
-                }
-                try? await Task.sleep(nanoseconds: 700_000_000)
-                guard !Task.isCancelled else { return }
-                if let next = try? await client.fetchJob(id: snapshot.jobId) {
-                    snapshot = next
-                }
-            }
-        }
-    }
-
-    func downloadAll(baseURL: URL?) {
-        guard let snapshot else { return }
-        Task { await AudiobookDownloads.shared.enqueueAll(snapshot: snapshot, baseURL: baseURL) }
-    }
-
-    func cancelDownloads() {
-        guard let jobId = snapshot?.jobId else { return }
-        Task { await AudiobookDownloads.shared.cancel(jobId: jobId) }
-    }
-
-    func clearDownloads() {
-        guard let jobId = snapshot?.jobId else { return }
-        Task { await AudiobookDownloads.shared.clearDownloadedBook(jobId: jobId) }
     }
 }

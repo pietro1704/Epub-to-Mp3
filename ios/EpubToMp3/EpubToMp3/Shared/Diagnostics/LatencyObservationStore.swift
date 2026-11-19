@@ -353,14 +353,6 @@ final class LatencyObservationStore: @unchecked Sendable {
         return orderedJourneyIDs.compactMap { activeJourneys[$0]?.journey }
     }
 
-    /// Returns the latest client-monotonic elapsed time for correlation with
-    /// the backend. The journey payload itself stays redacted and local.
-    func latestElapsedNanoseconds(for journeyID: UUID) -> UInt64? {
-        lock.lock()
-        defer { lock.unlock() }
-        return activeJourneys[journeyID]?.journey.records.last?.elapsedNanoseconds
-    }
-
     func exportData() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

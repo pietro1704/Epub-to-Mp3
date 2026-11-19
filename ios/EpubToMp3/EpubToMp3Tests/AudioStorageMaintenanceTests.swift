@@ -49,7 +49,7 @@ final class AudioStorageMaintenanceTests: XCTestCase {
         let tts = root.appendingPathComponent("legacy-tts", isDirectory: true)
         let center = NotificationCenter()
         let notifications = MaintenanceNotifications()
-        let observer = center.addObserver(forName: ChapterCacheManager.clearAllNotification,
+        let observer = center.addObserver(forName: AudioStorageMaintenance.clearAllNotification,
             object: nil, queue: nil) { _ in notifications.received() }
         addTeardownBlock { center.removeObserver(observer) }
         return .init(root: root, artifacts: artifacts, downloads: downloads, tts: tts,

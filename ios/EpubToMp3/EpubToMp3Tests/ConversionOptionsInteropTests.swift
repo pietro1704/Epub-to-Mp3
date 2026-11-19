@@ -34,25 +34,23 @@ final class ConversionOptionsInteropTests: XCTestCase {
         let completed = expectation(description: "The real conversion submitted by the macOS button finishes")
         var converted: RustConversionCoordinator.Result?
         var conversionError: String?
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let outputStore = RustConversionOutputStore(root: root.appendingPathComponent("outputs"), notificationCenter: NotificationCenter())
-        let controller = MacBookDetailViewController(book: book, library: library, settings: settings,
-            player: player, playerPresentation: PlayerPresentation(defaults: defaults), onRead: { _ in }, onShowJobs: {},
-            conversionExecutor: { url, job, first, last, options, progress, chapter in
-                defer { completed.fulfill() }
-                XCTAssertEqual(options?.ttsPreferences?.primary.engine, engine.rawValue)
-                XCTAssertNil(options?.ttsPreferences?.secondary)
-                do {
-                    let result = try await RustConversionCoordinator(outputStore: outputStore).convert(
-                        bookURL: url, jobID: job, chapterStart: first, chapterEnd: last,
-                        options: options, onProgress: progress, onChapterCompleted: chapter)
-                    converted = result
-                    return result
-                } catch {
-                    conversionError = error.localizedDescription
-                    throw error
-                }
-            })
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { url, job, first, last, options, progress, chapter in
+            defer { completed.fulfill() }
+            XCTAssertEqual(options?.ttsPreferences?.primary.engine, engine.rawValue)
+            XCTAssertNil(options?.ttsPreferences?.secondary)
+            do {
+                let result = try await RustConversionCoordinator(outputStore: outputStore).convert(
+                    bookURL: url, jobID: job, chapterStart: first, chapterEnd: last,
+                    options: options, onProgress: progress, onChapterCompleted: chapter)
+                converted = result
+                return result
+            } catch {
+                conversionError = error.localizedDescription
+                throw error
+            }
+        }))
+        let controller = MacConvertScreenController(settings: settings, library: library, viewModel: model)
         let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 1000, height: 700),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "\(engine.displayName) conversion validation — one chapter, no playback"
@@ -69,33 +67,22 @@ final class ConversionOptionsInteropTests: XCTestCase {
         NSRunningApplication.current.activate(options: .activateAllWindows)
         XCTAssertTrue(window.isOnActiveSpace)
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
-            .first { $0.accessibilityIdentifier() == "bookDetail.convert" })
-        XCTAssertGreaterThanOrEqual(try XCTUnwrap(window.contentView).bounds.height, 700)
-        XCTAssertGreaterThan(button.visibleRect.height, 0, "The real conversion action must be visible in the test window.")
-        var accepted = false
-        let dialog = Timer(timeInterval: 0.05, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                guard let modal = NSApp.modalWindow else { return }
-                if !accepted {
-                    accepted = true
-                    NSApp.stopModal(withCode: .alertFirstButtonReturn)
-                } else {
-                    NSApp.abortModal()
-                }
-                modal.orderOut(nil)
-            }
-        }
-        RunLoop.main.add(dialog, forMode: .modalPanel)
         defer {
-            dialog.invalidate()
             window.close()
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: root)
             try? FileManager.default.removeItem(at: source)
         }
+        // The library context selects the exact book; the visible Convert button submits it.
+        await controller.selectLibraryBook(book.id, startImmediately: false)
+        XCTAssertEqual(controller.selectedBookID, book.id)
+        let button = controller.form.submit
+        button.scrollToVisible(button.bounds)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(window.contentView).bounds.height, 700)
+        XCTAssertGreaterThan(button.visibleRect.height, 0, "The real conversion action must be visible in the test window.")
+        XCTAssertTrue(button.isEnabled)
         button.performClick(nil)
-        XCTAssertTrue(accepted, "The actual Convert button must present its confirmation.")
         for _ in 0..<20 where NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -111,7 +98,7 @@ final class ConversionOptionsInteropTests: XCTestCase {
         let audio = try AVAudioFile(forReading: URL(fileURLWithPath: try XCTUnwrap(chapter.downloadUrl)))
         XCTAssertGreaterThan(audio.length, 0)
         print("MAC_CONVERT_GUI engine=\(engine.rawValue) job=\(result.jobID) frames=\(audio.length) output=\(result.outputDirectory.path)")
-        // Allow the real detail controller to publish its completed job before closing its window.
+        // Allow the Convert screen to record its completed job before closing its window.
         for _ in 0..<40 where library.books.first?.lastJobId == nil {
             try await Task.sleep(nanoseconds: 50_000_000)
         }

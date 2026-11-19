@@ -6,7 +6,6 @@ enum RuntimeSettingsRows {
     enum Row {
         case models
         case primary
-        case cellular
         case model(SpeechModelSnapshot.Entry?)
         case secondary
         case automaticSystemFallback
@@ -24,7 +23,6 @@ enum RuntimeSettingsRows {
         guard rows.indices.contains(index) else { return nil }
         switch rows[index] {
         case .primary: return .primary
-        case .cellular: return .cellular
         case .summary: return .models
         case let .model(ordinal):
             return .model(ordinal.flatMap { speechModels.orderedEntries.indices.contains($0) ? speechModels.orderedEntries[$0] : nil })
@@ -72,20 +70,6 @@ enum RuntimeSettingsRows {
                 cell.contentConfiguration = content
                 cell.accessoryType = .disclosureIndicator
                 cell.selectionStyle = .default
-                return cell
-            case .cellular:
-                let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
-                cell.configure(
-                    title: L10n.string("settings.allowCellularAudio"),
-                    subtitle: L10n.string("settings.allowCellularAudioDescription"),
-                    isOn: settings.allowCellularAudioConversion
-                )
-                cell.onValueChanged = { [weak controller] isOn in
-                    guard controller != nil else { return }
-                    settings.allowCellularAudioConversion = isOn
-                    LocalAudioConversionScheduler.shared.setAllowsCellularConversion(isOn)
-                }
-                cell.accessibilityIdentifier = "settings.allowCellularAudio"
                 return cell
             case .secondary:
                 let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
@@ -179,47 +163,6 @@ enum RuntimeSettingsRows {
             case .none:
                 return UITableViewCell()
             }
-    }
-    static func backendWarningVisible(settings: AppSettings) -> Bool {
-        settings.remoteBackendControlsEnabled && settings.resolvedBaseURL == nil
-    }
-
-    static func backendCell(for indexPath: IndexPath, tableView: UITableView, settings: AppSettings, controller: UIViewController) -> UITableViewCell {
-            if indexPath.row == 0 {
-                let cell = tableView.dequeueReusableCell(withIdentifier: "TextField", for: indexPath) as! IOSInlineTextFieldCell
-                cell.configure(
-                    title: L10n.string("settings.url"),
-                    value: settings.backendURL,
-                    placeholder: "https://rust-backend.example",
-                    keyboardType: .URL,
-                    autocapitalization: .none,
-                    isEnabled: settings.remoteBackendControlsEnabled
-                )
-                cell.onTextChanged = { [weak controller, weak tableView] text in
-                    guard controller != nil, let tableView else { return }
-                    let warningWasVisible = backendWarningVisible(settings: settings)
-                    settings.backendURL = text
-                    let warningIsVisible = backendWarningVisible(settings: settings)
-                    guard warningWasVisible != warningIsVisible else { return }
-                    let warning = IndexPath(row: 1, section: indexPath.section)
-                    // Update only the warning: replacing the URL cell would
-                    // destroy the active field and interrupt typing.
-                    tableView.performBatchUpdates {
-                        if warningIsVisible { tableView.insertRows(at: [warning], with: .automatic) }
-                        else { tableView.deleteRows(at: [warning], with: .automatic) }
-                    }
-                 }
-                return cell
-            }
-            let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
-            var content = cell.defaultContentConfiguration()
-            content.text = L10n.string("settings.urlNotValid")
-            content.image = UIImage(systemName: "exclamationmark.triangle.fill")
-            content.imageProperties.tintColor = .systemRed
-            cell.contentConfiguration = content
-            cell.isHidden = false
-            cell.selectionStyle = .none
-            return cell
     }
     static func handleAboutSelection(row: Int) {
         guard row == 2, let url = URL(string: "https://github.com/pietro1704/Epub-to-Mp3") else { return }

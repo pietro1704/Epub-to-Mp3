@@ -28,28 +28,6 @@ import AppIntents
     NowPlayingEntry.empty
 }
 
-// Continue Reading
-@available(iOS 17.0, *)
-#Preview("Continue Reading — small", as: .systemSmall) {
-    ContinueReadingWidget()
-} timeline: {
-    ContinueReadingEntry.placeholder
-}
-
-@available(iOS 17.0, *)
-#Preview("Continue Reading — medium", as: .systemMedium) {
-    ContinueReadingWidget()
-} timeline: {
-    ContinueReadingEntry.placeholder
-}
-
-@available(iOS 17.0, *)
-#Preview("Continue Reading — empty", as: .systemSmall) {
-    ContinueReadingWidget()
-} timeline: {
-    ContinueReadingEntry.empty
-}
-
 // Library
 @available(iOS 17.0, *)
 #Preview("Library — medium", as: .systemMedium) {

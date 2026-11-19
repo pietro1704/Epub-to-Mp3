@@ -353,9 +353,9 @@ final class FullPlayerScreenController: UIViewController {
     private func requestAudioDownload(snapshot: JobSnapshot, chapterIndex: Int?) {
         Task {
             if let chapterIndex {
-                await AudiobookDownloads.shared.enqueueSelected(snapshot: snapshot, epubZeroBasedIndices: [chapterIndex], baseURL: settings.resolvedBaseURL)
+                await AudiobookDownloads.shared.enqueueSelected(snapshot: snapshot, epubZeroBasedIndices: [chapterIndex], baseURL: nil)
             } else {
-                await AudiobookDownloads.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
+                await AudiobookDownloads.shared.enqueueAll(snapshot: snapshot, baseURL: nil)
             }
         }
     }

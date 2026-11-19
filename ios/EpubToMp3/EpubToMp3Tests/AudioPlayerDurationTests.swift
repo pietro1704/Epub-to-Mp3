@@ -14,18 +14,7 @@ final class AudioPlayerDurationTests: XCTestCase {
     func testSegmentModeUsesChapterRelativePositionAcrossTwentySecondSegments() {
         let durations = [20.0, 20.0, 20.0, 20.0, 20.0]
 
-        XCTAssertEqual(PlaybackSegmentSession.segmentPosition(durations: durations, segmentIndex: 0, itemPosition: 10), 10)
-        XCTAssertEqual(PlaybackSegmentSession.segmentPosition(durations: durations, segmentIndex: 2, itemPosition: 10), 50)
-        XCTAssertEqual(PlaybackSegmentSession.segmentPosition(durations: durations, segmentIndex: 3, itemPosition: 15), 75)
         XCTAssertEqual(PlaybackSegmentSession.segmentDuration(durations: durations), 100)
-    }
-
-    func testSegmentModeProgressAndRemainingAreFiniteAndClamped() {
-        XCTAssertEqual(PlaybackSegmentSession.segmentProgress(position: -10, duration: 100), 0)
-        XCTAssertEqual(PlaybackSegmentSession.segmentProgress(position: 75, duration: 100), 0.75)
-        XCTAssertEqual(PlaybackSegmentSession.segmentProgress(position: 150, duration: 100), 1)
-        XCTAssertEqual(PlaybackSegmentSession.segmentRemaining(position: 150, duration: 100), 0)
-        XCTAssertEqual(PlaybackSegmentSession.segmentRemaining(position: -10, duration: 100), 100)
     }
 
     func testSegmentQueueDrainsBacklogBeforeItCanStarve() {

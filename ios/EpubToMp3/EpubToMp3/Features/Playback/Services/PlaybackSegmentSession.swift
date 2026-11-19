@@ -84,7 +84,6 @@ final class PlaybackSegmentSession {
         startingPositions[chapter] = startingRatio.isFinite ? max(0, min(1, startingRatio)) * duration : 0
         if chapterIndex == chapter { chapterDuration = duration }
     }
-    func updateChapterDuration(_ duration: TimeInterval) { chapterDuration = duration }
     func setBase(_ value: TimeInterval) { cumulativeBase = value }
     func startingPosition(for chapter: Int) -> TimeInterval { startingPositions[chapter] ?? 0 }
     func advanceBase(_ duration: TimeInterval) { cumulativeBase += duration }
@@ -191,32 +190,11 @@ final class PlaybackSegmentSession {
     }
 
 
-    nonisolated static func segmentPosition(
-        durations: [TimeInterval],
-        segmentIndex: Int,
-        itemPosition: TimeInterval
-    ) -> TimeInterval {
-        let base = durations.prefix(max(0, segmentIndex)).reduce(0) { total, duration in
-            total + (duration.isFinite && duration > 0 ? duration : 0)
-        }
-        let position = itemPosition.isFinite ? max(0, itemPosition) : 0
-        let duration = durations.indices.contains(segmentIndex) ? durations[segmentIndex] : .infinity
-        return base + min(position, duration.isFinite && duration > 0 ? duration : position)
-    }
-
 
     nonisolated static func segmentDuration(durations: [TimeInterval]) -> TimeInterval {
         durations.filter { $0.isFinite && $0 > 0 }.reduce(0, +)
     }
 
-
-    nonisolated static func estimatedChapterDurationSeconds(
-        wordCount: Int,
-        wordsPerMinute: Double = 200
-    ) -> TimeInterval {
-        guard wordCount > 0, wordsPerMinute.isFinite, wordsPerMinute > 0 else { return 0 }
-        return Double(wordCount) / wordsPerMinute * 60
-    }
 
 
     nonisolated static func segmentChapterTitle(
@@ -235,16 +213,6 @@ final class PlaybackSegmentSession {
     }
 
 
-    nonisolated static func segmentProgress(position: TimeInterval, duration: TimeInterval) -> Double {
-        guard duration.isFinite, duration > 0, position.isFinite else { return 0 }
-        return min(1, max(0, position / duration))
-    }
-
-
-    nonisolated static func segmentRemaining(position: TimeInterval, duration: TimeInterval) -> TimeInterval {
-        guard duration.isFinite, duration > 0 else { return 0 }
-        return max(0, duration - max(0, position.isFinite ? position : 0))
-    }
 
 
 

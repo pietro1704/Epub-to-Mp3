@@ -86,11 +86,6 @@ private actor ConversionActivityStorage {
         state.bookTitle = event.bookTitle
         if state.phase != .cancelling { state.phase = .converting }
         publish(force: advanced)
-        if event.chaptersCompleted.isMultiple(of: 5) || event.chaptersCompleted == event.chaptersTotal {
-            WidgetDataSync.updateConversionProgress(bookTitle: event.bookTitle,
-                chaptersDone: event.chaptersCompleted, chaptersTotal: event.chaptersTotal,
-                currentChapterName: event.chapterTitle)
-        }
     }
 
     func setPhase(_ phase: ConversionActivityPhase, total: Int?, completed: Int?) async {

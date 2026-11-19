@@ -9,7 +9,6 @@ import AppKit
 #endif
 
 /// Persisted preferences for the native reader and embedded Rust conversion.
-/// Backend fields retain inert legacy migration values.
 ///
 /// Why direct UserDefaults instead of @AppStorage:
 /// `@AppStorage` is a `DynamicProperty` tied to a declarative view tree.
@@ -23,20 +22,10 @@ final class AppSettings: ObservableObject {
     static let playbackBackwardSecondsKey = "playbackBackwardSeconds"
     static let playbackSkipIntervals: Set<Double> = [15, 30, 45, 60]
     private let defaults: UserDefaults
-    let readingPosition: ReaderPositionPreferences
     private var loadingPersistedValues = true
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        readingPosition = ReaderPositionPreferences(defaults: defaults)
-        // Conversion is local Rust on every Apple platform. Backend URLs are
-        // retained only as inert migration data and never drive production.
-        self.backendURL = ""
-        self.useEmbeddedRuntime = true
-        // Edge is the only network dependency of on-device conversion. Keep
-        // it on Wi-Fi by default; the user may opt into cellular explicitly.
-        self.allowCellularAudioConversion =
-            defaults.object(forKey: "allowCellularAudioConversion") as? Bool ?? false
         let speech = SpeechPreferenceMigration(defaults: defaults)
         self.audioEngine = speech.primary
         if let snapshot = defaults.data(forKey: "primaryTtsSelection") {
@@ -81,35 +70,6 @@ final class AppSettings: ObservableObject {
         self.readerLetterSpacing = reader.readerLetterSpacing
         self.readerWordSpacing = reader.readerWordSpacing
         loadingPersistedValues = false
-        self.offlineCacheBudgetBytes =
-            (defaults.object(forKey: "offlineCacheBudgetBytes") as? Int64)
-            ?? defaultOfflineCacheBudgetBytes
-        self.offlineCacheTTLSeconds =
-            (defaults.object(forKey: "offlineCacheTTLSeconds") as? Double)
-            ?? defaultOfflineCacheTTLSeconds
-    }
-
-    @Published var backendURL: String = "" {
-        didSet { defaults.set(backendURL, forKey: "backendURL") }
-    }
-
-    /// Master switch: when `true` the app uses its bundled runtime for
-    /// everything that *can* run on-device — EPUB parsing (pure Swift +
-    /// HTTP backend), TTS conversion (Rust server) —
-    /// and treats the configured `backendURL` only as an
-    /// optional remote fallback for users who genuinely want it.
-    ///
-    /// Reader paths NEVER require this to be false. EPUB parsing is
-    /// remote (`APIClient` + Rust backend). The flag remains only as a
-    /// persisted compatibility key for old installations.
-    @Published var useEmbeddedRuntime: Bool = false {
-        didSet { defaults.set(useEmbeddedRuntime, forKey: "useEmbeddedRuntime") }
-    }
-
-    /// Whether the embedded Edge voice provider may use cellular data.
-    /// Defaults to false so local audiobook generation waits for Wi-Fi.
-    @Published var allowCellularAudioConversion: Bool = false {
-        didSet { defaults.set(allowCellularAudioConversion, forKey: "allowCellularAudioConversion") }
     }
 
     @Published var audioEngine: AudioEnginePreference = .piper {
@@ -200,9 +160,6 @@ final class AppSettings: ObservableObject {
 
     /// Reader and library access use the local Apple projection without a backend.
     var canReadOffline: Bool { true }
-
-    /// Legacy backend controls stay hidden in the embedded production client.
-    var remoteBackendControlsEnabled: Bool { false }
 
     /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
     /// Clamped in `didSet` so the rest of the app can trust 0…4.
@@ -344,12 +301,6 @@ final class AppSettings: ObservableObject {
         set { storedReaderCustomColors = ReaderCustomColorCodec.encode(newValue) }
     }
 
-    /// Compatibility shim for legacy screens. Apple production never uses a
-    /// remote backend, so this intentionally always returns nil.
-    var resolvedBaseURL: URL? {
-        nil
-    }
-
     // MARK: Override knobs (opt-in)
     //
     // Every override defaults to **off** — fresh installs see the
@@ -425,20 +376,6 @@ final class AppSettings: ObservableObject {
             }
             defaults.set(readerWordSpacing, forKey: "readerWordSpacing")
         }
-    }
-
-    // MARK: Offline cache budget
-
-    /// Maximum on-device audiobook cache size in bytes.
-    /// Default: 2 GB. UI should present this in human-readable units.
-    @Published var offlineCacheBudgetBytes: Int64 = defaultOfflineCacheBudgetBytes {
-        didSet { defaults.set(offlineCacheBudgetBytes, forKey: "offlineCacheBudgetBytes") }
-    }
-
-    /// Maximum age (seconds) before a cached audiobook is evicted.
-    /// Default: 86 400 s (24 h).
-    @Published var offlineCacheTTLSeconds: Double = defaultOfflineCacheTTLSeconds {
-        didSet { defaults.set(offlineCacheTTLSeconds, forKey: "offlineCacheTTLSeconds") }
     }
 
     /// Resolved point size for the current font-size step.

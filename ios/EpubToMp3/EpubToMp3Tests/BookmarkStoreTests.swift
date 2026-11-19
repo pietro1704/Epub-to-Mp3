@@ -13,8 +13,6 @@ final class BookmarkStoreTests: XCTestCase {
         let store = makeStore()
         store.addBookmark(bookId: "b1", chapterIndex: 3, chapterTitle: "Ch 3")
         XCTAssertEqual(store.bookmarks(for: "b1").count, 1)
-        XCTAssertTrue(store.hasBookmark(bookId: "b1", chapterIndex: 3))
-        XCTAssertFalse(store.hasBookmark(bookId: "b1", chapterIndex: 1))
     }
 
     func testAddHighlight() {
@@ -37,24 +35,6 @@ final class BookmarkStoreTests: XCTestCase {
         XCTAssertEqual(store.bookmarks.count, 1)
         store.remove(id: bm.id)
         XCTAssertEqual(store.bookmarks.count, 0)
-    }
-
-    func testUpdateNote() {
-        let store = makeStore()
-        let bm = store.addBookmark(bookId: "b1", chapterIndex: 1, chapterTitle: "Ch 1")
-        XCTAssertNil(store.bookmarks[0].note)
-        store.updateNote(id: bm.id, note: "My note")
-        XCTAssertEqual(store.bookmarks[0].note, "My note")
-    }
-
-    func testUpdateColor() {
-        let store = makeStore()
-        let bm = store.addBookmark(
-            bookId: "b1", chapterIndex: 1, chapterTitle: "Ch 1",
-            startChar: 0, endChar: 5, selectedText: "text", color: .yellow
-        )
-        store.updateColor(id: bm.id, color: .green)
-        XCTAssertEqual(store.bookmarks[0].color, .green)
     }
 
     func testRemoveAllForBook() {
@@ -100,7 +80,6 @@ final class BookmarkStoreTests: XCTestCase {
         store.addBookmark(bookId: "b1", chapterIndex: 1, chapterTitle: "Ch 1")
         store.addBookmark(bookId: "b1", chapterIndex: 2, chapterTitle: "Ch 2",
                           startChar: 0, endChar: 5, selectedText: "text")
-        XCTAssertEqual(store.pageBookmarks(for: "b1").count, 1)
         XCTAssertEqual(store.highlights(for: "b1").count, 1)
     }
 

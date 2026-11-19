@@ -33,8 +33,10 @@ final class ConvertViewModelTests: XCTestCase {
     @MainActor
     func testCompatibleRecoveryAddsSecondaryOnlyForRetryWithoutChangingSavedPreferences() async throws {
         var captured: ConversionOptions?
-        let result = manualResult()
-        let model = ConvertViewModel(converter: { _, _, _, options in captured = options; return result })
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, options, _, _ in
+            captured = options
+            return self.manualResult(jobID: jobID)
+        }))
         let preferences = TtsPreferences(primary: .selected(.piper), secondary: nil, allowOnlineFallback: false)
         let candidate = TtsRecoveryCandidate(name: "English", selection: TtsSelection(engine: "piper", modelID: "en_US-ljspeech-high", voice: nil))
         model.selectedFile = URL(fileURLWithPath: "/fixture.pdf")
@@ -67,8 +69,9 @@ final class ConvertViewModelTests: XCTestCase {
 
     @MainActor
     func testManualSuccessLeavesPlaybackSnapshotUnchanged() async throws {
-        let result = manualResult()
-        let model = ConvertViewModel(converter: { _, _, _, _ in result })
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, _, _, _ in
+            self.manualResult(jobID: jobID)
+        }))
         model.selectedFile = URL(fileURLWithPath: "/unused-manual-input.epub")
         let suite = "manual-playback-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -89,13 +92,14 @@ final class ConvertViewModelTests: XCTestCase {
         let started = expectation(description: "First conversion suspended")
         let retried = expectation(description: "Second submit intent delivered")
         var calls = 0
-        let result = manualResult()
-        let model = ConvertViewModel(converter: { _, _, _, _ in
+        var requestedJobID: String?
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, _, _, _ in
+            requestedJobID = jobID
             calls += 1
             if calls == 1 { started.fulfill() }
             for await _ in gate { }
-            return result
-        })
+            return self.manualResult(jobID: jobID)
+        }))
         model.selectedFile = URL(fileURLWithPath: "/unused-manual-input.epub")
         let first = Task { await model.submit() }
         await fulfillment(of: [started], timeout: 2)
@@ -107,7 +111,8 @@ final class ConvertViewModelTests: XCTestCase {
         release.finish()
         await first.value
         await second.value
-        XCTAssertEqual(model.submittedJobId, "manual-only")
+        XCTAssertNotNil(requestedJobID)
+        XCTAssertEqual(model.submittedJobId, requestedJobID)
         XCTAssertFalse(model.isSubmitting)
         XCTAssertNil(model.error)
     }
@@ -123,13 +128,14 @@ final class ConvertViewModelTests: XCTestCase {
         var release: AsyncStream<Void>.Continuation!
         let gate = AsyncStream<Void> { release = $0 }
         defer { release.finish() }
-        let result = manualResult(jobID: "explicit-model-job")
-        let model = ConvertViewModel(converter: { _, _, _, options in
+        var requestedJobID: String?
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, options, _, _ in
+            requestedJobID = jobID
             captured = options
             started.fulfill()
             for await _ in gate {}
-            return result
-        })
+            return self.manualResult(jobID: jobID)
+        }))
         model.selectedFile = URL(fileURLWithPath: "/unused-explicit-model.epub")
         model.modelsRoot = "/owned-fixture-models"
         model.engine = "edge"
@@ -152,7 +158,8 @@ final class ConvertViewModelTests: XCTestCase {
         expected.ttsPreferences = selected
         XCTAssertEqual(captured, expected)
         XCTAssertEqual(model.inheritedPreferences?.primary.modelID, "pt_BR-faber-medium")
-        XCTAssertEqual(model.submittedJobId, "explicit-model-job")
+        XCTAssertNotNil(requestedJobID)
+        XCTAssertEqual(model.submittedJobId, requestedJobID)
         XCTAssertNil(model.error)
     }
 
@@ -160,12 +167,13 @@ final class ConvertViewModelTests: XCTestCase {
     func testManualFormForwardsConfigurationAndDoesNotMutatePlayback() async throws {
         var captured: ConversionOptions?
         var capturedBounds: (Int32, Int32)?
-        let result = manualResult()
-        let model = ConvertViewModel(converter: { _, start, end, options in
+        var requestedJobID: String?
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, start, end, options, _, _ in
+            requestedJobID = jobID
             captured = options
             capturedBounds = (start, end)
-            return result
-        })
+            return self.manualResult(jobID: jobID)
+        }))
         model.selectedFile = URL(fileURLWithPath: "/unused-manual-input.epub")
         let modelsRoot = try XCTUnwrap(LocalSpeechModelReadiness.ttsModelsRoot()).path
         model.modelsRoot = modelsRoot
@@ -194,7 +202,8 @@ final class ConvertViewModelTests: XCTestCase {
         XCTAssertEqual(model.manualPrimary, expected.ttsPreferences?.primary)
         XCTAssertEqual(capturedBounds?.0, 8)
         XCTAssertEqual(capturedBounds?.1, 9)
-        XCTAssertEqual(model.submittedJobId, "manual-only")
+        XCTAssertNotNil(requestedJobID)
+        XCTAssertEqual(model.submittedJobId, requestedJobID)
         XCTAssertNil(model.error)
         XCTAssertEqual(player.snapshot, previous)
         XCTAssertFalse(player.isPlaying)
@@ -217,14 +226,10 @@ final class ConvertViewModelTests: XCTestCase {
     }
 
     @MainActor
-    func testMissingClientAndFileProduceActionableErrors() async {
+    func testMissingFileProducesActionableError() async {
         let model = ConvertViewModel()
 
-        await model.submit(client: nil)
-        XCTAssertEqual(model.error, L10n.string("convert.error.pickFileFirst"))
-
-        let client = APIClient(baseURL: URL(string: "http://127.0.0.1:1")!)
-        await model.submit(client: client)
+        await model.submit()
         XCTAssertEqual(model.error, L10n.string("convert.error.pickFileFirst"))
     }
 

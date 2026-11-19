@@ -25,26 +25,6 @@ final class WidgetDataSyncTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - Localized chapter label
-
-    func test_localizedChapterLabel_delegatesToL10n() {
-        // The host ships its localized label through the App Group payload.
-        XCTAssertEqual(
-            WidgetDataSync.localizedChapterLabel(chapterIndex: 4, totalChapters: 18),
-            L10n.string("player.chapterOf", 5, 18)
-        )
-        XCTAssertEqual(
-            WidgetDataSync.localizedChapterLabel(chapterIndex: 4, totalChapters: nil),
-            L10n.string("player.chapter", 5)
-        )
-        XCTAssertEqual(
-            WidgetDataSync.localizedChapterLabel(chapterIndex: 0, totalChapters: 0),
-            L10n.string("player.chapter", 1)
-        )
-    }
-
-    // MARK: - Now Playing round-trip
-
     func test_updateNowPlaying_writesAllKeys() {
         var reloads = 0
         WidgetDataSync.updateNowPlaying(bookId: "book-42", chapterName: "The Psychohistorians",
@@ -196,35 +176,6 @@ final class WidgetDataSyncTests: XCTestCase {
 
         defaults.set(true, forKey: "widget.nowPlayingIsPlaying")
         XCTAssertTrue(defaults.bool(forKey: "widget.nowPlayingIsPlaying"))
-    }
-
-    // MARK: - Continue Reading round-trip
-
-    func test_updateLastRead_writesAllKeys() {
-        defaults.set("book-7", forKey: "widget.lastReadBookId")
-        defaults.set(3, forKey: "widget.lastReadChapterIndex")
-        defaults.set(18, forKey: "widget.lastReadTotalChapters")
-
-        XCTAssertEqual(defaults.string(forKey: "widget.lastReadBookId"), "book-7")
-        XCTAssertEqual(defaults.integer(forKey: "widget.lastReadChapterIndex"), 3)
-        XCTAssertEqual(defaults.integer(forKey: "widget.lastReadTotalChapters"), 18)
-    }
-
-    // MARK: - Conversion progress round-trip
-
-    func test_conversionProgress_writesAllKeys() {
-        defaults.set("Foundation", forKey: "widget.conversion.bookTitle")
-        defaults.set(5, forKey: "widget.conversion.chaptersDone")
-        defaults.set(20, forKey: "widget.conversion.chaptersTotal")
-        defaults.set("Part II: The Encyclopedists", forKey: "widget.conversion.currentChapterName")
-
-        XCTAssertEqual(defaults.string(forKey: "widget.conversion.bookTitle"), "Foundation")
-        XCTAssertEqual(defaults.integer(forKey: "widget.conversion.chaptersDone"), 5)
-        XCTAssertEqual(defaults.integer(forKey: "widget.conversion.chaptersTotal"), 20)
-        XCTAssertEqual(
-            defaults.string(forKey: "widget.conversion.currentChapterName"),
-            "Part II: The Encyclopedists"
-        )
     }
 
     func testConversionActivityUsesRealSharedProgressAndClampsBounds() {

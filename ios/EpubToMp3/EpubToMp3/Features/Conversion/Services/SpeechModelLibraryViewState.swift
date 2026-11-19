@@ -335,14 +335,6 @@ struct SpeechModelLibraryViewState: Sendable {
         }
     }
 
-    func installActionTitle(
-        for entry: SpeechModelSnapshot.Entry,
-        event: SpeechModelInstallEvent?
-    ) -> String {
-        guard event?.isActive == true else { return installTitle(for: entry) }
-        return L10n.string("settings.modelInstall.cancel")
-    }
-
     func actionTitle(for action: SpeechModelProductAction) -> String {
         switch action {
         case .preview: return L10n.string("voiceAudition.title")

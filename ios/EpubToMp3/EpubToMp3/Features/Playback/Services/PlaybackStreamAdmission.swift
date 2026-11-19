@@ -63,7 +63,7 @@ final class PlaybackStreamAdmission {
                 return await self.segments.waitForCapacity(maximumCount: maximumDeferredSegments)
             }, failed: { [weak self] in self?.actions.failed(.segmentWriteFailed) },
             accept: { [weak self] file in
-                self?.accept(file, identity: identity, byteCount: data.count,
+                self?.accept(file, identity: identity,
                              sentenceID: sentenceID, publication: publication, receipt: receipt)
             })
     }
@@ -78,7 +78,7 @@ final class PlaybackStreamAdmission {
             actions.failed(.segmentWriteFailed)
             return
         }
-        accept(file, identity: identity, byteCount: data.count,
+        accept(file, identity: identity,
                sentenceID: sentenceID, publication: publication, receipt: receipt)
     }
 
@@ -93,7 +93,7 @@ final class PlaybackStreamAdmission {
         }
     }
 
-    private func accept(_ file: URL, identity: SegmentBacklog.Identity, byteCount: Int,
+    private func accept(_ file: URL, identity: SegmentBacklog.Identity,
                         sentenceID: String?, publication: LatencyObservation.StreamPublication?,
                         receipt: LatencyObservation.StreamRequestReceipt?) {
         actions.accepting()
@@ -107,15 +107,12 @@ final class PlaybackStreamAdmission {
         case .buffered(let player, let highWaterMark):
             if highWaterMark {
                 log.notice("[enqueueSegment] deferred audio reached \(SegmentBacklog.advisoryHighWaterMark) segments; preserving file-backed backlog until playback drains it")
-                readiness.status.record(.info, "Playback is buffering ahead; audio remains queued until it can play.")
             }
             queue.drainSegments(segments)
             log.debug("[enqueueSegment] deferred ch=\(identity.chapterIndex) seg=\(identity.segmentIndex), pending=\(self.segments.deferredCount), queue=\(player.items().count)")
         }
         readiness.markFirstSegmentReady()
         journeys.recordQueuedAudioIfNeeded()
-        readiness.status.record(.chunkComplete,
-            "ch\(identity.chapterIndex) segment \(identity.segmentIndex) ready (\(byteCount) bytes)")
         actions.ready()
     }
     /// Only the first unbuffered segment carrying explicit Play/Seek intent

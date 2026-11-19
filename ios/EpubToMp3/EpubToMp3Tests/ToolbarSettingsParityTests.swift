@@ -278,11 +278,13 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let (settings, _) = make()
         let originalPreferences = settings.ttsPreferences
         var captured: ConversionOptions?
-        let model = ConvertViewModel(converter: { _, _, _, options in
+        var requestedJobID: String?
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, options, _, _ in
+            requestedJobID = jobID
             captured = options
-            return .init(jobID: "manual-edge-primary", manifestJSON: Data(),
+            return .init(jobID: jobID, manifestJSON: Data(),
                          outputDirectory: URL(fileURLWithPath: "/unused-fixture"))
-        })
+        }))
         model.selectedFile = URL(fileURLWithPath: "/unused-fixture.epub")
         model.engine = "edge"
         model.voice = "pt-BR-AntonioNeural"
@@ -291,6 +293,8 @@ final class ToolbarSettingsParityTests: XCTestCase {
 
         await model.submit()
 
+        XCTAssertNotNil(requestedJobID)
+        XCTAssertEqual(model.submittedJobId, requestedJobID)
         XCTAssertEqual(captured?.ttsPreferences?.primary.engine, "edge")
         XCTAssertNil(captured?.ttsPreferences?.secondary)
         XCTAssertEqual(captured?.ttsPreferences?.allowOnlineFallback, false)
@@ -323,17 +327,20 @@ final class ToolbarSettingsParityTests: XCTestCase {
         settings.allowOnlineAudioFallback = true
         settings.secondaryAudioEngine = .edge
         var captured: ConversionOptions?
-        let model = ConvertViewModel(converter: { _, _, _, options in
+        var requestedJobID: String?
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, options, _, _ in
+            requestedJobID = jobID
             captured = options
-            return .init(jobID: "manual-fixture", manifestJSON: Data(),
+            return .init(jobID: jobID, manifestJSON: Data(),
                          outputDirectory: URL(fileURLWithPath: "/unused-fixture"))
-        })
+        }))
         model.selectedFile = URL(fileURLWithPath: "/unused-fixture.epub")
         model.inheritedPreferences = settings.ttsPreferences
         model.engine = "piper"
         model.usesPreferences = false
         await model.submit()
-        XCTAssertEqual(model.submittedJobId, "manual-fixture")
+        XCTAssertNotNil(requestedJobID)
+        XCTAssertEqual(model.submittedJobId, requestedJobID)
         XCTAssertEqual(captured?.ttsPreferences?.primary.modelID, "pt_BR-faber-medium")
         XCTAssertNil(captured?.ttsPreferences?.secondary)
         XCTAssertEqual(captured?.ttsPreferences?.allowOnlineFallback, false)
@@ -432,13 +439,11 @@ final class ToolbarSettingsParityTests: XCTestCase {
         s.readerLayout = .paginated
         s.readerTheme = .sepia
         s.readerAutoScroll = false
-        s.backendURL = "http://my-backend"
         s.readerOverrideFontFamily = true
         s.restoreOriginal()
         XCTAssertEqual(s.readerLayout, .paginated)
         XCTAssertEqual(s.readerTheme, .sepia)
         XCTAssertFalse(s.readerAutoScroll)
-        XCTAssertEqual(s.backendURL, "http://my-backend")
         XCTAssertFalse(s.readerOverrideFontFamily)
     }
 }

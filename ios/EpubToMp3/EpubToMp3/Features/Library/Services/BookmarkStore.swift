@@ -25,10 +25,6 @@ final class BookmarkStore: ObservableObject {
             .sorted { $0.startChar < $1.startChar }
     }
 
-    func pageBookmarks(for bookId: String) -> [Bookmark] {
-        bookmarks(for: bookId).filter { !$0.isHighlight }
-    }
-
     func highlights(for bookId: String) -> [Bookmark] {
         bookmarks(for: bookId).filter { $0.isHighlight }
     }
@@ -63,18 +59,6 @@ final class BookmarkStore: ObservableObject {
         return entry
     }
 
-    func updateNote(id: UUID, note: String?) {
-        guard let i = bookmarks.firstIndex(where: { $0.id == id }) else { return }
-        bookmarks[i].note = note
-        persist()
-    }
-
-    func updateColor(id: UUID, color: HighlightColor) {
-        guard let i = bookmarks.firstIndex(where: { $0.id == id }) else { return }
-        bookmarks[i].color = color
-        persist()
-    }
-
     func remove(id: UUID) {
         bookmarks.removeAll { $0.id == id }
         persist()
@@ -103,10 +87,6 @@ final class BookmarkStore: ObservableObject {
         bookmarks = kept
         persist()
         return removed
-    }
-
-    func hasBookmark(bookId: String, chapterIndex: Int) -> Bool {
-        bookmarks.contains { $0.bookId == bookId && $0.chapterIndex == chapterIndex && !$0.isHighlight }
     }
 
     // MARK: - Persistence
@@ -142,31 +122,3 @@ final class BookmarkStore: ObservableObject {
         defaults.set(data, forKey: storageKey)
     }
 }
-
-#if DEBUG
-extension BookmarkStore {
-    static var previewPopulated: BookmarkStore {
-        let suite = "bookmarks.preview.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        let store = BookmarkStore(defaults: defaults)
-        store.addBookmark(
-            bookId: "preview-1",
-            chapterIndex: 1,
-            chapterTitle: "Chapter 1",
-            selectedText: "",
-            color: .yellow
-        )
-        store.addBookmark(
-            bookId: "preview-1",
-            chapterIndex: 2,
-            chapterTitle: "Chapter 2",
-            startChar: 10,
-            endChar: 50,
-            selectedText: "The old scientists peered at the young man",
-            note: "Great opening line",
-            color: .blue
-        )
-        return store
-    }
-}
-#endif

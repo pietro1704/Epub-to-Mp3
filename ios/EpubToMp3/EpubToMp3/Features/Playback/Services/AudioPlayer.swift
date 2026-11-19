@@ -396,10 +396,6 @@ final class AudioPlayer: ObservableObject {
 
     func beginPlaybackPreparation() { services.readiness.beginPlaybackPreparation() }
 
-    func recordConversionError(_ message: String) { services.readiness.recordConversionError(message) }
-
-    var conversionStatus: ConversionStatus { services.readiness.status }
-
     func clearConversionState() {
         services.readiness.reset(clearLatches: !isPlaying && player == nil)
     }
@@ -413,10 +409,6 @@ final class AudioPlayer: ObservableObject {
 
     func startSleepTimer(minutes: Int) {
         services.sleep.start(minutes: minutes)
-    }
-
-    func cancelSleepTimer() {
-        services.sleep.cancel()
     }
     func cycleRate() {
         services.transport.cycleRate()

@@ -35,22 +35,6 @@ enum SharedContainerImporter {
 
     private static let availabilityState = AvailabilityState()
 
-    static var isAppGroupAvailable: Bool {
-        availabilityState.lock.lock()
-        if let cached = availabilityState.cache[appGroupID] {
-            availabilityState.lock.unlock()
-            return cached
-        }
-        availabilityState.lock.unlock()
-        let available = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupID
-        ) != nil
-        availabilityState.lock.lock()
-        availabilityState.cache[appGroupID] = available
-        availabilityState.lock.unlock()
-        return available
-    }
-
     /// Subdirectory inside the group container where the extension
     /// drops incoming EPUB/PDF files. `Inbox/` mirrors the convention
     /// Apple uses for system-provided document drop folders.

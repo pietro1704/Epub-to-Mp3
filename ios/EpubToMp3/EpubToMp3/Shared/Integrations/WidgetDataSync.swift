@@ -27,10 +27,6 @@ enum WidgetDataSync {
         static let nowPlayingChapterRemainingSeconds = "widget.nowPlayingChapterRemainingSeconds"
         static let nowPlayingBookRemainingSeconds = "widget.nowPlayingBookRemainingSeconds"
         static let nowPlayingTotalChapters = "widget.nowPlayingTotalChapters"
-        static let lastReadBookId = "widget.lastReadBookId"
-        static let lastReadChapterIndex = "widget.lastReadChapterIndex"
-        static let lastReadTotalChapters = "widget.lastReadTotalChapters"
-        static let lastReadChapterLabel = "widget.lastReadChapterLabel"
     }
 
     // MARK: - Widget kind identifiers
@@ -38,7 +34,6 @@ enum WidgetDataSync {
     private enum WidgetKind {
         static let legacy = "EpubToMp3Widget"
         static let nowPlaying = "NowPlayingWidget"
-        static let continueReading = "ContinueReadingWidget"
         static let library = "LibraryWidget"
     }
 
@@ -94,14 +89,6 @@ enum WidgetDataSync {
         reloadWidgets()
     }
 
-    /// Update only the isPlaying flag without touching other fields.
-    /// Lightweight — called on every play/pause toggle.
-    static func updateIsPlaying(_ isPlaying: Bool) {
-        guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
-        defaults.set(isPlaying, forKey: Keys.nowPlayingIsPlaying)
-        reloadNowPlayingWidgets()
-    }
-
     /// Update playback progress (0.0–1.0). Debounced by the caller;
     /// we just write and reload.
     static func updateNowPlayingProgress(_ progress: Double) {
@@ -132,101 +119,6 @@ enum WidgetDataSync {
         }
     }
 
-    // MARK: - Continue Reading
-
-    /// Update the last-read book metadata. Call this when the user opens
-    /// or navigates within a book in the reader.
-    ///
-    /// Debounced 800 ms: chapter swaps during fast pagination would
-    /// otherwise fire `reloadContinueReadingWidgets()` (cross-process
-    /// `WidgetCenter` IPC, 10-30 ms on cold widgetkitd) on every
-    /// page-boundary cross. The 3 UserDefaults writes also batch into
-    /// one trailing-edge flush.
-    static func updateLastRead(
-        bookId: String,
-        chapterIndex: Int,
-        totalChapters: Int? = nil
-    ) {
-        // Capture latest values; the trailing-edge flush reads them.
-        let snapshot = LastReadSnapshot(
-            bookId: bookId,
-            chapterIndex: chapterIndex,
-            totalChapters: totalChapters
-        )
-        lastReadState.lock.lock()
-        lastReadState.pending = snapshot
-        lastReadState.lock.unlock()
-        scheduleLastReadFlush()
-    }
-
-    /// Flush any pending last-read write immediately. Call from
-    /// `onDisappear` (reader teardown) so the widget reflects the
-    /// final position the moment the user leaves the book.
-    static func flushLastRead() {
-        lastReadState.lock.lock()
-        let task = lastReadState.flushTask
-        lastReadState.flushTask = nil
-        let snapshot = lastReadState.pending
-        lastReadState.pending = nil
-        lastReadState.lock.unlock()
-        task?.cancel()
-        guard let snapshot else { return }
-        commitLastRead(snapshot)
-    }
-
-    private struct LastReadSnapshot: Sendable, Equatable {
-        let bookId: String
-        let chapterIndex: Int
-        let totalChapters: Int?
-    }
-
-    private final class LastReadState: @unchecked Sendable {
-        let lock = NSLock()
-        var pending: LastReadSnapshot?
-        var flushTask: Task<Void, Never>?
-    }
-
-    private static let lastReadState = LastReadState()
-
-    private static func scheduleLastReadFlush() {
-        let task = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            guard !Task.isCancelled else { return }
-            flushLastRead()
-        }
-        lastReadState.lock.lock()
-        let previousTask = lastReadState.flushTask
-        lastReadState.flushTask = task
-        lastReadState.lock.unlock()
-        previousTask?.cancel()
-    }
-
-    private static func commitLastRead(_ snapshot: LastReadSnapshot) {
-        guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
-        defaults.set(snapshot.bookId, forKey: Keys.lastReadBookId)
-        defaults.set(snapshot.chapterIndex, forKey: Keys.lastReadChapterIndex)
-        if let total = snapshot.totalChapters {
-            defaults.set(total, forKey: Keys.lastReadTotalChapters)
-        }
-        defaults.set(
-            localizedChapterLabel(
-                chapterIndex: snapshot.chapterIndex,
-                totalChapters: snapshot.totalChapters
-            ),
-            forKey: Keys.lastReadChapterLabel
-        )
-        reloadContinueReadingWidgets()
-    }
-
-    /// Preserve the host language in the shared payload. The extension also
-    /// localizes chapter labels when reading older payloads without a label.
-    static func localizedChapterLabel(chapterIndex: Int, totalChapters: Int?) -> String {
-        if let total = totalChapters, total > 0 {
-            return L10n.string("player.chapterOf", chapterIndex + 1, total)
-        }
-        return L10n.string("player.chapter", chapterIndex + 1)
-    }
-
     // MARK: - Library
 
     /// Reload the library widget timelines. Called by `LibraryStore`
@@ -235,44 +127,12 @@ enum WidgetDataSync {
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetKind.library)
     }
 
-    // MARK: - Conversion progress (every 5 chapters)
-
-    /// Update conversion progress in the App Group and reload ContinueReading
-    /// timelines. Must be called every 5 completed chapters from the conversion
-    /// job observer.
-    ///
-    /// - Parameters:
-    ///   - bookTitle: display title of the book being converted
-    ///   - chaptersDone: number of chapters successfully converted so far
-    ///   - chaptersTotal: total chapters in the job
-    ///   - currentChapterName: name of the chapter currently being synthesised
-    static func updateConversionProgress(
-        bookTitle: String,
-        chaptersDone: Int,
-        chaptersTotal: Int,
-        currentChapterName: String? = nil
-    ) {
-        guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
-        defaults.set(bookTitle, forKey: "widget.conversion.bookTitle")
-        defaults.set(chaptersDone, forKey: "widget.conversion.chaptersDone")
-        defaults.set(chaptersTotal, forKey: "widget.conversion.chaptersTotal")
-        defaults.set(currentChapterName, forKey: "widget.conversion.currentChapterName")
-
-        // Reload home-screen widgets so the conversion state is visible.
-        WidgetCenter.shared.reloadAllTimelines()
-
-    }
-
     // MARK: - Reload helpers
 
     static func reloadNowPlayingWidgets() {
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetKind.nowPlaying)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetKind.legacy)
         WidgetCenter.shared.reloadTimelines(ofKind: "NowPlayingLockScreenWidget")
-    }
-
-    static func reloadContinueReadingWidgets() {
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetKind.continueReading)
     }
 
     /// Reload all widget timelines at once. Call on major state changes

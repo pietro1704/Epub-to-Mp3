@@ -69,36 +69,4 @@ final class LibraryTagsTests: XCTestCase {
         // Verify allTags aggregation via direct property
         XCTAssertTrue(store.allTags.isEmpty)
     }
-
-    func testLibraryStoreAddTag() {
-        let suite = "test.tags.store.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-
-        // Pre-populate with a book entity via encoding
-        let book = BookEntity(
-            id: "t1", title: "Tagged", bookmark: Data([1]),
-            displayFilename: "tagged.epub", addedAt: Date()
-        )
-        let encoded = try! JSONEncoder().encode([book])
-        defaults.set(encoded, forKey: "library.tags.store.test")
-        let store2 = LibraryStore(defaults: defaults, defaultsKey: "library.tags.store.test")
-
-        store2.addTag("fiction", to: "t1")
-        XCTAssertEqual(store2.books[0].tags, ["fiction"])
-        XCTAssertEqual(store2.allTags, ["fiction"])
-
-        store2.addTag("classic", to: "t1")
-        XCTAssertEqual(store2.books[0].tags, ["fiction", "classic"])
-
-        // Duplicate tag not added
-        store2.addTag("fiction", to: "t1")
-        XCTAssertEqual(store2.books[0].tags, ["fiction", "classic"])
-
-        store2.removeTag("fiction", from: "t1")
-        XCTAssertEqual(store2.books[0].tags, ["classic"])
-
-        let filtered = store2.books(withTag: "classic")
-        XCTAssertEqual(filtered.count, 1)
-    }
 }

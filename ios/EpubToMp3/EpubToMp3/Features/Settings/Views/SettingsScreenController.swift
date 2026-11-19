@@ -73,7 +73,6 @@ final class SettingsScreenController: UITableViewController {
         tableView.estimatedRowHeight = 64
         tableView.accessibilityLabel = L10n.string("settings.title")
         tableView.register(IOSContentCell.self, forCellReuseIdentifier: "Cell")
-        tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
         reloadSpeechModels()
     }
@@ -112,8 +111,7 @@ final class SettingsScreenController: UITableViewController {
                 : modelRowCount(inSection: section)
         }
         if section == Section.runtime.rawValue { return 1 }
-        return Section(rawValue: section)?.rowCount(speechModels: speechModelState, disclosure: modelDisclosure,
-            backendWarningVisible: RuntimeSettingsRows.backendWarningVisible(settings: settings)) ?? 0
+        return Section(rawValue: section)?.rowCount(speechModels: speechModelState, disclosure: modelDisclosure) ?? 0
     }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if let section = settingsSection(at: section) { return section.title }
@@ -142,8 +140,6 @@ final class SettingsScreenController: UITableViewController {
             // Settings shows one summary row; the destination lists every runtime row.
             return runtimeCell(voiceModelsOnly
                 ? RuntimeSettingsRows.row(at: indexPath.row, speechModels: speechModelState) : .models)
-        case .backend:
-            return RuntimeSettingsRows.backendCell(for: indexPath, tableView: tableView, settings: settings, controller: self)
         case .reader:
             return ReaderSettingsRows(tableView: tableView, settings: settings).cell(for: indexPath)
         case .playback:
@@ -178,8 +174,6 @@ final class SettingsScreenController: UITableViewController {
             handleAdvancedSelection(row: indexPath.row)
         case .about:
             RuntimeSettingsRows.handleAboutSelection(row: indexPath.row)
-        case .backend:
-            break
         }
     }
 
@@ -207,7 +201,7 @@ final class SettingsScreenController: UITableViewController {
                 tableView.reloadData()
             }
         case let .model(entry?): presentModelActions(for: entry, source: source)
-        case .cellular, .model(nil), .automaticSystemFallback, .onlineFallback: break
+        case .model(nil), .automaticSystemFallback, .onlineFallback: break
         }
     }
 
@@ -419,11 +413,14 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func handleAdvancedSelection(row: Int) {
-        if let destination = SettingsAdvancedNavigation.destination(row: row, settings: settings,
-            library: library, player: player, playbackClock: playbackClock) {
-            navigationController?.pushViewController(destination, animated: true)
-        } else if row == 2 { exportPerformanceDiagnostics() }
-        else if row == 3 { toggleStreamingDiagnostics() }
+        switch row {
+        case SettingsCellPresentation.AdvancedRow.exportPerformanceDiagnostics.rawValue:
+            exportPerformanceDiagnostics()
+        case SettingsCellPresentation.AdvancedRow.streamingDiagnostics.rawValue:
+            toggleStreamingDiagnostics()
+        default:
+            break
+        }
     }
 
     private func exportPerformanceDiagnostics() {
@@ -470,7 +467,8 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func refreshStreamingDiagnostics() {
-        tableView.reloadRows(at: [IndexPath(row: 3, section: Section.advanced.rawValue)], with: .none)
+        tableView.reloadRows(at: [IndexPath(row: SettingsCellPresentation.AdvancedRow.streamingDiagnostics.rawValue,
+                                            section: Section.advanced.rawValue)], with: .none)
         scheduleDiagnosticsExpiryRefresh()
     }
 
@@ -488,7 +486,7 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func refreshStorageUsage() {
-        storageUsage = StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes)
+        storageUsage = StorageUsageScanner.current()
     }
 
 

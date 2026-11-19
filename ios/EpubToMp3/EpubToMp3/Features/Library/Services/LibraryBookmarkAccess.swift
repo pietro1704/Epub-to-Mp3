@@ -3,18 +3,6 @@ import Foundation
 enum LibraryBookmarkAccess {
     // MARK: - Bookmark helpers
 
-    private static var bookmarkResolutionOptions: URL.BookmarkResolutionOptions {
-        #if os(macOS)
-        // We may hold a non-security-scoped bookmark when the app is
-        // running unsigned (Debug builds) — the system lets us resolve
-        // either kind with the same call when we leave the option off.
-        // We try the scoped resolution first via the resolver below.
-        return [.withSecurityScope]
-        #else
-        return []
-        #endif
-    }
-
     /// Best-effort bookmark creation. macOS sandbox + signed app →
     /// security-scoped bookmark. Unsigned Debug runs (no sandbox) →
     /// regular bookmark. iOS → `suitableForBookmarkFile`. We always
@@ -94,20 +82,6 @@ enum LibraryBookmarkAccess {
         }
     }
 
-    static func resolveBookmarkWithTimeoutAsync(
-        _ bookmark: Data,
-        options: URL.BookmarkResolutionOptions,
-        timeout: TimeInterval = 10
-    ) async throws -> BookmarkResolution {
-        try await Task.detached(priority: .userInitiated) {
-            try Self.resolveBookmarkWithTimeout(
-                bookmark,
-                options: options,
-                timeout: timeout
-            )
-        }.value
-    }
-
     /// Prefer scoped bookmarks on macOS, retaining unsigned-build compatibility.
     static func resolveBookBookmark(_ bookmark: Data) throws -> BookmarkResolution {
         #if os(macOS)
@@ -116,15 +90,6 @@ enum LibraryBookmarkAccess {
         }
         #endif
         return try resolveBookmarkWithTimeout(bookmark, options: [])
-    }
-
-    static func resolveBookBookmarkAsync(_ bookmark: Data) async throws -> BookmarkResolution {
-        #if os(macOS)
-        if let scoped = try? await resolveBookmarkWithTimeoutAsync(bookmark, options: [.withSecurityScope]) {
-            return scoped
-        }
-        #endif
-        return try await resolveBookmarkWithTimeoutAsync(bookmark, options: [])
     }
 
 }

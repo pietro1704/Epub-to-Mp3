@@ -93,12 +93,6 @@ final class ResumeStore {
         "\(jobId)#\(chapterIndex)"
     }
 
-    func latestMarker(jobId: String) -> ResumeMarker? {
-        cache.values
-            .filter { $0.jobId == jobId }
-            .max { $0.updatedAt < $1.updatedAt }
-    }
-
     func marker(jobId: String, chapterIndex: Int) -> ResumeMarker? {
         cache[Self.key(jobId: jobId, chapterIndex: chapterIndex)]
     }

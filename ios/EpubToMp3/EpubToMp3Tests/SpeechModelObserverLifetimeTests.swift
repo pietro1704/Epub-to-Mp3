@@ -202,7 +202,7 @@ final class SpeechModelObserverLifetimeTests: XCTestCase {
         owner.loadViewIfNeeded()
         await waitForObservers(2, fixture: fixture)
         XCTAssertEqual(owner.numberOfSections(in: owner.tableView), 3)
-        XCTAssertEqual(owner.tableView(owner.tableView, numberOfRowsInSection: 0), 7)
+        XCTAssertEqual(owner.tableView(owner.tableView, numberOfRowsInSection: 0), 6)
         XCTAssertEqual(owner.settingsSection(at: 0), .runtime)
         XCTAssertNil(owner.settingsSection(at: 1))
         let paths = (1...2).flatMap { section in
@@ -237,7 +237,7 @@ final class SpeechModelObserverLifetimeTests: XCTestCase {
         defer { window.isHidden = true }
         owner.tableView.layoutIfNeeded()
         let summaryPath = owner.modelSummaryPath
-        XCTAssertEqual(summaryPath, IndexPath(row: 2, section: 0))
+        XCTAssertEqual(summaryPath, IndexPath(row: 1, section: 0))
         let summary = try XCTUnwrap(owner.tableView.cellForRow(at: summaryPath))
         let offset = owner.tableView.contentOffset
         owner.applyInstallEvent(.init(sequence: 1, operationID: "foreign", modelID: "missing-model",

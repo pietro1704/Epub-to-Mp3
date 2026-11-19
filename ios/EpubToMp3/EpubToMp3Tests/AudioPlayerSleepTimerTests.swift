@@ -24,14 +24,6 @@ final class AudioPlayerSleepTimerTests: XCTestCase {
     }
 
     @MainActor
-    func testCancelSleepTimerResetsRemaining() {
-        let player = AudioPlayer()
-        player.setSleepTimer(seconds: 300)
-        player.cancelSleepTimer()
-        XCTAssertEqual(player.sleepTimerRemaining, 0)
-    }
-
-    @MainActor
     func testStartSleepTimerMinutesConvertsCorrectly() {
         let player = AudioPlayer()
         player.startSleepTimer(minutes: 5)

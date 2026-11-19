@@ -69,6 +69,9 @@ final class ManualConversionSession: ObservableObject {
             guard activeJobID == jobID else { return }
             try Task.checkCancellation()
             guard !pending.isCancelled, phase != .cancelling else { throw CancellationError() }
+            guard output.jobID == jobID else {
+                throw EmbeddedConverterError.conversionFailed("Conversion returned a different manual job.")
+            }
             result = output
             phase = .completed
         } catch {

@@ -38,9 +38,9 @@ final class AppKitMigrationTests: XCTestCase {
         let books = [BookEntity(id: "z", title: "Zebra", bookmark: Data(), displayFilename: "z.epub", addedAt: .distantPast),
                      BookEntity(id: "a", title: "Alpha", bookmark: Data(), displayFilename: "a.epub", addedAt: .distantPast)]
         var model = LibraryGridModel(books: books, sortMode: .title)
-        XCTAssertEqual(model.arrangedIdentifiers(), ["a", "z"])
+        XCTAssertEqual(model.arrangedBooks().map(\.id), ["a", "z"])
         model.searchQuery = "ZEBRA"
-        XCTAssertEqual(model.arrangedIdentifiers(), ["z"])
+        XCTAssertEqual(model.arrangedBooks().map(\.id), ["z"])
         model.searchQuery = "missing"
         XCTAssertTrue(model.arrangedBooks().isEmpty)
     }

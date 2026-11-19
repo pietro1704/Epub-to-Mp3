@@ -3,6 +3,9 @@ import Foundation
 /// Explicit storage cleanup. A thrown error may follow partial cleanup;
 /// callers must reload actual storage state instead of claiming full success.
 struct AudioStorageMaintenance: Sendable {
+    /// Posted after stored audio is cleared.
+    static let clearAllNotification = Notification.Name("epub2mp3.clearAllChapterCaches")
+
     private let artifactStore: LocalAudioArtifactStore
     private let legacyAudiobooksRoot: URL
     private let legacyTTSRoot: URL
@@ -40,14 +43,14 @@ struct AudioStorageMaintenance: Sendable {
                 try removeLegacyRoot(legacyAudiobooksRoot)
                 try removeLegacyRoot(legacyTTSRoot)
             }
-            notificationCenter.post(name: ChapterCacheManager.clearAllNotification, object: nil)
+            notificationCenter.post(name: Self.clearAllNotification, object: nil)
         }
     }
 
     func clearTemporaryAudio() async throws {
         try await artifactStore.clearTemporaryAudio()
         try removeLegacyRoot(legacyTTSRoot)
-        notificationCenter.post(name: ChapterCacheManager.clearAllNotification, object: nil)
+        notificationCenter.post(name: Self.clearAllNotification, object: nil)
     }
 
     private func removeLegacyRoot(_ root: URL) throws {

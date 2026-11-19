@@ -15,7 +15,6 @@ final class ManualConversionScreenTests: XCTestCase {
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let settings = AppSettings(defaults: defaults)
-        settings.backendURL = ""
         let controller = ConvertScreenController(settings: settings, library: LibraryStore(defaults: defaults),
             player: player, playbackClock: player.playbackClock,
             preselectedFileURL: URL(fileURLWithPath: "/fixture-only/input.epub"),
@@ -42,17 +41,13 @@ final class ManualConversionScreenTests: XCTestCase {
     func testResultMetadataClearsAccessoriesReusedFromChaptersAndActions() throws {
         let session = ManualConversionSession(executor: { _, id, _, _, _, _, _ in self.result(id) })
         let (_, navigation, player) = try makeScreen(session)
-        let suite = "result-cell-reuse-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
         let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data("""
         {"jobId":"result-cell-reuse","state":"completed","bookTitle":"Fixture book",
          "chapterProgress":[{"index":0,"name":"Fixture chapter","status":"completed",
          "downloadUrl":"file:///fixture-only/chapter.mp3"}]}
         """.utf8))
-        let detail = JobDetailScreenController(jobId: snapshot.jobId, settings: AppSettings(defaults: defaults),
-            library: LibraryStore(defaults: defaults), player: player, playbackClock: player.playbackClock,
-            localSnapshot: snapshot)
+        let detail = JobDetailScreenController(localSnapshot: snapshot, player: player,
+            playbackClock: player.playbackClock)
         detail.loadViewIfNeeded()
         let table = ResultCellReuseTable(frame: .zero, style: .plain)
         detail.tableView = table

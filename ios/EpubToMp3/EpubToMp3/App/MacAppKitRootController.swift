@@ -27,6 +27,15 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private lazy var playbackSession = MacReaderPlaybackSession(
         settings: settings, library: library, player: player,
         playerPresentation: playerPresentation, conversionExecutor: conversionExecutor)
+    private lazy var bookDownload = MacBookDownloadAction(
+        library: library,
+        currentSnapshot: { [weak self] in self?.player.snapshot },
+        streamingOwner: { [weak self] in
+            guard let session = self?.playbackSession, let bookID = session.localPlaybackBookID,
+                  let jobID = session.localPlaybackGeneration else { return nil }
+            return (bookID, jobID)
+        },
+        presentUnavailable: { [weak self] in MacBookDownloadAction.presentUnavailable(in: self?.view.window) })
     static func shouldShowPlayerBar(
         hasSnapshot: Bool,
         hasCurrentBook: Bool,
@@ -222,14 +231,13 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                     bookmarkStore: bookmarkStore,
                 onOpenBook: { [weak self] bookID in self?.showReader(bookID: bookID) },
                     onDownloadBook: { [weak self] bookID in
-                        self?.showBookDetail(bookID: bookID)
-                        (self?.detailController as? MacBookDetailViewController)?.downloadWholeBook()
+                        Task { [weak self] in await self?.bookDownload.download(bookID: bookID) }
                     },
                     onConvertBook: { [weak self] bookID in
-                        self?.showBookDetail(bookID: bookID)
-                        (self?.detailController as? MacBookDetailViewController)?.convertWholeBook()
+                        self?.showConverter(bookID: bookID)
                     }
                 )
+            case .convert: controller = MacConvertScreenController(settings: settings, library: library)
             case .jobs: controller = MacJobsListViewController()
             case .settings: controller = MacSettingsViewController(settings: settings, library: library)
             }
@@ -253,35 +261,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         refreshDetailAccessibilityChildren()
     }
 
-    private func showBookDetail(bookID: String) {
-        guard let book = library.books.first(where: { $0.id == bookID }) else { return }
-        playbackSession.cancel(ifReplacingBook: bookID)
-        sidebarPresentation.select(.library)
-        let detail = MacBookDetailViewController(
-            book: book,
-            library: library,
-            settings: settings,
-            player: player,
-            playerPresentation: playerPresentation,
-            onRead: { [weak self] bookID in self?.showReader(bookID: bookID) },
-            onShowJobs: { [weak self] in self?.show(.jobs) }
-        )
-        if let current = detailController {
-            current.view.removeFromSuperview()
-            current.removeFromParent()
-        }
-        detailContainer.addChild(detail)
-        let contentView = detail.view
-        contentView.translatesAutoresizingMaskIntoConstraints = false
-        detailContainer.view.addSubview(contentView)
-        NSLayoutConstraint.activate([
-            contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
-            contentView.topAnchor.constraint(equalTo: detailContainer.view.topAnchor),
-            contentView.bottomAnchor.constraint(equalTo: playerBar.view.topAnchor),
-        ])
-        detailController = detail
-        refreshDetailAccessibilityChildren()
+    func showConverter(bookID: String) {
+        show(.convert)
+        guard let converter = controllers[.convert] as? MacConvertScreenController else { return }
+        Task { await converter.selectLibraryBook(bookID) }
     }
 
     func showReader(bookID: String) {

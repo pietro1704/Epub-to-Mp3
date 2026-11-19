@@ -173,18 +173,4 @@ final class PlaybackResumeStore {
         return bookID.isEmpty ? nil : bookID
     }
 
-    /// Resolves a player queue offset back to the canonical embedded-book
-    /// artifact. A partial snapshot contains only available chapters, so the
-    /// queue offset is not necessarily the EPUB chapter index.
-    nonisolated static func playbackRetentionTarget(
-        snapshot: JobSnapshot,
-        playableChapterOffset: Int
-    ) -> (bookID: String, chapterIndex: Int)? {
-        guard snapshot.playableChapters.indices.contains(playableChapterOffset) else {
-            return nil
-        }
-        guard let bookID = artifactBookID(jobID: snapshot.jobId) else { return nil }
-        return (bookID, snapshot.playableChapters[playableChapterOffset].index)
-    }
-
 }

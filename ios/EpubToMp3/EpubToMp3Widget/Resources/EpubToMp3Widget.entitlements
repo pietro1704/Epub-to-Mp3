@@ -6,7 +6,5 @@
 	<array>
 		<string>group.com.pietrocode.epubtomp3</string>
 	</array>
-	<key>com.apple.security.files.bookmarks.app-scope</key>
-	<true/>
 </dict>
 </plist>

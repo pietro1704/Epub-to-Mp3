@@ -56,50 +56,6 @@ final class NativeResponsiveScreenTests: XCTestCase {
 
 
 
-    func verifyBookDetail(size: CGSize, category: UIContentSizeCategory) throws {
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
-        defer { player.stop() }
-        let controller = BookDetailScreenController(book: book, library: LibraryStore(defaults: defaults),
-            settings: AppSettings(defaults: defaults), player: player,
-            playerPresentation: PlayerPresentation(defaults: defaults))
-        let host = UIViewController()
-        host.addChild(controller)
-        host.setOverrideTraitCollection(UITraitCollection(preferredContentSizeCategory: category), forChild: controller)
-        host.view.addSubview(controller.view)
-        controller.didMove(toParent: host)
-        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        window.rootViewController = host
-        window.isHidden = false
-        defer { window.isHidden = true; window.rootViewController = nil }
-        host.view.frame = window.bounds
-        controller.view.frame = host.view.bounds
-        host.view.layoutIfNeeded()
-        controller.view.layoutIfNeeded()
-        let views = descendants(controller.view)
-        let scroll = try XCTUnwrap(views.compactMap { $0 as? UIScrollView }.first)
-        let buttons = views.compactMap { $0 as? UIButton }
-        for text in [book.resolvedTitle, book.author ?? ""] {
-            let label = try XCTUnwrap(views.compactMap { $0 as? UILabel }.first { $0.text == text })
-            XCTAssertTrue(label.adjustsFontForContentSizeCategory, "Book metadata must follow Dynamic Type")
-            XCTAssertEqual(label.numberOfLines, 0, "Book metadata must wrap")
-        }
-        for key in ["bookDetail.read", "bookDetail.listenStart", "bookDetail.download", "conversion.log"] {
-            let title = L10n.string(key)
-            let button = try XCTUnwrap(buttons.first { $0.title(for: .normal) == title || $0.configuration?.title == title })
-            XCTAssertGreaterThanOrEqual(button.bounds.height, 44, "\(title), \(size), \(category)")
-            XCTAssertLessThanOrEqual(button.bounds.width, scroll.bounds.width)
-            if let label = button.titleLabel {
-                let required = label.sizeThatFits(CGSize(width: label.bounds.width, height: .greatestFiniteMagnitude))
-                XCTAssertLessThanOrEqual(required.height, label.bounds.height + 1, "Action title must not clip: \(title)")
-            }
-            let frame = button.convert(button.bounds, to: scroll)
-            scroll.scrollRectToVisible(frame, animated: false)
-            scroll.layoutIfNeeded()
-            XCTAssertTrue(scroll.bounds.insetBy(dx: -1, dy: -1).contains(button.convert(button.bounds, to: scroll)),
-                          "Action must be reachable by scrolling: \(title)")
-        }
-    }
-
     func descendants(_ view: UIView) -> [UIView] {
         [view] + view.subviews.flatMap(descendants)
     }

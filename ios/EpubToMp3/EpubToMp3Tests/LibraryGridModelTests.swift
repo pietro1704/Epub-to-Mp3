@@ -40,7 +40,7 @@ final class LibraryGridModelTests: XCTestCase {
         let c = make(id: "c", title: "C", addedAt: date(200), lastOpenedAt: date(300))
         let model = LibraryGridModel(books: [a, b, c], sortMode: .lastOpened)
         // b uses addedAt=900 (no lastOpened) → first; a=500; c=300.
-        XCTAssertEqual(model.arrangedIdentifiers(), ["b", "a", "c"])
+        XCTAssertEqual(model.arrangedBooks().map(\.id), ["b", "a", "c"])
     }
 
     func testSortTitleIsLocalizedAscending() {
@@ -48,7 +48,7 @@ final class LibraryGridModelTests: XCTestCase {
         let b = make(id: "b", title: "apple", addedAt: date(1))
         let c = make(id: "c", title: "Éclair", addedAt: date(1))
         let model = LibraryGridModel(books: [a, b, c], sortMode: .title)
-        XCTAssertEqual(model.arrangedIdentifiers(), ["b", "c", "a"])
+        XCTAssertEqual(model.arrangedBooks().map(\.id), ["b", "c", "a"])
     }
 
     func testSortAddedDateNewestFirst() {
@@ -56,7 +56,7 @@ final class LibraryGridModelTests: XCTestCase {
         let b = make(id: "b", title: "B", addedAt: date(300))
         let c = make(id: "c", title: "C", addedAt: date(200))
         let model = LibraryGridModel(books: [a, b, c], sortMode: .addedDate)
-        XCTAssertEqual(model.arrangedIdentifiers(), ["b", "c", "a"])
+        XCTAssertEqual(model.arrangedBooks().map(\.id), ["b", "c", "a"])
     }
 
     func testSearchMatchesTitleAuthorAndTagsCaseInsensitively() {
@@ -69,24 +69,24 @@ final class LibraryGridModelTests: XCTestCase {
             searchQuery: "  foun ",
             sortMode: .addedDate
         )
-        XCTAssertEqual(model.arrangedIdentifiers(), ["t"])
+        XCTAssertEqual(model.arrangedBooks().map(\.id), ["t"])
 
         let tagModel = LibraryGridModel(books: [byTitle, byAuthor, byTag, miss], searchQuery: "sci-fi")
-        XCTAssertEqual(tagModel.arrangedIdentifiers(), ["tg"])
+        XCTAssertEqual(tagModel.arrangedBooks().map(\.id), ["tg"])
     }
 
     func testTagFilterRestrictsToTaggedBooks() {
         let tagged = make(id: "x", title: "X", tags: ["fav"], addedAt: date(2))
         let untagged = make(id: "y", title: "Y", addedAt: date(1))
         let model = LibraryGridModel(books: [tagged, untagged], selectedTag: "fav", sortMode: .addedDate)
-        XCTAssertEqual(model.arrangedIdentifiers(), ["x"])
+        XCTAssertEqual(model.arrangedBooks().map(\.id), ["x"])
     }
 
     func testEmptyQueryReturnsAll() {
         let a = make(id: "a", title: "A", addedAt: date(2))
         let b = make(id: "b", title: "B", addedAt: date(1))
         let model = LibraryGridModel(books: [a, b], searchQuery: "   ", sortMode: .addedDate)
-        XCTAssertEqual(model.arrangedIdentifiers().count, 2)
+        XCTAssertEqual(model.arrangedBooks().map(\.id).count, 2)
     }
 
     func testSortModeLabelsAreAvailableToUIKitMenus() {

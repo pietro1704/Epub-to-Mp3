@@ -184,18 +184,6 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         XCTAssertTrue(restored.playableChapters.allSatisfy { $0.downloadUrl?.hasPrefix("file:") == true })
 
         let localURL = try XCTUnwrap(AudiobookDownloadStorage.localAudioURL(jobId: jobId, chapterIndex: 4))
-        let route = PlaybackRouter.route(
-            chapter: snapshot.playableChapters[1],
-            baseURL: nil,
-            localAudioURL: localURL,
-            chapterText: nil,
-            languageCode: nil,
-            isAudioPlayable: { url in
-                guard url.isFileURL else { return false }
-                return (try? Data(contentsOf: url).isEmpty) == false
-            }
-        )
-
-        XCTAssertEqual(route, .audio(localURL))
+        XCTAssertEqual((try? Data(contentsOf: localURL).isEmpty), false)
     }
 }

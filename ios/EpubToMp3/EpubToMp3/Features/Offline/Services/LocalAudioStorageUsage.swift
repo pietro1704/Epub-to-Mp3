@@ -4,14 +4,6 @@ enum LocalAudioStorageUsage {
     typealias Manifest = LocalAudioArtifactStore.Manifest
     typealias StorageUsage = LocalAudioArtifactStore.StorageUsage
 
-    static func temporaryCacheBudgetBytes(root: URL = LocalAudioArtifactStore.defaultRoot()) -> Int64 {
-        let hardLimit: Int64 = 2 * 1_024 * 1_024 * 1_024
-        let freeBytes = (try? root.resourceValues(
-            forKeys: [.volumeAvailableCapacityForImportantUsageKey]
-        ).volumeAvailableCapacityForImportantUsage).map { Int64($0) } ?? hardLimit
-        return max(0, min(hardLimit, freeBytes / 10))
-    }
-
     static func storageUsage(root: URL = LocalAudioArtifactStore.defaultRoot()) -> StorageUsage {
         guard let directories = try? FileManager.default.contentsOfDirectory(
             at: root,
