@@ -231,7 +231,7 @@ final class AppSettingsSpeechCharacterizationTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         settings.allowAutomaticSystemVoiceFallback = false
 
-        let options = settings.conversionOptions
+        let options = NarrationConversionOptions.current(for: settings.ttsPreferences)
         XCTAssertEqual(options.engine, "piper")
         XCTAssertEqual(options.modelID, "pt_BR-faber-medium")
         XCTAssertEqual(options.modelsRoot, LocalSpeechModelReadiness.ttsModelsRoot()?.path)
@@ -244,7 +244,7 @@ final class AppSettingsSpeechCharacterizationTests: XCTestCase {
         XCTAssertEqual(preferences.policyVersion, 3)
 
         settings.selectPrimaryNarration(.systemDefault)
-        let system = settings.conversionOptions
+        let system = NarrationConversionOptions.current(for: settings.ttsPreferences)
         XCTAssertEqual(system.engine, "system")
         XCTAssertNil(system.modelID)
         XCTAssertEqual(system.modelsRoot, LocalSpeechModelReadiness.ttsModelsRoot()?.path,

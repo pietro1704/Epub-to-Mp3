@@ -166,7 +166,7 @@ extension NativeResponsiveScreenTests {
         online.performClick(nil)
         XCTAssertEqual(online.state, .on)
         XCTAssertTrue(AppSettings(defaults: defaults).allowOnlineAudioFallback)
-        let captured = settings.conversionOptions
+        let captured = NarrationConversionOptions.current(for: settings.ttsPreferences)
         primary.selectItem(withTitle: faberTitle)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
         XCTAssertNil(settings.secondaryTtsSelection, "A primary change must remove a duplicate secondary.")
