@@ -22,6 +22,9 @@ module CiContracts
     test_apple_latency_evidence.rb test_performance_evidence_gate.rb test_performance_evidence_sources.rb
     test_capture_native_test_metadata.rb test_native_test_metadata_plist.rb test_build_converter_ffi.rb
     test_linux_gui_artifact_evidence.rb
+    test_codeql_workflow.rb test_sync_hf_workflow.rb test_mac_run_task.rb
+    test_ios_device_mise_tasks.rb test_development_run_tasks.rb test_widget_embed_config.rb
+    test_mobile_file_associations.rb test_ios_disk_guard.rb
   ]).uniq.freeze
   NODE_SUITES = %w[
     .github/scripts/rust-cache-identity.test.cjs
@@ -35,15 +38,7 @@ module CiContracts
     scripts/test_post_merge_validation.mjs
   ].freeze
   PYTHON_SUITES = %w[
-    scripts/test_codeql_workflow.py
-    scripts/test_development_run_tasks.py
-    scripts/test_ios_device_mise_tasks.py
-    scripts/test_ios_disk_guard.py
-    scripts/test_mac_run_task.py
     scripts/test_mise_python_environment.py
-    scripts/test_mobile_file_associations.py
-    scripts/test_sync_hf_workflow.py
-    scripts/test_widget_embed_config.py
   ].freeze
 
   def self.steps
