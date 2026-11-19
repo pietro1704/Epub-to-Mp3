@@ -12,7 +12,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(restored.primaryTtsSelection, .edgeDefault)
         XCTAssertEqual(restored.ttsPreferences.secondary?.engine, "system")
         XCTAssertFalse(restored.ttsPreferences.allowOnlineFallback)
-        let captured = restored.conversionOptions
+        let captured = NarrationConversionOptions.current(for: restored.ttsPreferences)
         restored.selectSecondaryNarration(nil)
         XCTAssertNil(AppSettings(defaults: defaults).secondaryTtsSelection)
         XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "system")
@@ -59,7 +59,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(settings.primaryTtsSelection, .defaultPiper)
         XCTAssertEqual(settings.secondaryTtsSelection, .edgeDefault)
         XCTAssertTrue(settings.ttsPreferences.allowOnlineFallback)
-        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.secondary?.engine, "edge")
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.secondary?.engine, "edge")
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
         XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .edgeDefault)
         XCTAssertNil(defaults.object(forKey: "secondaryAudioEngine"), "The migrated engine key is retired.")
@@ -252,8 +252,8 @@ final class ToolbarSettingsParityTests: XCTestCase {
         settings.selectSecondaryNarration(.edgeDefault)
         XCTAssertNil(settings.secondaryTtsSelection, "Unconsented Edge must not be saved.")
         XCTAssertNil(defaults.object(forKey: "secondaryTtsSelection"), "Rejected assignment must clear a stale Edge preference.")
-        XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary, "Unconsented Edge must never reach conversion preferences.")
-        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
+        XCTAssertNil(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.secondary, "Unconsented Edge must never reach conversion preferences.")
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.allowOnlineFallback, false)
 
         settings.selectPrimaryNarration(.edgeDefault)
         settings.allowOnlineAudioFallback = true
@@ -268,13 +268,13 @@ final class ToolbarSettingsParityTests: XCTestCase {
         settings.allowOnlineAudioFallback = true
         XCTAssertTrue(settings.selectableSecondaryEngines.contains("edge"))
         settings.selectSecondaryNarration(.edgeDefault)
-        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.secondary?.engine, "edge")
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.secondary?.engine, "edge")
         XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .edgeDefault)
 
         settings.allowOnlineAudioFallback = false
         XCTAssertNil(settings.secondaryTtsSelection)
         XCTAssertNil(defaults.object(forKey: "secondaryTtsSelection"))
-        XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary)
+        XCTAssertNil(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.secondary)
     }
 
     func testSecondaryCannotDuplicatePrimary() {
@@ -317,8 +317,8 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertFalse(settings.allowOnlineAudioFallback)
         XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
-        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.primary.engine, "edge")
-        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.primary.engine, "edge")
+        XCTAssertEqual(NarrationConversionOptions.current(for: settings.ttsPreferences).ttsPreferences?.allowOnlineFallback, false)
     }
 
     @MainActor
@@ -360,7 +360,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let restored = AppSettings(defaults: defaults)
         XCTAssertEqual(restored.primaryTtsSelection, .edgeDefault)
         XCTAssertEqual(restored.secondaryTtsSelection, .defaultPiper)
-        let captured = restored.conversionOptions
+        let captured = NarrationConversionOptions.current(for: restored.ttsPreferences)
         restored.selectPrimaryNarration(.defaultPiper)
         XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
         let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(captured.encodedJSON().utf8)) as? [String: Any])

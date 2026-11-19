@@ -70,7 +70,7 @@ final class ReaderListeningSessionTests: XCTestCase {
         )
         session.start(book: book("original"), priority: 0, pageRatio: nil,
                       catalog: [(index: 0, title: "Original chapter")],
-                      conversionOptions: AppSettings(defaults: defaults).conversionOptions,
+                      conversionOptions: NarrationConversionOptions.current(for: AppSettings(defaults: defaults).ttsPreferences),
                       presentsFullPlayer: false, chapterEstimates: [0: 600])
         await fulfillment(of: [started], timeout: 2)
         if replacesBook { activeBookID = "replacement" }
@@ -102,7 +102,7 @@ final class ReaderListeningSessionTests: XCTestCase {
             reportFailure: { _ in failures += 1 }
         )
         session.start(book: book("missing"), priority: 0, pageRatio: nil, catalog: [],
-                      conversionOptions: AppSettings(defaults: defaults).conversionOptions,
+                      conversionOptions: NarrationConversionOptions.current(for: AppSettings(defaults: defaults).ttsPreferences),
                       presentsFullPlayer: false)
         await session.waitForCompletion()
         XCTAssertEqual(failures, 1)
