@@ -71,6 +71,22 @@ final class MacBookDownloadActionTests: XCTestCase {
         XCTAssertEqual(alerts, 0)
     }
 
+    func testRetainedEmbeddedAudioOfTheSameBookIsEnqueuedWithoutALastJob() async throws {
+        let store = try library([book(lastJobId: nil)])
+        let embedded = snapshot(jobID: "embedded-book-a")
+        let enqueuedAny = await action(library: store, current: embedded).download(bookID: "book-a")
+        XCTAssertTrue(enqueuedAny)
+        XCTAssertEqual(enqueued, ["embedded-book-a"])
+        XCTAssertEqual(alerts, 0)
+        // Another book's retained audio is never taken, even with the same title.
+        enqueued = []
+        let otherStore = try library([book(id: "book-b", lastJobId: nil)])
+        let notEnqueued = await action(library: otherStore, current: embedded).download(bookID: "book-b")
+        XCTAssertFalse(notEnqueued)
+        XCTAssertEqual(enqueued, [])
+        XCTAssertEqual(alerts, 1)
+    }
+
     func testPlayerSnapshotMatchingOnlyByTitleIsNeverEnqueued() async throws {
         let other = snapshot(jobID: "other-book-job")
         let unconverted = try library([book(lastJobId: nil)])

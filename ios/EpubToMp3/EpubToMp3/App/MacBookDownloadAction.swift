@@ -43,6 +43,8 @@ struct MacBookDownloadAction {
     private func ownedLiveSnapshot(for book: BookEntity) -> JobSnapshot? {
         guard let snapshot = currentSnapshot() else { return nil }
         if let jobID = book.lastJobId, snapshot.jobId == jobID { return snapshot }
+        // Retained embedded audio is identified by the book itself, never by title.
+        if snapshot.jobId == "embedded-\(book.id)" { return snapshot }
         if let owner = streamingOwner(), owner.bookID == book.id, owner.jobID == snapshot.jobId { return snapshot }
         return nil
     }
