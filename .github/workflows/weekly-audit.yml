@@ -17,6 +17,9 @@ jobs:
   audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # npm audit needs only Node and npm; installing every project tool took 163 s.
+      MISE_ENABLE_TOOLS: node,npm
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
