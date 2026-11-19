@@ -22,7 +22,7 @@
     {
       "parallelizable" : false,
       "selectedTests" : [
-            "RustConversionCoordinatorTests/testOptInImportedLordOfTheRingsConvertsAndPublishesPlayableAudio"
+            "DeviceConversionBenchmarkTests/testOptInDeviceConversionBenchmark"
       ],
       "target" : {
         "containerPath" : "container:EpubToMp3.xcodeproj",
