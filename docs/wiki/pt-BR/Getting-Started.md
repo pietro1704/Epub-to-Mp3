@@ -20,6 +20,6 @@ outros modelos. Modelo ausente não autoriza download, Edge ou provedor pago
 silencioso. Recursos do navegador e dependências nativas precisam de verificação real.
 
 Existir uma tarefa não comprova instalação, conversão ou release funcionando.
-Registre revisão, artefato e resultado observado. Python/Ruff locais ficam para CI;
-execução do Simulator está em quarentena. Empacotar, compilar, abrir e validar o
+Registre revisão, artefato e resultado observado. A execução do Simulator está
+em quarentena. Empacotar, compilar, abrir e validar o
 app visível são etapas distintas.

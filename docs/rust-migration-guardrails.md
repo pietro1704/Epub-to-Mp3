@@ -2,8 +2,8 @@
 
 Rust migration checks establish packaging and client wiring at their affected
 runtime. Select the relevant checks under [execution policy](agents/execution-policy.md):
-Apple builds run on Mac, Flutter/Android builds belong on Arch, and Python/Ruff
-execute in CI. Use guarded compiler tasks and preserve compatible caches.
+Apple builds run on Mac, Flutter/Android builds belong on Arch, and host-script
+tests run in Ruby. Use guarded compiler tasks and preserve compatible caches.
 
 ## Migration verification
 

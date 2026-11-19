@@ -82,7 +82,7 @@ class HostChecksTest < Minitest::Test
        test_xcresult_job.rb].each { |name| assert_includes HostChecks::SUITES, name }
     workflow = YAML.load_file(File.expand_path("../.github/workflows/ci.yml", __dir__), aliases: true)
     job = workflow.fetch("jobs").fetch("production-packaging-guard")
-    assert_equal "node,python", job.fetch("env").fetch("MISE_ENABLE_TOOLS")
+    assert_equal "node", job.fetch("env").fetch("MISE_ENABLE_TOOLS")
     steps = job.fetch("steps")
     install = steps.index { |step| step["run"] == "mise install" }
     run = steps.index { |step| step["run"]&.start_with?("mise exec -- ruby scripts/run_ci_contracts.rb") }

@@ -17,8 +17,8 @@ Apple builds and app validation run on this Mac. Android/Samsung and Flutter
 Linux builds, tests and generated artifacts belong on Arch. Android work remains
 paused until the user resumes it. Separately authorized Mac and Arch work may
 run concurrently; shared Rust has one named editing owner. Focused CLI/Web
-checks may run on Mac; start Web tests with at most two workers. Python/Ruff
-execution remains deferred to CI.
+checks may run on Mac; start Web tests with at most two workers. Host scripts are
+Ruby; their fixture-only host tests may run on Mac.
 
 Use the smallest check that proves the requested behavior. Reuse artifacts only
 after matching source, toolchain, lockfile, target and build flags. Explain a

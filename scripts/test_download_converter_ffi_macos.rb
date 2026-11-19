@@ -289,7 +289,7 @@ class ConverterFfiMacOSDownloaderTest < Minitest::Test
     assert_equal 2, workflow.scan("if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt\n        id: rust-cache").length
     assert_includes workflow, "&& (matrix.arch != 'x86_64' || !inputs.intel_prebuilt) && steps.rust-cache.outputs.cache-hit != 'true'"
     assert_includes workflow, "if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt"
-    assert_includes workflow, "matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'python'"
+    assert_includes workflow, "matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'aqua:git-lfs/git-lfs'"
     assert_match(/Download and verify the pinned Intel converter-ffi artifact.*?mise run onnxruntime:host.*?scripts\/download_converter_ffi_macos\.rb/m, workflow)
     assert_match(/Verify actual FFI and pinned ORT architectures.*?xcrun lipo -archs target\/release\/libconverter_ffi\.dylib/m, workflow)
   end

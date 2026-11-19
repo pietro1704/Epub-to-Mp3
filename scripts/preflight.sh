@@ -47,7 +47,7 @@ if [[ "$SCOPE" == "device-workflow" ]]; then
 fi
 if [[ "${CI:-false}" != "true" ]]; then
   mise run host:workflow:test
-  echo 'Full Python/lint gates run in CI. Select --scope device-workflow for native host verification.'
+  echo 'Full lint gates run in CI. Select --scope device-workflow for native host verification.'
   exit 0
 fi
 echo 'Rust formatting...'
@@ -56,7 +56,7 @@ cargo fmt --all -- --check
 # Verification must not install a legacy Apple runtime as a side effect.
 # Explicit setup/build tasks own dependency installation and artifact generation.
 
-echo 'Python, integration, and Web tests...'
+echo 'Web tests...'
 mise run test
 
 echo 'Rust workspace tests...'

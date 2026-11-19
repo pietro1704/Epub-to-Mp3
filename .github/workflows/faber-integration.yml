@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      MISE_ENABLE_TOOLS: python,rust,ruby
+      MISE_ENABLE_TOOLS: rust,ruby
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
+      MISE_ENABLE_TOOLS: rust,ruby,flutter,java,android-sdk,ninja
       ANDROID_VERIFICATION_MODE: full
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -311,7 +311,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ inputs.macos_only == true && 30 || 60 }}
     env:
-      MISE_ENABLE_TOOLS: ${{ matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'python' || matrix.arch == 'x86_64' && 'python,rust' || 'python,rust,ruby' }}
+      # The Intel prebuilt path needs neither Rust nor mise Ruby; it enables only a small
+      # pinned tool so the filter stays non-empty.
+      MISE_ENABLE_TOOLS: ${{ matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'aqua:git-lfs/git-lfs' || matrix.arch == 'x86_64' && 'rust' || 'rust,ruby' }}
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
       EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
@@ -562,7 +564,7 @@ jobs:
             export INVENTORY_WORKTREE_STATE=unknown
           fi
           unset state
-          mise exec -- python scripts/capture_native_test_metadata.py \
+          mise exec -- ruby scripts/capture_native_test_metadata.rb \
             --products ios/EpubToMp3/.build/faber-ci/Build/Products \
             --output .reports/tts-preferences/test-metadata \
             --xcode-version-file "$RUNNER_TEMP/faber-xcode-version.txt"

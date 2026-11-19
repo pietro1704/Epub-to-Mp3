@@ -28,9 +28,8 @@ The first command renders the Apple masters, records source/tool/payload
 identity, then exports static resources with installed ImageMagick. It requires
 the existing `magick` binary and performs no tool installation. Without
 `--render-apple`, it reuses the checked-in matching masters. `--check` verifies
-source identity and output hashes without modifying assets. The two historical
-Python entry points delegate to this same exporter instead of drawing another
-design. Commit generated resources together with their source and manifests.
+source identity and output hashes without modifying assets. Commit generated
+resources together with their source and manifests.
 
 ## Platform wiring
 

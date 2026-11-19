@@ -17,5 +17,5 @@ with a mandatory HTTP server to satisfy a historical migration checklist.
 
 Read [runtime navigation](agents/runtime-navigation.md) and
 [execution policy](agents/execution-policy.md) before builds or execution.
-Python/Ruff execution for host scripts remains deferred to CI; model installation and publication
-retain their own authorization boundaries.
+Host scripts are Ruby; the repository no longer ships Python tooling. Model
+installation and publication retain their own authorization boundaries.

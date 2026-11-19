@@ -102,7 +102,7 @@ class CiRuntimeScopeTest
     integrated = "inputs.full_validation == true && github.ref == 'refs/heads/master' && contains(github.workflow_ref, '/.github/workflows/post-merge-validation.yml@')"
     assert_equal "needs.changes.outputs.android == 'true' && !(#{integrated})", job.fetch('if')
     assert_equal '${{ inputs.full_validation == true && 30 || 12 }}', job.fetch('timeout-minutes')
-    assert_equal 'python,ruby,flutter,java', job.fetch('env').fetch('MISE_ENABLE_TOOLS')
+    assert_equal 'ruby,flutter,java', job.fetch('env').fetch('MISE_ENABLE_TOOLS')
     refute job.fetch('steps').any? { |step| step['continue-on-error'] }
   end
 

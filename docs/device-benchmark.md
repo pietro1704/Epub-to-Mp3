@@ -2,7 +2,7 @@
 
 Use this for a requested Apple conversion benchmark. The product uses embedded
 Rust; the native Swift host tool orchestrates Apple tooling and never synthesizes.
-Local execution uses Swift and shell only. Python/Ruff checks belong in CI.
+Local execution uses Swift and shell only.
 
 ## Explicit scope
 

@@ -16,7 +16,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      MISE_ENABLE_TOOLS: python,rust,ruby
+      MISE_ENABLE_TOOLS: rust,ruby
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

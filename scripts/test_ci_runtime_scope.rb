@@ -71,7 +71,7 @@ class CiRuntimeScopeTest < Minitest::Test
       assert_equal 'false', contracts, paths.inspect
     end
     [[], ['AGENTS.md'], ['mise.toml'], ['docs/generator.rb'], ['unknown.file'],
-      ['scripts/host_tool.py'], ['web/src/app.tsx'], ['flutter_app/lib/main.dart'],
+      ['scripts/host_tool.rb'], ['web/src/app.tsx'], ['flutter_app/lib/main.dart'],
       ['README.md', 'scripts/run_ci_contracts.rb'], ['scripts/deleted.rb', 'docs/moved.md']].each do |paths|
       _, status, err, contracts = scope(paths)
       assert status.success?, err
@@ -93,7 +93,7 @@ class CiRuntimeScopeTest < Minitest::Test
     end
     names = ['Set up Ruby for host workflow checks', 'Install host test dependency',
       'Set up mise for task metadata checks', 'Install scoped host contract tools',
-      'Install fixture-only Python dependencies', 'Verify host workflow guards and collaboration regressions']
+      'Verify host workflow guards and collaboration regressions']
     names.each do |name|
       step = steps.find { |entry| entry['name'] == name }
       assert_equal "needs.changes.outputs.contracts == 'true'", step.fetch('if'), name
@@ -112,7 +112,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_platform_and_shared_runtime_dependencies
     { 'web/src/app.tsx' => %w[web], 'flutter_app/lib/main.dart' => %w[flutter],
-      'ruby_app/rails_gateway/config/routes.rb' => %w[rails], 'scripts/host_tool.py' => [], 'crates/converter-server/src/main.rs' => %w[rust],
+      'ruby_app/rails_gateway/config/routes.rb' => %w[rails], 'scripts/host_tool.rb' => [], 'crates/converter-server/src/main.rs' => %w[rust],
       'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
       'ios/EpubToMp3/Package.swift' => %w[apple],
       'native/piper-runtime/src/lib.rs' => %w[rust apple flutter android],
@@ -229,6 +229,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_pr_jobs_do_not_rebuild_unaffected_wasm
     refute @workflow.fetch('jobs').key?('python-tests')
+    refute_match(/\bpython3?\b|pytest|ruff/i, File.read(File.expand_path('../.github/workflows/ci.yml', __dir__)))
     web = @workflow.fetch('jobs').fetch('web')
     %w[Install\ Rust\ WASM\ target Build\ direct\ Rust\ WASM\ adapter].each do |name|
       assert_equal "needs.changes.outputs.wasm == 'true'", web.fetch('steps').find { |step| step['name'] == name }.fetch('if')
@@ -311,7 +312,7 @@ end
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     mac = faber.fetch('jobs').fetch('macos-preferences')
     assert_equal '/Applications/Xcode_16.4.app/Contents/Developer', mac.fetch('env').fetch('DEVELOPER_DIR')
-    assert_includes mac.fetch('env').fetch('MISE_ENABLE_TOOLS'), "'python,rust,ruby'"
+    assert_includes mac.fetch('env').fetch('MISE_ENABLE_TOOLS'), "'rust,ruby'"
     foundation = mac.fetch('steps').find { |step| step['name'] == 'Test the Foundation-only Apple production seam' }
     refute_nil foundation
     assert_equal "matrix.arch == 'arm64'", foundation.fetch('if')

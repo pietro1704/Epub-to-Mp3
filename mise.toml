@@ -1,5 +1,4 @@
 [tools]
-python = "3.14.10"
 # Latest stable Node accepted by Vite, ESLint, Vitest and jsdom.
 node = "26.13.0"
 npm = "12.2.2"
@@ -28,7 +27,6 @@ ninja = "1.13.2"
 # Provision project tools only from published binaries.
 all_compile = false
 node.compile = false
-python.compile = false
 ruby.compile = false
 
 [env]
@@ -36,10 +34,6 @@ ruby.compile = false
 DEVELOPER_DIR = "{% if os() == 'macos' %}{{ exec(command='ruby scripts/xcode_build_paths.rb developer') }}{% else %}{{ env.DEVELOPER_DIR | default(value='') }}{% endif %}"
 # Reuse the GUI workspace cache; SDK/configuration subdirectories stay isolated.
 APPLE_DERIVED_DATA_PATH = "{% if os() == 'macos' %}{{ exec(command='ruby scripts/xcode_build_paths.rb derived-data') }}{% else %}{{ config_root }}/ios/EpubToMp3/.build{% endif %}"
-
-[tasks."vendor:python"]
-description = "Install and verify the mise-managed Python used by Simulator helper scripts"
-run = "mise install python && mise exec -- python --version"
 
 [tasks."hf:snapshot"]
 description = "Prepare an allowlisted Space snapshot with snapshot-local Git LFS"
@@ -112,11 +106,11 @@ run = "bash scripts/check_rust_migration_gate.sh"
 
 [tasks."converter-ffi:validate"]
 description = "Validate converter-ffi native target mapping and artifact names on the host"
-run = "mise exec -- python scripts/validate_converter_ffi_targets.py"
+run = "mise exec -- ruby scripts/validate_converter_ffi_targets.rb"
 
 [tasks."converter-ffi:targets"]
 description = "List converter-ffi native target mappings and exact output paths"
-run = "mise exec -- python scripts/build_converter_ffi.py --list"
+run = "mise exec -- ruby scripts/build_converter_ffi.rb --list"
 
 [tasks."native:build:preflight"]
 description = "Check native host safety and Mac or Arch free disk space before compilation"
@@ -531,7 +525,7 @@ description = "Validate recorded cross-client cold/warm journey evidence"
 run = """
 #!/bin/bash
 set -euo pipefail
-mise exec -- python scripts/performance_evidence_gate.py "$@"
+mise exec -- ruby scripts/performance_evidence_gate.rb "$@"
 """
 
 [tasks."xcode:generate"]
@@ -641,10 +635,6 @@ if ! command -v xcodegen >/dev/null 2>&1; then
 fi
 xcodegen generate
 
-# Compatibility hook retained for existing workflows; it no longer blocks
-# Simulator work based on RAM or host load.
-python3 ../../scripts/guard_ios_simulator_resources.py
-
 # Slice 18 preflight: confirm the widget extension is wired into the
 # app bundle. xcodegen has silently dropped this dependency in the past,
 # producing a release .app with no PlugIns/EpubToMp3Widget.appex and
@@ -687,14 +677,14 @@ fi
 
 # Pick the simulator destination dynamically — the previous hard-coded
 # `name=iPhone SE,OS=17.2` broke silently when the installed runtime was
-# named, e.g., `iPhone SE (2nd generation),OS=17.2`. The Python selector
-# is unit-tested (`test_select_ios_simulator.py`) and reads
+# named, e.g., `iPhone SE (2nd generation),OS=17.2`. The Ruby selector
+# is unit-tested (`test_select_ios_simulator.rb`) and reads
 # `xcrun simctl list -j devices available`. Override with `IOS_DEST` to
 # pin a specific target in CI.
 if [ -n "${IOS_DEST:-}" ]; then
   DEST="${IOS_DEST}"
 else
-  DEST=$(python3 ../../scripts/select_ios_simulator.py)
+  DEST=$(ruby ../../scripts/select_ios_simulator.rb)
 fi
 echo "ios:build → destination: ${DEST}"
 
@@ -758,7 +748,7 @@ echo "ios:device:run → app: $APP_PATH"
 xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
 SEED_LAUNCH=0
 if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
-  if python3 ../../scripts/seed_ios_development_book.py --target device --identifier "$DEVICE"; then
+  if ruby ../../scripts/seed_ios_development_book.rb --target device --identifier "$DEVICE"; then
     SEED_LAUNCH=1
   else
     SEED_STATUS=$?
@@ -888,24 +878,17 @@ mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- b
 
 # This task intentionally launches only an existing artifact. Use
 # `mise run ios:build` separately when a new simulator build is required.
-python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
 
 if [[ -n "${IOS_APP_PATH:-}" ]]; then
   APP_PATH="$IOS_APP_PATH"
 else
-  APP_PATH=$(python3 - <<'PY'
-from pathlib import Path
-
-apps = []
-for pattern in (".build/Build/Products/*-iphonesimulator/EpubToMp3.app", ".build/*-iphonesimulator/EpubToMp3.app"):
-    apps.extend(path for path in Path(".").glob(pattern) if path.is_dir())
-if not apps:
-    raise SystemExit(1)
-apps.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-print(apps[0])
-PY
-  ) || {
+  APP_PATH=$(ruby -e '
+apps = [".build/Build/Products/*-iphonesimulator/EpubToMp3.app", ".build/*-iphonesimulator/EpubToMp3.app"]
+  .flat_map { |pattern| Dir.glob(pattern) }.select { |path| File.directory?(path) }
+exit 1 if apps.empty?
+puts apps.max_by { |path| File.mtime(path) }
+') || {
     echo "ios:simulator:run error: no existing iphonesimulator EpubToMp3.app found." >&2
     echo "Run `mise run ios:build` first, or provide IOS_APP_PATH=/path/to/EpubToMp3.app." >&2
     exit 2
@@ -920,7 +903,7 @@ if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
   UDID="$IOS_SIMULATOR_UDID"
   DEST="id=$UDID"
 else
-  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  DEST="${IOS_DEST:-$(ruby ../../scripts/select_ios_simulator.rb)}"
   UDID="${DEST##*id=}"
 fi
 if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
@@ -935,7 +918,7 @@ xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP_PATH"
 SEED_LAUNCH=0
 if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
-  if python3 ../../scripts/seed_ios_development_book.py --target simulator --identifier "$UDID"; then
+  if ruby ../../scripts/seed_ios_development_book.rb --target simulator --identifier "$UDID"; then
     SEED_LAUNCH=1
   else
     SEED_STATUS=$?
@@ -962,7 +945,6 @@ mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- b
 # This task is deliberately distinct from `ios:run`: it is useful when a
 # legacy simulator can boot an already-installed build but the selected Xcode
 # cannot compile current source for that runtime.
-python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
 
 BUNDLE_ID="com.pietrocode.epubtomp3"
@@ -970,7 +952,7 @@ if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
   UDID="$IOS_SIMULATOR_UDID"
   DEST="id=$UDID"
 else
-  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  DEST="${IOS_DEST:-$(ruby ../../scripts/select_ios_simulator.rb)}"
   UDID="${DEST##*id=}"
 fi
 if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
@@ -1003,13 +985,11 @@ NATIVE_JOB
 
 [tasks."ios:simulator:test"]
 description = "Build and run iOS XCTest/UI tests on a selected Simulator. Set IOS_TESTS=Target/Class or Target/Class/test."
-depends = ["vendor:python"]
 run = """
 #!/bin/bash
 set -euo pipefail
 mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
-python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
 
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -1021,7 +1001,7 @@ xcodegen generate
 if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
   DEST="id=${IOS_SIMULATOR_UDID}"
 else
-  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  DEST="${IOS_DEST:-$(ruby ../../scripts/select_ios_simulator.rb)}"
 fi
 UDID="${DEST##*id=}"
 if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
@@ -1247,14 +1227,14 @@ run = """
 #!/bin/bash
 set -euo pipefail
 ruby scripts/mac_build_budget.rb check flutter_app/build
-SELECTOR="${MISE_PROJECT_ROOT:-.}/scripts/select_android_target.py"
+SELECTOR="${MISE_PROJECT_ROOT:-.}/scripts/select_android_target.rb"
 DEVICE="${FLUTTER_DEVICE_ID:-}"
 if [[ -z "$DEVICE" ]]; then
   DEVICES_JSON="$(mise exec -- flutter devices --machine)"
-  DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- python "$SELECTOR" --devices-json || true)"
+  DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- ruby "$SELECTOR" --devices-json || true)"
 fi
 if [[ -z "$DEVICE" ]]; then
-  AVD="$(mise exec -- python "$SELECTOR" --lightest-avd)" || {
+  AVD="$(mise exec -- ruby "$SELECTOR" --lightest-avd)" || {
     echo "flutter:run error: no Android device or AVD is available." >&2
     exit 2
   }
@@ -1262,7 +1242,7 @@ if [[ -z "$DEVICE" ]]; then
   mise exec -- emulator -avd "$AVD" -no-boot-anim -no-snapshot >/tmp/epub-to-mp3-android-emulator.log 2>&1 &
   for _ in $(seq 1 90); do
     DEVICES_JSON="$(mise exec -- flutter devices --machine)"
-    DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- python "$SELECTOR" --devices-json || true)"
+    DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- ruby "$SELECTOR" --devices-json || true)"
     [[ -n "$DEVICE" ]] && break
     sleep 2
   done

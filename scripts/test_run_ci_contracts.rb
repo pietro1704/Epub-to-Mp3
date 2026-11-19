@@ -55,9 +55,9 @@ class CiContractsTest < Minitest::Test
 
   def test_allowlist_contains_existing_fixture_files_and_no_build_commands
     root = File.expand_path("..", __dir__)
-    paths = CiContracts::RUBY_SUITES.map { |path| "scripts/#{path}" } + CiContracts::NODE_SUITES + CiContracts::PYTHON_SUITES
+    paths = CiContracts::RUBY_SUITES.map { |path| "scripts/#{path}" } + CiContracts::NODE_SUITES
     paths.each { |path| assert File.file?(File.join(root, path)), path }
-    refute CiContracts.steps.any? { |step| %w[cargo swift swiftc xcodebuild simctl docker].include?(step.fetch("argv").first) }
+    refute CiContracts.steps.any? { |step| %w[cargo swift swiftc xcodebuild simctl docker python python3].include?(step.fetch("argv").first) }
     assert_equal paths.uniq, paths
   end
 

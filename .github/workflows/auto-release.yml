@@ -46,39 +46,35 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          import re
-          import tomllib
-          from pathlib import Path
+          ruby - <<'RUBY' >> "$GITHUB_OUTPUT"
+          require "json"
 
-          product_version = tomllib.loads(
-              Path("Cargo.toml").read_text(encoding="utf-8")
-          )["workspace"]["package"]["version"]
-          web_version = json.loads(
-              Path("web/package.json").read_text(encoding="utf-8")
-          )["version"]
+          # The [workspace.package] version of the root Cargo.toml is the product version (D22).
+          cargo = File.read("Cargo.toml", encoding: "UTF-8")
+          product_version = cargo[/^\[workspace\.package\][^\[]*?^version = "([^"]+)"/m, 1]
+          abort "Cargo.toml is missing [workspace.package] version" unless product_version
+          web_version = JSON.parse(File.read("web/package.json", encoding: "UTF-8")).fetch("version")
 
           versions = {
-              "Cargo.toml": product_version,
-              "web/package.json": web_version,
+            "Cargo.toml" => product_version,
+            "web/package.json" => web_version
           }
-          unique_versions = set(versions.values())
-          if len(unique_versions) != 1:
-              details = ", ".join(f"{path}={version}" for path, version in versions.items())
-              raise SystemExit(f"Version mismatch across manifests: {details}")
+          if versions.values.uniq.length != 1
+            details = versions.map { |path, version| "#{path}=#{version}" }.join(", ")
+            abort "Version mismatch across manifests: #{details}"
+          end
 
-          if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", product_version):
-              raise SystemExit("Committed release version must be a numeric major.minor.patch")
+          unless product_version.match?(/\A(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\z/)
+            abort "Committed release version must be a numeric major.minor.patch"
+          end
 
-          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
-          if f"## [{product_version}]" not in changelog:
-              raise SystemExit(
-                  f"CHANGELOG.md is missing an entry for version {product_version}"
-              )
+          changelog = File.read("CHANGELOG.md", encoding: "UTF-8")
+          unless changelog.include?("## [#{product_version}]")
+            abort "CHANGELOG.md is missing an entry for version #{product_version}"
+          end
 
-          print(f"base_version={product_version}")
-          PY
+          puts "base_version=#{product_version}"
+          RUBY
 
       - name: Determine next version
         id: bump
@@ -91,26 +87,17 @@ jobs:
 
           RANGE="${LAST_TAG:+${LAST_TAG}..}HEAD"
 
-          NEW=$(python3 - <<'PY' "$BASE_VERSION" "$LAST_TAG"
-          import sys
+          NEW=$(ruby - "$BASE_VERSION" "$LAST_TAG" <<'RUBY'
+          parse = ->(value) { value.split(".").map { |part| Integer(part, 10) } }
 
-          def parse(value: str):
-              return tuple(int(part) for part in value.split("."))
+          base, tag = ARGV
+          if tag.to_s.empty?
+            puts base
+            exit
+          end
 
-          base = parse(sys.argv[1])
-          tag = sys.argv[2]
-
-          if not tag:
-              print(sys.argv[1])
-              raise SystemExit
-
-          last = parse(tag[1:])
-
-          if base > last:
-              print(sys.argv[1])
-          else:
-              print("")
-          PY
+          puts((parse.call(base) <=> parse.call(tag[1..])) == 1 ? base : "")
+          RUBY
           )
 
           if [[ -z "$NEW" ]]; then

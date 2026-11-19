@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 45
     env:
-      MISE_ENABLE_TOOLS: python,rust,ruby,flutter
+      MISE_ENABLE_TOOLS: rust,ruby,flutter
       MISE_YES: '1'
       ORT_PREFER_DYNAMIC_LINK: '1'
       ORT_SKIP_DOWNLOAD: '1'
@@ -190,7 +190,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      MISE_ENABLE_TOOLS: python,rust,ruby,flutter
+      MISE_ENABLE_TOOLS: rust,ruby,flutter
       MISE_YES: '1'
       ORT_PREFER_DYNAMIC_LINK: '1'
       ORT_SKIP_DOWNLOAD: '1'
