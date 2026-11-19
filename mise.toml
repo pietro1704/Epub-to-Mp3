@@ -1067,7 +1067,7 @@ run_simulator_tests() {
     local -a grouped_classes=()
     local class_name
     for class_name in ${unit_classes[@]+"${unit_classes[@]}"} ${ui_classes[@]+"${ui_classes[@]}"}; do
-      if [[ "$class_name" == *Audiobook* || "$class_name" == *AudioPlayerStreamingTests || "$class_name" == *AudioPlayerSleepTimerTests || "$class_name" == *AudioPlayerSpeechFallbackTests || "$class_name" == *AudioUITests ]]; then
+      if [[ "$class_name" == *Audiobook* || "$class_name" == *AudioPlayerStreamingTests || "$class_name" == *AudioPlayerSpeechFallbackTests || "$class_name" == *AudioUITests ]]; then
         isolated_classes+=("$class_name")
       else
         grouped_classes+=("$class_name")

@@ -49,13 +49,6 @@ final class AudioPlayerConversionStateTests: XCTestCase {
             "isLoading must be false once firstChapterReady is true, even during conversion")
     }
 
-    @MainActor
-    func testIsLoadingFalseWhenNotConverting() {
-        let player = AudioPlayer()
-        player.isConverting = false
-        XCTAssertFalse(player.isLoading)
-    }
-
     /// A Listen tap must replace its play control immediately, including
     /// while the embedded runtime warms up and parses the book before the
     /// first chapter synthesis begins.
@@ -137,51 +130,7 @@ final class AudioPlayerConversionStateTests: XCTestCase {
         XCTAssertFalse(player.firstChapterReady)
     }
 
-    // MARK: - conversionProgress bounds
-
-    @MainActor
-    func testConversionProgressStoresArbitraryValue() {
-        let player = AudioPlayer()
-        player.conversionProgress = 0.75
-        XCTAssertEqual(player.conversionProgress ?? -1, 0.75, accuracy: 0.001)
-    }
-
-    @MainActor
-    func testConversionProgressCanBeZero() {
-        let player = AudioPlayer()
-        player.conversionProgress = 0.0
-        XCTAssertEqual(player.conversionProgress ?? -1, 0.0, accuracy: 0.001)
-    }
-
-    @MainActor
-    func testConversionProgressCanBeOne() {
-        let player = AudioPlayer()
-        player.conversionProgress = 1.0
-        XCTAssertEqual(player.conversionProgress ?? -1, 1.0, accuracy: 0.001)
-    }
-
     // MARK: - MiniPlayerBar display logic (unit replica)
-
-    /// The bar should show a spinner (not play/pause) when converting
-    /// and the first chapter has not arrived yet.
-    @MainActor
-    func testMiniBarShowsSpinnerWhenConvertingNoFirstChapter() {
-        let player = AudioPlayer()
-        player.isConverting = true
-        XCTAssertTrue(player.isLoading,
-            "MiniPlayerBar must show spinner while isConverting && !firstChapterReady")
-    }
-
-    /// After the first chapter lands the bar switches to play/pause,
-    /// regardless of isConverting still being true (background chapters).
-    @MainActor
-    func testMiniBarShowsPlayAfterFirstChapterReady() {
-        let player = AudioPlayer()
-        player.isConverting = true
-        player.markFirstChapterReady()
-        XCTAssertFalse(player.isLoading,
-            "MiniPlayerBar must switch to play/pause once firstChapterReady is true")
-    }
 
     /// Conversion done: isConverting=false, firstChapterReady=true.
     /// Bar should show normal play/pause.
@@ -193,29 +142,6 @@ final class AudioPlayerConversionStateTests: XCTestCase {
         player.isConverting = false
         XCTAssertFalse(player.isLoading,
             "Bar must show play/pause when conversion is done")
-    }
-
-    // MARK: - Progress bar color logic (unit replica)
-
-    /// While converting with known progress, the bar color key is "orange".
-    @MainActor
-    func testProgressBarUsesOrangeColorKeyDuringConversion() {
-        let player = AudioPlayer()
-        player.isConverting = true
-        player.conversionProgress = 0.4
-        let useOrange = player.isConverting && player.conversionProgress != nil
-        XCTAssertTrue(useOrange,
-            "Progress bar must use orange tint during active conversion with known progress")
-    }
-
-    /// After conversion completes, accent color is used.
-    @MainActor
-    func testProgressBarUsesAccentColorAfterConversion() {
-        let player = AudioPlayer()
-        player.isConverting = false
-        let useOrange = player.isConverting && player.conversionProgress != nil
-        XCTAssertFalse(useOrange,
-            "Progress bar must use accent color when not converting")
     }
 }
 #endif

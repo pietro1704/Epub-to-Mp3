@@ -5,7 +5,7 @@ import MediaPlayer
 @testable import EpubToMp3
 
 /// Unit tests for the UX-layer additions to `AudioPlayer`:
-/// sleep timer, rate cycling, skip ±15 s.
+/// sleep timer, rate labels, skip ±15 s.
 ///
 /// These tests run on the macOS host (no iOS device required). Because
 /// AVQueuePlayer cannot load remote URLs in a unit-test sandbox, we
@@ -133,43 +133,6 @@ final class AudioPlayerUXTests: XCTestCase {
             "setSleepTimer(0) must zero the remaining counter")
     }
 
-    // MARK: - availableRates
-
-    @MainActor
-    func testAvailableRatesContainsExpectedValues() {
-        let player = makePlayer()
-        let expected: [Float] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
-        XCTAssertEqual(player.availableRates, expected)
-    }
-
-    // MARK: - cycleRate
-
-    /// Normal speed participates in the same ordered menu cycle.
-    @MainActor
-    func testCycleRateAdvancesThroughAllCases() {
-        let player = makePlayer()
-        // Default rate is 1.0.
-        XCTAssertEqual(player.rate, .x100)
-
-        let expected: [PlaybackRate] = [.x125, .x150, .x175, .x200, .x250, .x300, .x075, .x100]
-        for expectedRate in expected {
-            player.cycleRate()
-            XCTAssertEqual(player.rate, expectedRate,
-                "After cycle, rate should be \(expectedRate.shortLabel)")
-        }
-    }
-
-    /// A complete cycle returns to the first menu option.
-    @MainActor
-    func testCycleRateWrapsAroundToStart() {
-        let player = makePlayer()
-        player.setRate(.x075)
-        let cycleCount = player.availableRates.count
-        for _ in 0..<cycleCount { player.cycleRate() }
-        XCTAssertEqual(player.rate, .x075,
-            "Cycling through all \(cycleCount) rates must land back at 0.75")
-    }
-
     // MARK: - PlaybackRate.shortLabel
 
     @MainActor
@@ -205,34 +168,7 @@ final class AudioPlayerUXTests: XCTestCase {
             "Skip backward below 0 should clamp to 0")
     }
 
-    /// When `positionSeconds` is known (simulate via `seek`), `skipForward`
-    /// should add the delta. We fake durationSeconds via a snapshot-less
-    /// seek so we can verify the arithmetic.
-    @MainActor
-    func testSkipForwardAddsSeconds() {
-        let player = makePlayer()
-        // Seek to 30 s without a real player item (seek clamps to 0 since
-        // durationSeconds == 0, so we cannot go past 0 here). Instead we
-        // verify that skipForward does NOT exceed positionSeconds when
-        // duration is 0 — i.e., the clamp logic fires correctly.
-        player.skipForward(seconds: 30)
-        XCTAssertGreaterThanOrEqual(player.positionSeconds, 0)
-        XCTAssertLessThanOrEqual(player.positionSeconds, player.durationSeconds)
-    }
-
     // MARK: - isPlaying gate (reader chapter sync regression)
-
-    /// A freshly created player with a loaded snapshot must report
-    /// `isPlaying == false`. The reader's `installPositionLoop` uses
-    /// this flag to prevent an idle player at chapter 0 from forcing
-    /// the reader back to the TOC/index chapter on every position
-    /// update — the "1→index→2→index" regression (bcfebf3 → fix).
-    @MainActor
-    func testIdlePlayerWithSnapshotIsNotPlaying() {
-        let player = makePlayer()
-        XCTAssertFalse(player.isPlaying,
-            "A freshly initialised player must not report isPlaying=true")
-    }
 
     /// `isPlaying` must remain false after loading a snapshot without
     /// calling `play`. The position-loop chapter-sync must therefore

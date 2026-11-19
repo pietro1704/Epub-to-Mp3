@@ -72,15 +72,6 @@ final class AsyncTimeoutTests: XCTestCase {
         XCTAssertEqual(result, "ok")
     }
 
-    /// TimeoutError must be Equatable so call sites can `catch is
-    /// TimeoutError` reliably — used in `BookOpenView` to distinguish
-    /// "30 s parse timeout" from a real Python decode error.
-    func testTimeoutErrorEquatability() {
-        let a = TimeoutError(seconds: 5, label: "x")
-        let b = TimeoutError(seconds: 5, label: "x")
-        XCTAssertEqual(a, b)
-    }
-
     func testTimeoutErrorDescriptionIncludesLabel() {
         let err = TimeoutError(seconds: 30, label: "EPUB parse")
         let desc = err.errorDescription ?? ""

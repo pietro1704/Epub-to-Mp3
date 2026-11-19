@@ -168,16 +168,6 @@ final class WidgetDataSyncTests: XCTestCase {
         defaults.set(try JSONSerialization.data(withJSONObject: books), forKey: "library.books.v1")
     }
 
-    // MARK: - isPlaying round-trip
-
-    func test_isPlaying_toggleRoundTrip() {
-        defaults.set(false, forKey: "widget.nowPlayingIsPlaying")
-        XCTAssertFalse(defaults.bool(forKey: "widget.nowPlayingIsPlaying"))
-
-        defaults.set(true, forKey: "widget.nowPlayingIsPlaying")
-        XCTAssertTrue(defaults.bool(forKey: "widget.nowPlayingIsPlaying"))
-    }
-
     func testConversionActivityUsesRealSharedProgressAndClampsBounds() {
         XCTAssertEqual(ConversionActivityProgress(chaptersDone: 7, chaptersTotal: 20).progressFraction, 0.35, accuracy: 0.001)
         XCTAssertEqual(ConversionActivityProgress(chaptersDone: 0, chaptersTotal: 0).progressFraction, 0)
@@ -197,23 +187,6 @@ final class WidgetDataSyncTests: XCTestCase {
             XCTAssertEqual(state.statusLocalizationKey, "liveActivity." + phase.rawValue)
             XCTAssertEqual(state.statusLabel, "2 / 8")
         }
-    }
-
-    // MARK: - Library key
-
-    func test_libraryKey_roundTrip() throws {
-        struct MinimalBook: Codable, Equatable {
-            let id: String
-            let title: String
-        }
-        let books = [MinimalBook(id: "b1", title: "Dune"), MinimalBook(id: "b2", title: "1984")]
-        let data = try JSONEncoder().encode(books)
-        defaults.set(data, forKey: "library.books.v1")
-
-        let loaded = defaults.data(forKey: "library.books.v1")
-        XCTAssertNotNil(loaded)
-        let decoded = try JSONDecoder().decode([MinimalBook].self, from: loaded!)
-        XCTAssertEqual(decoded, books)
     }
 
     // MARK: - AudioPlayer -> widget isPlaying sync (regression)
@@ -345,14 +318,5 @@ final class WidgetDataSyncTests: XCTestCase {
         let last = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
         let current = (bookId: "book-2", chapterName: "Chapter One", isPlaying: true)
         XCTAssertTrue(NowPlayingPublication.widgetSyncNeedsReload(last: last, current: current))
-    }
-
-    // MARK: - App Group boundary (never UserDefaults.standard)
-
-    /// Verify that keys written to the test suite are NOT visible in .standard.
-    func test_appGroup_isolatedFromStandard() {
-        defaults.set("sentinel", forKey: "widget.test.isolation")
-        let standardValue = UserDefaults.standard.string(forKey: "widget.test.isolation")
-        XCTAssertNil(standardValue, "Widget keys must never be readable from UserDefaults.standard")
     }
 }

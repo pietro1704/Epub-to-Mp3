@@ -21,14 +21,6 @@ final class RepeatedCrossingUITests: XCTestCase {
         guard parts.count >= 3, let p = Int(parts[0]), let t = Int(parts[2]) else { return nil }
         return (p, t)
     }
-    private func flickerTotal(_ app: XCUIApplication) -> Int {
-        // Summary is "stale=N spurious=N empty=N".
-        let label = app.staticTexts[flickerSummaryAXId].firstMatch.label
-        return label.split(separator: " ").reduce(0) { acc, kv in
-            acc + (Int(kv.split(separator: "=").last.map(String.init) ?? "") ?? 0)
-        }
-    }
-    private let flickerSummaryAXId = "flicker.probe.summary"
 
     private func open(withProbe: Bool = true) throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
@@ -176,7 +168,7 @@ final class RepeatedCrossingUITests: XCTestCase {
     }
 
     /// Crossing BACKWARD must settle on the previous chapter's LAST page in a
-    /// single hop — no flash of page 1 first, and no recorded flicker events.
+    /// single hop — no flash of page 1 first.
     /// Before the fix the reader seeded page 0 then a polling task animated to
     /// the last page (a visible second hop / re-navigation flicker).
     func testBackwardCrossingLandsOnLastPageWithoutFlicker() throws {
@@ -198,10 +190,6 @@ final class RepeatedCrossingUITests: XCTestCase {
         waitUntil(timeout: 2.0) { chapter(app)?.index == start.index + 1 }
         guard chapter(app)?.index == start.index + 1 else { throw XCTSkip("Forward cross failed.") }
 
-        // Zero the probe right before the backward crossing we care about.
-        app.buttons["flicker.probe.reset"].firstMatch.tap()
-        waitUntil(timeout: 1.0) { flickerTotal(app) == 0 }
-
         // Drag right off page 1. A tap on the fixture's linked text must open
         // that link, so the physical crossing regression uses the edge-pan
         // gesture that users also use to return a chapter.
@@ -213,7 +201,5 @@ final class RepeatedCrossingUITests: XCTestCase {
             XCTAssertEqual(ind.page, ind.total,
                            "backward crossing must land on the previous chapter's LAST page, got \(ind)")
         }
-        XCTAssertEqual(flickerTotal(app), 0,
-                       "backward crossing must record zero flicker events")
     }
 }

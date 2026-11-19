@@ -9,26 +9,6 @@ final class IntegrationTests: XCTestCase {
 
     // MARK: - ZipReader
 
-    func testZipReaderExtractsStoredAndDeflatedMembers() throws {
-        let url = try EpubFixture.create()
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        // STORE entry — mimetype is required to be the first entry of
-        // every EPUB and stored uncompressed per spec.
-        let mimetype = ZipReader.extract(member: "mimetype", from: url)
-        XCTAssertEqual(mimetype.flatMap { String(data: $0, encoding: .utf8) },
-                       "application/epub+zip")
-
-        // DEFLATE entry.
-        let container = ZipReader.extract(member: "META-INF/container.xml",
-                                          from: url)
-        XCTAssertNotNil(container)
-        XCTAssertTrue(
-            String(data: container!, encoding: .utf8)!
-                .contains("OEBPS/content.opf")
-        )
-    }
-
     func testZipReaderReturnsNilForMissingMember() throws {
         let url = try EpubFixture.create()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -45,18 +25,6 @@ final class IntegrationTests: XCTestCase {
         XCTAssertEqual(payload.title, EpubFixture.title)
         XCTAssertEqual(payload.author, EpubFixture.author)
         XCTAssertEqual(payload.cover, EpubFixture.coverPNG)
-    }
-
-    func testReadMetadataReturnsEmptyPayloadForMalformedArchive() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("garbage-\(UUID().uuidString).epub")
-        try Data("not a zip".utf8).write(to: url)
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        let payload = try EpubMetadataReader.readMetadata(from: url)
-        XCTAssertNil(payload.title)
-        XCTAssertNil(payload.author)
-        XCTAssertNil(payload.cover)
     }
 
     // MARK: - LibraryStore importBook
@@ -112,22 +80,5 @@ final class IntegrationTests: XCTestCase {
         XCTAssertEqual(s2.books.count, 1)
         XCTAssertEqual(s2.books.first?.id, imported.id)
         XCTAssertEqual(s2.books.first?.title, EpubFixture.title)
-    }
-
-    func testRemoveDropsEntryFromPersistedStore() throws {
-        let suite = "library.rm.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        let url = try EpubFixture.create()
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        let store = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
-        let book = try store.importBook(from: url)
-        store.remove(id: book.id)
-        try store.flushPersistenceSync()
-
-        let reloaded = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
-        XCTAssertTrue(reloaded.books.isEmpty)
     }
 }

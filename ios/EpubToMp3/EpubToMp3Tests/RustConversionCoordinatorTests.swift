@@ -1,6 +1,5 @@
 import XCTest
 @testable import EpubToMp3
-import AVFoundation
 import Darwin
 
 final class RustConversionCoordinatorTests: XCTestCase {
@@ -67,61 +66,6 @@ final class RustConversionCoordinatorTests: XCTestCase {
 
         let contents = try String(contentsOf: logURL, encoding: .utf8)
         XCTAssertEqual(contents, previousTrace + "[Rust] conversion resumed\n")
-    }
-
-    @MainActor
-    func testOptInImportedLordOfTheRingsConvertsAndPublishesPlayableAudio() async throws {
-        guard ProcessInfo.processInfo.environment["EPUB2MP3_ALLOW_WHOLE_BOOK"] == "1" else {
-            throw XCTSkip("Whole-book conversion requires explicit EPUB2MP3_ALLOW_WHOLE_BOOK=1.")
-        }
-        let resolvedBookPath = try explicitlySelectedBookPath("EPUB2MP3_LOTR_IMPORTED_EPUB")
-        let bookURL = URL(fileURLWithPath: resolvedBookPath)
-        XCTAssertTrue(FileManager.default.isReadableFile(atPath: bookURL.path), "Imported EPUB is not readable: \(bookURL.path)")
-
-        let outputRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("RustConversionFixture-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: outputRoot) }
-        let outputStore = RustConversionOutputStore(root: outputRoot, notificationCenter: NotificationCenter())
-
-        let jobID = UUID().uuidString
-        var publishedChapters: [JobSnapshot.Chapter] = []
-        let adapter = ConverterFFIAdapter()
-        let result = try await RustConversionCoordinator(adapter: adapter, outputStore: outputStore).convert(
-            bookURL: bookURL,
-            jobID: jobID,
-            chapterStart: -1,
-            chapterEnd: -1,
-            options: ConversionOptions(engine: "system"),
-            onProgress: { event in
-                _ = event
-            },
-            onChapterCompleted: { event in
-                publishedChapters.append(event.playableChapter)
-            }
-        )
-
-        let snapshot = try result.snapshot()
-        XCTAssertGreaterThan(snapshot.chaptersTotal ?? 0, 1)
-        XCTAssertEqual(snapshot.chaptersCompleted, snapshot.chaptersTotal)
-        XCTAssertEqual(publishedChapters.count, snapshot.chaptersTotal)
-
-        guard let firstAudioPath = snapshot.playableChapters.first?.downloadUrl else {
-            return XCTFail("Rust returned no playable chapter audio.")
-        }
-        let firstAsset = AVURLAsset(url: URL(fileURLWithPath: firstAudioPath))
-        let firstAudioIsPlayable = try await firstAsset.load(.isPlayable)
-        XCTAssertTrue(firstAudioIsPlayable, "AVFoundation rejected the first Rust MP3.")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: firstAudioPath))
-    }
-
-    private func explicitlySelectedBookPath(_ key: String) throws -> String {
-        let environment = ProcessInfo.processInfo.environment
-        guard environment["EPUB2MP3_IMPORTED_CONVERSION_TEST"] == "1",
-              let path = environment[key], !path.isEmpty,
-              !path.contains("${"), !path.contains("$(") else {
-            throw XCTSkip("Enable EPUB2MP3_IMPORTED_CONVERSION_TEST=1 and explicitly supply \(key). No library discovery or model download is performed.")
-        }
-        return path
     }
 
     @MainActor

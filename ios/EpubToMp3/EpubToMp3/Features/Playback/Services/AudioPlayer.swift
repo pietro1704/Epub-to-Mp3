@@ -86,9 +86,6 @@ final class AudioPlayer: ObservableObject {
 
     var sleepTimerRemaining: TimeInterval { playbackClock.sleepTimerRemaining }
 
-    /// Ordered list of playback rates available in the UI.
-    let availableRates: [Float] = PlaybackRate.primaryRates.map(\.rawValue)
-
     // MARK: AsyncStreams (positions + chapter changes)
 
     var currentChapter: AsyncStream<JobSnapshot.Chapter?> { services.broadcast.chapters(initial: services.observation.currentChapterValue) }
@@ -409,9 +406,6 @@ final class AudioPlayer: ObservableObject {
 
     func startSleepTimer(minutes: Int) {
         services.sleep.start(minutes: minutes)
-    }
-    func cycleRate() {
-        services.transport.cycleRate()
     }
     func skipForward(seconds: Double? = nil) {
         services.transport.skipForward(seconds: seconds)

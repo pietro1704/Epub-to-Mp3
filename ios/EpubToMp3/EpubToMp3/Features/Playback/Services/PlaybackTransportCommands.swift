@@ -256,18 +256,6 @@ final class PlaybackTransportCommands {
         actions.publish()
     }
 
-    /// Advance to the next rate in `PlaybackRate.primaryRates`, wrapping
-    /// from the last entry back to the first.
-    func cycleRate() {
-        let cases = PlaybackRate.primaryRates
-        guard let idx = cases.firstIndex(of: rate) else {
-            setRate(.x075)
-            return
-        }
-        let next = cases[(idx + 1) % cases.count]
-        setRate(next)
-    }
-
     /// Skip forward by `seconds` (default 15 s). Clamped to [0, duration].
     func skipForward(seconds: Double? = nil) {
         skip(by: seconds ?? PlaybackSystemSession.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey))
