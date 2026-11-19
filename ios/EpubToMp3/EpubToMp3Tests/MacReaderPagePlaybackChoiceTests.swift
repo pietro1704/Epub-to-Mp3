@@ -6,6 +6,23 @@ import XCTest
 
 @MainActor
 final class MacReaderPagePlaybackChoiceTests: XCTestCase {
+    func testPaginatedSnapKeepsShortChapterTailReachable() throws {
+        let snap = { (offset: CGFloat) throws -> CGFloat in
+            try XCTUnwrap(MacReaderTextPresentation.pageSnapOffset(for: offset, pageHeight: 600, maximumOffset: 1_210))
+        }
+        // The final page starts at the maximum offset even when the tail is
+        // a small fraction of a page.
+        XCTAssertEqual(try snap(1_210), 1_210)
+        XCTAssertEqual(try snap(1_206), 1_210)
+        XCTAssertEqual(try snap(1_204), 1_200)
+        XCTAssertEqual(try snap(1_500), 1_210, "Elastic overscroll lands on the final page.")
+        XCTAssertEqual(try snap(899), 600)
+        XCTAssertEqual(try snap(900), 1_200, "A half-page tie advances, as before.")
+        XCTAssertEqual(try snap(-40), 0)
+        XCTAssertEqual(MacReaderTextPresentation.pageSnapOffset(for: 0, pageHeight: 600, maximumOffset: 0), 0)
+        XCTAssertNil(MacReaderTextPresentation.pageSnapOffset(for: 10, pageHeight: 0, maximumOffset: 100))
+    }
+
     func testFinalVisibleReaderPagePublishesTextStartInsteadOfChapterEnd() async throws {
         let id = "mac-page-anchor-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))

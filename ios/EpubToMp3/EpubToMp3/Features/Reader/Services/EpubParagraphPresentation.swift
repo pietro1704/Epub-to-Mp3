@@ -108,7 +108,7 @@ enum EpubParagraphPresentation {
     }
 
     private static func cssLength(_ raw: String, bodyFontSize: CGFloat) -> CGFloat {
-        let pattern = "^\\s*([+-]?[0-9]*\\.?[0-9]+)\\s*(pt|px|em|rem|%)?"
+        let pattern = "^\\s*([+-]?[0-9]*\\.?[0-9]+)\\s*(pt|px|pc|in|cm|mm|em|rem|%)?"
         guard let match = try? NSRegularExpression(pattern: pattern).firstMatch(in: raw, range: NSRange(location: 0, length: (raw as NSString).length)),
               let number = Double((raw as NSString).substring(with: match.range(at: 1))) else { return 0 }
         let unit: String
@@ -122,9 +122,8 @@ enum EpubParagraphPresentation {
         }
         switch unit {
         case "em", "rem": return CGFloat(number) * max(bodyFontSize, 16)
-        case "px": return CGFloat(number) * 0.75
         case "%": return CGFloat(number) * max(bodyFontSize, 16) / 100
-        default: return CGFloat(number)
+        default: return CGFloat(EpubCssLengths.points(number, unit: unit) ?? number)
         }
     }
 

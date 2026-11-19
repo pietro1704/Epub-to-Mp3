@@ -89,11 +89,15 @@ enum EpubHtmlRenderer {
                 EpubFontAliases.rewrite(sourceCSS, families: aliases), fontDirectory: fontDirectoryURL)
         }()
 
+        // Only the importer input carries importer-space lengths; paragraph
+        // geometry below keeps reading the publisher's original CSS units.
+        let htmlTag = EpubFontAliases.rewriteInlineStyles("<html\(source.htmlAttributes)>", families: aliases)
+        let bodyTag = EpubFontAliases.rewriteInlineStyles("<body\(source.bodyAttributes)>", families: aliases)
         let doc = """
         <!DOCTYPE html>
-        \(EpubFontAliases.rewriteInlineStyles("<html\(source.htmlAttributes)>", families: aliases))<head><meta charset="utf-8">
-        <style>\(cleanedCSS)</style>
-        </head>\(EpubFontAliases.rewriteInlineStyles("<body\(source.bodyAttributes)>", families: aliases))\(placeholderBody)</body></html>
+        \(EpubCssLengths.importerHTML(htmlTag))<head><meta charset="utf-8">
+        <style>\(EpubCssLengths.importerCSS(cleanedCSS))</style>
+        </head>\(EpubCssLengths.importerHTML(bodyTag))\(EpubCssLengths.importerHTML(placeholderBody))</body></html>
         """
 
         guard let data = doc.data(using: .utf8) else { return nil }

@@ -16,6 +16,13 @@ This does not download fonts, copy private app assets or redistribute book fonts
 Cold Mac opens now extract/register the book fonts, and both Mac and iOS warm
 rendering use the retained font directory.
 
+CSS units are authoritative: a CSS point is a native point and a CSS pixel is
+0.75 point. The Cocoa HTML importer instead treats one `px` as one point and
+the other absolute units at 96 px per inch (`18pt` would import as 24 points),
+so `EpubCssLengths` rewrites absolute lengths in the importer input only.
+Relative units are unchanged because the importer's 12-point `medium` already
+equals CSS `16px`; structural paragraph geometry still reads the original CSS.
+
 Font-size controls remain explicit overrides. Publisher headings are no longer
 silently capped against the unrelated reader default size. Alignment and line
 spacing have independent persisted override flags. Existing saved controls
