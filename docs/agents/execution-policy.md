@@ -178,10 +178,15 @@ automatic merge after successful exact-head CI and its required `PR gate`.
 Enable squash auto-merge on every ready PR targeting `master` when opening it
 or marking it ready, regardless of author or task. Keep it enabled while the
 required checks run; any user request to hold a particular PR takes precedence.
-Because protection requires an up-to-date base, the merge workflow also
-refreshes the oldest non-draft, same-repository PR that is behind `master`,
-one at a time, unless its gate failed or another current PR is still running
-its gate. The refreshed head must pass CI again before it can merge.
+Branch protection on `master` does not require an up-to-date base: the owner
+turned the `strict` setting off on 2026-11-19, because every merge sent the next
+PR back through the 10-18 minute Apple job. A PR merges as soon as its own
+exact-head `PR gate` passes. Two PRs that pass separately can still break the
+integrated result; post-merge validation is the check for that, and publishers
+require its validated SHA. So post-merge validation must stay reliable: a red or
+stale validation blocks publication and is fixed before new work piles up on it.
+The merge workflow's refresh of behind PRs only applies if the setting is turned
+back on.
 Keep repository auto-merge enabled and the `Merge eligible pull requests`
 workflow active. It uses the trusted master merge helper to verify the current
 head, up-to-date base and server protection before squash merging. Drafts,
