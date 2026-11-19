@@ -14,8 +14,9 @@ sequence; historical campaign permissions are not execution authorization.
    and rerun the original journey. Expand investigation only when evidence
    leaves the cause or acceptance unresolved.
 3. Keep one coherent change on its feature branch. Continue independent work
-   while PRs are open and follow the [stacked PR procedure](agents/execution-policy.md#git-and-publication)
-   for dependent changes. Write a short dependency and acceptance list only
+   while PRs are open, never leave a PR in draft, and follow the
+   [stacked PR procedure](agents/execution-policy.md#git-and-publication)
+   (native `gh stack`) for dependent changes. Write a short dependency and acceptance list only
    when multiple steps need coordination. Keep private task plans and progress
    evidence local, outside the published diff.
 4. Run focused checks, inspect the complete owned diff and obtain review against

@@ -111,16 +111,43 @@ changes and new benchmarks require their own task scope.
 ## Git and publication
 
 Use one feature branch and one PR per coherent change. Start independent changes
-from current `master` and continue them while earlier PRs are open. For a
-dependent change, branch from the prerequisite PR's head, open a stacked PR
-against that branch, and record the prerequisite PR and exact base SHA in the
-description. Update the recorded SHA when restacking. Keep the child PR in
-draft while it targets the prerequisite.
+from current `master` and continue them while earlier PRs are open.
 
-After the prerequisite merges, transplant the child-only commits onto current
-`master` using the recorded base SHA. Retarget the PR to `master`, review the
-resulting diff, rerun affected checks, and mark it ready after local validation.
-The updated head must pass its own required CI before merging. A hold or explicit
+Never open or leave a PR in draft. Open every PR ready, with squash auto-merge
+enabled; work that is not ready to merge stays local on its branch. A draft is
+never the way to mark a dependent or unfinished change.
+
+For a dependent change, use GitHub's native Stacked PRs (preview) through the
+official `gh stack` extension (`gh extension install github/gh-stack`; update
+with `gh extension upgrade stack`; requires `gh` 2.0+ and Git 2.36+). The bottom
+PR targets `master` and each PR above it targets the branch below, so a reviewer
+sees only that layer's diff. Typical loop: `gh stack init` (or `init <branches>`
+to adopt existing branches), commit, `gh stack add <branch>` for the next layer,
+`gh stack submit --open` to push every branch atomically and create the PRs as
+ready (`submit --auto` creates drafts unless `--open` is passed, and the editor's
+default for new PRs is ready, so never toggle draft). After editing a lower
+layer run `gh stack rebase`, then `gh stack push`. After a lower PR merges,
+`gh stack sync --prune` fetches, fast-forwards the trunk, rebases the remaining
+layers (it switches to `--onto` mode for a merged PR, which handles the squash
+merge) and pushes with `--force-with-lease`. `gh stack merge [<pr-number>]`
+merges everything up to a PR atomically; it checks only that the PRs are open
+and not draft, GitHub still enforces branch protection, and a merge queue takes
+over the merge method. Record in each description the prerequisite PR and its
+exact head SHA and keep that SHA current when restacking.
+
+Status of this procedure here: the extension and its documentation were
+reviewed (v0.3.0), but a stack has not yet been created or merged on this
+repository, so whether it is enabled for the repository and how the required
+`PR gate`, the standing auto-merge authorization and the `Merge eligible pull
+requests` workflow treat a PR that targets a branch other than `master` are
+unverified. The standing automatic-merge authorization covers ready PRs that
+target `master`; any other target needs task-specific authorization. Verify on
+the first real stack, then update this paragraph with the observed behavior. If
+`gh stack` is unavailable, keep the dependent change local until its
+prerequisite merges, then branch from current `master` (transplant the
+child-only commits using the recorded base SHA when the work already exists),
+review the resulting diff, rerun affected checks and open the PR ready. The
+updated head must pass its own required CI before merging. A hold or explicit
 acceptance requirement still applies to the change it covers.
 
 Finish the authorized local checks and any requested real-app journey before
