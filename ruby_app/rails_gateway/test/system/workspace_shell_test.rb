@@ -162,8 +162,8 @@ class WorkspaceShellSystemTest < ApplicationSystemTestCase
 
   def assert_same_document = assert_equal("kept", page.evaluate_script("window.documentMarker"))
 
-  # Waits for the slide-in transition to finish: a click sent while the drawer
-  # still moves can land beside the moving close button (the CI failure).
+  # Waits for the slide-in transition to finish: the close button moves during
+  # it, so a click sent meanwhile can land beside the button.
   def assert_help_drawer_open
     assert_selector "#help-drawer.help-drawer--open[aria-hidden='false']:not([inert])"
     assert_selector ".help-drawer__overlay", visible: :visible
@@ -176,17 +176,21 @@ class WorkspaceShellSystemTest < ApplicationSystemTestCase
     assert_help_drawer_placement "off screen"
   end
 
-  # The closed drawer is moved off the viewport rather than removed; the open
-  # one has no running transition and its right edge meets the viewport's.
+  # The closed drawer is moved off the viewport rather than removed. Both
+  # placements require its slide transition to have finished; the open drawer's
+  # right edge meets the viewport's.
   def assert_help_drawer_placement(expected)
     page.document.synchronize do
       placement = page.evaluate_script(<<~JS)
         (() => {
           const drawer = document.getElementById("help-drawer")
+          const sliding = drawer.getAnimations().some((animation) =>
+            animation.transitionProperty === "right" && animation.playState === "running")
+          if (sliding) return "moving"
           const rect = drawer.getBoundingClientRect()
-          if (rect.left >= window.innerWidth) return "off screen"
-          if (drawer.getAnimations().length > 0) return "moving"
-          return Math.abs(rect.right - document.documentElement.clientWidth) < 1 ? "settled on screen" : "partly on screen"
+          const viewportWidth = document.documentElement.clientWidth
+          if (rect.left >= viewportWidth) return "off screen"
+          return Math.abs(rect.right - viewportWidth) < 1 ? "settled on screen" : "partly on screen"
         })()
       JS
       raise Capybara::ExpectationNotMet, "help drawer is #{placement}, expected #{expected}" unless placement == expected
