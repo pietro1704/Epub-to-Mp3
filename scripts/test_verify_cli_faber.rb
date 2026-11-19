@@ -59,6 +59,44 @@ class VerifyCliFaberTest < Minitest::Test
     assert_empty Dir.glob(File.join(@root, 'cli-faber-owned-*')), 'Failed golden runs must clean only their owned temporary state'
   end
 
+  def test_the_typed_pipeline_missing_model_message_counts_as_a_missing_faber
+    executable(<<~RUBY)
+      case ARGV.first
+      when 'preferences'
+        puts #{JSON.generate(CliFaberVerification::PREFERENCES).dump} if ARGV[1] == 'show'
+      when 'models'
+        abort 'REACHED_INSTALL' if ARGV[1] == 'install'
+        puts "pt_BR-faber-medium\\t63206149 bytes\\tnot installed"
+      when 'convert'
+        warn 'error: Piper error: Piper model not found: /state/models/tts/pt_BR-faber-medium/model.onnx'
+        exit 2
+      else
+        abort 'Unexpected command'
+      end
+    RUBY
+    error = assert_raises(CliFaberVerification::Failure) { runner.run! }
+    refute_includes error.message, 'never for a missing runtime'
+    assert_includes error.message, 'failed (', 'The run must get past the pre-install check and reach the model installation'
+  end
+
+  def test_a_missing_model_message_for_another_model_is_not_a_missing_faber
+    executable(<<~RUBY)
+      case ARGV.first
+      when 'preferences'
+        puts #{JSON.generate(CliFaberVerification::PREFERENCES).dump} if ARGV[1] == 'show'
+      when 'models'
+        puts "pt_BR-faber-medium\\t63206149 bytes\\tnot installed"
+      when 'convert'
+        warn 'error: Piper error: Piper model not found: /state/models/tts/en_US-other-medium/model.onnx'
+        exit 2
+      else
+        abort 'Unexpected command'
+      end
+    RUBY
+    error = assert_raises(CliFaberVerification::Failure) { runner.run! }
+    assert_includes error.message, 'never for a missing runtime'
+  end
+
   def test_unexpected_command_failure_is_fatal
     executable("warn 'fixture command failed'; exit 9")
     error = assert_raises(CliFaberVerification::Failure) { runner.cli!('models', 'install', CliFaberVerification::MODEL) }

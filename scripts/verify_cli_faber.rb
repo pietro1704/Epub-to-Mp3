@@ -144,7 +144,10 @@ class CliFaberVerification
       arguments = ['convert', @sample, '--chapter', 'position:0', '--chapter', 'position:1',
         '--no-parallel', '--fallback-engine', 'none', '--output-dir', output]
       _, error, rejected = cli!(*arguments, allow_failure: true)
-      require_condition(!rejected.success? && error.match?(/Piper model .* is not installed/),
+      # Both forms name the missing Faber model file; anything else (for example
+      # a missing shared library) means the runtime, not the model, is absent.
+      missing_faber = %r{Piper model (?:.* is not installed|not found: \S*#{Regexp.escape(MODEL)}/model\.onnx)}
+      require_condition(!rejected.success? && error.match?(missing_faber),
         'Pre-install conversion must fail specifically for missing Faber, never for a missing runtime')
       require_condition(Dir.glob(File.join(work, '**', '*.mp3')).empty? &&
         Dir.glob(File.join(work, '**', '*.onnx*')).empty?, 'Conversion implicitly downloaded a model or emitted audio')
