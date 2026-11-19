@@ -7,7 +7,19 @@ require 'digest'
 
 module HfSnapshot
   FILES = %w[Dockerfile .dockerignore README.md LICENSE Cargo.toml Cargo.lock].freeze
-  TREES = %w[web crates benches native/piper-runtime native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys].freeze
+  TREES = %w[crates benches native/piper-runtime native/vendor/piper-rs native/vendor/espeak-rs native/vendor/espeak-rs-sys].freeze
+
+  LAYOUT_FILE = '.hf-runtime'.freeze
+  RAILS_ROOT = 'ruby_app/rails_gateway'.freeze
+  RUNTIME_INPUTS = {
+    'react' => %w[web/package.json web/src/wasm/converter_wasm_bg.wasm].freeze,
+    'rails' => %w[Gemfile Gemfile.lock bin/build-runtime-wasm bin/assemble-runtime
+                  browser_runtime/package.json browser_runtime/package-lock.json
+                  browser_runtime/prepare_tts_runtime.mjs
+                  browser_runtime/workers/piper_worker.js].map do |path|
+      "#{RAILS_ROOT}/#{path}"
+    end.freeze
+  }.freeze
 
   def self.command!(*argv, chdir:)
     output, status = Open3.capture2e(*argv, chdir: chdir)
@@ -15,28 +27,46 @@ module HfSnapshot
     output
   end
 
+  def self.tracked_input(source, path)
+    input = File.join(source, path)
+    unless Pathname.new(path).cleanpath.to_s == path && !path.start_with?('/') &&
+           File.file?(input) && !File.symlink?(input)
+      raise "Unsafe snapshot input: #{path}"
+    end
+    input
+  end
+
   def self.create(source, destination)
     source = File.realpath(source)
     destination = File.expand_path(destination)
     raise 'Snapshot must be outside the source repository' if destination == source || destination.start_with?("#{source}/")
     raise 'Snapshot destination must be empty' if File.exist?(destination) && !Dir.empty?(destination)
-    FileUtils.mkdir_p(destination)
-    paths = command!('git', 'ls-files', '-z', chdir: source).split("\0").select do |path|
-      FILES.include?(path) || TREES.any? { |tree| path.start_with?("#{tree}/") }
+    tracked_paths = command!('git', 'ls-files', '-z', chdir: source).split("\0")
+    # A missing marker selects React for previously validated rollback revisions.
+    layout = if tracked_paths.include?(LAYOUT_FILE)
+               File.read(tracked_input(source, LAYOUT_FILE)).strip
+             else
+               'react'
+             end
+    required = RUNTIME_INPUTS.fetch(layout) { raise 'Unsupported HF runtime layout' }
+    runtime_tree = layout == 'rails' ? RAILS_ROOT : 'web'
+    trees = TREES + [runtime_tree]
+    paths = tracked_paths.select do |path|
+      FILES.include?(path) || trees.any? { |tree| path.start_with?("#{tree}/") }
     end
-    %w[Dockerfile README.md Cargo.toml Cargo.lock web/package.json web/src/wasm/converter_wasm_bg.wasm].each do |path|
+    (%w[Dockerfile README.md Cargo.toml Cargo.lock] + required).each do |path|
       raise "Missing required tracked input: #{path}" unless paths.include?(path)
     end
+    FileUtils.mkdir_p(destination)
     binaries = []
     paths.each do |path|
-      input = File.join(source, path)
-      raise "Unsafe snapshot input: #{path}" unless Pathname.new(path).cleanpath.to_s == path && !path.start_with?('/') && File.file?(input) && !File.symlink?(input)
+      input = tracked_input(source, path)
       bytes = File.binread(input)
       raise "Unresolved LFS pointer: #{path}" if bytes.start_with?("version https://git-lfs.github.com/spec/v1\n")
       raise "Model weights must not enter the snapshot: #{path}" if File.extname(path).downcase == '.onnx'
       output = File.join(destination, path)
       FileUtils.mkdir_p(File.dirname(output))
-      FileUtils.copy_file(input, output)
+      FileUtils.copy_file(input, output, true)
       binaries << path if bytes.include?("\0") || !bytes.dup.force_encoding(Encoding::UTF_8).valid_encoding?
     end
     command!('git', 'init', '--initial-branch=master', chdir: destination)
