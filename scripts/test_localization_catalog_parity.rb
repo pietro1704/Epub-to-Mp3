@@ -113,6 +113,87 @@ class LocalizationCatalogParityTest < Minitest::Test
     end
   end
 
+  def test_percent_sign_in_prose_is_not_a_placeholder
+    assert_equal [], LocalizationCatalogParity.signature("50% off")
+    assert_equal [], LocalizationCatalogParity.signature("100% sincronizado, 50% de desconto")
+    assert_equal ["1$d"], LocalizationCatalogParity.signature("%d%% done")
+  end
+
+  def test_star_width_counts_as_an_argument
+    refute_equal LocalizationCatalogParity.signature("%*d items"), LocalizationCatalogParity.signature("%d artículos")
+  end
+
+  def test_mixed_positional_and_implicit_arguments_fail
+    Dir.mktmpdir do |root|
+      pt = %("greeting" = "Olá %@";\n"count" = "%1$d de %d";\n"percent" = "%d%% feito";\n)
+      problems = LocalizationCatalogParity.check(matching_catalogs(root, pt: pt))
+      assert(problems.any? { _1.end_with?('"count" mixes positional and implicit arguments') }, problems.join("\n"))
+    end
+  end
+
+  def test_byte_order_marks_and_utf16_tables_parse
+    Dir.mktmpdir do |root|
+      matching_catalogs(root)
+      es = %("greeting" = "Hola %@";\n"count" = "%1$d de %2$d";\n"percent" = "%d%% hecho";\n)
+      File.binwrite(File.join(root, "es.lproj/Localizable.strings"), "\xFF\xFE".b + es.encode("UTF-16LE").b)
+      pt = %("greeting" = "Olá %@";\n"count" = "%1$d de %2$d";\n"percent" = "%d%% feito";\n)
+      File.binwrite(File.join(root, "pt-BR.lproj/Localizable.strings"), "\xEF\xBB\xBF".b + pt.b)
+      assert_equal [], LocalizationCatalogParity.check(root)
+    end
+  end
+
+  def test_undecodable_table_is_reported_not_raised
+    Dir.mktmpdir do |root|
+      matching_catalogs(root)
+      File.binwrite(File.join(root, "es.lproj/Localizable.strings"), "\"greeting\" = \"\xFF\";\n".b)
+      problems = LocalizationCatalogParity.check(root)
+      assert(problems.any? { _1.end_with?("es.lproj/Localizable.strings: not valid UTF-8 or UTF-16 text") }, problems.join("\n"))
+    end
+  end
+
+  def test_block_and_trailing_comments_parse
+    Dir.mktmpdir do |root|
+      en = %(/* Context\n   spanning lines */\n"greeting" = "Hello %@"; // trailing\n) +
+           %("count" = "%1$d of %2$d"; /* inline */ "percent" = "%d%% done";\n)
+      assert_equal [], LocalizationCatalogParity.check(matching_catalogs(root, en: en))
+    end
+  end
+
+  def test_unterminated_block_comment_fails
+    Dir.mktmpdir do |root|
+      en = %("greeting" = "Hello %@";\n"count" = "%1$d of %2$d";\n"percent" = "%d%% done";\n/* open\n)
+      problems = LocalizationCatalogParity.check(matching_catalogs(root, en: en))
+      assert(problems.any? { _1.end_with?("unterminated block comment") }, problems.join("\n"))
+    end
+  end
+
+  def test_plural_tables_are_not_silently_accepted
+    Dir.mktmpdir do |root|
+      matching_catalogs(root)
+      %w[en es pt-BR].each { File.write(File.join(root, "#{_1}.lproj/Localizable.stringsdict"), "<plist/>") }
+      assert_equal ["Localizable.stringsdict: .stringsdict tables are not checked yet; extend this check"],
+                   LocalizationCatalogParity.check(root)
+    end
+  end
+
+  def test_additional_locale_is_checked
+    Dir.mktmpdir do |root|
+      matching_catalogs(root)
+      write_catalogs(root, "fr" => { "Localizable.strings" => %("greeting" = "Bonjour %@";\n) })
+      problems = LocalizationCatalogParity.check(root)
+      assert_includes problems, "fr.lproj: missing table AppShortcuts.strings"
+      assert_includes problems, 'fr.lproj/Localizable.strings: missing key "count"'
+    end
+  end
+
+  def test_missing_locale_is_reported_once
+    Dir.mktmpdir do |root|
+      matching_catalogs(root)
+      FileUtils.rm_rf(File.join(root, "es.lproj"))
+      assert_equal ["#{File.join(root, 'es.lproj')}: missing locale directory"], LocalizationCatalogParity.check(root)
+    end
+  end
+
   def test_command_line_reports_status
     Dir.mktmpdir do |root|
       matching_catalogs(root)
