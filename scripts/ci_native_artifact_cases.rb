@@ -121,7 +121,7 @@ class CiRuntimeScopeTest
     refute_includes paths, 'target'
     refute paths.any? { |path| path.include?('onnxruntime') }
     key = restore.fetch('with').fetch('key')
-    assert key.start_with?('faber-rust-${{ matrix.os }}-${{ runner.arch }}-'), 'Architecture and runner image select the cache'
+    assert key.start_with?('faber-rust-${{ matrix.os }}-${{ runner.arch }}-'), 'Runner OS and architecture select the cache'
     %w[matrix.os runner.arch steps.rust-cache-identity.outputs.identity].each do |identity_key|
       assert_includes key, "${{ #{identity_key} }}"
     end
@@ -144,7 +144,8 @@ class CiRuntimeScopeTest
     refute verify.key?('if')
     assert_equal 'mise run converter-ffi:build', build.fetch('run')
     assert_includes verify.fetch('run'), 'xcrun lipo -archs target/release/libconverter_ffi.dylib'
-    assert_equal 'mise exec -- ruby scripts/intel_rust_cache_identity.rb', identity.fetch('run')
+    assert_equal "${{ matrix.arch == 'arm64' }}", identity.fetch('env').fetch('IMAGE_BUILD_AGNOSTIC')
+    assert_equal 1, restore_prefix.lines.map(&:strip).reject(&:empty?).size, 'No fallback crosses lockfile or build-script edits'
     producer = YAML.load_file(File.expand_path('../.github/workflows/converter-ffi-macos-intel-prebuilt.yml', __dir__))
     shared = producer.fetch('jobs').fetch('build').fetch('steps').find { |step| step['id'] == 'rust-cache-identity' }
     refute_nil shared
@@ -155,6 +156,46 @@ class CiRuntimeScopeTest
     assert_operator steps.index(restore), :<, steps.index(build)
     assert_operator steps.index(build), :<, steps.index(verify)
     assert_operator steps.index(verify), :<, steps.index(save)
+  end
+
+  # Executes the actual identity step against fake host tools.
+  def test_faber_arm64_identity_ignores_the_image_build_but_not_the_toolchain_or_cmake
+    require 'tmpdir'
+    require 'open3'
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    run = faber.fetch('jobs').fetch('macos-preferences').fetch('steps').find { |step| step['id'] == 'rust-cache-identity' }.fetch('run')
+    Dir.mktmpdir('faber-identity-') do |root|
+      bin = File.join(root, 'bin')
+      Dir.mkdir(bin)
+      clang = File.join(root, 'clang')
+      File.write(clang, 'clang-v1')
+      tools = {
+        'mise' => 'shift 2; exec "$@"',
+        'rustc' => 'echo "rustc 1.99.1"', 'cargo' => 'echo "cargo 1.99.1"',
+        'xcodebuild' => 'printf "Xcode 16.4\nBuild version 16F6\n"',
+        'xcrun' => 'case "$*" in *show-sdk-path*) echo /sdk;; *show-sdk-version*) echo 15.5;; *) echo "$FAKE_CLANG";; esac',
+        'cmake' => 'echo "cmake version ${FAKE_CMAKE:-3.31.6}"'
+      }
+      tools.each do |name, body|
+        File.write(File.join(bin, name), "#!/bin/bash\n#{body}\n")
+        File.chmod(0o700, File.join(bin, name))
+      end
+      identity = lambda do |arch, image, cmake: '3.31.6'|
+        output = File.join(root, 'github-output')
+        File.write(output, '')
+        environment = { 'PATH' => "#{bin}:#{File.dirname(RbConfig.ruby)}:/usr/bin:/bin", 'GITHUB_OUTPUT' => output,
+          'IMAGE_BUILD_AGNOSTIC' => (arch == 'arm64').to_s, 'ImageOS' => 'macos15', 'ImageVersion' => image, 'FAKE_CMAKE' => cmake, 'FAKE_CLANG' => clang }
+        _out, err, status = Open3.capture3(environment, 'bash', '-e', '-c', run, chdir: File.expand_path('..', __dir__))
+        assert status.success?, err
+        File.read(output)[/\Aidentity=(\h{64})\n\z/, 1] || flunk("Missing identity output: #{File.read(output)}")
+      end
+      assert_equal identity.call('arm64', '20261104.0514.1'), identity.call('arm64', '20261112.0539.3')
+      refute_equal identity.call('arm64', '20261104.0514.1'), identity.call('arm64', '20261104.0514.1', cmake: '4.0.0')
+      refute_equal identity.call('x86_64', '20261104.0514.1'), identity.call('x86_64', '20261112.0539.3'), 'Intel stays image-scoped for the producer'
+      arm = identity.call('arm64', '20261104.0514.1')
+      File.write(clang, 'clang-v2')
+      refute_equal arm, identity.call('arm64', '20261104.0514.1'), 'The compiler binary still selects the cache'
+    end
   end
 
   def test_faber_intel_prebuilt_is_opt_in_and_has_no_rust_build_fallback
