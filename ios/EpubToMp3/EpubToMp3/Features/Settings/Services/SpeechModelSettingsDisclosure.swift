@@ -19,7 +19,7 @@ struct SpeechModelSettingsDisclosure {
                         events: [String: SpeechModelInstallEvent]) -> String {
         var lines = [state.displayName(for: primary)]
         if let entry = state.entry(for: primary) { lines.append(state.status(for: entry)) }
-        else if primary.engine == "piper" { lines.append(L10n.string("settings.modelState.notInspected")) }
+        else if primary.isPiper { lines.append(L10n.string("settings.modelState.notInspected")) }
         for entry in state.orderedEntries {
             guard let event = events[entry.identity.modelID], event.modelID == entry.identity.modelID,
                   event.stage != .completed else { continue }

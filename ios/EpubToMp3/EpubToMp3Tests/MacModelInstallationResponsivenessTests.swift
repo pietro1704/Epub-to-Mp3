@@ -58,7 +58,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettings(defaults: defaults)
-        settings.audioEngine = .edge
+        settings.selectPrimaryNarration(.edgeDefault)
         let original = settings.conversionOptions
         let installer = BlockingModelInstaller()
         defer { installer.release() }
@@ -103,7 +103,7 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettings(defaults: defaults)
-        settings.secondaryAudioEngine = .edge
+        settings.selectSecondaryNarration(.edgeDefault)
         settings.allowOnlineAudioFallback = true
         let original = settings.conversionOptions
         let installer = BlockingModelInstaller()

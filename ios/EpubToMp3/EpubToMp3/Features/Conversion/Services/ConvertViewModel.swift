@@ -8,7 +8,7 @@ final class ConvertViewModel {
         self.session = session ?? ManualConversionSession()
     }
     var selectedFile: URL?
-    var engine = "piper"
+    var engine = TtsSelection.piperEngine
     var inheritedPreferences: TtsPreferences?
     var usesPreferences = true
     var allowSecondary = false
@@ -24,7 +24,7 @@ final class ConvertViewModel {
 
     var manualPrimary: TtsSelection {
         let trimmedVoice = voice.trimmingCharacters(in: .whitespacesAndNewlines)
-        return TtsSelection(engine: engine, modelID: engine == "piper" ? "pt_BR-faber-medium" : nil,
+        return TtsSelection(engine: engine, modelID: TtsSelection.defaultModelID(forEngine: engine),
                             voice: trimmedVoice.isEmpty ? nil : voice)
     }
     var distinctManualSecondary: TtsSelection? {
@@ -68,7 +68,7 @@ final class ConvertViewModel {
                 forceReprocess: forceReprocess,
                 maxPerformance: maxPerformance,
                 modelsRoot: modelsRoot ?? LocalSpeechModelReadiness.ttsModelsRoot()?.path,
-                modelID: engine == "piper" ? "pt_BR-faber-medium" : nil,
+                modelID: TtsSelection.defaultModelID(forEngine: engine),
                 espeakDataDirectory: Bundle.main.resourceURL?.path
             )
             if usesPreferences, let inheritedPreferences {

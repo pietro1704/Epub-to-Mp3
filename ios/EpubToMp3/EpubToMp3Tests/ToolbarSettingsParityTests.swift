@@ -3,18 +3,18 @@ import XCTest
 
 final class ToolbarSettingsParityTests: XCTestCase {
     func testInstalledSystemVoiceCanBeSelectedAsSecondaryWithoutChangingPrimary() throws {
-        let system = try XCTUnwrap(AudioEnginePreference.supportedPreferences.first { $0.rawValue == "system" },
-                                  "Apple must expose installed system speech as an offline fallback.")
+        XCTAssertTrue(TtsSelection.selectableEngines.contains("system"),
+                      "Apple must expose installed system speech as an offline fallback.")
         let (settings, defaults) = make()
-        settings.audioEngine = .edge
-        settings.secondaryAudioEngine = system
+        settings.selectPrimaryNarration(.edgeDefault)
+        settings.selectSecondaryNarration(.systemDefault)
         let restored = AppSettings(defaults: defaults)
-        XCTAssertEqual(restored.audioEngine, .edge)
+        XCTAssertEqual(restored.primaryTtsSelection, .edgeDefault)
         XCTAssertEqual(restored.ttsPreferences.secondary?.engine, "system")
         XCTAssertFalse(restored.ttsPreferences.allowOnlineFallback)
         let captured = restored.conversionOptions
-        restored.secondaryAudioEngine = nil
-        XCTAssertNil(AppSettings(defaults: defaults).secondaryAudioEngine)
+        restored.selectSecondaryNarration(nil)
+        XCTAssertNil(AppSettings(defaults: defaults).secondaryTtsSelection)
         XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "system")
         XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
     }
@@ -26,36 +26,43 @@ final class ToolbarSettingsParityTests: XCTestCase {
         return (AppSettings(defaults: d), d)
     }
 
+    private func savedSelection(_ defaults: UserDefaults, _ key: String) -> TtsSelection? {
+        SpeechPreferenceMigration.decodeSelection(defaults, key: key)
+    }
+
     func testNewSpeechSettingsUseFaberWithNativeFallbackAndPersistExplicitNone() {
         let (settings, defaults) = make()
-        XCTAssertEqual(settings.audioEngine, .piper)
-        XCTAssertEqual(settings.secondaryAudioEngine, .system)
+        XCTAssertEqual(settings.primaryTtsSelection, .defaultPiper)
+        XCTAssertEqual(settings.secondaryTtsSelection, .systemDefault)
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
         XCTAssertFalse(settings.allowOnlineAudioFallback)
-        XCTAssertEqual(defaults.string(forKey: AppSettings.audioEngineKey), "piper")
-        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "system")
-        XCTAssertEqual(AppSettings(defaults: defaults).secondaryAudioEngine, .system)
-        settings.secondaryAudioEngine = nil
-        XCTAssertNil(AppSettings(defaults: defaults).secondaryAudioEngine)
-        XCTAssertEqual(AppSettings(defaults: defaults).audioEngine, .piper)
+        XCTAssertEqual(savedSelection(defaults, "primaryTtsSelection"), .defaultPiper)
+        XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .systemDefault)
+        XCTAssertNil(defaults.object(forKey: "audioEngine"))
+        XCTAssertNil(defaults.object(forKey: "secondaryAudioEngine"))
+        XCTAssertEqual(AppSettings(defaults: defaults).secondaryTtsSelection, .systemDefault)
+        settings.selectSecondaryNarration(nil)
+        XCTAssertNil(AppSettings(defaults: defaults).secondaryTtsSelection)
+        XCTAssertEqual(AppSettings(defaults: defaults).primaryTtsSelection, .defaultPiper)
     }
 
     func testLoadingConsentedEdgeFallbackAdoptsNativeRecoveryWithoutChangingSelections() {
         let suite = "ConsentedLegacySpeech.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set("piper", forKey: AppSettings.audioEngineKey)
+        defaults.set("piper", forKey: "audioEngine")
         defaults.set("edge", forKey: "secondaryAudioEngine")
         defaults.set(true, forKey: "allowOnlineAudioFallback")
 
         let settings = AppSettings(defaults: defaults)
 
-        XCTAssertEqual(settings.audioEngine, .piper)
-        XCTAssertEqual(settings.secondaryAudioEngine, .edge)
+        XCTAssertEqual(settings.primaryTtsSelection, .defaultPiper)
+        XCTAssertEqual(settings.secondaryTtsSelection, .edgeDefault)
         XCTAssertTrue(settings.ttsPreferences.allowOnlineFallback)
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.secondary?.engine, "edge")
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
-        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "edge")
+        XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .edgeDefault)
+        XCTAssertNil(defaults.object(forKey: "secondaryAudioEngine"), "The migrated engine key is retired.")
         XCTAssertNil(defaults.object(forKey: "ttsPreferencesVersion"))
         let restored = AppSettings(defaults: defaults)
         XCTAssertEqual(restored.ttsPreferences, settings.ttsPreferences)
@@ -65,13 +72,13 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let suite = "LegacySpeech.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set("edge", forKey: AppSettings.audioEngineKey)
+        defaults.set("edge", forKey: "audioEngine")
         let settings = AppSettings(defaults: defaults)
-        XCTAssertEqual(settings.audioEngine, .edge)
-        XCTAssertNil(settings.secondaryAudioEngine)
-        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        XCTAssertEqual(settings.primaryTtsSelection, .edgeDefault)
+        XCTAssertNil(settings.secondaryTtsSelection)
+        XCTAssertNil(defaults.object(forKey: "secondaryTtsSelection"))
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
-        settings.secondaryAudioEngine = .system
+        settings.selectSecondaryNarration(.systemDefault)
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
         XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.policyVersion, 2)
     }
@@ -80,31 +87,70 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let suite = "LegacyNativeSpeech.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set("piper", forKey: AppSettings.audioEngineKey)
+        defaults.set("piper", forKey: "audioEngine")
         defaults.set("system", forKey: "secondaryAudioEngine")
         let settings = AppSettings(defaults: defaults)
-        XCTAssertEqual(settings.secondaryAudioEngine, .system)
+        XCTAssertEqual(settings.secondaryTtsSelection, .systemDefault)
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
         settings.allowOnlineAudioFallback = false
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
-        XCTAssertEqual(settings.secondaryAudioEngine, .system)
+        XCTAssertEqual(settings.secondaryTtsSelection, .systemDefault)
     }
 
     func testLoadingDuplicateLegacyFallbackClearsOnlySecondary() {
         let suite = "DuplicateLegacySpeech.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set("system", forKey: AppSettings.audioEngineKey)
+        defaults.set("system", forKey: "audioEngine")
         defaults.set("system", forKey: "secondaryAudioEngine")
 
         let settings = AppSettings(defaults: defaults)
 
-        XCTAssertEqual(settings.audioEngine, .system)
-        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertEqual(settings.primaryTtsSelection, .systemDefault)
+        XCTAssertNil(settings.secondaryTtsSelection)
         XCTAssertNil(settings.ttsPreferences.secondary)
         XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
-        XCTAssertEqual(AppSettings(defaults: defaults).audioEngine, .system)
+        XCTAssertEqual(AppSettings(defaults: defaults).primaryEngine, "system")
+    }
+
+    func testUnreadableSavedSelectionStaysOnDiskUntilANewExplicitChoice() throws {
+        let (_, defaults) = make()
+        let unreadable = Data(#"{"model_id":"pt_BR-faber-medium"}"#.utf8)
+        defaults.set(unreadable, forKey: "primaryTtsSelection")
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertEqual(settings.primaryTtsSelection, .defaultPiper, "An unreadable choice narrates with the default.")
+        settings.allowOnlineAudioFallback = true
+        settings.selectSecondaryNarration(.edgeDefault)
+        XCTAssertEqual(defaults.data(forKey: "primaryTtsSelection"), unreadable,
+                       "Other edits and loading must not erase the saved primary.")
+        XCTAssertEqual(AppSettings(defaults: defaults).primaryTtsSelection, .defaultPiper)
+        settings.selectPrimaryNarration(.systemDefault)
+        XCTAssertEqual(savedSelection(defaults, "primaryTtsSelection"), .systemDefault)
+    }
+
+    func testSavedUnconsentedEdgeSecondaryIsNeverSentAndSurvivesAPrimaryChange() throws {
+        let (_, defaults) = make()
+        let edge = try JSONEncoder().encode(TtsSelection.edgeDefault)
+        defaults.set(edge, forKey: "secondaryTtsSelection")
+        defaults.set(false, forKey: "allowOnlineAudioFallback")
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertNil(settings.ttsPreferences.secondary, "Edge never reaches conversion without consent.")
+        settings.selectPrimaryNarration(.systemDefault)
+        XCTAssertEqual(defaults.data(forKey: "secondaryTtsSelection"), edge,
+                       "An unrelated primary change must not erase the saved secondary.")
+    }
+
+    func testPrimaryChangeKeepsADifferentSecondaryAndDropsARepeatedOne() {
+        let (settings, _) = make()
+        let english = TtsSelection(engine: "piper", modelID: "en_US-ljspeech-high", voice: nil)
+        settings.selectSecondaryNarration(english)
+        settings.selectPrimaryNarration(.systemDefault)
+        XCTAssertEqual(settings.secondaryTtsSelection, english)
+        settings.selectPrimaryNarration(english)
+        XCTAssertNil(settings.secondaryTtsSelection, "A secondary may not repeat the new primary.")
+        XCTAssertEqual(settings.selectableSecondaryEngines, ["piper", "system"],
+                       "Edge stays hidden without consent; the default Piper differs from this model.")
     }
 
     func testFontSizeStepperBoundaries() {
@@ -201,51 +247,51 @@ final class ToolbarSettingsParityTests: XCTestCase {
 
     func testEdgeSecondaryRequiresConsentAndRevocationClearsPreference() throws {
         let (settings, defaults) = make()
-        XCTAssertFalse(settings.selectableSecondaryAudioEngines.contains(.edge))
-        defaults.set("edge", forKey: "secondaryAudioEngine")
-        settings.secondaryAudioEngine = .edge
-        XCTAssertNil(settings.secondaryAudioEngine, "Unconsented Edge must not be saved.")
-        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"), "Rejected assignment must clear a stale Edge preference.")
+        XCTAssertFalse(settings.selectableSecondaryEngines.contains("edge"))
+        defaults.set(try JSONEncoder().encode(TtsSelection.edgeDefault), forKey: "secondaryTtsSelection")
+        settings.selectSecondaryNarration(.edgeDefault)
+        XCTAssertNil(settings.secondaryTtsSelection, "Unconsented Edge must not be saved.")
+        XCTAssertNil(defaults.object(forKey: "secondaryTtsSelection"), "Rejected assignment must clear a stale Edge preference.")
         XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary, "Unconsented Edge must never reach conversion preferences.")
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
 
-        settings.audioEngine = .edge
+        settings.selectPrimaryNarration(.edgeDefault)
         settings.allowOnlineAudioFallback = true
-        settings.secondaryAudioEngine = .piper
-        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "piper")
+        settings.selectSecondaryNarration(.defaultPiper)
+        XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .defaultPiper)
 
         settings.allowOnlineAudioFallback = false
-        XCTAssertEqual(settings.secondaryAudioEngine, .piper, "Revocation may retain a non-Edge secondary.")
-        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "piper")
+        XCTAssertEqual(settings.secondaryTtsSelection, .defaultPiper, "Revocation may retain a non-Edge secondary.")
+        XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .defaultPiper)
 
-        settings.audioEngine = .piper
+        settings.selectPrimaryNarration(.defaultPiper)
         settings.allowOnlineAudioFallback = true
-        XCTAssertTrue(settings.selectableSecondaryAudioEngines.contains(.edge))
-        settings.secondaryAudioEngine = .edge
+        XCTAssertTrue(settings.selectableSecondaryEngines.contains("edge"))
+        settings.selectSecondaryNarration(.edgeDefault)
         XCTAssertEqual(settings.conversionOptions.ttsPreferences?.secondary?.engine, "edge")
-        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "edge")
+        XCTAssertEqual(savedSelection(defaults, "secondaryTtsSelection"), .edgeDefault)
 
         settings.allowOnlineAudioFallback = false
-        XCTAssertNil(settings.secondaryAudioEngine)
-        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        XCTAssertNil(settings.secondaryTtsSelection)
+        XCTAssertNil(defaults.object(forKey: "secondaryTtsSelection"))
         XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary)
     }
 
-    func testSecondaryAudioEngineCannotDuplicatePrimary() {
+    func testSecondaryCannotDuplicatePrimary() {
         let (settings, defaults) = make()
         settings.allowOnlineAudioFallback = true
 
-        settings.secondaryAudioEngine = .piper
-        XCTAssertNil(settings.secondaryAudioEngine)
-        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        settings.selectSecondaryNarration(.defaultPiper)
+        XCTAssertNil(settings.secondaryTtsSelection)
+        XCTAssertNil(defaults.object(forKey: "secondaryTtsSelection"))
 
-        settings.audioEngine = .edge
-        settings.secondaryAudioEngine = .edge
-        XCTAssertNil(settings.secondaryAudioEngine)
-        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        settings.selectPrimaryNarration(.edgeDefault)
+        settings.selectSecondaryNarration(.edgeDefault)
+        XCTAssertNil(settings.secondaryTtsSelection)
+        XCTAssertNil(defaults.object(forKey: "secondaryTtsSelection"))
     }
 
-    func testLegacyUnconsentedEdgeSecondaryIsMigratedOnLoad() {
+    func testLegacyUnconsentedEdgeSecondaryIsNotMigratedOnLoad() {
         let suite = "Toolbar.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -255,17 +301,19 @@ final class ToolbarSettingsParityTests: XCTestCase {
 
         let settings = AppSettings(defaults: defaults)
 
-        XCTAssertNil(settings.secondaryAudioEngine)
-        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        XCTAssertNil(settings.secondaryTtsSelection)
+        XCTAssertNil(defaults.object(forKey: "secondaryTtsSelection"))
+        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "edge",
+                       "A choice the new model cannot hold stays on disk untouched.")
         XCTAssertNil(settings.ttsPreferences.secondary)
         defaults.removePersistentDomain(forName: suite)
     }
 
     func testEdgePrimaryRemainsAvailableWithoutFallbackConsent() throws {
         let (settings, _) = make()
-        settings.audioEngine = .edge
+        settings.selectPrimaryNarration(.edgeDefault)
 
-        XCTAssertEqual(settings.audioEngine, .edge)
+        XCTAssertEqual(settings.primaryTtsSelection, .edgeDefault)
         XCTAssertFalse(settings.allowOnlineAudioFallback)
         XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
@@ -303,17 +351,17 @@ final class ToolbarSettingsParityTests: XCTestCase {
 
     func testFaberDefaultsAndExplicitEdgeChoicePersist() throws {
         let (settings, defaults) = make()
-        XCTAssertEqual(settings.audioEngine, .piper)
+        XCTAssertEqual(settings.primaryTtsSelection, .defaultPiper)
         XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
         XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
         XCTAssertFalse(settings.ttsPreferences.allowOnlineFallback)
-        settings.audioEngine = .edge
-        settings.secondaryAudioEngine = .piper
+        settings.selectPrimaryNarration(.edgeDefault)
+        settings.selectSecondaryNarration(.defaultPiper)
         let restored = AppSettings(defaults: defaults)
-        XCTAssertEqual(restored.audioEngine, .edge)
-        XCTAssertEqual(restored.secondaryAudioEngine, .piper)
+        XCTAssertEqual(restored.primaryTtsSelection, .edgeDefault)
+        XCTAssertEqual(restored.secondaryTtsSelection, .defaultPiper)
         let captured = restored.conversionOptions
-        restored.audioEngine = .piper
+        restored.selectPrimaryNarration(.defaultPiper)
         XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
         let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(captured.encodedJSON().utf8)) as? [String: Any])
         let policy = try XCTUnwrap(fields["tts_preferences"] as? [String: Any])
@@ -325,7 +373,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
     func testManualOverrideIsStrictAndDoesNotChangePreferences() async throws {
         let (settings, _) = make()
         settings.allowOnlineAudioFallback = true
-        settings.secondaryAudioEngine = .edge
+        settings.selectSecondaryNarration(.edgeDefault)
         var captured: ConversionOptions?
         var requestedJobID: String?
         let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, options, _, _ in
@@ -344,7 +392,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(captured?.ttsPreferences?.primary.modelID, "pt_BR-faber-medium")
         XCTAssertNil(captured?.ttsPreferences?.secondary)
         XCTAssertEqual(captured?.ttsPreferences?.allowOnlineFallback, false)
-        XCTAssertEqual(settings.secondaryAudioEngine, .edge)
+        XCTAssertEqual(settings.secondaryTtsSelection, .edgeDefault)
         model.allowSecondary = true
         await model.submit()
         XCTAssertEqual(captured?.ttsPreferences?.secondary?.engine, "edge")
@@ -370,7 +418,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(captured?.ttsPreferences?.primary.voice, "pt-BR-AntonioNeural")
         XCTAssertNil(captured?.ttsPreferences?.primary.modelID)
         XCTAssertNil(captured?.ttsPreferences?.secondary)
-        XCTAssertEqual(settings.audioEngine, .piper)
+        XCTAssertEqual(settings.primaryTtsSelection, .defaultPiper)
     }
 
     func testAutoScrollTogglesBackAndForth() {

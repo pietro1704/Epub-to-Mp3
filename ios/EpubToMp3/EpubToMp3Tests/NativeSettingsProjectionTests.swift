@@ -10,38 +10,13 @@ final class NativeSettingsProjectionTests: XCTestCase {
         try body(defaults)
     }
 
-    func testMigrationDistinguishesFreshDefaultsFromAnExplicitSecondaryOptOut() {
-        withDefaults { defaults in
-            let fresh = SpeechPreferenceMigration(defaults: defaults)
-            XCTAssertEqual(fresh.primary, .piper)
-            XCTAssertEqual(fresh.secondary, .system)
-            XCTAssertFalse(fresh.allowOnlineFallback)
-            defaults.removeObject(forKey: "secondaryAudioEngine")
-            let explicitNone = SpeechPreferenceMigration(defaults: defaults)
-            XCTAssertEqual(explicitNone.primary, .piper)
-            XCTAssertNil(explicitNone.secondary)
-            XCTAssertNil(defaults.object(forKey: "secondaryAudioEngine"))
-        }
-    }
-
-    func testMigrationRejectsUnconsentedOnlineSecondaryWithoutChangingPrimary() {
-        withDefaults { defaults in
-            defaults.set("piper", forKey: AppSettings.audioEngineKey)
-            defaults.set("edge", forKey: "secondaryAudioEngine")
-            let migrated = SpeechPreferenceMigration(defaults: defaults)
-            XCTAssertEqual(migrated.primary, .piper)
-            XCTAssertNil(migrated.secondary)
-            XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
-        }
-    }
-
     func testAutomaticSystemFallbackOptOutPersistsWithoutChangingSelectedVoices() {
         withDefaults { defaults in
             let settings = AppSettings(defaults: defaults)
             XCTAssertTrue(settings.allowAutomaticSystemVoiceFallback)
             XCTAssertEqual(settings.ttsPreferences.policyVersion, 2)
-            settings.selectPrimaryNarration(.selected(.piper))
-            var english = TtsSelection.selected(.piper)
+            settings.selectPrimaryNarration(.defaultPiper)
+            var english = TtsSelection.defaultPiper
             english.modelID = "en_US-ljspeech-high"
             settings.selectSecondaryNarration(english)
             let primary = settings.ttsPreferences.primary
@@ -70,7 +45,7 @@ final class NativeSettingsProjectionTests: XCTestCase {
         withDefaults { defaults in
             let settings = AppSettings(defaults: defaults)
             settings.allowAutomaticSystemVoiceFallback = false
-            settings.selectSecondaryNarration(.selected(.system))
+            settings.selectSecondaryNarration(.systemDefault)
             XCTAssertEqual(settings.ttsPreferences.policyVersion, 3)
             XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "system")
             settings.selectSecondaryNarration(nil)

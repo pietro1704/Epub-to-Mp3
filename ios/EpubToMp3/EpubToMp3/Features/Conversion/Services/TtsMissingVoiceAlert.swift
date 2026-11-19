@@ -43,7 +43,7 @@ enum TtsMissingVoiceAlert {
         case .cancel: return nil
         case .system:
             guard let voice = voices.first(where: { $0.identifier == systemVoice }) else { return nil }
-            return TtsRecoveryCandidate(name: voice.name, selection: .selected(.system))
+            return TtsRecoveryCandidate(name: voice.name, selection: .systemDefault)
         case .settings:
             await openSettings(language: language, snapshot: snapshot, from: controller, client: client)
             return nil

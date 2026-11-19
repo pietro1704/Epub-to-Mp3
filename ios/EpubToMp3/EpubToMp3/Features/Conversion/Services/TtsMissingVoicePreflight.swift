@@ -7,7 +7,7 @@ import Foundation
 /// and readiness, and remains the owner of language resolution.
 enum TtsMissingVoicePreflight {
     static func requiresCheck(options: ConversionOptions?) -> Bool {
-        (options?.ttsPreferences?.primary.engine ?? options?.engine ?? "piper") == "piper"
+        (options?.ttsPreferences?.primary.engine ?? options?.engine ?? TtsSelection.piperEngine) == TtsSelection.piperEngine
     }
 
     static func installedSystemVoices() -> [InstalledSpeechVoicePolicy.Voice] {
@@ -23,7 +23,7 @@ enum TtsMissingVoicePreflight {
     static func acceptsExplicitSystemVoice(options: ConversionOptions?, language: String,
                                            voices: [InstalledSpeechVoicePolicy.Voice]) -> Bool {
         guard let preferences = options?.ttsPreferences, preferences.policyVersion == 3,
-              preferences.secondary?.engine == "system" else { return false }
+              preferences.secondary?.isSystem == true else { return false }
         return InstalledSpeechVoicePolicy.select(language: language, voices: voices) != nil
     }
 

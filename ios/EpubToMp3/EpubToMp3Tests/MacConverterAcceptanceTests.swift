@@ -20,7 +20,7 @@ final class MacConverterAcceptanceTests: XCTestCase {
         let library = LibraryStore(defaults: defaults, importDirectory: root.appendingPathComponent("library"))
         let book = try library.importBook(from: source)
         let settings = AppSettings(defaults: defaults)
-        settings.selectPrimaryNarration(.selected(.system))
+        settings.selectPrimaryNarration(.systemDefault)
         settings.selectSecondaryNarration(nil)
         let output = RustConversionOutputStore(root: root.appendingPathComponent("outputs"),
                                               notificationCenter: NotificationCenter())

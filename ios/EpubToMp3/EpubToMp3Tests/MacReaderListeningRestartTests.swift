@@ -19,7 +19,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         let missingModels = directory.appendingPathComponent("missing-models")
         try FileManager.default.createDirectory(at: missingModels, withIntermediateDirectories: true)
         let settings = AppSettings(defaults: defaults)
-        settings.selectSecondaryNarration(.selected(.system))
+        settings.selectSecondaryNarration(.systemDefault)
         let metadata = try XCTUnwrap(JSONSerialization.jsonObject(
             with: ConverterFFIAdapter().openBook(at: source).metadataJSON) as? [String: Any])
         let chapters = try XCTUnwrap(metadata["chapters"] as? [[String: Any]])

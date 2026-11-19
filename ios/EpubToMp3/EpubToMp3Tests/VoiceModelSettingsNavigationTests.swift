@@ -34,7 +34,7 @@ final class VoiceModelSettingsNavigationTests: XCTestCase {
         XCTAssertTrue(navigation.topViewController === root)
         XCTAssertEqual(root.tableView(root.tableView, numberOfRowsInSection: runtime), 1)
         XCTAssertNil(settings.ttsPreferences.secondary)
-        XCTAssertEqual(settings.audioEngine, .piper)
+        XCTAssertEqual(settings.primaryEngine, TtsSelection.piperEngine)
     }
 }
 #elseif os(macOS)
@@ -64,7 +64,7 @@ final class MacVoiceModelSettingsNavigationTests: XCTestCase {
         back.performClick(nil)
         XCTAssertTrue(root.children.isEmpty)
         XCTAssertFalse(models.isHidden)
-        XCTAssertEqual(settings.audioEngine, .piper)
+        XCTAssertEqual(settings.primaryEngine, TtsSelection.piperEngine)
     }
 }
 #endif

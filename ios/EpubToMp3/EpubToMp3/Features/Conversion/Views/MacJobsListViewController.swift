@@ -152,7 +152,7 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
             label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         } else {
             let outcome = ConversionStatusPresentation.label(session.outcome)
-            let engine = session.engine.flatMap(AudioEnginePreference.init(rawValue:))?.displayName ?? session.engine ?? ""
+            let engine = session.engine.flatMap(TtsSelection.displayName(forEngine:)) ?? session.engine ?? ""
             let chapters = session.chaptersConverted.map { L10n.string("jobs.chaptersAbbrev", $0) } ?? ""
             label.stringValue = [outcome, engine, chapters, String(session.timestamp.prefix(19))]
                 .filter { !$0.isEmpty }

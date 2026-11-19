@@ -95,9 +95,9 @@ final class SpeechModelLibraryClientTests: XCTestCase {
         let unavailable = SpeechModelLibraryViewState(snapshot: try SpeechModelSnapshot.decode(snapshotJSON(
             installationState: "missing", readinessState: "not_inspected", selectable: false
         )))
-        XCTAssertFalse(unavailable.canSelect(.selected(.piper)))
+        XCTAssertFalse(unavailable.canSelect(.defaultPiper))
         let ready = SpeechModelLibraryViewState(snapshot: try SpeechModelSnapshot.decode(snapshotJSON()))
-        XCTAssertTrue(ready.canSelect(.selected(.piper)))
+        XCTAssertTrue(ready.canSelect(.defaultPiper))
         var stale = try XCTUnwrap(ready.selectableChoices.first?.selection)
         stale.session?.modelRevision = "stale-revision"
         XCTAssertFalse(ready.canSelect(stale))
@@ -164,7 +164,7 @@ final class SpeechModelLibraryClientTests: XCTestCase {
         )
         let state = SpeechModelLibraryViewState(snapshot: snapshot)
         let selection = try XCTUnwrap(state.selectableChoices.first?.selection)
-        var configuredSelection = TtsSelection.selected(.system)
+        var configuredSelection = TtsSelection.systemDefault
 
         _ = try await client.install(modelID: selection.modelID!)
         XCTAssertEqual(configuredSelection.engine, "system")
@@ -183,7 +183,7 @@ final class SpeechModelLibraryClientTests: XCTestCase {
         }
         XCTAssertTrue(recorder.removals.isEmpty)
 
-        configuredSelection = .selected(.system)
+        configuredSelection = .systemDefault
         _ = try await client.remove(
             modelID: "pt_BR-faber-medium",
             configuredSelections: [configuredSelection]

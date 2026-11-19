@@ -233,10 +233,10 @@ struct SpeechModelLibraryViewState: Sendable {
     }
 
     func canSelect(_ selection: TtsSelection) -> Bool {
-        if selection.engine == "piper" || entry(for: selection) != nil {
+        if selection.isPiper || entry(for: selection) != nil {
             return selectableChoices.contains { Self.sameChoice($0.selection, selection) }
         }
-        return selection.engine == "system" || selection.engine == "edge"
+        return selection.isSystem || selection.isEdge
     }
 
     static func sameChoice(_ first: TtsSelection, _ second: TtsSelection) -> Bool {
@@ -379,7 +379,7 @@ struct SpeechModelLibraryViewState: Sendable {
     }
 
     private func fallbackName(for selection: TtsSelection) -> String {
-        AudioEnginePreference(rawValue: selection.engine)?.displayName ?? selection.engine
+        TtsSelection.displayName(forEngine: selection.engine) ?? selection.engine
     }
 
     private func languageEvidence(for entry: SpeechModelSnapshot.Entry) -> String {

@@ -245,8 +245,8 @@ final class MacSettingsViewController: NSViewController {
             let ready = speechModelState.canSelect(selection)
             audioEnginePopup.item(at: index)?.isEnabled = ready
             secondaryEnginePopup.item(at: index + 1)?.isEnabled = ready
-                && !selection.representsSameRequest(as: settings.ttsPreferences.primary)
-                && (selection.engine != "edge" || settings.allowOnlineAudioFallback)
+                && selection.canBeSecondary(to: settings.ttsPreferences.primary,
+                                            allowOnlineFallback: settings.allowOnlineAudioFallback)
         }
         onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
         speechModelPanel.render()
@@ -300,8 +300,8 @@ final class MacSettingsViewController: NSViewController {
         }
         let selection = narrationSelections[index]
         guard speechModelState.canSelect(selection),
-              !selection.representsSameRequest(as: settings.ttsPreferences.primary),
-              selection.engine != "edge" || settings.allowOnlineAudioFallback else {
+              selection.canBeSecondary(to: settings.ttsPreferences.primary,
+                                       allowOnlineFallback: settings.allowOnlineAudioFallback) else {
             refresh()
             return
         }
@@ -316,10 +316,10 @@ final class MacSettingsViewController: NSViewController {
 
     private func rebuildNarrationChoices() {
         let catalogChoices = speechModelState.selectableChoices.map(\.selection)
-        narrationSelections = AudioEnginePreference.supportedPreferences.flatMap { engine -> [TtsSelection] in
-            let matching = catalogChoices.filter { $0.engine == engine.rawValue }
+        narrationSelections = TtsSelection.selectableEngines.flatMap { engine -> [TtsSelection] in
+            let matching = catalogChoices.filter { $0.engine == engine }
             if !matching.isEmpty { return matching }
-            return engine == .piper ? [] : [.selected(engine)]
+            return engine == TtsSelection.piperEngine ? [] : [.engineDefault(engine)]
         }
         for selection in settings.configuredNarrationSelections
             where !narrationSelections.contains(where: { SpeechModelLibraryViewState.sameChoice($0, selection) }) {

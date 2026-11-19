@@ -47,14 +47,16 @@ struct ConversionOptions: Codable, Sendable, Equatable {
         self.espeakDataDirectory = espeakDataDirectory
     }
 
-    static func selectedEngine(_ engine: AudioEnginePreference, modelsRoot: URL? = nil) -> ConversionOptions {
-        let resolvedEngine = AudioEnginePreference.supportedPreferences.contains(engine) ? engine : .piper
+    static func selectedEngine(_ engine: String, modelsRoot: URL? = nil) -> ConversionOptions {
+        let resolved = TtsSelection.engineDefault(
+            TtsSelection.selectableEngines.contains(engine) ? engine : TtsSelection.piperEngine
+        )
         return ConversionOptions(
-            engine: resolvedEngine.rawValue,
+            engine: resolved.engine,
             language: nil,
-            modelsRoot: resolvedEngine == .piper ? modelsRoot?.path : nil,
-            modelID: resolvedEngine == .piper ? "pt_BR-faber-medium" : nil,
-            espeakDataDirectory: resolvedEngine == .piper ? Bundle.main.resourceURL?.path : nil,
+            modelsRoot: resolved.isPiper ? modelsRoot?.path : nil,
+            modelID: resolved.modelID,
+            espeakDataDirectory: resolved.isPiper ? Bundle.main.resourceURL?.path : nil,
         )
     }
 

@@ -58,7 +58,7 @@ final class VoiceAuditionController: NSObject, AVAudioPlayerDelegate {
                     try play(output)
                     return
                 }
-                guard selection.engine == "piper", let modelID = selection.modelID,
+                guard selection.isPiper, let modelID = selection.modelID,
                       let root = modelsRoot ?? LocalSpeechModelReadiness.ttsModelsRoot() else {
                     throw EmbeddedConverterError.artifactUnavailable
                 }
@@ -68,7 +68,7 @@ final class VoiceAuditionController: NSObject, AVAudioPlayerDelegate {
                 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("voice-audition-\(attempt.uuidString)")
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
                 self.directory = directory
-                var options = ConversionOptions(engine: "piper", language: language, modelsRoot: root.path,
+                var options = ConversionOptions(engine: TtsSelection.piperEngine, language: language, modelsRoot: root.path,
                     modelID: modelID, espeakDataDirectory: Bundle.main.resourceURL?.path)
                 options.ttsPreferences = TtsPreferences(primary: selection, secondary: nil, allowOnlineFallback: false)
                 let output = directory.appendingPathComponent("preview.mp3")

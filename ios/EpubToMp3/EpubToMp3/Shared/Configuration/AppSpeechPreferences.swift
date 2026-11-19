@@ -1,17 +1,20 @@
 import Foundation
 
 extension AppSettings {
-    var selectableSecondaryAudioEngines: [AudioEnginePreference] {
-        AudioEnginePreference.supportedPreferences.filter {
-            $0 != audioEngine && ($0 != .edge || allowOnlineAudioFallback)
+    /// Engine of the primary voice; it also names the reader's saved local audio.
+    var primaryEngine: String { primaryTtsSelection.engine }
+    /// Engine-default secondaries the user may pick for the current primary.
+    var selectableSecondaryEngines: [String] {
+        TtsSelection.selectableEngines.filter {
+            TtsSelection.engineDefault($0).canBeSecondary(to: primaryTtsSelection,
+                                                          allowOnlineFallback: allowOnlineAudioFallback)
         }
     }
     var ttsPreferences: TtsPreferences {
-        let secondary = secondaryTtsSelection ?? secondaryAudioEngine.flatMap { engine -> TtsSelection? in
-            guard engine != .edge || allowOnlineAudioFallback else { return nil }
-            return .selected(engine)
+        let secondary = secondaryTtsSelection.flatMap {
+            $0.isAllowedAsFallback(allowOnlineFallback: allowOnlineAudioFallback) ? $0 : nil
         }
-        return TtsPreferences(primary: primaryTtsSelection ?? .selected(audioEngine),
+        return TtsPreferences(primary: primaryTtsSelection,
                               secondary: secondary,
                               allowOnlineFallback: allowOnlineAudioFallback,
                               policyVersion: allowAutomaticSystemVoiceFallback ? 2 : 3)
@@ -19,17 +22,8 @@ extension AppSettings {
     var configuredNarrationSelections: [TtsSelection] {
         [ttsPreferences.primary, ttsPreferences.secondary].compactMap { $0 }
     }
-    func selectPrimaryNarration(_ selection: TtsSelection) {
-        if let engine = AudioEnginePreference(rawValue: selection.engine) { audioEngine = engine }
-        primaryTtsSelection = selection
-        if secondaryTtsSelection?.representsSameRequest(as: selection) == true { secondaryTtsSelection = nil }
-    }
-    func selectSecondaryNarration(_ selection: TtsSelection?) {
-        secondaryAudioEngine = nil
-        secondaryTtsSelection = selection
-    }
     var conversionOptions: ConversionOptions {
-        var options = ConversionOptions.selectedEngine(audioEngine, modelsRoot: LocalSpeechModelReadiness.ttsModelsRoot())
+        var options = ConversionOptions.selectedEngine(primaryEngine, modelsRoot: LocalSpeechModelReadiness.ttsModelsRoot())
         options.ttsPreferences = ttsPreferences
         if let catalog = try? ConverterFFIAdapter().ttsCatalog() {
             #if os(macOS)

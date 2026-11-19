@@ -43,7 +43,7 @@ final class MacSpeechModelAcceptanceTests: XCTestCase {
             transfer: SpeechModelBackgroundTransfer(configuration: configuration)
         )
         let settings = AppSettings(defaults: defaults)
-        settings.selectPrimaryNarration(.selected(.system))
+        settings.selectPrimaryNarration(.systemDefault)
         settings.selectSecondaryNarration(nil)
         let original = settings.ttsPreferences
         let controller = MacSettingsViewController(

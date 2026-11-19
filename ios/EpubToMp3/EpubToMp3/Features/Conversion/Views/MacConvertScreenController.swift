@@ -278,7 +278,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
 
     private func updatePreferences() {
         viewModel.inheritedPreferences = settings.ttsPreferences
-        if viewModel.usesPreferences { viewModel.engine = settings.audioEngine.rawValue }
+        if viewModel.usesPreferences { viewModel.engine = settings.primaryEngine }
         viewModel.modelsRoot = LocalSpeechModelReadiness.ttsModelsRoot()?.path
     }
 
@@ -320,7 +320,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         form.cancel.isHidden = !viewModel.isSubmitting
         form.cancel.isEnabled = viewModel.isSubmitting && viewModel.session.phase != .cancelling
         form.engine.selectItem(at: viewModel.usesPreferences ? 0
-            : (AudioEnginePreference.supportedPreferences.firstIndex(where: { $0.rawValue == viewModel.engine }).map { $0 + 1 } ?? 0))
+            : (TtsSelection.selectableEngines.firstIndex(of: viewModel.engine).map { $0 + 1 } ?? 0))
         let canSelectSecondary = !viewModel.usesPreferences && viewModel.distinctManualSecondary != nil
         form.secondary.isEnabled = !busy && canSelectSecondary
         form.secondary.state = (viewModel.usesPreferences
@@ -361,7 +361,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     @objc private func engineChanged() {
         viewModel.usesPreferences = form.engine.indexOfSelectedItem == 0
         if !viewModel.usesPreferences {
-            viewModel.engine = AudioEnginePreference.supportedPreferences[form.engine.indexOfSelectedItem - 1].rawValue
+            viewModel.engine = TtsSelection.selectableEngines[form.engine.indexOfSelectedItem - 1]
         }
         viewModel.allowSecondary = false
         refresh()
@@ -371,7 +371,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
 
     func controlTextDidChange(_ notification: Notification) {
         if notification.object as? NSTextField === form.voice, viewModel.usesPreferences {
-            viewModel.engine = viewModel.inheritedPreferences?.primary.engine ?? settings.audioEngine.rawValue
+            viewModel.engine = viewModel.inheritedPreferences?.primary.engine ?? settings.primaryEngine
             viewModel.usesPreferences = false
             viewModel.allowSecondary = false
             form.secondary.state = .off

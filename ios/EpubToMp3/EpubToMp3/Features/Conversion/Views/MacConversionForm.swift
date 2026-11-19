@@ -33,7 +33,7 @@ final class MacConversionForm: NSView {
         configure(cancel, key: "convert.cancel", identifier: "convert.cancel")
         configure(revealResult, key: "convert.openResult", identifier: "convert.openResult")
         engine.addItems(withTitles: [L10n.string("convert.usePreferences")]
-            + AudioEnginePreference.supportedPreferences.map(\.displayName))
+            + TtsSelection.selectableEngines.map { TtsSelection.displayName(forEngine: $0) ?? $0 })
         engine.setAccessibilityIdentifier("convert.tts.primary")
         engine.setAccessibilityLabel(L10n.string("settings.audioEngineChoice"))
         secondary.setAccessibilityIdentifier("convert.tts.useSecondary")

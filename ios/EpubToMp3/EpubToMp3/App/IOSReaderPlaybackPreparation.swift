@@ -35,7 +35,7 @@ enum IOSReaderPlaybackPreparation {
             defer { withExtendedLifetime(owner) {} }
             let embeddedSnapshot = try? await LocalAudioArtifactStore.shared.playableSnapshot(
                 bookID: bookID,
-                engine: settings.audioEngine.rawValue,
+                engine: settings.primaryEngine,
                 voice: "auto",
                 language: nil
             )

@@ -111,8 +111,8 @@ final class MacFallbackResponsivenessTests: XCTestCase {
         ReaderProgressStore.save(bookId: book.id, chapterIndex: readerChapter, offsetFraction: pageRatio)
 
         let settings = AppSettings(defaults: defaults)
-        settings.audioEngine = .piper
-        settings.selectSecondaryNarration(.selected(.system))
+        settings.selectPrimaryNarration(.defaultPiper)
+        settings.selectSecondaryNarration(.systemDefault)
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let presentation = PlayerPresentation(defaults: defaults)
         var control: ConverterPlaybackControl?
