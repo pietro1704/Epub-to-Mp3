@@ -17,6 +17,43 @@ module AndroidOnnxRuntime
   ROOT = File.expand_path('..', __dir__).freeze
   DESTINATION = File.join(ROOT, 'target', 'onnxruntime-android-prebuilt', 'arm64-v8a').freeze
 
+# Maven Central intermittently answers this immutable URL with HTTP 404 from
+# hosted runners (post-merge runs 44426324588, 44466049534, 44555534048 and
+# 44578840995); curl --retry never retries an HTTP 404. Retry only transient
+# transfer failures, and a body that fails the pinned size/SHA-256 check,
+# a bounded number of times: at most 4 x 120 s plus 50 s of backoff.
+DOWNLOAD_ATTEMPTS = 4
+DOWNLOAD_BACKOFF_SECONDS = [5, 15, 30].freeze
+# curl: 6/7 resolve/connect, 18 partial, 22 HTTP error, 28 timeout, 35 TLS, 52/56 empty/receive.
+TRANSIENT_CURL_STATUSES = [6, 7, 18, 22, 28, 35, 52, 56].freeze
+
+def self.curl(archive)
+  system("curl", "--fail", "--location", "--silent", "--show-error", "--connect-timeout", "15", "--max-time", "120",
+         "--max-filesize", ARCHIVE_SIZE.to_s, "--output", archive, URL, out: $stderr, err: $stderr)
+  $?&.exitstatus
+end
+
+def self.verified_archive?(archive)
+  File.file?(archive) && File.size(archive) == ARCHIVE_SIZE && Digest::SHA256.file(archive).hexdigest == ARCHIVE_SHA256
+end
+
+def self.download(archive, attempts: DOWNLOAD_ATTEMPTS, sleeper: Kernel.method(:sleep), runner: method(:curl),
+                  verifier: method(:verified_archive?))
+  attempts.times do |index|
+    FileUtils.rm_f(archive)
+    status = runner.call(archive)
+    return true if status&.zero? && verifier.call(archive)
+    reason = status&.zero? ? "archive failed checksum verification" : "curl exited #{status.inspect}"
+    return false unless status&.zero? || TRANSIENT_CURL_STATUSES.include?(status)
+    break if index == attempts - 1
+
+    delay = DOWNLOAD_BACKOFF_SECONDS.fetch(index, DOWNLOAD_BACKOFF_SECONDS.last)
+    warn "Android ONNX runtime download attempt #{index + 1}/#{attempts}: #{reason}; retrying in #{delay} s"
+    sleeper.call(delay)
+  end
+  false
+end
+
   def self.command(*arguments)
     output, status = Open3.capture2e(*arguments)
     raise "#{arguments.join(' ')} failed: #{output}" unless status.success?
@@ -74,8 +111,7 @@ module AndroidOnnxRuntime
         raise 'Supplied Android ONNX archive is missing' unless File.file?(archive)
       else
         archive = File.join(stage, 'runtime.aar')
-        success = system('curl', '--fail', '--location', '--silent', '--show-error', '--retry', '2', '--connect-timeout', '15', '--max-time', '120', '--max-filesize', ARCHIVE_SIZE.to_s, '--output', archive, URL, out: $stderr, err: $stderr)
-        raise 'Android ONNX runtime download failed' unless success
+        raise 'Android ONNX runtime download failed' unless download(archive)
       end
       raise 'Android ONNX archive failed checksum verification' unless File.size(archive) == ARCHIVE_SIZE && Digest::SHA256.file(archive).hexdigest == ARCHIVE_SHA256
       # Extract one pinned archive member; never unpack unrelated AAR contents.
