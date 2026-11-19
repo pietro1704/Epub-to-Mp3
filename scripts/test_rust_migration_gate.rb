@@ -20,8 +20,10 @@ class RustMigrationGateTest < Minitest::Test
     end
     write('scripts/guard_no_python_production.sh', "#!/bin/sh\n", mode: 0o755)
     write('scripts/check_rust_migration_gate.sh', File.read(GATE), mode: 0o755)
-    %w[converter_wasm.js converter_wasm.d.ts converter_wasm_bg.wasm].each { |name| write("web/src/wasm/#{name}", 'x') }
-    write('web/src/services/EmbeddedConverter.ts', "import init from '../wasm/converter_wasm';\n")
+    # The browser WASM is built by the Rails gateway (nothing generated is committed).
+    write('crates/converter-wasm/Cargo.toml', '[package]')
+    write('ruby_app/rails_gateway/bin/build-runtime-wasm', "#!/bin/sh\n", mode: 0o755)
+    write('ruby_app/rails_gateway/bin/assemble-runtime', "#!/bin/sh\n", mode: 0o755)
   end
 
   def teardown
@@ -47,13 +49,24 @@ class RustMigrationGateTest < Minitest::Test
     assert_includes output, 'No generated Rust production artifact found (expected target/release/)'
   end
 
-  def test_still_blocks_when_the_wasm_artifacts_are_missing
+  def test_still_blocks_when_the_gateway_wasm_build_is_missing
     write('target/release/converter-cli', 'x', mode: 0o755)
-    FileUtils.rm(File.join(@root, 'web/src/wasm/converter_wasm_bg.wasm'))
+    FileUtils.rm(File.join(@root, 'ruby_app/rails_gateway/bin/build-runtime-wasm'))
 
     output, status = run_gate
     refute status.success?, output
-    assert_includes output, 'Missing browser WASM artifact: web/src/wasm/converter_wasm_bg.wasm'
+    assert_includes output, 'Missing gateway WASM build script: ruby_app/rails_gateway/bin/build-runtime-wasm'
+  end
+
+  def test_still_blocks_when_the_wasm_crate_or_runtime_assembly_is_missing
+    write('target/release/converter-cli', 'x', mode: 0o755)
+    FileUtils.rm(File.join(@root, 'crates/converter-wasm/Cargo.toml'))
+    FileUtils.rm(File.join(@root, 'ruby_app/rails_gateway/bin/assemble-runtime'))
+
+    output, status = run_gate
+    refute status.success?, output
+    assert_includes output, 'Missing WASM crate manifest: crates/converter-wasm/Cargo.toml'
+    assert_includes output, 'Missing gateway runtime assembly script: ruby_app/rails_gateway/bin/assemble-runtime'
   end
 
   private

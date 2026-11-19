@@ -1,4 +1,4 @@
-// Saved narration policy. Port of web/src/services/TtsPreferences.ts with the
+// Saved narration policy. Port of the former React client's TtsPreferences.ts (removed in the Rails cutover) with the
 // same localStorage key and shape, so both clients read each other's choice.
 // Storage is injected because access to localStorage itself can throw.
 

@@ -53,11 +53,11 @@ jobs:
           cargo = File.read("Cargo.toml", encoding: "UTF-8")
           product_version = cargo[/^\[workspace\.package\][^\[]*?^version = "([^"]+)"/m, 1]
           abort "Cargo.toml is missing [workspace.package] version" unless product_version
-          web_version = JSON.parse(File.read("web/package.json", encoding: "UTF-8")).fetch("version")
+          gateway_version = File.read("ruby_app/rails_gateway/VERSION", encoding: "UTF-8").strip
 
           versions = {
             "Cargo.toml" => product_version,
-            "web/package.json" => web_version
+            "ruby_app/rails_gateway/VERSION" => gateway_version
           }
           if versions.values.uniq.length != 1
             details = versions.map { |path, version| "#{path}=#{version}" }.join(", ")

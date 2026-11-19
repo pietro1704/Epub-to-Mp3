@@ -38,7 +38,7 @@ class BuildRuntimeWasmTest < ActiveSupport::TestCase
     assert_includes events, "wasm-bindgen #{target}/wasm32-unknown-unknown/release/converter_wasm.wasm"
     assert_includes events, "--target web --no-typescript --out-dir #{@output}"
     assert_equal %w[converter_wasm.js converter_wasm_bg.wasm], @output.children.map { |file| file.basename.to_s }.sort
-    assert_empty @workspace.glob("ruby_app/**/*.wasm") + @workspace.glob("web/**/*")
+    assert_empty @workspace.glob("ruby_app/**/*.wasm")
   end
 
   test "refuses a wasm-bindgen CLI that does not match Cargo.lock before compiling" do

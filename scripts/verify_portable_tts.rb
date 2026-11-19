@@ -11,11 +11,7 @@ directory = ".reports/tts-preferences/checks"
 FileUtils.mkdir_p(directory)
 commands = [
   ["codec", %w[mise exec -- cargo test -p converter-core --lib pcm::tests --jobs 1]],
-  ["wasm", %w[mise run web:wasm-build]],
-  ["web", %w[mise run test:web]],
-  ["browser-storage", %w[mise exec -- node web/scripts/verify-browser-store.mjs]],
-  ["browser", %w[mise exec -- node web/scripts/verify-browser-tts.mjs]],
-  ["browser-production", %w[env TTS_BROWSER_MODE=production mise exec -- node web/scripts/verify-browser-tts.mjs]],
+  ["rails-web", %w[mise run rails:web:test]],
   ["flutter-analyze", %w[mise run flutter:analyze]],
   ["flutter-tests", %w[mise run flutter:test]]
 ]

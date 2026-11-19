@@ -51,7 +51,7 @@ class CiRuntimeScopeTest < Minitest::Test
   def test_documentation_changes_skip_runtimes_and_host_contracts_but_not_packaging
     result, status, err, contracts = scope(['docs/guide.md'])
     assert status.success?, err
-    assert_equal %w[rust web flutter android wasm apple rails].to_h { |name| [name, 'false'] }, result
+    assert_equal %w[rust flutter android apple rails].to_h { |name| [name, 'false'] }, result
     assert_equal 'false', contracts
     guard = @workflow.fetch('jobs').fetch('production-packaging-guard')
     refute guard.key?('if')
@@ -59,7 +59,7 @@ class CiRuntimeScopeTest < Minitest::Test
     boundary = guard.fetch('steps').find { |step| step['name'] == 'Check production packaging boundary' }
     refute boundary.key?('if')
     assert_equal 'bash scripts/guard_no_python_production.sh', boundary.fetch('run')
-    %w[rust web flutter android wasm apple rails contracts].each do |name|
+    %w[rust flutter android apple rails contracts].each do |name|
       assert_equal "${{ steps.scope.outputs.#{name} }}", @workflow.fetch('jobs').fetch('changes').fetch('outputs').fetch(name)
     end
   end
@@ -71,7 +71,7 @@ class CiRuntimeScopeTest < Minitest::Test
       assert_equal 'false', contracts, paths.inspect
     end
     [[], ['AGENTS.md'], ['mise.toml'], ['docs/generator.rb'], ['unknown.file'],
-      ['scripts/host_tool.rb'], ['web/src/app.tsx'], ['flutter_app/lib/main.dart'],
+      ['scripts/host_tool.rb'], ['ruby_app/rails_gateway/app/models/x.rb'], ['flutter_app/lib/main.dart'],
       ['README.md', 'scripts/run_ci_contracts.rb'], ['scripts/deleted.rb', 'docs/moved.md']].each do |paths|
       _, status, err, contracts = scope(paths)
       assert status.success?, err
@@ -103,7 +103,7 @@ class CiRuntimeScopeTest < Minitest::Test
 
   def test_runtime_jobs_can_start_before_contracts_finish_but_gate_waits_for_both
     jobs = @workflow.fetch('jobs')
-    runtimes = %w[rust flutter android-jvm web apple-app rails-web]
+    runtimes = %w[rust flutter android-jvm apple-app rails-web]
     runtimes.each { |name| assert_equal ['changes'], Array(jobs.fetch(name).fetch('needs')), name }
     assert_equal (%w[changes production-packaging-guard] + runtimes).sort,
       jobs.fetch('pr-gate').fetch('needs').sort
@@ -111,28 +111,27 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_platform_and_shared_runtime_dependencies
-    { 'web/src/app.tsx' => %w[web], 'flutter_app/lib/main.dart' => %w[flutter],
+    { 'ruby_app/rails_gateway/app/models/x.rb' => %w[rails], 'flutter_app/lib/main.dart' => %w[flutter],
       'ruby_app/rails_gateway/config/routes.rb' => %w[rails], 'scripts/host_tool.rb' => [], 'crates/converter-server/src/main.rs' => %w[rust],
       'ios/EpubToMp3/EpubToMp3/App/EpubToMp3App.swift' => %w[apple],
       'ios/EpubToMp3/Package.swift' => %w[apple],
       'native/piper-runtime/src/lib.rs' => %w[rust apple flutter android],
       'crates/converter-ffi/src/lib.rs' => %w[rust apple flutter android],
-      'Cargo.lock' => %w[rust apple flutter android web wasm rails],
-      'Cargo.toml' => %w[rust apple flutter android web wasm rails],
-      'rust-toolchain.toml' => %w[rust apple flutter android web wasm rails],
-      'mise.toml' => %w[rust apple flutter android web wasm rails],
-      'mise.lock' => %w[rust apple flutter android web wasm rails],
-      '.github/workflows/ci.yml' => %w[rust apple flutter android web wasm rails],
-      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android web wasm rails],
-      '.github/workflows/browser-runtime.yml' => %w[web wasm],
-      '.github/workflows/faber-integration.yml' => %w[rust apple flutter android web wasm rails],
+      'Cargo.lock' => %w[rust apple flutter android rails],
+      'Cargo.toml' => %w[rust apple flutter android rails],
+      'rust-toolchain.toml' => %w[rust apple flutter android rails],
+      'mise.toml' => %w[rust apple flutter android rails],
+      'mise.lock' => %w[rust apple flutter android rails],
+      '.github/workflows/ci.yml' => %w[rust apple flutter android rails],
+      '.github/workflows/post-merge-validation.yml' => %w[rust apple flutter android rails],
+      '.github/workflows/faber-integration.yml' => %w[rust apple flutter android rails],
       '.github/workflows/converter-ffi.yml' => %w[rust apple flutter android],
-      '.github/actions/rust-build-cache/action.yml' => %w[rust apple flutter android web wasm rails],
-      'scripts/build_web_wasm.sh' => %w[web wasm rails],
+      '.github/actions/rust-build-cache/action.yml' => %w[rust apple flutter android rails],
+      # The root Dockerfile is the Rails image, so it selects the Rails job.
+      'Dockerfile' => %w[rails], '.dockerignore' => %w[rails], '.hf-runtime' => %w[rails],
       'Cargo.lock.notes.md' => [],
-      'crates/converter-core/src/lib.rs' => %w[rust apple flutter web wasm rails],
-      'crates/converter-wasm/src/lib.rs' => %w[rust web wasm rails],
-      'web/src/wasm/converter_wasm.js' => %w[web wasm] }.each do |path, expected|
+      'crates/converter-core/src/lib.rs' => %w[rust apple flutter rails],
+      'crates/converter-wasm/src/lib.rs' => %w[rust rails] }.each do |path, expected|
       result, status, err = scope([path])
       assert status.success?, err
       assert_equal expected.sort, result.select { |_, value| value == 'true' }.keys.sort, path
@@ -140,16 +139,16 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_multi_file_and_deleted_paths_are_classified
-    result, status, err = scope(['docs/removed.md', 'web/src/deleted.ts', 'flutter_app/lib/new.dart'])
+    result, status, err = scope(['docs/removed.md', 'ruby_app/rails_gateway/app/deleted.rb', 'flutter_app/lib/new.dart'])
     assert status.success?, err
-    assert_equal %w[flutter web], result.select { |_, value| value == 'true' }.keys.sort
+    assert_equal %w[flutter rails], result.select { |_, value| value == 'true' }.keys.sort
   end
 
   def test_deleted_or_renamed_shared_source_keeps_its_consumers
     # --no-renames makes both the removed and new names visible to classification.
     result, status, err = scope(['crates/converter-core/src/deleted.rs', 'docs/moved.md'])
     assert status.success?, err
-    assert_equal %w[apple flutter rails rust wasm web], result.select { |_, value| value == 'true' }.keys.sort
+    assert_equal %w[apple flutter rails rust], result.select { |_, value| value == 'true' }.keys.sort
   end
 
   def test_full_validation_uses_every_runtime_without_pr_context
@@ -169,7 +168,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_manual_scoped_validation_requires_explicit_base
-    _, status, err = scope(['web/app.ts'], event: 'workflow_dispatch')
+    _, status, err = scope(['ruby_app/app.rb'], event: 'workflow_dispatch')
     assert status.success?, err
     _, status, = scope([], event: 'workflow_dispatch', base: '')
     refute status.success?
@@ -178,7 +177,7 @@ class CiRuntimeScopeTest < Minitest::Test
   def gate(scopes, results = {}, integrated = false)
     needs = { 'changes' => { 'result' => 'success', 'outputs' => scopes },
       'production-packaging-guard' => { 'result' => 'success' } }
-    { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android', 'web' => 'web',
+    { 'rust' => 'rust', 'flutter' => 'flutter', 'android-jvm' => 'android',
       'apple-app' => 'apple', 'rails-web' => 'rails' }.each do |job, name|
       selected = scopes[name] == 'true' && !(%w[apple-app android-jvm].include?(job) && integrated == true)
       needs[job] = { 'result' => selected ? 'success' : 'skipped' }
@@ -189,7 +188,7 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_native_app_gate_rejects_failures_and_integrated_validation_avoids_duplicate_app_runs
-    scopes = %w[rust web flutter android wasm apple rails].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
+    scopes = %w[rust flutter android apple rails].to_h { |name| [name, 'false'] }.merge('apple' => 'true')
     assert gate(scopes).success?
     %w[failure cancelled skipped].each { |result| refute gate(scopes, 'apple-app' => result).success? }
     assert gate(scopes, {}, true).success?
@@ -198,9 +197,9 @@ class CiRuntimeScopeTest < Minitest::Test
   end
 
   def test_gate_accepts_only_confirmed_scopes_and_matching_results
-    scopes = %w[rust web flutter android wasm apple rails].to_h { |name| [name, 'false'] }.merge('web' => 'true')
+    scopes = %w[rust flutter android apple rails].to_h { |name| [name, 'false'] }.merge('flutter' => 'true')
     assert gate(scopes).success?
-    %w[failure cancelled skipped].each { |result| refute gate(scopes, 'web' => result).success? }
+    %w[failure cancelled skipped].each { |result| refute gate(scopes, 'flutter' => result).success? }
     rails = scopes.merge('rails' => 'true')
     assert gate(rails).success?
     %w[failure cancelled skipped].each { |result| refute gate(rails, 'rails-web' => result).success? }
@@ -209,9 +208,12 @@ class CiRuntimeScopeTest < Minitest::Test
       refute gate(scopes, 'production-packaging-guard' => result).success?
     end
     refute gate(scopes.reject { |name, _| name == 'rust' }).success?
-    refute gate(scopes.reject { |name, _| name == 'wasm' }).success?
-    refute gate(scopes.merge('wasm' => 'unknown')).success?
-    refute gate(scopes.merge('web' => 'false', 'wasm' => 'true')).success?
+    refute gate(scopes.reject { |name, _| name == 'rails' }).success?
+    refute gate(scopes.merge('rails' => 'unknown')).success?
+    # The retired React web job and wasm scope must not be accepted any more.
+    refute_includes @workflow.fetch('jobs').fetch('pr-gate').fetch('needs'), 'web'
+    refute @workflow.fetch('jobs').fetch('changes').fetch('outputs').key?('wasm')
+    refute @workflow.fetch('jobs').key?('web')
     refute gate(scopes, 'rust' => 'success').success?
   end
   def test_redundant_workflows_have_concrete_replacements
@@ -227,13 +229,11 @@ class CiRuntimeScopeTest < Minitest::Test
     assert_equal false, events.fetch('workflow_dispatch').fetch('inputs').fetch('full_validation').fetch('default')
   end
 
-  def test_pr_jobs_do_not_rebuild_unaffected_wasm
+  def test_pr_jobs_have_no_python_or_react_web_and_keep_flutter_cargo_free
     refute @workflow.fetch('jobs').key?('python-tests')
     refute_match(/\bpython3?\b|pytest|ruff/i, File.read(File.expand_path('../.github/workflows/ci.yml', __dir__)))
-    web = @workflow.fetch('jobs').fetch('web')
-    %w[Install\ Rust\ WASM\ target Build\ direct\ Rust\ WASM\ adapter].each do |name|
-      assert_equal "needs.changes.outputs.wasm == 'true'", web.fetch('steps').find { |step| step['name'] == name }.fetch('if')
-    end
+    refute @workflow.fetch('jobs').key?('web')
+    refute_match(/web\/package|npm ci|working-directory: web/, File.read(File.expand_path('../.github/workflows/ci.yml', __dir__)))
     assert_equal '0', @workflow.fetch('jobs').fetch('flutter').fetch('env').fetch('EPUB_DART_FABER_INTEGRATION')
     refute_includes @workflow.fetch('jobs').fetch('flutter').fetch('steps').filter_map { |step| step['run'] }.join("\n"), 'cargo build'
   end
@@ -248,7 +248,7 @@ def test_reusable_jobs_cannot_share_the_callers_concurrency_group
   assert_equal groups.size, groups.uniq.size
   faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
   jobs = faber.fetch('jobs')
-  %w[ffi-jni android-package browser-runtime].each do |job|
+  %w[ffi-jni android-package rails-browser-runtime].each do |job|
     assert_equal "${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}", jobs.fetch(job).fetch('if')
   end
   refute jobs.fetch('macos-preferences').key?('if')
@@ -290,11 +290,11 @@ def test_faber_intel_only_is_dispatch_only_and_leaves_reusable_calls_full
 end
 
 def test_full_client_suites_replace_duplicate_subset_runs
-  web_steps = @workflow.fetch('jobs').fetch('web').fetch('steps')
+  rails_steps = @workflow.fetch('jobs').fetch('rails-web').fetch('steps')
   flutter_steps = @workflow.fetch('jobs').fetch('flutter').fetch('steps')
-  assert_includes web_steps.filter_map { |step| step['run'] }, 'mise exec -- npm test -- --maxWorkers=2'
+  assert_includes rails_steps.filter_map { |step| step['run'] }, 'mise run rails:web:test'
   assert flutter_steps.any? { |step| step['run'].to_s.include?('mise run flutter:test') }
-  [web_steps, flutter_steps].each do |steps|
+  [rails_steps, flutter_steps].each do |steps|
     refute steps.any? { |step| step['run'].to_s.include?('bash scripts/check_direct_runtime_boundary.sh') }
   end
 end
@@ -366,19 +366,18 @@ end
   end
 
   def test_browser_runtime_has_an_independent_entrypoint_and_preserves_real_inference
-    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
-    assert_equal './.github/workflows/browser-runtime.yml', faber.fetch('jobs').fetch('browser-runtime').fetch('uses')
-    browser = YAML.load_file(File.expand_path('../.github/workflows/browser-runtime.yml', __dir__))
-    triggers = browser['on'] || browser[true]
+    workflows = File.expand_path('../.github/workflows', __dir__)
+    refute File.exist?(File.join(workflows, 'browser-runtime.yml')), 'The React browser runtime workflow was removed with web/'
+    faber = YAML.load_file(File.join(workflows, 'faber-integration.yml'))
+    refute faber.fetch('jobs').key?('browser-runtime')
+    assert_equal './.github/workflows/rails-real-model.yml', faber.fetch('jobs').fetch('rails-browser-runtime').fetch('uses')
+    rails = YAML.load_file(File.join(workflows, 'rails-real-model.yml'))
+    triggers = rails['on'] || rails[true]
     assert triggers.key?('workflow_call')
     assert triggers.key?('workflow_dispatch')
-    assert_equal ['browser-runtime'], browser.fetch('jobs').keys
-    steps = browser.fetch('jobs').fetch('browser-runtime').fetch('steps')
-    development = steps.find { |step| step['name'] == 'Exercise real browser storage and development inference' }
-    assert_includes development.fetch('run'), 'node web/scripts/verify-browser-tts.mjs'
-    production = steps.find { |step| step['name'] == 'Exercise real production inference' }
-    assert_equal 'production', production.fetch('env').fetch('TTS_BROWSER_MODE')
-    assert_includes production.fetch('run'), 'node web/scripts/verify-browser-tts.mjs'
+    run = rails.fetch('jobs').values.flat_map { |job| job.fetch('steps') }.filter_map { |step| step['run'] }.join("\n")
+    assert_includes run, 'rails:web:runtime-build'
+    refute_includes run, 'web/scripts'
   end
 
   def test_android_and_desktop_setup_use_project_flutter_without_unpinned_composite_actions
@@ -409,7 +408,7 @@ end
     assert_equal 2, jobs.fetch('changes').fetch('timeout-minutes')
     assert_equal 7, jobs.fetch('production-packaging-guard').fetch('timeout-minutes')
     assert_equal 1, jobs.fetch('pr-gate').fetch('timeout-minutes')
-    %w[rust web flutter].each do |name|
+    %w[rust flutter].each do |name|
       assert_equal '${{ inputs.full_validation == true && 30 || 7 }}', jobs.fetch(name).fetch('timeout-minutes')
       assert_includes jobs.fetch(name).fetch('needs'), 'changes'
       refute_includes jobs.fetch(name).fetch('needs'), 'production-packaging-guard'

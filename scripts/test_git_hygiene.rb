@@ -40,11 +40,6 @@ class GitHygieneTest < Minitest::Test
       assert ignored?(path), "secret environment file is visible: #{path}"
     end
     refute ignored?(".env.example")
-    refute ignored?("web/.env.production.example")
-    %w[web/.env.production].each do |path|
-      refute ignored?(path), "public Vite profile is hidden: #{path}"
-    end
-    assert ignored?("web/.env.local")
   end
 
   def test_local_agent_state_and_installed_artifacts_are_ignored
@@ -123,7 +118,7 @@ class GitHygieneTest < Minitest::Test
     File.binwrite(sentinel, "private dependency fixture\x00bytes\n")
     bytes = File.binread(sentinel)
 
-    %w[web/node_modules nested/client/node_modules].each do |path|
+    %w[client/node_modules nested/client/node_modules].each do |path|
       absolute = File.join(@root, path)
       FileUtils.mkdir_p(File.dirname(absolute))
       File.symlink(target, absolute)

@@ -34,8 +34,8 @@ jobs:
       - name: npm audit
         id: npm_audit
         continue-on-error: true
-        working-directory: web
-        run: npm audit --audit-level=moderate 2>&1 | tee ../npm-audit.log
+        working-directory: ruby_app/rails_gateway/browser_runtime
+        run: npm audit --audit-level=moderate 2>&1 | tee ../../../npm-audit.log
 
       - name: Open issue on failure
         if: steps.npm_audit.outcome == 'failure'

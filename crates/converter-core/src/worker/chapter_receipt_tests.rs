@@ -229,7 +229,7 @@ fn worker_rejects_empty_audio_instead_of_completing_the_job() {
         root.path().to_path_buf(),
     );
     let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/public/sample.epub");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ruby_app/rails_gateway/public/sample.epub");
     let book = epub::parse_epub(std::io::Cursor::new(fs::read(&input).unwrap())).unwrap();
     assert!(book.cover.is_none());
     let output = worker.config.paths.output_dir.join("empty-existing-audio");

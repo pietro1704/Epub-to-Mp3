@@ -1,4 +1,4 @@
-# Keys keep the hierarchy and names of the React dictionaries in web/src/i18n
+# Keys keep the hierarchy and names of the React dictionaries of the former client (`web/src/i18n`, removed in the Rails cutover)
 # so both clients can be compared key by key. Only the keys the shell renders
 # are present; later slices add the rest.
 en:

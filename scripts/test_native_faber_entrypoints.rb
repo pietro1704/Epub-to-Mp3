@@ -236,7 +236,7 @@ class NativeFaberEntrypointsTest < Minitest::Test
   end
 
   def test_actual_native_task_bodies_refuse_before_preparation
-    %w[converter-ffi:build native-tts:rust:test tts:web:verify converter-ffi:ios-device native-tts:android:test onnxruntime:host].each do |name|
+    %w[converter-ffi:build native-tts:rust:test converter-ffi:ios-device native-tts:android:test onnxruntime:host].each do |name|
       metadata, error, status = Open3.capture3('mise', 'tasks', 'info', name, '--json', chdir: ROOT)
       assert status.success?, error
       body = JSON.parse(metadata).fetch('run').join("\n")

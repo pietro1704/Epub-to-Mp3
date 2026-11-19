@@ -16,7 +16,7 @@ This map describes ownership; it is not evidence that a migration or test passed
 | Jobs/artifacts | crates/converter-core/src/jobs.rs, cache.rs, audio.rs, paths.rs | Progress, persistence, cache, output |
 | C ABI | crates/converter-ffi/src/lib.rs | Embedded client boundary |
 | Product CLI | crates/converter-cli/src/ | Direct Rust entry point |
-| Web adapter | crates/converter-wasm/src/ and web/src/ | Rust/WASM integration |
+| Web adapter | crates/converter-wasm/src/ and ruby_app/rails_gateway/app/javascript/runtime/, browser_runtime/ | Rust/WASM integration |
 | Flutter | flutter_app/ | Platform bindings to Rust |
 
 Apple clients share the embedded core/FFI pipeline. Configure online/offline

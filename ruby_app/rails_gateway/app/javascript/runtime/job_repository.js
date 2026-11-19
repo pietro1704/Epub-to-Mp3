@@ -1,5 +1,5 @@
 // Reconciles durable jobs with the live jobs of this page. Port of
-// web/src/services/BrowserJobRepository.ts: restore marks unfinished jobs
+// the former React client's BrowserJobRepository.ts (removed in the Rails cutover): restore marks unfinished jobs
 // interrupted, rejects audio whose identity or byte ranges no longer hold,
 // and rebuilds the object URLs the player and downloads use.
 

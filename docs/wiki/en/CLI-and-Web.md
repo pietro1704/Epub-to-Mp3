@@ -26,12 +26,16 @@ choices. Online Edge fallback requires explicit consent. Model installation is a
 separate explicit action. Cache clearing is destructive and is not part of a
 conversion quickstart.
 
-The normal web client is embedded Rust/WASM with browser Piper. Follow
-[web/README.md](../../../web/README.md) for Vite and focused lint/test/build tasks.
+The normal web client is the Rails client with embedded Rust/WASM and browser
+Piper; conversion runs in the browser. Follow
+[the Rails web README](../../../ruby_app/rails_gateway/README.md) for the
+generated runtime tree (`mise run rails:web:runtime-build`) and tests
+(`mise run rails:web:test`). The former React/Vite client in `web/` was removed
+in the Rails cutover.
 Browser native speech is listening-only; exporting MP3 requires installed Piper.
 EPUB inspection support does not prove PDF or other native-format capability.
 
-`mise run dev` starts the optional Rust server plus Vite, can compile/install
+`mise run dev` was written to start the optional Rust server plus the former Vite frontend (inspect the task and `scripts/dev.sh` first, since the React client was removed), can compile/install
 missing dependencies and manages development processes. Use it only for an
 explicit server journey after inspecting `scripts/dev.sh` and task scope.
 `converter-server` and the retained HTTP client are compatibility adapters; actual

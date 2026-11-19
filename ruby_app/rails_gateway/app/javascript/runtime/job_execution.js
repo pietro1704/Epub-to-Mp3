@@ -1,5 +1,5 @@
 // Runs browser jobs one at a time against the Rust ConversionSession. Port of
-// web/src/services/BrowserJobExecution.ts: owns the serial runtime lease,
+// the former React client's BrowserJobExecution.ts (removed in the Rails cutover): owns the serial runtime lease,
 // receipt and byte-range bookkeeping, publication ordering (audio is durable
 // before a chapter is advertised), cancellation, resume and the listening
 // position that steers synthesis (P-24, P-25, P-35).

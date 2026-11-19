@@ -31,8 +31,8 @@ class NoPythonToolingTest < Minitest::Test
     refute_match(COMMAND, mise)
   end
 
-  def test_workflows_and_hooks_do_not_run_python
-    files = Dir[File.join(ROOT, ".github/workflows/*.yml")] + [File.join(ROOT, ".pre-commit-config.yaml")]
+  def test_workflows_do_not_run_python
+    files = Dir[File.join(ROOT, ".github/workflows/*.yml")]
     files.each do |path|
       refute_match(COMMAND, File.read(path), path)
     end

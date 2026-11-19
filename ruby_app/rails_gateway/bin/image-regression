@@ -32,7 +32,7 @@ trap cleanup EXIT
 
 if [[ -z "$image" ]]; then
   image="rails-web-image-regression"
-  docker build --file "$gateway_root/Dockerfile" --tag "$image" "$workspace_root"
+  docker build --tag "$image" "$workspace_root"
 fi
 
 docker run --detach --name "$container" --publish "127.0.0.1:$host_port:7860" \

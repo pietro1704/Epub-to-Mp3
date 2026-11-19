@@ -114,11 +114,11 @@ module AppIcons
         arguments = entry['idiom'] == 'mac' ? [] : ['-alpha', 'off']
         export.call(source, "#{CATALOG}/AppIcon.appiconset/#{entry.fetch('filename')}", size, *arguments)
       end
-      { 'web/public/favicon.png' => 64, 'web/public/apple-touch-icon.png' => 180,
-        'web/public/app-icon-192.png' => 192, 'web/public/app-icon-512.png' => 512,
+      { 'ruby_app/rails_gateway/public/favicon.png' => 64, 'ruby_app/rails_gateway/public/apple-touch-icon.png' => 180,
+        'ruby_app/rails_gateway/public/app-icon-192.png' => 192, 'ruby_app/rails_gateway/public/app-icon-512.png' => 512,
         'flutter_app/linux/resources/app-icon.png' => 512 }.each { |path, size| export.call(master, path, size) }
       export.call(master, 'flutter_app/windows/runner/resources/app_icon.ico', 256, '-define', 'icon:auto-resize=256,128,64,48,32,16')
-      export.call(master, 'web/public/favicon.ico', 64, '-define', 'icon:auto-resize=64,48,32,16')
+      export.call(master, 'ruby_app/rails_gateway/public/favicon.ico', 64, '-define', 'icon:auto-resize=64,48,32,16')
       DENSITIES.each do |density, scale|
         export.call(master, "#{ANDROID}/mipmap-#{density}/ic_launcher.png", (48 * scale).round)
         # Keep the complete mark inside Android's 66/108 adaptive safe region.

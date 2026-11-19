@@ -581,10 +581,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  browser-runtime:
-    if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
-    uses: ./.github/workflows/browser-runtime.yml
-
   rails-browser-runtime:
     if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
     uses: ./.github/workflows/rails-real-model.yml

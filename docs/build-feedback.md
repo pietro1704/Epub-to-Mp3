@@ -43,16 +43,9 @@ commands skip that tool request; existing SDK installations are retained.
 The executable task-wiring regression checks mise's actual tool selection on
 the current platform without installing tools.
 
-## Incremental TypeScript checks
+## Web build caches
 
-TypeScript keeps separate compiler metadata for the complete source check and
-the production build under `web/node_modules/.cache/typescript/`. Production
-builds keep their existing test-file exclusions. Dependency cleanup may remove
-this reproducible metadata; the compiler recreates it on the next check.
-
-`npm run test -- --maxWorkers=2 src/test/TypeScriptIncrementalCache.test.ts`
-from `web` exercises the installed compiler with copies of the actual project
-configurations. It verifies separate cache identities, reuse on unchanged input,
-same-length source edits, recovery from type errors and interrupted metadata
-publication. This establishes compiler-cache behavior; app startup remains a
-separate measurement.
+The former React/TypeScript client and its incremental compiler cache
+(`web/node_modules/.cache/typescript/`) were removed in the Rails cutover. The
+Rails web client has no TypeScript or bundler step; its generated runtime tree
+is built by `mise run rails:web:runtime-build` under the native build lease.

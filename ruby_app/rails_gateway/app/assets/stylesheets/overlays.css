@@ -1,4 +1,4 @@
-/* Help toggle and drawer. Ported from web/src/styles/overlays.css. */
+/* Help toggle and drawer. Ported from the former React client's overlays.css (removed in the Rails cutover). */
 .help-toggle {
   display: flex;
   justify-content: flex-end;

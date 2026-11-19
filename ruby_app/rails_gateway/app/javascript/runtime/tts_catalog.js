@@ -1,5 +1,5 @@
 // Browser view of the Rust TTS catalog. Port of the pure half of
-// web/src/services/TtsCatalog.ts; loading the catalog from converter-wasm
+// the former React client's TtsCatalog.ts (removed in the Rails cutover); loading the catalog from converter-wasm
 // stays in runtime/converter_runtime (loadTtsCatalog).
 
 /**

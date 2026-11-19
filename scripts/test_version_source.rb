@@ -4,7 +4,6 @@ require 'minitest/autorun'
 require 'tmpdir'
 require 'fileutils'
 require 'open3'
-require 'json'
 require 'rbconfig'
 
 # The root Cargo.toml workspace version is the product version (D22). These
@@ -18,10 +17,15 @@ class VersionSourceTest < Minitest::Test
     File.read(File.join(root, 'Cargo.toml'))[VERSION, 1]
   end
 
-  def test_web_package_mirrors_the_workspace_version
-    web = JSON.parse(File.read(File.join(ROOT, 'web/package.json'))).fetch('version')
+  def test_gateway_version_file_mirrors_the_workspace_version
+    gateway = File.read(File.join(ROOT, 'ruby_app/rails_gateway/VERSION')).strip
     assert_match(/\A\d+\.\d+\.\d+\z/, workspace_version)
-    assert_equal workspace_version, web
+    assert_equal workspace_version, gateway
+  end
+
+  def test_version_source_no_longer_includes_the_removed_react_package
+    refute File.exist?(File.join(ROOT, 'web/package.json'))
+    refute_includes File.read(File.join(ROOT, 'scripts/bump.sh')), 'web/package.json'
   end
 
   def test_release_workflow_reads_the_workspace_version
@@ -31,9 +35,9 @@ class VersionSourceTest < Minitest::Test
     refute_includes workflow, 'version.py'
   end
 
-  def test_bump_updates_cargo_lock_members_and_web_package_only
+  def test_bump_updates_cargo_lock_members_and_gateway_version
     Dir.mktmpdir('version bump ') do |directory|
-      %w[Cargo.toml Cargo.lock web/package.json scripts/bump.sh].each do |path|
+      %w[Cargo.toml Cargo.lock ruby_app/rails_gateway/VERSION scripts/bump.sh].each do |path|
         FileUtils.mkdir_p(File.join(directory, File.dirname(path)))
         FileUtils.cp(File.join(ROOT, path), File.join(directory, path))
       end
@@ -56,7 +60,7 @@ class VersionSourceTest < Minitest::Test
       output, error, status = Open3.capture3(environment, 'bash', File.join(directory, 'scripts/bump.sh'), '9.8.7', chdir: directory)
       assert status.success?, "#{output}#{error}"
       assert_equal '9.8.7', workspace_version(directory)
-      assert_equal '9.8.7', JSON.parse(File.read(File.join(directory, 'web/package.json'))).fetch('version')
+      assert_equal "9.8.7\n", File.read(File.join(directory, 'ruby_app/rails_gateway/VERSION'))
       lock = File.read(File.join(directory, 'Cargo.lock'))
       %w[converter-core converter-ffi converter-server converter-cli converter-wasm rust-migration-bench].each do |name|
         assert_includes lock, %(name = "#{name}"\nversion = "9.8.7"\n), name

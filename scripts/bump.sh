@@ -29,9 +29,8 @@ fi
 
 echo "Bumping $CURRENT → $NEW"
 
-# ── Update web/package.json ──────────────────────────────────────────────────
-sed -i.bak "s/\"version\": \".*\"/\"version\": \"$NEW\"/" web/package.json
-rm -f web/package.json.bak
+# ── Update the Rails gateway VERSION file (mirrors the workspace version) ─────
+printf '%s\n' "$NEW" > ruby_app/rails_gateway/VERSION
 
 # ── Update Cargo.toml and the workspace members recorded in Cargo.lock ────────
 CURRENT="$CURRENT" NEW="$NEW" ruby - <<'RUBY'
@@ -61,7 +60,7 @@ fi
 
 # ── Commit + tag ─────────────────────────────────────────────────────────────
 git add \
-  web/package.json \
+  ruby_app/rails_gateway/VERSION \
   Cargo.toml \
   Cargo.lock \
   CHANGELOG.md 2>/dev/null || true

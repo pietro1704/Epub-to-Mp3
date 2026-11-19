@@ -61,7 +61,7 @@ class CiRuntimeScopeTest
     saves = caches.select { |step| step['uses'].to_s.start_with?('actions/cache/save@') }
     refute_empty saves
     saves.each { |step| assert step.fetch('if').start_with?("github.ref == 'refs/heads/master' && "), step['name'] }
-    %w[flutter android-jvm rust web].each do |name|
+    %w[flutter android-jvm rust].each do |name|
       refute jobs.fetch(name).fetch('steps').any? { |step| step['uses'].to_s.start_with?('actions/cache@') }, name
     end
     gradle_restore = jobs.fetch('android-jvm').fetch('steps').find { |step| step['name'] == 'Restore Gradle dependency downloads' }

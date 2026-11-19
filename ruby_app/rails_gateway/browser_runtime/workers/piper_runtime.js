@@ -1,5 +1,5 @@
 // One immutable ONNX session over installed model bytes. Port of
-// web/src/services/BrowserPiperRuntime.ts. ONNX Runtime Web and the
+// the former React client's BrowserPiperRuntime.ts (removed in the Rails cutover). ONNX Runtime Web and the
 // phonemizer are imported as native ES modules from the sibling tts/ subtree
 // (ADR R-02); it never fetches weights: models come only from OPFS piper/.
 import { env, InferenceSession, Tensor } from "../tts/ort.wasm.min.mjs"

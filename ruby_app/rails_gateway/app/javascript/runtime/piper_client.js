@@ -1,5 +1,5 @@
 // Page-side client of the Piper module worker. Port of
-// web/src/services/BrowserPiper.ts: one segment at a time, a deadline per
+// the former React client's BrowserPiper.ts (removed in the Rails cutover): one segment at a time, a deadline per
 // segment, and cancellation by terminating the worker so no late callback
 // from a retired worker can resolve a newer request. The worker speaks the
 // version 2 message contract shared with the React worker.

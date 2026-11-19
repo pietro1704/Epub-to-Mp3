@@ -7,10 +7,11 @@ class RepositoryContentTest < ActiveSupport::TestCase
     assert_empty weights
   end
 
-  test "the footer version matches the React client while it exists" do
-    react_manifest = Rails.root.join("../../web/package.json")
-    skip "web/ is not part of this checkout" unless react_manifest.file?
+  test "the footer version matches the product version in the root Cargo.toml" do
+    cargo = Rails.root.join("../../Cargo.toml").read
+    product = cargo[/^\[workspace\.package\][^\[]*?^version = "([^"]+)"/m, 1]
 
-    assert_equal JSON.parse(react_manifest.read).fetch("version"), Rails.root.join("VERSION").read.strip
+    refute_nil product
+    assert_equal product, Rails.root.join("VERSION").read.strip
   end
 end

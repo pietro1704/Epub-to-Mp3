@@ -1,6 +1,7 @@
-// Durable browser job storage. Port of web/src/services/BrowserJobStore.ts.
+// Durable browser job storage. Port of the former React client's BrowserJobStore.ts (removed in the Rails cutover).
 // The database name, version, store name and key path are shared with the
-// React client (ADR 3.4) and must not change while React can be deployed.
+// former React client (ADR 3.4); browsers that used it keep their stored jobs,
+// so these must not change.
 
 export const JOB_DATABASE = "ebook-tts.jobs.v1"
 export const JOB_DATABASE_VERSION = 1

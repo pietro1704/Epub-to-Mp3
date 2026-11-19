@@ -1,5 +1,5 @@
 // Local-only, bounded timing diagnostics of reader-open, progressive-playback
-// and seek journeys (P-44). Port of web/src/services/LatencyObservation.ts
+// and seek journeys (P-44). Port of the former React client's LatencyObservation.ts (removed in the Rails cutover)
 // with the same vocabulary and JSON shape, so evidence from both clients can
 // be compared. No job id, text, account, URL or other listener data is kept.
 

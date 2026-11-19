@@ -56,14 +56,11 @@ cargo fmt --all -- --check
 # Verification must not install a legacy Apple runtime as a side effect.
 # Explicit setup/build tasks own dependency installation and artifact generation.
 
-echo 'Web tests...'
+echo 'Rails web tests...'
 mise run test
 
 echo 'Rust workspace tests...'
 cargo test --workspace
-
-echo 'Web production build...'
-(cd web && npm run build)
 
 echo 'Repository hooks and host workflow gate...'
 mise run hooks-test

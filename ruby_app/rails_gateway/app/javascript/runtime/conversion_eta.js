@@ -1,7 +1,7 @@
 // Client-side ETA of a running job. Port of estimateEtaSeconds,
 // estimateWordsBasedEtaSeconds and resolveCurrentCharsPerSecond from
-// web/src/hooks/conversion_eta.ts and of the duration part of
-// web/src/utils/formatEta.ts. The adaptive health tolerances of that file
+// the former React client's conversion_eta.ts and of the duration part of
+// its formatEta.ts (removed in the Rails cutover). The adaptive health tolerances of that file
 // served the HTTP backend only and are not carried over.
 
 /**

@@ -7,9 +7,10 @@ those manifests, not a duplicated Python-first installation list.
 
 - Apple: follow the [native guide](../../../ios/EpubToMp3/README.md) and
   [macOS validation](../../agents/macos-validation.md), reusing matching artifacts.
-- Browser: follow [web/README.md](../../../web/README.md); with existing
-  dependencies, `mise exec -- npm run dev` in `web/` starts Vite. Rust/WASM and
-  TTS assets must match the current source.
+- Browser: follow the [Rails web README](../../../ruby_app/rails_gateway/README.md);
+  `mise run rails:web:runtime-build` generates the Rust/WASM and TTS runtime tree
+  and `mise run rails:web:test` runs the tests. The tree must match the current
+  source; it is never committed.
 - CLI: [CLI and Web](CLI-and-Web.md) describes the Rust `convert` task.
 - Flutter: follow [flutter_app/README.md](../../../flutter_app/README.md) and
   target-platform prerequisites; Android work is currently paused.
