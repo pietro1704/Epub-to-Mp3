@@ -278,3 +278,27 @@ async fn models_are_listed_without_installing_and_unknown_models_are_refused() {
         "listing or refusing a model must not create the model store"
     );
 }
+
+#[tokio::test]
+async fn server_serves_the_api_only_and_no_static_web_bundle() {
+    let root = TestRoot::new();
+    let config = root.state().config;
+    let page = http_fixture_request(
+        config.clone(),
+        b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+    )
+    .await;
+    assert!(
+        page.starts_with("HTTP/1.1 404"),
+        "unexpected response: {page}"
+    );
+    let asset = http_fixture_request(
+        config,
+        b"GET /assets/app.js HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+    )
+    .await;
+    assert!(
+        asset.starts_with("HTTP/1.1 404"),
+        "unexpected response: {asset}"
+    );
+}
