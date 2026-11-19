@@ -8,7 +8,7 @@ import Foundation
 /// This type is not wired to launch: the Download writer and the playback and
 /// TOC readers still use the legacy layout, so running it at launch would only
 /// duplicate audio. It is the tested seam the cutover builds on.
-struct LegacyAudioMigrationCoordinator: Sendable {
+struct LegacyAudioMigrationCoordinator {
     struct Book: Equatable, Sendable {
         let id: String
         let title: String
