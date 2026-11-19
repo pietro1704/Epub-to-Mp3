@@ -18,8 +18,9 @@ extension AudioPlayerStreamingTests {
         }
         let firstURL = root.appendingPathComponent("0001-first.mp3")
         let secondURL = root.appendingPathComponent("0002-second.mp3")
-        try fakeMP3().write(to: firstURL)
-        try fakeMP3().write(to: secondURL)
+        // Completed chapters are validated by Rust before playback.
+        try CompletedMP3Fixture.data().write(to: firstURL)
+        try CompletedMP3Fixture.data().write(to: secondURL)
 
         let pending = JobSnapshot(
             jobId: jobID, state: "running", bookTitle: "Rust stream", bookAuthor: "Author",
@@ -85,7 +86,7 @@ extension AudioPlayerStreamingTests {
         let player = AudioPlayer()
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("manual-rust-\(UUID().uuidString).mp3")
-        try fakeMP3().write(to: fileURL)
+        try CompletedMP3Fixture.data().write(to: fileURL)
         defer {
             player.stop()
             try? FileManager.default.removeItem(at: fileURL)
@@ -110,10 +111,15 @@ extension AudioPlayerStreamingTests {
     }
 
     @MainActor
-    func testUpdateSnapshotBuildsQueueWhenFirstPlayableChapterArrives() {
-        let player = AudioPlayer(backendBaseURL: URL(string: "https://example.com")!)
+    func testUpdateSnapshotBuildsQueueWhenFirstPlayableChapterArrives() throws {
+        // Since #1197 there is no remote backend: a completed chapter is a
+        // local file that Rust validates before it can be queued.
+        let audio = try CompletedMP3Fixture.write(named: "ch0")
+        defer { try? FileManager.default.removeItem(at: audio) }
+        let player = AudioPlayer()
+        defer { player.stop() }
         let pending = snapshot(chapters: [chapter(index: 0, url: nil)], state: "running")
-        let playable = snapshot(chapters: [chapter(index: 0, url: "/audio/ch0.mp3")], state: "running")
+        let playable = snapshot(chapters: [chapter(index: 0, url: audio.path)], state: "running")
 
         player.play(snapshot: pending, startingAt: 0)
         XCTAssertFalse(player.isPlaying)
@@ -126,10 +132,13 @@ extension AudioPlayerStreamingTests {
     }
 
     @MainActor
-    func testResumeBeforeFirstPlayableChapterAutoplaysWhenSnapshotArrives() {
-        let player = AudioPlayer(backendBaseURL: URL(string: "https://example.com")!)
+    func testResumeBeforeFirstPlayableChapterAutoplaysWhenSnapshotArrives() throws {
+        let audio = try CompletedMP3Fixture.write(named: "ch2")
+        defer { try? FileManager.default.removeItem(at: audio) }
+        let player = AudioPlayer()
+        defer { player.stop() }
         let pending = snapshot(chapters: [chapter(index: 2, url: nil)], state: "running")
-        let playable = snapshot(chapters: [chapter(index: 2, url: "/audio/ch2.mp3")], state: "running")
+        let playable = snapshot(chapters: [chapter(index: 2, url: audio.path)], state: "running")
 
         player.play(snapshot: pending, startingAt: 2)
         player.resume()

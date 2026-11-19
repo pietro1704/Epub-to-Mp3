@@ -69,9 +69,11 @@ final class RustConversionCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testStreamingIntentStartsWhenRustPublishesPlayableChapter() {
+    func testStreamingIntentStartsWhenRustPublishesPlayableChapter() throws {
         let jobID = UUID().uuidString
-        let audioURL = FileManager.default.temporaryDirectory.appendingPathComponent("stream-test.mp3")
+        // The chapter file must exist and pass Rust's completed-audio check.
+        let audioURL = try CompletedMP3Fixture.write(named: "stream-test")
+        defer { try? FileManager.default.removeItem(at: audioURL) }
         let player = AudioPlayer()
         let pending = JobSnapshot(
             jobId: jobID, state: "running", bookTitle: "The Lord of the Rings",
