@@ -256,11 +256,12 @@ final class LibraryBookRemovalCharacterizationTests: XCTestCase {
         return view.subviews.contains { containsText(text, in: $0) }
     }
 
-    private func waitUntil(_ predicate: () -> Bool) async {
+    private func waitUntil(_ predicate: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
         for _ in 0..<250 {
             if predicate() { return }
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
+        XCTFail("Timed out waiting for the removal to finish", file: file, line: line)
     }
 }
 #endif

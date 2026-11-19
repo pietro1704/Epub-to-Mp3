@@ -1,7 +1,10 @@
 import XCTest
 @testable import EpubToMp3
 
-/// Exercises the shared removal sequence on isolated store roots.
+/// Exercises the shared removal sequence. The Rust output and local-audio
+/// stores use temporary roots; the legacy download root is redirected through
+/// `AudiobookDownloadStorage.rootOverrideForTesting`, and the static reader
+/// caches are reached with per-test unique identities.
 @MainActor
 final class LibraryBookRemovalTests: XCTestCase {
     private var root: URL!

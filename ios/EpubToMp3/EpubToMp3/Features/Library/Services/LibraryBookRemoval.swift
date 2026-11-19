@@ -19,7 +19,8 @@ import Foundation
 /// directory remains, as before this sequence was shared.
 ///
 /// A failure in step 1 is thrown before anything in steps 2–3 runs, so the
-/// book stays in the library and the listener can retry. The source file the
+/// book stays in the library and the listener can retry. Steps 2–3 and the
+/// legacy-download deletion do not report failures; they never did. The source file the
 /// listener imported is never deleted.
 @MainActor
 struct LibraryBookRemoval {
