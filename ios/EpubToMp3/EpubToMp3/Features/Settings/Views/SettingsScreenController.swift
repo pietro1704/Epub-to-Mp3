@@ -353,10 +353,10 @@ final class SettingsScreenController: UITableViewController {
             case .catalog: self?.tableView.reloadData()
             }
         }
-        modelLibrary.onFailure = { [weak self] title, error in
+        modelLibrary.onFailure = { [weak self] title, error, operation in
             guard let self else { return }
             let alert = UIAlertController(title: title,
-                message: AppErrorReporter.message(error, context: #function), preferredStyle: .alert)
+                message: AppErrorReporter.message(error, context: operation), preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
             present(alert, animated: true)
         }

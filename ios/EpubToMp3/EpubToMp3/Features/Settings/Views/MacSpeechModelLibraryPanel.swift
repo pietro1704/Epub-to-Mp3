@@ -84,7 +84,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
                 onSnapshot?(state)
             }
         }
-        modelLibrary.onFailure = { [weak self] title, error in
+        modelLibrary.onFailure = { [weak self] title, error, _ in
             self?.presentFailure(title: title, error: error)
         }
     }

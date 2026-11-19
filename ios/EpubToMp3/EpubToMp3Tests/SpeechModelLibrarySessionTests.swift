@@ -38,7 +38,7 @@ final class SpeechModelLibrarySessionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         var failures: [String] = []
         var changes: [SpeechModelLibrarySession.Change] = []
-        session.onFailure = { title, _ in failures.append(title) }
+        session.onFailure = { title, _, _ in failures.append(title) }
         session.onChange = { changes.append($0) }
         let before = session.state.entries.map(\.identity.modelID)
 
@@ -57,7 +57,7 @@ final class SpeechModelLibrarySessionTests: XCTestCase {
         let (session, root) = try makeSession(reads: SnapshotReads(), requests: InstallRequests(), installFails: true)
         defer { try? FileManager.default.removeItem(at: root) }
         var failures: [String] = []
-        session.onFailure = { title, _ in failures.append(title) }
+        session.onFailure = { title, _, _ in failures.append(title) }
         let target = try entry(in: session)
 
         await session.install(target, acceptedTermsFingerprint: nil).value
@@ -98,7 +98,7 @@ final class SpeechModelLibrarySessionTests: XCTestCase {
         let (session, root) = try makeSession(reads: SnapshotReads(), requests: InstallRequests())
         defer { try? FileManager.default.removeItem(at: root) }
         var failures: [String] = []
-        session.onFailure = { title, _ in failures.append(title) }
+        session.onFailure = { title, _, _ in failures.append(title) }
         let target = try entry(in: session)
         await session.remove(target, configuredSelections: [.defaultPiper]).value
 

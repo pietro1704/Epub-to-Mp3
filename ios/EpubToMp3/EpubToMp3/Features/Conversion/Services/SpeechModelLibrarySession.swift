@@ -24,8 +24,9 @@ final class SpeechModelLibrarySession {
     var state: SpeechModelLibraryViewState
     private(set) var installEvents: [String: SpeechModelInstallEvent] = [:]
     var onChange: ((Change) -> Void)?
-    /// A failed confirmed operation, with the title its alert uses.
-    var onFailure: ((_ title: String, _ error: Error) -> Void)?
+    /// A failed confirmed operation: the title its alert uses and the
+    /// operation name for `AppErrorReporter` diagnostics.
+    var onFailure: ((_ title: String, _ error: Error, _ operation: String) -> Void)?
 
     private var reloadTask: Task<Void, Never>?
     private var observationTasks: [String: Task<Void, Never>] = [:]
@@ -129,16 +130,16 @@ final class SpeechModelLibrarySession {
                 _ = try await client.install(modelID: modelID, acceptedTermsFingerprint: acceptedTermsFingerprint)
                 guard self != nil else { return }
                 do {
-                    let snapshot = try await client.snapshot()
-                    self?.state = SpeechModelLibraryViewState(snapshot: snapshot)
-                    self?.observeInstalls(in: snapshot.entries)
+                    // Replaces a pending older reload so it cannot restore the pre-install catalogue.
+                    self?.show(try await client.snapshot())
+                    return
                 } catch {
                     self?.logRefreshFailure(error)
                 }
             } catch is CancellationError {
                 // Cancellation is already rendered by the operation event.
             } catch {
-                self?.onFailure?(title, error)
+                self?.onFailure?(title, error, "install(_:acceptedTermsFingerprint:)")
             }
             self?.onChange?(.catalog)
         }
@@ -157,7 +158,7 @@ final class SpeechModelLibrarySession {
                 state = SpeechModelLibraryViewState(snapshot: snapshot)
                 onChange?(.catalog)
             } catch {
-                onFailure?(L10n.string("settings.modelRemove.failed"), error)
+                onFailure?(L10n.string("settings.modelRemove.failed"), error, "remove(_:configuredSelections:)")
             }
         }
     }
