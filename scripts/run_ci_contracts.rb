@@ -19,6 +19,7 @@ module CiContracts
     test_runner_acquisition_retry.rb
     test_convert_entrypoint.rb test_version_source.rb test_espeak_runtime_assets.rb
     test_select_ios_simulator.rb test_seed_ios_development_book.rb test_select_android_target.rb
+    test_apple_latency_evidence.rb test_performance_evidence_gate.rb test_performance_evidence_sources.rb
   ]).uniq.freeze
   NODE_SUITES = %w[
     .github/scripts/rust-cache-identity.test.cjs
@@ -33,7 +34,6 @@ module CiContracts
   ].freeze
   PYTHON_SUITES = %w[
     scripts/test_capture_native_test_metadata.py
-    scripts/test_apple_latency_evidence.py
     scripts/test_codeql_workflow.py
     scripts/test_development_run_tasks.py
     scripts/test_ios_device_mise_tasks.py
@@ -41,8 +41,6 @@ module CiContracts
     scripts/test_mac_run_task.py
     scripts/test_mise_python_environment.py
     scripts/test_mobile_file_associations.py
-    scripts/test_performance_evidence_gate.py
-    scripts/test_performance_evidence_sources.py
     scripts/test_sync_hf_workflow.py
     scripts/test_widget_embed_config.py
   ].freeze

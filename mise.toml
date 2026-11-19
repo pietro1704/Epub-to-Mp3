@@ -531,7 +531,7 @@ description = "Validate recorded cross-client cold/warm journey evidence"
 run = """
 #!/bin/bash
 set -euo pipefail
-mise exec -- python scripts/performance_evidence_gate.py "$@"
+mise exec -- ruby scripts/performance_evidence_gate.rb "$@"
 """
 
 [tasks."xcode:generate"]
