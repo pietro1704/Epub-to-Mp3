@@ -21,7 +21,17 @@
 #ifndef GETOPT_H_COMPAT_SHIM
 #define GETOPT_H_COMPAT_SHIM
 
-#if __has_include_next(<getopt.h>)
+/* MSVC does not define __has_include_next, and toolset 19.52 and later reject the
+ * unknown macro inside #if (C7780) instead of reading it as 0. Test for the
+ * macro first and nest the real test, so that an undefined macro falls through
+ * to the fallback below, exactly as it used to. */
+#if defined(__has_include_next)
+#	if __has_include_next(<getopt.h>)
+#		define ESPEAK_COMPAT_GETOPT_NEXT 1
+#	endif
+#endif
+
+#if defined(ESPEAK_COMPAT_GETOPT_NEXT)
 #pragma GCC system_header // Silence "warning: #include_next is a GCC extension"
 #include_next <getopt.h>
 #else
