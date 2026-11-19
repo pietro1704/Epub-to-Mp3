@@ -91,7 +91,7 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
     }
 
     func testFaberIsAvailableAsAnExplicitOfflineProvider() {
-        XCTAssertEqual(AudioEnginePreference.supportedPreferences, [.piper, .system, .edge])
+        XCTAssertEqual(TtsSelection.selectableEngines, ["piper", "system", "edge"])
         XCTAssertEqual(ConversionOptions.selectedEngine(TtsSelection.piperEngine).engine, "piper")
         XCTAssertEqual(ConversionOptions.selectedEngine(TtsSelection.piperEngine).modelID, "pt_BR-faber-medium")
     }

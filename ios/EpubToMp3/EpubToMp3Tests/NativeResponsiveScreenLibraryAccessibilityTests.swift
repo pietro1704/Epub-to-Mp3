@@ -59,7 +59,7 @@ extension NativeResponsiveScreenTests {
     func testMacSecondaryVoiceMenuValidationKeepsPrimaryDisabled() throws {
         let settings = AppSettings(defaults: defaults)
         settings.allowOnlineAudioFallback = true
-        settings.secondaryAudioEngine = nil
+        settings.selectSecondaryNarration(nil)
         // Since #1145 the narration popups live in the pushed Voice models
         // detail; MacVoiceModelSettingsNavigationTests covers the push itself.
         let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults),
@@ -75,11 +75,11 @@ extension NativeResponsiveScreenTests {
         let secondary = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "settings.tts.secondary" })
         let menu = try XCTUnwrap(secondary.menu)
         menu.update()
-        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: AudioEnginePreference.piper.displayName)).isEnabled,
+        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Piper")).isEnabled,
                        "AppKit menu validation must preserve the primary-voice exclusion.")
         XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
 
-        secondary.selectItem(withTitle: AudioEnginePreference.piper.displayName)
+        secondary.selectItem(withTitle: "Piper")
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         XCTAssertNil(settings.ttsPreferences.secondary, "A stale or programmatic action must not persist a duplicate voice.")
         XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
@@ -88,7 +88,7 @@ extension NativeResponsiveScreenTests {
         XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "edge")
 
         let captured = settings.conversionOptions
-        secondary.selectItem(withTitle: AudioEnginePreference.piper.displayName)
+        secondary.selectItem(withTitle: "Piper")
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.secondary?.engine, "edge")
         XCTAssertEqual(secondary.titleOfSelectedItem, "Edge")
@@ -107,7 +107,7 @@ extension NativeResponsiveScreenTests {
         menu.update()
         XCTAssertNil(settings.ttsPreferences.secondary, "The new primary voice cannot remain the secondary voice.")
         XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
-        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: AudioEnginePreference.piper.displayName)).isEnabled,
+        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Piper")).isEnabled,
                        "Changing the primary cannot make an uninstalled model selectable.")
         XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
     }
@@ -118,7 +118,7 @@ extension NativeResponsiveScreenTests {
     func testMacConvertScreenTtsOverrideStartsStrictAndKeepsInheritedPreferences() throws {
         let settings = AppSettings(defaults: defaults)
         settings.allowOnlineAudioFallback = true
-        settings.secondaryAudioEngine = .edge
+        settings.selectSecondaryNarration(.edgeDefault)
         let original = settings.ttsPreferences
         var conversions = 0
         let model = ConvertViewModel(session: ManualConversionSession(executor: { _, _, _, _, _, _, _ in
@@ -140,7 +140,7 @@ extension NativeResponsiveScreenTests {
         XCTAssertEqual(choice.titleOfSelectedItem, "Edge")
         XCTAssertEqual(secondary.state, .off, "An override must begin strict even when defaults have a secondary.")
         XCTAssertFalse(secondary.isEnabled, "The saved Edge secondary duplicates this manual primary.")
-        choice.selectItem(withTitle: AudioEnginePreference.piper.displayName)
+        choice.selectItem(withTitle: "Piper")
         XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
         XCTAssertTrue(secondary.isEnabled)
         secondary.performClick(nil)

@@ -1,18 +1,5 @@
 import Foundation
 
-enum AudioEnginePreference: String, CaseIterable, Identifiable {
-    case edge
-    case piper
-    case system
-
-    var id: String { rawValue }
-    var displayName: String { TtsSelection.displayName(forEngine: rawValue) ?? rawValue }
-
-    static var supportedPreferences: [AudioEnginePreference] {
-        TtsSelection.selectableEngines.compactMap(AudioEnginePreference.init(rawValue:))
-    }
-}
-
 /// Immutable selections transported to the shared Rust policy resolver.
 struct TtsSelection: Codable, Sendable, Equatable {
     var engine: String
@@ -20,7 +7,6 @@ struct TtsSelection: Codable, Sendable, Equatable {
     var voice: String?
     var session: TtsSessionSelection? = nil
     enum CodingKeys: String, CodingKey { case engine, voice, session; case modelID = "model_id" }
-    static func selected(_ engine: AudioEnginePreference) -> Self { engineDefault(engine.rawValue) }
     func representsSameRequest(as other: Self) -> Bool {
         guard engine == other.engine, modelID == other.modelID, voice == other.voice else { return false }
         guard let session, let otherSession = other.session else {

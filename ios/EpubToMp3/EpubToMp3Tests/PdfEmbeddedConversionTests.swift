@@ -72,8 +72,8 @@ final class PdfEmbeddedConversionTests: XCTestCase {
         library.update(book)
         try await library.flushPersistence()
         let settings = AppSettings(defaults: defaults)
-        settings.audioEngine = .system
-        settings.secondaryAudioEngine = nil
+        settings.selectPrimaryNarration(.systemDefault)
+        settings.selectSecondaryNarration(nil)
         let output = RustConversionOutputStore(root: root.appendingPathComponent("outputs"), notificationCenter: NotificationCenter())
         let completed = expectation(description: "Visible PDF conversion completes")
         var converted: RustConversionCoordinator.Result?

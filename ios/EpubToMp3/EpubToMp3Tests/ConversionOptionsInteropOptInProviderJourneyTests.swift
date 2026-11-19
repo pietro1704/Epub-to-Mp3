@@ -18,7 +18,7 @@ extension ConversionOptionsInteropTests {
         guard ProcessInfo.processInfo.environment["APP_FOUNDATION_LIVE_EDGE"] == "1" else {
             throw XCTSkip("Enable APP_FOUNDATION_LIVE_EDGE=1 for the visible macOS conversion journey.")
         }
-        try await exerciseMacConvertButton(engine: .edge)
+        try await exerciseMacConvertButton(engine: TtsSelection.edgeEngine)
     }
 #endif
 
@@ -28,7 +28,7 @@ extension ConversionOptionsInteropTests {
         guard ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" else {
             throw XCTSkip("Enable EPUB2MP3_NATIVE_TTS_TEST=1 for the visible installed-voice conversion journey.")
         }
-        try await exerciseMacConvertButton(engine: .system)
+        try await exerciseMacConvertButton(engine: TtsSelection.systemEngine)
     }
 #endif
 
@@ -152,7 +152,7 @@ extension ConversionOptionsInteropTests {
             chapterStart: 0,
             chapterEnd: 0,
             options: ConversionOptions(
-                engine: AudioEnginePreference.piper.rawValue,
+                engine: TtsSelection.piperEngine,
                 language: "pt-BR",
                 modelsRoot: root.path,
                 modelID: "pt_BR-faber-medium",

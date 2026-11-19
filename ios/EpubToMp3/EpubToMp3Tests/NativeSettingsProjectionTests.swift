@@ -10,31 +10,6 @@ final class NativeSettingsProjectionTests: XCTestCase {
         try body(defaults)
     }
 
-    func testMigrationDistinguishesFreshDefaultsFromAnExplicitSecondaryOptOut() {
-        withDefaults { defaults in
-            let fresh = SpeechPreferenceMigration(defaults: defaults)
-            XCTAssertEqual(fresh.primary, .piper)
-            XCTAssertEqual(fresh.secondary, .system)
-            XCTAssertFalse(fresh.allowOnlineFallback)
-            defaults.removeObject(forKey: "secondaryAudioEngine")
-            let explicitNone = SpeechPreferenceMigration(defaults: defaults)
-            XCTAssertEqual(explicitNone.primary, .piper)
-            XCTAssertNil(explicitNone.secondary)
-            XCTAssertNil(defaults.object(forKey: "secondaryAudioEngine"))
-        }
-    }
-
-    func testMigrationRejectsUnconsentedOnlineSecondaryWithoutChangingPrimary() {
-        withDefaults { defaults in
-            defaults.set("piper", forKey: AppSettings.audioEngineKey)
-            defaults.set("edge", forKey: "secondaryAudioEngine")
-            let migrated = SpeechPreferenceMigration(defaults: defaults)
-            XCTAssertEqual(migrated.primary, .piper)
-            XCTAssertNil(migrated.secondary)
-            XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
-        }
-    }
-
     func testAutomaticSystemFallbackOptOutPersistsWithoutChangingSelectedVoices() {
         withDefaults { defaults in
             let settings = AppSettings(defaults: defaults)

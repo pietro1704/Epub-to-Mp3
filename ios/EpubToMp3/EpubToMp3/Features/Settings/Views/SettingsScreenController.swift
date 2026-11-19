@@ -211,12 +211,12 @@ final class SettingsScreenController: UITableViewController {
             message: L10n.string("settings.audioEngineChoiceDescription"),
             preferredStyle: .actionSheet
         )
-        for engine in AudioEnginePreference.supportedPreferences where engine != .piper {
-            let selection = TtsSelection.selected(engine)
+        for engine in TtsSelection.selectableEngines where engine != TtsSelection.piperEngine {
+            let selection = TtsSelection.engineDefault(engine)
             alert.addAction(UIAlertAction(
                 title: speechModelState.displayName(for: selection), style: .default
             ) { [weak self] _ in
-                self?.settings.audioEngine = engine
+                self?.settings.selectPrimaryNarration(selection)
                 self?.tableView.reloadData()
             })
         }
@@ -237,15 +237,17 @@ final class SettingsScreenController: UITableViewController {
             self?.settings.selectSecondaryNarration(nil)
             self?.tableView.reloadData()
         })
-        for engine in settings.selectableSecondaryAudioEngines where engine != .piper {
-            alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
-                guard let self, self.settings.selectableSecondaryAudioEngines.contains(engine) else { return }
-                self.settings.secondaryAudioEngine = engine
+        for engine in settings.selectableSecondaryEngines where engine != TtsSelection.piperEngine {
+            alert.addAction(UIAlertAction(title: TtsSelection.displayName(forEngine: engine) ?? engine,
+                                          style: .default) { [weak self] _ in
+                guard let self, self.settings.selectableSecondaryEngines.contains(engine) else { return }
+                self.settings.selectSecondaryNarration(.engineDefault(engine))
                 self.tableView.reloadData()
             })
         }
         for choice in speechModelState.selectableChoices
-            where !choice.selection.representsSameRequest(as: settings.ttsPreferences.primary) {
+            where choice.selection.canBeSecondary(to: settings.primaryTtsSelection,
+                                                  allowOnlineFallback: settings.allowOnlineAudioFallback) {
             alert.addAction(UIAlertAction(title: choice.title, style: .default) { [weak self] _ in
                 self?.settings.selectSecondaryNarration(choice.selection)
                 self?.tableView.reloadData()

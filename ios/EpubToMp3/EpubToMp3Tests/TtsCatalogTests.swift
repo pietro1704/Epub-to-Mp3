@@ -57,8 +57,8 @@ final class TtsCatalogTests: XCTestCase {
         settings.selectPrimaryNarration(second)
         XCTAssertEqual(captured.primary, first)
         XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.primary, second)
-        settings.audioEngine = .system
-        XCTAssertNil(settings.primaryTtsSelection)
+        settings.selectPrimaryNarration(.systemDefault)
+        XCTAssertEqual(settings.primaryTtsSelection, .systemDefault)
         XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.primary.engine, "system")
     }
 }

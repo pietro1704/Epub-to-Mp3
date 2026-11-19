@@ -316,10 +316,10 @@ final class MacSettingsViewController: NSViewController {
 
     private func rebuildNarrationChoices() {
         let catalogChoices = speechModelState.selectableChoices.map(\.selection)
-        narrationSelections = AudioEnginePreference.supportedPreferences.flatMap { engine -> [TtsSelection] in
-            let matching = catalogChoices.filter { $0.engine == engine.rawValue }
+        narrationSelections = TtsSelection.selectableEngines.flatMap { engine -> [TtsSelection] in
+            let matching = catalogChoices.filter { $0.engine == engine }
             if !matching.isEmpty { return matching }
-            return engine == .piper ? [] : [.selected(engine)]
+            return engine == TtsSelection.piperEngine ? [] : [.engineDefault(engine)]
         }
         for selection in settings.configuredNarrationSelections
             where !narrationSelections.contains(where: { SpeechModelLibraryViewState.sameChoice($0, selection) }) {

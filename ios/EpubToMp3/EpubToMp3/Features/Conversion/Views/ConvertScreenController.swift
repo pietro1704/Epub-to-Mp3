@@ -73,7 +73,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     override func viewDidLoad() {
         super.viewDidLoad()
         viewModel.inheritedPreferences = settings.ttsPreferences
-        if viewModel.usesPreferences { viewModel.engine = settings.audioEngine.rawValue }
+        if viewModel.usesPreferences { viewModel.engine = settings.primaryEngine }
         viewModel.modelsRoot = LocalSpeechModelReadiness.ttsModelsRoot()?.path
         tableView.cellLayoutMarginsFollowReadableWidth = true
         tableView.rowHeight = UITableView.automaticDimension
@@ -93,7 +93,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         viewModel.inheritedPreferences = settings.ttsPreferences
-        if viewModel.usesPreferences { viewModel.engine = settings.audioEngine.rawValue }
+        if viewModel.usesPreferences { viewModel.engine = settings.primaryEngine }
         viewModel.modelsRoot = LocalSpeechModelReadiness.ttsModelsRoot()?.path
         tableView.reloadSections(IndexSet(integer: Section.engine.rawValue), with: .none)
     }
@@ -191,10 +191,11 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
                 self?.viewModel.usesPreferences = true
                 self?.reloadData()
             })
-            for engine in AudioEnginePreference.supportedPreferences {
-                alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
+            for engine in TtsSelection.selectableEngines {
+                alert.addAction(UIAlertAction(title: TtsSelection.displayName(forEngine: engine) ?? engine,
+                                              style: .default) { [weak self] _ in
                     self?.viewModel.usesPreferences = false
-                    self?.viewModel.engine = engine.rawValue
+                    self?.viewModel.engine = engine
                     self?.viewModel.allowSecondary = false
                     self?.reloadData()
                 })
@@ -239,7 +240,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
             var content = cell.defaultContentConfiguration()
             content.text = L10n.string("settings.audioEngineChoice")
-            content.secondaryText = viewModel.usesPreferences ? L10n.string("convert.usePreferences") : AudioEnginePreference(rawValue: viewModel.engine)?.displayName
+            content.secondaryText = viewModel.usesPreferences ? L10n.string("convert.usePreferences") : TtsSelection.displayName(forEngine: viewModel.engine)
             cell.accessibilityIdentifier = "convert.tts.primary"
             cell.accessibilityValue = content.secondaryText
             cell.contentConfiguration = content
@@ -267,7 +268,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             cell.onTextChanged = { [weak self] text in
                 guard let self else { return }
                 if self.viewModel.usesPreferences {
-                    self.viewModel.engine = self.viewModel.inheritedPreferences?.primary.engine ?? self.settings.audioEngine.rawValue
+                    self.viewModel.engine = self.viewModel.inheritedPreferences?.primary.engine ?? self.settings.primaryEngine
                     self.viewModel.allowSecondary = false
                 }
                 self.viewModel.voice = text

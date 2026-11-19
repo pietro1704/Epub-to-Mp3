@@ -16,7 +16,7 @@ final class ConversionOptionsInteropTests: XCTestCase {
 
 
     @MainActor
-    func exerciseMacConvertButton(engine: AudioEnginePreference) async throws {
+    func exerciseMacConvertButton(engine: String) async throws {
         let activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.regular)
         defer { NSApp.setActivationPolicy(activationPolicy) }
@@ -29,15 +29,15 @@ final class ConversionOptionsInteropTests: XCTestCase {
         let library = LibraryStore(defaults: defaults, importDirectory: root)
         let book = try library.importBook(from: source)
         let settings = AppSettings(defaults: defaults)
-        settings.audioEngine = engine
-        settings.secondaryAudioEngine = nil
+        settings.selectPrimaryNarration(.engineDefault(engine))
+        settings.selectSecondaryNarration(nil)
         let completed = expectation(description: "The real conversion submitted by the macOS button finishes")
         var converted: RustConversionCoordinator.Result?
         var conversionError: String?
         let outputStore = RustConversionOutputStore(root: root.appendingPathComponent("outputs"), notificationCenter: NotificationCenter())
         let model = ConvertViewModel(session: ManualConversionSession(executor: { url, job, first, last, options, progress, chapter in
             defer { completed.fulfill() }
-            XCTAssertEqual(options?.ttsPreferences?.primary.engine, engine.rawValue)
+            XCTAssertEqual(options?.ttsPreferences?.primary.engine, engine)
             XCTAssertNil(options?.ttsPreferences?.secondary)
             do {
                 let result = try await RustConversionCoordinator(outputStore: outputStore).convert(
@@ -53,7 +53,7 @@ final class ConversionOptionsInteropTests: XCTestCase {
         let controller = MacConvertScreenController(settings: settings, library: library, viewModel: model)
         let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 1000, height: 700),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "\(engine.displayName) conversion validation — one chapter, no playback"
+        window.title = "\(TtsSelection.displayName(forEngine: engine) ?? engine) conversion validation — one chapter, no playback"
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 1000, height: 700)
         window.contentViewController = controller
@@ -92,18 +92,18 @@ final class ConversionOptionsInteropTests: XCTestCase {
         XCTAssertNil(conversionError)
         let result = try XCTUnwrap(converted, conversionError ?? "No conversion result")
         let snapshot = try result.snapshot()
-        XCTAssertEqual(snapshot.engine, engine.rawValue, "No fallback may hide failure of the selected primary voice.")
-        if engine == .edge { XCTAssertEqual(snapshot.voice, "pt-BR-FranciscaNeural") }
+        XCTAssertEqual(snapshot.engine, engine, "No fallback may hide failure of the selected primary voice.")
+        if engine == TtsSelection.edgeEngine { XCTAssertEqual(snapshot.voice, "pt-BR-FranciscaNeural") }
         let chapter = try XCTUnwrap(snapshot.chapterProgress?.first)
         let audio = try AVAudioFile(forReading: URL(fileURLWithPath: try XCTUnwrap(chapter.downloadUrl)))
         XCTAssertGreaterThan(audio.length, 0)
-        print("MAC_CONVERT_GUI engine=\(engine.rawValue) job=\(result.jobID) frames=\(audio.length) output=\(result.outputDirectory.path)")
+        print("MAC_CONVERT_GUI engine=\(engine) job=\(result.jobID) frames=\(audio.length) output=\(result.outputDirectory.path)")
         // Allow the Convert screen to record its completed job before closing its window.
         for _ in 0..<40 where library.books.first?.lastJobId == nil {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTAssertNotNil(library.books.first?.lastJobId)
-        if engine == .system {
+        if engine == TtsSelection.systemEngine {
             let notices = descendants(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSTextField }
             XCTAssertFalse(notices.contains { $0.stringValue == L10n.string("conversion.systemVoiceFallback") },
                            "An explicitly selected system primary must not appear as a fallback.")
