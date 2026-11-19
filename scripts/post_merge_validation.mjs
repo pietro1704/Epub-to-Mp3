@@ -6,7 +6,7 @@ const ensure = (condition, message) => { if (!condition) throw new Error(message
 const SHA = /^[a-f0-9]{40}$/;
 export const REQUIRED_VALIDATIONS = Object.freeze([
   'merge', 'ci', 'codeql', 'ffi', 'faber', 'flutter', 'fallback', 'native',
-  'snapshot', 'cli', 'linux', 'isolation', 'audit', 'ruby',
+  'snapshot', 'rails-image', 'cli', 'linux', 'isolation', 'audit', 'ruby',
 ]);
 
 export function verifyMergeIdentity({ repo, sha, event, ref, master, comparison, pulls }) {

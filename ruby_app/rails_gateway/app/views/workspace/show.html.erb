@@ -1,0 +1,9 @@
+<div class="workspace" data-controller="help-drawer" data-action="keydown.esc@window->help-drawer#close">
+  <%= render "workspace/hero" %>
+  <%= render "workspace/help_toggle" %>
+  <%= render "workspace/tabs" %>
+  <%= render "workspace/help_drawer" %>
+</div>
+<div class="conversion-notifications" data-controller="notifications"
+     data-notifications-strings-value="<%= t("flow").slice(:notificationErrorTitle, :notificationErrorBody, :notificationCancelTitle, :notificationCancelBody).to_json %>"
+     data-notifications-space-value="<%= request.host.end_with?(".hf.space", ".huggingface.co") || request.host == "huggingface.co" %>"></div>

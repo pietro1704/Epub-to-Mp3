@@ -1,0 +1,12 @@
+<section class="downloads-panel">
+  <div data-downloads-target="context" hidden>
+    <p data-downloads-target="contextTitle"></p>
+    <button type="button" data-action="downloads#back"><%= t("downloadLibrary.back") %></button>
+  </div>
+  <p data-downloads-target="placeholder"><%= t("downloadLibrary.placeholder") %></p>
+  <h3 data-downloads-target="title" hidden></h3>
+  <ol data-downloads-target="chapters"></ol>
+  <%= render "downloads/share" %>
+  <button type="button" data-downloads-target="reset" data-action="downloads#reset"><%= t("downloadLibrary.reset") %></button>
+  <p role="alert" hidden data-downloads-target="error"></p>
+</section>

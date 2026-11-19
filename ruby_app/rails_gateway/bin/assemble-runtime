@@ -1,0 +1,36 @@
+#!/usr/bin/env ruby
+# Publishes already-built runtime files as public/runtime/<id>/ and writes
+# config/runtime_manifest.json. It does not compile anything:
+#
+#   bin/assemble-runtime --wasm DIR [--tts DIR] [--workers DIR]
+#
+# DIR for --wasm holds converter_wasm.js and converter_wasm_bg.wasm as written
+# by wasm-bindgen (see bin/build-runtime-wasm).
+require "optparse"
+require_relative "../lib/converter_runtime/assembler"
+
+gateway_root = File.expand_path("..", __dir__)
+sources = {}
+output_root = File.join(gateway_root, "public/runtime")
+manifest_path = File.join(gateway_root, "config/runtime_manifest.json")
+
+parser = OptionParser.new do |options|
+  options.banner = "usage: bin/assemble-runtime --wasm DIR [--tts DIR] [--workers DIR]"
+  %w[wasm tts workers].each do |subtree|
+    options.on("--#{subtree} DIR", "directory published as #{subtree}/") { |directory| sources[subtree] = directory }
+  end
+  options.on("--output-root DIR", "defaults to public/runtime") { |directory| output_root = directory }
+  options.on("--manifest FILE", "defaults to config/runtime_manifest.json") { |file| manifest_path = file }
+end
+
+begin
+  parser.parse!
+  raise OptionParser::MissingArgument, "--wasm" unless sources.key?("wasm")
+
+  runtime_id = ConverterRuntime::Assembler.new(sources: sources, output_root: output_root, manifest_path: manifest_path).call
+  puts "published converter runtime #{runtime_id} in #{output_root}"
+rescue OptionParser::ParseError, ArgumentError => error
+  warn error.message
+  warn parser.banner
+  exit 64
+end

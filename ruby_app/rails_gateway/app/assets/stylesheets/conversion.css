@@ -1,0 +1,100 @@
+/* Conversion workspace: banners, queue, job library, status panel. */
+.saved-batch,
+.active-conversion,
+.batch-queue,
+.job-library,
+.status-panel {
+  display: grid;
+  gap: 0.5rem;
+  margin-block-end: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+}
+
+.saved-batch[hidden],
+.active-conversion[hidden],
+.batch-queue[hidden],
+.job-library[hidden] {
+  display: none;
+}
+
+.saved-batch__warning {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.batch-queue__list,
+.job-library__list,
+.status-panel__log {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.active-conversion__actions,
+.batch-queue__actions,
+.job-library__actions,
+.status-panel__actions,
+.status-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.status-panel__log {
+  max-height: 16rem;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+.status-panel [role="alert"] {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--error-bg);
+  color: var(--error-color);
+}
+
+.book-picker__options {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.hero__progress-bar {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--input-bg);
+  overflow: hidden;
+}
+
+.hero__progress-fill {
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--button-gradient-start), var(--button-gradient-end));
+  transition: width 0.3s ease;
+}
+
+.chapter-progress summary { cursor: pointer; }
+.chapter-progress audio { display: block; max-width: 100%; }
+.chapter-progress .segment { margin-block: 0.75rem; }
+.chapter-progress mark[aria-current=true] { outline: 2px solid currentColor; }
+.chapter-progress .segment[aria-current=true] { border-inline-start: 0.2rem solid currentColor; padding-inline-start: 0.5rem; }
+
+.conversion-notifications {
+  position: fixed;
+  inset-inline-end: 1rem;
+  inset-block-end: 1rem;
+  max-width: min(30rem, calc(100% - 2rem));
+  z-index: 10;
+}
+.conversion-notifications [role=status] {
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  padding: 0.75rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+}

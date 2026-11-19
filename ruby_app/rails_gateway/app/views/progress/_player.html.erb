@@ -1,0 +1,22 @@
+<section class="streaming-player" data-controller="player" hidden
+         aria-label="<%= t("player.title") %>" data-player-strings-value="<%= t("player").to_json %>">
+  <h3><%= t("player.title") %></h3>
+  <button type="button" data-player-target="start" data-action="player#start"><%= t("player.listen") %></button>
+  <div data-player-target="controls" hidden>
+    <button type="button" data-player-target="prev" data-action="player#previous"><%= t("player.previous") %></button>
+    <button type="button" data-player-target="next" data-action="player#next"><%= t("player.next") %></button>
+    <label><%= t("player.jump") %> <select data-player-target="chapter" data-action="player#jump"></select></label>
+    <button type="button" hidden data-player-target="restart" data-action="player#jump"><%= t("player.restart") %></button>
+    <label><%= t("player.speed") %>
+      <select data-player-target="rate" data-action="player#speed">
+        <% [0.75, 1, 1.25, 1.5, 2].each do |rate| %><option value="<%= rate %>"><%= rate %>x</option><% end %>
+      </select>
+    </label>
+    <button type="button" data-action="player#stop"><%= t("player.stop") %></button>
+    <audio controls preload="auto" aria-label="<%= t("player.title") %>" data-player-target="audio"
+           data-action="canplay->player#canPlay playing->player#playing timeupdate->player#timeUpdate ended->player#ended error->player#mediaError"></audio>
+    <output data-player-target="status"></output>
+    <p data-player-target="text" aria-label="<%= t("player.text") %>"></p>
+    <ol data-player-target="chips" aria-label="<%= t("player.segments") %>"></ol>
+  </div>
+</section>

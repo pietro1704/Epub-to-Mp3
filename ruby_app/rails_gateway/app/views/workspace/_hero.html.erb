@@ -1,0 +1,26 @@
+<%# Hidden until a job exists, as the React hero renders nothing while idle (P-05). %>
+<header class="hero hero--active" hidden data-controller="hero" data-hero-strings-value="<%= conversion_strings_json %>">
+  <div class="hero__book">
+    <div class="hero__book-body">
+      <p class="badge badge--muted"><%= t("hero.badge") %></p>
+      <h1 data-hero-target="title"><%= t("status.bookFallbackTitle") %></h1>
+      <p class="hero__author" data-hero-target="author"><%= t("status.bookFallbackAuthor") %></p>
+      <p class="hero__phase"><span data-hero-target="phase"></span> <span data-hero-target="batch"></span></p>
+      <p class="hero__voice" data-hero-target="voice"></p>
+      <div class="hero__progress">
+        <div class="hero__progress-info">
+          <span id="hero-progress-label"><%= t("status.progressLabel") %></span>
+          <strong data-hero-target="percent">—</strong>
+        </div>
+        <div class="hero__progress-bar" role="progressbar" aria-labelledby="hero-progress-label"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-hero-target="bar">
+          <div class="hero__progress-fill" data-hero-target="fill"></div>
+        </div>
+        <div class="hero__progress-info hero__progress-info--eta">
+          <span><%= t("status.etaLabel") %></span>
+          <strong data-hero-target="eta">—</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>

@@ -11,6 +11,8 @@ default = []
 
 [dependencies]
 quick-xml = "0.41"
+scraper = { version = "0.24", default-features = false }
+base64 = "0.22"
 percent-encoding = "2"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

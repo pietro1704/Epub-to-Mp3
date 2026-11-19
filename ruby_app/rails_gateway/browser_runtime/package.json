@@ -1,0 +1,10 @@
+{
+  "name": "epubtomp3-browser-runtime",
+  "private": true,
+  "description": "Pins the browser TTS libraries copied into the generated runtime tree. Not a bundler project.",
+  "type": "module",
+  "dependencies": {
+    "@diffusionstudio/piper-wasm": "1.0.0",
+    "onnxruntime-web": "1.31.1"
+  }
+}

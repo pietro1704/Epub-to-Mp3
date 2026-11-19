@@ -1,0 +1,18 @@
+<section class="chapter-progress" hidden data-controller="chapter-progress" data-action="player:segment@document->chapter-progress#playing"
+         data-chapter-progress-strings-value="<%= t("chapterList").merge(statuses: t("status.chapterStatuses")).to_json %>">
+  <h3><%= t("chapterList.title") %> <span data-chapter-progress-target="total"></span></h3>
+  <button type="button" data-action="chapter-progress#current"><%= t("chapterList.current") %></button>
+  <button type="button" data-action="chapter-progress#toggleChapters" data-chapter-progress-target="expand"><%= t("chapterList.expand") %></button>
+  <button type="button" data-action="chapter-progress#toggleText" data-chapter-progress-target="textToggle"><%= t("chapterList.showText") %></button>
+  <div data-chapter-progress-target="tools" hidden>
+    <button type="button" data-action="chapter-progress#top"><%= t("chapterList.top") %></button>
+    <button type="button" data-action="chapter-progress#download"><%= t("chapterList.download") %></button>
+    <label><%= t("chapterList.search") %>
+      <input type="search" data-chapter-progress-target="query" data-action="input->chapter-progress#search">
+    </label>
+    <output data-chapter-progress-target="count"></output>
+    <button type="button" data-action="chapter-progress#previous" data-chapter-progress-target="prev" disabled><%= t("chapterList.previous") %></button>
+    <button type="button" data-action="chapter-progress#next" data-chapter-progress-target="next" disabled><%= t("chapterList.next") %></button>
+  </div>
+  <ol data-chapter-progress-target="list"></ol>
+</section>

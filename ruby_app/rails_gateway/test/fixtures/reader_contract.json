@@ -1,0 +1,1076 @@
+{
+  "book": {
+    "bookTitle": "Reader contract fixture",
+    "bookAuthor": "Fixture author",
+    "language": "pt-BR",
+    "chapters": [
+      {
+        "index": "1",
+        "name": "First chapter",
+        "sourcePath": "OEBPS/first.xhtml",
+        "level": 1,
+        "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\" onclick=\"window.readerExecuted=true\">Olá 😀 <em>café</em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><p>Final narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><script>window.readerExecuted=true</script><img src=\"https://reader-tracker.invalid/pixel\" onerror=\"window.readerExecuted=true\"><iframe src=\"https://reader-tracker.invalid/frame\"></iframe><a href=\"javascript:alert(1)\">Unsafe reference</a>",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; } @import url(https://reader-tracker.invalid/style); .unsafe { background: url(https://reader-tracker.invalid/a); }"
+      },
+      {
+        "index": "2",
+        "name": "Second chapter",
+        "sourcePath": "OEBPS/second.xhtml",
+        "level": 1,
+        "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More narrated words.</p>",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": ""
+      }
+    ]
+  },
+  "layouts": {
+    "<h1 id=\"start\">First chapter</h1><p class=\"lead\" onclick=\"window.readerExecuted=true\">Olá 😀 <em>café</em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><p>Final narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><script>window.readerExecuted=true</script><img src=\"https://reader-tracker.invalid/pixel\" onerror=\"window.readerExecuted=true\"><iframe src=\"https://reader-tracker.invalid/frame\"></iframe><a href=\"javascript:alert(1)\">Unsafe reference</a>": {
+      "|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em>café</em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em>café</em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final <mark data-reader-audio=\"true\">narrated words</mark>. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": {
+          "start": 2868,
+          "end": 2882,
+          "pageIndex": 2
+        },
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "needle|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em>café</em> &amp; <mark data-reader-search=\"0\">needle</mark>.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second <mark data-reader-search=\"1\">needle</mark>. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [
+          {
+            "start": 28,
+            "end": 34,
+            "pageIndex": 0
+          },
+          {
+            "start": 1473,
+            "end": 1479,
+            "pageIndex": 1
+          }
+        ],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "needle|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em>café</em> &amp; <mark data-reader-search=\"0\">needle</mark>.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second <mark data-reader-search=\"1\">needle</mark>. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final <mark data-reader-audio=\"true\">narrated words</mark>. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [
+          {
+            "start": 28,
+            "end": 34,
+            "pageIndex": 0
+          },
+          {
+            "start": 1473,
+            "end": 1479,
+            "pageIndex": 1
+          }
+        ],
+        "audioMatch": {
+          "start": 2868,
+          "end": 2882,
+          "pageIndex": 2
+        },
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "café|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em><mark data-reader-search=\"0\">café</mark></em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [
+          {
+            "start": 21,
+            "end": 25,
+            "pageIndex": 0
+          }
+        ],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "café|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em><mark data-reader-search=\"0\">café</mark></em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final <mark data-reader-audio=\"true\">narrated words</mark>. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [
+          {
+            "start": 21,
+            "end": 25,
+            "pageIndex": 0
+          }
+        ],
+        "audioMatch": {
+          "start": 2868,
+          "end": 2882,
+          "pageIndex": 2
+        },
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "missing|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em>café</em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "missing|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em>café</em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final <mark data-reader-audio=\"true\">narrated words</mark>. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": {
+          "start": 2868,
+          "end": 2882,
+          "pageIndex": 2
+        },
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "chapterOlá|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em>café</em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "chapterOlá|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "First chapter\nOlá 😀 café & needle.\nLabel\nValue\nNext chapter link External reference\nA long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nSecond needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nFinal narrated words. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. \nUnsafe reference",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h1 id=\"start\">First chapter</h1><p class=\"lead\">Olá 😀 <em>café</em> &amp; needle.</p><table><tbody><tr><th>Label</th><td>Value</td></tr></tbody></table><p><a data-reader-chapter=\"2\" data-reader-fragment=\"arrival\">Next chapter link</a> <a href=\"https://example.org/\" target=\"_blank\" rel=\"noopener noreferrer\">External reference</a></p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTGUAAAAASUVORK5CYII=\" alt=\"Local dot\"><p>A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 0,
+            "end": 1465
+          },
+          {
+            "html": "<p>Second needle. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p>",
+            "start": 1465,
+            "end": 2861
+          },
+          {
+            "html": "<p>Final <mark data-reader-audio=\"true\">narrated words</mark>. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. A long paragraph preserves every word and remains readable. </p><a>Unsafe reference</a>",
+            "start": 2861,
+            "end": 4281
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": {
+          "start": 2868,
+          "end": 2882,
+          "pageIndex": 2
+        },
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      }
+    },
+    "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More narrated words.</p>": {
+      "|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More narrated words.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More <mark data-reader-audio=\"true\">narrated words</mark>.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": {
+          "start": 32,
+          "end": 46,
+          "pageIndex": 0
+        },
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "needle|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More narrated words.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "needle|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More <mark data-reader-audio=\"true\">narrated words</mark>.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": {
+          "start": 32,
+          "end": 46,
+          "pageIndex": 0
+        },
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "café|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More narrated words.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "café|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More <mark data-reader-audio=\"true\">narrated words</mark>.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": {
+          "start": 32,
+          "end": 46,
+          "pageIndex": 0
+        },
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "missing|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More narrated words.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "missing|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More <mark data-reader-audio=\"true\">narrated words</mark>.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": {
+          "start": 32,
+          "end": 46,
+          "pageIndex": 0
+        },
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "chapterOlá|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More narrated words.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "chapterOlá|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Second chapter\nArrival 😀. More narrated words.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<h1 id=\"arrival\">Second chapter</h1><p>Arrival 😀. More <mark data-reader-audio=\"true\">narrated words</mark>.</p>",
+            "start": 0,
+            "end": 47
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": {
+          "start": 32,
+          "end": 46,
+          "pageIndex": 0
+        },
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      }
+    },
+    "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>": {
+      "|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "needle|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "needle|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "café|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "café|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "missing|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "missing|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "chapterOlá|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "chapterOlá|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "css": ".lead { font-weight: bold; }",
+        "pages": [
+          {
+            "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+            "start": 0,
+            "end": 85
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "start",
+            "pageIndex": 0
+          }
+        ]
+      }
+    },
+    "<p>The letter begins with a confident tone.</p>": {
+      "|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "needle|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "needle|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "café|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "café|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "missing|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "missing|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "chapterOlá|": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      },
+      "chapterOlá|narrated words": {
+        "version": 1,
+        "offsetUnit": "utf16",
+        "text": "The letter begins with a confident tone.",
+        "css": "",
+        "pages": [
+          {
+            "html": "<p>The letter begins with a confident tone.</p>",
+            "start": 0,
+            "end": 40
+          }
+        ],
+        "searchMatches": [],
+        "audioMatch": null,
+        "anchors": [
+          {
+            "id": "arrival",
+            "pageIndex": 0
+          }
+        ]
+      }
+    }
+  },
+  "sampleBook": {
+    "bookTitle": "Test Multi Feature Book",
+    "bookAuthor": "Equipe de Testes",
+    "language": "pt-BR",
+    "chapters": [
+      {
+        "index": "1",
+        "name": "Capítulo 1 - Começo",
+        "sourcePath": "OEBPS/chapter1.xhtml",
+        "level": 1,
+        "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento itálico com notas de rodapé.",
+        "html": "<h2>Capítulo 1 - Começo</h2><p>Este é o início do nosso experimento <em>itálico</em> com notas de rodapé.</p>",
+        "css": ""
+      },
+      {
+        "index": "2",
+        "name": "Capítulo 2 - Correspondências",
+        "sourcePath": "OEBPS/chapter2.xhtml",
+        "level": 1,
+        "text": "The letter begins with a confident tone.",
+        "html": "<p>The letter begins with a confident tone.</p>",
+        "css": ""
+      }
+    ]
+  }
+}

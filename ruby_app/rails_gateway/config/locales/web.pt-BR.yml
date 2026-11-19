@@ -1,0 +1,214 @@
+# Web dictionary keys shared with the React client during migration (P-41).
+---
+pt-BR:
+  locale: pt
+  hero:
+    title: Transforme seu EPUB ou PDF em MP3 com poucos cliques
+    highlights:
+    - title: Piper local
+      description: Sua voz principal é preservada. Instale o modelo somente quando quiser habilitar a conversão offline.
+    - title: Multi-idioma real
+      description: Detectamos mudanças de idioma no texto e alternamos a voz sem precisar configurar nada.
+    - title: Conversões retomáveis
+      description: O cache inteligente retoma jobs interrompidos e evita refazer capítulos já prontos.
+  tabs:
+    setup:
+      savedBatchResume: Retomar fila
+    progress:
+      backButton: "← Voltar"
+      viewDownloads: Ver Downloads →
+    downloads:
+      footer: ''
+      backButton: "← Voltar"
+      followConversion: Acompanhar conversão →
+  flow:
+    jobCreated: Pedido %{jobId} recebido. Aguardando narração…
+    loadingCache: "\U0001F4E6 Recuperando dados desta conversão..."
+    completion:
+      one: Conversão finalizada com 1 arquivos de áudio.
+      other: Conversão finalizada com %{count} arquivos de áudio.
+    defaultError: Erro inesperado
+    cancelRequested: "\U0001F6D1 Cancelamento solicitado. Concluindo passo atual…"
+    skipped: Livro atual ignorado, continuando com a fila.
+    cancelFailed: 'Não foi possível cancelar: %{message}'
+    cachedRestoredSuccess: Restaurado do cache local. Os downloads podem estar indisponíveis se o servidor foi reiniciado.
+    notificationErrorTitle: Conversão falhou
+    notificationErrorBody: Ocorreu um erro. Verifique o log para mais detalhes.
+    notificationCancelTitle: Conversão cancelada
+    notificationCancelBody: Conversão cancelada e removida. Você pode iniciar uma nova conversão quando quiser.
+  activeConversion:
+    engineLabel: Motor
+    voiceLabel: Voz
+    languageLabel: Idioma
+  form:
+    ttsPreferences:
+      primary: Voz principal
+      secondary: Voz secundária
+      none: Nenhuma
+      inherit: Usar preferências
+      reserve: Permitir secundário nesta conversão
+      install: Instalar modelo selecionado
+      installed: Modelo selecionado instalado
+      installing: Instalando…
+      system: TTS do sistema — só para ouvir; MP3 exige Piper
+      nativeNotice: Piper indisponível. A voz do sistema serve apenas para ouvir; exportar MP3 exige Piper.
+      nativeListen: Ouvir com voz instalada do sistema
+      nativePause: Pausar
+      nativeResume: Continuar
+      nativeStop: Parar
+      nativeRetry: Tentar conversão com Piper novamente
+      nativeUnavailable: A voz do sistema não está disponível neste navegador.
+      nativeFailure: Não foi possível narrar com a voz instalada. Verifique as vozes offline do sistema ou tente novamente com Piper.
+      nativeRetryFailure: Não foi possível retomar a conversão com Piper. Tente novamente.
+      nativeStates:
+        idle: Narração do sistema parada
+        starting: Preparando voz do sistema
+        playing: Ouvindo com voz do sistema
+        paused: Narração do sistema pausada
+        completed: Narração do sistema concluída
+        failed: Falha na narração do sistema
+      unavailable: indisponível neste navegador
+      manualVoice: Voz desta conversão
+    fileQueueWithCurrent: "“%{title}” está sendo convertido. Novos livros entram logo depois."
+    fileQueueCount:
+      one: 1 livro
+      other: "%{count} livros"
+    languagePlaceholder: Selecione o idioma principal
+    languageNotRequired: Este motor detecta o idioma sozinho.
+    languageAutoDetected: O idioma será detectado automaticamente a partir do livro.
+    languageOptions:
+      es: Espanhol (América Latina)
+      fr: Francês
+      de: Alemão
+    autoUploadHint: Detectamos título e capa automaticamente ao escolher o arquivo. Esse upload é reaproveitado na conversão.
+    uploadingFile: Enviando arquivo para detectar capa…
+    submitBusy: Converter agora
+  queue:
+    title: Adicionar livros enquanto converte
+    subtitle: Os arquivos abaixo usam as mesmas configurações do passo 1 e entram na fila assim que o livro atual terminar.
+    inputLabel: Escolha EPUB/PDF adicionais
+    hint: Você pode continuar acompanhando passo 2 enquanto novos livros aguardam automaticamente.
+    addFolderButton: Escolher pasta
+    success:
+      one: 1 livro adicionado à fila.
+      other: "%{count} livros adicionados à fila."
+    errorFallback: Não foi possível adicionar à fila. Tente novamente.
+    phaseActive: Convertendo
+    phaseSuccess: Pronto para próxima fila
+    displayMoreLabel:
+      one: "+ 1 outro"
+      other: "+ %{count} outros"
+    displayShowLess: Mostrar menos
+  status:
+    summaryTitle: Resumo da execução
+    summaryProgress: Progresso
+    chapterProgressTitle: Progresso por capítulo
+    expandAllChapters: Expandir tudo
+    collapseAllChapters: Recolher tudo
+    showAllText: Mostrar todo texto
+    hideAllText: Ocultar texto
+    scrollToTop: Ir ao topo
+    downloadFullText: Baixar texto completo
+    searchCount:
+      one: 1 ocorrência
+      other: "%{count} ocorrências"
+    readerReadButton: Ler livro
+    readerStillExtracting: Ainda extraindo o texto do livro… isto pode levar alguns segundos.
+    readerExtractionFailed: Não foi possível extrair capítulos deste arquivo. Verifique se o EPUB/PDF é válido.
+    readerNowReading: Trecho em leitura
+    readerWaitingSegment: Aguardando próximo segmento
+    readerPlaying: Reproduzindo
+    readerPaused: Pausado
+    readerSegmentLabel: Segmento %{index}
+    readerChapterCount:
+      one: capítulo
+      other: capítulos
+    readerAudioOnChapter: Áudio no cap. %{index}
+    chapterGoToCurrent: Ver atual
+    chapterGoToCurrentTitle: Ir para o capítulo atual
+    chapterFullAudio: 'Capítulo completo:'
+    chapterSegmentsTitle: Segmentos do capítulo
+    chapterSegmentCount:
+      zero: sem segmentos
+      one: 1 segmentos
+      other: "%{count} segmentos"
+    chapterSegmentsNone: Nenhum segmento disponível
+    chapterSegmentsWaiting: Aguardando segmentos...
+    chapterSegmentsLoading: Carregando segmentos...
+    chapterSegmentTitle: Segmento %{index}
+    chapterSegmentShowText: Mostrar texto
+    chapterSegmentHideText: Ocultar texto
+    chapterSegmentText: Texto
+    chapterSegmentsEmpty: Nenhum segmento disponível ainda.
+    chapterAudioUnsupported: Seu navegador não oferece suporte à reprodução de áudio.
+    chapterEngineLabel: 'Motor: %{ENGINE}'
+    uploadingFiles: Enviando livros…
+    ttsEngineLabel: Motor TTS
+  resumableJobs:
+    toggleMore:
+      expanded: Mostrar menos
+      collapsed: Ver todas
+    justNow: agora mesmo
+    minutesAgo: há %{m} min
+    hoursAgo: há %{h}h
+    daysAgo:
+      one: há 1 dia
+      other: há %{d} dias
+  recentJobs:
+    title: "⚡ Conversões recentes"
+    subtitle: Retome ou baixe rapidamente qualquer conversão salva no servidor.
+    resumeButton: Retomar
+    downloadButton: Baixar ZIP
+    viewAudiosButton: Ver áudios
+    viewAudiosHint: Abrir na aba 3 para ouvir capítulos individuais
+    empty: Nenhuma conversão finalizada disponível ainda.
+    justNow: agora mesmo
+    minutesAgo: há %{m} min
+    hoursAgo: há %{h}h
+    daysAgo:
+      one: há 1 dia
+      other: há %{d} dias
+    stateLabels:
+      cancelling: Cancelando
+    completedAtLabel: Concluído em %{value}
+    durationLabel: 'Tempo total: %{value}'
+    removeButton: Remover
+  downloads:
+    placeholder: Assim que a conversão terminar, os áudios ficam disponíveis aqui para ouvir ou baixar.
+    noDownloadsAfterSuccess: Conversão concluída, mas os arquivos não puderam ser carregados. Verifique as conversões recentes ou inicie uma nova.
+    resetWithDownloads: Começar uma nova conversão
+    resetWithoutDownloads: Limpar tudo
+    audioNotSupported: Seu navegador não suporta reprodução de áudio.
+    downloadChapter: "⬇ Baixar MP3"
+    viewingJobTitle: Ouvindo capítulos de “%{title}”
+    viewingJobSubtitle: Esses arquivos vêm de uma conversão finalizada. Você pode voltar para os downloads atuais quando quiser.
+    viewingJobBackToCurrent: Ver downloads atuais
+    readyListTitle: Livros prontos para download
+    readyListSubtitle: Inclui títulos finalizados nesta fila e em sessões anteriores.
+    readyListAction: Abrir downloads
+    readyListDownloadAll: Baixar todos (ZIP)
+    readyListDownloadAllHint: Abre o ZIP de cada livro em novas abas.
+    readyListItem:
+      one: 1 capítulo pronto
+      other: "%{count} capítulos prontos"
+    readyListAriaLabel: Histórico de audiolivros disponíveis
+    readyListTagCurrent: Sessão atual
+    readyListTagPast: Sessões anteriores
+    removeButton: Remover
+    shareTitle: Compartilhe seu audiolivro
+    shareSubtitle: Envie “%{book}” para amigos ou salve o link para ouvir depois.
+    shareWhatsapp: Enviar no WhatsApp
+    shareCopyLink: Copiar link
+    shareCopied: Link copiado!
+    shareCopyError: Não foi possível copiar. Tente manualmente.
+    shareNative: Compartilhar…
+    shareNativeUnavailable: Seu navegador não abriu o menu de compartilhamento. Use copiar link.
+    shareUnavailable: O link ficará disponível assim que houver um arquivo para baixar.
+    shareMessage: 'Terminei de converter “%{book}” em audiobook com o EPUB to MP3. Ouça aqui:'
+    readyListCompletedAt: Concluído em %{value}
+    readyListDuration: 'Tempo total: %{value}'
+    durationHours: "%{value}h"
+    durationMinutes: "%{value}min"
+    durationSeconds: "%{value}s"
+  layout:
+    closeNotification: Fechar notificação

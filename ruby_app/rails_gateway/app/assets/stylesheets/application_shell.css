@@ -1,0 +1,95 @@
+/* Shell, top bar and footer. Ported from web/src/styles/application_shell.css and desktop_status.css. */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.content-shell {
+  width: min(var(--content-max-width), 100%);
+  margin: 0 auto;
+  padding: clamp(1rem, 2vw, 1.75rem) var(--content-padding-inline) 4rem;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1.5rem, 3vw, 2.75rem);
+}
+
+.topbar {
+  width: min(var(--content-max-width), 100%);
+  margin: 0 auto;
+  padding: 1.5rem var(--content-padding-inline) 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+}
+
+.topbar__group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem 0.35rem 1rem;
+  border-radius: 999px;
+  background: var(--topbar-bg);
+  border: 1px solid var(--topbar-border);
+  backdrop-filter: blur(12px);
+}
+
+.topbar__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--topbar-label-color);
+}
+
+.topbar__button {
+  background: var(--topbar-button-bg);
+  color: var(--topbar-button-text);
+  border: 1px solid var(--topbar-button-border);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    transform 0.2s ease;
+}
+
+.topbar__button:hover,
+.topbar__button:focus-visible {
+  border-color: var(--topbar-button-hover-border);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.topbar__button--active {
+  background: var(--topbar-button-active-bg);
+  border-color: var(--topbar-button-active-border);
+}
+
+.status-bar {
+  width: min(var(--content-max-width), 100%);
+  margin: auto auto 0;
+  text-align: center;
+  padding: 1.5rem var(--content-padding-inline) 2rem;
+  color: var(--footer-color);
+  font-size: 0.85rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* Groups shell controllers without adding a layout box. */
+.workspace {
+  display: contents;
+}
+
+.app-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100px;
+  color: var(--text-muted);
+}

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<%= tag.html lang: document_language, class: theme_class do %>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Epub to MP3 Converter</title>
+    <meta name="description" content="<%= t("hero.subtitle") %>">
+    <meta name="theme-color" content="#1a1a1a">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <meta name="color-scheme" content="dark light">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <% if converter_runtime_base_path %>
+      <meta name="converter-runtime-base" content="<%= converter_runtime_base_path %>">
+    <% end %>
+    <% if conversion_test_fixture_path %>
+      <meta name="conversion-test-fixture" content="<%= conversion_test_fixture_path %>">
+    <% end %>
+    <%= theme_stylesheet_tags %>
+    <%= javascript_importmap_tags %>
+  </head>
+  <body>
+    <div class="app-shell" data-controller="theme" data-theme-mode-value="<%= theme_mode %>">
+      <%= render "shared/top_bar" %>
+      <main class="content-shell">
+        <%= yield %>
+      </main>
+      <footer class="status-bar">
+        <span class="status-bar__version">v<%= application_version %></span>
+        <% if t("layout.footer").present? %>
+          <span class="status-bar__text"><%= t("layout.footer") %></span>
+        <% end %>
+      </footer>
+    </div>
+  </body>
+<% end %>

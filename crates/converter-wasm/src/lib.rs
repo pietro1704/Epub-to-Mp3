@@ -3,7 +3,9 @@ use std::io::{BufReader, Cursor};
 use converter_core::epub::parse_epub;
 use serde_json::json;
 use wasm_bindgen::prelude::*;
+mod reader;
 mod session;
+pub use reader::{reader_chapter_json_v1, reader_inspect_epub_json_v1};
 pub use session::ConversionSession;
 
 #[wasm_bindgen]

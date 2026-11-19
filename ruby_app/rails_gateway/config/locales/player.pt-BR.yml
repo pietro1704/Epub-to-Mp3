@@ -1,0 +1,16 @@
+pt-BR:
+  player:
+    title: Leitura contínua
+    listen: Ouvir agora em sequência
+    previous: Capítulo anterior
+    next: Próximo capítulo
+    jump: Ir para
+    speed: Velocidade
+    stop: Parar
+    waiting: Aguardando o próximo trecho…
+    segment: Trecho
+    text: Trecho atual
+    segments: Trechos do capítulo atual
+    unmapped: O áudio salvo não tem um mapa de trechos. Selecione um capítulo para reiniciar a reprodução.
+    unavailable: Áudio indisponível para esta posição.
+    restart: Reiniciar capítulo

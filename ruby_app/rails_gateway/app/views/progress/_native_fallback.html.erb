@@ -1,0 +1,13 @@
+<section hidden data-controller="native-fallback" aria-label="<%= t("nativeSpeech.label") %>"
+         data-native-fallback-strings-value="<%= t("nativeSpeech").to_json %>">
+  <p><%= t("nativeSpeech.notice") %></p>
+  <label data-native-fallback-target="chapterLabel">
+    <%= t("nativeSpeech.chapter") %>
+    <select data-native-fallback-target="chapter" data-action="change->native-fallback#changeChapter"></select>
+  </label>
+  <p role="status" aria-live="polite" data-native-fallback-target="status"></p>
+  <button type="button" data-native-fallback-target="listen" data-action="native-fallback#listen"><%= t("nativeSpeech.listen") %></button>
+  <button type="button" disabled data-native-fallback-target="pause" data-action="native-fallback#togglePause"><%= t("nativeSpeech.pause") %></button>
+  <button type="button" disabled data-native-fallback-target="stop" data-action="native-fallback#stop"><%= t("nativeSpeech.stop") %></button>
+  <button type="button" data-native-fallback-target="retry" data-action="native-fallback#retry"><%= t("nativeSpeech.retry") %></button>
+</section>

@@ -1,0 +1,9 @@
+<%# Each group is a form: the server stores the choice and renders the next response with it. %>
+<div class="topbar" aria-label="<%= t("topBar.ariaLabel") %>" data-controller="stored-preferences">
+  <%= render "shared/preference_group", preference: :theme, storage_key: "ebook-tts-theme", mode: theme_mode,
+        label: t("topBar.themeLabel"),
+        choices: { "auto" => t("topBar.themeAuto"), "light" => t("topBar.themeLight"), "dark" => t("topBar.themeDark") } %>
+  <%= render "shared/preference_group", preference: :locale, storage_key: "ebook-tts-locale", mode: locale_mode,
+        label: t("topBar.localeLabel"),
+        choices: { "auto" => t("topBar.localeAuto"), "pt" => t("topBar.localePortuguese"), "en" => t("topBar.localeEnglish") } %>
+</div>

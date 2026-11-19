@@ -64,6 +64,10 @@ jobs:
     needs: merge
     uses: ./.github/workflows/native-hook-safety.yml
 
+  rails-image:
+    needs: merge
+    uses: ./.github/workflows/rails-image-regression.yml
+
   snapshot:
     needs: merge
     uses: ./.github/workflows/hf-snapshot-regression.yml
@@ -91,7 +95,7 @@ jobs:
   validated:
     name: Validated merged source
     if: always()
-    needs: [merge, ci, codeql, ffi, faber, flutter, fallback, native, snapshot, cli, linux, isolation, audit, ruby]
+    needs: [merge, ci, codeql, ffi, faber, flutter, fallback, native, snapshot, rails-image, cli, linux, isolation, audit, ruby]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

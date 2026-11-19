@@ -1,0 +1,16 @@
+en:
+  player:
+    title: Sequential player
+    listen: Listen now (sequential streaming)
+    previous: Previous chapter
+    next: Next chapter
+    jump: Jump to
+    speed: Speed
+    stop: Stop
+    waiting: Waiting for the next segment…
+    segment: Segment
+    text: Current segment text
+    segments: Current chapter segments
+    unmapped: Saved audio has no segment map. Select a chapter to restart playback.
+    unavailable: Audio unavailable for this position.
+    restart: Restart chapter

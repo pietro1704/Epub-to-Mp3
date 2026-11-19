@@ -146,3 +146,16 @@ test('postmerge graph contains every runtime and aggregates all called workflows
   assert.match(finalScript, /assertValidationResults/);
   assert.match(finalScript, /post_merge_validation\.mjs/);
 });
+
+test('the Rails image regression runs for the integrated SHA before validation succeeds', () => {
+  const post = workflow('post-merge-validation.yml');
+  const job = post.jobs['rails-image'];
+  assert.equal(job?.needs, 'merge');
+  assert.equal(job.uses, './.github/workflows/rails-image-regression.yml');
+  assert.ok(post.jobs.validated.needs.includes('rails-image'));
+  const image = workflow('rails-image-regression.yml').jobs.image;
+  const checkout = image.steps.find(step => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(checkout.with.ref, '${{ github.sha }}');
+  assert.equal(checkout.with['persist-credentials'], false);
+  assert.ok(image.steps.some(step => step.run === 'ruby_app/rails_gateway/bin/image-regression'));
+});

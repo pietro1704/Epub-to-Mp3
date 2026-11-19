@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Builds crates/converter-wasm for the browser and writes the wasm-bindgen
+# output (converter_wasm.js, converter_wasm_bg.wasm) to OUTPUT_DIR.
+#
+#   bin/build-runtime-wasm OUTPUT_DIR
+#
+# cargo and wasm-bindgen come from PATH, so the same script runs under
+# `mise exec --` on a developer machine and in CI, and in the Rust stage of
+# the image build. The output is never written into the repository.
+set -euo pipefail
+
+output_dir="${1:?usage: bin/build-runtime-wasm OUTPUT_DIR}"
+workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+mkdir -p "$output_dir"
+output_dir="$(cd "$output_dir" && pwd)"
+cd "$workspace_root"
+
+# The CLI and the crate exchange a versioned schema and must match exactly.
+locked_version="$(awk '/^name = "wasm-bindgen"$/ { found=1; next } found && /^version = / { gsub(/"/, "", $3); print $3; exit }' Cargo.lock)"
+cli_version="$(wasm-bindgen --version)"
+if [[ -z "$locked_version" || "$cli_version" != "wasm-bindgen $locked_version" ]]; then
+  echo "wasm-bindgen schema mismatch: Cargo.lock=$locked_version; CLI=$cli_version. Install the matching pinned CLI before building." >&2
+  exit 1
+fi
+
+rm -f "$output_dir"/converter_wasm.js "$output_dir"/converter_wasm_bg.wasm
+
+if command -v rustup >/dev/null 2>&1; then
+  RUSTC="$(rustup which rustc)"
+  export RUSTC
+fi
+cargo build --locked -p converter-wasm --target wasm32-unknown-unknown --release --jobs "${CONVERTER_WASM_BUILD_JOBS:-1}"
+wasm-bindgen \
+  "${CARGO_TARGET_DIR:-${CARGO_BUILD_TARGET_DIR:-target}}/wasm32-unknown-unknown/release/converter_wasm.wasm" \
+  --target web \
+  --no-typescript \
+  --out-dir "$output_dir"
+
+for artifact in "$output_dir/converter_wasm.js" "$output_dir/converter_wasm_bg.wasm"; do
+  test -s "$artifact" || {
+    echo "missing or empty WASM artifact: $artifact" >&2
+    exit 1
+  }
+done
+
+echo "generated browser WASM artifacts in $output_dir"

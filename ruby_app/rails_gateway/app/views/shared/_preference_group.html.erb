@@ -1,0 +1,10 @@
+<%= form_with url: preferences_path, method: :patch, class: "topbar__group",
+      html: { role: "group", aria: { label: label } },
+      data: { stored_preferences_target: "form", action: "submit->stored-preferences#remember",
+              preference: preference, storage_key: storage_key, mode: mode, chosen: cookies[preference].present? } do %>
+  <span class="topbar__label"><%= label %></span>
+  <% choices.each do |value, text| %>
+    <%= button_tag text, type: :submit, name: preference, value: value,
+          class: class_names("topbar__button", "topbar__button--active": mode == value) %>
+  <% end %>
+<% end %>

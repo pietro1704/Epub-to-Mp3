@@ -17,7 +17,7 @@ class RustClient
     request_bytes("/api/outputs/#{URI.encode_uri_component(id)}/#{URI.encode_uri_component(filename)}")
   end
   private
-  def request(method, path, payload=nil)
+  def request(method, path, payload = nil)
     uri = @base_uri + path; klass = method == :get ? Net::HTTP::Get : Net::HTTP::Post
     req = klass.new(uri); req["Accept"] = "application/json"
     if payload; req["Content-Type"] = "application/json"; req.body = JSON.generate(payload); end
@@ -28,7 +28,7 @@ class RustClient
   end
   def request_bytes(path)
     uri = @base_uri + path; response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") { |http| http.get(uri.request_uri) }
-    return [response.body, response["content-type"]] if response.is_a?(Net::HTTPSuccess)
+    return [ response.body, response["content-type"] ] if response.is_a?(Net::HTTPSuccess)
     raise "Rust converter returned #{response.code}"
   end
 end

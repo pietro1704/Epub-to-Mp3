@@ -1,0 +1,30 @@
+en:
+  downloadLibrary:
+    recent: Recent conversions
+    ready: Books ready to download
+    downloadAll: Download all chapters
+    open: Open downloads
+    listen: Listen
+    remove: Remove
+    current: Current session
+    history: Past sessions
+    viewing: Listening to “{title}”
+    back: Back to current downloads
+    placeholder: When the conversion finishes, the audio files will show up here to play or download.
+    missing: Conversion finished, but the files could not be loaded. Check recent conversions or start a new one.
+    reset: Start another conversion
+    clear: Clear form
+    chapterDownload: Download MP3
+    chapter: 1 chapter ready
+    chapters: "{count} chapters ready"
+    noTitle: Untitled book
+    readError: Could not load saved downloads.
+    removeError: Could not remove the saved conversion.
+    shareTitle: Share your audiobook
+    nativeShare: Share…
+    whatsApp: Share on WhatsApp
+    copy: Copy link
+    copied: Link copied!
+    copyError: Could not copy. Please copy manually.
+    nativeUnavailable: Your browser could not open the share sheet. Use copy link instead.
+    shareMessage: "I just turned “{title}” into an audiobook with EPUB to MP3. Listen here:"

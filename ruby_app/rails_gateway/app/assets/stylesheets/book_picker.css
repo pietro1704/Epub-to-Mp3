@@ -1,0 +1,16 @@
+.book-picker { display: grid; gap: 0.8rem; margin-top: 1.5rem; }
+.book-picker p { color: var(--text-secondary); margin: 0; }
+.book-picker input { max-width: 100%; }
+.book-picker__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.book-picker button {
+  padding: 0.5rem 0.8rem; border: 1px solid var(--input-border);
+  border-radius: 0.5rem; background: var(--input-bg); color: var(--text-primary); cursor: pointer;
+}
+.book-picker button:disabled { opacity: 0.45; cursor: default; }
+.book-picker :focus-visible { outline: 2px solid var(--input-focus-border); outline-offset: 3px; }
+.book-queue { list-style: none; padding: 0; display: grid; gap: 0.8rem; }
+.book-queue__item {
+  display: grid; gap: 0.3rem; padding: 1rem; overflow-wrap: anywhere;
+  border: 1px solid var(--panel-border); border-radius: 0.8rem; background: var(--panel-bg);
+}
+.book-picker [role="alert"] { white-space: pre-line; color: var(--error-color); }

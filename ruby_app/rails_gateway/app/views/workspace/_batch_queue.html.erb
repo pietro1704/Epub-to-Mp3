@@ -1,0 +1,18 @@
+<%# Books waiting after the active one (P-17); one instance per tab. %>
+<section class="batch-queue" hidden data-controller="batch-queue"
+         data-batch-queue-strings-value="<%= conversion_strings_json %>">
+  <p><strong data-batch-queue-target="label"></strong>
+    <span class="badge" data-batch-queue-target="paused" hidden><%= t("queue.displayPausedBadge") %></span></p>
+  <ol class="batch-queue__list" data-batch-queue-target="list"></ol>
+  <template data-batch-queue-target="row">
+    <li class="batch-queue__item">
+      <span data-field="title"></span>
+      <button type="button" data-action="batch-queue#up"><%= t("queue.displayMoveUp") %></button>
+      <button type="button" data-action="batch-queue#down"><%= t("queue.displayMoveDown") %></button>
+    </li>
+  </template>
+  <div class="batch-queue__actions">
+    <button type="button" data-batch-queue-target="resume" data-action="batch-queue#resume" hidden><%= t("queue.displayResumeButton") %></button>
+    <button type="button" data-action="batch-queue#clear"><%= t("queue.displayClearButton") %></button>
+  </div>
+</section>

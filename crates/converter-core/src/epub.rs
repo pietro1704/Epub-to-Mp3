@@ -40,6 +40,14 @@ pub enum EpubError {
     ResourceReadLimit { path: String, limit: u64 },
     #[error("EPUB total read limit of {limit} bytes exceeded at: {path}")]
     TotalReadLimit { path: String, limit: u64 },
+    #[error("EPUB document exceeds {kind} limit of {limit}: {path}")]
+    StructureLimit {
+        path: String,
+        kind: &'static str,
+        limit: usize,
+    },
+    #[error("Unsafe reader document structure in {path}: {reason}")]
+    ReaderStructure { path: String, reason: &'static str },
 }
 
 /// Limits decompressed bytes read, including metadata, navigation and cover.
@@ -92,15 +100,37 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
     reader: R,
     limits: EpubReadLimits,
 ) -> Result<Book, EpubError> {
+    parse_epub_document(reader, limits, false)
+}
+
+/// Reader inspection retains image-only spine items; the conversion API above
+/// keeps its existing text-only behavior. TOC identity still has one owner.
+pub(crate) fn parse_epub_for_reader<R: Read + Seek>(
+    reader: R,
+    limits: EpubReadLimits,
+) -> Result<Book, EpubError> {
+    parse_epub_document(reader, limits, true)
+}
+
+fn parse_epub_document<R: Read + Seek>(
+    reader: R,
+    limits: EpubReadLimits,
+    reader_mode: bool,
+) -> Result<Book, EpubError> {
     let mut budget = EpubReadBudget::new(limits);
     let mut archive = ZipArchive::new(reader)?;
     // Reject conflicting resource identities before trusting the central directory.
     archive.validate_header_consistency()?;
-    let container = read_entry(&mut archive, "META-INF/container.xml", &mut budget)?;
+    let container = read_document(
+        &mut archive,
+        "META-INF/container.xml",
+        &mut budget,
+        reader_mode,
+    )?;
     let rootfile =
         xml_attr(&container, b"rootfile", b"full-path").ok_or(EpubError::MissingRootfile)?;
     let opf_dir = Path::new(&rootfile).parent().unwrap_or(Path::new(""));
-    let opf = read_entry(&mut archive, &rootfile, &mut budget)?;
+    let opf = read_document(&mut archive, &rootfile, &mut budget, reader_mode)?;
 
     let title = xml_text(&opf, b"title").unwrap_or_default();
     let author = xml_text(&opf, b"creator").unwrap_or_default();
@@ -130,17 +160,19 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
         .map(|(candidate, _)| candidate.clone());
 
     let toc = if let Some(href) = nav_href {
-        parse_nav(&read_entry(
+        parse_nav(&read_document(
             &mut archive,
             &resolve_resource_path(opf_dir, &href),
             &mut budget,
+            reader_mode,
         )?)
         .unwrap_or_default()
     } else if let Some(href) = ncx_href {
-        parse_ncx(&read_entry(
+        parse_ncx(&read_document(
             &mut archive,
             &resolve_resource_path(opf_dir, &href),
             &mut budget,
+            reader_mode,
         )?)
         .unwrap_or_default()
     } else {
@@ -161,17 +193,21 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
             .ok_or_else(|| EpubError::MissingResource(id.clone()))?
             .clone();
         let path = resolve_resource_path(opf_dir, &href);
-        let html = read_entry(&mut archive, &path, &mut budget)?;
+        let html = read_document(&mut archive, &path, &mut budget, reader_mode)?;
         if markup_language.is_none() {
             markup_language = crate::language::markup_language(&html);
         }
         let (text, paragraph_ends, heading_ends) = html_to_text_projection(&html);
-        if text.trim().is_empty() {
+        if text.trim().is_empty() && !reader_mode {
             continue;
         }
         let key = href.split('#').next().unwrap_or(&href);
         let index = if let Some(value) = indices.get(key) {
             value.clone()
+        } else if reader_mode && text.trim().is_empty() {
+            // TOC roots start at 1. Reserve root 0 for reader-only spine items
+            // so retaining illustrations cannot renumber convertible chapters.
+            format!("0.{}", position + 1)
         } else {
             orphan += 1;
             orphan.to_string()
@@ -201,6 +237,97 @@ pub fn parse_epub_with_limits<R: Read + Seek>(
         cover,
         cover_mime,
     })
+}
+
+fn read_document<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    path: &str,
+    budget: &mut EpubReadBudget,
+    reader_mode: bool,
+) -> Result<String, EpubError> {
+    let source = read_entry(archive, path, budget)?;
+    if reader_mode {
+        // Guard recursive TOC consumers before building their trees. HTML5
+        // parsing/sanitisation applies its own independent depth/node guards.
+        let mut parser = quick_xml::Reader::from_str(&source);
+        parser.config_mut().check_end_names = false;
+        let mut depth = 0usize;
+        let mut nodes = 0usize;
+        let mut ncx_points = 0usize;
+        let mut ncx_label = false;
+        loop {
+            match parser.read_event() {
+                Ok(quick_xml::events::Event::Start(event)) => {
+                    nodes += 1;
+                    let name =
+                        String::from_utf8_lossy(event.local_name().as_ref()).to_ascii_lowercase();
+                    // The legacy NCX parser consumes one event for a label;
+                    // nested elements there must not alter its navPoint stack.
+                    if ncx_label {
+                        return Err(EpubError::ReaderStructure {
+                            path: path.into(),
+                            reason: "NCX labels must contain text only",
+                        });
+                    }
+                    if name == "navpoint" {
+                        ncx_points += 1;
+                    }
+                    if name == "text" && ncx_points > 0 {
+                        ncx_label = true;
+                    }
+                    if !reader_void_element(&name) {
+                        depth += 1;
+                    }
+                }
+                Ok(quick_xml::events::Event::Empty(_)) => nodes += 1,
+                Ok(quick_xml::events::Event::End(event)) => {
+                    let name =
+                        String::from_utf8_lossy(event.local_name().as_ref()).to_ascii_lowercase();
+                    // Paired void tags must not drain the depth contributed by
+                    // enclosing li/navPoint nodes before their recursive parser.
+                    if !reader_void_element(&name) {
+                        depth = depth.saturating_sub(1);
+                    }
+                    if name == "text" {
+                        ncx_label = false;
+                    }
+                    if name == "navpoint" {
+                        ncx_points = ncx_points.saturating_sub(1);
+                    }
+                }
+                Ok(quick_xml::events::Event::Eof) | Err(_) => break,
+                _ => {}
+            }
+            if depth > 128 || nodes > 50_000 {
+                return Err(EpubError::StructureLimit {
+                    path: path.into(),
+                    kind: if depth > 128 { "depth" } else { "nodes" },
+                    limit: if depth > 128 { 128 } else { 50_000 },
+                });
+            }
+        }
+    }
+    Ok(source)
+}
+
+fn reader_void_element(name: &str) -> bool {
+    matches!(
+        name,
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
 }
 
 #[cfg(test)]
