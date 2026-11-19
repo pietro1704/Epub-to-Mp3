@@ -71,11 +71,9 @@ final class RetainedDownloadSettingsTests: XCTestCase {
         let selected = try retain("job-a"), other = try retain("job-b")
         let protected = root.appendingPathComponent("source-and-model")
         try Data([7, 8, 9]).write(to: protected)
-        try await artifacts.prepare(bookID: "book-a", bookTitle: "Fixture book-a", author: nil,
-                                    chapters: [.init(index: 1, title: "Older chapter")])
-        let oldAudio = try await artifacts.canonicalURL(bookID: "book-a", chapterIndex: 1)
-        try Data([1, 2]).write(to: oldAudio)
-        try await artifacts.markAvailable(bookID: "book-a", chapterIndex: 1)
+        let oldAudio = try XCTUnwrap(try LocalAudioArtifactFixture.seed(
+            root: root.appendingPathComponent("artifacts"), bookID: "book-a", bookTitle: "Fixture book-a",
+            chapters: [.init(index: 1, title: "Older chapter", audio: Data([1, 2]))])[1])
         try await artifacts.promote(bookID: "book-a", chapterIndex: 1)
         let books = [book("book-a", job: "job-a"), book("book-b", job: "job-b")]
         let entries = try await storage.entries(books: books)

@@ -34,8 +34,7 @@ final class LegacyAudioMigrationCoordinatorTests: XCTestCase {
         let before = try Data(contentsOf: fixture.sourceManifest())
         let report = try await coordinator(fixture, defaults, bases: ["job": 1]).run(books: [book()])
         XCTAssertEqual(report.books["book"], .complete(imported: 3, alreadyPresent: 0))
-        let store = LocalAudioArtifactStore(root: fixture.storeRoot)
-        let manifest = try await store.manifest(bookID: "book")
+        let manifest = try LocalAudioArtifactFixture.manifest(root: fixture.storeRoot, bookID: "book")
         XCTAssertEqual(manifest?.chapters.map(\.index), [0, 1, 2])
         XCTAssertEqual(try Data(contentsOf: fixture.sourceManifest()), before)
         XCTAssertEqual(try Data(contentsOf: fixture.source(chapter: 3)), LegacyAudioImportFixture.audio,

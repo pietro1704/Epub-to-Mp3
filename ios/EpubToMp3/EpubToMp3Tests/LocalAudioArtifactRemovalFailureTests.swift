@@ -11,20 +11,18 @@ final class LocalAudioArtifactRemovalFailureTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(bookID: bookID, bookTitle: "Removal fixture", author: nil,
-                                chapters: [.init(index: 0, title: "Chapter")])
-        let canonical = try await store.canonicalURL(bookID: bookID, chapterIndex: 0)
         let bytes = Data([0x49, 0x44, 0x33, 0x04, 0x01, 0x02, 0x03])
-        try bytes.write(to: canonical)
-        try await store.markAvailable(bookID: bookID, chapterIndex: 0)
+        let canonical = try XCTUnwrap(try LocalAudioArtifactFixture.seed(
+            root: root, bookID: bookID, bookTitle: "Removal fixture",
+            chapters: [.init(index: 0, title: "Chapter", audio: bytes)])[0])
         try await store.requestPlaybackRetention(bookID: bookID, chapterIndex: 0)
         return (root, store, canonical, bookID, bytes)
     }
 
     func testFilesystemDeletionFailurePreservesDownloadedArtifactAndReportsError() async throws {
         let (root, store, canonical, bookID, bytes) = try await fixture()
-        let beforeValue = try await store.artifact(bookID: bookID, chapterIndex: 0)
-        let before = try XCTUnwrap(beforeValue)
+        let before = try XCTUnwrap(
+            try LocalAudioArtifactFixture.artifact(root: root, bookID: bookID, chapterIndex: 0))
         XCTAssertEqual(before.retention, .downloaded)
         XCTAssertEqual(before.playbackRetentionRequested, true)
         let parent = canonical.deletingLastPathComponent()
@@ -56,8 +54,7 @@ final class LocalAudioArtifactRemovalFailureTests: XCTestCase {
             XCTAssertEqual(error.code, NSFileWriteNoPermissionError)
         }
         XCTAssertEqual(try Data(contentsOf: canonical), bytes)
-        let reopened = LocalAudioArtifactStore(root: root)
-        let after = try await reopened.artifact(bookID: bookID, chapterIndex: 0)
+        let after = try LocalAudioArtifactFixture.artifact(root: root, bookID: bookID, chapterIndex: 0)
         XCTAssertEqual(after?.state, before.state)
         XCTAssertEqual(after?.retention, before.retention)
         XCTAssertEqual(after?.byteCount, before.byteCount)
@@ -68,8 +65,7 @@ final class LocalAudioArtifactRemovalFailureTests: XCTestCase {
         let (root, store, canonical, bookID, _) = try await fixture()
         try FileManager.default.removeItem(at: canonical)
         try await store.removeDownloadedAudio(bookID: bookID, chapterIndex: 0)
-        let reopened = LocalAudioArtifactStore(root: root)
-        let artifact = try await reopened.artifact(bookID: bookID, chapterIndex: 0)
+        let artifact = try LocalAudioArtifactFixture.artifact(root: root, bookID: bookID, chapterIndex: 0)
         XCTAssertEqual(artifact?.state, .pending)
         XCTAssertEqual(artifact?.retention, .temporary)
         XCTAssertEqual(artifact?.byteCount, 0)

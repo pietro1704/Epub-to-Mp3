@@ -42,15 +42,9 @@ final class LocalAudioSettingsScreenControllerTests: XCTestCase {
     @MainActor
     func testDownloadedBookRemovalRequiresConfirmation() async throws {
         let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(
-            bookID: "book-id",
-            bookTitle: "Book",
-            author: "Author",
-            chapters: [.init(index: 0, title: "Chapter")]
-        )
-        let fileURL = try await store.canonicalURL(bookID: "book-id", chapterIndex: 0)
-        try Data(repeating: 0xB2, count: 64).write(to: fileURL)
-        try await store.markAvailable(bookID: "book-id", chapterIndex: 0)
+        let fileURL = try XCTUnwrap(try LocalAudioArtifactFixture.seed(
+            root: root, bookID: "book-id", bookTitle: "Book", author: "Author",
+            chapters: [.init(index: 0, title: "Chapter", audio: Data(repeating: 0xB2, count: 64))])[0])
         try await store.promote(bookID: "book-id", chapterIndex: 0)
 
         let controller = LocalAudioDownloadsScreenController(
@@ -111,16 +105,15 @@ final class LocalAudioSettingsScreenControllerTests: XCTestCase {
             displayFilename: "fixture.epub", addedAt: .now, cachedOffline: true) }
         defaults.set(try JSONEncoder().encode(books), forKey: "library.books.v1")
         let library = LibraryStore(defaults: defaults)
-        let store = LocalAudioArtifactStore(root: root.appendingPathComponent(UUID().uuidString))
+        let storeRoot = root.appendingPathComponent(UUID().uuidString)
+        let store = LocalAudioArtifactStore(root: storeRoot)
         var files: [String: URL] = [:]
         let bytes = Data(repeating: 0xB2, count: 64)
         for id in [firstID, otherID] {
-            try await store.prepare(bookID: id, bookTitle: id, author: nil, chapters: [.init(index: 0, title: "Chapter")])
-            let url = try await store.canonicalURL(bookID: id, chapterIndex: 0)
-            try bytes.write(to: url)
-            try await store.markAvailable(bookID: id, chapterIndex: 0)
+            files[id] = try XCTUnwrap(try LocalAudioArtifactFixture.seed(
+                root: storeRoot, bookID: id, bookTitle: id,
+                chapters: [.init(index: 0, title: "Chapter", audio: bytes)])[0])
             try await store.promote(bookID: id, chapterIndex: 0)
-            files[id] = url
         }
         let protected = root.appendingPathComponent("source-and-model-fixture")
         try bytes.write(to: protected)

@@ -119,6 +119,7 @@ let tests = [
     "LocalAudioLegacyImportTests.swift",
     "LocalAudioPlaybackRestorationTests.swift",
     "LegacyAudioImportFixture.swift",
+    "LocalAudioArtifactFixture.swift",
     "LegacyPreferenceCleanupTests.swift",
     "SpeechPreferenceMigrationTests.swift",
     "BookConversionRecoveryTests.swift",
