@@ -49,7 +49,9 @@ jq -e '.status == "healthy" and .contract_version == "1" and .backend == "rails"
 
 # header URL NAME prints one response header value, lower-cased name match.
 header() {
-  curl --max-time 10 --silent --head "$1" | tr -d '\r' | awk -F': ' -v name="$2" 'tolower($1) == name { print $2; exit }'
+  # Print everything after the first ": " only; values such as the CSP contain
+  # "data: blob:" and must not be split on it.
+  curl --max-time 10 --silent --head "$1" | tr -d '\r' | awk -v name="$2" '{ key = $0; sub(/:.*/, "", key); if (tolower(key) == name) { sub(/^[^:]*: */, ""); print; exit } }'
 }
 # served URL TYPE_PATTERN requires 200, a non-empty body, the media type and immutable caching.
 served() {

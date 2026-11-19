@@ -13,11 +13,14 @@ RUN npm run build
 # builder and the runtime stage on the same Debian release.
 FROM rust:1-slim-trixie AS server-builder
 
-# The embedded Piper runtime compiles the vendored eSpeak NG phonemizer.
+# The embedded Piper runtime compiles the vendored eSpeak NG phonemizer; its
+# CMake build clones sonic with git, so git and CA certificates are required.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     clang \
     cmake \
     g++ \
+    git \
     libclang-dev \
     make \
     pkg-config \
@@ -31,7 +34,7 @@ COPY benches ./benches
 # Ship the phoneme data produced by this exact phonemizer build; a distribution
 # package may carry an incompatible data version. Voice models are never built in.
 RUN cargo build --locked --release -p converter-server \
-    && cp -R "$(find target/release/build -type d -path '*/espeak-rs-sys-*/out/share/espeak-ng-data' | head -n 1)" /app/espeak-ng-data \
+    && cp -R "$(find target/release/build -type d -path '*/espeak-rs-sys*/out/share/espeak-ng-data' | head -n 1)" /app/espeak-ng-data \
     && test -f /app/espeak-ng-data/phontab
 
 # Stage 3: Minimal Rust runtime
