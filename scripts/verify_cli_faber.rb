@@ -7,6 +7,8 @@ require 'tmpdir'
 class CliFaberVerification
   class Failure < StandardError; end
   MODEL = 'pt_BR-faber-medium'.freeze
+  # Two chapters of real Portuguese text: the CLI refuses passages whose language it cannot classify.
+  DEFAULT_SAMPLE = 'tests/fixtures/epubs/cli_faber_public_chapters.epub'.freeze
   PREFERENCES = {
     'primary' => {'engine' => 'piper', 'model_id' => MODEL, 'voice' => nil},
     'secondary' => nil, 'allow_online_fallback' => false
@@ -197,7 +199,7 @@ if $PROGRAM_NAME == __FILE__
     end
     CliFaberVerification.new(
       cli: ARGV.fetch(0, File.join(root, 'dist/epub-to-mp3-cli/bin/converter-cli')),
-      sample: File.join(root, 'ruby_app/rails_gateway/public/sample.epub'),
+      sample: File.join(root, CliFaberVerification::DEFAULT_SAMPLE),
       reports: File.join(root, '.reports/cli-faber'),
       temporary_root: ENV.fetch('RUNNER_TEMP', Dir.tmpdir)
     ).run!

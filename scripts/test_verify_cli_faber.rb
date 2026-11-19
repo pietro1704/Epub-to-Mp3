@@ -97,6 +97,29 @@ class VerifyCliFaberTest < Minitest::Test
     assert_includes error.message, 'never for a missing runtime'
   end
 
+  # The CLI has no language option. When it cannot resolve the language of the
+  # book (a deliberately multilingual document such as the web sample), a
+  # heading-only passage fails with book_language_uncertain_v1 after the Faber
+  # install already succeeded. The golden run must use a single-language book.
+  def test_default_sample_is_a_two_chapter_single_language_book
+    sample = File.expand_path("../#{CliFaberVerification::DEFAULT_SAMPLE}", __dir__)
+    assert File.file?(sample), 'The public sample EPUB is missing'
+    entries, status = Open3.capture2('unzip', '-Z1', sample)
+    assert status.success?, 'The public sample is not a readable EPUB'
+    assert_equal 'mimetype', entries.lines.first.strip, 'The mimetype entry must come first'
+    package = Open3.capture2('unzip', '-p', sample, 'OEBPS/content.opf').first
+    assert_equal ['pt-BR'], package.scan(%r{<dc:language>([^<]+)</dc:language>}).flatten
+    spine = package.scan(/<itemref idref="([^"]+)"/).flatten
+    assert_equal 2, spine.length, 'The golden run converts exactly two source chapters'
+    spine.each do |id|
+      href = package[/<item id="#{id}" href="([^"]+)"/, 1]
+      chapter = Open3.capture2('unzip', '-p', sample, "OEBPS/#{href}").first
+      declared = chapter.scan(/(?:xml:)?lang="([^"]+)"/).flatten.uniq
+      assert_empty declared - %w[pt-BR pt], "#{href} declares another language: #{declared.inspect}"
+      assert_operator chapter.gsub(/<[^>]+>/, ' ').split.length, :>=, 25, "#{href} has too little text"
+    end
+  end
+
   def test_unexpected_command_failure_is_fatal
     executable("warn 'fixture command failed'; exit 9")
     error = assert_raises(CliFaberVerification::Failure) { runner.cli!('models', 'install', CliFaberVerification::MODEL) }
