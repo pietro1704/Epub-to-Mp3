@@ -147,6 +147,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
     }
 
     private func exerciseAdmission(_ scenario: AdmissionScenario) async throws {
+        try LoopbackTestHost.skipUnlessLoopbackNetworkingIsAllowed()
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("DownloadMaintenanceAdmission-\(UUID().uuidString)", isDirectory: true)
         let downloads = root.appendingPathComponent("downloads", isDirectory: true)
@@ -348,6 +349,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
     }
 
     private func exerciseDownload(clearWhileResponseIsPending: Bool) async throws {
+        try LoopbackTestHost.skipUnlessLoopbackNetworkingIsAllowed()
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("DownloadCleanupRace-\(UUID().uuidString)", isDirectory: true)
         let downloads = root.appendingPathComponent("downloads", isDirectory: true)
