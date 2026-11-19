@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), " +
-  "textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+  "textarea:not([disabled]), [tabindex]:not([tabindex='-1']):not([disabled])"
 
 /**
  * Opens and closes the help drawer; the overlay and Escape close it. While it
@@ -11,11 +11,15 @@ const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), selec
 export default class extends Controller {
   static targets = ["toggle", "overlay", "drawer"]
 
-  connect() {
+  initialize() {
     this.trapFocus = this.trapFocus.bind(this)
     this.closeBeforeCache = () => this.setOpen(false)
+  }
+
+  connect() {
     // A snapshot taken while open would come back open without its focus trap.
     document.addEventListener("turbo:before-cache", this.closeBeforeCache)
+    if (this.isOpen) document.addEventListener("keydown", this.trapFocus)
   }
 
   disconnect() {
@@ -26,7 +30,6 @@ export default class extends Controller {
   open() {
     if (this.isOpen) return
     this.setOpen(true)
-    document.addEventListener("keydown", this.trapFocus)
     // The drawer is fixed, so focusing it during the slide does not scroll the page.
     this.focusableElements[0]?.focus({ preventScroll: true })
   }
@@ -42,12 +45,13 @@ export default class extends Controller {
   }
 
   get focusableElements() {
-    return [ ...this.drawerTarget.querySelectorAll(FOCUSABLE) ]
+    return [ ...this.drawerTarget.querySelectorAll(FOCUSABLE) ].filter((element) => !element.closest("[hidden]"))
   }
 
   /** @param {boolean} open */
   setOpen(open) {
-    if (!open) document.removeEventListener("keydown", this.trapFocus)
+    if (open) document.addEventListener("keydown", this.trapFocus)
+    else document.removeEventListener("keydown", this.trapFocus)
     this.toggleTarget.setAttribute("aria-expanded", String(open))
     this.drawerTarget.classList.toggle("help-drawer--open", open)
     this.drawerTarget.setAttribute("aria-hidden", String(!open))
