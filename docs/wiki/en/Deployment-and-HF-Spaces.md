@@ -1,13 +1,16 @@
 # Deployment and Hugging Face Spaces
 
-The current `Dockerfile` builds React/Vite and the Rust `converter-server`, then
-runs that binary in a minimal Debian image. Inspect the exact deployed revision,
-selected client mode and workflow before diagnosing a hosted service.
+The root `Dockerfile` builds the Rails web client: the Rust/WASM runtime tree
+is compiled in a build stage, and the final Ruby image holds the gems, the
+application, precompiled assets and the generated runtime (no Node, Rust
+toolchain, `converter-server` or model weights). The Space is published from a
+`scripts/hf_snapshot.rb` snapshot (`.hf-runtime` is `rails`). Inspect the exact
+deployed revision and workflow before diagnosing a hosted service.
 
-The container declares `PORT=7860`, `HOST=0.0.0.0` and
-`PERSISTENT_ROOT=/data/epub-to-mp3`, and probes `/api/health`. These are source
-configuration values, not proof of a reachable deployment or persistent storage.
-Survival across restarts requires an actual persistent mount and correct paths/
+The image serves on port 7860 and answers `/api/health` (and `/health`) locally.
+These are source configuration values, not proof of a reachable deployment.
+The Rails interface needs no server state; any `PERSISTENT_ROOT` storage applies
+only to the optional compatibility API. Survival across restarts requires an actual persistent mount and correct paths/
 permissions on the service. Preserve cache, outputs, jobs and user data.
 
 R2/object storage is optional and not established by this repository. See the

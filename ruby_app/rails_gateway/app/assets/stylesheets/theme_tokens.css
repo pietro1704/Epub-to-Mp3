@@ -1,4 +1,4 @@
-/* Dark tokens are the default; theme_light.css overrides them. Ported from web/src/styles/theme_tokens.css. */
+/* Dark tokens are the default; theme_light.css overrides them. Ported from the former React client's theme_tokens.css (removed in the Rails cutover). */
 :root {
   color-scheme: dark;
   font-family:

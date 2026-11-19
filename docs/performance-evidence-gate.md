@@ -11,7 +11,7 @@ has `observations_status: passed` but release `status: pending` until all
 
 Still required: automated cold/relaunch lifecycle capture, representative corpus
 verification (including sideways two-up scan geometry), backend streaming
-correlation, actual CLI/server output-integrity evidence, and web/Flutter profile
+correlation, actual CLI/server output-integrity evidence, and Rails web/Flutter profile
 collectors. Merely adding flags or hashes cannot satisfy those requirements.
 Hashes establish byte identity, not the truth of runner or lifecycle claims.
 The report labels this input `imported_diagnostics_not_verified_collection`.

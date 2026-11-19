@@ -197,7 +197,7 @@ if $PROGRAM_NAME == __FILE__
     end
     CliFaberVerification.new(
       cli: ARGV.fetch(0, File.join(root, 'dist/epub-to-mp3-cli/bin/converter-cli')),
-      sample: File.join(root, 'web/public/sample.epub'),
+      sample: File.join(root, 'ruby_app/rails_gateway/public/sample.epub'),
       reports: File.join(root, '.reports/cli-faber'),
       temporary_root: ENV.fetch('RUNNER_TEMP', Dir.tmpdir)
     ).run!

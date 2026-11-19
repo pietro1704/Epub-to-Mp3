@@ -1,12 +1,13 @@
 # Rails web client
 
-Server-rendered web client for EpubToMp3, built beside the React client in
-`web/` until it reaches full parity (see
-`docs/adr/2026-11-16-rails-web-with-browser-conversion.md`). Rails renders the
+Server-rendered web client for EpubToMp3. It replaced the former React client
+(`web/`, removed in the Rails cutover; see git history and
+`../../docs/adr/2026-11-16-rails-web-with-browser-conversion.md`). Rails renders the
 interface, negotiates locale and theme, and serves static files. Conversion,
 storage and playback stay in the browser: the page loads the Rust/WASM runtime
-and never uploads a book. Nothing here is deployed yet; the public Space still
-ships `web/`.
+and never uploads a book. The public Hugging Face Space runs the image built from
+the root `Dockerfile`, published from a `scripts/hf_snapshot.rb` snapshot
+(`.hf-runtime` is `rails`).
 
 The current book-selection slice accepts EPUB files up to 100 MB each through
 the picker, folder input, drop area or `/sample.epub`. `runtime/workspace_store`
@@ -40,14 +41,14 @@ its own tab and allow site storage. [Direct Space](https://pi1704-epub-to-mp3.hf
 
 | Path | Role |
 | --- | --- |
-| `app/views`, `config/locales` | The single document at `/` in `pt-BR` and `en`. Locale keys keep the names of `web/src/i18n`. |
+| `app/views`, `config/locales` | The single document at `/` in `pt-BR` and `en`. Locale keys keep the names of the former React dictionaries. |
 | `app/javascript/controllers` | Stimulus controllers: presentation and user intent only. |
 | `app/javascript/runtime` | First-party ES modules that talk to the generated runtime. |
 | `config/importmap.rb` | Page modules, digested by Propshaft. No bundler, no transpiler. |
 | `lib/converter_runtime` | Publishes and serves the generated runtime tree. |
 | `browser_runtime/` | Pins the browser TTS libraries copied into the tree; `workers/` holds the Piper module worker published as `workers/` of the tree (ONNX Runtime Web and the phonemizer load as native ES modules, ADR R-02). |
 | `bin/build-runtime*`, `bin/assemble-runtime` | Runtime tree build. |
-| `Dockerfile`, `bin/image-regression` | Production image (repository root as context) and its checks. |
+| `../../Dockerfile`, `bin/image-regression` | Production image (repository root as context) and its checks. |
 
 ## Generated runtime tree
 
@@ -75,15 +76,14 @@ mise exec -- bin/rails test:all                 # integration, library and syste
 mise exec -- node --test --test-concurrency=2 browser_runtime/
 ```
 
+The same suites run from the repository root as `mise run rails:web:test`.
+
 - Without a built runtime the tests publish a hand-written fixture module
   (`test/fixtures/converter_runtime`) so they need no Rust toolchain.
   Its inspection stub recognises only the checked-in sample bytes and returns
   fixed metadata; this mode tests the queue/UI, not the Rust EPUB parser.
   `CONVERTER_RUNTIME=built` runs the same tests against the tree produced by
-  `rails:web:runtime-build`; continuous integration does that. For this mode,
-  first run `mise exec -- npm ci --ignore-scripts` in `web/`. The IndexedDB
-  compatibility test builds the React reference from that checkout and opens
-  both clients on the same Chromium origin. Only synthesis I/O is replaced.
+  `rails:web:runtime-build`; continuous integration does that.
 - System tests drive a headless Chromium through Cuprite. Set `BROWSER_PATH`
   when Chrome or Chromium is not at a standard location.
 - The separate post-merge Faber job runs `REAL_BROWSER_MODEL=1 CONVERTER_RUNTIME=built

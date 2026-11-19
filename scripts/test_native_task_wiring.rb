@@ -12,7 +12,7 @@ require_relative "mise_task_bodies"
 # Apple service, Python runtime, Simulator, app, or device is invoked.
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
-  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check piper:build-runtime web:wasm-build].freeze
+  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check piper:build-runtime rails:web:runtime-build].freeze
   TASKS = MiseTaskBodies.load(ROOT, %w[ios:run ios:test ios:device:test ios:build ios:device:build ios:simulator:test ios:simulator:run ios:simulator:resume ios:simulator:smoke:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS)
 
   def setup
@@ -29,8 +29,10 @@ class NativeTaskWiringTest < Minitest::Test
     _, error, status = Open3.capture3("git", "init", "-q", @dir)
     raise "Cannot initialize isolated task fixture: #{error}" unless status.success?
     FileUtils.cp(File.join(__dir__, "dev_backend.sh"), File.join(@dir, "scripts", "dev_backend.sh"))
-    wasm_build = File.join(@dir, "scripts/build_web_wasm.sh")
-    File.write(wasm_build, "#!/bin/bash\nset -euo pipefail\nmise exec -- cargo build -p converter-wasm --target wasm32-unknown-unknown --release\n")
+    runtime_build = File.join(@dir, "ruby_app/rails_gateway/bin/build-runtime")
+    FileUtils.mkdir_p(File.dirname(runtime_build))
+    File.write(runtime_build, "#!/bin/bash\nset -euo pipefail\nmise exec -- cargo build -p converter-wasm --target wasm32-unknown-unknown --release\n")
+    File.chmod(0o755, runtime_build)
     server = File.join(@target_dir, "debug/converter-server")
     File.write(server, <<~'SH')
       #!/bin/bash
@@ -70,6 +72,13 @@ class NativeTaskWiringTest < Minitest::Test
             exec /bin/bash -euo pipefail "$FIXTURE_IOS_SIMULATOR_TEST_TASK" ;;
           *) exit 98 ;;
         esac
+      fi
+      if [[ "${1:-}" == bin-paths ]]; then
+        shift
+        for tool in "$@"; do
+          printf '/fixture/tools/%s/bin\n' "${tool//[:\/]/_}"
+        done
+        exit 0
       fi
       if [[ "${1:-}" == exec && "${2:-}" == -- && "${3:-}" == cargo ]]; then
         shift 3

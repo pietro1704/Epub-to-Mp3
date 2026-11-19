@@ -27,12 +27,16 @@ preferências salvas. Fallback Edge online exige consentimento explícito. Insta
 modelos é ação explícita separada. Limpar cache é destrutivo e não faz parte do
 primeiro uso de conversão.
 
-O cliente web normal usa Rust/WASM embutido com Piper no navegador. Siga
-[web/README.md](../../../web/README.md) para Vite e verificações focadas.
+O cliente web normal é o cliente Rails com Rust/WASM embutido e Piper no
+navegador; a conversão roda no navegador. Siga o
+[README do web Rails](../../../ruby_app/rails_gateway/README.md) para a árvore de
+runtime gerada (`mise run rails:web:runtime-build`) e os testes
+(`mise run rails:web:test`). O antigo cliente React/Vite em `web/` foi removido
+no cutover para Rails.
 Voz nativa do navegador serve para escuta; exportar MP3 exige Piper instalado.
 Inspecionar EPUB não comprova suporte a PDF ou outros formatos nativos.
 
-`mise run dev` inicia servidor Rust opcional e Vite, pode compilar/instalar
+`mise run dev` foi escrito para iniciar o servidor Rust opcional e o antigo frontend Vite (inspecione a tarefa e `scripts/dev.sh` antes, pois o cliente React foi removido), pode compilar/instalar
 pré-requisitos ausentes e gerencia processos de desenvolvimento. Use somente para
 jornada de servidor explícita após inspecionar `scripts/dev.sh` e o escopo.
 `converter-server` e o cliente HTTP retido são adaptadores de compatibilidade;

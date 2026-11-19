@@ -10,10 +10,10 @@ tests run in Ruby. Use guarded compiler tasks and preserve compatible caches.
 Run the commands relevant to the changed surface from the repository root with
 `mise` installed and configured:
 
-- `mise run web:wasm-build` generates browser Rust/WASM artifacts.
+- `mise run rails:web:runtime-build` generates the browser Rust/WASM runtime tree.
 - `mise run migration:build-and-gate` builds CLI/server release artifacts and
   checks migration boundaries. `check:rust-migration` alone requires existing artifacts.
-- `mise run test:web` exercises the Web client.
+- `mise run rails:web:test` exercises the Rails web client.
 
 Inspect the selected task before execution. A focused change does not require
 all three commands. Confirm generated artifacts are non-empty, the embedded

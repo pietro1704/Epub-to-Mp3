@@ -121,7 +121,7 @@ fn worker_reuses_proven_audio_and_publishes_the_matching_archive() {
     worker.test_edge = Some(Arc::new(|_| {
         Ok(crate::pcm::encode_wav_mp3(&test_system_wav()).unwrap())
     }));
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/public/sample.epub");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ruby_app/rails_gateway/public/sample.epub");
     let source = fs::read(&input).unwrap();
     let book = epub::parse_epub(std::io::Cursor::new(&source)).unwrap();
     assert!(book.cover.is_none());

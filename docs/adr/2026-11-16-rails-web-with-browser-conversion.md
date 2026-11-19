@@ -455,7 +455,7 @@ Build, without committing generated files:
   runs the tests in 3.9. A new `rails` change scope (paths `ruby_app/`,
   `crates/converter-wasm/`, shared core, the build script) gates it and is
   added to `pr-gate`.
-- **Docker:** build `ruby_app/rails_gateway/Dockerfile` with the repository root
+- **Docker:** build the root `Dockerfile` with the repository root
   as its context so the Rust stage can copy `crates/`. Stages: (1) Rust: copy `Cargo.toml`,
   `Cargo.lock`, `crates`, `native`, `benches` (the workspace manifest lists
   them all), build `converter-wasm` for `wasm32-unknown-unknown` with
@@ -554,7 +554,7 @@ web keeps that:
   `public/assets`, the generated `public/runtime/<id>/`, `sample.epub`,
   manifest and icons. Not in the image: Node, the Rust toolchain,
   `converter-server`, ffmpeg, `web/`, model weights.
-- Runs as a non-root user (the gateway `Dockerfile` already uses uid 1000).
+- Runs as a non-root user (the root `Dockerfile` uses uid 1000).
 - Server state: none required by the interface. SQLite remains only for the
   optional compatibility API; its files go under `PERSISTENT_ROOT` when
   writable, otherwise a container-local directory. Whether the Space has
@@ -590,7 +590,7 @@ web keeps that:
 | JS/WASM contract tests | freshly built exports, catalog, receipts, session resume, worker message contract, store/repository/execution logic with the in-memory store | `node --test`, as `web/scripts/*.node-tests.mjs` do today; ports of `BrowserConversionClient.test.ts`, `BrowserJobLifecycle.test.ts`, `BrowserModelInstaller.test.ts`, `BrowserNativeSpeech.test.ts`, `BrowserAudioIdentity.test.ts`, `LatencyObservation.test.ts` | `rails-web` job |
 | Rails system tests | every P-row acceptance in a real headless Chromium with the real WASM; synthesis through a fixture worker that returns fixed audio, the technique `verify-browser-tts.mjs` uses | `ActionDispatch::SystemTestCase`, Capybara | `rails-web` job |
 | Real-model browser run | actual Faber synthesis end to end after an explicit, checksum-verified model download | same system tests with the fixture disabled | separate workflow modelled on `browser-runtime.yml` (`workflow_call` / dispatch, part of post-merge validation) |
-| Image regression | `ruby_app/rails_gateway/Dockerfile` builds; health; root HTML; every referenced asset and the runtime tree served with the right type; `0.0.0.0:7860`; no `.onnx` | shell, as `hf-snapshot-regression.yml` | new workflow, PR-G; replaces the React assertions in PR-H |
+| Image regression | the root `Dockerfile` builds; health; root HTML; every referenced asset and the runtime tree served with the right type; `0.0.0.0:7860`; no `.onnx` | shell, as `hf-snapshot-regression.yml` | new workflow, PR-G; replaces the React assertions in PR-H |
 
 Rules: system and JS tests run with **at most two workers**, on the Mac and in
 CI (`parallelize(workers: 2)` as an upper bound; `node --test
@@ -732,3 +732,18 @@ The owner accepted the default, the first option, of every row on 2026-11-17.
 | Q-15 | N-18: drop the unread UI-issue recorder together with its dead panel? | yes / no, keep recording to `localStorage` |
 | Q-16 | Before PR-H, publish the Rails image to a second, private Space for a manual check? | yes / no, rely on the image regression and system tests |
 | Q-17 | Confirm rows N-01 to N-25 as not carried over. | confirm all / list the IDs to keep |
+
+## Cutover record
+
+The PR-H cutover (section 3.11) has happened. The root `Dockerfile` is now the
+Rails image (repository root as build context; the former
+`ruby_app/rails_gateway/Dockerfile` was removed), `.hf-runtime` contains `rails`
+so the Space snapshot is built from the gateway, and the React client in `web/`
+was removed. The Space is the same one; it is published from a
+`scripts/hf_snapshot.rb` snapshot.
+
+Rollback of the Space: `.github/workflows/rollback-hf.yml` rebuilds the Space
+from the chosen earlier commit; for a revision that predates the cutover that
+means the React layout by default. Parts 1 and 2 above describe the removed
+React client as it was before the cutover and are kept as historical record; see
+git history for `web/`.

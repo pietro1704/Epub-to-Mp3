@@ -22,7 +22,7 @@ establish acceptance for that checkpoint or the later audit phases.
 | Scope, regression evidence and review | [Delivery workflow](agent-workflow.md) and [coding standards](../CODING_STANDARDS.md) |
 | Native Apple client | [Apple guide](../ios/EpubToMp3/README.md), [macOS validation](agents/macos-validation.md) and [reader contract](../ios/EpubToMp3/AGENTS.md) |
 | Non-Apple client | [Flutter guide](../flutter_app/README.md) and [platform ownership](agents/mac-arch-collaboration.md) |
-| Browser client | [Web guide](../web/README.md) and [WASM boundary](wasm-capability-boundary.md) |
+| Browser client | [Rails web README](../ruby_app/rails_gateway/README.md) and [WASM boundary](wasm-capability-boundary.md) |
 | Embedded native packages | [FFI artifact contract](converter-ffi-artifacts.md) and [iOS integration](../ios/EpubToMp3/docs/converter-ffi-ios.md) |
 | Local user documentation | [Wiki source index](wiki/README.md), in English and Brazilian Portuguese |
 | Historical consolidation results | [Reconciled checkpoint](archive/root/RESUME_CONSOLIDATION.md) and [historical reports](archive/consolidation/historical-reports.md) |
@@ -46,8 +46,7 @@ audit records its evidence. Keep the current paths for these families.
 | `crates/` (222) | Shared Rust conversion and its adapters | [Cargo.toml](../Cargo.toml) and crate manifests define `converter-core`, `converter-ffi`, CLI, server and WASM. Apple/Flutter embed FFI; Web uses WASM. |
 | `native/` (2,237) | Piper runtime adapter and patched dependencies | `native/piper-runtime` is project code; `native/vendor` is dependency source/data selected by Cargo patches. See provenance below. |
 | `flutter_app/` (345) | Non-Apple client, tests and platform packaging | [pubspec.yaml](../flutter_app/pubspec.yaml), platform manifests and `cmake/` select sources/assets. `lib/`, `test/`, `integration_test/`, Linux/Windows/Android packaging and generated bindings are distinct families. |
-| `web/` (267) | Browser app and compatibility adapters | [package.json](../web/package.json), Vite/TypeScript configuration and `crates/converter-wasm` feed browser/Docker tasks. `src/wasm/` contains generated artifacts. |
-| `ruby_app/` (67) | Rust HTTP client and Ruby/Rails gateways | [Ruby guide](../ruby_app/README.md), Gemfiles and gateway routes; conversion domain behavior stays in Rust. |
+| `ruby_app/` (67) | Rust HTTP client, Ruby gateway and the Rails web client (`rails_gateway/`) | [Ruby guide](../ruby_app/README.md), [Rails web README](../ruby_app/rails_gateway/README.md), Gemfiles and gateway routes; browser conversion uses the generated runtime tree from `crates/converter-wasm` (`mise run rails:web:runtime-build`, never committed); conversion domain behavior stays in Rust. The former React client in `web/` was removed in the Rails cutover. |
 
 ## Supporting families
 
@@ -86,7 +85,7 @@ None of the generation/build commands below was run for this inventory.
 | Flutter `*.freezed.dart`, `*.g.dart` | Authored model declarations / `build_runner`, Freezed and JSON Serializable declared in `pubspec.yaml` | Generated model implementations; review models and generator versions |
 | Flutter `lib/l10n/app_localizations*.dart` | ARB files and [l10n.yaml](../flutter_app/l10n.yaml) / Flutter localization generation | Generated locale output; preserve intended locale text |
 | Flutter Linux/Windows `flutter/generated_*` | Flutter plugin resolution and platform generation from `pubspec.yaml`/lockfile | Generated plugin registrants and CMake lists |
-| Web `src/wasm/converter_wasm*` | `crates/converter-wasm`, Cargo.lock and [build_web_wasm.sh](../scripts/build_web_wasm.sh) / matching `wasm-bindgen` | Generated JS/types/WASM; matching schema and build identity required |
+| Web generated runtime tree (`ruby_app/rails_gateway/public/runtime/<id>/`) | `crates/converter-wasm`, Cargo.lock and [build-runtime-wasm](../ruby_app/rails_gateway/bin/build-runtime-wasm) / matching `wasm-bindgen` | Generated JS/types/WASM, gitignored and never committed; matching schema and build identity required |
 | Lockfiles and `.SRCINFO` | Package manifests / the owning package manager or Arch packaging metadata generator | Derived dependency/package identity; do not split mechanically |
 | `native/vendor/piper-rs/` | [UPSTREAM.md](../native/vendor/piper-rs/UPSTREAM.md): crates.io 0.2.0, upstream `d70b0970a87453f3476b5fd6cf9edf329be8b445`; MIT declared in manifest, no separate upstream license file | Local ONNX version, cancellation and configuration patches; preserve patch behavior when refreshing upstream |
 | `native/vendor/espeak-rs/` | Manifest declares 0.2.0, MIT and the Piper upstream repository; `LICENSE` retained | Local clause/punctuation wrapper; exact upstream diff and refresh recipe need investigation |

@@ -1,6 +1,6 @@
 // The browser conversion runtime: Rust ConversionSession creation, selection
 // capture against the Rust catalog, model readiness before inference and the
-// synthesis adapters. Port of web/src/services/BrowserConversionRuntime.ts.
+// synthesis adapters. Port of the former React client's BrowserConversionRuntime.ts (removed in the Rails cutover).
 // All I/O (bindings, catalog, model verification, the Piper client) is
 // injected, so job execution can run against this module or a test fixture.
 

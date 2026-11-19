@@ -11,5 +11,5 @@ useful for source-fidelity and language-markup regressions, and
 gateway. These fixtures do not establish that every current adapter preserves or
 synthesizes all those features.
 
-`web/public/sample.epub` is a separate consumer artifact; inspect its actual
+`ruby_app/rails_gateway/public/sample.epub` is a separate consumer artifact; inspect its actual
 consumers before changing either copy.

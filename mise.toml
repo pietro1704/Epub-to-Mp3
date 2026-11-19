@@ -1,5 +1,5 @@
 [tools]
-# Latest stable Node accepted by Vite, ESLint, Vitest and jsdom.
+# Latest stable Node accepted by the Rails browser runtime tooling.
 node = "26.13.0"
 npm = "12.2.2"
 # Project-managed Codex CLI; invoke through mise independently of app installs.
@@ -63,14 +63,6 @@ run = "mise exec -- ruby scripts/package_rust_cli.rb --run --"
 description = "Package the native Rust CLI; macOS preserves deployment target 12 and needs no Python runtime"
 run = "mise exec -- ruby scripts/package_rust_cli.rb --package-only"
 
-[tasks."web:wasm-build"]
-description = "Build and verify the direct Rust EPUB WASM adapter under the native build supervisor"
-run = "mise exec -- ruby scripts/native_build_command.rb --build-dir \"${CARGO_TARGET_DIR:-${CARGO_BUILD_TARGET_DIR:-target}}\" --build-dir web/src/wasm -- bash scripts/build_web_wasm.sh"
-
-[tasks."web:wasm-contract:test"]
-description = "Test generated WASM EPUB integrity, export voice and locale contracts without synthesis"
-run = "mise exec -- node --test web/scripts/wasm-epub.node-tests.mjs web/scripts/wasm-locale.node-tests.mjs"
-
 [tasks."rails:web:runtime-build"]
 description = "Build the Rails web client's generated runtime tree (Rust/WASM and pinned TTS libraries) under the native build supervisor"
 run = '''
@@ -84,12 +76,8 @@ description = "Run the Rails web client tests with at most two workers; uses the
 dir = "{{config_root}}/ruby_app/rails_gateway"
 run = "mise exec -- ruby bin/rails test:all && mise exec -- node --import ./browser_runtime/importmap_resolver.mjs --test --test-concurrency=2 'browser_runtime/*.test.mjs'"
 
-[tasks."tts:session:web:test"]
-description = "Verify real Piper/ONNX adapters, versioned WASM receipts and resumable session policy without model downloads"
-run = "mise exec -- node --experimental-transform-types --test web/scripts/piper-runtime.node-tests.mjs web/scripts/tts-session.node-tests.mjs web/scripts/wasm-locale.node-tests.mjs"
-
 [tasks."migration:product-boundary-audit"]
-description = "Exercise embedded Web and Flutter runtime contracts"
+description = "Exercise embedded Flutter runtime contracts"
 run = "bash scripts/check_direct_runtime_boundary.sh"
 
 [tasks."guard:no-python-production"]
@@ -207,14 +195,6 @@ run = "mise exec -- bash scripts/build_onnxruntime_macos.sh"
 [tasks."onnxruntime:host"]
 description = "Install the verified prebuilt host inference runtime without compiling ONNX"
 run = "mise exec -- ruby -r ./scripts/native_job.rb -e 'exit(0) unless RUBY_PLATFORM.include?(\"darwin\"); exit NativeJob.run(phase: \"build\", command: [RbConfig.ruby, \"scripts/fetch_onnxruntime_macos.rb\"])'"
-
-[tasks."tts:web:verify"]
-description = "Verify actual browser Piper synthesis and local Rust/WASM chapters serially"
-run = '''
-mise exec -- ruby scripts/native_build_command.rb -- mise exec -- ruby -e '
-exit($?.exitstatus || 1) unless system("mise", "exec", "--", "node", "web/scripts/verify-browser-tts.mjs")
-'
-'''
 
 [tasks."tts:portable:test"]
 description = "Verify portable Rust audio, WASM, web and Flutter paths with retained logs"
@@ -449,8 +429,8 @@ description = "Prune superseded Xcode caches below the configured free-space flo
 run = "ruby scripts/mac_build_budget.rb prune-if-low"
 
 [tasks.test]
-description = "Run the web suite"
-run = "mise run test:web"
+description = "Run the Rails web suite"
+run = "mise run rails:web:test"
 
 [tasks.preflight]
 description = "Run the full local delivery gate before opening or merging a PR"
@@ -463,7 +443,7 @@ run = """
 set -euo pipefail
 
 echo "🔍 npm CVE scan..."
-(cd web && mise exec -- npm audit --audit-level=moderate)
+(cd ruby_app/rails_gateway/browser_runtime && mise exec -- npm audit --audit-level=moderate)
 echo "✅ npm: no known vulnerabilities."
 """
 
@@ -1153,7 +1133,7 @@ if ffiEnabled {
     environment["APP_FOUNDATION_FFI_LIBRARY"] = taskRoot + "/target/debug/libconverter_ffi.dylib"
 }
 if environment["APP_FOUNDATION_FFI_FIXTURE"] == nil {
-    environment["APP_FOUNDATION_FFI_FIXTURE"] = taskRoot + "/web/public/sample.epub"
+    environment["APP_FOUNDATION_FFI_FIXTURE"] = taskRoot + "/ruby_app/rails_gateway/public/sample.epub"
 }
 child.environment = environment
 try child.run()
@@ -1196,20 +1176,9 @@ run = "docker build -t epub-to-mp3:local ."
 
 [tasks."docker:run"]
 description = "Run Docker image locally on port 7860"
-run = "docker run --rm -p 7860:7860 epub-to-mp3:local"
+run = "docker run --rm -p 7860:7860 -e SECRET_KEY_BASE=\"$(head -c 64 /dev/urandom | od -An -tx1 | tr -d '[:space:]')\" epub-to-mp3:local"
 
 # ── Tests ────────────────────────────────────────────────────────────────────────
-
-[tasks."test:web"]
-description = "Run web lint + test + build"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-(cd web && mise exec -- npm run lint)
-(cd web && mise exec -- npm run test)
-(cd web && mise exec -- npm run build)
-"""
 
 # ── Release ───────────────────────────────────────────────────────────────────────
 

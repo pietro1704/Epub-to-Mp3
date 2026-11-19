@@ -26,7 +26,7 @@ AppIcons::DENSITIES.each do |density, scale|
   png("#{AppIcons::ANDROID}/drawable-#{density}/ic_launcher_foreground.png", (108 * scale).round)
 end
 
-{ 'web/public/favicon.ico' => [16, 32, 48, 64],
+{ 'ruby_app/rails_gateway/public/favicon.ico' => [16, 32, 48, 64],
   'flutter_app/windows/runner/resources/app_icon.ico' => [16, 32, 48, 64, 128, 256] }.each do |path, expected|
   bytes = File.binread(File.join(AppIcons::ROOT, path))
   reserved, type, count = bytes.unpack('vvv')
@@ -41,13 +41,13 @@ end
   raise "Missing ICO sizes: #{path}" unless dimensions.sort == expected
 end
 
-manifest = JSON.parse(File.read(File.join(AppIcons::ROOT, 'web/public/site.webmanifest')))
+manifest = JSON.parse(File.read(File.join(AppIcons::ROOT, 'ruby_app/rails_gateway/public/site.webmanifest')))
 manifest.fetch('icons').each do |icon|
   size = Integer(icon.fetch('sizes').split('x').first)
-  png('web/public' + icon.fetch('src'), size)
+  png('ruby_app/rails_gateway/public' + icon.fetch('src'), size)
 end
-png('web/public/favicon.png', 64)
-png('web/public/apple-touch-icon.png', 180)
+png('ruby_app/rails_gateway/public/favicon.png', 64)
+png('ruby_app/rails_gateway/public/apple-touch-icon.png', 180)
 png('flutter_app/linux/resources/app-icon.png', 512)
 Dir.glob(File.join(AppIcons::ROOT, AppIcons::ANDROID, '**/*launcher*.xml')).each do |path|
   REXML::Document.new(File.read(path))

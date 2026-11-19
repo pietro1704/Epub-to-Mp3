@@ -1,5 +1,5 @@
 // Verifies installed model files against the checksums of the Rust catalog
-// before inference. Port of web/src/services/BrowserModelIntegrity.ts. The
+// before inference. Port of the former React client's BrowserModelIntegrity.ts (removed in the Rails cutover). The
 // OPFS directory and the digest are injected so the policy is testable.
 
 import { browserArtifacts } from "runtime/tts_catalog"

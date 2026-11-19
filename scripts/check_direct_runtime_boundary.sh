@@ -2,23 +2,16 @@
 set -euo pipefail
 
 # Exercise runtime behavior; compatibility identifiers are not transport evidence.
-selection="${1:-all}"
-if [[ $# -gt 1 ]] || [[ "$selection" != web && "$selection" != flutter && "$selection" != all ]]; then
-  echo 'Usage: check_direct_runtime_boundary.sh [web|flutter|all]' >&2
+selection="${1:-flutter}"
+if [[ $# -gt 1 ]] || [[ "$selection" != flutter ]]; then
+  echo 'Usage: check_direct_runtime_boundary.sh [flutter]' >&2
   exit 64
 fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 command -v mise >/dev/null || { echo 'BLOCKED: mise is required' >&2; exit 127; }
 
-if [[ "$selection" == web || "$selection" == all ]]; then
-  mise exec -- npm --prefix web run test -- \
-    src/services/EmbeddedConverter.test.ts \
-    src/services/BrowserConversionClient.test.ts \
-    src/test/App.integration.test.tsx \
-    src/test/useConversionFlow.test.ts
-fi
-if [[ "$selection" == flutter || "$selection" == all ]]; then
+if [[ "$selection" == flutter ]]; then
   (
     cd flutter_app
     mise exec -- flutter test --no-pub \

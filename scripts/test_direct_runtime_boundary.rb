@@ -25,7 +25,7 @@ class DirectRuntimeBoundaryTest < Minitest::Test
       File.open(ENV.fetch('BOUNDARY_CALLS'), 'a') do |file|
         file.puts(JSON.generate({ 'cwd' => Dir.pwd, 'argv' => ARGV }))
       end
-      exit Integer(ENV.fetch(ARGV.include?('flutter') ? 'FLUTTER_EXIT' : 'WEB_EXIT', '0'))
+      exit Integer(ENV.fetch('FLUTTER_EXIT', '0'))
     RUBY
     FileUtils.chmod(0o755, @mise)
   end
@@ -50,18 +50,7 @@ class DirectRuntimeBoundaryTest < Minitest::Test
     refute_includes output, 'RESULT PASS'
   end
 
-  def test_web_selection_preserves_literal_arguments_and_root
-    output, error, status = invoke('web')
-    assert status.success?, error
-    assert_equal [{ 'cwd' => @root, 'argv' => [
-      'exec', '--', 'npm', '--prefix', 'web', 'run', 'test', '--',
-      'src/services/EmbeddedConverter.test.ts', 'src/services/BrowserConversionClient.test.ts',
-      'src/test/App.integration.test.tsx', 'src/test/useConversionFlow.test.ts'
-    ] }], calls
-    assert_includes output, 'RESULT PASS: web'
-  end
-
-  def test_flutter_selection_uses_its_project_without_web
+  def test_flutter_selection_uses_its_project
     output, error, status = invoke('flutter')
     assert status.success?, error
     assert_equal [{ 'cwd' => File.join(@root, 'flutter_app'), 'argv' => [
@@ -73,29 +62,22 @@ class DirectRuntimeBoundaryTest < Minitest::Test
     assert_includes output, 'RESULT PASS: flutter'
   end
 
-  def test_default_requires_both_contract_suites_in_order
+  def test_default_runs_the_flutter_contract_suite
     output, error, status = invoke
     assert status.success?, error
-    assert_equal [@root, File.join(@root, 'flutter_app')], calls.map { |call| call['cwd'] }
-    assert_equal 1, output.scan('RESULT PASS: all').length
+    assert_equal [File.join(@root, 'flutter_app')], calls.map { |call| call['cwd'] }
+    assert_equal 1, output.scan('RESULT PASS: flutter').length
   end
 
-  def test_web_failure_stops_before_flutter
-    output, _error, status = invoke('all', 'WEB_EXIT' => '23')
-    assert_blocked status, output, 23
-    assert_equal 1, calls.length
-    assert_includes calls.first['argv'], 'npm'
-  end
-
-  def test_flutter_failure_propagates_after_web_success
-    output, _error, status = invoke('all', 'FLUTTER_EXIT' => '31')
+  def test_flutter_failure_propagates
+    output, _error, status = invoke('flutter', 'FLUTTER_EXIT' => '31')
     assert_blocked status, output, 31
-    assert_equal 2, calls.length
+    assert_equal 1, calls.length
   end
 
   def test_missing_mise_cannot_report_capability_success
     FileUtils.rm(@mise)
-    output, error, status = invoke('web')
+    output, error, status = invoke('flutter')
     assert_blocked status, output, 127
     assert_includes error, 'mise is required'
     assert_empty calls
@@ -110,7 +92,7 @@ class DirectRuntimeBoundaryTest < Minitest::Test
   end
 
   def test_invalid_or_extra_selection_never_starts_tools
-    [['unknown'], ['web', 'flutter']].each do |arguments|
+    [['unknown'], ['web'], ['all'], ['flutter', 'flutter']].each do |arguments|
       output, error, status = invoke(*arguments)
       assert_blocked status, output, 64
       assert_includes error, 'Usage:'

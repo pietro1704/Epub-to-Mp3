@@ -115,7 +115,7 @@ relevant implementation before relying on a surface-specific behavior.
 - **Audio reuse**: completed chapter audio is reused only after its source and provider identity are validated
 - **Chapter structure**: preserves TOC hierarchy (NCX / EPUB3 nav), numbered `1.0 / 1.1 / 1.2`
 - **Batch conversion**: the Rust CLI accepts EPUB inputs; format support is surface-specific
-- **Web UI**: React browser client with Rust/WASM book processing and local Piper synthesis; the HTTP server remains a compatibility surface
+- **Web UI**: Rails (Hotwire) client in `ruby_app/rails_gateway` with Rust/WASM book processing and local Piper synthesis in the browser; the HTTP server remains a compatibility surface
 - **Audio validation**: WPM-based truncation detection, auto-retry with engine fallback
 - **Progress ETA**: per-chapter telemetry + chunk tracking for accurate estimates
 
@@ -188,16 +188,20 @@ intentionally authorized clear.
 mise run rust:server                   # Native Rust server (canonical)
 ```
 
-The Docker deployment builds `converter-server` and serves the browser bundle.
-Its HTTP conversion endpoints are compatibility routes with their own provider
-capabilities; they are not required for the browser's local WASM conversion or
-for native clients.
+The root `Dockerfile` builds the Rails web client (it does not include
+`converter-server`). The `converter-server` HTTP conversion endpoints are
+compatibility routes with their own provider capabilities; they are not
+required for the browser's local WASM conversion or for native clients.
 
-Frontend dev server (hot reload):
+Rails web client (the WASM runtime is generated, never committed):
 
 ```bash
-cd web && npm run dev
+mise run rails:web:runtime-build       # generated Rust/WASM + TTS runtime tree
+mise run rails:web:test                # Rails and browser-runtime tests
+cd ruby_app/rails_gateway && mise exec -- bin/rails server
 ```
+
+See [ruby_app/rails_gateway/README.md](ruby_app/rails_gateway/README.md).
 
 ---
 
@@ -214,8 +218,7 @@ browser's local WASM conversion and the native clients do not depend on them.
 ## Development
 
 ```bash
-mise run test           # Web lint + tests + build; not a full Rust/Flutter/Apple gate
-mise run test:web       # Web lint + tests + build
+mise run test           # Rails web tests (Ruby and browser runtime); not a full Rust/Flutter/Apple gate
 mise run hooks-test     # Validate Git hooks and the host workflow gate
 mise run audit          # Scan npm dependencies for CVEs
 ```
@@ -263,8 +266,8 @@ Epub-to-Mp3/
 ├── mise.toml                # Tool versions and authoritative task definitions
 ├── ios/EpubToMp3/           # Native Apple client
 ├── flutter_app/             # Non-Apple client with embedded Rust bindings
-├── web/                     # Local browser WASM/Piper surface and compatibility adapters
-├── Dockerfile               # Rust server and browser bundle deployment
+├── ruby_app/rails_gateway/  # Rails web client; conversion runs in the browser (Rust/WASM + Piper)
+├── Dockerfile               # Rails web image (Hugging Face Space)
 ├── docs/adr/                # Accepted architecture decisions
 └── scripts/                 # Audits, validation and build helpers
 ```
@@ -273,14 +276,15 @@ Epub-to-Mp3/
 
 ## HF Spaces
 
-The Space runs via Docker. GitHub CI syncs code → HF rebuilds the image.
+The Space runs the Rails web image via Docker. GitHub CI publishes a
+`scripts/hf_snapshot.rb` snapshot (`.hf-runtime` is `rails`) and HF rebuilds the image from the root `Dockerfile`.
 
-Key auto-applied settings when `SPACE_ID` is set:
+Key settings `converter-server` auto-applies when `SPACE_ID` is set (the Rails Space image does not run `converter-server`; they matter only where it is deployed):
 - `EDGE_MAX_CONCURRENCY=1`, `CHAPTER_PARALLEL_MAX=1` (shared CPU)
 - `EDGE_MIN_CHARS_PER_SECOND=100`; timeout behavior is selected by the HF runtime profile
 - `COMPLETED_JOB_TTL_HOURS=48` (outputs survive overnight on `/data`)
 
-Persistent storage at `/data/epub-to-mp3/` survives Space restarts.
+With a persistent mount, `/data/epub-to-mp3/` survives restarts of a `converter-server` deployment. The Rails interface needs no server state (see the ADR, section 3.7).
 
 ---
 

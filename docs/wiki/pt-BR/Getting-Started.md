@@ -7,9 +7,10 @@ pertencem aos manifestos; a instalação não parte de uma lista Python duplicad
 
 - Apple: siga o [guia nativo](../../../ios/EpubToMp3/README.md) e a
   [validação macOS](../../agents/macos-validation.md), reutilizando artefatos compatíveis.
-- Navegador: siga [web/README.md](../../../web/README.md); com dependências existentes,
-  `mise exec -- npm run dev` em `web/` inicia Vite. WASM e assets de TTS devem
-  corresponder ao código atual.
+- Navegador: siga o [README do web Rails](../../../ruby_app/rails_gateway/README.md);
+  `mise run rails:web:runtime-build` gera a árvore de runtime Rust/WASM e TTS e
+  `mise run rails:web:test` roda os testes. A árvore deve corresponder ao código
+  atual; ela nunca é commitada.
 - CLI: [CLI e Web](CLI-and-Web.md) descreve a tarefa Rust `convert`.
 - Flutter: siga [flutter_app/README.md](../../../flutter_app/README.md) e os
   pré-requisitos da plataforma; trabalho Android está pausado.

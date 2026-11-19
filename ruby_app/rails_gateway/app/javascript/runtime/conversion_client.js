@@ -1,6 +1,6 @@
 // Browser API and input policy for conversion jobs; Rust owns segment
 // planning and audio acceptance. Port of the live half of
-// web/src/services/BrowserConversionClient.ts. Books arrive already inspected
+// the former React client's BrowserConversionClient.ts (removed in the Rails cutover). Books arrive already inspected
 // by the book queue, so there is no upload step: the document never leaves
 // this page.
 

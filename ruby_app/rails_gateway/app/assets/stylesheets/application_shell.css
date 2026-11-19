@@ -1,4 +1,4 @@
-/* Shell, top bar and footer. Ported from web/src/styles/application_shell.css and desktop_status.css. */
+/* Shell, top bar and footer. Ported from the former React client's application_shell.css and desktop_status.css (removed in the Rails cutover). */
 .app-shell {
   min-height: 100vh;
   display: flex;

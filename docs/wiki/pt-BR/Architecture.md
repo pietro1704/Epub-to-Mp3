@@ -9,7 +9,7 @@ condicional; processos e rede nativos não formam uma API do navegador.
 | Superfície | Entrada no código | Responsabilidade do adaptador |
 | --- | --- | --- |
 | Apple | `ios/EpubToMp3/EpubToMp3/Features/` | UIKit/AppKit, arquivos locais, mídia e FFI |
-| Web | `web/src/services/BrowserConversionClient.ts` | I/O, Piper e armazenamento do navegador em torno de sessões Rust |
+| Web | `ruby_app/rails_gateway/app/javascript/runtime/conversion_client.js` | Página Rails; I/O, Piper e armazenamento do navegador em torno de sessões Rust |
 | Flutter | `flutter_app/lib/main.dart`, `lib/services/conversion/embedded_converter.dart` | Canal nativo Android e FFI Linux/Windows registrados |
 | Servidor opcional | `crates/converter-server/src/main.rs` | Contrato HTTP hospedado de compatibilidade |
 

@@ -1,13 +1,16 @@
 # Deploy e Hugging Face Spaces
 
-O `Dockerfile` atual compila React/Vite e `converter-server` Rust, depois executa
-o binário em imagem Debian mínima. Inspecione revisão implantada, modo do cliente e workflow antes de
-diagnosticar serviço hospedado.
+O `Dockerfile` da raiz compila o cliente web Rails: a árvore de runtime Rust/WASM
+é compilada em um estágio de build, e a imagem Ruby final contém as gems, a
+aplicação, os assets pré-compilados e o runtime gerado (sem Node, toolchain Rust,
+`converter-server` nem pesos de modelo). O Space é publicado a partir de um
+snapshot de `scripts/hf_snapshot.rb` (`.hf-runtime` é `rails`). Inspecione a
+revisão implantada e o workflow antes de diagnosticar serviço hospedado.
 
-O container declara `PORT=7860`, `HOST=0.0.0.0` e
-`PERSISTENT_ROOT=/data/epub-to-mp3`, com healthcheck em `/api/health`. São valores
-no código, não comprovação de serviço acessível ou armazenamento persistente.
-Sobreviver a reinícios exige volume persistente real e paths/permissões corretos.
+A imagem serve na porta 7860 e responde `/api/health` (e `/health`) localmente.
+São valores no código, não comprovação de serviço acessível. A interface Rails
+não precisa de estado no servidor; qualquer armazenamento em `PERSISTENT_ROOT`
+vale apenas para a API de compatibilidade opcional. Sobreviver a reinícios exige volume persistente real e paths/permissões corretos.
 Preserve cache, saídas, jobs e dados do usuário.
 
 R2/object storage é opcional e não está comprovado por este repositório. Consulte

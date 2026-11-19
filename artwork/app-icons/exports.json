@@ -5,7 +5,7 @@
     "ios/EpubToMp3/EpubToMp3/AppIcon.icon/Assets/03-cushions.svg": "fd3697515fc5435b7a5c5e5ecd2c8eb324b9a1a25c817d3ebb141853741674da",
     "ios/EpubToMp3/EpubToMp3/AppIcon.icon/icon.json": "05a32ecca14d88b05de607c3f50e200b3d73c37abcc39003dd3397eda1460a7c"
   },
-  "exporter_sha256": "c1685933b182fc7e13770ee494b1f7682fb0e79b5d594f8e2dedf49be96178cd",
+  "exporter_sha256": "9364532a2d63c9889d844902131e2c6d345c06bc710de8c156a2485a17bf9046",
   "outputs": {
     "flutter_app/android/app/src/main/res/drawable-hdpi/ic_launcher_foreground.png": "8e7e16cc58c53ed3acd3921d5b42520a2df325acc3d8e0bd305d56310497ed3a",
     "flutter_app/android/app/src/main/res/drawable-mdpi/ic_launcher_foreground.png": "90b8ddafdd897876198d5f9ac70f6f8d1ed95e5af8fd85bed7e174fbd41902d2",
@@ -47,10 +47,10 @@
     "ios/EpubToMp3/EpubToMp3/AppIcons.xcassets/AppIcon.appiconset/icon-mac-32@2x.png": "b05ea8b7aa865abb6c09123280350a9b8350a06ee20ab54323f69d19e02c8a37",
     "ios/EpubToMp3/EpubToMp3/AppIcons.xcassets/AppIcon.appiconset/icon-mac-512@1x.png": "5f7405b2f02042ce7c8b4d1a3aad7024b940e10361a5c34b1d47c14d2fc2abb9",
     "ios/EpubToMp3/EpubToMp3/AppIcons.xcassets/AppIcon.appiconset/icon-mac-512@2x.png": "14334296c0f291b8f9cb2ffa5aaffa08cf65cf4b87a5399b68dfc3cea01c24de",
-    "web/public/app-icon-192.png": "55cf05f675773361a113ffd5c3299aaa29962eef6328f75a7ae2cd23d6ce8b0e",
-    "web/public/app-icon-512.png": "5f7405b2f02042ce7c8b4d1a3aad7024b940e10361a5c34b1d47c14d2fc2abb9",
-    "web/public/apple-touch-icon.png": "5f13f140829fad2923e28dea8814ffc277a5890f0ed6f84894053112327cb2d7",
-    "web/public/favicon.ico": "17d6c53b49ec601ddefacd1fea3bdc18fde31bb4ef227e2e0ee9f8be333570cf",
-    "web/public/favicon.png": "b05ea8b7aa865abb6c09123280350a9b8350a06ee20ab54323f69d19e02c8a37"
+    "ruby_app/rails_gateway/public/app-icon-192.png": "55cf05f675773361a113ffd5c3299aaa29962eef6328f75a7ae2cd23d6ce8b0e",
+    "ruby_app/rails_gateway/public/app-icon-512.png": "5f7405b2f02042ce7c8b4d1a3aad7024b940e10361a5c34b1d47c14d2fc2abb9",
+    "ruby_app/rails_gateway/public/apple-touch-icon.png": "5f13f140829fad2923e28dea8814ffc277a5890f0ed6f84894053112327cb2d7",
+    "ruby_app/rails_gateway/public/favicon.ico": "17d6c53b49ec601ddefacd1fea3bdc18fde31bb4ef227e2e0ee9f8be333570cf",
+    "ruby_app/rails_gateway/public/favicon.png": "b05ea8b7aa865abb6c09123280350a9b8350a06ee20ab54323f69d19e02c8a37"
   }
 }

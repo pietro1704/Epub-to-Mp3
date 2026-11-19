@@ -5,7 +5,7 @@ clients, with shared Rust conversion behavior. Format/provider support varies by
 adapter; product targets and retained legacy code do not prove current support.
 
 - CLI: `crates/converter-cli/`, using the embedded Rust pipeline.
-- Web: React/TypeScript plus Rust/WASM and browser Piper.
+- Web: Rails (Hotwire) client plus Rust/WASM and browser Piper.
 - Apple: native UIKit/AppKit with embedded `converter-ffi`.
 - Linux/Windows/Android: Flutter with registered Rust adapters.
 - Hosted compatibility API: separate Rust `converter-server` deployment.

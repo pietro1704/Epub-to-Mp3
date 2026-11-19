@@ -1,4 +1,4 @@
-/* Tabs and panels. Ported from web/src/styles/navigation_panels.css. */
+/* Tabs and panels. Ported from the former React client's navigation_panels.css (removed in the Rails cutover). */
 .tabs {
   width: 100%;
   padding-bottom: 2rem;

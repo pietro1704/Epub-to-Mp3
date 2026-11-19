@@ -1,7 +1,8 @@
 // Seals stored chapter audio against the exact source text, selection,
 // synthesis receipts and bytes, using the Rust cache-identity schema. Port of
-// web/src/services/BrowserAudioIdentity.ts; both clients read the same jobs,
-// so the sealed format must stay byte-for-byte identical.
+// the former React client's BrowserAudioIdentity.ts (removed in the Rails cutover);
+// jobs sealed by the former client must keep verifying, so the sealed format
+// must stay byte-for-byte identical.
 
 /**
  * @typedef {object} AudioReceipt
@@ -27,7 +28,7 @@
  * @property {Blob} blob
  * @property {number} [textOffset]
  * @property {AudioRange[]} [chunks]
- * @property {string} [cacheIdentity] IndexedDB v1 integrity seal readable by the deployed React client
+ * @property {string} [cacheIdentity] IndexedDB v1 integrity seal written by the former React client
  * @property {string} [synthesisCacheIdentity] seal under the producing Rust synthesis profile
  * @property {AudioReceipt[]} [ttsReceipts]
  */

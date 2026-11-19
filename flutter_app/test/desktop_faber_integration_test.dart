@@ -54,7 +54,7 @@ void main() {
       final models = _requiredPath('EPUB_DART_FABER_MODELS');
       final report = _requiredPath('EPUB_DART_FABER_REPORT');
       final ortVersion = Platform.isWindows ? _preloadPackagedWindowsOrt(library) : null;
-      final input = File('../web/public/sample.epub').absolute;
+      final input = File('../ruby_app/rails_gateway/public/sample.epub').absolute;
       expect(await input.exists(), true);
       final directory = await Directory.systemTemp.createTemp('dart-faber-owned-');
       const jobId = 'dart-faber %20#identity';
@@ -114,7 +114,7 @@ void main() {
         }
         await File(report).parent.create(recursive: true);
         await File(report).writeAsString(jsonEncode({
-          'jobId': jobId, 'input': 'web/public/sample.epub',
+          'jobId': jobId, 'input': 'ruby_app/rails_gateway/public/sample.epub',
           'chapterStart': 0, 'chapterEnd': 1,
           'modelId': 'pt_BR-faber-medium', 'fallbackUsed': false,
           'ortVersion': ?ortVersion,

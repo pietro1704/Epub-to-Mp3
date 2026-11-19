@@ -1,6 +1,6 @@
 // Validation of installed Piper models, shared by the module worker and its
 // node tests. It imports nothing, so it runs unchanged in both places. Ported
-// from web/src/services/BrowserPiperRuntime.ts.
+// from the former React client's BrowserPiperRuntime.ts (removed in the Rails cutover).
 
 export const MAX_SEGMENT_CODE_POINTS = 800
 

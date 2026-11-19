@@ -9,7 +9,7 @@ conditionally compiled; the full native process/network pipeline is not a browse
 | Surface | Source entry | Adapter responsibility |
 | --- | --- | --- |
 | Apple | `ios/EpubToMp3/EpubToMp3/Features/` | UIKit/AppKit, local files, media and FFI |
-| Web | `web/src/services/BrowserConversionClient.ts` | Browser I/O/Piper/storage around Rust sessions |
+| Web | `ruby_app/rails_gateway/app/javascript/runtime/conversion_client.js` | Rails page; browser I/O/Piper/storage around Rust sessions |
 | Flutter | `flutter_app/lib/main.dart`, `lib/services/conversion/embedded_converter.dart` | Registered Android native channel and Linux/Windows FFI |
 | Optional server | `crates/converter-server/src/main.rs` | Hosted HTTP compatibility contract |
 

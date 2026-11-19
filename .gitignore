@@ -56,8 +56,6 @@ ENV/
 !.env.example
 !.env.template
 !.env.*.example
-# Checked-in Vite profiles contain public API routing only.
-!/web/.env.production
 .venv/
 .venv*/
 env.bak/
@@ -117,7 +115,6 @@ Thumbs.db
 # EBook files (for testing - uncomment if needed)
 *.epub
 !tests/fixtures/epubs/*.epub
-!web/public/sample.epub
 *.pdf
 *.mobi
 *.azw3
@@ -158,10 +155,8 @@ pretrained_models/
 .pretrained_models
 
 # Frontend build artifacts
-web/node_modules/
 # Match directories and local dependency symlinks at every depth.
 node_modules
-web/dist/
 
 # Conversion logs (runtime data)
 .logs/
@@ -201,9 +196,6 @@ target/
 # Local Hermes QA artifacts
 .hermes-run/
 .qa/
-
-# Generated browser speech runtime assets
-/web/public/tts/
 
 # Generated Android phonemizer assets, prepared by the native packaging task
 /flutter_app/android/app/src/main/assets/espeak-ng-data/

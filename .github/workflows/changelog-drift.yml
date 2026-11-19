@@ -4,16 +4,16 @@ name: CHANGELOG drift
 # output diverges from the committed CHANGELOG.md. Doesn't block — just
 # a heads-up so an out-of-date CHANGELOG isn't discovered at release time.
 #
-# Triggered on PRs that modify crates/, web/src/, or version files,
+# Triggered on PRs that modify crates/, the Rails app, or version files,
 # i.e. anywhere a release-worthy change might land.
 
 on:
   pull_request:
     paths:
       - "crates/**"
-      - "web/src/**"
+      - "ruby_app/rails_gateway/app/**"
       - "Cargo.toml"
-      - "web/package.json"
+      - "ruby_app/rails_gateway/VERSION"
       - "CHANGELOG.md"
       - "cliff.toml"
       - '.github/workflows/changelog-drift.yml'
