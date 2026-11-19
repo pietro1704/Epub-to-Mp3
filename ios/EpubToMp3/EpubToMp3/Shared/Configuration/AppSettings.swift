@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import os.log
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -22,17 +21,14 @@ final class AppSettings: ObservableObject {
     static let playbackSkipIntervals: Set<Double> = [15, 30, 45, 60]
     private let defaults: UserDefaults
     private var loadingPersistedValues = true
-    private static let log = Logger(subsystem: "epub2mp3", category: "Settings")
+    /// Narration choices and their rules; `AppSettings` forwards its speech
+    /// surface to it (`AppSpeechPreferences.swift`) and republishes its changes.
+    let speechPreferences: SpeechPreferences
+    private var speechPreferencesObservation: AnyCancellable?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        SpeechPreferenceMigration.runIfNeeded(defaults)
-        self.primaryTtsSelection = Self.storedSelection(defaults, key: SpeechPreferenceMigration.Key.primarySelection)
-            ?? .defaultPiper
-        self.secondaryTtsSelection = Self.storedSelection(defaults, key: SpeechPreferenceMigration.Key.secondarySelection)
-        self.allowOnlineAudioFallback = defaults.bool(forKey: SpeechPreferenceMigration.Key.onlineFallbackConsent)
-        self.allowAutomaticSystemVoiceFallback =
-            defaults.object(forKey: "allowAutomaticSystemVoiceFallback") as? Bool ?? true
+        self.speechPreferences = SpeechPreferences(defaults: defaults)
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
         )
@@ -65,78 +61,10 @@ final class AppSettings: ObservableObject {
         self.readerLetterSpacing = reader.readerLetterSpacing
         self.readerWordSpacing = reader.readerWordSpacing
         loadingPersistedValues = false
-    }
-
-    /// Explicit narration choices, persisted as `TtsSelection` JSON. Change them
-    /// through `selectPrimaryNarration` and `selectSecondaryNarration`, which keep
-    /// the secondary valid for the primary and the online consent.
-    @Published private(set) var primaryTtsSelection: TtsSelection = .defaultPiper {
-        didSet {
-            guard !loadingPersistedValues else { return }
-            persist(primaryTtsSelection, forKey: SpeechPreferenceMigration.Key.primarySelection)
-        }
-    }
-    @Published private(set) var secondaryTtsSelection: TtsSelection? = nil {
-        didSet {
-            guard !loadingPersistedValues else { return }
-            persist(secondaryTtsSelection, forKey: SpeechPreferenceMigration.Key.secondarySelection)
-        }
-    }
-    @Published var allowAutomaticSystemVoiceFallback = true {
-        didSet {
-            guard !loadingPersistedValues else { return }
-            defaults.set(allowAutomaticSystemVoiceFallback, forKey: "allowAutomaticSystemVoiceFallback")
-        }
-    }
-    @Published var allowOnlineAudioFallback = false {
-        didSet {
-            guard !loadingPersistedValues else { return }
-            defaults.set(allowOnlineAudioFallback, forKey: SpeechPreferenceMigration.Key.onlineFallbackConsent)
-            if secondaryTtsSelection?.isAllowedAsFallback(allowOnlineFallback: allowOnlineAudioFallback) == false {
-                secondaryTtsSelection = nil
-            }
-        }
-    }
-
-    /// Makes `selection` the primary voice; a secondary that would now repeat
-    /// it is cleared. Consent is not re-checked here: revoking it already clears
-    /// an Edge secondary, and `ttsPreferences` never sends one without consent.
-    func selectPrimaryNarration(_ selection: TtsSelection) {
-        primaryTtsSelection = selection
-        if secondaryTtsSelection?.representsSameRequest(as: selection) == true {
-            secondaryTtsSelection = nil
-        }
-    }
-
-    /// Sets or clears the secondary voice. A selection that repeats the primary,
-    /// or Edge without online consent, is rejected and leaves no secondary.
-    func selectSecondaryNarration(_ selection: TtsSelection?) {
-        secondaryTtsSelection = selection.flatMap {
-            $0.canBeSecondary(to: primaryTtsSelection, allowOnlineFallback: allowOnlineAudioFallback) ? $0 : nil
-        }
-    }
-
-    /// A selection that cannot be decoded is logged and left on disk; it is
-    /// only replaced when the user makes a new explicit choice.
-    private static func storedSelection(_ defaults: UserDefaults, key: String) -> TtsSelection? {
-        guard defaults.object(forKey: key) != nil else { return nil }
-        guard let selection = SpeechPreferenceMigration.decodeSelection(defaults, key: key) else {
-            log.error("Saved \(key, privacy: .public) could not be decoded; using the default until a new choice")
-            return nil
-        }
-        return selection
-    }
-
-    /// An encoding failure keeps the previously saved choice instead of erasing it.
-    private func persist(_ selection: TtsSelection?, forKey key: String) {
-        guard let selection else {
-            defaults.removeObject(forKey: key)
-            return
-        }
-        do {
-            defaults.set(try JSONEncoder().encode(selection), forKey: key)
-        } catch {
-            Self.log.error("Could not save \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        // Synchronous, like the `@Published` speech properties it replaces:
+        // observers still hear about a change before the value moves.
+        speechPreferencesObservation = speechPreferences.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
         }
     }
 
