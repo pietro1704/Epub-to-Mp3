@@ -200,7 +200,9 @@ class MacBuildBudgetTest < Minitest::Test
       File.chmod(0o755, path)
     end
     @env = { "PATH" => "#{bin}:#{ENV.fetch('PATH')}", "BUDGET_FIXTURE_ROOT" => @dir,
-             "BUDGET_FREE_STATE" => @free, "BUDGET_TRACE" => @trace, "EPUB_NATIVE_LEASE_FD" => nil, "EPUB_NATIVE_LEASE_PATH" => nil }
+             "BUDGET_FREE_STATE" => @free, "BUDGET_TRACE" => @trace, "EPUB_NATIVE_LEASE_FD" => nil, "EPUB_NATIVE_LEASE_PATH" => nil,
+             # The local one-job contract; the hosted-runner allowance is tested in test_native_job.rb.
+             "GITHUB_ACTIONS" => nil, "RUNNER_ENVIRONMENT" => nil }
     @command = [RbConfig.ruby, File.join(scripts, "native_job.rb"), "--lock-path", File.join(@dir, "lease"),
                 "build", "--", RbConfig.ruby, "-e"]
   end
@@ -292,12 +294,19 @@ class MacBuildBudgetTest < Minitest::Test
     assert_match(/exactly one job/, error)
     refute File.exist?(@marker)
     require_relative "native_job"
-    %w[-j8 --jobs=8 --jobs=-1].each do |option|
-      assert_match(/exactly one job/, NativeJob.parallelism_error(["cargo", "build", option]))
+    # Exercise the local one-job contract even when this suite runs on a hosted runner.
+    NativeJob.singleton_class.alias_method(:hosted_build_jobs_for_test, :build_jobs)
+    NativeJob.define_singleton_method(:build_jobs) { |*| 1 }
+    begin
+      %w[-j2 -j8 --jobs=2 --jobs=8 --jobs=-1].each do |option|
+        assert_match(/exactly one job/, NativeJob.parallelism_error(["cargo", "build", option]))
+      end
+      assert_match(/exactly one job/, NativeJob.parallelism_error(["cmake", "--build", ".", "--parallel", "2"]))
+      assert_nil NativeJob.parallelism_error(["cargo", "build", "--jobs", "1"])
+      assert_nil NativeJob.parallelism_error(["xcodebuild", "-showdestinations", "-json", "-jobs", "1"])
+    ensure
+      NativeJob.singleton_class.alias_method(:build_jobs, :hosted_build_jobs_for_test)
     end
-    assert_match(/exactly one job/, NativeJob.parallelism_error(["cmake", "--build", ".", "--parallel", "8"]))
-    assert_nil NativeJob.parallelism_error(["cargo", "build", "--jobs", "1"])
-    assert_nil NativeJob.parallelism_error(["xcodebuild", "-showdestinations", "-json", "-jobs", "1"])
   end
 
   def test_device_and_variant_build_caches_are_preserved_by_cleanup
@@ -326,7 +335,16 @@ class MacBuildBudgetTest < Minitest::Test
     %w[mac:build ios:build ios:device:build converter-ffi:build].each do |name|
       body = task_body(name)
       assert_match(/(?:native_job\.rb["']?\s+(?:--build-dir\s+"[^"]+"\s+)*build\s+--|native_build_command\.rb["']?\s+(?:--build-dir\s+"[^"]+"\s+)*--)/, body, name)
-      assert_match(/(?:-jobs|--jobs)(?:["']\s*,\s*["']|\s+)1/, body, name)
+      if name == "converter-ffi:build"
+        # Both Cargo commands take NativeJob.build_jobs, which is 1 off GitHub-hosted runners.
+        cargo = body.lines.grep(/\[\s*"cargo",/)
+        assert_equal 2, cargo.size, body
+        cargo.each { |line| assert_match(/"--jobs", NativeJob\.build_jobs\.to_s\]/, line) }
+        refute_match(/"--jobs", "(?!1")\d+"/, body)
+      else
+        assert_match(/(?:-jobs|--jobs)(?:["']\s*,\s*["']|\s+)1/, body, name)
+        refute_match(/build_jobs/, body, name)
+      end
       refute_match(/-parallelizeTargets/, body, name)
       _, error, status = Open3.capture3("/bin/bash", "-n", stdin_data: body)
       assert status.success?, error

@@ -198,6 +198,18 @@ class CiRuntimeScopeTest
     end
   end
 
+  # The Piper test takes its job count only from the native_job.rb guard.
+  def test_faber_piper_cancellation_cargo_test_runs_under_the_native_job_guard
+    faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
+    step = faber.fetch('jobs').fetch('macos-preferences').fetch('steps').find { |entry| entry['name'] == 'Verify native Piper cancellation and subsequent inference' }
+    refute_nil step
+    run = step.fetch('run')
+    cargo = run.lines.drop_while { |line| !line.include?('cargo test') }.take_while { |line| !line.strip.end_with?('--nocapture') }.join
+    assert_includes run, 'mise exec -- ruby scripts/native_job.rb build -- cargo test --locked -p piper-runtime --release --lib'
+    refute_match(/--jobs|-j\d|CARGO_BUILD_JOBS/, cargo)
+    refute (step.fetch('env', {}).keys + faber.fetch('jobs').fetch('macos-preferences').fetch('env', {}).keys).include?('CARGO_BUILD_JOBS')
+  end
+
   def test_faber_intel_prebuilt_is_opt_in_and_has_no_rust_build_fallback
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     triggers = faber.fetch('on', faber[true])
