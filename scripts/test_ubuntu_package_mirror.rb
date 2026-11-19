@@ -95,9 +95,11 @@ class UbuntuPackageMirrorTest < Minitest::Test
   def test_cli_bootstrap_bounds_network_wait_without_weakening_apt_validation
     workflow = YAML.load_file(File.join(ROOT, '.github/workflows/cli-faber-golden.yml'))
     job = workflow.fetch('jobs').fetch('packaged-cli')
-    assert_equal 35, job.fetch('timeout-minutes')
     step = job.fetch('steps').find { |entry| entry['name'] == 'Install native build and full audio decoding prerequisites' }
-    assert_equal 7, step.fetch('timeout-minutes')
+    # A slow mirror exceeded the old 7-minute bound in 6 of 17 post-merge runs; the build
+    # and golden run (about 7.5 min warm, longer cold with one compiler job) keep 30 minutes.
+    assert_operator step.fetch('timeout-minutes'), :>=, 12
+    assert_operator job.fetch('timeout-minutes') - step.fetch('timeout-minutes'), :>=, 30
     run = step.fetch('run')
     assert_includes run, 'scripts/normalize_ubuntu_package_mirror.rb'
     assert_operator run.index('scripts/normalize_ubuntu_package_mirror.rb'), :<, run.index('apt-get')
