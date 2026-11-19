@@ -30,7 +30,7 @@ module ConverterFfiLocalBuild
   # Measured on the Intel development Mac (see docs/agents/macos-validation.md):
   # release keeps codegen-units=1 and thin LTO. Locally, workspace crates build
   # incrementally at opt-level 0 without LTO (a converter-core edit fell from
-  # 98 s to about 12 s of cargo time), while dependencies keep opt-level 3 and
+  # 98 s to 14 s of cargo time), while dependencies keep opt-level 3 and
   # one codegen unit, which kept the cold build closest to release.
   PROFILE_SETTINGS = {
     "opt-level" => "0",
