@@ -130,6 +130,18 @@ final class LegacyJobPathSafetyTests: XCTestCase {
         assertSentinelsIntact("tampered", "deleteChapter")
     }
 
+    func testSymlinkedChaptersFolderIsNotFollowed() throws {
+        try write("linked/manifest.json", under: root, manifest(jobID: "linked", fileName: "a.mp3"))
+        let chapters = root.appendingPathComponent("linked/chapters")
+        try FileManager.default.createSymbolicLink(at: chapters,
+            withDestinationURL: parent.appendingPathComponent("outside-dir/chapters", isDirectory: true))
+        sentinels.append(chapters)
+        XCTAssertEqual(AudiobookDownloadStorage.locallyDownloadedIndices(for: "linked"), [])
+        XCTAssertNil(AudiobookDownloadStorage.localAudioURL(jobId: "linked", chapterIndex: 0))
+        AudiobookDownloadStorage.deleteChapter(jobId: "linked", chapterIndex: 0)
+        assertSentinelsIntact("linked", "deleteChapter")
+    }
+
     func testFulltextEvictRejectsUnsafeJobIDs() throws {
         for id in Self.attackIDs {
             try resetFixture()

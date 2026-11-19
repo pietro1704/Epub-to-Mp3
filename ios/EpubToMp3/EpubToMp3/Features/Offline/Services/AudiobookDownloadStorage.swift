@@ -43,10 +43,15 @@ enum AudiobookDownloadStorage {
         LegacyJobDirectory.directory(for: jobId, under: audiobooksRoot(), operation: operation)
     }
 
+    /// `chapters/` inside the job folder, refused when it is a symlink so
+    /// chapter reads and removals cannot follow it outside the root.
+    private static func chaptersDirectory(for jobId: String, operation: String) -> URL? {
+        guard let directory = jobDirectory(for: jobId, operation: operation) else { return nil }
+        return LegacyJobDirectory.directory(for: "chapters", under: directory, operation: operation)
+    }
+
     static func audiobookFolder(for jobId: String) -> URL? {
-        guard let url = jobDirectory(for: jobId)?.appendingPathComponent("chapters", isDirectory: true) else {
-            return nil
-        }
+        guard let url = chaptersDirectory(for: jobId, operation: #function) else { return nil }
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -71,9 +76,7 @@ enum AudiobookDownloadStorage {
         // This is a read-only query. Do not call `audiobookFolder(for:)`
         // here because that helper creates missing directories, causing
         // filesystem work for every absent/evicted manifest lookup.
-        guard let folder = jobDirectory(for: jobId)?.appendingPathComponent("chapters", isDirectory: true) else {
-            return []
-        }
+        guard let folder = chaptersDirectory(for: jobId, operation: #function) else { return [] }
         let fm = FileManager.default
         return Set(
             manifest.chapters
@@ -219,10 +222,9 @@ enum AudiobookDownloadStorage {
               var manifest = loadManifest(for: jobId),
               let entry = manifest.chapters.first(where: { $0.index == chapterIndex }) else { return }
         // The file name comes from the manifest on disk; it must stay inside chapters/.
-        if LegacyJobDirectory.isSafeComponent(entry.mp3FileName) {
-            let chapterURL = directory
-                .appendingPathComponent("chapters", isDirectory: true)
-                .appendingPathComponent(entry.mp3FileName)
+        if LegacyJobDirectory.isSafeComponent(entry.mp3FileName),
+           let chapters = chaptersDirectory(for: jobId, operation: #function) {
+            let chapterURL = chapters.appendingPathComponent(entry.mp3FileName)
             try? FileManager.default.removeItem(at: chapterURL)
         }
         manifest.chapters.removeAll { $0.index == chapterIndex }

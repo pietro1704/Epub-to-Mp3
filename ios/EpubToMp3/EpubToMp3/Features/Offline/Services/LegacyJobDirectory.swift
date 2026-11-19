@@ -40,6 +40,8 @@ enum LegacyJobDirectory {
         guard isSafeComponent(jobID) else { return .failure(.invalidComponent) }
         let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
         let directory = canonicalRoot.appendingPathComponent(jobID, isDirectory: true).standardizedFileURL
+        // Defense in depth: isSafeComponent already makes this hold; it stays so a
+        // future relaxation of the component rules cannot silently allow an escape.
         guard directory.deletingLastPathComponent().standardizedFileURL.path == canonicalRoot.path else {
             return .failure(.outsideRoot)
         }

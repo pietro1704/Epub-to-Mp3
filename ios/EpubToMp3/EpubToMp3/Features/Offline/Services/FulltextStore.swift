@@ -70,10 +70,11 @@ final class FulltextStore: @unchecked Sendable {
     }
 
     static func saveToDisk(_ payload: EbookFulltext, root: URL? = nil) throws {
-        clearEvicted(jobId: payload.jobId)
         guard let url = fulltextURL(for: payload.jobId, root: root) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
+        // Only a save that can land clears the eviction tombstone.
+        clearEvicted(jobId: payload.jobId)
         let data = try JSONEncoder().encode(payload)
         try data.write(to: url, options: .atomic)
     }
