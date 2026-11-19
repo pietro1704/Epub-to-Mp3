@@ -5,28 +5,12 @@ import UIKit
 /// per language. Settings itself keeps a single summary row and no model rows.
 extension SettingsScreenController {
     func reloadSpeechModels() {
-        speechModelsTask?.cancel()
-        let client = speechModels
-        speechModelsTask = Task { [weak self] in
-            guard !Task.isCancelled else { return }
-            do {
-                let snapshot = try await client.snapshot()
-                guard !Task.isCancelled else { return }
-                self?.speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-                self?.observeInstalls(in: snapshot.entries)
-                self?.tableView.reloadData()
-            } catch {
-                // Fail closed: keep existing selections and the last valid presentation.
-            }
-        }
+        modelLibrary.reload()
     }
 
     /// Presents a catalogue the caller already resolved, replacing the pending reload.
     func show(_ snapshot: SpeechModelSnapshot) {
-        speechModelsTask?.cancel()
-        speechModelState = SpeechModelLibraryViewState(snapshot: snapshot)
-        observeInstalls(in: snapshot.entries)
-        tableView.reloadData()
+        modelLibrary.show(snapshot)
     }
 
     func settingsSection(at index: Int) -> SettingsSection? {
@@ -69,14 +53,17 @@ extension SettingsScreenController {
     }
 
     func applyInstallEvent(_ event: SpeechModelInstallEvent) {
-        guard speechModelState.entries.contains(where: { $0.identity.modelID == event.modelID }) else { return }
-        speechModelInstallEvents[event.modelID] = event
+        guard modelLibrary.apply(event) else { return }
+        refreshInstallProgress(modelID: event.modelID)
+    }
+
+    func refreshInstallProgress(modelID: String) {
         // Configure the live cells directly: reloading a self-sizing section makes
         // UIKit replace rows and recompute estimated heights for every byte event.
         UIView.performWithoutAnimation {
             for path in tableView.indexPathsForVisibleRows ?? [] {
                 guard let cell = tableView.cellForRow(at: path) else { continue }
-                if let entry = modelEntry(at: path), entry.identity.modelID == event.modelID {
+                if let entry = modelEntry(at: path), entry.identity.modelID == modelID {
                     _ = modelCell(at: path, entry: entry, existingCell: cell)
                 } else if path == modelSummaryPath {
                     _ = RuntimeSettingsRows.cell(for: path, tableView: tableView, settings: settings,

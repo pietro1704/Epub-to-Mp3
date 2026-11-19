@@ -335,12 +335,7 @@ final class SpeechModelObserverLifetimeTests: XCTestCase {
         }
 
         func startConfirmedInstall(on owner: ModelObservationOwner) -> Task<Void, Never> {
-            let entry = snapshot.entries[0]
-            #if os(iOS)
-            return owner.install(entry, title: "Native installation fixture", acceptedTermsFingerprint: nil)
-            #else
-            return owner.install(entry, acceptedTermsFingerprint: nil)
-            #endif
+            owner.install(snapshot.entries[0], acceptedTermsFingerprint: nil)
         }
 
         private static func makeSnapshot() throws -> SpeechModelSnapshot {
