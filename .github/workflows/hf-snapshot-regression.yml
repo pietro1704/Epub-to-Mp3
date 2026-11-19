@@ -31,6 +31,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: mise install ruby
+      - name: Select the runtime layout
+        # The snapshot builder owns the rule: a tracked .hf-runtime marker, else
+        # React. Only the matching container contract below runs.
+        run: |
+          set -euo pipefail
+          layout="$(mise run hf:snapshot -- --layout "$GITHUB_WORKSPACE")"
+          echo "HF_LAYOUT=$layout" >> "$GITHUB_ENV"
+          echo "HF runtime layout: $layout"
       - name: Exercise actual Git/LFS offline transport
         run: |
           git lfs version
@@ -46,11 +54,37 @@ jobs:
           git clone --no-checkout "file://$snapshot_root/transport.git" "$snapshot_root/reconstructed"
           git -C "$snapshot_root/reconstructed" lfs install --local
           git -C "$snapshot_root/reconstructed" checkout master
-          cmp web/src/wasm/converter_wasm_bg.wasm "$snapshot_root/reconstructed/web/src/wasm/converter_wasm_bg.wasm"
-          cmp web/public/sample.epub "$snapshot_root/reconstructed/web/public/sample.epub"
+          case "$HF_LAYOUT" in
+            react)
+              compared=(web/src/wasm/converter_wasm_bg.wasm web/public/sample.epub)
+              ;;
+            rails)
+              compared=(
+                ruby_app/rails_gateway/Gemfile.lock
+                ruby_app/rails_gateway/browser_runtime/workers/piper_worker.js
+                ruby_app/rails_gateway/public/sample.epub
+              )
+              ;;
+            *)
+              echo "::error::Unsupported HF runtime layout: $HF_LAYOUT"
+              exit 1
+              ;;
+          esac
+          for path in "${compared[@]}"; do
+            cmp "$path" "$snapshot_root/reconstructed/$path"
+          done
       - name: Build Docker from the reconstructed snapshot
         run: docker build --tag hf-snapshot-regression "$HF_REGRESSION_ROOT/reconstructed"
+      - name: Verify the Rails image with the regression shipped in the snapshot
+        if: env.HF_LAYOUT == 'rails'
+        # Health (backend must be rails), the document, every referenced asset,
+        # the runtime tree, the listener, the unprivileged user and the absence
+        # of model weights and build tools, all against the deployable bytes.
+        run: |
+          set -euo pipefail
+          IMAGE=hf-snapshot-regression bash "$HF_REGRESSION_ROOT/reconstructed/ruby_app/rails_gateway/bin/image-regression"
       - name: Verify container health, contract and production SPA assets without models
+        if: env.HF_LAYOUT == 'react'
         run: |
           set -euo pipefail
           docker run --detach --name hf-snapshot-regression --publish 127.0.0.1:17860:7860 hf-snapshot-regression

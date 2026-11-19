@@ -238,7 +238,35 @@ class HfSnapshotTest < Minitest::Test
     assert_equal 'owned elsewhere', File.read(sentinel)
   end
 
+  def test_layout_defaults_to_react_without_a_tracked_marker
+    assert_equal "react\n", layout!
+    write('.hf-runtime', "rails\n")
+    assert_equal "react\n", layout!, 'an untracked marker must not select a layout'
+  end
+
+  def test_layout_reports_the_tracked_marker_trimmed
+    write('.hf-runtime', "  rails \n")
+    git!('add', '.hf-runtime', chdir: @source)
+    assert_equal "rails\n", layout!
+    write('.hf-runtime', "react\n")
+    git!('add', '.hf-runtime', chdir: @source)
+    assert_equal "react\n", layout!
+  end
+
+  def test_layout_rejects_an_unknown_tracked_marker
+    write('.hf-runtime', "other\n")
+    git!('add', '.hf-runtime', chdir: @source)
+    error = assert_raises(RuntimeError) { layout! }
+    assert_includes error.message, 'Unsupported HF runtime layout'
+  end
+
   private
+
+  def layout!
+    output, status = capture(RbConfig.ruby, File.expand_path('hf_snapshot.rb', __dir__), '--layout', @source, chdir: @directory)
+    raise output unless status.success?
+    output
+  end
 
   def snapshot!
     # Exercise the real entrypoint with clean Git configuration and actual git-lfs.

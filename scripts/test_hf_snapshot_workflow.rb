@@ -101,7 +101,70 @@ class HfSnapshotWorkflowTest < Minitest::Test
                  command!('git', 'show', "HEAD:#{WASM}", chdir: snapshot))
   end
 
+  REGRESSION_WORKFLOW = '.github/workflows/hf-snapshot-regression.yml'.freeze
+
+  def test_regression_selects_the_layout_from_the_tracked_marker
+    step = regression_step('Select the runtime layout')
+    assert_equal 'react', selected_layout(step), 'no marker must select React'
+
+    write('.hf-runtime', "rails\n")
+    assert_equal 'react', selected_layout(step), 'an untracked marker must not select a layout'
+    command!('git', 'add', '.hf-runtime', chdir: @source)
+    assert_equal 'rails', selected_layout(step)
+
+    write('.hf-runtime', "other\n")
+    command!('git', 'add', '.hf-runtime', chdir: @source)
+    _, status = Open3.capture2e(@env, 'bash', '-euo', 'pipefail', '-c', step.fetch('run'),
+                                chdir: @source, unsetenv_others: true)
+    refute status.success?, 'an unknown tracked layout must fail the workflow'
+  end
+
+  def test_regression_verifies_exactly_one_layout_specific_container_contract
+    steps = regression_steps
+    react = steps.select { |step| step['if'] == "env.HF_LAYOUT == 'react'" }
+    rails = steps.select { |step| step['if'] == "env.HF_LAYOUT == 'rails'" }
+    assert_equal 1, react.length
+    assert_equal 1, rails.length
+    assert_includes react.fetch(0).fetch('run'), '/api/contract'
+    # The Rails image is checked by the regression that ships inside the very
+    # snapshot that would be deployed, against the image built from it.
+    assert_includes rails.fetch(0).fetch('run'), 'IMAGE=hf-snapshot-regression'
+    assert_includes rails.fetch(0).fetch('run'), '$HF_REGRESSION_ROOT/reconstructed/ruby_app/rails_gateway/bin/image-regression'
+    refute_includes rails.fetch(0).fetch('run'), '/app/web/dist', 'Rails verification must not expect React assets'
+    reconstruct = regression_step('Reconstruct the actual snapshot through local LFS transport').fetch('run')
+    assert_includes reconstruct, 'case "$HF_LAYOUT" in'
+    assert_includes reconstruct, 'ruby_app/rails_gateway/browser_runtime/workers/piper_worker.js'
+    assert_includes reconstruct, 'web/src/wasm/converter_wasm_bg.wasm'
+  end
+
+  def test_regression_scripts_are_valid_bash
+    regression_steps.each do |step|
+      next unless step['run']
+
+      output, status = Open3.capture2e('bash', '-n', stdin_data: step.fetch('run'))
+      assert status.success?, "#{step['name']} is not valid bash: #{output}"
+    end
+  end
+
   private
+
+  def regression_steps
+    YAML.safe_load(File.read(File.join(REPOSITORY, REGRESSION_WORKFLOW))).fetch('jobs').fetch('snapshot').fetch('steps')
+  end
+
+  def regression_step(name)
+    matches = regression_steps.select { |step| step['name'] == name }
+    assert_equal 1, matches.length, "Expected exactly one regression step named #{name}"
+    matches.fetch(0)
+  end
+
+  def selected_layout(step)
+    File.write(@environment_file, '')
+    command!('bash', '-euo', 'pipefail', '-c', step.fetch('run'), chdir: @source)
+    assignments = File.readlines(@environment_file, chomp: true).grep(/^HF_LAYOUT=/)
+    assert_equal 1, assignments.length, 'The step must export exactly one layout'
+    assignments.fetch(0).delete_prefix('HF_LAYOUT=')
+  end
 
   def copy_real_snapshot_task
     helper = File.join(REPOSITORY, 'scripts/hf_snapshot.rb')
