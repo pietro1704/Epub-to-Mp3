@@ -122,8 +122,8 @@ class WorkspaceShellSystemTest < ApplicationSystemTestCase
 
     toggle.click
     assert_equal "true", toggle["aria-expanded"]
-    assert_help_drawer_on_screen true
-    within("#help-drawer.help-drawer--open[aria-hidden='false']:not([inert])") do
+    assert_help_drawer_open
+    within("#help-drawer") do
       assert_selector "h2", text: "Local conversion"
       assert_text "Compatible Piper models run locally after installation."
       assert_text "Ready to start"
@@ -134,10 +134,12 @@ class WorkspaceShellSystemTest < ApplicationSystemTestCase
     assert_equal "false", toggle["aria-expanded"]
 
     toggle.click
+    assert_help_drawer_open
     find(".help-drawer__overlay").click
     assert_help_drawer_closed
 
     toggle.click
+    assert_help_drawer_open
     within("#help-drawer") { click_button "Close panel" }
     assert_help_drawer_closed
   end
@@ -160,17 +162,34 @@ class WorkspaceShellSystemTest < ApplicationSystemTestCase
 
   def assert_same_document = assert_equal("kept", page.evaluate_script("window.documentMarker"))
 
+  # Waits for the slide-in transition to finish: a click sent while the drawer
+  # still moves can land beside the moving close button (the CI failure).
+  def assert_help_drawer_open
+    assert_selector "#help-drawer.help-drawer--open[aria-hidden='false']:not([inert])"
+    assert_selector ".help-drawer__overlay", visible: :visible
+    assert_help_drawer_placement "settled on screen"
+  end
+
   def assert_help_drawer_closed
     assert_selector "#help-drawer[aria-hidden='true'][inert]:not(.help-drawer--open)", visible: :all
     assert_no_selector ".help-drawer__overlay", visible: :visible
-    assert_help_drawer_on_screen false
+    assert_help_drawer_placement "off screen"
   end
 
-  # The closed drawer is moved off the viewport rather than removed.
-  def assert_help_drawer_on_screen(expected)
+  # The closed drawer is moved off the viewport rather than removed; the open
+  # one has no running transition and its right edge meets the viewport's.
+  def assert_help_drawer_placement(expected)
     page.document.synchronize do
-      on_screen = page.evaluate_script("document.getElementById('help-drawer').getBoundingClientRect().left < window.innerWidth")
-      raise Capybara::ExpectationNotMet, "help drawer on screen: #{on_screen}" unless on_screen == expected
+      placement = page.evaluate_script(<<~JS)
+        (() => {
+          const drawer = document.getElementById("help-drawer")
+          const rect = drawer.getBoundingClientRect()
+          if (rect.left >= window.innerWidth) return "off screen"
+          if (drawer.getAnimations().length > 0) return "moving"
+          return Math.abs(rect.right - document.documentElement.clientWidth) < 1 ? "settled on screen" : "partly on screen"
+        })()
+      JS
+      raise Capybara::ExpectationNotMet, "help drawer is #{placement}, expected #{expected}" unless placement == expected
     end
   end
 
