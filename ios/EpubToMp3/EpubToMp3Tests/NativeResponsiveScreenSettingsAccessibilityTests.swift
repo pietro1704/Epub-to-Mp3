@@ -74,14 +74,17 @@ extension NativeResponsiveScreenTests {
         button.performClick(nil)
         let views = NSApp.windows.flatMap { $0.contentView.map(descendants) ?? [] }
         for (identifier, key) in [("font", "reader.font"), ("theme", "reader.theme"),
-                                  ("layout", "reader.layout"), ("margin", "reader.margins"),
-                                  ("kerning", "reader.kerning"), ("columns", "reader.columns")] {
+                                  ("layout", "reader.layout"), ("columns", "reader.columns")] {
             let popup = try XCTUnwrap(views.compactMap { $0 as? NSPopUpButton }
                 .first { $0.accessibilityIdentifier() == "readerSettings.\(identifier)" })
             XCTAssertEqual(popup.accessibilityLabel(), L10n.string(key))
         }
-        for key in ["readerSettings.decreaseFontSize", "readerSettings.increaseFontSize"] {
-            XCTAssertTrue(views.compactMap { $0 as? NSButton }.contains { $0.accessibilityLabel() == L10n.string(key) })
+        // Since #1147 size, margin and kerning are preset sliders.
+        for (identifier, key) in [("fontSize", "settings.fontSize"), ("margin", "reader.margins"),
+                                  ("kerning", "reader.kerning")] {
+            let slider = try XCTUnwrap(views.compactMap { $0 as? NSSlider }
+                .first { $0.accessibilityIdentifier() == "readerSettings.\(identifier)" })
+            XCTAssertEqual(slider.accessibilityLabel(), L10n.string(key))
         }
     }
 #endif
@@ -123,7 +126,9 @@ extension NativeResponsiveScreenTests {
         let controller = MacSettingsViewController(
             settings: settings,
             library: LibraryStore(defaults: defaults),
-            speechModels: SpeechModelLibraryClient(initialSnapshot: snapshot, target: target)
+            speechModels: SpeechModelLibraryClient(initialSnapshot: snapshot, target: target),
+            // Since #1145 the narration popups live in the pushed Voice models detail.
+            voiceModelsOnly: true
         )
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)

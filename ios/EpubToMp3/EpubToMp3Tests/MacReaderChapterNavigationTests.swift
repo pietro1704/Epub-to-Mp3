@@ -20,7 +20,8 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         let keys = [ReaderSessionState.currentlyReadingBookIDKey,
                     AudioPlayer.readerCurrentChapterIndexDefaultsKey,
                     AudioPlayer.readerCurrentPageRatioDefaultsKey,
-                    AudioPlayer.readerCurrentSentenceIdDefaultsKey, "readerProgress.v1", "readerWarmBookIDs.v1"]
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey, "readerProgress.v1", "readerWarmBookIDs.v1",
+                    "reader.recentTool.v1"]
         let saved = keys.map { standard.object(forKey: $0) }
         defer {
             for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
@@ -70,15 +71,17 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         }
         let text = try XCTUnwrap(findText(in: controller.view))
         let scroll = try XCTUnwrap(text.enclosingScrollView)
-        func findTOCButton(in view: NSView) -> NSButton? {
-            if let button = view as? NSButton, button.action == NSSelectorFromString("showTOC:") {
-                return button
-            }
-            return view.subviews.lazy.compactMap { findTOCButton(in: $0) }.first
+        func findButton(_ identifier: String, in view: NSView) -> NSButton? {
+            if let button = view as? NSButton, button.accessibilityIdentifier() == identifier { return button }
+            return view.subviews.lazy.compactMap { findButton(identifier, in: $0) }.first
         }
-        if openTableOfContents {
-            try XCTUnwrap(findTOCButton(in: controller.view)).performClick(nil)
+        // Since #1151 Contents is chosen from the native reader More menu.
+        func openContents() throws {
+            let more = try XCTUnwrap(findButton("reader.more", in: controller.view)?.menu)
+            let contents = try XCTUnwrap(more.items.first { $0.representedObject as? String == ReaderTool.contents.rawValue })
+            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(contents.action), to: contents.target, from: contents))
         }
+        if openTableOfContents { try openContents() }
         XCTAssertEqual(text.string, currentText)
         XCTAssertEqual(scroll.contentView.bounds.origin.y, 0, accuracy: 1)
         XCTAssertEqual(text.onPageTap?(false), true)
@@ -126,7 +129,7 @@ final class MacReaderChapterNavigationTests: XCTestCase {
 
         if openTableOfContents {
             // A subsequent selection must still navigate after highlight synchronization.
-            try XCTUnwrap(findTOCButton(in: controller.view)).performClick(nil)
+            try openContents()
             func findChapterTable(in view: NSView) -> NSTableView? {
                 if let table = view as? NSTableView, table.delegate is MacReaderContentsPresentation { return table }
                 return view.subviews.lazy.compactMap { findChapterTable(in: $0) }.first

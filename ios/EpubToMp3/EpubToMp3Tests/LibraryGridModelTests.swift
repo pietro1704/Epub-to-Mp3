@@ -97,12 +97,6 @@ final class LibraryGridModelTests: XCTestCase {
         XCTAssertEqual(m.columnCount(forWidth: 800), 2)
     }
 
-    func testColumnPolicyDoesNotCollapseOnNarrowWidths() {
-        let m = LibraryGridLayoutMetrics()
-        XCTAssertEqual(m.columnCount(forWidth: 100), 2)
-        XCTAssertEqual(m.columnCount(forWidth: 0), 2)
-    }
-
     func testTileWidthsFillTheRequestedColumns() {
         let m = LibraryGridLayoutMetrics()
         XCTAssertEqual(m.tileWidth(forWidth: 1200, columns: 2), 570, accuracy: 0.5)

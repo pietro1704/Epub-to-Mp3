@@ -79,7 +79,9 @@ final class SessionRowModelTests: XCTestCase {
     func testRowsPreservesOrder() {
         let sessions = [session(engine: "edge"), session(engine: "piper")]
         let rows = SessionRowModel.rows(from: sessions)
-        XCTAssertEqual(rows.map(\.engineText), ["edge", "piper"])
+        // Rows carry the engine display names (see testEngineTextOmittedWhenEmpty).
+        XCTAssertEqual(rows.map(\.engineText), [AudioEnginePreference.edge.displayName,
+                                                AudioEnginePreference.piper.displayName])
     }
 
     func testSessionRecordDecodesOptionalJobID() throws {

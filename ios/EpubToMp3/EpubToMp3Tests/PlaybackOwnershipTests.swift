@@ -92,7 +92,9 @@ final class PlaybackOwnershipTests: XCTestCase {
         XCTAssertFalse(session.activate(first))
         XCTAssertTrue(session.activate(later))
         XCTAssertEqual(session.cumulativeBase, 0)
-        XCTAssertEqual(session.chapterDuration, 0)
+        // Activation adopts the producer's whole-chapter estimate (#979)
+        // only once that chapter becomes audible.
+        XCTAssertEqual(session.chapterDuration, 900)
         session.resetMetadata()
         XCTAssertTrue(session.files.isEmpty)
         XCTAssertNil(session.activeIdentity)
