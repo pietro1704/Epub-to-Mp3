@@ -403,6 +403,8 @@
 "convert.startConversion" = "Start conversion";
 "convert.error.engineWarmingUp" = "The audio engine is still starting. Please try again in a moment.";
 "convert.error.pickFileFirst" = "Pick an EPUB or PDF first.";
+"convert.error.busyWithAnotherBook" = "Another conversion is running. Wait for it to finish or cancel it, then convert this book.";
+"convert.error.unsupportedBookType" = "This book has no text to convert to audio.";
 
 /* === LibrarySidebar === */
 "librarySidebar.emptyTitle" = "Library is empty";

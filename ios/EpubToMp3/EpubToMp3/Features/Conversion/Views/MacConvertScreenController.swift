@@ -2,6 +2,20 @@
 import AppKit
 import Combine
 
+/// A cheap identity for "the file has not been touched since it was hashed".
+private struct SourceFingerprint: Equatable {
+    let size: UInt64
+    let modified: Date
+
+    init?(_ file: URL) {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+              let size = (attributes[.size] as? NSNumber)?.uint64Value,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        self.size = size
+        self.modified = modified
+    }
+}
+
 @MainActor
 final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     let form = MacConversionForm()
@@ -9,6 +23,8 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     private let library: LibraryStore
     private let viewModel: ConvertViewModel
     private let resolveBookFile: (String) async throws -> URL
+    /// Overrides the app-owned inbox that picked documents are copied into.
+    private let inboxDirectory: URL?
     private let presentPronunciation: (String, NSViewController) -> Void
     private var observation: AnyCancellable?
     private var audioRemovalObservation: AnyCancellable?
@@ -17,16 +33,26 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     private var convertingBookID: String?
     private var audioRemovedDuringConversion = false
     private var selectionID = UUID()
+    /// The inbox copy made for the current manual selection; removed when the
+    /// selection is replaced or abandoned so picked files do not pile up.
+    private var importedCopy: URL?
+    /// Size and modification date seen when the source identity was last
+    /// verified, so submit re-hashes the book only when the file changed.
+    private var verifiedFingerprint: SourceFingerprint?
     private var conversionSelectionID: UUID?
     private var sourceError: String?
     private var resultSnapshot: JobSnapshot?
     private var resultDirectory: URL?
     private(set) var selectedBookID: String?
+    /// The file the form currently holds; exposed so tests can observe copy lifetime.
+    var currentSelectionForTesting: URL? { viewModel.selectedFile }
     private(set) var isPreparingSource = false
 
     init(settings: AppSettings, library: LibraryStore, viewModel: ConvertViewModel? = nil,
          resolveBookFile: ((String) async throws -> URL)? = nil,
+         inboxDirectory: URL? = nil,
          presentPronunciation: ((String, NSViewController) -> Void)? = nil) {
+        self.inboxDirectory = inboxDirectory
         self.settings = settings
         self.library = library
         self.viewModel = viewModel ?? ConvertViewModel()
@@ -83,8 +109,20 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     /// Library context conversion selects the exact book, restores form defaults
     /// and starts directly. A running manual job retains its source and options.
     func selectLibraryBook(_ bookID: String, startImmediately: Bool = true) async {
-        guard !viewModel.isSubmitting else { return }
         _ = view
+        guard !viewModel.isSubmitting else {
+            // Never drop the request silently: the running conversion keeps the form.
+            sourceError = L10n.string("convert.error.busyWithAnotherBook")
+            refresh()
+            return
+        }
+        if let book = library.books.first(where: { $0.id == bookID }), !book.fileType.supportsAudioConversion {
+            _ = beginSourceSelection()
+            isPreparingSource = false
+            sourceError = L10n.string("convert.error.unsupportedBookType")
+            refresh()
+            return
+        }
         let request = beginSourceSelection()
         resetOptions()
         do {
@@ -108,18 +146,33 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         guard !viewModel.isSubmitting else { return }
         _ = view
         let request = beginSourceSelection()
+        var imported: URL?
         do {
-            let file = try await Task.detached { try ConvertViewModel.importForConversion(url) }.value
+            let inbox = inboxDirectory
+            let file = try await Task.detached {
+                try ConvertViewModel.importForConversion(url, baseDirectory: inbox)
+            }.value
+            imported = file
             let identity = try await Task.detached { try BookContentIdentity.hash(of: file) }.value
-            guard selectionID == request else { return }
+            guard selectionID == request else {
+                ConvertViewModel.discardImportedCopy(file, baseDirectory: inboxDirectory)
+                return
+            }
             try Task.checkCancellation()
+            importedCopy = file
             finishSourceSelection(file: file, bookID: identity)
         } catch {
+            if let imported { ConvertViewModel.discardImportedCopy(imported, baseDirectory: inboxDirectory) }
             failSourceSelection(error, request: request)
         }
     }
 
     private func beginSourceSelection() -> UUID {
+        if let importedCopy {
+            ConvertViewModel.discardImportedCopy(importedCopy, baseDirectory: inboxDirectory)
+            self.importedCopy = nil
+        }
+        verifiedFingerprint = nil
         selectionID = UUID()
         isPreparingSource = true
         selectedBookID = nil
@@ -134,6 +187,7 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
     }
 
     private func finishSourceSelection(file: URL, bookID: String) {
+        verifiedFingerprint = SourceFingerprint(file)
         viewModel.selectedFile = file
         selectedBookID = bookID
         isPreparingSource = false
@@ -159,11 +213,16 @@ final class MacConvertScreenController: NSViewController, NSTextFieldDelegate {
         isPreparingSource = true
         refresh()
         do {
-            let currentIdentity = try await Task.detached { try BookContentIdentity.hash(of: file) }.value
-            guard selectionID == selection else { return }
-            try Task.checkCancellation()
-            guard currentIdentity == bookID else {
-                throw EmbeddedConverterError.conversionFailed(L10n.string("library.error.changedWhileOpening"))
+            // The selection already hashed this exact file; hash again only if it changed.
+            if let verified = verifiedFingerprint, SourceFingerprint(file) == verified {
+                try Task.checkCancellation()
+            } else {
+                let currentIdentity = try await Task.detached { try BookContentIdentity.hash(of: file) }.value
+                guard selectionID == selection else { return }
+                try Task.checkCancellation()
+                guard currentIdentity == bookID else {
+                    throw EmbeddedConverterError.conversionFailed(L10n.string("library.error.changedWhileOpening"))
+                }
             }
         } catch {
             failSourceSelection(error, request: selection)

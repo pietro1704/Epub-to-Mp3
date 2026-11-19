@@ -323,11 +323,13 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         download.target = self
         download.representedObject = book.id
         menu.insertItem(download, at: 0)
-        let convert = NSMenuItem(title: L10n.string("library.convertWholeBook"),
-                                 action: #selector(convertSelectedBook(_:)), keyEquivalent: "")
-        convert.target = self
-        convert.representedObject = book.id
-        menu.insertItem(convert, at: 0)
+        if book.fileType.supportsAudioConversion {
+            let convert = NSMenuItem(title: L10n.string("library.convertWholeBook"),
+                                     action: #selector(convertSelectedBook(_:)), keyEquivalent: "")
+            convert.target = self
+            convert.representedObject = book.id
+            menu.insertItem(convert, at: 0)
+        }
         return menu
     }
 
@@ -456,7 +458,9 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         view.setAccessibilityRole(.group)
         view.setAccessibilityEnabled(true)
         view.setAccessibilityLabel(book.resolvedTitle)
-        view.setAccessibilityChildren([openButton, convertButton])
+        // Comics have no text to convert, so they offer no conversion control.
+        convertButton.isHidden = !book.fileType.supportsAudioConversion
+        view.setAccessibilityChildren(book.fileType.supportsAudioConversion ? [openButton, convertButton] : [openButton])
         view.setAccessibilityIdentifier("library.book.\(book.id)")
         openButton.setAccessibilityIdentifier("library.book.open.\(book.id)")
         openButton.setAccessibilityLabel(book.resolvedTitle)

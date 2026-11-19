@@ -123,6 +123,22 @@ final class ConvertViewModel {
         return destination
     }
 
+    /// Removes the staging directory of a copy made by `importForConversion`.
+    /// Only a file exactly one level below the inbox is touched, so a library
+    /// book or any user file passed here is never deleted.
+    nonisolated static func discardImportedCopy(
+        _ file: URL,
+        fileManager: FileManager = .default,
+        baseDirectory: URL? = nil
+    ) {
+        guard let inbox = try? conversionInboxDirectory(fileManager: fileManager, baseDirectory: baseDirectory)
+        else { return }
+        let staging = file.deletingLastPathComponent()
+        guard staging.deletingLastPathComponent().standardizedFileURL.path == inbox.standardizedFileURL.path,
+              UUID(uuidString: staging.lastPathComponent) != nil else { return }
+        try? fileManager.removeItem(at: staging)
+    }
+
     nonisolated static func conversionInboxDirectory(
         fileManager: FileManager = .default,
         baseDirectory: URL? = nil

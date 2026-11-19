@@ -267,6 +267,82 @@ final class MacConvertScreenControllerTests: XCTestCase {
         XCTAssertTrue(controller.form.revealResult.isHidden)
     }
 
+    func testReplacedDocumentSelectionDiscardsItsInboxCopyAndNeverTouchesLibraryFiles() async throws {
+        let fixture = try fixture()
+        let manager = FileManager.default
+        let inbox = manager.temporaryDirectory.appendingPathComponent("inbox-\(UUID().uuidString)", isDirectory: true)
+        let pickDirectory = manager.temporaryDirectory.appendingPathComponent("picked-\(UUID().uuidString)", isDirectory: true)
+        try manager.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try manager.createDirectory(at: pickDirectory, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: inbox); try? manager.removeItem(at: pickDirectory) }
+        let first = pickDirectory.appendingPathComponent("First.epub")
+        let second = pickDirectory.appendingPathComponent("Second.epub")
+        try manager.copyItem(at: fixture.source, to: first)
+        try manager.copyItem(at: fixture.source, to: second)
+        let controller = MacConvertScreenController(settings: fixture.settings, library: fixture.library,
+                                                   inboxDirectory: inbox)
+        func copies() throws -> [String] { try manager.contentsOfDirectory(atPath: inbox.path).sorted() }
+
+        await controller.selectDocument(first)
+        XCTAssertEqual(try copies().count, 1)
+        let firstCopy = try XCTUnwrap(controller.currentSelectionForTesting)
+        await controller.selectDocument(second)
+        XCTAssertEqual(try copies().count, 1, "A replaced selection must not leave its copy behind")
+        XCTAssertFalse(manager.fileExists(atPath: firstCopy.path))
+        let secondCopy = try XCTUnwrap(controller.currentSelectionForTesting)
+        XCTAssertTrue(manager.fileExists(atPath: secondCopy.path))
+        XCTAssertTrue(manager.fileExists(atPath: first.path) && manager.fileExists(atPath: second.path),
+                      "The user's own files are never deleted")
+
+        await controller.selectLibraryBook(fixture.book.id, startImmediately: false)
+        XCTAssertEqual(try copies(), [], "Selecting a library book discards the last imported copy")
+        XCTAssertTrue(manager.fileExists(atPath: fixture.source.path))
+        XCTAssertNotNil(controller.currentSelectionForTesting)
+    }
+
+    func testSecondBookIsNotDroppedSilentlyWhileAConversionRuns() async throws {
+        let fixture = try fixture()
+        let gate = ManualConversionGate()
+        defer { gate.release() }
+        let started = expectation(description: "First conversion running")
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, _, _, _ in
+            started.fulfill()
+            await gate.wait()
+            return self.result(jobID: jobID, directory: fixture.directory)
+        }))
+        let controller = MacConvertScreenController(settings: fixture.settings, library: fixture.library, viewModel: model)
+        let pending = Task { await controller.selectLibraryBook(fixture.book.id) }
+        await fulfillment(of: [started], timeout: 1)
+        await controller.selectLibraryBook("another-book")
+        XCTAssertEqual(controller.form.failure.stringValue, L10n.string("convert.error.busyWithAnotherBook"))
+        XCTAssertFalse(controller.form.failure.isHidden)
+        XCTAssertEqual(controller.selectedBookID, fixture.book.id, "The running conversion keeps its form")
+        gate.release()
+        await pending.value
+    }
+
+    func testComicLibraryBookIsRefusedWithoutStartingAConversion() async throws {
+        let fixture = try fixture()
+        let comic = BookEntity(id: "comic-book", title: "Comic", bookmark: Data([1]), displayFilename: "Comic.cbz",
+                               addedAt: .distantPast, lastJobId: nil, fileType: .cbz)
+        try fixture.defaults.set(JSONEncoder().encode([comic]), forKey: "library")
+        let library = LibraryStore(defaults: fixture.defaults, defaultsKey: "library")
+        var resolved = 0
+        var calls = 0
+        let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, _, _, _ in
+            calls += 1
+            return self.result(jobID: jobID, directory: fixture.directory)
+        }))
+        let controller = MacConvertScreenController(settings: fixture.settings, library: library, viewModel: model,
+                                                   resolveBookFile: { _ in resolved += 1; return fixture.source })
+        await controller.selectLibraryBook("comic-book")
+        XCTAssertEqual(resolved, 0)
+        XCTAssertEqual(calls, 0)
+        XCTAssertNil(controller.selectedBookID)
+        XCTAssertEqual(controller.form.failure.stringValue, L10n.string("convert.error.unsupportedBookType"))
+        XCTAssertFalse(controller.isPreparingSource)
+    }
+
     func testInvalidCompletedManifestDoesNotRecordSuccessfulLibraryConversion() async throws {
         let fixture = try fixture()
         let model = ConvertViewModel(session: ManualConversionSession(executor: { _, jobID, _, _, _, _, _ in
