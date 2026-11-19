@@ -56,7 +56,7 @@ struct LegacyAudioMigrationCoordinator {
         var report = Report()
         for book in books {
             try Task.checkCancellation()
-            guard let jobID = book.jobID, LocalAudioImportFiles.isComponent(jobID) else {
+            guard let jobID = book.jobID, LegacyJobDirectory.isSafeComponent(jobID) else {
                 report.books[book.id] = .noLegacyAudio
                 continue
             }
@@ -73,7 +73,8 @@ struct LegacyAudioMigrationCoordinator {
         _ book: Book, jobID: String,
         onProgress: @Sendable (String, LocalAudioArtifactStore.LegacyImportProgress) -> Void
     ) async throws -> JobOutcome {
-        let manifestURL = legacyRoot.appendingPathComponent(jobID).appendingPathComponent("manifest.json")
+        guard let manifestURL = LegacyJobDirectory.directory(for: jobID, under: legacyRoot, operation: #function)?
+            .appendingPathComponent("manifest.json") else { return .unreadable }
         guard FileManager.default.fileExists(atPath: manifestURL.path) else { return .noLegacyAudio }
         guard let data = try? Data(contentsOf: manifestURL),
               let manifest = try? JSONDecoder().decode(AudiobookManifest.self, from: data),
