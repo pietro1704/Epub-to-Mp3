@@ -683,14 +683,14 @@ fi
 
 # Pick the simulator destination dynamically — the previous hard-coded
 # `name=iPhone SE,OS=17.2` broke silently when the installed runtime was
-# named, e.g., `iPhone SE (2nd generation),OS=17.2`. The Python selector
-# is unit-tested (`test_select_ios_simulator.py`) and reads
+# named, e.g., `iPhone SE (2nd generation),OS=17.2`. The Ruby selector
+# is unit-tested (`test_select_ios_simulator.rb`) and reads
 # `xcrun simctl list -j devices available`. Override with `IOS_DEST` to
 # pin a specific target in CI.
 if [ -n "${IOS_DEST:-}" ]; then
   DEST="${IOS_DEST}"
 else
-  DEST=$(python3 ../../scripts/select_ios_simulator.py)
+  DEST=$(ruby ../../scripts/select_ios_simulator.rb)
 fi
 echo "ios:build → destination: ${DEST}"
 
@@ -754,7 +754,7 @@ echo "ios:device:run → app: $APP_PATH"
 xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
 SEED_LAUNCH=0
 if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
-  if python3 ../../scripts/seed_ios_development_book.py --target device --identifier "$DEVICE"; then
+  if ruby ../../scripts/seed_ios_development_book.rb --target device --identifier "$DEVICE"; then
     SEED_LAUNCH=1
   else
     SEED_STATUS=$?
@@ -915,7 +915,7 @@ if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
   UDID="$IOS_SIMULATOR_UDID"
   DEST="id=$UDID"
 else
-  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  DEST="${IOS_DEST:-$(ruby ../../scripts/select_ios_simulator.rb)}"
   UDID="${DEST##*id=}"
 fi
 if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
@@ -930,7 +930,7 @@ xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP_PATH"
 SEED_LAUNCH=0
 if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
-  if python3 ../../scripts/seed_ios_development_book.py --target simulator --identifier "$UDID"; then
+  if ruby ../../scripts/seed_ios_development_book.rb --target simulator --identifier "$UDID"; then
     SEED_LAUNCH=1
   else
     SEED_STATUS=$?
@@ -964,7 +964,7 @@ if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
   UDID="$IOS_SIMULATOR_UDID"
   DEST="id=$UDID"
 else
-  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  DEST="${IOS_DEST:-$(ruby ../../scripts/select_ios_simulator.rb)}"
   UDID="${DEST##*id=}"
 fi
 if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
@@ -1014,7 +1014,7 @@ xcodegen generate
 if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
   DEST="id=${IOS_SIMULATOR_UDID}"
 else
-  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  DEST="${IOS_DEST:-$(ruby ../../scripts/select_ios_simulator.rb)}"
 fi
 UDID="${DEST##*id=}"
 if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
@@ -1240,14 +1240,14 @@ run = """
 #!/bin/bash
 set -euo pipefail
 ruby scripts/mac_build_budget.rb check flutter_app/build
-SELECTOR="${MISE_PROJECT_ROOT:-.}/scripts/select_android_target.py"
+SELECTOR="${MISE_PROJECT_ROOT:-.}/scripts/select_android_target.rb"
 DEVICE="${FLUTTER_DEVICE_ID:-}"
 if [[ -z "$DEVICE" ]]; then
   DEVICES_JSON="$(mise exec -- flutter devices --machine)"
-  DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- python "$SELECTOR" --devices-json || true)"
+  DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- ruby "$SELECTOR" --devices-json || true)"
 fi
 if [[ -z "$DEVICE" ]]; then
-  AVD="$(mise exec -- python "$SELECTOR" --lightest-avd)" || {
+  AVD="$(mise exec -- ruby "$SELECTOR" --lightest-avd)" || {
     echo "flutter:run error: no Android device or AVD is available." >&2
     exit 2
   }
@@ -1255,7 +1255,7 @@ if [[ -z "$DEVICE" ]]; then
   mise exec -- emulator -avd "$AVD" -no-boot-anim -no-snapshot >/tmp/epub-to-mp3-android-emulator.log 2>&1 &
   for _ in $(seq 1 90); do
     DEVICES_JSON="$(mise exec -- flutter devices --machine)"
-    DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- python "$SELECTOR" --devices-json || true)"
+    DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- ruby "$SELECTOR" --devices-json || true)"
     [[ -n "$DEVICE" ]] && break
     sleep 2
   done
