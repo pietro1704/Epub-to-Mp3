@@ -185,6 +185,17 @@ newest successful post-merge run of an ancestor is confined to other areas
 (`ios/EpubToMp3/`, `flutter_app/` or modified prose Markdown;
 `scripts/post_merge_scope.mjs`). Any other path runs everything, as does a
 manual dispatch.
+The Hugging Face sync and rollback require only the post-merge job "Publication surfaces
+validated", not the whole run. That job needs the integrated source, its scope, the
+full integrated CI, CodeQL, the dependency audit, the Ruby gateway, the Rails image
+and HF snapshot regressions and the real-model browser conversion (`PUBLICATION_VALIDATIONS` in
+`scripts/post_merge_validation.mjs`). Those jobs must pass. A skipped job counts only
+when the scope did not select it, which means its inputs match an earlier validated
+ancestor. Apple, Android, Windows, Linux desktop, CLI, native fallback and FFI artifact
+failures do not block the Space; a wholly successful run also qualifies. Releases and
+TestFlight still require the whole run to succeed. A run that passes only the
+publication job is not a scope base, so later merges select every validation until a
+whole run succeeds. The sync still starts when the whole run completes.
 
 After an authorized merge, read back its identity and confirm it belongs to
 `origin/master`. Preserve local overlays, fast-forward local `master`, then remove

@@ -6,6 +6,13 @@ import { REQUIRED, SCOPED } from './post_merge_scope.mjs';
 const ensure = (condition, message) => { if (!condition) throw new Error(message); };
 const SHA = /^[a-f0-9]{40}$/;
 export const REQUIRED_VALIDATIONS = REQUIRED;
+// What publishing the Hugging Face Space needs: the integrated source and its scope,
+// the full integrated CI (Rust, Rails web with the built runtime, host contracts),
+// the Ruby gateway and its Rust client (ruby),
+// security (CodeQL, dependency audit), the Rails image and HF snapshot regressions
+// and the real-model browser conversion the Space serves. Apple, Android, Windows,
+// Linux desktop, CLI, native fallback and FFI artifact validations are not needed.
+export const PUBLICATION_VALIDATIONS = Object.freeze(['merge', 'scope', 'ci', 'codeql', 'audit', 'ruby', 'rails-image', 'snapshot', 'browser']);
 
 export function verifyMergeIdentity({ repo, sha, event, ref, master, comparison, pulls }) {
   ensure(typeof repo === 'string' && /^[\w.-]+\/[\w.-]+$/.test(repo), 'Invalid repository');
@@ -20,9 +27,9 @@ export function verifyMergeIdentity({ repo, sha, event, ref, master, comparison,
   return { sha, master, pull: merged[0].number };
 }
 
-export function assertValidationResults(needs) {
+export function assertValidationResults(needs, required = REQUIRED_VALIDATIONS) {
   ensure(needs && typeof needs === 'object' && !Array.isArray(needs), 'Missing validation results');
-  ensure(REQUIRED_VALIDATIONS.every(name => Object.hasOwn(needs, name)), 'Missing required validation');
+  ensure(required.every(name => Object.hasOwn(needs, name)), 'Missing required validation');
   let selection;
   try { selection = JSON.parse(needs.scope?.outputs?.selection); } catch { selection = null; }
   ensure(selection && typeof selection === 'object' && !Array.isArray(selection), 'Missing scope selection');

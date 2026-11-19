@@ -24,12 +24,24 @@ class SyncHfWorkflowTest < Minitest::Test
   def test_hf_sync_checks_out_the_trusted_workflow_revision
     assert_includes @workflow, "ref: master"
     assert_includes @workflow, "scripts/validated_merge.mjs"
-    assert_includes @workflow, '--ref "$SOURCE_REF" --latest'
-    assert_includes @workflow, '--ref "$VALIDATED_SHA" --latest'
-    validated = @workflow.index('--ref "$VALIDATED_SHA" --latest')
+    publication = ' --required-job "Publication surfaces validated"'
+    assert_includes @workflow, "--ref \"$SOURCE_REF\" --latest#{publication}"
+    assert_includes @workflow, "--ref \"$VALIDATED_SHA\" --latest#{publication}"
+    validated = @workflow.index("--ref \"$VALIDATED_SHA\" --latest#{publication}")
     push = @workflow.index("bash scripts/hf_push.sh")
     refute_nil push
     assert_operator validated, :<, push
     refute_includes @workflow, "issues: write"
+  end
+
+  # A failed post-merge run reaches the gate; validated_merge.mjs then requires the
+  # publication job of that exact attempt, so cancelled or skipped runs never publish.
+  def test_hf_sync_gate_admits_only_completed_master_runs_for_the_publication_job_check
+    require "yaml"
+    gate = YAML.load_file(WORKFLOW).fetch("jobs").fetch("gate").fetch("if")
+    assert_includes gate, %q{contains(fromJSON('["success","failure"]'), github.event.workflow_run.conclusion)}
+    refute_match(/cancelled|skipped|neutral|timed_out/, gate)
+    assert_includes gate, "github.event.workflow_run.head_branch == 'master'"
+    assert_includes gate, "github.event.workflow_run.head_repository.full_name == github.repository"
   end
 end

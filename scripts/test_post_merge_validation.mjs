@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { verifyMergeIdentity, assertValidationResults, inspectMergedSource, REQUIRED_VALIDATIONS } from './post_merge_validation.mjs';
+import { verifyMergeIdentity, assertValidationResults, inspectMergedSource, REQUIRED_VALIDATIONS, PUBLICATION_VALIDATIONS } from './post_merge_validation.mjs';
 import { SCOPED, ALWAYS } from './post_merge_scope.mjs';
 
 const repo = 'pietro1704/Epub-to-Mp3';
@@ -159,7 +159,7 @@ test('postmerge graph contains every runtime and aggregates all called workflows
   const events = post.on ?? post.true;
   assert.deepEqual(events.push.branches, ['master']);
   assert.equal(events.pull_request, undefined);
-  const required = Object.keys(post.jobs).filter(name => name !== 'validated').sort();
+  const required = Object.keys(post.jobs).filter(name => !['validated', 'publication'].includes(name)).sort();
   assert.deepEqual(required, [...REQUIRED_VALIDATIONS].sort());
   assert.deepEqual([...post.jobs.validated.needs].sort(), required);
   assert.equal(post.jobs.validated.if, 'always()');
@@ -200,4 +200,35 @@ test('postmerge runs every always-on job and gates each scoped job on its scope 
   assert.equal(checkout.with.ref, '${{ github.sha }}');
   assert.equal(checkout.with['fetch-depth'], 0);
   assert.equal(post.jobs.scope.steps.at(-1).run, 'node scripts/post_merge_scope.mjs');
+});
+
+test('the publication aggregate requires exactly the surfaces the Space needs, with the same skip rule', () => {
+  const post = workflow('post-merge-validation.yml');
+  const job = post.jobs.publication;
+  assert.equal(job.name, 'Publication surfaces validated');
+  assert.equal(job.if, 'always()');
+  assert.deepEqual([...job.needs].sort(), [...PUBLICATION_VALIDATIONS].sort());
+  assert.deepEqual([...PUBLICATION_VALIDATIONS].sort(), ['audit', 'browser', 'ci', 'codeql', 'merge', 'rails-image', 'ruby', 'scope', 'snapshot']);
+  assert.equal(job.steps[0].with.ref, '${{ github.sha }}');
+  const script = job.steps.map(step => step.run ?? '').join('\n');
+  assert.match(script, /assertValidationResults\(JSON\.parse\(process\.env\.NEEDS_JSON\), PUBLICATION_VALIDATIONS\)/);
+  // Every publication surface is also part of the full validation.
+  for (const name of PUBLICATION_VALIDATIONS) assert.ok(REQUIRED_VALIDATIONS.includes(name), name);
+  // The real-model browser conversion runs once, as its own scoped job.
+  assert.equal(post.jobs.browser.uses, './.github/workflows/rails-real-model.yml');
+  assert.equal(post.jobs.faber.with.browser_runtime, false);
+  const faber = workflow('faber-integration.yml');
+  assert.equal((faber.on ?? faber.true).workflow_call.inputs.browser_runtime.default, true);
+  assert.match(faber.jobs['rails-browser-runtime'].if, /inputs\.browser_runtime != false/);
+
+  const subset = Object.fromEntries(PUBLICATION_VALIDATIONS.map(name => [name, { result: 'success' }]));
+  subset.scope = { result: 'success', outputs: { selection: JSON.stringify(Object.fromEntries(Object.keys(SCOPED).map(name => [name, true]))) } };
+  assert.equal(assertValidationResults(subset, PUBLICATION_VALIDATIONS), true);
+  for (const name of PUBLICATION_VALIDATIONS.filter(name => name !== 'scope')) {
+    assert.throws(() => assertValidationResults({ ...subset, [name]: { result: 'failure' } }, PUBLICATION_VALIDATIONS), new RegExp(name));
+    const missing = { ...subset }; delete missing[name];
+    assert.throws(() => assertValidationResults(missing, PUBLICATION_VALIDATIONS), /Missing required validation/);
+  }
+  assert.throws(() => assertValidationResults({ ...subset, 'rails-image': { result: 'skipped' } }, PUBLICATION_VALIDATIONS), /rails-image/,
+    'A selected publication surface may not be skipped');
 });

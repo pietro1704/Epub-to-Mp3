@@ -17,6 +17,7 @@ function client(f) {
     if (route === '/actions/workflows/post-merge-validation.yml') return f.workflow;
     if (route.startsWith('/actions/workflows/7/runs?')) return { workflow_runs: f.runs, total_count: f.runs?.length };
     if (route === '/actions/runs/12') return f.run;
+    if (route.startsWith(`/actions/runs/12/attempts/${f.run.run_attempt}/jobs?`)) return { jobs: f.jobs, total_count: f.jobs?.length };
     if (route.startsWith(`/commits/${sha}/pulls?`)) return f.prs;
     if (route === '/git/ref/heads/master') return { object: { sha: f.master } };
     if (route === `/compare/${sha}...${f.master}`) return f.comparison;
@@ -92,8 +93,11 @@ test('publisher boundaries preserve manual releases and serialize HF writes', ()
   assert.match(workflow('sync-hf'), /workflows: \["Post-merge validation"\]/);
   for (const name of ['sync-hf', 'rollback-hf']) {
     assert.match(workflow(name), /group: sync-hf\n  cancel-in-progress: false/);
+    // Both HF gates accept a run whose publication job succeeded; releases and TestFlight do not.
+    assert.equal(workflow(name).match(/validated_merge\.mjs"? --repo [^\n]*--required-job "Publication surfaces validated"/g)?.length, 2, name);
     assert.match(workflow(name), /RUNNER_TEMP\/validated_merge\.mjs/);
   }
+  for (const name of ['auto-release', 'ios-testflight', 'release-desktop']) assert.doesNotMatch(workflow(name), /--required-job/, name);
   const release = workflow('release-desktop');
   assert.match(release, /needs: \[gate, docker, android, swiftui-apple, flutter-desktop\]/);
   assert.doesNotMatch(release, /push: true|softprops\/action-gh-release/);
@@ -189,4 +193,40 @@ test('Auto Release tags the validated SHA explicitly and refuses unvalidated or 
     assert.notEqual(invoke('v1.2.3', sha, tip).status, 0, 'An existing tag on another SHA cannot be reused');
     assert.ok(existsSync(calls));
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+const PUBLICATION = 'Publication surfaces validated';
+const job = (patch = {}) => ({ name: PUBLICATION, run_id: 12, run_attempt: 1, head_sha: sha, status: 'completed', conclusion: 'success', ...patch });
+test('a required publication job may authorize a run whose unrelated validations failed', async () => {
+  const f = fixture(); f.run.conclusion = 'failure';
+  f.jobs = [job(), { name: 'faber / Faber Android APK', run_id: 12, run_attempt: 1, status: 'completed', conclusion: 'failure' }];
+  assert.equal((await verify(f, { latest: true, requiredJob: PUBLICATION })).sha, sha);
+  await assert.rejects(verify(f, { latest: true }), /unsuccessful/, 'Without the option the whole run must still succeed');
+  const ok = fixture(); ok.jobs = [];
+  assert.equal((await verify(ok, { requiredJob: PUBLICATION })).sha, sha, 'A wholly successful run, including one from before the job existed, needs no job');
+});
+test('the required job must exist once, belong to the exact attempt and succeed', async () => {
+  for (const jobs of [[], [job({ conclusion: 'failure' })], [job({ conclusion: 'skipped' })], [job({ conclusion: 'cancelled' })],
+    [job({ status: 'in_progress', conclusion: null })], [job({ run_attempt: 2 })], [job({ run_attempt: 0 })], [job({ run_id: 13 })], [job({ head_sha: tip })], [job(), job()],
+    [job({ name: 'ci / Publication surfaces validated' })]]) {
+    const f = fixture(); f.run.conclusion = 'failure'; f.jobs = jobs;
+    await assert.rejects(verify(f, { requiredJob: PUBLICATION }), /Required validation job/, JSON.stringify(jobs));
+  }
+  for (const conclusion of ['cancelled', 'skipped', 'timed_out', null]) {
+    const f = fixture(); f.run.conclusion = conclusion; f.jobs = [job()];
+    await assert.rejects(verify(f, { requiredJob: PUBLICATION }), /unsuccessful/, String(conclusion));
+  }
+  const running = fixture(); running.run.status = 'in_progress'; running.jobs = [job()];
+  await assert.rejects(verify(running, { requiredJob: PUBLICATION }));
+  for (const requiredJob of ['', 'x'.repeat(101), 'a;b', 7]) {
+    await assert.rejects(verify(fixture(), { requiredJob }), /Invalid required job/);
+  }
+});
+
+test('a publication job carried over by a rerun of failed jobs still authorizes the newer attempt', async () => {
+  const f = fixture(); f.run.conclusion = 'failure'; f.run.run_attempt = 2; f.runs[0].run_attempt = 2;
+  f.jobs = [job({ run_attempt: 1 })];
+  assert.equal((await verify(f, { requiredJob: PUBLICATION })).sha, sha);
+  f.jobs = [job({ run_attempt: 2, conclusion: 'failure' })];
+  await assert.rejects(verify(f, { requiredJob: PUBLICATION }), /Required validation job/);
 });

@@ -74,6 +74,15 @@ jobs:
     needs: [merge, scope]
     if: fromJSON(needs.scope.outputs.selection)['faber']
     uses: ./.github/workflows/faber-integration.yml
+    with:
+      # The browser conversion runs once, as the browser job below.
+      browser_runtime: false
+
+  # Real-model browser conversion of the Rails Space, required for publication.
+  browser:
+    needs: [merge, scope]
+    if: fromJSON(needs.scope.outputs.selection)['browser']
+    uses: ./.github/workflows/rails-real-model.yml
 
   flutter:
     needs: [merge, scope]
@@ -125,7 +134,7 @@ jobs:
   validated:
     name: Validated merged source
     if: always()
-    needs: [merge, scope, ci, codeql, ffi, faber, flutter, fallback, native, snapshot, rails-image, cli, linux, isolation, audit, ruby]
+    needs: [merge, scope, ci, codeql, browser, ffi, faber, flutter, fallback, native, snapshot, rails-image, cli, linux, isolation, audit, ruby]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -144,3 +153,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/post_merge_validation.mjs
+
+  # The Hugging Face sync and rollback gates require this job, not the whole run:
+  # see PUBLICATION_VALIDATIONS in scripts/post_merge_validation.mjs. Merge identity
+  # was confirmed by the merge job and is rechecked by validated_merge.mjs.
+  publication:
+    name: Publication surfaces validated
+    if: always()
+    needs: [merge, scope, ci, codeql, audit, ruby, rails-image, snapshot, browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require every publication validation
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: >-
+          node --input-type=module -e
+          'import { assertValidationResults, PUBLICATION_VALIDATIONS } from "./scripts/post_merge_validation.mjs";
+          assertValidationResults(JSON.parse(process.env.NEEDS_JSON), PUBLICATION_VALIDATIONS);'
