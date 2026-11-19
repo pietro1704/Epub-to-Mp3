@@ -13,10 +13,14 @@ session plans, handoffs and private instruction overlays out of published diffs.
 Inspect branch/status and the relevant diff before implementation, except when
 the user explicitly defers Git until a current app-validation journey ends.
 
-Apple builds and app validation run on this Mac. Android/Samsung and Flutter
-Linux builds, tests and generated artifacts belong on Arch. Android work remains
-paused until the user resumes it. Separately authorized Mac and Arch work may
-run concurrently; shared Rust has one named editing owner. Focused CLI/Web
+This Mac is for the Apple ecosystem only (macOS, iOS, iPadOS and their tooling):
+Apple builds and app validation run here. Everything Flutter (Windows, Linux and
+Android/Samsung) builds, tests and generates artifacts on Arch or in GitHub CI,
+never on this Mac: do not install or run the Flutter/Dart SDK, Gradle/Android
+tooling or a Windows toolchain here. A Flutter edit made on this Mac is validated
+by Arch or CI, and reading a CI log is not running that platform locally.
+Android work remains paused until the user resumes it. Separately authorized Mac
+and Arch work may run concurrently; shared Rust has one named editing owner. Focused CLI/Web
 checks may run on Mac; start Web tests with at most two workers. Host scripts are
 Ruby; their fixture-only host tests may run on Mac.
 
