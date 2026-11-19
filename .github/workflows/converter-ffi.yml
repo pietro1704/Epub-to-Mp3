@@ -18,7 +18,7 @@ jobs:
   host-validation:
     name: Host target mapping and converter-ffi tests
     env:
-      MISE_ENABLE_TOOLS: python,rust
+      MISE_ENABLE_TOOLS: rust,ruby
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -51,7 +51,7 @@ jobs:
   artifact-build:
     name: Build converter-ffi native artifacts
     env:
-      MISE_ENABLE_TOOLS: python,rust,ruby
+      MISE_ENABLE_TOOLS: rust,ruby
       CARGO_BUILD_JOBS: '1'
     needs: host-validation
     runs-on: ${{ matrix.os }}

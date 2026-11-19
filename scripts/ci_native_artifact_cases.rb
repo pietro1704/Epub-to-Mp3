@@ -82,7 +82,7 @@ class CiRuntimeScopeTest
     faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
     mac = faber.fetch('jobs').fetch('macos-preferences')
     steps = mac.fetch('steps')
-    assert_equal "${{ matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'python' || matrix.arch == 'x86_64' && 'python,rust' || 'python,rust,ruby' }}", mac.fetch('env').fetch('MISE_ENABLE_TOOLS')
+    assert_equal "${{ matrix.arch == 'x86_64' && inputs.intel_prebuilt && 'aqua:git-lfs/git-lfs' || matrix.arch == 'x86_64' && 'rust' || 'rust,ruby' }}", mac.fetch('env').fetch('MISE_ENABLE_TOOLS')
     setup = steps.find { |step| step['name'] == 'Install official prebuilt Ruby for Intel' }
     verify = steps.find { |step| step['name'] == 'Verify official Intel Ruby selection through mise' }
     install = steps.find { |step| step['run'] == 'mise install' }

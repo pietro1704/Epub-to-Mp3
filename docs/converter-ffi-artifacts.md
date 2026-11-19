@@ -15,10 +15,9 @@ subset recipe. Dedicated Apple tasks include `converter-ffi:ios-device`,
 `converter-ffi:android-install` and `android:runtime-audit`; inspect their
 prerequisites and platform ownership before use. Android work remains paused.
 
-The retained `scripts/build_converter_ffi.py` maps logical targets below.
+The retained `scripts/build_converter_ffi.rb` maps logical targets below.
 `converter-ffi:targets` lists that map; `converter-ffi:validate` checks the host
-mapping. Both currently invoke Python, whose local execution remains deferred
-to CI by policy. The script's `--dry-run` checks installed-target prerequisites
+mapping. Both run with Ruby on the host. The script's `--dry-run` checks installed-target prerequisites
 and prints commands; it is not a build or artifact audit. Never invoke its direct
 compiler path to bypass native guards.
 
