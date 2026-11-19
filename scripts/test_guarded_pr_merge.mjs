@@ -293,13 +293,14 @@ test('every workflow writer uses the trusted gate or leaves automatic merge disa
   }
 });
 
-test('freshness requires an actual current master ancestry comparison', () => {
-  for (const comparison of [undefined, {}, { status: 'ahead', behind_by: 1 },
-    { status: 'behind', behind_by: 1 }, { status: 'diverged', behind_by: 2 },
-    { status: 'ahead', behind_by: '0' }]) {
+test('a real master ancestry comparison is required but base freshness is not', () => {
+  for (const comparison of [undefined, {}, { status: 'behind', behind_by: 1 }, { status: 'bogus', behind_by: 0 }]) {
     const f = fixture(); f.comparison = comparison;
     assert.equal(evaluate(f).eligible, false);
   }
-  const f = fixture(); f.comparison.status = 'identical';
-  assert.equal(evaluate(f).eligible, true);
+  for (const comparison of [{ status: 'identical', behind_by: 0 }, { status: 'ahead', behind_by: 0 },
+    { status: 'diverged', behind_by: 2 }, { status: 'ahead', behind_by: 1 }]) {
+    const f = fixture(); f.comparison = comparison;
+    assert.equal(evaluate(f).eligible, true, JSON.stringify(comparison));
+  }
 });

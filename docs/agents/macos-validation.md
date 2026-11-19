@@ -73,8 +73,8 @@ Swift and documentation edits alone do not invalidate an unchanged FFI package.
 ## Required PR gate
 
 `mise run pr:gate:policy -- --repo OWNER/REPO` verifies the server requires only
-`PR gate`, bound to the GitHub Actions app, with an up-to-date base and administrator
-enforcement. Explicit `--apply` changes only the required-check policy while
+`PR gate`, bound to the GitHub Actions app, with administrator enforcement
+(an up-to-date base is not required since 2026-11-19). Explicit `--apply` changes only the required-check policy while
 preserving other protections. Initial creation uses GitHub's full protection
 endpoint, checks that the baseline has not changed, and verifies the result.
 Keep an external before/after snapshot when applying repository settings.

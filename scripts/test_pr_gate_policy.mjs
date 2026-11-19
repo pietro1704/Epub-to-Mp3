@@ -38,9 +38,17 @@ function client({ initial = protection(), stale = false, denied = false, moved =
   } }); } };
 }
 test('explicit apply installs exactly the trusted gate and preserves every other protection', () => {
-  const f = client(); assert.deepEqual(f.run(true), { repo, branch: 'master', verified: true, changed: true, context: 'PR gate', app_id: 15368, strict: true });
+  const f = client(); assert.deepEqual(f.run(true), { repo, branch: 'master', verified: true, changed: true, context: 'PR gate', app_id: 15368, strict: false });
   assert.equal(f.calls.length, 5);
   assert.equal(f.calls.filter(args => args.includes('PUT')).length, 1);
+});
+test('either value of the up-to-date setting is a matching policy and is never rewritten', () => {
+  for (const strict of [false, true]) {
+    const initial = withGate(protection()); initial.required_status_checks.strict = strict;
+    const f = client({ initial });
+    assert.equal(f.run(true).changed, false);
+    assert.equal(f.calls.some(args => args.includes('PATCH') || args.includes('PUT')), false);
+  }
 });
 test('matching policy verifies idempotently without any write', () => {
   for (const apply of [false, true]) {
@@ -92,8 +100,8 @@ test('inspection cannot silently enable absent protection or accept a forged app
     assert.equal(f.calls.some(args => args.includes('PATCH')), false);
   }
 });
-test('missing, unbound, extra, stale or non-strict checks reject a merge policy', () => {
-  for (const change of [p => delete p.required_status_checks, p => p.required_status_checks.strict = false,
+test('missing, unbound, extra or stale checks reject a merge policy', () => {
+  for (const change of [p => delete p.required_status_checks, p => p.required_status_checks.strict = undefined,
     p => p.required_status_checks.checks[0].app_id = null, p => p.required_status_checks.checks[0].app_id = 1,
     p => p.required_status_checks.checks.push({ context: 'CodeQL', app_id: 15368 }),
     p => p.required_status_checks.contexts.push('CodeQL'), p => p.enforce_admins.enabled = false]) {

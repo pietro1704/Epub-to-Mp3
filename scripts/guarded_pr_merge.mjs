@@ -21,7 +21,9 @@ export function evaluate({ pr, runs, comparison, repo, head }) {
       || pr.headRefOid !== head || typeof pr.isCrossRepository !== 'boolean'
       || pr.reviewDecision === 'CHANGES_REQUESTED' || pr.mergeable !== 'MERGEABLE'
       || !['CLEAN', 'UNSTABLE'].includes(pr.mergeStateStatus)) return { eligible: false, reason: 'pr_state_or_head' };
-  if (!comparison || comparison.behind_by !== 0 || !['ahead', 'identical'].includes(comparison.status))
+  // Base freshness is not required (master protection has `strict` off); a head
+  // that only trails master with no commits of its own has nothing to merge.
+  if (!comparison || !['ahead', 'identical', 'diverged'].includes(comparison.status))
     return { eligible: false, reason: 'base_not_current' };
   if (!Array.isArray(pr.statusCheckRollup)) return { eligible: false, reason: 'missing_checks' };
   // Only the scoped PR workflow blocks integration. Full runtime/security
