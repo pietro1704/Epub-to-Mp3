@@ -27,8 +27,12 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
             chapters: chapters.map { .init(index: $0.0, title: $0.1, audio: bytes) })
     }
 
-    func artifact(_ bookID: String = "book-id", _ index: Int) throws -> LocalAudioArtifactStore.ChapterArtifact? {
+    func artifact(_ bookID: String, _ index: Int) throws -> LocalAudioArtifactStore.ChapterArtifact? {
         try LocalAudioArtifactFixture.artifact(root: root, bookID: bookID, chapterIndex: index)
+    }
+
+    func artifact(_ index: Int) throws -> LocalAudioArtifactStore.ChapterArtifact? {
+        try artifact("book-id", index)
     }
 
     func assertExplicitRemovalClearsPlaybackRetention(removeWholeBook: Bool) async throws {
