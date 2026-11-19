@@ -24,6 +24,7 @@ module CiContracts
     test_select_ios_simulator.rb test_seed_ios_development_book.rb test_select_android_target.rb
     test_apple_latency_evidence.rb test_performance_evidence_gate.rb test_performance_evidence_sources.rb
     test_capture_native_test_metadata.rb test_native_test_metadata_plist.rb test_build_converter_ffi.rb test_linux_gui_artifact_evidence.rb
+    test_localization_catalog_parity.rb
   ]).uniq.freeze
   NODE_SUITES = %w[
     .github/scripts/rust-cache-identity.test.cjs
