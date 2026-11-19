@@ -641,10 +641,6 @@ if ! command -v xcodegen >/dev/null 2>&1; then
 fi
 xcodegen generate
 
-# Compatibility hook retained for existing workflows; it no longer blocks
-# Simulator work based on RAM or host load.
-python3 ../../scripts/guard_ios_simulator_resources.py
-
 # Slice 18 preflight: confirm the widget extension is wired into the
 # app bundle. xcodegen has silently dropped this dependency in the past,
 # producing a release .app with no PlugIns/EpubToMp3Widget.appex and
@@ -888,7 +884,6 @@ mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- b
 
 # This task intentionally launches only an existing artifact. Use
 # `mise run ios:build` separately when a new simulator build is required.
-python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
 
 if [[ -n "${IOS_APP_PATH:-}" ]]; then
@@ -962,7 +957,6 @@ mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- b
 # This task is deliberately distinct from `ios:run`: it is useful when a
 # legacy simulator can boot an already-installed build but the selected Xcode
 # cannot compile current source for that runtime.
-python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
 
 BUNDLE_ID="com.pietrocode.epubtomp3"
@@ -1009,7 +1003,6 @@ run = """
 set -euo pipefail
 mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
-python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
 
 if ! command -v xcodegen >/dev/null 2>&1; then

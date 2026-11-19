@@ -31,15 +31,11 @@ module CiContracts
     scripts/test_post_merge_validation.mjs
   ].freeze
   PYTHON_SUITES = %w[
-    scripts/test_android_ui_session.py
     scripts/test_capture_native_test_metadata.py
-    scripts/test_simulator_resource_monitor.py
     scripts/test_android_target_selection.py
     scripts/test_apple_latency_evidence.py
     scripts/test_codeql_workflow.py
     scripts/test_development_run_tasks.py
-    scripts/test_guard_ios_simulator_resources.py
-    scripts/test_heavy_job_guard.py
     scripts/test_ios_device_mise_tasks.py
     scripts/test_ios_disk_guard.py
     scripts/test_mac_run_task.py

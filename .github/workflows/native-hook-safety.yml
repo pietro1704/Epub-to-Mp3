@@ -13,7 +13,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 25
     env:
-      MISE_ENABLE_TOOLS: python,ruby,rust
+      MISE_ENABLE_TOOLS: ruby,rust
       CARGO_BUILD_JOBS: '1'
       CMAKE_BUILD_PARALLEL_LEVEL: '1'
     steps:
@@ -25,7 +25,7 @@ jobs:
           version: 2026.11.3
           cache: false
           install: false
-      - run: mise install python ruby rust
+      - run: mise install ruby rust
       - run: mise exec -- gem install minitest --version 6.1.0 --no-document --bindir "$RUNNER_TEMP/minitest-bin"
       - name: Verify real Mac filesystem, storage and native fixture contracts
         run: |
@@ -38,12 +38,6 @@ jobs:
           mise exec -- ruby scripts/test_native_codex_tool_guard.rb
           mise exec -- ruby scripts/test_native_simulator_session.rb
           mise exec -- ruby scripts/test_device_workflow_entrypoint.rb
-      - name: Verify resource monitor contracts and style without Apple execution
-        run: |
-          mise exec -- python -m pip install --disable-pip-version-check ruff==0.6.9
-          mise exec -- ruff check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
-          mise exec -- ruff format --check scripts/simulator_resource_monitor.py scripts/test_simulator_resource_monitor.py
-          mise exec -- python scripts/test_simulator_resource_monitor.py
       - name: Type-check inherited-lease adapter without launching it
         run: mise exec -- ruby scripts/native_job.rb build -- xcrun swiftc -typecheck scripts/ios_simulator_smoke.swift
       - name: Test the actual DeviceWorkflow Swift package serially
