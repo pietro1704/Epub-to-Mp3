@@ -13,11 +13,6 @@ The Rails interface needs no server state; any `PERSISTENT_ROOT` storage applies
 only to the optional compatibility API. Survival across restarts requires an actual persistent mount and correct paths/
 permissions on the service. Preserve cache, outputs, jobs and user data.
 
-R2/object storage is optional and not established by this repository. See the
-[conditional R2 reference](../../R2_SETUP.md) before proposing an integration;
-old secret names, public URLs and local cleanup endpoints do not prove uploads,
-TTL, scheduled deletion or a free service tier.
-
 Inspect `.github/workflows/sync-hf.yml`, release workflows and the exact validated
 integrated SHA when publication is explicitly requested. GitHub branch delivery
 does not authorize a Hugging Face push, website publication, secret/configuration
