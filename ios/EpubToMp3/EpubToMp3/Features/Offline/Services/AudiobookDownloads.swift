@@ -293,9 +293,13 @@ actor AudiobookDownloads {
             ))
 
             let safeName = AudiobookChapterTransfer.sanitizedFileName(chapter.name ?? "chapter_\(chapter.index)") + ".mp3"
-            let dest = AudiobookDownloadStorage.audiobookFolder(for: snapshot.jobId).appendingPathComponent(safeName)
 
             do {
+                // An unsafe job id has no folder; it fails this chapter like any write error.
+                guard let folder = AudiobookDownloadStorage.audiobookFolder(for: snapshot.jobId) else {
+                    throw CocoaError(.fileWriteInvalidFileName)
+                }
+                let dest = folder.appendingPathComponent(safeName)
                 let bytes = try await AudiobookChapterTransfer.downloadWithBackoff(url: url, to: dest)
                 try Task.checkCancellation()
                 guard activeTasks[snapshot.jobId] == operationID else { return }

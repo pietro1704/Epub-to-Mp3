@@ -96,9 +96,8 @@ enum AudiobookCacheEviction {
     /// Touch the last-access timestamp for `jobId`.
     /// Safe to call from any thread — no shared mutable state.
     static func touchLastAccess(jobId: String) {
-        let url = AudiobookDownloadStorage.audiobooksRoot()
-            .appendingPathComponent(jobId, isDirectory: true)
-            .appendingPathComponent("last_access")
+        guard let url = AudiobookDownloadStorage.jobDirectory(for: jobId)?
+            .appendingPathComponent("last_access") else { return }
         let iso = ISO8601DateFormatter().string(from: Date())
         try? iso.write(to: url, atomically: true, encoding: .utf8)
     }

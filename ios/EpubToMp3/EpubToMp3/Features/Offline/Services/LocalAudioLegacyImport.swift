@@ -45,7 +45,7 @@ extension LocalAudioArtifactStore {
     ) throws -> LegacyImportReport {
         try Task.checkCancellation()
         let sourceRoot = legacyRoot.standardizedFileURL
-        guard LocalAudioImportFiles.isComponent(identity.jobID), !identity.bookID.isEmpty,
+        guard LegacyJobDirectory.isSafeComponent(identity.jobID), !identity.bookID.isEmpty,
               files.safePathComponent(identity.bookID) == identity.bookID,
               identity.canonicalIndices.keys.allSatisfy({ $0 >= 0 }),
               identity.canonicalIndices.values.allSatisfy({ $0 >= 0 }),

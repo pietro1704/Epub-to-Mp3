@@ -41,6 +41,7 @@ let production = [
     "Features/Offline/Services/AudiobookDownloadContracts.swift",
     "Features/Offline/Services/AudiobookDownloadStorage.swift",
     "Features/Offline/Services/FulltextStore.swift",
+    "Features/Offline/Services/LegacyJobDirectory.swift",
     "Features/Offline/Services/LocalAudioArtifactStore.swift",
     "Features/Offline/Services/LocalAudioArtifactContracts.swift",
     "Features/Offline/Services/LocalAudioArtifactFiles.swift",

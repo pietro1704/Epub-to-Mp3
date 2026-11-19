@@ -128,7 +128,7 @@ final class DownloadManagerHelperTests: XCTestCase {
 
     func testDeleteAudiobookRemovesBookFolder() throws {
         let jobId = "delete-test-\(UUID().uuidString)"
-        let folder = AudiobookDownloadStorage.audiobookFolder(for: jobId)
+        let folder = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: jobId))
         let file = folder.appendingPathComponent("chapter_1.mp3")
         try Data([0x01]).write(to: file)
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
@@ -164,7 +164,7 @@ final class DownloadManagerHelperTests: XCTestCase {
     func testManifestIsCompleteRequiresEveryExpectedChapterAndExistingFiles() throws {
         let jobId = "complete-\(UUID().uuidString)"
         defer { AudiobookDownloadStorage.deleteAudiobook(jobId: jobId) }
-        let folder = AudiobookDownloadStorage.audiobookFolder(for: jobId)
+        let folder = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: jobId))
         let entries = [0, 1].map {
             AudiobookManifest.ChapterEntry(index: $0, title: "ch\($0)", mp3FileName: "ch\($0).mp3", mp3Bytes: 128, downloadedAt: Date())
         }

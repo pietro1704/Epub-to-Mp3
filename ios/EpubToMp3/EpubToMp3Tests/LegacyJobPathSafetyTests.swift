@@ -186,4 +186,36 @@ final class LegacyJobPathSafetyTests: XCTestCase {
             assertSentinelsIntact(id, "valid removal")
         }
     }
+
+    // MARK: Validator
+
+    func testSafeComponentAcceptsProducedIDsAndRejectsEverythingElse() {
+        for id in ["3F2504E0-4F89-11D3-9A0C-0305E82C3301", "embedded-0123abcd", "job_1.v2", "fixture",
+                   "...", ".hidden", "livro-ç", String(repeating: "a", count: 255)] {
+            XCTAssertTrue(LegacyJobDirectory.isSafeComponent(id), id)
+        }
+        for id in Self.attackIDs.filter({ $0 != "evil-job" }) + ["a\\b", "bell\u{7}", "line\n", "del\u{7F}",
+                                                                String(repeating: "é", count: 128)] {
+            XCTAssertFalse(LegacyJobDirectory.isSafeComponent(id), id.debugDescription)
+        }
+    }
+
+    func testResolveReportsTheRejectionType() {
+        XCTAssertEqual(LegacyJobDirectory.resolve("..", under: root), .failure(.invalidComponent))
+        XCTAssertEqual(LegacyJobDirectory.resolve("evil-job", under: root), .failure(.symbolicLink))
+        // Foundation may spell the canonical temp root as /var or /private/var; compare resolved paths.
+        let resolved = try? LegacyJobDirectory.resolve("other-book", under: root).get()
+        XCTAssertEqual(resolved?.resolvingSymlinksInPath().path,
+                       root.appendingPathComponent("other-book").resolvingSymlinksInPath().path)
+    }
+
+    func testAliasedRootStillAddressesItsOwnJobFolders() throws {
+        let alias = parent.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: root)
+        AudiobookDownloadStorage.rootOverrideForTesting = alias
+        XCTAssertEqual(AudiobookDownloadStorage.locallyDownloadedIndices(for: "other-book"), [0])
+        AudiobookDownloadStorage.deleteAudiobook(jobId: "other-book")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("other-book").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: alias.path))
+    }
 }

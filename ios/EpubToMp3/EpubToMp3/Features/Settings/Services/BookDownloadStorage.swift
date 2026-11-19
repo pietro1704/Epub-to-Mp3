@@ -55,10 +55,7 @@ struct BookDownloadStorage: Sendable {
     }
 
     private func directory(_ jobID: String) -> URL? {
-        guard isComponent(jobID) else { return nil }
-        let root = retainedRoot.resolvingSymlinksInPath()
-        let directory = root.appendingPathComponent(jobID, isDirectory: true).resolvingSymlinksInPath()
-        return directory.deletingLastPathComponent() == root ? directory : nil
+        LegacyJobDirectory.directory(for: jobID, under: retainedRoot, operation: #function)
     }
 
     private func isComponent(_ value: String) -> Bool {

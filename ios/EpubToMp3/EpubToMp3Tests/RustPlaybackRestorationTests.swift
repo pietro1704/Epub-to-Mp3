@@ -76,7 +76,7 @@ final class RustPlaybackRestorationTests: XCTestCase {
 
     func testPartialDownloadKeepsOtherConvertedChaptersAndPrefersRetainedFile() throws {
         try withFixture { job, manager, directory in
-            let retained = AudiobookDownloadStorage.audiobookFolder(for: job).appendingPathComponent("retained.mp3")
+            let retained = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: job)).appendingPathComponent("retained.mp3")
             try Data([1, 2, 3]).write(to: retained)
             try AudiobookDownloadStorage.saveManifest(.init(jobId: job, bookTitle: "Retained",
                 chapters: [.init(index: 0, title: "Retained title", mp3FileName: "retained.mp3",
@@ -120,7 +120,7 @@ final class RustPlaybackRestorationTests: XCTestCase {
     }
 
     private func retainChapterEight(job: String) throws -> URL {
-        let retained = AudiobookDownloadStorage.audiobookFolder(for: job).appendingPathComponent("retained.mp3")
+        let retained = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: job)).appendingPathComponent("retained.mp3")
         try Data([7, 8, 9]).write(to: retained)
         try AudiobookDownloadStorage.saveManifest(.init(jobId: job, bookTitle: "Retained",
             chapters: [.init(index: 8, title: "Retained chapter", mp3FileName: "retained.mp3",

@@ -54,23 +54,28 @@ final class FulltextStore: @unchecked Sendable {
 
     /// Storage layout shared with `AudiobookDownloads` so a single
     /// audiobook folder owns both audio and reader text.
-    static func fulltextURL(for jobId: String, root: URL? = nil) -> URL {
-        let base = (root ?? AudiobookDownloadStorage.audiobooksRoot())
-            .appendingPathComponent(jobId, isDirectory: true)
+    /// Nil when `jobId` is not a safe single path component (see `LegacyJobDirectory`).
+    static func fulltextURL(for jobId: String, root: URL? = nil, operation: String = #function) -> URL? {
+        guard let base = LegacyJobDirectory.directory(for: jobId,
+            under: root ?? AudiobookDownloadStorage.audiobooksRoot(), operation: operation) else { return nil }
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("fulltext.json")
     }
 
     static func loadFromDisk(jobId: String, root: URL? = nil) -> EbookFulltext? {
         guard !isEvicted(jobId: jobId) else { return nil }
-        guard let data = try? Data(contentsOf: fulltextURL(for: jobId, root: root)) else { return nil }
+        guard let url = fulltextURL(for: jobId, root: root),
+              let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(EbookFulltext.self, from: data)
     }
 
     static func saveToDisk(_ payload: EbookFulltext, root: URL? = nil) throws {
         clearEvicted(jobId: payload.jobId)
+        guard let url = fulltextURL(for: payload.jobId, root: root) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
         let data = try JSONEncoder().encode(payload)
-        try data.write(to: fulltextURL(for: payload.jobId, root: root), options: .atomic)
+        try data.write(to: url, options: .atomic)
     }
 
     /// Mark ``jobId`` as evicted so in-flight store instances stop
@@ -99,11 +104,12 @@ final class FulltextStore: @unchecked Sendable {
     /// Remove the on-disk and in-memory fulltext cache for ``jobId``.
     /// Used by the library delete cascade (slice 48) so a removed book
     /// does not leave its parsed reader text behind on disk.
-    /// Missing files are treated as success.
+    /// Missing files are treated as success. An unsafe job id removes
+    /// nothing and returns false without interrupting the caller's cascade.
     @discardableResult
     static func evict(jobId: String) -> Bool {
         markEvicted(jobId: jobId)
-        let url = fulltextURL(for: jobId)
+        guard let url = fulltextURL(for: jobId) else { return false }
         do {
             try FileManager.default.removeItem(at: url)
             return true

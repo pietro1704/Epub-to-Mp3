@@ -31,7 +31,7 @@ final class AudiobookCacheEvictionTests: XCTestCase {
     private func plantRealAudiobook(
         jobId: String, entries: [(index: Int, fileName: String, onDisk: Bool)]
     ) throws {
-        let folder = AudiobookDownloadStorage.audiobookFolder(for: jobId)
+        let folder = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: jobId))
         var chapters: [AudiobookManifest.ChapterEntry] = []
         for entry in entries {
             if entry.onDisk {
