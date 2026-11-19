@@ -61,7 +61,17 @@ final class MacSidebarPresentation {
         stack.alignment = .leading
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 12, bottom: 12, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        controller.view = stack
+        // The sidebar is full height under the titlebar; keep its content
+        // below the toolbar's sidebar section that holds the toggle.
+        let container = NSView()
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        controller.view = container
     }
 
     func select(_ destination: Destination) {

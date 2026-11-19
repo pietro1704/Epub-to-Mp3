@@ -63,6 +63,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     static func runApp() {
         let application = NSApplication.shared
+        MacApplicationWindowSetup.applyWindowingPolicy()
         let delegate = AppStartupTiming.shared.measure(.macDelegateCreation) { EpubToMp3App() }
         macOSDelegate = delegate
         application.setActivationPolicy(.regular)
@@ -108,19 +109,38 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls { handleIncomingURL(url) }
+        // After Cmd+W the book opens in the same window; ordering it in does
+        // not activate the app, so a background open stays in the background.
+        if let window, !window.isVisible { window.orderFront(nil) }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MacApplicationWindowSetup.handleReopen(window)
+    }
+
+    /// Menu commands act on the single window, so show it again if Cmd+W hid it.
+    private func showMainWindowIfHidden() {
+        guard let window, !window.isVisible || window.isMiniaturized else { return }
+        MacApplicationWindowSetup.reopen(window)
     }
 
     @objc func importBooks(_ sender: Any?) {
+        showMainWindowIfHidden()
         rootController?.importBooks(sender)
     }
 
     @objc func toggleNavigationSidebar(_ sender: Any?) {
+        showMainWindowIfHidden()
         rootController?.toggleNavigationSidebar(sender)
     }
 
-    @objc func showSettings(_ sender: Any?) { rootController?.showSettings(sender) }
+    @objc func showSettings(_ sender: Any?) {
+        showMainWindowIfHidden()
+        rootController?.showSettings(sender)
+    }
 
     @objc func focusLibrarySearch(_ sender: Any?) {
+        showMainWindowIfHidden()
         rootController?.focusLibrarySearch(sender)
     }
 
