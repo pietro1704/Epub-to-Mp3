@@ -23,7 +23,10 @@ final class SpeechModelRangeCrashTests: XCTestCase {
         writer.standardOutput = FileHandle.nullDevice
         let watchdog = DispatchWorkItem { if writer.isRunning { writer.terminate() } }
         try writer.run()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: watchdog)
+        // The watchdog only bounds a hung interpreter. Under a full suite the
+        // first /usr/bin/ruby launch can take several seconds, and a 3 s bound
+        // terminated it (SIGTERM, nothing written) before it could fsync.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: watchdog)
         writer.waitUntilExit()
         watchdog.cancel()
         XCTAssertEqual(writer.terminationReason, .uncaughtSignal)
