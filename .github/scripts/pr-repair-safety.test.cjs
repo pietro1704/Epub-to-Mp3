@@ -307,7 +307,7 @@ test('concrete policy and deployment paths are refused untracked and staged', as
     'infra/fixture.tf', 'scripts/native_job.rb', 'scripts/guard_remediation_changes.py',
     'config/mac-build-budget.json', 'scripts/mac_build_budget.rb',
     'scripts/native_simulator_session.rb', 'scripts/simulator_resource_monitor.py',
-    'scripts/validated_merge.mjs', 'scripts/post_merge_validation.mjs',
+    'scripts/validated_merge.mjs', 'scripts/post_merge_validation.mjs', 'scripts/post_merge_scope.mjs',
     'scripts/run_ci_contracts.rb', 'scripts/check_codeql_swift_tool_scope.rb',
     'scripts/pr_gate_policy.mjs', 'scripts/mac_validate.rb']) {
     await t.test(filename, child => {
