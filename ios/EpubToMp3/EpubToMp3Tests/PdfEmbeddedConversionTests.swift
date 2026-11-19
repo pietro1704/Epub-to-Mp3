@@ -120,6 +120,9 @@ final class PdfEmbeddedConversionTests: XCTestCase {
         // Selecting the library book opens it through the library, which refreshes the legacy PDF cover.
         await controller.selectLibraryBook(book.id, startImmediately: false)
         XCTAssertEqual(controller.selectedBookID, book.id)
+        // One short sentence cannot be language-detected, which would open the language
+        // picker; the acceptance run states the PDF's language like a user would.
+        controller.form.language.stringValue = "pt-BR"
         let button = controller.form.submit
         window.contentView?.layoutSubtreeIfNeeded()
         button.scrollToVisible(button.bounds)
