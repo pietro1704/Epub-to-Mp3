@@ -163,12 +163,18 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         window.toolbarStyle = .unified
     }
 
+    /// Items before the tracking separator are drawn over the sidebar and follow
+    /// its divider; with the sidebar collapsed the toggle stays at the leading edge.
+    static let toolbarItemIdentifiers: [NSToolbarItem.Identifier] = [
+        sidebarToolbarItemIdentifier, .sidebarTrackingSeparator,
+    ]
+
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.sidebarToolbarItemIdentifier]
+        Self.toolbarItemIdentifiers
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.sidebarToolbarItemIdentifier]
+        Self.toolbarItemIdentifiers
     }
 
     func toolbar(
@@ -254,7 +260,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         NSLayoutConstraint.activate([
             contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
-            contentView.topAnchor.constraint(equalTo: detailContainer.view.topAnchor),
+            contentView.topAnchor.constraint(equalTo: detailContainer.view.safeAreaLayoutGuide.topAnchor),
             contentView.bottomAnchor.constraint(equalTo: playerBar.view.topAnchor),
         ])
         detailController = controller
@@ -299,7 +305,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         NSLayoutConstraint.activate([
             contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
-            contentView.topAnchor.constraint(equalTo: detailContainer.view.topAnchor),
+            contentView.topAnchor.constraint(equalTo: detailContainer.view.safeAreaLayoutGuide.topAnchor),
             contentView.bottomAnchor.constraint(equalTo: detailContainer.view.bottomAnchor),
         ])
         detailController = reader
@@ -400,7 +406,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 presentation: playerPresentation,
                 onStartPlayback: { [weak self] in self?.playFromCurrentReaderPosition() }
             )
-            controller.preferredContentSize = view.window?.contentView?.bounds.size ?? NSSize(width: 1000, height: 700)
+            // Full-size content bounds include the titlebar; the sheet hangs below it.
+            controller.preferredContentSize = view.window?.contentLayoutRect.size ?? NSSize(width: 1000, height: 700)
             fullPlayerController = controller
             presentAsSheet(controller)
         } else if let controller = fullPlayerController {

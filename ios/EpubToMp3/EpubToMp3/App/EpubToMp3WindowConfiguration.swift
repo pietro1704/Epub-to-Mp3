@@ -9,12 +9,17 @@ enum EpubToMp3WindowConfiguration {
     static func makeMacOSWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: macOSDefaultSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            // Full-size content lets the toolbar's sidebar tracking separator
+            // split the titlebar, so the sidebar toggle sits over the sidebar.
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.minSize = macOSMinimumSize
         window.isRestorable = false
+        window.tabbingMode = .disallowed
+        // The app delegate owns this single window and re-shows it after Cmd+W.
+        window.isReleasedWhenClosed = false
         return window
     }
     @MainActor
