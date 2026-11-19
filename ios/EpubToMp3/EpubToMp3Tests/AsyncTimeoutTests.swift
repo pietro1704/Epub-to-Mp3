@@ -72,12 +72,17 @@ final class AsyncTimeoutTests: XCTestCase {
         XCTAssertEqual(result, "ok")
     }
 
-    func testTimeoutErrorDescriptionIncludesLabel() {
+    func testTimeoutErrorDescriptionIsLocalizedWithDeadlineAndKeepsDiagnosticLabel() {
+        // Since #1069 the user-facing text is the localized `error.timeout`
+        // message; the English call-site label stays on the error for
+        // diagnostics and must not leak into a translated banner.
         let err = TimeoutError(seconds: 30, label: "EPUB parse")
         let desc = err.errorDescription ?? ""
-        XCTAssertTrue(desc.contains("EPUB parse"),
-            "errorDescription must mention the label so banners are informative")
+        XCTAssertEqual(desc, L10n.string("error.timeout", 30))
         XCTAssertTrue(desc.contains("30"),
             "errorDescription must mention the deadline so users know the budget")
+        XCTAssertFalse(desc.contains("EPUB parse"),
+            "The English diagnostic label must not leak into the localized banner")
+        XCTAssertEqual(err.label, "EPUB parse")
     }
 }

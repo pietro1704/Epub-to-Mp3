@@ -247,8 +247,11 @@ final class AppSettings: ObservableObject {
                 readerLineSpacing = clamped
                 return
             }
+            // Loading must not persist the default: a stored `readerLineSpacing`
+            // is the legacy signal of an explicit choice (ReaderParagraphPreferences).
+            guard !loadingPersistedValues else { return }
             defaults.set(readerLineSpacing, forKey: "readerLineSpacing")
-            if !loadingPersistedValues { readerOverrideLineSpacing = true }
+            readerOverrideLineSpacing = true
         }
     }
 

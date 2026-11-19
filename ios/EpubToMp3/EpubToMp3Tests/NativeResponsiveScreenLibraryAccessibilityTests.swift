@@ -47,7 +47,10 @@ extension NativeResponsiveScreenTests {
         let add = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
             .first { $0.accessibilityIdentifier() == "library.add" })
         XCTAssertEqual(add.accessibilityLabel(), L10n.string("library.addBook"))
-        XCTAssertTrue((controller.view.accessibilityChildren() ?? []).contains { ($0 as? NSView) === add })
+        // AppKit exposes a flattened control through its cell, so the import
+        // button is reachable either as the view or as its NSButtonCell.
+        let accessible = controller.view.accessibilityChildren() ?? []
+        XCTAssertTrue(accessible.contains { ($0 as AnyObject) === add || ($0 as AnyObject) === add.cell })
     }
 #endif
 
@@ -57,7 +60,10 @@ extension NativeResponsiveScreenTests {
         let settings = AppSettings(defaults: defaults)
         settings.allowOnlineAudioFallback = true
         settings.secondaryAudioEngine = nil
-        let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
+        // Since #1145 the narration popups live in the pushed Voice models
+        // detail; MacVoiceModelSettingsNavigationTests covers the push itself.
+        let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults),
+                                                   voiceModelsOnly: true)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -75,21 +81,22 @@ extension NativeResponsiveScreenTests {
 
         secondary.selectItem(withTitle: AudioEnginePreference.piper.displayName)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertNil(settings.secondaryAudioEngine, "A stale or programmatic action must not persist a duplicate voice.")
+        XCTAssertNil(settings.ttsPreferences.secondary, "A stale or programmatic action must not persist a duplicate voice.")
         XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
         secondary.selectItem(withTitle: "Edge")
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertEqual(settings.secondaryAudioEngine, .edge)
+        XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "edge")
 
         let captured = settings.conversionOptions
         secondary.selectItem(withTitle: AudioEnginePreference.piper.displayName)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertEqual(AppSettings(defaults: defaults).secondaryAudioEngine, .edge)
+        XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences.secondary?.engine, "edge")
         XCTAssertEqual(secondary.titleOfSelectedItem, "Edge")
-        XCTAssertEqual(settings.ttsPreferences, captured.ttsPreferences)
+        // The captured job keeps its own (catalog-captured) preferences.
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences, captured.ttsPreferences)
         secondary.selectItem(withTitle: L10n.string("settings.noSecondary"))
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
-        XCTAssertNil(AppSettings(defaults: defaults).secondaryAudioEngine)
+        XCTAssertNil(AppSettings(defaults: defaults).ttsPreferences.secondary)
         XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
         XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "edge")
         secondary.selectItem(withTitle: "Edge")
@@ -98,7 +105,7 @@ extension NativeResponsiveScreenTests {
         primary.selectItem(withTitle: "Edge")
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
         menu.update()
-        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(settings.ttsPreferences.secondary, "The new primary voice cannot remain the secondary voice.")
         XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Edge")).isEnabled)
         XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: AudioEnginePreference.piper.displayName)).isEnabled,
                        "Changing the primary cannot make an uninstalled model selectable.")

@@ -14,9 +14,14 @@ final class ReaderSelectionWiringTests: XCTestCase {
         harness.showChapter(0)
         let range = (harness.displayed.string as NSString).range(of: "selected passage")
 #if os(macOS)
+        // Since #1152 the Mac menu leads with Play from here and groups the
+        // highlight actions under More.
         let items = harness.annotations.buildSelectionMenuItems(range: range)
-        XCTAssertEqual(items.map(\.title), [L10n.string("reader.action.highlight"), L10n.string("reader.action.addNote")])
-        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(items.map(\.title), [L10n.string("reader.action.playFromHere"), L10n.string("reader.selection.more")])
+        let more = try XCTUnwrap(items.last?.submenu)
+        XCTAssertEqual(Array(more.items.prefix(2)).map(\.title),
+                       [L10n.string("reader.action.highlight"), L10n.string("reader.action.addNote")])
+        let item = try XCTUnwrap(more.items.first)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
 #else
         if #available(iOS 16.0, *) {

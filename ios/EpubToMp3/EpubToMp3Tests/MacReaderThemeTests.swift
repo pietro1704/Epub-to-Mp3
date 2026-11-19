@@ -80,8 +80,9 @@ final class MacReaderThemeTests: XCTestCase {
             assertColor(text.backgroundColor, equals: expected.background)
             // Mixed body/link colors legitimately make NSTextView.textColor nil.
             assertColor(scroll.backgroundColor, equals: expected.background)
-            assertColor(try XCTUnwrap(NSColor(cgColor: try XCTUnwrap(toolbar.layer?.backgroundColor))),
-                        equals: expected.background)
+            // Chrome overlays the fixed text viewport on a native material (#1153);
+            // the toolbar itself must not paint an opaque theme slab.
+            XCTAssertNil(toolbar.layer?.backgroundColor, "Reader toolbar must stay transparent for \(theme.rawValue)")
             let foreground = try XCTUnwrap(text.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, "Body foreground must exist for \(theme.rawValue)")
             assertColor(foreground, equals: expected.foreground)
             if theme != .light || settings.readerOverrideColours {
@@ -174,7 +175,9 @@ final class MacReaderThemeTests: XCTestCase {
         assertColor(try XCTUnwrap(textView.textColor), equals: settings.readerColors.foreground)
         assertColor(scrollView.backgroundColor, equals: settings.readerColors.background)
         assertColor(try XCTUnwrap(title.textColor), equals: settings.readerColors.foreground)
-        assertColor(try XCTUnwrap(NSColor(cgColor: try XCTUnwrap(toolbar.layer?.backgroundColor))), equals: settings.readerColors.background)
+        XCTAssertTrue(toolbar.wantsLayer)
+        XCTAssertNil(toolbar.layer?.backgroundColor, "Reader chrome draws over native material, not an opaque theme fill")
+        assertColor(try XCTUnwrap(NSColor(cgColor: try XCTUnwrap(surface.layer?.backgroundColor))), equals: settings.readerColors.background)
     }
 
     func testAutoThemeResolvesSurfaceAndTitleUsingOneAppearance() throws {

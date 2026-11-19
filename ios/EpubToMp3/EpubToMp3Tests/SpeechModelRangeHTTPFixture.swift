@@ -2,6 +2,30 @@
 import Foundation
 import Network
 import XCTest
+#if os(macOS)
+import Security
+#endif
+
+/// Loopback HTTP fixtures need to listen and connect on 127.0.0.1. A macOS
+/// test host signed into the App Sandbox without the network entitlements
+/// (for example `CODE_SIGN_ENTITLEMENTS=` with `ENABLE_APP_SANDBOX=YES`)
+/// can do neither, so the listener never becomes ready.
+enum LoopbackTestHost {
+    static func skipUnlessLoopbackNetworkingIsAllowed() throws {
+        #if os(macOS)
+        guard let task = SecTaskCreateFromSelf(nil) else { return }
+        func entitled(_ key: String) -> Bool {
+            (SecTaskCopyValueForEntitlement(task, key as CFString, nil) as? Bool) == true
+        }
+        let sandboxed = entitled("com.apple.security.app-sandbox")
+        let allowed = entitled("com.apple.security.network.server") && entitled("com.apple.security.network.client")
+        try XCTSkipIf(sandboxed && !allowed,
+            "The test host is sandboxed without network.server/network.client entitlements, so a loopback "
+            + "listener cannot run. Build the tests with the project Debug entitlements "
+            + "(do not pass CODE_SIGN_ENTITLEMENTS=).")
+        #endif
+    }
+}
 
 /// Real loopback HTTP with deterministic range failures; never contacts public hosts.
 final class SpeechModelRangeHTTPFixture: @unchecked Sendable {
@@ -23,6 +47,7 @@ final class SpeechModelRangeHTTPFixture: @unchecked Sendable {
     private let pauseAfterFirstRange: Bool
 
     init(payload: Data, scenario: Scenario, pauseAfterFirstRange: Bool = false) throws {
+        try LoopbackTestHost.skipUnlessLoopbackNetworkingIsAllowed()
         self.payload = payload
         self.scenario = scenario
         self.pauseAfterFirstRange = pauseAfterFirstRange
