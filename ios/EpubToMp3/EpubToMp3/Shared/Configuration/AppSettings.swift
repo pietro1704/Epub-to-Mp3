@@ -15,6 +15,9 @@ import AppKit
 /// observers on the same persistence channel.
 /// Plain `@Published` stored properties + `didSet { UserDefaults... }`
 /// gives both Combine publishing and persistence on the same channel.
+/// The speech preferences are the exception: they live in `SpeechPreferences`
+/// (with their own `@Published` properties) and `AppSettings` forwards them
+/// and republishes their changes through its `objectWillChange`.
 final class AppSettings: ObservableObject {
     static let playbackForwardSecondsKey = "playbackForwardSeconds"
     static let playbackBackwardSecondsKey = "playbackBackwardSeconds"

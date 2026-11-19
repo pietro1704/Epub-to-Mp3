@@ -6,8 +6,8 @@ import os.log
 ///
 /// The bundled catalog pins each selection to its model or provider session
 /// for this platform. When the catalog cannot be read the selections are sent
-/// as chosen, so conversion still starts, and the failure is reported instead
-/// of being dropped.
+/// as chosen, so conversion still starts; `prepare` returns the failure and
+/// `current(for:)` logs it instead of dropping it.
 enum NarrationConversionOptions {
     struct Prepared {
         let options: ConversionOptions
@@ -27,9 +27,10 @@ enum NarrationConversionOptions {
     static func current(for preferences: TtsPreferences) -> ConversionOptions {
         let prepared = prepare(preferences)
         if let failure = prepared.catalogFailure {
+            // The error text can carry local paths, so only its type is public.
             log.error("""
-                TTS catalog unavailable; sending the saved voices without catalog capture: \
-                \(String(describing: failure), privacy: .public)
+                TTS catalog unavailable (\(String(describing: type(of: failure)), privacy: .public)); \
+                sending the saved voices without catalog capture: \(String(describing: failure), privacy: .private)
                 """)
         }
         return prepared.options
