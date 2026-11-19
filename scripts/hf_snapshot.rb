@@ -36,19 +36,30 @@ module HfSnapshot
     input
   end
 
-  def self.create(source, destination)
-    source = File.realpath(source)
-    destination = File.expand_path(destination)
-    raise 'Snapshot must be outside the source repository' if destination == source || destination.start_with?("#{source}/")
-    raise 'Snapshot destination must be empty' if File.exist?(destination) && !Dir.empty?(destination)
-    tracked_paths = command!('git', 'ls-files', '-z', chdir: source).split("\0")
-    # A missing marker selects React for previously validated rollback revisions.
+  def self.tracked_paths(source)
+    command!('git', 'ls-files', '-z', chdir: source).split("\0")
+  end
+
+  # The runtime layout of a source tree: the tracked marker, or React. A missing
+  # marker selects React for previously validated rollback revisions, and an
+  # untracked marker never counts.
+  def self.layout(source, tracked_paths = tracked_paths(source))
     layout = if tracked_paths.include?(LAYOUT_FILE)
                File.read(tracked_input(source, LAYOUT_FILE)).strip
              else
                'react'
              end
-    required = RUNTIME_INPUTS.fetch(layout) { raise 'Unsupported HF runtime layout' }
+    RUNTIME_INPUTS.key?(layout) ? layout : raise('Unsupported HF runtime layout')
+  end
+
+  def self.create(source, destination)
+    source = File.realpath(source)
+    destination = File.expand_path(destination)
+    raise 'Snapshot must be outside the source repository' if destination == source || destination.start_with?("#{source}/")
+    raise 'Snapshot destination must be empty' if File.exist?(destination) && !Dir.empty?(destination)
+    tracked_paths = tracked_paths(source)
+    layout = layout(source, tracked_paths)
+    required = RUNTIME_INPUTS.fetch(layout)
     runtime_tree = layout == 'rails' ? RAILS_ROOT : 'web'
     trees = TREES + [runtime_tree]
     paths = tracked_paths.select do |path|
@@ -87,9 +98,15 @@ module HfSnapshot
 end
 
 if $PROGRAM_NAME == __FILE__
-  abort 'Usage: hf_snapshot.rb SOURCE EMPTY_DESTINATION' unless ARGV.length == 2
+  layout_only = ARGV.first == '--layout'
+  ARGV.shift if layout_only
+  abort 'Usage: hf_snapshot.rb SOURCE EMPTY_DESTINATION | hf_snapshot.rb --layout SOURCE' unless ARGV.length == (layout_only ? 1 : 2)
   begin
-    HfSnapshot.create(*ARGV)
+    if layout_only
+      puts HfSnapshot.layout(File.realpath(ARGV.fetch(0)))
+    else
+      HfSnapshot.create(*ARGV)
+    end
   rescue StandardError => error
     warn error.message
     exit 1
