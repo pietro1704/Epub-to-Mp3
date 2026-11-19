@@ -27,3 +27,14 @@ Windows CMake support, including `src/compat/getopt.c`, remains intact.
 The CMake install still uses `vim/`, so it is retained together with all language,
 dictionary and phoneme data. Runtime phonemization coverage lives in the
 `espeak-rs` workspace crate, including punctuation and concurrent voice identity.
+
+## Compatibility shims and MSVC
+
+`src/include/compat/{getopt,unistd,endian}.h` select the system header with
+`__has_include_next`. MSVC does not define that macro, and toolset 19.52 and later
+reject the unknown macro inside `#if` (C7780, then C1017) where older toolsets read
+it as 0. The shims therefore test `defined(__has_include_next)` first and nest the
+real test, so an undefined macro falls through to the shim's own declarations or
+its `_WIN32` branch, as it always did. With GCC and Clang the preprocessed output
+is unchanged. `scripts/test_espeak_msvc_headers.rb` reproduces the MSVC case with
+a real preprocessor.
