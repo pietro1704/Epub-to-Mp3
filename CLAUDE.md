@@ -12,8 +12,8 @@ screen. Do not introduce new user-facing screens without Pietro's explicit reque
 Apple clients use native Swift (UIKit/AppKit) and embedded Rust
 `converter-core`/`converter-ffi`. Rust owns conversion, provider/model selection,
 progress, cancellation and artifacts. CLI, web and Flutter use Rust binaries,
-WASM or bindings. The legacy Python application was removed; Python remains only
-in host scripts. Shared conversion behavior belongs in Rust first.
+WASM or bindings. The legacy Python application and Python host tooling were
+removed; host scripts are Ruby. Shared conversion behavior belongs in Rust first.
 
 Piper `pt_BR-faber-medium` is the default primary TTS. Default fallback uses
 installed system TTS, preferring Apple Luciana for Brazilian Portuguese when

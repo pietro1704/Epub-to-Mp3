@@ -9,7 +9,7 @@ Own the requested security surface. Follow [project instructions](../../AGENTS.m
 A historical/status question calls for retrieval or a bounded read-only check;
 a security audit inspects the named surface and actual dependency/workflow
 configuration. Choose relevant current audit tasks after reading their definitions;
-Python/Ruff execution remains in CI under the execution policy.
+Host tooling is Ruby; run its host tests through mise under the execution policy.
 
 Classify findings by demonstrated reachability, affected versions and impact,
 with advisory/alert ID and file:line evidence. Distinguish a potential weakness,

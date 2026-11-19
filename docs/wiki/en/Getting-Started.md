@@ -20,6 +20,6 @@ is not permission to download one, call Edge or install a paid provider silently
 Browser storage/capabilities and native runtime dependencies need actual checks.
 
 An available task is not evidence that setup, conversion or a release works.
-Record the exact revision, artifact and observed result. Local Python/Ruff checks
-remain deferred to CI, and Simulator execution remains quarantined. Package,
+Record the exact revision, artifact and observed result. Simulator execution
+remains quarantined. Package,
 compile, launch and visible-app acceptance are separate stages.

@@ -11,7 +11,7 @@ Use uma branch/PR por mudança coerente, preserve trabalho alheio, acrescente
 regressão significativa e valide proporcionalmente no runtime dono. Erros,
 cancelamento e identidade livro/capítulo relevantes importam mais que quantidade
 fixa de camadas de teste ou especialistas. Documentação exige checagem de conteúdo/
-links. Python/Ruff ficam na CI; web começa com até dois workers; guards nativos,
+links. Scripts de host são Ruby; web começa com até dois workers; guards nativos,
 responsabilidade de plataformas e quarentena do Simulator continuam valendo.
 
 Commit/push e escrita de PR seguem autorização de entrega do escopo verificado.

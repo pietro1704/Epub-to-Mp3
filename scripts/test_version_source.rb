@@ -26,7 +26,8 @@ class VersionSourceTest < Minitest::Test
 
   def test_release_workflow_reads_the_workspace_version
     workflow = File.read(File.join(ROOT, '.github/workflows/auto-release.yml'))
-    assert_includes workflow, '["workspace"]["package"]["version"]'
+    assert_includes workflow, 'product_version = cargo[/^\[workspace\.package\][^\[]*?^version = "([^"]+)"/m, 1]'
+    refute_match(/\bpython3?\b/, workflow)
     refute_includes workflow, 'version.py'
   end
 

@@ -10,7 +10,7 @@ if environment.key?('MISE_ENABLE_TOOLS') && !environment['MISE_ENABLE_TOOLS'].is
   abort 'Swift MISE_ENABLE_TOOLS must be a literal string or absent'
 end
 filter = environment['MISE_ENABLE_TOOLS']
-expected = %w[python ruby rust]
+expected = %w[ruby rust]
 failures = []
 { 'root' => '.', 'Apple project' => 'ios/EpubToMp3' }.each do |label, directory|
   # A missing production filter must remove the harness-only Ruby filter.

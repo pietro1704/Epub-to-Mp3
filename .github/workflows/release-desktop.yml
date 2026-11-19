@@ -157,8 +157,7 @@ jobs:
   # SwiftUI native Apple build (macOS .app + iOS .ipa unsigned)
   #
   # Builds the official Apple client out of `ios/EpubToMp3/`. macOS embeds
-  # the Rust converter-server. Legacy Python bridge sources remain in the
-  # repository as oracle tests but are excluded from the production target.
+  # the Rust converter-server; no Python runtime is packaged.
   # The iOS build is unsigned — users sideload via AltStore.
   # ──────────────────────────────────────────────────────────────────────
   swiftui-apple:

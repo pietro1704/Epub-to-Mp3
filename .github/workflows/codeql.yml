@@ -28,7 +28,6 @@ jobs:
         language:
           - actions
           - javascript-typescript
-          - python
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -109,7 +108,7 @@ jobs:
     env:
       # Nested mise exec calls in Xcode build phases must not install XcodeGen.
       # The project generator is installed separately through Homebrew below.
-      MISE_ENABLE_TOOLS: python,rust,ruby
+      MISE_ENABLE_TOOLS: rust,ruby
     # The observed 40-minute cap canceled successful Swift extraction during
     # TRAP finalization. Keep real builds and analysis within a bounded budget.
     timeout-minutes: 90
@@ -151,13 +150,12 @@ jobs:
         working-directory: ios/EpubToMp3
         run: |
           set -o pipefail
-          mise ls --current --json | mise exec -- python -c '
-          import json, sys
-          tools = set(json.load(sys.stdin))
-          if tools != {"python", "rust", "ruby"}:
-              sys.exit(f"Unexpected Swift CodeQL tools: {sorted(tools)}")
-          print("Swift CodeQL nested tools: python, rust, ruby")
-          '
+          tools="$(mise ls --current --json | jq -c 'keys')"
+          if [ "$tools" != '["ruby","rust"]' ]; then
+            echo "Unexpected Swift CodeQL tools: $tools" >&2
+            exit 1
+          fi
+          echo "Swift CodeQL nested tools: ruby, rust"
 
       - name: Install XcodeGen
         env:

@@ -1,5 +1,4 @@
 [tools]
-python = "3.14.10"
 # Latest stable Node accepted by Vite, ESLint, Vitest and jsdom.
 node = "26.13.0"
 npm = "12.2.2"
@@ -28,7 +27,6 @@ ninja = "1.13.2"
 # Provision project tools only from published binaries.
 all_compile = false
 node.compile = false
-python.compile = false
 ruby.compile = false
 
 [env]
@@ -36,10 +34,6 @@ ruby.compile = false
 DEVELOPER_DIR = "{% if os() == 'macos' %}{{ exec(command='ruby scripts/xcode_build_paths.rb developer') }}{% else %}{{ env.DEVELOPER_DIR | default(value='') }}{% endif %}"
 # Reuse the GUI workspace cache; SDK/configuration subdirectories stay isolated.
 APPLE_DERIVED_DATA_PATH = "{% if os() == 'macos' %}{{ exec(command='ruby scripts/xcode_build_paths.rb derived-data') }}{% else %}{{ config_root }}/ios/EpubToMp3/.build{% endif %}"
-
-[tasks."vendor:python"]
-description = "Install and verify the mise-managed Python used by Simulator helper scripts"
-run = "mise install python && mise exec -- python --version"
 
 [tasks."hf:snapshot"]
 description = "Prepare an allowlisted Space snapshot with snapshot-local Git LFS"
@@ -889,18 +883,12 @@ cd ios/EpubToMp3
 if [[ -n "${IOS_APP_PATH:-}" ]]; then
   APP_PATH="$IOS_APP_PATH"
 else
-  APP_PATH=$(python3 - <<'PY'
-from pathlib import Path
-
-apps = []
-for pattern in (".build/Build/Products/*-iphonesimulator/EpubToMp3.app", ".build/*-iphonesimulator/EpubToMp3.app"):
-    apps.extend(path for path in Path(".").glob(pattern) if path.is_dir())
-if not apps:
-    raise SystemExit(1)
-apps.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-print(apps[0])
-PY
-  ) || {
+  APP_PATH=$(ruby -e '
+apps = [".build/Build/Products/*-iphonesimulator/EpubToMp3.app", ".build/*-iphonesimulator/EpubToMp3.app"]
+  .flat_map { |pattern| Dir.glob(pattern) }.select { |path| File.directory?(path) }
+exit 1 if apps.empty?
+puts apps.max_by { |path| File.mtime(path) }
+') || {
     echo "ios:simulator:run error: no existing iphonesimulator EpubToMp3.app found." >&2
     echo "Run `mise run ios:build` first, or provide IOS_APP_PATH=/path/to/EpubToMp3.app." >&2
     exit 2
@@ -997,7 +985,6 @@ NATIVE_JOB
 
 [tasks."ios:simulator:test"]
 description = "Build and run iOS XCTest/UI tests on a selected Simulator. Set IOS_TESTS=Target/Class or Target/Class/test."
-depends = ["vendor:python"]
 run = """
 #!/bin/bash
 set -euo pipefail

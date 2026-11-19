@@ -3,7 +3,7 @@ set -euo pipefail
 
 git diff --cached --check
 
-# Local commits use read-only gates. Python-based tooling and Ruff belong in CI.
+# Local commits use read-only gates. Language formatters and linters belong in CI.
 if [[ "${CI:-false}" != "true" ]]; then
     exit 0
 fi

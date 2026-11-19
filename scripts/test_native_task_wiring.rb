@@ -113,7 +113,6 @@ class NativeTaskWiringTest < Minitest::Test
       printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
       printf 'fixture 41943040 0 %s 0%% /\n' "${FIXTURE_FREE_KIB:-31457280}"
     SH
-    shim("python3", 'exit 0')
     shim("cargo", <<~'SH')
       "$FIXTURE_RUBY" -e 'f=File.open(ARGV[0], "a+"); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 97 : 0)' "$FIXTURE_LOCK"
       echo "cargo $*" >> "$FIXTURE_EVENTS"

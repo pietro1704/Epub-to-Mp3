@@ -65,5 +65,5 @@ state/report. Command availability does not prove a device run passed.
 
 mise.toml owns project tasks. scripts/device-workflow.sh bootstraps the native
 tools/DeviceWorkflow CLI; it shares the heavy-job lease with existing guards.
-Python/Ruff checks for host scripts remain in CI; local Apple verification uses
-native tools.
+Host scripts are Ruby with fixture-only minitest suites; local Apple verification
+uses native tools.

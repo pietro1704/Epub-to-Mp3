@@ -91,7 +91,7 @@ jobs:
     timeout-minutes: 7
     runs-on: ubuntu-24.04
     env:
-      MISE_ENABLE_TOOLS: node,python
+      MISE_ENABLE_TOOLS: node
     permissions:
       contents: read
 
@@ -136,10 +136,6 @@ jobs:
         if: needs.changes.outputs.contracts == 'true'
         run: mise install
 
-      - name: Install fixture-only Python dependencies
-        if: needs.changes.outputs.contracts == 'true'
-        run: mise exec -- python -m pip install pytest
-
       - name: Verify host workflow guards and collaboration regressions
         if: needs.changes.outputs.contracts == 'true'
         run: mise exec -- ruby scripts/run_ci_contracts.rb --output .reports/ci-contracts/production-guard
@@ -158,7 +154,7 @@ jobs:
     needs: [changes]
     runs-on: ubuntu-24.04
     env:
-      MISE_ENABLE_TOOLS: python,rust
+      MISE_ENABLE_TOOLS: rust
     timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
     permissions:
       contents: read
@@ -179,13 +175,12 @@ jobs:
           install: false
       - name: Check Rust toolchain scope
         run: |
-          mise ls --current --json | python3 -c '
-          import json, sys
-          tools = set(json.load(sys.stdin))
-          if tools != {"python", "rust"}:
-              sys.exit(f"Unexpected Rust CI tools: {sorted(tools)}")
-          print("Rust CI tools: python, rust")
-          '
+          tools="$(mise ls --current --json | jq -c 'keys')"
+          if [ "$tools" != '["rust"]' ]; then
+            echo "Unexpected Rust CI tools: $tools" >&2
+            exit 1
+          fi
+          echo "Rust CI tools: rust"
       - name: Install Rust toolchain
         run: |
           mise install
@@ -271,7 +266,7 @@ jobs:
     timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
     runs-on: ubuntu-24.04
     env:
-      MISE_ENABLE_TOOLS: ${{ needs.changes.outputs.wasm == 'true' && 'python,node,npm,rust,github:wasm-bindgen/wasm-bindgen' || 'python,node,npm' }}
+      MISE_ENABLE_TOOLS: ${{ needs.changes.outputs.wasm == 'true' && 'node,npm,rust,github:wasm-bindgen/wasm-bindgen' || 'node,npm' }}
     permissions:
       contents: read
 
@@ -291,16 +286,16 @@ jobs:
           MISE_GITHUB_TOKEN: ${{ github.token }}
           BUILD_WASM: ${{ needs.changes.outputs.wasm }}
         run: |
-          mise ls --current --json | python3 -c '
-          import json, os, sys
-          tools = set(json.load(sys.stdin))
-          expected = {"python", "node", "npm"}
-          if os.environ["BUILD_WASM"] == "true":
-              expected.update({"rust", "github:wasm-bindgen/wasm-bindgen"})
-          if tools != expected:
-              sys.exit(f"Unexpected Web CI tools: {sorted(tools)}")
-          print(f"Web CI tools: {sorted(tools)}")
-          '
+          tools="$(mise ls --current --json | jq -c 'keys')"
+          expected='["node","npm"]'
+          if [ "$BUILD_WASM" = true ]; then
+            expected='["github:wasm-bindgen/wasm-bindgen","node","npm","rust"]'
+          fi
+          if [ "$tools" != "$expected" ]; then
+            echo "Unexpected Web CI tools: $tools" >&2
+            exit 1
+          fi
+          echo "Web CI tools: $tools"
       - name: Install toolchain
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
@@ -405,7 +400,7 @@ jobs:
     timeout-minutes: ${{ inputs.full_validation == true && 30 || 7 }}
     runs-on: ubuntu-24.04
     env:
-      MISE_ENABLE_TOOLS: python,flutter
+      MISE_ENABLE_TOOLS: flutter
       EPUB_DART_FABER_INTEGRATION: '0'
     permissions:
       contents: read
@@ -425,13 +420,12 @@ jobs:
 
       - name: Check Flutter toolchain scope
         run: |
-          mise ls --current --json | python3 -c '
-          import json, sys
-          tools = set(json.load(sys.stdin))
-          if tools != {"python", "flutter"}:
-              sys.exit(f"Unexpected Flutter CI tools: {sorted(tools)}")
-          print("Flutter CI tools: python, flutter")
-          '
+          tools="$(mise ls --current --json | jq -c 'keys')"
+          if [ "$tools" != '["flutter"]' ]; then
+            echo "Unexpected Flutter CI tools: $tools" >&2
+            exit 1
+          fi
+          echo "Flutter CI tools: flutter"
 
       # Key tool caches by the installed versions, not by unrelated mise.toml task edits.
       - name: Identify cached toolchain versions
@@ -514,7 +508,7 @@ jobs:
     timeout-minutes: ${{ inputs.full_validation == true && 30 || 12 }}
     runs-on: ubuntu-24.04
     env:
-      MISE_ENABLE_TOOLS: python,ruby,flutter,java
+      MISE_ENABLE_TOOLS: ruby,flutter,java
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -583,21 +577,20 @@ jobs:
         run: mise exec -- ruby ../../scripts/native_build_command.rb -- mise exec -- ./gradlew :app:testDebugUnitTest -x :app:copyFlutterAssetsDebug --max-workers=1 --no-daemon --console=plain '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -XX:ReservedCodeCacheSize=256m'
       - name: Require executed Android JVM cases
         run: |
-          mise exec -- python - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-          reports = list(Path('flutter_app/build/app/test-results/testDebugUnitTest').glob('TEST-*.xml'))
-          if not reports:
-              raise SystemExit('Missing Android JVM test results')
-          counts = {name: 0 for name in ('tests', 'failures', 'errors', 'skipped')}
-          for report in reports:
-              suite = ET.parse(report).getroot()
-              for name in counts:
-                  counts[name] += int(suite.attrib[name])
-          if counts['tests'] <= 0 or any(counts[name] for name in ('failures', 'errors', 'skipped')):
-              raise SystemExit(f'Android JVM tests did not all execute successfully: {counts}')
-          print(f'ANDROID_JVM_TESTS {counts}')
-          PY
+          mise exec -- ruby - <<'RUBY'
+          require 'rexml/document'
+          reports = Dir.glob('flutter_app/build/app/test-results/testDebugUnitTest/TEST-*.xml')
+          abort 'Missing Android JVM test results' if reports.empty?
+          counts = %w[tests failures errors skipped].to_h { |name| [name, 0] }
+          reports.each do |report|
+            suite = REXML::Document.new(File.read(report)).root
+            counts.each_key { |name| counts[name] += Integer(suite.attributes[name] || raise(KeyError, "#{report}: #{name}"), 10) }
+          end
+          if counts['tests'] <= 0 || counts.values_at('failures', 'errors', 'skipped').any? { |count| count != 0 }
+            abort "Android JVM tests did not all execute successfully: #{counts}"
+          end
+          puts "ANDROID_JVM_TESTS #{counts}"
+          RUBY
       - name: Retain Android JVM test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

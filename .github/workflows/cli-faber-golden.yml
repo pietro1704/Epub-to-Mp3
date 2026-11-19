@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      MISE_ENABLE_TOOLS: python,rust,ruby
+      MISE_ENABLE_TOOLS: rust,ruby
       ORT_PREFER_DYNAMIC_LINK: '1'
       ORT_SKIP_DOWNLOAD: '1'
       CARGO_BUILD_JOBS: '1'

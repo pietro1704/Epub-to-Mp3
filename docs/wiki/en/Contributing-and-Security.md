@@ -11,7 +11,7 @@ Use one coherent feature branch/PR, preserve unrelated work, add meaningful
 regression coverage and validate proportionally at the owning runtime. Relevant
 errors, cancellation and book/chapter identity matter more than a mandatory count
 of test tiers or specialists. Documentation-only changes need content/link checks.
-Python/Ruff stay in CI; web tests start with at most two workers; native guards,
+Host scripts are Ruby; web tests start with at most two workers; native guards,
 platform ownership and Simulator quarantine remain in force.
 
 Commit/push and PR writes follow standing scoped delivery authorization after
