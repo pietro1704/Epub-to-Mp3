@@ -339,17 +339,8 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private func remove(book: BookEntity) {
         Task {
             do {
-                try await RustConversionOutputStore.shared.removeAudio(bookID: book.id, legacyJobID: book.lastJobId) {
-                    try await LocalAudioArtifactStore.shared.removeAllAudio(bookID: book.id)
-                    if let jobID = book.lastJobId {
-                        await AudiobookDownloads.shared.clearDownloadedBook(jobId: jobID)
-                    }
-                }
-                bookmarkStore.removeAll(for: book.id)
-                LocalFulltextCache.evict(bookId: book.id)
-                EpubFontManager.evictCachedFonts(bookID: book.id)
-                if let jobID = book.lastJobId { FulltextStore.evict(jobId: jobID) }
-                library.remove(id: book.id)
+                try await LibraryBookRemoval(library: library, bookmarks: bookmarkStore)
+                    .remove(bookID: book.id, legacyJobID: book.lastJobId)
                 reloadGrid(animated: true)
             } catch {
                 presentMessage(title: L10n.string("settings.storageRemovalFailedTitle"),
