@@ -5,7 +5,7 @@ import MediaPlayer
 @testable import EpubToMp3
 
 /// Unit tests for the UX-layer additions to `AudioPlayer`:
-/// sleep timer, rate cycling, skip ±15 s.
+/// sleep timer, rate labels, skip ±15 s.
 ///
 /// These tests run on the macOS host (no iOS device required). Because
 /// AVQueuePlayer cannot load remote URLs in a unit-test sandbox, we
@@ -131,43 +131,6 @@ final class AudioPlayerUXTests: XCTestCase {
         player.setSleepTimer(seconds: 0)
         XCTAssertEqual(player.sleepTimerRemaining, 0,
             "setSleepTimer(0) must zero the remaining counter")
-    }
-
-    // MARK: - availableRates
-
-    @MainActor
-    func testAvailableRatesContainsExpectedValues() {
-        let player = makePlayer()
-        let expected: [Float] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
-        XCTAssertEqual(player.availableRates, expected)
-    }
-
-    // MARK: - cycleRate
-
-    /// Normal speed participates in the same ordered menu cycle.
-    @MainActor
-    func testCycleRateAdvancesThroughAllCases() {
-        let player = makePlayer()
-        // Default rate is 1.0.
-        XCTAssertEqual(player.rate, .x100)
-
-        let expected: [PlaybackRate] = [.x125, .x150, .x175, .x200, .x250, .x300, .x075, .x100]
-        for expectedRate in expected {
-            player.cycleRate()
-            XCTAssertEqual(player.rate, expectedRate,
-                "After cycle, rate should be \(expectedRate.shortLabel)")
-        }
-    }
-
-    /// A complete cycle returns to the first menu option.
-    @MainActor
-    func testCycleRateWrapsAroundToStart() {
-        let player = makePlayer()
-        player.setRate(.x075)
-        let cycleCount = player.availableRates.count
-        for _ in 0..<cycleCount { player.cycleRate() }
-        XCTAssertEqual(player.rate, .x075,
-            "Cycling through all \(cycleCount) rates must land back at 0.75")
     }
 
     // MARK: - PlaybackRate.shortLabel
