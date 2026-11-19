@@ -218,6 +218,10 @@ jobs:
           disable-animations: true
           disable-linux-hw-accel: false
           emulator-options: -no-window -no-audio -no-boot-anim -accel on
+          # The action otherwise installs the latest emulator. 37.2.13.0 (build 16740729)
+          # passed post-merge 44567671401; 37.3.10.0 (16970787) exited about 33 s after
+          # the test finished in both attempts of 44618870851, before the driver read results.
+          emulator-build: '16740729'
           script: bash scripts/verify_android_piper_inference.sh "$ANDROID_VERIFICATION_MODE"
       - name: Retain APK, native identity and Android test results
         if: always()

@@ -361,6 +361,10 @@ end
     refute steps.find { |step| step['id'] == 'main-ui-apk' }.key?('if')
     refute steps.find { |step| step['name'] == 'Run actual Piper inference in the packaged ARM64 app' }.key?('if')
     assert_includes fixture.fetch('run'), 'android_real_books_inference_test.dart'
+    inference = steps.find { |step| step['name'] == 'Run actual Piper inference in the packaged ARM64 app' }
+    # A floating emulator release broke the driver handoff (post-merge 44618870851); keep a verified build.
+    assert_match(/\A\d{7,}\z/, inference.fetch('with').fetch('emulator-build').to_s)
+    assert_equal '16740729', inference.fetch('with').fetch('emulator-build')
     retention = steps.find { |step| step['name'] == 'Retain the physical-device fixture APK and build identity' }
     assert_includes retention.fetch('if'), "steps.device-fixture-apk.outcome == 'success'"
   end
