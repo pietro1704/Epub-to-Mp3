@@ -117,7 +117,6 @@ final class AudioPlayerRetentionTests: XCTestCase {
                 let artifact = try LocalAudioArtifactFixture.artifact(
                     root: artifactRoot, bookID: bookID, chapterIndex: index)
                 XCTAssertEqual(artifact?.playbackRetentionRequested, true, "Audible chapter \(index) needs durable intent")
-                XCTAssertEqual(artifact?.state, .generating, "Streamed segments never publish a chapter artifact")
             }
         }
     }

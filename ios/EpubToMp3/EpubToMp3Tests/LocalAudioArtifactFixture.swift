@@ -20,7 +20,8 @@ enum LocalAudioArtifactFixture {
     struct Chapter {
         let index: Int
         var title: String
-        var state: ArtifactState = .available
+        /// Defaults to `.available` with audio and `.pending` without it.
+        var state: ArtifactState?
         var retention: Retention = .temporary
         /// Written to the canonical chapter file when present.
         var audio: Data?
@@ -53,12 +54,13 @@ enum LocalAudioArtifactFixture {
                 .standardizedFileURL
             if let audio = chapter.audio { try audio.write(to: url) }
             urls[chapter.index] = url
+            let state = chapter.state ?? (chapter.audio == nil ? .pending : .available)
             artifacts[chapter.index] = ChapterArtifact(
-                index: chapter.index, title: chapter.title, state: chapter.state,
+                index: chapter.index, title: chapter.title, state: state,
                 retention: chapter.retention,
                 playbackRetentionRequested: chapter.playbackRetentionRequested,
                 relativePath: relativePath,
-                byteCount: chapter.state == .available ? Int64(chapter.audio?.count ?? 0) : 0,
+                byteCount: state == .available ? Int64(chapter.audio?.count ?? 0) : 0,
                 retryCount: chapter.retryCount, lastError: chapter.lastError, updatedAt: now)
         }
         let manifest = Manifest(

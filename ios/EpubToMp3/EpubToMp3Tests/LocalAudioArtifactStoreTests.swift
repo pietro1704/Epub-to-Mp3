@@ -63,15 +63,18 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
                               "Explicit removal must persist cancellation of the previous listening intent.")
         }
         for index in removedIndices {
-            // Audio that reappears on disk keeps the persisted removal: reading
-            // the store must not restore the removed download by itself.
-            var regenerated = try XCTUnwrap(try artifact("removed-book", index))
-            let url = try XCTUnwrap(try LocalAudioArtifactFixture.seed(root: root, bookID: "removed-book", chapters: [
-                .init(index: index, title: regenerated.title, audio: bytes,
-                      playbackRetentionRequested: regenerated.playbackRetentionRequested)
-            ])[index])
+            // Audio that reappears on disk keeps every other persisted field of
+            // the removed entry; reading it must not restore the download.
+            let url = try await reopenedStore.canonicalURL(bookID: "removed-book", chapterIndex: index)
+            try bytes.write(to: url)
+            let files = LocalAudioArtifactFixture.files(root: root)
+            var manifest = try XCTUnwrap(try files.loadManifest(bookID: "removed-book"))
+            let position = try XCTUnwrap(manifest.chapters.firstIndex { $0.index == index })
+            manifest.chapters[position].state = .available
+            manifest.chapters[position].byteCount = Int64(bytes.count)
+            try files.save(manifest)
             _ = try await reopenedStore.playableSnapshot(bookID: "removed-book", engine: "e", voice: "v", language: nil)
-            regenerated = try XCTUnwrap(try artifact("removed-book", index))
+            let regenerated = try XCTUnwrap(try artifact("removed-book", index))
             XCTAssertEqual(regenerated.retention, .temporary,
                            "Regeneration without a new listening request must not restore a removed download.")
             XCTAssertNotEqual(regenerated.playbackRetentionRequested, true)

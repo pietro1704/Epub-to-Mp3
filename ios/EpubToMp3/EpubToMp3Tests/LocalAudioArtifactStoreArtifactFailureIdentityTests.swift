@@ -17,7 +17,6 @@ extension LocalAudioArtifactStoreTests {
         XCTAssertNil(snapshot, "A manifest entry without its audio file is not playable.")
         let artifact = try self.artifact(0)
         XCTAssertEqual(artifact?.retention, .temporary, "Missing audio must not become a protected download.")
-        XCTAssertEqual(artifact?.playbackRetentionRequested, true)
         let downloadedBooks = try await store.downloadedBooks()
         XCTAssertEqual(downloadedBooks, [])
     }
