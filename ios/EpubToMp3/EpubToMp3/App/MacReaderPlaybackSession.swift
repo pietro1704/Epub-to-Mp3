@@ -41,7 +41,7 @@ final class MacReaderPlaybackSession {
         localPlaybackGeneration = jobID
         localPlaybackBookID = bookID
         isStartingLocalPlayback = true
-        let conversionOptions = optionsOverride ?? settings.conversionOptions
+        let conversionOptions = optionsOverride ?? NarrationConversionOptions.current(for: settings.ttsPreferences)
         Task { [weak self, owner] in
             guard let self else { return }
             defer { withExtendedLifetime(owner) {} }
