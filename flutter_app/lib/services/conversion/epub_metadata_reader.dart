@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../storage/library_store.dart';
@@ -36,7 +37,8 @@ Future<EpubMetadata> readEpubMetadataFrom(
       author: text('author'),
       coverBase64: text('coverBase64'),
     );
-  } catch (_) {
+  } catch (error) {
+    debugPrint('Library metadata unavailable for $path: $error');
     return const EpubMetadata();
   }
 }
