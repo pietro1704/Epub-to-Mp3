@@ -341,6 +341,52 @@ class NativeFaberEntrypointsTest < Minitest::Test
     end
   end
 
+  # No network: the transfer and the checksum are injected, as the sleeper is.
+  def test_android_runtime_download_retries_only_transient_failures_a_bounded_number_of_times
+    require_relative 'fetch_onnxruntime_android'
+    Dir.mktmpdir('android-ort-download-') do |root|
+      archive = File.join(root, 'runtime.aar')
+      run = lambda do |statuses, good_after: nil|
+        calls = 0
+        delays = []
+        runner = lambda do |path|
+          calls += 1
+          assert_equal archive, path
+          refute File.exist?(path), 'A previous attempt must not leave its file behind'
+          File.write(path, "body-#{calls}")
+          statuses.fetch(calls - 1, 0)
+        end
+        verifier = ->(path) { good_after.nil? || File.read(path) == "body-#{good_after}" }
+        ok = AndroidOnnxRuntime.download(archive, sleeper: ->(seconds) { delays << seconds }, runner: runner, verifier: verifier)
+        [ok, calls, delays]
+      end
+      assert_equal [true, 1, []], run.call([0])
+      assert_equal [true, 3, [5, 15]], run.call([22, 22, 0]), 'Observed Maven Central 404s are retried'
+      assert_equal [true, 2, [5]], run.call([0, 0], good_after: 2), 'A truncated or wrong body is retried'
+      assert_equal [false, AndroidOnnxRuntime::DOWNLOAD_ATTEMPTS, [5, 15, 30]], run.call([28] * 9)
+      [nil, 23, 63, 2].each do |status|
+        assert_equal [false, 1, []], run.call([status]), "Permanent curl status #{status.inspect} is not retried"
+      end
+    end
+  end
+
+  def test_android_runtime_download_keeps_the_pinned_curl_contract
+    Dir.mktmpdir('android-ort-curl-') do |root|
+      trace = File.join(root, 'argv')
+      File.write(File.join(root, 'curl'), "#!/bin/bash\nprintf '%s\\n' \"$@\" > \"#{trace}\"\nexit 22\n")
+      File.chmod(0o700, File.join(root, 'curl'))
+      script = "require #{File.join(ROOT, 'scripts/fetch_onnxruntime_android').inspect}; print AndroidOnnxRuntime.curl(ARGV.fetch(0))"
+      output, error, status = Open3.capture3({ 'PATH' => "#{root}:#{ENV.fetch('PATH')}" }, RbConfig.ruby, '-e', script, File.join(root, 'a.aar'))
+      assert status.success?, error
+      assert_equal '22', output
+      argv = File.readlines(trace, chomp: true)
+      %w[--fail --location --max-filesize --output].each { |flag| assert_includes argv, flag }
+      assert_equal AndroidOnnxRuntime::URL, argv.last
+      assert_equal AndroidOnnxRuntime::ARCHIVE_SIZE.to_s, argv[argv.index('--max-filesize') + 1]
+      refute_includes argv, '--retry'
+    end
+  end
+
   def fixture_process_running?(pid)
     Process.kill(0, pid)
     state, = Open3.capture2('ps', '-o', 'stat=', '-p', pid.to_s)
