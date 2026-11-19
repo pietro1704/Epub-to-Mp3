@@ -83,6 +83,16 @@ enum LocalAudioImportFiles {
         return Fingerprint(digest: hasher.finalize(), byteCount: byteCount)
     }
 
+    /// Frames short of the declared length that still count as a complete decode.
+    /// `AVAudioFile.length` is only an estimate for VBR MP3 without a Xing/Info
+    /// header, so a clean end a few percent early is valid audio. A file cut
+    /// short by a larger share, or one that decodes nothing, is not.
+    static func isAcceptableDecodeEnd(decodedFrames: Int64, expectedFrames: Int64) -> Bool {
+        guard decodedFrames > 0, expectedFrames > 0 else { return false }
+        if decodedFrames >= expectedFrames { return decodedFrames == expectedFrames }
+        return Double(decodedFrames) >= Double(expectedFrames) * 0.95
+    }
+
     /// Decode through EOF with bounded memory; a playable prefix is not enough.
     /// Synchronous decoding keeps actor publication non-reentrant and does not
     /// start playback or acquire an audio session.
@@ -98,20 +108,30 @@ enum LocalAudioImportFiles {
                 throw Failure.invalidAudio
             }
             var decodedFrames: Int64 = 0
-            // AVAudioFile can throw nilError on a read beyond the declared EOF
-            // of a valid MP3. Decode every declared frame, without that extra read.
+            // AVAudioFile can throw nilError on a read beyond the real EOF of a valid
+            // MP3 whose length is estimated. Read only the declared frames, and treat a
+            // read that ends early as EOF only within the tolerance above.
             while decodedFrames < expectedFrames {
                 try Task.checkCancellation()
                 let remaining = AVAudioFrameCount(min(4096, expectedFrames - decodedFrames))
-                try audio.read(into: buffer, frameCount: remaining)
-                guard buffer.frameLength > 0 else { throw Failure.invalidAudio }
+                do {
+                    try audio.read(into: buffer, frameCount: remaining)
+                } catch {
+                    if isAcceptableDecodeEnd(decodedFrames: decodedFrames, expectedFrames: expectedFrames) { break }
+                    throw error
+                }
+                if buffer.frameLength == 0 {
+                    if isAcceptableDecodeEnd(decodedFrames: decodedFrames, expectedFrames: expectedFrames) { break }
+                    throw Failure.invalidAudio
+                }
                 let (total, overflow) = decodedFrames.addingReportingOverflow(Int64(buffer.frameLength))
                 guard !overflow, total <= expectedFrames else { throw Failure.invalidAudio }
                 decodedFrames = total
                 onDecodedFrames(decodedFrames)
             }
             let decodedDuration = Double(decodedFrames) / sampleRate
-            guard decodedFrames == expectedFrames, decodedDuration.isFinite, decodedDuration > 0 else {
+            guard isAcceptableDecodeEnd(decodedFrames: decodedFrames, expectedFrames: expectedFrames),
+                  decodedDuration.isFinite, decodedDuration > 0 else {
                 throw Failure.invalidAudio
             }
         } catch is CancellationError {

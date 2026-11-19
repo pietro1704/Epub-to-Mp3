@@ -103,6 +103,19 @@ final class LocalAudioLegacyImportTests: XCTestCase {
         try assertNoStaging(fixture)
     }
 
+    func testEstimatedLengthTolerancePassesEarlyCleanEndAndRejectsRealTruncation() {
+        let accept = LocalAudioImportFiles.isAcceptableDecodeEnd
+        XCTAssertTrue(accept(1_000_000, 1_000_000))
+        // VBR without Xing/Info: the estimate overshoots by a few percent.
+        XCTAssertTrue(accept(970_000, 1_000_000))
+        XCTAssertTrue(accept(950_000, 1_000_000))
+        XCTAssertFalse(accept(949_999, 1_000_000))
+        // The fixture truncated to half its declared length, and empty decodes.
+        XCTAssertFalse(accept(8_192, 16_384))
+        XCTAssertFalse(accept(0, 16_384))
+        XCTAssertFalse(accept(10, 0))
+    }
+
     func testTruncatedContainerIsNotPublished() async throws {
         let fixture = try fixture()
         let truncated = LegacyAudioImportFixture.wave(storedFrames: 8_192)
