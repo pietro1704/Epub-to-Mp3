@@ -399,10 +399,28 @@ jobs:
         run: brew install xcodegen
       # Both architectures reuse master's embedded runtime build; the Intel key
       # (matrix.os macos-15-intel) stays shared with the Intel FFI producer.
+      # Hosted arm64 runners serve several weekly image builds at once with the
+      # same Xcode, SDK, clang and Rust; keying on the image build split the arm64
+      # cache three ways and most PRs rebuilt from scratch. arm64 replaces the
+      # image build with the image tool the native build actually runs (cmake,
+      # for eSpeak NG) next to rustc, cargo, Xcode build, SDK and the clang hash.
+      # Intel keeps the producer's image-scoped identity, which it shares.
       - name: Identify Rust cache inputs
         if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt
         id: rust-cache-identity
-        run: mise exec -- ruby scripts/intel_rust_cache_identity.rb
+        env:
+          IMAGE_BUILD_AGNOSTIC: ${{ matrix.arch == 'arm64' }}
+        run: |
+          if [ "$IMAGE_BUILD_AGNOSTIC" = true ]; then
+            mise exec -- ruby -rdigest -r ./scripts/intel_rust_cache_identity -e '
+              toolchain = IntelRustCacheIdentity.calculate(ENV.to_h.merge("ImageVersion" => "toolchain-scoped"))
+              cmake = IO.popen(%w[cmake --version], &:read)
+              abort "Cannot inspect cmake" unless $?.success? && !cmake.empty?
+              File.write(ENV.fetch("GITHUB_OUTPUT"), "identity=#{Digest::SHA256.hexdigest("#{toolchain}\n#{cmake}")}\n", mode: "a")
+            '
+          else
+            mise exec -- ruby scripts/intel_rust_cache_identity.rb
+          fi
       - name: Restore Rust build cache
         if: matrix.arch != 'x86_64' || !inputs.intel_prebuilt
         id: rust-cache

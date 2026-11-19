@@ -82,6 +82,18 @@ class RunnerAcquisitionRetryTest < Minitest::Test
     refute rerun?(calls)
   end
 
+  # Post-merge validation calls CI, so its gate is reported as "ci / PR gate".
+  def test_called_workflow_aggregates_are_recognized_by_their_job_name
+    calls = execute(jobs: { 1 => 'native / Mac storage, lease and native host regressions', 2 => 'ci / PR gate', 3 => 'Validated merged source' },
+      annotations: { 1 => [MARKER], 2 => ['Process completed with exit code 1.'] }, event: 'push')
+    assert rerun?(calls)
+    calls = execute(jobs: { 1 => 'ci / Rust', 2 => 'ci / PR gate flaky' }, annotations: { 1 => [MARKER], 2 => ['Process completed with exit code 1.'] }, event: 'push')
+    refute rerun?(calls), 'Only the exact aggregate job name is exempt'
+    calls = execute(jobs: { 1 => 'ci / Rust', 2 => 'faber / PR gate' },
+      annotations: { 1 => [MARKER], 2 => ['Process completed with exit code 1.'] }, event: 'push')
+    refute rerun?(calls), 'Another workflow job sharing the gate name is a real failure'
+  end
+
   def test_superseded_heads_and_already_retried_runs_are_left_unchanged
     jobs = { 1 => 'Rust' }
     annotations = { 1 => [MARKER] }
