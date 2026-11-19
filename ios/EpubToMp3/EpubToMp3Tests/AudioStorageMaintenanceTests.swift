@@ -63,23 +63,19 @@ final class AudioStorageMaintenanceTests: XCTestCase {
         return file
     }
 
-    private func prepareAudio(_ store: LocalAudioArtifactStore) async throws -> [URL] {
-        try await store.prepare(bookID: "fixture-book", bookTitle: "Fixture", author: nil,
-                                chapters: [.init(index: 0, title: "Temporary"), .init(index: 1, title: "Protected")])
-        var urls: [URL] = []
-        for index in 0...1 {
-            let url = try await store.canonicalURL(bookID: "fixture-book", chapterIndex: index)
-            try Data([UInt8(index), 1, 2, 3]).write(to: url)
-            try await store.markAvailable(bookID: "fixture-book", chapterIndex: index)
-            urls.append(url)
-        }
-        try await store.promote(bookID: "fixture-book", chapterIndex: 1)
-        return urls
+    private func prepareAudio(_ fixture: Fixture) async throws -> [URL] {
+        let seeded = try LocalAudioArtifactFixture.seed(
+            root: fixture.artifacts, bookID: "fixture-book", bookTitle: "Fixture",
+            chapters: (0...1).map { index in
+                .init(index: index, title: index == 0 ? "Temporary" : "Protected", audio: Data([UInt8(index), 1, 2, 3]))
+            })
+        try await fixture.store.promote(bookID: "fixture-book", chapterIndex: 1)
+        return try (0...1).map { try XCTUnwrap(seeded[$0]) }
     }
 
     func testClearAllWaitsForCancellationAndRemovesOnlyOwnedRoots() async throws {
         let fixture = try fixture()
-        let audio = try await prepareAudio(fixture.store)
+        let audio = try await prepareAudio(fixture)
         let legacy = try legacyFile(in: fixture.downloads)
         let tts = try legacyFile(in: fixture.tts)
         let source = fixture.root.appendingPathComponent("source.epub")
@@ -108,7 +104,7 @@ final class AudioStorageMaintenanceTests: XCTestCase {
         let fixture = try fixture()
         try await fixture.service().clearAllDownloads()
         XCTAssertEqual(fixture.notifications.count, 1)
-        let audio = try await prepareAudio(fixture.store)
+        let audio = try await prepareAudio(fixture)
         let protectedBytes = try Data(contentsOf: audio[1])
         let legacy = try legacyFile(in: fixture.downloads)
         _ = try legacyFile(in: fixture.tts)
@@ -117,7 +113,7 @@ final class AudioStorageMaintenanceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: audio[1]), protectedBytes)
         XCTAssertTrue(FileManager.default.fileExists(atPath: legacy.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.tts.path))
-        let downloaded = try await fixture.store.downloadedIndices(bookID: "fixture-book")
+        let downloaded = try LocalAudioArtifactFixture.downloadedIndices(root: fixture.artifacts, bookID: "fixture-book")
         XCTAssertEqual(downloaded, Set([1]))
         XCTAssertEqual(fixture.notifications.count, 2)
         try await fixture.service().clearTemporaryAudio()
@@ -161,7 +157,7 @@ final class AudioStorageMaintenanceTests: XCTestCase {
 
     func testEmbeddedTemporaryDeletionFailurePreservesMetadataAndStopsCleanup() async throws {
         let fixture = try fixture()
-        let audio = try await prepareAudio(fixture.store)
+        let audio = try await prepareAudio(fixture)
         let originalBytes = try Data(contentsOf: audio[0])
         let legacyTTS = try legacyFile(in: fixture.tts)
         let parent = audio[0].deletingLastPathComponent()
@@ -179,8 +175,8 @@ final class AudioStorageMaintenanceTests: XCTestCase {
             XCTAssertEqual((error as NSError).code, NSFileWriteNoPermissionError)
         }
         XCTAssertEqual(try Data(contentsOf: audio[0]), originalBytes)
-        let reopened = LocalAudioArtifactStore(root: fixture.artifacts)
-        let artifact = try await reopened.artifact(bookID: "fixture-book", chapterIndex: 0)
+        let artifact = try LocalAudioArtifactFixture.artifact(
+            root: fixture.artifacts, bookID: "fixture-book", chapterIndex: 0)
         XCTAssertEqual(artifact?.state, .available)
         XCTAssertEqual(artifact?.byteCount, Int64(originalBytes.count))
         XCTAssertTrue(FileManager.default.fileExists(atPath: legacyTTS.path))

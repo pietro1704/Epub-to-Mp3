@@ -16,24 +16,34 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         root = nil
     }
 
+    /// Seeds one book whose chapters are persisted, playable temporary audio.
+    @discardableResult
+    func seedAvailable(
+        bookID: String = "book-id", title: String = "Book", author: String? = nil,
+        chapters: [(Int, String)], bytes: Data
+    ) throws -> [Int: URL] {
+        try LocalAudioArtifactFixture.seed(
+            root: root, bookID: bookID, bookTitle: title, author: author,
+            chapters: chapters.map { .init(index: $0.0, title: $0.1, audio: bytes) })
+    }
 
+    func artifact(_ bookID: String, _ index: Int) throws -> LocalAudioArtifactStore.ChapterArtifact? {
+        try LocalAudioArtifactFixture.artifact(root: root, bookID: bookID, chapterIndex: index)
+    }
 
+    func artifact(_ index: Int) throws -> LocalAudioArtifactStore.ChapterArtifact? {
+        try artifact("book-id", index)
+    }
 
     func assertExplicitRemovalClearsPlaybackRetention(removeWholeBook: Bool) async throws {
         let store = LocalAudioArtifactStore(root: root)
-        let chapters: [LocalAudioArtifactStore.ChapterSeed] = [
-            .init(index: 0, title: "First"), .init(index: 1, title: "Second")
-        ]
         let bytes = Data(repeating: 0xA7, count: 128)
         for bookID in ["removed-book", "untouched-book"] {
-            try await store.prepare(bookID: bookID, bookTitle: bookID, author: nil, chapters: chapters)
+            try seedAvailable(bookID: bookID, title: bookID, chapters: [(0, "First"), (1, "Second")], bytes: bytes)
             for index in [0, 1] {
-                // Audible playback can request durable retention before the final file exists.
+                // Audible playback records durable intent and promotes playable audio.
                 try await store.requestPlaybackRetention(bookID: bookID, chapterIndex: index)
-                let url = try await store.canonicalURL(bookID: bookID, chapterIndex: index)
-                try bytes.write(to: url)
-                try await store.markAvailable(bookID: bookID, chapterIndex: index)
-                let artifact = try await store.artifact(bookID: bookID, chapterIndex: index)
+                let artifact = try self.artifact(bookID, index)
                 XCTAssertEqual(artifact?.retention, .downloaded)
                 XCTAssertEqual(artifact?.playbackRetentionRequested, true)
             }
@@ -50,25 +60,31 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         for index in removedIndices {
             let url = try await reopenedStore.canonicalURL(bookID: "removed-book", chapterIndex: index)
             XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
-            let removed = try await reopenedStore.artifact(bookID: "removed-book", chapterIndex: index)
+            let removed = try artifact("removed-book", index)
             XCTAssertEqual(removed?.state, .pending)
             XCTAssertEqual(removed?.retention, .temporary)
             XCTAssertNotEqual(removed?.playbackRetentionRequested, true,
                               "Explicit removal must persist cancellation of the previous listening intent.")
         }
-        try await reopenedStore.prepare(
-            bookID: "removed-book", bookTitle: "Removed book", author: nil, chapters: chapters)
         for index in removedIndices {
+            // Audio that reappears on disk keeps every other persisted field of
+            // the removed entry; reading it must not restore the download.
             let url = try await reopenedStore.canonicalURL(bookID: "removed-book", chapterIndex: index)
             try bytes.write(to: url)
-            try await reopenedStore.markAvailable(bookID: "removed-book", chapterIndex: index)
-            let regenerated = try await reopenedStore.artifact(bookID: "removed-book", chapterIndex: index)
-            XCTAssertEqual(regenerated?.retention, .temporary,
+            let files = LocalAudioArtifactFixture.files(root: root)
+            var manifest = try XCTUnwrap(try files.loadManifest(bookID: "removed-book"))
+            let position = try XCTUnwrap(manifest.chapters.firstIndex { $0.index == index })
+            manifest.chapters[position].state = .available
+            manifest.chapters[position].byteCount = Int64(bytes.count)
+            try files.save(manifest)
+            _ = try await reopenedStore.playableSnapshot(bookID: "removed-book", engine: "e", voice: "v", language: nil)
+            let regenerated = try XCTUnwrap(try artifact("removed-book", index))
+            XCTAssertEqual(regenerated.retention, .temporary,
                            "Regeneration without a new listening request must not restore a removed download.")
-            XCTAssertNotEqual(regenerated?.playbackRetentionRequested, true)
+            XCTAssertNotEqual(regenerated.playbackRetentionRequested, true)
 
             try await reopenedStore.requestPlaybackRetention(bookID: "removed-book", chapterIndex: index)
-            let requestedAgain = try await reopenedStore.artifact(bookID: "removed-book", chapterIndex: index)
+            let requestedAgain = try artifact("removed-book", index)
             XCTAssertEqual(requestedAgain?.retention, .downloaded)
             XCTAssertEqual(requestedAgain?.playbackRetentionRequested, true)
             XCTAssertEqual(try Data(contentsOf: url), bytes)
@@ -78,7 +94,7 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
             ? [("untouched-book", 0), ("untouched-book", 1)]
             : [("removed-book", 1), ("untouched-book", 0), ("untouched-book", 1)]
         for (bookID, index) in untouched {
-            let artifact = try await reopenedStore.artifact(bookID: bookID, chapterIndex: index)
+            let artifact = try self.artifact(bookID, index)
             let url = try await reopenedStore.canonicalURL(bookID: bookID, chapterIndex: index)
             XCTAssertEqual(artifact?.state, .available)
             XCTAssertEqual(artifact?.retention, .downloaded)
@@ -86,23 +102,4 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: url), bytes)
         }
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }

@@ -4,87 +4,56 @@ import XCTest
 @testable import EpubToMp3
 
 extension LocalAudioArtifactStoreTests {
-    func testPrepareRecoversAnAvailableArtifactWhoseFileWasRemoved() async throws {
-        let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(
-            bookID: "book-id",
-            bookTitle: "Book",
-            author: nil,
-            chapters: [.init(index: 0, title: "Chapter")]
-        )
-        let url = try await store.canonicalURL(bookID: "book-id", chapterIndex: 0)
-        try Data(repeating: 0xEE, count: 32).write(to: url)
-        try await store.markAvailable(bookID: "book-id", chapterIndex: 0)
+    func testAvailableArtifactWhoseFileWasRemovedIsNeitherPlayedNorPromoted() async throws {
+        let url = try XCTUnwrap(
+            try seedAvailable(chapters: [(0, "Chapter")], bytes: Data(repeating: 0xEE, count: 32))[0])
         try FileManager.default.removeItem(at: url)
 
-        let recovered = try await store.prepare(
-            bookID: "book-id",
-            bookTitle: "Book",
-            author: nil,
-            chapters: [.init(index: 0, title: "Chapter")]
-        )
+        let store = LocalAudioArtifactStore(root: root)
+        let snapshot = try await store.playableSnapshot(
+            bookID: "book-id", engine: "edge", voice: "voice", language: nil)
+        try await store.requestPlaybackRetention(bookID: "book-id", chapterIndex: 0)
 
-        XCTAssertEqual(recovered.chapters.first?.state, .pending)
-        XCTAssertEqual(recovered.chapters.first?.byteCount, 0)
+        XCTAssertNil(snapshot, "A manifest entry without its audio file is not playable.")
+        let artifact = try self.artifact(0)
+        XCTAssertEqual(artifact?.retention, .temporary, "Missing audio must not become a protected download.")
+        let downloadedBooks = try await store.downloadedBooks()
+        XCTAssertEqual(downloadedBooks, [])
     }
 
-    func testStateTransitionsPreserveFailureDetailsUntilAudioBecomesAvailable() async throws {
+    func testStoreWritesPreservePersistedFailureDetailsOfOtherChapters() async throws {
+        try LocalAudioArtifactFixture.seed(root: root, bookID: "book-id", bookTitle: "Book", chapters: [
+            .init(index: 0, title: "Generating", state: .generating),
+            .init(index: 1, title: "Waiting", state: .waitingForWiFi),
+            .init(index: 2, title: "Failed", state: .failed, retryCount: 1, lastError: "Network unavailable"),
+            .init(index: 3, title: "Available", audio: Data(repeating: 0xC0, count: 32))
+        ])
+
         let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(
-            bookID: "book-id",
-            bookTitle: "Book",
-            author: nil,
-            chapters: [.init(index: 0, title: "Chapter")]
-        )
+        let snapshot = try await store.playableSnapshot(
+            bookID: "book-id", engine: "edge", voice: "voice", language: nil)
+        // Promotion rewrites the manifest; other chapters keep their state.
+        try await store.requestPlaybackRetention(bookID: "book-id", chapterIndex: 3)
 
-        try await store.markGenerating(bookID: "book-id", chapterIndex: 0)
-        let generating = try await store.artifact(bookID: "book-id", chapterIndex: 0)
-        XCTAssertEqual(generating?.state, .generating)
-        try await store.markWaitingForWiFi(bookID: "book-id", chapterIndex: 0)
-        let waitingForWiFi = try await store.artifact(bookID: "book-id", chapterIndex: 0)
-        XCTAssertEqual(waitingForWiFi?.state, .waitingForWiFi)
-        try await store.markFailed(bookID: "book-id", chapterIndex: 0, errorDescription: "Network unavailable")
-
-        let failed = try await store.artifact(bookID: "book-id", chapterIndex: 0)
+        XCTAssertEqual(snapshot?.playableChapters.map(\.index), [3])
+        XCTAssertEqual(snapshot?.state, "partial")
+        XCTAssertEqual(try artifact(0)?.state, .generating)
+        XCTAssertEqual(try artifact(1)?.state, .waitingForWiFi)
+        let failed = try artifact(2)
         XCTAssertEqual(failed?.state, .failed)
         XCTAssertEqual(failed?.retryCount, 1)
         XCTAssertEqual(failed?.lastError, "Network unavailable")
-
-        let url = try await store.canonicalURL(bookID: "book-id", chapterIndex: 0)
-        try Data(repeating: 0xC0, count: 32).write(to: url)
-        try await store.markAvailable(bookID: "book-id", chapterIndex: 0)
-        let available = try await store.artifact(bookID: "book-id", chapterIndex: 0)
+        let available = try artifact(3)
         XCTAssertEqual(available?.state, .available)
+        XCTAssertEqual(available?.retention, .downloaded)
         XCTAssertNil(available?.lastError)
-    }
-
-    func testFailedIndicesIncludeOnlyRetryableChapters() async throws {
-        let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(
-            bookID: "book-id",
-            bookTitle: "Book",
-            author: nil,
-            chapters: [
-                .init(index: 0, title: "Available"),
-                .init(index: 1, title: "Failed"),
-                .init(index: 2, title: "Pending")
-            ]
-        )
-        try await store.markFailed(bookID: "book-id", chapterIndex: 1, errorDescription: "Network unavailable")
-
-        let failed = try await store.failedIndices(bookID: "book-id")
-        XCTAssertEqual(failed, [1])
     }
 
     func testCanonicalURLStaysInsideTheStoreForUnsafeBookIdentifiers() async throws {
         let store = LocalAudioArtifactStore(root: root)
         let bookID = "../Book / with symbols"
-        try await store.prepare(
-            bookID: bookID,
-            bookTitle: "Book",
-            author: nil,
-            chapters: [.init(index: 3, title: "Chapter")]
-        )
+        try LocalAudioArtifactFixture.seed(root: root, bookID: bookID, bookTitle: "Book",
+                                           chapters: [.init(index: 3, title: "Chapter", state: .pending)])
 
         let url = try await store.canonicalURL(bookID: bookID, chapterIndex: 3)
         XCTAssertTrue(url.path.hasPrefix(root.standardizedFileURL.path + "/"))
@@ -105,21 +74,19 @@ extension LocalAudioArtifactStoreTests {
             try retainedBytes.write(to: marker)
 
             let store = LocalAudioArtifactStore(root: storage)
-            try await store.prepare(bookID: "retained-book", bookTitle: "Retained", author: nil,
-                                    chapters: [.init(index: 0, title: "Retained chapter")])
-            let retained = try await store.canonicalURL(bookID: "retained-book", chapterIndex: 0)
-            try retainedBytes.write(to: retained)
-            try await store.markAvailable(bookID: "retained-book", chapterIndex: 0)
+            let retained = try XCTUnwrap(try LocalAudioArtifactFixture.seed(
+                root: storage, bookID: "retained-book", bookTitle: "Retained",
+                chapters: [.init(index: 0, title: "Retained chapter", audio: retainedBytes)])[0])
 
-            try await store.prepare(bookID: bookID, bookTitle: "Unsafe identity", author: nil,
-                                    chapters: [.init(index: 1, title: "Disposable chapter")])
+            try LocalAudioArtifactFixture.seed(
+                root: storage, bookID: bookID, bookTitle: "Unsafe identity",
+                chapters: [.init(index: 1, title: "Disposable chapter", audio: Data(repeating: 0xB6, count: 32))])
             let audio = try await store.canonicalURL(bookID: bookID, chapterIndex: 1)
             let bookDirectory = audio.deletingLastPathComponent().deletingLastPathComponent()
                 .resolvingSymlinksInPath().standardizedFileURL
             let canonicalStorage = storage.resolvingSymlinksInPath().standardizedFileURL
             XCTAssertTrue(bookDirectory.path.hasPrefix(canonicalStorage.path + "/"), bookID)
-            try Data(repeating: 0xB6, count: 32).write(to: audio)
-            try await store.markAvailable(bookID: bookID, chapterIndex: 1)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: audio.path), bookID)
             try await store.removeAllAudio(bookID: bookID)
 
             XCTAssertTrue(FileManager.default.fileExists(atPath: storage.path), bookID)
@@ -133,8 +100,8 @@ extension LocalAudioArtifactStoreTests {
     func testCanonicalBookDirectoryPreservesAValidIdentifier() async throws {
         let bookID = "0123456789abcdef-Book_ID"
         let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(bookID: bookID, bookTitle: "Book", author: nil,
-                                chapters: [.init(index: 2, title: "Chapter")])
+        try LocalAudioArtifactFixture.seed(root: root, bookID: bookID, bookTitle: "Book",
+                                           chapters: [.init(index: 2, title: "Chapter", state: .pending)])
         let audio = try await store.canonicalURL(bookID: bookID, chapterIndex: 2)
         XCTAssertEqual(audio.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent,
                        bookID)

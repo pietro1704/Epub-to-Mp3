@@ -23,7 +23,7 @@ final class LocalAudioLegacyImportTests: XCTestCase {
             from: fixture.legacyRoot, identity: fixture.identity(mapping: [1: 0, 2: 4]))
         XCTAssertEqual(report.chapters, [1: .imported, 2: .imported])
         let reopened = LocalAudioArtifactStore(root: fixture.storeRoot)
-        let saved = try await reopened.manifest(bookID: "book")
+        let saved = try LocalAudioArtifactFixture.manifest(root: fixture.storeRoot, bookID: "book")
         let manifest = try XCTUnwrap(saved)
         XCTAssertEqual(manifest.bookID, "book")
         XCTAssertEqual(manifest.bookTitle, "Library title")
@@ -50,13 +50,13 @@ final class LocalAudioLegacyImportTests: XCTestCase {
         let retry = try await store.importLegacyAudio(from: fixture.legacyRoot, identity: fixture.identity())
         XCTAssertEqual(retry.chapters, [1: .alreadyPresent, 2: .unmapped])
         XCTAssertEqual(try Data(contentsOf: fixture.destinationManifest()), manifestBeforeRetry)
-        let firstArtifact = try await store.artifact(bookID: "book", chapterIndex: 0)
+        let firstArtifact = try LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 0)
         let second = try await store.importLegacyAudio(
             from: fixture.legacyRoot, identity: fixture.identity(mapping: [1: 0, 2: 7]))
         XCTAssertEqual(second.chapters, [1: .alreadyPresent, 2: .imported])
-        let preservedArtifact = try await store.artifact(bookID: "book", chapterIndex: 0)
+        let preservedArtifact = try LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 0)
         XCTAssertEqual(preservedArtifact, firstArtifact)
-        let manifest = try await store.manifest(bookID: "book")
+        let manifest = try LocalAudioArtifactFixture.manifest(root: fixture.storeRoot, bookID: "book")
         XCTAssertEqual(manifest?.chapters.map(\.index), [0, 7])
     }
 
@@ -65,7 +65,7 @@ final class LocalAudioLegacyImportTests: XCTestCase {
         try fixture.writeSource()
         let store = LocalAudioArtifactStore(root: fixture.storeRoot)
         _ = try await store.importLegacyAudio(from: fixture.legacyRoot, identity: fixture.identity())
-        let firstArtifact = try await store.artifact(bookID: "book", chapterIndex: 0)
+        let firstArtifact = try LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 0)
         // A distinct, still playable file from a later job must not replace chapter zero.
         let differentAudio = LegacyAudioImportFixture.audio + LegacyAudioImportFixture.audio
         try fixture.writeSource(job: "second-job", chapters: [5, 6], bytes: differentAudio)
@@ -73,7 +73,7 @@ final class LocalAudioLegacyImportTests: XCTestCase {
             from: fixture.legacyRoot, identity: fixture.identity(job: "second-job", mapping: [5: 0, 6: 3]))
         XCTAssertEqual(report.chapters, [5: .conflict, 6: .imported])
         XCTAssertEqual(try Data(contentsOf: fixture.destination()), LegacyAudioImportFixture.audio)
-        let preserved = try await store.artifact(bookID: "book", chapterIndex: 0)
+        let preserved = try LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 0)
         XCTAssertEqual(preserved, firstArtifact)
         XCTAssertEqual(try Data(contentsOf: fixture.destination(chapter: 3)), differentAudio)
         XCTAssertEqual(try Data(contentsOf: fixture.source(job: "second-job", chapter: 5)), differentAudio)
@@ -235,7 +235,7 @@ final class LocalAudioLegacyImportTests: XCTestCase {
         let after = try FileManager.default.attributesOfItem(atPath: destination.path)
         XCTAssertEqual(attributes[.systemFileNumber] as? NSNumber, after[.systemFileNumber] as? NSNumber)
         XCTAssertEqual(try Data(contentsOf: destination), LegacyAudioImportFixture.audio)
-        let saved = try await store.artifact(bookID: "book", chapterIndex: 0)
+        let saved = try LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 0)
         XCTAssertEqual(saved?.state, .available)
     }
 

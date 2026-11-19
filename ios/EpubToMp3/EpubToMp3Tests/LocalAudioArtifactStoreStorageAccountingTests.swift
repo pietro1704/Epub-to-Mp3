@@ -7,15 +7,8 @@ extension LocalAudioArtifactStoreTests {
     func testTemporaryEvictionCandidatesNeverContainDownloadedBooks() async throws {
         let store = LocalAudioArtifactStore(root: root)
         for bookID in ["temporary-book", "downloaded-book"] {
-            try await store.prepare(
-                bookID: bookID,
-                bookTitle: bookID,
-                author: nil,
-                chapters: [.init(index: 0, title: "Chapter")]
-            )
-            let url = try await store.canonicalURL(bookID: bookID, chapterIndex: 0)
-            try Data(repeating: 0xFF, count: 64).write(to: url)
-            try await store.markAvailable(bookID: bookID, chapterIndex: 0)
+            try seedAvailable(bookID: bookID, title: bookID, chapters: [(0, "Chapter")],
+                              bytes: Data(repeating: 0xFF, count: 64))
         }
 
         try await store.promote(bookID: "downloaded-book", chapterIndex: 0)
@@ -26,17 +19,7 @@ extension LocalAudioArtifactStoreTests {
 
     func testStorageUsageSeparatesTemporaryFromDownloadedAudio() async throws {
         let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(
-            bookID: "book-id",
-            bookTitle: "Book",
-            author: nil,
-            chapters: [.init(index: 0, title: "Temporary"), .init(index: 1, title: "Downloaded")]
-        )
-        for index in [0, 1] {
-            let url = try await store.canonicalURL(bookID: "book-id", chapterIndex: index)
-            try Data(repeating: 0xFF, count: 128).write(to: url)
-            try await store.markAvailable(bookID: "book-id", chapterIndex: index)
-        }
+        try seedAvailable(chapters: [(0, "Temporary"), (1, "Downloaded")], bytes: Data(repeating: 0xFF, count: 128))
         try await store.promote(bookID: "book-id", chapterIndex: 1)
 
         let usage = LocalAudioStorageUsage.storageUsage(root: root)
@@ -46,68 +29,51 @@ extension LocalAudioArtifactStoreTests {
 
     func testClearingTemporaryAudioPreservesDownloadedChapters() async throws {
         let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(
-            bookID: "book-id",
-            bookTitle: "Book",
-            author: nil,
-            chapters: [.init(index: 0, title: "Temporary"), .init(index: 1, title: "Downloaded")]
-        )
-        for index in [0, 1] {
-            let url = try await store.canonicalURL(bookID: "book-id", chapterIndex: index)
-            try Data(repeating: 0xFF, count: 64).write(to: url)
-            try await store.markAvailable(bookID: "book-id", chapterIndex: index)
-        }
+        try seedAvailable(chapters: [(0, "Temporary"), (1, "Downloaded")], bytes: Data(repeating: 0xFF, count: 64))
         try await store.promote(bookID: "book-id", chapterIndex: 1)
 
         try await store.clearTemporaryAudio()
 
-        let temporary = try await store.artifact(bookID: "book-id", chapterIndex: 0)
-        let downloaded = try await store.artifact(bookID: "book-id", chapterIndex: 1)
+        let temporary = try artifact(0)
+        let downloaded = try artifact(1)
         XCTAssertEqual(temporary?.state, .pending)
         XCTAssertEqual(downloaded?.state, .available)
         XCTAssertEqual(downloaded?.retention, .downloaded)
     }
 
-    func testAutomaticEvictionPreservesStreamedAndDownloadedAudio() async throws {
+    func testReadingAndSummarizingStoredAudioNeverEvictsStreamedOrDownloadedAudio() async throws {
         let store = LocalAudioArtifactStore(root: root)
+        var urls: [URL] = []
         for bookID in ["temporary-book", "downloaded-book"] {
-            try await store.prepare(
-                bookID: bookID,
-                bookTitle: bookID,
-                author: nil,
-                chapters: [.init(index: 0, title: "Chapter")]
-            )
-            let url = try await store.canonicalURL(bookID: bookID, chapterIndex: 0)
-            try Data(repeating: 0xDF, count: 64).write(to: url)
-            try await store.markAvailable(bookID: bookID, chapterIndex: 0)
+            urls += try seedAvailable(bookID: bookID, title: bookID, chapters: [(0, "Chapter")],
+                                      bytes: Data(repeating: 0xDF, count: 64)).values
         }
         try await store.promote(bookID: "downloaded-book", chapterIndex: 0)
 
-        let evicted = try await store.evictTemporaryAudio(toMaximumBytes: 0)
-        let temporary = try await store.artifact(bookID: "temporary-book", chapterIndex: 0)
-        let downloaded = try await store.artifact(bookID: "downloaded-book", chapterIndex: 0)
+        // Launch-time and Settings reads must not remove listener media.
+        _ = try await store.temporaryBookIDsEligibleForEviction()
+        _ = try await store.downloadedBooks()
+        _ = LocalAudioStorageUsage.storageUsage(root: root)
+        for bookID in ["temporary-book", "downloaded-book"] {
+            _ = try await store.playableSnapshot(bookID: bookID, engine: "edge", voice: "voice", language: nil)
+        }
+        let temporary = try artifact("temporary-book", 0)
+        let downloaded = try artifact("downloaded-book", 0)
 
-        XCTAssertEqual(evicted, [])
         XCTAssertEqual(temporary?.state, .available)
         XCTAssertEqual(downloaded?.state, .available)
         XCTAssertEqual(downloaded?.retention, .downloaded)
+        for url in urls { XCTAssertTrue(FileManager.default.fileExists(atPath: url.path)) }
     }
 
     func testRemovingBookAudioDeletesItsManifestAndChapters() async throws {
         let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(
-            bookID: "book-id",
-            bookTitle: "Book",
-            author: nil,
-            chapters: [.init(index: 0, title: "First")]
-        )
-        let chapterURL = try await store.canonicalURL(bookID: "book-id", chapterIndex: 0)
-        try Data(repeating: 0xD1, count: 32).write(to: chapterURL)
-        try await store.markAvailable(bookID: "book-id", chapterIndex: 0)
+        let chapterURL = try XCTUnwrap(
+            try seedAvailable(chapters: [(0, "First")], bytes: Data(repeating: 0xD1, count: 32))[0])
 
         try await store.removeAllAudio(bookID: "book-id")
 
-        let manifest = try await store.manifest(bookID: "book-id")
+        let manifest = try LocalAudioArtifactFixture.manifest(root: root, bookID: "book-id")
         XCTAssertNil(manifest)
         XCTAssertFalse(FileManager.default.fileExists(atPath: chapterURL.path))
     }

@@ -179,12 +179,10 @@ final class MacSettingsStorageFailureTests: XCTestCase {
         XCTAssertEqual(loadedBook.id, identifier)
         XCTAssertTrue(loadedBook.cachedOffline)
         let store = LocalAudioArtifactStore(root: root)
-        try await store.prepare(bookID: identifier, bookTitle: book.title, author: nil,
-                                chapters: [.init(index: 0, title: "Chapter")])
-        let audioURL = try await store.canonicalURL(bookID: identifier, chapterIndex: 0)
         let bytes = Data(repeating: 0xA3, count: 128)
-        try bytes.write(to: audioURL)
-        try await store.markAvailable(bookID: identifier, chapterIndex: 0)
+        let audioURL = try XCTUnwrap(try LocalAudioArtifactFixture.seed(
+            root: root, bookID: identifier, bookTitle: book.title,
+            chapters: [.init(index: 0, title: "Chapter", audio: bytes)])[0])
         try await store.requestPlaybackRetention(bookID: identifier, chapterIndex: 0)
         let attempts = Attempts()
         let controller = MacSettingsViewController(settings: AppSettings(defaults: defaults), library: library,

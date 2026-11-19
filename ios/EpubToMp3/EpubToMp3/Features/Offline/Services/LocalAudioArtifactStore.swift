@@ -2,8 +2,8 @@ import Foundation
 
 /// The single durable record of locally generated audiobook audio.
 ///
-/// A chapter keeps one canonical file URL for its lifetime. Marking a chapter
-/// as downloaded promotes its manifest retention only, which prevents a
+/// A chapter keeps one canonical file URL for its lifetime. Promoting a chapter
+/// to a download changes its manifest retention only, which prevents a
 /// second copy of already-generated audio from consuming storage.
 actor LocalAudioArtifactStore {
     static let shared = LocalAudioArtifactStore()
@@ -29,56 +29,6 @@ actor LocalAudioArtifactStore {
             .appendingPathComponent("LocalAudioArtifacts", isDirectory: true)
     }
 
-    @discardableResult
-    func prepare(
-        bookID: String,
-        bookTitle: String,
-        author: String?,
-        chapters: [ChapterSeed]
-    ) throws -> Manifest {
-        try files.createDirectoryIfNeeded(root)
-        try files.createDirectoryIfNeeded(files.chaptersDirectory(bookID: bookID))
-
-        let existing = try files.loadManifest(bookID: bookID)
-        let existingByIndex = Dictionary(
-            uniqueKeysWithValues: (existing?.chapters ?? []).map { ($0.index, $0) }
-        )
-        let now = Date()
-        let artifacts = chapters.sorted { $0.index < $1.index }.map { seed -> ChapterArtifact in
-            guard var existing = existingByIndex[seed.index] else {
-                return ChapterArtifact(
-                    index: seed.index,
-                    title: seed.title,
-                    state: .pending,
-                    retention: .temporary,
-                    relativePath: files.relativePath(for: seed.index),
-                    byteCount: 0,
-                    retryCount: 0,
-                    lastError: nil,
-                    updatedAt: now
-                )
-            }
-            existing.title = seed.title
-            if existing.state == .available, !files.hasAudioFile(bookID: bookID, artifact: existing) {
-                existing.state = .pending
-                existing.byteCount = 0
-                existing.updatedAt = now
-            }
-            return existing
-        }
-        let manifest = Manifest(
-            schemaVersion: Self.schemaVersion,
-            bookID: bookID,
-            bookTitle: bookTitle,
-            author: author,
-            chapters: artifacts,
-            updatedAt: now
-        )
-        try files.repairFilePolicies(for: manifest)
-        try files.save(manifest)
-        return manifest
-    }
-
     func canonicalURL(bookID: String, chapterIndex: Int) throws -> URL {
         let artifact = try requiredArtifact(bookID: bookID, chapterIndex: chapterIndex)
         let directory = files.chaptersDirectory(bookID: bookID)
@@ -88,66 +38,14 @@ actor LocalAudioArtifactStore {
             .standardizedFileURL
     }
 
-    func markGenerating(bookID: String, chapterIndex: Int) throws {
-        try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
-            artifact.state = .generating
-            artifact.lastError = nil
-        }
-    }
-
-    func markWaitingForWiFi(bookID: String, chapterIndex: Int) throws {
-        try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
-            artifact.state = .waitingForWiFi
-        }
-    }
-
-    func markAvailable(bookID: String, chapterIndex: Int) throws {
-        let artifact = try requiredArtifact(bookID: bookID, chapterIndex: chapterIndex)
-        let url = try canonicalURL(bookID: bookID, chapterIndex: chapterIndex)
-        guard fileManager.fileExists(atPath: url.path) else {
-            throw StoreError.missingAudioFile(url)
-        }
-        let size = try files.fileSize(at: url)
-        guard size > 0 else {
-            throw StoreError.invalidAudioFile(url)
-        }
-        let shouldRetain = artifact.retention == .downloaded || artifact.playbackRetentionRequested == true
-        switch shouldRetain {
-        case true:
-            try files.applyDownloadedFilePolicy(to: url)
-        case false:
-            try files.applyTemporaryFilePolicy(to: url)
-        }
-        try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
-            artifact.state = .available
-            if artifact.playbackRetentionRequested == true {
-                artifact.retention = .downloaded
-            }
-            artifact.byteCount = size
-            artifact.lastError = nil
-        }
-    }
-
     /// Records durable-retention intent only after a chapter has become audible.
-    /// A completed file is promoted immediately; an in-flight conversion is
-    /// promoted by `markAvailable` when its canonical MP3 arrives.
+    /// A completed file is promoted immediately. For a chapter without playable
+    /// audio the intent stays persisted, and explicit removal clears it.
     func requestPlaybackRetention(bookID: String, chapterIndex: Int) throws {
         try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
             artifact.playbackRetentionRequested = true
         }
         _ = try promoteAvailable(bookID: bookID, chapterIndices: [chapterIndex])
-    }
-
-    func markFailed(
-        bookID: String,
-        chapterIndex: Int,
-        errorDescription: String
-    ) throws {
-        try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
-            artifact.state = .failed
-            artifact.retryCount += 1
-            artifact.lastError = errorDescription
-        }
     }
 
     func promote(bookID: String, chapterIndex: Int) throws {
@@ -182,17 +80,6 @@ actor LocalAudioArtifactStore {
             try promote(bookID: bookID, chapterIndex: artifact.index)
         }
         return Set(available.map(\.index))
-    }
-
-    func artifact(bookID: String, chapterIndex: Int) throws -> ChapterArtifact? {
-        guard let manifest = try files.loadManifest(bookID: bookID) else { return nil }
-        return manifest.chapters.first { $0.index == chapterIndex }
-    }
-
-    func manifest(bookID: String) throws -> Manifest? {
-        guard let manifest = try files.loadManifest(bookID: bookID) else { return nil }
-        try files.repairFilePolicies(for: manifest)
-        return manifest
     }
 
     /// Produces the player-compatible representation of every playable local
@@ -255,61 +142,12 @@ actor LocalAudioArtifactStore {
         )
     }
 
-    /// Returns a snapshot only when every chapter is local and playable.
-    /// Callers that can continue conversion use `playableSnapshot` instead.
-    func completedSnapshot(
-        bookID: String,
-        engine: String,
-        voice: String,
-        language: String?
-    ) throws -> JobSnapshot? {
-        guard let snapshot = try playableSnapshot(
-            bookID: bookID,
-            engine: engine,
-            voice: voice,
-            language: language
-        ), snapshot.state == "finished" else {
-            return nil
-        }
-        return snapshot
-    }
-
     func temporaryBookIDsEligibleForEviction() throws -> [String] {
         try LocalAudioStorageSummary(files: files).temporaryBookIDsEligibleForEviction()
     }
 
-    func downloadedIndices(bookID: String) throws -> Set<Int> {
-        guard let manifest = try files.loadManifest(bookID: bookID) else { return [] }
-        return Set(manifest.chapters.compactMap { artifact in
-            guard artifact.retention == .downloaded,
-                  artifact.state == .available,
-                  files.hasAudioFile(bookID: bookID, artifact: artifact) else {
-                return nil
-            }
-            return artifact.index
-        })
-    }
-
     func downloadedBooks() throws -> [DownloadedBook] {
         try LocalAudioStorageSummary(files: files).downloadedBooks()
-    }
-
-    func failedIndices(bookID: String) throws -> [Int] {
-        guard let manifest = try files.loadManifest(bookID: bookID) else { return [] }
-        return manifest.chapters.compactMap { artifact in
-            artifact.state == .failed ? artifact.index : nil
-        }.sorted()
-    }
-
-    func hasCompleteDownloadedAudio(bookID: String) throws -> Bool {
-        guard let manifest = try files.loadManifest(bookID: bookID), !manifest.chapters.isEmpty else {
-            return false
-        }
-        return manifest.chapters.allSatisfy {
-            $0.retention == .downloaded
-                && $0.state == .available
-                && files.hasAudioFile(bookID: bookID, artifact: $0)
-        }
     }
 
     /// Drops only recreatable audio. Explicitly downloaded chapters are never
@@ -385,19 +223,6 @@ actor LocalAudioArtifactStore {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    /// Legacy cache-maintenance entry point.
-    ///
-    /// Streamed audio is listener media, even before it is explicitly promoted
-    /// as a download. Automatic LRU cleanup used to remove it on app launch,
-    /// making a previously playable chapter disappear without an explicit
-    /// listener decision. Storage management must use the scoped, confirmed
-    /// removal actions instead, so this method deliberately performs no I/O.
-    @discardableResult
-    func evictTemporaryAudio(toMaximumBytes maximumBytes: Int64) throws -> [String] {
-        _ = maximumBytes
-        return []
-    }
-
     func clearAllAudio() throws {
         guard fileManager.fileExists(atPath: root.path) else { return }
         try fileManager.removeItem(at: root)
@@ -430,6 +255,4 @@ actor LocalAudioArtifactStore {
         manifest.updatedAt = Date()
         try files.save(manifest)
     }
-
-
 }

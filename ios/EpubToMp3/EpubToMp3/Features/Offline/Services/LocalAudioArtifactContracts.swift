@@ -14,11 +14,6 @@ extension LocalAudioArtifactStore {
         case downloaded
     }
 
-    struct ChapterSeed: Codable, Equatable, Sendable {
-        let index: Int
-        let title: String
-    }
-
     struct ChapterArtifact: Codable, Equatable, Sendable {
         let index: Int
         var title: String
