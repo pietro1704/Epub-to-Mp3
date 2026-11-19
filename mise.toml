@@ -44,7 +44,7 @@ description = "Exercise actual offline Git/LFS transport and snapshot rejection"
 run = "ruby scripts/test_hf_snapshot.rb"
 
 [tasks.dev]
-description = "Start the Rust converter server and frontend (Vite) together"
+description = "Start the Rails web client (port 3000); DEV_RUST_SERVER=1 also starts the optional Rust converter server"
 run = "./scripts/dev.sh"
 
 [tasks."rust:health"]

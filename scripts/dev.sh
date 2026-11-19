@@ -4,12 +4,17 @@ set -euo pipefail
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_RELOAD="${BACKEND_RELOAD:-0}"
-FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
-FRONTEND_DIR="web"
+# The web client is the Rails app in ruby_app/rails_gateway; conversion runs in the browser.
+# The Rust converter server is an optional compatibility API: DEV_RUST_SERVER=1 starts it and
+# points the Rails app at it through RUST_CONVERTER_URL.
+DEV_RUST_SERVER="${DEV_RUST_SERVER:-0}"
+WEB_HOST="${WEB_HOST:-127.0.0.1}"
+WEB_PORT="${WEB_PORT:-3000}"
+WEB_DIR="ruby_app/rails_gateway"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 BACK_PID=""
-FRONT_PID=""
+WEB_PID=""
 BACKEND_WATCH_PID=""
 SHUTTING_DOWN=0
 BACKEND_RESTART_FLAG="${TMPDIR:-/tmp}/epub_to_mp3_backend_restart.flag"
@@ -112,8 +117,8 @@ cleanup_port_listeners() {
 cleanup_stale_dev_processes() {
   cleanup_port_listeners "$BACKEND_PORT" 'cargo run .*converter-server|converter-server'
   cleanup_matching_processes 'cargo run .*converter-server|converter-server'
-  cleanup_matching_processes 'node .*/vite([^[:alnum:]_]|$)'
-  cleanup_matching_processes 'npm run dev -- --host|npm run dev --host'
+  cleanup_port_listeners "$WEB_PORT" 'puma|bin/rails'
+  cleanup_matching_processes 'puma.*rails_gateway|rails_gateway.*bin/rails server'
 }
 
 backend_watch_targets() {
@@ -196,25 +201,24 @@ start_backend() {
   BACK_PID=$!
 }
 
-frontend_needs_install() {
-  local node_modules_dir="$PROJECT_ROOT/$FRONTEND_DIR/node_modules"
-  local lockfile="$PROJECT_ROOT/$FRONTEND_DIR/package-lock.json"
-  [[ -d "$node_modules_dir" ]] || return 0
-  [[ -f "$lockfile" ]] || return 1
-  [[ "$lockfile" -nt "$node_modules_dir" ]]
-}
-
-start_frontend() {
-  echo "[dev] starting frontend on ${FRONTEND_HOST}"
+start_web() {
+  echo "[dev] starting the Rails web client on http://${WEB_HOST}:${WEB_PORT}"
   (
-    cd "$FRONTEND_DIR"
-    if frontend_needs_install; then
-      echo "[dev] installing frontend dependencies"
-      npm install
+    cd "$PROJECT_ROOT/$WEB_DIR"
+    if ! mise exec -- bundle check >/dev/null 2>&1; then
+      echo "[dev] installing gems"
+      mise exec -- bundle install
     fi
-    VITE_API_BASE="${VITE_API_BASE:-http://${BACKEND_HOST}:${BACKEND_PORT}}" npm run dev -- --host "$FRONTEND_HOST"
+    mise exec -- bin/rails db:prepare >/dev/null
+    if [[ ! -f config/runtime_manifest.json ]]; then
+      echo "[dev] no generated runtime tree: run 'mise run rails:web:runtime-build' for the real browser runtime"
+    fi
+    if [[ "$DEV_RUST_SERVER" == "1" ]]; then
+      export RUST_CONVERTER_URL="${RUST_CONVERTER_URL:-http://${BACKEND_HOST}:${BACKEND_PORT}}"
+    fi
+    exec mise exec -- bin/rails server -b "$WEB_HOST" -p "$WEB_PORT"
   ) &
-  FRONT_PID=$!
+  WEB_PID=$!
 }
 
 wait_for_any_exit() {
@@ -225,7 +229,7 @@ wait_for_any_exit() {
     if [[ -n "${BACK_PID:-}" ]] && ! kill -0 "$BACK_PID" 2>/dev/null; then
       return 0
     fi
-    if [[ -n "${FRONT_PID:-}" ]] && ! kill -0 "$FRONT_PID" 2>/dev/null; then
+    if [[ -n "${WEB_PID:-}" ]] && ! kill -0 "$WEB_PID" 2>/dev/null; then
       return 0
     fi
     sleep 1
@@ -240,7 +244,7 @@ shutdown_all() {
   echo "[dev] shutting down"
   clear_backend_restart_request
   stop_process "${BACK_PID:-}"
-  stop_process "${FRONT_PID:-}"
+  stop_process "${WEB_PID:-}"
   stop_process "${BACKEND_WATCH_PID:-}"
   cleanup_stale_dev_processes
 }
@@ -255,9 +259,11 @@ trap 'handle_signal' INT TERM
 trap 'shutdown_all' EXIT
 
 cleanup_stale_dev_processes
-start_backend
-start_backend_watcher
-start_frontend
+if [[ "$DEV_RUST_SERVER" == "1" ]]; then
+  start_backend
+  start_backend_watcher
+fi
+start_web
 
 while :; do
   wait_for_any_exit
@@ -274,8 +280,8 @@ while :; do
     continue
   fi
 
-  if [[ -n "${FRONT_PID:-}" ]] && ! kill -0 "$FRONT_PID" 2>/dev/null; then
-    echo "[dev] frontend exited; stopping backend"
+  if [[ -n "${WEB_PID:-}" ]] && ! kill -0 "$WEB_PID" 2>/dev/null; then
+    echo "[dev] web client exited; stopping"
     shutdown_all
     break
   fi

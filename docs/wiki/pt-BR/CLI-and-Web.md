@@ -36,9 +36,10 @@ no cutover para Rails.
 Voz nativa do navegador serve para escuta; exportar MP3 exige Piper instalado.
 Inspecionar EPUB não comprova suporte a PDF ou outros formatos nativos.
 
-`mise run dev` foi escrito para iniciar o servidor Rust opcional e o antigo frontend Vite (inspecione a tarefa e `scripts/dev.sh` antes, pois o cliente React foi removido), pode compilar/instalar
-pré-requisitos ausentes e gerencia processos de desenvolvimento. Use somente para
-jornada de servidor explícita após inspecionar `scripts/dev.sh` e o escopo.
+`mise run dev` inicia o cliente web Rails na porta 3000 (`WEB_PORT`, `WEB_HOST`); instala as gems que faltam,
+prepara o banco de desenvolvimento e avisa quando o runtime do navegador não foi gerado
+(`mise run rails:web:runtime-build`). `DEV_RUST_SERVER=1` também inicia o `converter-server` Rust
+opcional (o que o compila) e aponta o app Rails para ele por `RUST_CONVERTER_URL`.
 `converter-server` e o cliente HTTP retido são adaptadores de compatibilidade;
 rotas/payloads pertencem ao código atual do servidor Rust e cliente escolhido.
 O servidor Python/FastAPI legado e o `hf_app.py` foram removidos.

@@ -198,7 +198,7 @@ Rails web client (the WASM runtime is generated, never committed):
 ```bash
 mise run rails:web:runtime-build       # generated Rust/WASM + TTS runtime tree
 mise run rails:web:test                # Rails and browser-runtime tests
-cd ruby_app/rails_gateway && mise exec -- bin/rails server
+mise run dev                           # Rails web client on :3000 (DEV_RUST_SERVER=1 adds the Rust server)
 ```
 
 See [ruby_app/rails_gateway/README.md](ruby_app/rails_gateway/README.md).
