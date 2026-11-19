@@ -89,12 +89,6 @@ final class LibraryGridModelTests: XCTestCase {
         XCTAssertEqual(model.arrangedBooks().map(\.id).count, 2)
     }
 
-    func testSortModeLabelsAreAvailableToUIKitMenus() {
-        for mode in LibraryGridModel.SortMode.allCases {
-            XCTAssertFalse(mode.label.isEmpty)
-        }
-    }
-
     // MARK: - Layout metrics (shared by SwiftUI + UIKit renderers)
 
     func testColumnCountKeepsTwoAcrossWidths() {

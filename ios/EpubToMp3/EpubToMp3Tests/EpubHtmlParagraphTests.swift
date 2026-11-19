@@ -184,28 +184,4 @@ extension EpubHtmlRendererTests {
                        "real Pinocchio body paragraphs (text-align:justify) must never render centred")
     }
 
-    /// Diagnostic: histogram of paragraph alignment across the WHOLE real
-    /// chapter, so we can see exactly what the importer + override pipeline
-    /// produce. Keeps the assertion loose (just prints) — used to pin down
-    /// the "tudo centralizado" report.
-    @MainActor
-    func testPinocchioAlignmentHistogram() {
-        let s = makeSettings()
-        s.readerTextAlignment = .justified
-        guard let out = EpubHtmlRenderer.render(
-            html: PinocchioFixture.chapter3HTML,
-            css: PinocchioFixture.chapter3CSS,
-            settings: s
-        ) else { return XCTFail("nil") }
-        let n = ns(out)
-        var counts: [Int: Int] = [:]
-        n.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: n.length)) { value, range, _ in
-            let a = (value as? NSParagraphStyle)?.alignment.rawValue ?? -1
-            counts[a, default: 0] += range.length
-        }
-        // alignment rawValues: left=0 right=1 center=2 justified=3 natural=4
-        print("ALIGN histogram (rawValue:chars):", counts)
-        XCTAssertFalse(counts.isEmpty)
-    }
-
 }

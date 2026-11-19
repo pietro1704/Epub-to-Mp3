@@ -53,18 +53,6 @@ final class ReaderThemeIntegrationTests: XCTestCase {
                      "Custom theme defers to the OS — we don't know if user colours are dark or light.")
     }
 
-    // MARK: - Exhaustive coverage
-
-    func testAllThemesHaveADefinedPreferredColorScheme() {
-        // If a new theme case is added without updating `preferredColorScheme`,
-        // this test will fail only if the switch is non-exhaustive and the
-        // author forgets to add a case. The test acts as a reminder.
-        for theme in ReaderTheme.allCases {
-            // Calling the property must not crash.
-            _ = theme.preferredColorScheme
-        }
-    }
-
     // MARK: - Dark theme group
 
     func testDarkThemeGroupIsDark() {

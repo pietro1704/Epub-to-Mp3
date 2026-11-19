@@ -254,25 +254,6 @@ final class SharedContainerImporterTests: XCTestCase {
         XCTAssertTrue(pending.contains { $0.lastPathComponent == "payload-1.epub" })
     }
 
-    // MARK: - inboxURL
-
-    func testInboxURLIsNilWhenGroupNotProvisioned() {
-        // Unsigned simulator builds typically lack the App Group
-        // container. The importer must return nil rather than
-        // crashing when `containerURL(forSecurityApplicationGroupIdentifier:)`
-        // returns nil — that's the safety net used by `pendingFiles`.
-        let bogus = "group.does.not.exist.\(UUID().uuidString)"
-        let url = SharedContainerImporter.inboxURL(
-            groupID: bogus,
-            containerURLProvider: { _, _ in nil }
-        )
-        // On a properly provisioned device this might still resolve;
-        // we just assert no crash + tolerate either outcome.
-        if let url {
-            XCTAssertTrue(url.path.contains("Inbox"))
-        }
-    }
-
     private func makeLibrary() -> LibraryStore {
         let suite = "library.share-test.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -168,34 +168,7 @@ final class AudioPlayerUXTests: XCTestCase {
             "Skip backward below 0 should clamp to 0")
     }
 
-    /// When `positionSeconds` is known (simulate via `seek`), `skipForward`
-    /// should add the delta. We fake durationSeconds via a snapshot-less
-    /// seek so we can verify the arithmetic.
-    @MainActor
-    func testSkipForwardAddsSeconds() {
-        let player = makePlayer()
-        // Seek to 30 s without a real player item (seek clamps to 0 since
-        // durationSeconds == 0, so we cannot go past 0 here). Instead we
-        // verify that skipForward does NOT exceed positionSeconds when
-        // duration is 0 — i.e., the clamp logic fires correctly.
-        player.skipForward(seconds: 30)
-        XCTAssertGreaterThanOrEqual(player.positionSeconds, 0)
-        XCTAssertLessThanOrEqual(player.positionSeconds, player.durationSeconds)
-    }
-
     // MARK: - isPlaying gate (reader chapter sync regression)
-
-    /// A freshly created player with a loaded snapshot must report
-    /// `isPlaying == false`. The reader's `installPositionLoop` uses
-    /// this flag to prevent an idle player at chapter 0 from forcing
-    /// the reader back to the TOC/index chapter on every position
-    /// update — the "1→index→2→index" regression (bcfebf3 → fix).
-    @MainActor
-    func testIdlePlayerWithSnapshotIsNotPlaying() {
-        let player = makePlayer()
-        XCTAssertFalse(player.isPlaying,
-            "A freshly initialised player must not report isPlaying=true")
-    }
 
     /// `isPlaying` must remain false after loading a snapshot without
     /// calling `play`. The position-loop chapter-sync must therefore

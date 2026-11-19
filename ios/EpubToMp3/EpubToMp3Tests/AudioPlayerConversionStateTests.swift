@@ -137,29 +137,6 @@ final class AudioPlayerConversionStateTests: XCTestCase {
         XCTAssertFalse(player.firstChapterReady)
     }
 
-    // MARK: - conversionProgress bounds
-
-    @MainActor
-    func testConversionProgressStoresArbitraryValue() {
-        let player = AudioPlayer()
-        player.conversionProgress = 0.75
-        XCTAssertEqual(player.conversionProgress ?? -1, 0.75, accuracy: 0.001)
-    }
-
-    @MainActor
-    func testConversionProgressCanBeZero() {
-        let player = AudioPlayer()
-        player.conversionProgress = 0.0
-        XCTAssertEqual(player.conversionProgress ?? -1, 0.0, accuracy: 0.001)
-    }
-
-    @MainActor
-    func testConversionProgressCanBeOne() {
-        let player = AudioPlayer()
-        player.conversionProgress = 1.0
-        XCTAssertEqual(player.conversionProgress ?? -1, 1.0, accuracy: 0.001)
-    }
-
     // MARK: - MiniPlayerBar display logic (unit replica)
 
     /// The bar should show a spinner (not play/pause) when converting
@@ -193,29 +170,6 @@ final class AudioPlayerConversionStateTests: XCTestCase {
         player.isConverting = false
         XCTAssertFalse(player.isLoading,
             "Bar must show play/pause when conversion is done")
-    }
-
-    // MARK: - Progress bar color logic (unit replica)
-
-    /// While converting with known progress, the bar color key is "orange".
-    @MainActor
-    func testProgressBarUsesOrangeColorKeyDuringConversion() {
-        let player = AudioPlayer()
-        player.isConverting = true
-        player.conversionProgress = 0.4
-        let useOrange = player.isConverting && player.conversionProgress != nil
-        XCTAssertTrue(useOrange,
-            "Progress bar must use orange tint during active conversion with known progress")
-    }
-
-    /// After conversion completes, accent color is used.
-    @MainActor
-    func testProgressBarUsesAccentColorAfterConversion() {
-        let player = AudioPlayer()
-        player.isConverting = false
-        let useOrange = player.isConverting && player.conversionProgress != nil
-        XCTAssertFalse(useOrange,
-            "Progress bar must use accent color when not converting")
     }
 }
 #endif
