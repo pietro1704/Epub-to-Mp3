@@ -457,7 +457,7 @@ final class MainReaderScreenController: UIViewController {
             guard let self, self.currentBook?.id == book.id, self.listeningRequestID == requestID else { return }
             self.startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: priority, requestedRatio: pageRatio, recovery: choice)
         }
-        var options = settings.conversionOptions
+        var options = NarrationConversionOptions.current(for: settings.ttsPreferences)
         if let recovery { options = options.recovering(with: recovery.candidate, language: recovery.language) }
         listeningSession.start(book: book, priority: priority, pageRatio: pageRatio,
                                catalog: catalog, conversionOptions: options,
