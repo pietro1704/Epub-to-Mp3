@@ -207,12 +207,22 @@ jobs:
       - name: Build macOS .app
         working-directory: ios/EpubToMp3
         run: |
+          # The Rust build produces one slice, and ONNX packaging needs that same slice.
+          ffi_arch="$(lipo -archs ../../target/release/libconverter_ffi.dylib)"
+          case "$ffi_arch" in
+            arm64|x86_64) ;;
+            *)
+              echo "::error::Expected one macOS converter-ffi architecture, got: $ffi_arch" >&2
+              exit 1
+              ;;
+          esac
           xcodebuild \
             -project EpubToMp3.xcodeproj \
             -scheme EpubToMp3 \
             -destination 'generic/platform=macOS' \
             -configuration Release \
             -derivedDataPath build \
+            ARCHS="$ffi_arch" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \

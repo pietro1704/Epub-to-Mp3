@@ -4,20 +4,28 @@
 # had drifted from the CI jobs that pass on master. These checks keep each release
 # job on the same native prerequisites as its validated CI counterpart.
 require "minitest/autorun"
+require "open3"
+require "tmpdir"
 require "yaml"
 
 class ReleaseDesktopWorkflowTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
 
-  def workflow(name) = YAML.load_file(File.join(ROOT, ".github/workflows/#{name}"))
+  def workflow(name)
+    YAML.load_file(File.join(ROOT, ".github/workflows/#{name}"))
+  end
 
   def setup
     @jobs = workflow("release-desktop.yml").fetch("jobs")
   end
 
-  def index(steps, &block) = steps.index(&block) || flunk("missing step")
+  def index(steps, &block)
+    steps.index(&block) || flunk("missing step")
+  end
 
-  def runs(steps) = steps.map { |step| step.fetch("run", "") }
+  def runs(steps)
+    steps.map { |step| step.fetch("run", "") }
+  end
 
   # Failure 1: "libconverter_ffi.dylib couldn't be opened" - Xcode embeds a library
   # nothing had built.
@@ -41,6 +49,40 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     codeql = workflow("codeql.yml").fetch("jobs").values.map { |job| job["runs-on"] }.grep(/\Amacos-/).uniq
     assert_equal 1, codeql.size, "one CodeQL macOS image"
     assert_equal codeql.first, @jobs.fetch("swiftui-apple").fetch("runs-on")
+  end
+
+  def test_macos_build_targets_the_embedded_library_architecture
+    %w[x86_64 arm64].each do |architecture|
+      output, error, status = run_macos_build(architecture)
+      assert status.success?, error
+      assert_includes output.lines.map(&:chomp), "ARCHS=#{architecture}"
+    end
+  end
+
+  def test_macos_build_rejects_a_library_with_multiple_architectures
+    output, error, status = run_macos_build("x86_64 arm64")
+    refute status.success?
+    assert_empty output, "xcodebuild must not run with an ambiguous architecture"
+    assert_includes error, "Expected one macOS converter-ffi architecture"
+  end
+
+  def run_macos_build(architecture)
+    steps = @jobs.fetch("swiftui-apple").fetch("steps")
+    command = steps.find { |step| step["name"] == "Build macOS .app" }.fetch("run")
+    Dir.mktmpdir("release-macos-build") do |directory|
+      lipo = <<~'SH'
+        #!/bin/bash
+        [[ "$#" == 2 && "$1" == -archs && "$2" == ../../target/release/libconverter_ffi.dylib ]] || exit 90
+        printf '%s\n' "$FIXTURE_ARCHITECTURE"
+      SH
+      File.write(File.join(directory, "lipo"), lipo)
+      File.write(File.join(directory, "xcodebuild"), "#!/bin/bash\nprintf '%s\\n' \"$@\"\n")
+      %w[lipo xcodebuild].each { |tool| File.chmod(0o700, File.join(directory, tool)) }
+      Open3.capture3(
+        { "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "FIXTURE_ARCHITECTURE" => architecture },
+        "bash", "-eo", "pipefail", "-c", command
+      )
+    end
   end
 
   # Failure 2: "sdkmanager: command not found" - the runner image no longer puts an
