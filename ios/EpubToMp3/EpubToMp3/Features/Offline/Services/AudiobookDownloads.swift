@@ -278,16 +278,17 @@ actor AudiobookDownloads {
         NotificationCenter.default.post(name: LocalAudioArtifactStore.didChangeNotification, object: nil)
     }
 
-    /// Cancels the active Download and ends every Download of the snapshot's book.
+    /// Cancels the active Download and ends the Downloads of the chapters this
+    /// snapshot plays. Kept audio of chapters the snapshot does not have is
+    /// another job's and is never touched from here.
     func clearDownloads(snapshot: JobSnapshot) async {
         await stopLegacyMigration()
         cancel(jobId: snapshot.jobId)
         let retiring = writingTasks.values.filter { $0.jobId == snapshot.jobId }.map(\.task)
         for task in retiring { await task.value }
-        if let owner = await resolveOwner(snapshot),
-           let kept = try? await store.downloadedChapterIndices(bookID: owner.bookID) {
+        if let owner = await resolveOwner(snapshot) {
             await release(owner: owner, snapshot: snapshot,
-                          chapterIndices: kept.map(owner.snapshotIndex(forStoreIndex:)))
+                          chapterIndices: snapshot.playableChapters.map(\.index))
         }
         AudiobookDownloadStorage.deleteAudiobook(jobId: snapshot.jobId)
         NotificationCenter.default.post(name: LocalAudioArtifactStore.didChangeNotification, object: nil)
@@ -295,12 +296,13 @@ actor AudiobookDownloads {
 
     private func release(owner: RetainedAudioOwner, snapshot: JobSnapshot, chapterIndices: [Int]) async {
         for chapterIndex in chapterIndices {
-            guard let storeIndex = owner.storeIndex(forSnapshotIndex: chapterIndex) else { continue }
-            let source = snapshot.playableChapters.first { $0.index == chapterIndex }?.downloadUrl
-                .flatMap { AudiobookChapterTransfer.resolve(path: $0, base: nil) }
+            guard let storeIndex = owner.storeIndex(forSnapshotIndex: chapterIndex),
+                  let chapter = snapshot.playableChapters.first(where: { $0.index == chapterIndex }) else { continue }
+            let source = chapter.downloadUrl.flatMap { AudiobookChapterTransfer.resolve(path: $0, base: nil) }
             // Like the previous layout, a removal that fails leaves the chapter kept.
-            try? await store.releaseDownload(
-                bookID: owner.bookID, chapterIndex: storeIndex, playbackSource: source)
+            _ = try? await store.releaseDownload(
+                bookID: owner.bookID, chapterIndex: storeIndex, playbackSource: source,
+                sourceTextOffset: chapter.textOffset ?? 0)
         }
     }
 

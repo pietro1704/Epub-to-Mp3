@@ -52,10 +52,10 @@ final class LegacyAudioMigrationSession {
     /// Cancels a running migration and waits until it has let go of the files.
     func stop() async {
         hasStarted = true
-        let running = task
-        task = nil
-        running?.cancel()
-        await running?.value
+        // The task stays in place until it has finished, so a second caller
+        // waits for the same run instead of returning while it still works.
+        task?.cancel()
+        await task?.value
     }
 
     /// Counts only; book and job identifiers are never logged.

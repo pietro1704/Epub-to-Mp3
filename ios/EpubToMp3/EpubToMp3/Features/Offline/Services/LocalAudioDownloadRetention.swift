@@ -43,6 +43,10 @@ extension LocalAudioArtifactStore {
             byteCount = try files.fileSize(at: destination)
             guard byteCount > 0 else { throw StoreError.invalidAudioFile(destination) }
         } else {
+            let sourceValues = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard sourceValues.isRegularFile == true, sourceValues.isSymbolicLink != true else {
+                throw StoreError.invalidAudioFile(source)
+            }
             let expected = try files.fileSize(at: source)
             guard expected > 0 else { throw StoreError.invalidAudioFile(source) }
             try files.createDirectoryIfNeeded(directory)
@@ -89,36 +93,33 @@ extension LocalAudioArtifactStore {
 
     /// Chapters of a book that are protected downloads with audio on disk.
     func downloadedChapterIndices(bookID: String) throws -> Set<Int> {
-        guard let manifest = try files.loadManifest(bookID: bookID) else { return [] }
+        guard let manifest = try validatedManifest(bookID: bookID) else { return [] }
         return Set(manifest.chapters.filter {
             $0.retention == .downloaded && $0.state == .available
                 && files.hasAudioFile(bookID: bookID, artifact: $0)
         }.map(\.index))
     }
 
-    /// Ends a Download. A kept copy of audio that plays from elsewhere is removed.
-    /// When `playbackSource` is the canonical file itself, the listener is
-    /// playing the only copy, so it stays as recreatable audio instead.
-    func releaseDownload(bookID: String, chapterIndex: Int, playbackSource: URL?) throws {
-        guard let manifest = try files.loadManifest(bookID: bookID),
-              let artifact = manifest.chapters.first(where: { $0.index == chapterIndex }),
-              artifact.retention == .downloaded else { return }
-        guard let playbackSource,
-              isCanonicalFile(playbackSource, bookID: bookID, chapterIndex: chapterIndex),
-              files.hasAudioFile(bookID: bookID, artifact: artifact) else {
-            try removeDownloadedAudio(bookID: bookID, chapterIndex: chapterIndex)
-            return
-        }
-        var updated = manifest
-        guard let position = updated.chapters.firstIndex(where: { $0.index == chapterIndex }) else { return }
-        updated.chapters[position].retention = .temporary
-        updated.chapters[position].playbackRetentionRequested = false
-        updated.chapters[position].updatedAt = Date()
-        updated.updatedAt = Date()
-        try files.save(updated)
-        withdrawVisibleCopy(bookID: bookID, chapterIndex: chapterIndex)
-        try files.applyTemporaryFilePolicy(
-            to: files.bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath))
+    /// Ends a Download by removing the kept copy, but only when the listener
+    /// loses nothing: `playbackSource` must be another audio file on this
+    /// device that covers at least as much of the chapter (`sourceTextOffset`
+    /// characters skipped, 0 for a whole chapter). In every other case the kept
+    /// audio is the only or the fuller copy and stays exactly as it is;
+    /// Settings > Downloads is where the listener deletes such audio.
+    /// Returns whether the copy was removed.
+    @discardableResult
+    func releaseDownload(
+        bookID: String, chapterIndex: Int, playbackSource: URL?, sourceTextOffset: Int = 0
+    ) throws -> Bool {
+        guard let artifact = try validatedManifest(bookID: bookID)?.chapters
+            .first(where: { $0.index == chapterIndex }), artifact.retention == .downloaded else { return false }
+        guard let playbackSource, playbackSource.isFileURL,
+              !isCanonicalFile(playbackSource, bookID: bookID, chapterIndex: chapterIndex),
+              let values = try? playbackSource.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true, (values.fileSize ?? 0) > 0,
+              max(0, sourceTextOffset) <= (artifact.textOffset ?? 0) else { return false }
+        try removeDownloadedAudio(bookID: bookID, chapterIndex: chapterIndex)
+        return true
     }
 
     /// The book's manifest when it is this store's own, or nil when none exists.

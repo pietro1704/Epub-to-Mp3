@@ -226,31 +226,56 @@ final class LocalAudioDownloadRetentionTests: XCTestCase {
         } catch LocalAudioImportFiles.Failure.invalidIdentity {}
     }
 
-    func testEndingADownloadRemovesAKeptCopyButKeepsAudioThatIsPlayingFromTheStore() async throws {
+    func testEndingADownloadRemovesOnlyACopyTheListenerCanStillPlayFromElsewhere() async throws {
         let fixture = try fixture()
         let audio = Data(repeating: 6, count: 40)
         let urls = try LocalAudioArtifactFixture.seed(root: fixture.storeRoot, bookID: "book", chapters: [
             .init(index: 0, title: "Copy", retention: .downloaded, audio: audio),
             .init(index: 1, title: "Only copy", retention: .downloaded, audio: audio, playbackRetentionRequested: true),
-            .init(index: 2, title: "Temporary", retention: .temporary, audio: audio)
+            .init(index: 2, title: "Temporary", retention: .temporary, audio: audio),
+            .init(index: 3, title: "Whole chapter", retention: .downloaded, audio: audio),
+            .init(index: 4, title: "Other job", retention: .downloaded, audio: audio),
+            .init(index: 5, title: "Tail", retention: .downloaded, audio: audio, textOffset: 90)
         ])
-        let converted = fixture.root.appendingPathComponent("converted.mp3")
-        try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 0, playbackSource: converted)
-        try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 1, playbackSource: urls[1])
-        try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 2, playbackSource: nil)
-        try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 9, playbackSource: nil)
-        try await fixture.store.releaseDownload(bookID: "unknown", chapterIndex: 0, playbackSource: nil)
+        let converted = try fixture.source("converted.mp3", Data(repeating: 7, count: 10))
+        let missing = fixture.root.appendingPathComponent("missing.mp3")
+        let before = try Data(contentsOf: fixture.storeRoot.appendingPathComponent("book/manifest.json"))
 
-        let manifest = try XCTUnwrap(LocalAudioArtifactFixture.manifest(root: fixture.storeRoot, bookID: "book"))
-        XCTAssertEqual(manifest.chapters[0].state, .pending)
+        // Nothing of this may change kept audio: it plays from the store itself,
+        // was never a Download, is the fuller audio, has no other source, or the
+        // other source is not on this device.
+        var removed = try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 1, playbackSource: urls[1])
+        XCTAssertFalse(removed)
+        removed = try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 2, playbackSource: converted)
+        XCTAssertFalse(removed)
+        removed = try await fixture.store.releaseDownload(
+            bookID: "book", chapterIndex: 3, playbackSource: converted, sourceTextOffset: 120)
+        XCTAssertFalse(removed, "A chapter tail must not cost the listener the whole chapter")
+        removed = try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 4, playbackSource: nil)
+        XCTAssertFalse(removed, "Audio the current snapshot does not play has no replacement")
+        removed = try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 4, playbackSource: missing)
+        XCTAssertFalse(removed)
+        removed = try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 9, playbackSource: converted)
+        XCTAssertFalse(removed)
+        removed = try await fixture.store.releaseDownload(bookID: "unknown", chapterIndex: 0, playbackSource: converted)
+        XCTAssertFalse(removed)
+        XCTAssertEqual(try Data(contentsOf: fixture.storeRoot.appendingPathComponent("book/manifest.json")), before)
+        for chapter in 0...5 { XCTAssertEqual(try Data(contentsOf: fixture.canonical(chapter)), audio) }
+
+        // A copy of audio that still plays from the converted file goes away,
+        // and so does a tail when the other source covers at least as much.
+        removed = try await fixture.store.releaseDownload(bookID: "book", chapterIndex: 0, playbackSource: converted)
+        XCTAssertTrue(removed)
+        removed = try await fixture.store.releaseDownload(
+            bookID: "book", chapterIndex: 5, playbackSource: converted, sourceTextOffset: 90)
+        XCTAssertTrue(removed)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.canonical(0).path))
-        XCTAssertEqual(manifest.chapters[1].state, .available)
-        XCTAssertEqual(manifest.chapters[1].retention, .temporary)
-        XCTAssertEqual(manifest.chapters[1].playbackRetentionRequested, false)
-        XCTAssertEqual(try Data(contentsOf: fixture.canonical(1)), audio, "The only copy stays playable")
-        XCTAssertEqual(manifest.chapters[2].retention, .temporary)
-        XCTAssertEqual(try Data(contentsOf: fixture.canonical(2)), audio, "Audio that was never a Download is untouched")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.canonical(5).path))
         let indices = try await fixture.store.downloadedChapterIndices(bookID: "book")
-        XCTAssertEqual(indices, [])
+        XCTAssertEqual(indices, [1, 3, 4])
+        let protected = LocalAudioArtifactStore(root: fixture.storeRoot)
+        try await protected.clearTemporaryAudio()
+        XCTAssertEqual(try Data(contentsOf: fixture.canonical(1)), audio,
+                       "Ending a Download never leaves kept audio open to a cache clear")
     }
 }
