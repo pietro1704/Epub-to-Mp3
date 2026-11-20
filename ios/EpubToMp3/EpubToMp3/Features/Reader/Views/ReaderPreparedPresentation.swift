@@ -77,7 +77,7 @@ final class ReaderPreparedPresentation {
         }
 
         observeOpenStage("projection_snapshot_loaded")
-        if let journeyID = document.activeBookOpenJourneyID {
+        if let journeyID = document.openJourney.activeBookOpenJourneyID {
             LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
         }
         if let rendererRestoration = restoration.renderer {
@@ -141,7 +141,7 @@ final class ReaderPreparedPresentation {
             observeOpenStage("projection_snapshot_rejected")
             return
         }
-        if let journeyID = document.activeBookOpenJourneyID {
+        if let journeyID = document.openJourney.activeBookOpenJourneyID {
             LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
         }
         let fontDirectoryURL = document.registeredFontURLs.first?.deletingLastPathComponent()
@@ -228,7 +228,7 @@ final class ReaderPreparedPresentation {
         document.activePreparedChapter = nil
         LocalFulltextCache.recordWarmOpen(bookId: document.book.id)
         send(.publishTitles(payload))
-        if let journeyID = document.activeBookOpenJourneyID {
+        if let journeyID = document.openJourney.activeBookOpenJourneyID {
             LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
         }
         return true

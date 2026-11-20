@@ -34,10 +34,7 @@ final class MacReaderTextPresentation {
         get { document.presentationGeneration }
         set { document.presentationGeneration = newValue }
     }
-    private var activeBookOpenJourneyID: UUID? {
-        get { document.activeBookOpenJourneyID }
-        set { document.activeBookOpenJourneyID = newValue }
-    }
+    private var activeBookOpenJourneyID: UUID? { document.openJourney.activeBookOpenJourneyID }
     private var fulltext: EbookFulltext? {
         get { document.fulltext }
         set { document.fulltext = newValue }

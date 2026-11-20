@@ -18,7 +18,7 @@ final class MacReaderBookLoad {
     private let preparedFulltextReader: @Sendable (String) async -> EbookFulltext?
     private let preparedFulltextWriter: @Sendable (EbookFulltext, String) -> Void
     private let textPresentation: MacReaderTextPresentation
-    private let observation: MacReaderOpenObservation
+    private let observation: ReaderOpenJourney
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let send: (Event) -> Void
     private var loadTask: Task<Void, Never>?
@@ -31,14 +31,6 @@ final class MacReaderBookLoad {
     private var presentationGeneration: UUID {
         get { document.presentationGeneration }
         set { document.presentationGeneration = newValue }
-    }
-    private var activeBookOpenJourneyID: UUID? {
-        get { document.activeBookOpenJourneyID }
-        set { document.activeBookOpenJourneyID = newValue }
-    }
-    private var pendingPDFPageJourneyID: UUID? {
-        get { document.pendingPDFPageJourneyID }
-        set { document.pendingPDFPageJourneyID = newValue }
     }
     private var fulltext: EbookFulltext? {
         get { document.fulltext }
@@ -77,7 +69,7 @@ final class MacReaderBookLoad {
          renderer: PreparedChapterRenderer, store: PreparedReaderChapterStore,
          readFulltext: @escaping @Sendable (String) async -> EbookFulltext?,
          writeFulltext: @escaping @Sendable (EbookFulltext, String) -> Void,
-         textPresentation: MacReaderTextPresentation, observation: MacReaderOpenObservation,
+         textPresentation: MacReaderTextPresentation, observation: ReaderOpenJourney,
          stageObserver: (@Sendable (String, UInt64) -> Void)?, send: @escaping (Event) -> Void) {
         self.document = document
         self.library = library
@@ -123,11 +115,8 @@ final class MacReaderBookLoad {
             hasRestoredInitialPosition = false
         }
         document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: book.id)
-        let journeyID = LatencyObservationStore.shared.beginBookOpen(
-            documentKind: MacReaderOpenObservation.documentKind(for: book)
-        )
+        let journeyID = document.openJourney.begin(for: book)
         observeOpenStage("journey_started")
-        activeBookOpenJourneyID = journeyID
         // Process-warm reader opens must not clear the visible chapter or
         // show the loading cover. The last two prepared books are retained
         // in memory precisely so this route can paint immediately.
@@ -215,7 +204,7 @@ final class MacReaderBookLoad {
                     let fileURL = try await library.openBookFileAsync(id: book.id)
                     guard self.isActiveLoad(generation, bookID: book.id) else { return }
                     if book.fileType == .pdf {
-                        pendingPDFPageJourneyID = journeyID
+                        document.openJourney.pendingPDFPageJourneyID = journeyID
                         guard let wasNormalized = await textPresentation.showPDF(fileURL) else { return }
                         guard self.isActiveLoad(generation, bookID: book.id) else { return }
                         observation.recordFirstPDFPage(wasNormalized: wasNormalized)
