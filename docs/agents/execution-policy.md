@@ -170,6 +170,10 @@ Established from the Apple report, the unified log and session transcripts
   not attributed.
 - The T2 report of 2026-11-18 was a forced power-off after a stalled shutdown,
   not a CATERR.
+- A report with the same panic string was supplied on 2026-10-16. It is no
+  longer retained on this host, so the two were not compared. `ARM64/T8010` in
+  such a report is the T2 chip that writes it on an Intel Mac, not a second
+  machine, so this incident is most likely a repeat.
 
 Not established: any cause. Hardware or firmware (logic board, CPU, power
 delivery, battery), a thermal trip and a driver fault all remain open; the load
