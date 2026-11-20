@@ -116,7 +116,17 @@ extension LocalAudioArtifactStore {
         }
         let source = sourceDirectory.appendingPathComponent("chapters").appendingPathComponent(chapter.mp3FileName)
         try LocalAudioImportFiles.requireRegularFile(source, under: sourceRoot)
+        // Refuse what can never be imported before copying and decoding it, so
+        // a chapter that stays behind costs nothing on later launches.
+        guard try files.fileSize(at: source) == chapter.mp3Bytes else {
+            throw LocalAudioImportFiles.Failure.sourceChanged
+        }
+        if let existing = try importDestinationManifest(identity)?.chapters.first(where: { $0.index == canonicalIndex }),
+           existing.state != .available || existing.byteCount != chapter.mp3Bytes {
+            throw LocalAudioImportFiles.Failure.destinationConflict
+        }
         let directory = files.chaptersDirectory(bookID: identity.bookID)
+        removeStaleStaging(bookID: identity.bookID)
         try LocalAudioImportFiles.checkPath(directory, under: files.root)
         try files.createDirectoryIfNeeded(directory)
         let staging = directory.appendingPathComponent(".import-\(UUID().uuidString).mp3")

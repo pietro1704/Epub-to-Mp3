@@ -60,4 +60,17 @@ final class PlaybackArtifactLocationTests: XCTestCase {
             forDownloadPath: remote, jobId: "job", chapterIndex: 1, backendBaseURL: nil)
         XCTAssertEqual(streamed?.absoluteString, remote)
     }
+    func testTheKeptCopyStandsInWhenTheChaptersOwnFileCannotBePrepared() throws {
+        // An MP3 that cannot be prepared for playback: the same test the
+        // migration applies before it lets go of a kept copy.
+        let own = root.appendingPathComponent("broken.mp3")
+        try Data("not an mp3".utf8).write(to: own)
+        XCTAssertFalse(PlaybackArtifactLocation.isPlayable(own))
+        let copy = try keepLegacyCopy(job: "job", chapter: 3)
+        let resolved = PlaybackArtifactLocation.resolve(
+            forDownloadPath: own.path, jobId: "job", chapterIndex: 3, backendBaseURL: nil)
+        XCTAssertEqual(resolved?.resolvingSymlinksInPath().path, copy.resolvingSymlinksInPath().path)
+        XCTAssertTrue(PlaybackArtifactLocation.isPlayable(copy))
+        XCTAssertFalse(PlaybackArtifactLocation.isPlayable(root.appendingPathComponent("absent.wav")))
+    }
 }

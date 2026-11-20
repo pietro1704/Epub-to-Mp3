@@ -95,22 +95,27 @@ actor RustConversionOutputStore {
         writer.waiters.forEach { $0.resume() }
     }
 
-    /// The book a job's output directory was created for: its ownership record
-    /// or, for jobs older than that record, the content hash of the recorded source.
-    func bookID(forJob jobID: String) async -> String? {
-        guard let directory = try? jobDirectory(jobID),
-              FileManager.default.fileExists(atPath: directory.path) else { return nil }
-        if let identity = ownership(at: directory) { return identity.bookID }
-        return await legacyBookID(at: directory)
-    }
-
-    /// What the job's output directory itself records: the book in its
-    /// ownership file, and whether its chapter indices were projected onto the
-    /// reader's axis (the conversion wrote `reader-chapter-map.json`). Nil for a
-    /// job without an ownership file; nothing is derived from a source path.
+    /// What the job's own output records about it: the book in its ownership
+    /// file, and whether its chapter indices are the reader's. They are when the
+    /// conversion wrote `reader-chapter-map.json` (an EPUB converted for the
+    /// reader), or when the recorded source is not an EPUB: only EPUBs have a
+    /// reader chapter list that can differ from the converter's. Nil for a job
+    /// without an ownership file; nothing is derived from titles or paths.
     func recordedOwner(ofJob jobID: String) -> (bookID: String, usesReaderAxis: Bool)? {
         guard let directory = try? jobDirectory(jobID), let identity = ownership(at: directory) else { return nil }
-        return (identity.bookID, regularMetadata(at: directory.appendingPathComponent("reader-chapter-map.json")))
+        if regularMetadata(at: directory.appendingPathComponent("reader-chapter-map.json")) {
+            return (identity.bookID, true)
+        }
+        let record = root.appendingPathComponent(".jobs", isDirectory: true)
+            .appendingPathComponent(directory.lastPathComponent + ".json")
+        guard regularMetadata(at: record), let data = try? Data(contentsOf: record),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["job_id"] as? String == directory.lastPathComponent,
+              let input = (json["metadata"] as? [String: Any])?["input"] as? String else {
+            return (identity.bookID, false)
+        }
+        let sourceType = URL(fileURLWithPath: input).pathExtension.lowercased()
+        return (identity.bookID, !sourceType.isEmpty && sourceType != "epub")
     }
 
     /// All Rust outputs are protected audio; temporary-cache cleanup never visits this root.

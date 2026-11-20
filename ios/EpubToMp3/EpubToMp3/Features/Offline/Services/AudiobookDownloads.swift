@@ -42,6 +42,20 @@ actor AudiobookDownloads {
         await stopLegacyMigration()
     }
 
+    /// Stops the migration and every Download that writes to this book, and
+    /// waits for them, so a removal of the book's kept audio is not undone by a
+    /// chapter still being copied. A Download whose book is not known yet is
+    /// stopped too.
+    func quiesceWrites(bookID: String) async {
+        await stopLegacyMigration()
+        let stopping = writingTasks.filter { entry in
+            guard let book = writingBooks[entry.key] else { return true }
+            return book == bookID
+        }
+        for writer in stopping.values { cancel(jobId: writer.jobId) }
+        for writer in stopping.values { await writer.task.value }
+    }
+
     /// Stable identifier lets iOS reconnect to pending tasks after suspension
     /// or a system relaunch of the app.
     nonisolated static let backgroundSessionIdentifier = "com.pietrocode.epubtomp3.downloads"
@@ -72,6 +86,8 @@ actor AudiobookDownloads {
         let chapters: [JobSnapshot.Chapter]
         let baseURL: URL?
     }
+    /// The book each running Download writes to, once its owner is resolved.
+    private var writingBooks: [UUID: String] = [:]
     private var storageMaintenance: Set<UUID> = []
     private var bookStorageMaintenance: [UUID: String] = [:]
     private var deferredDownloads: [String: DeferredDownload] = [:]
@@ -156,6 +172,7 @@ actor AudiobookDownloads {
         let task = Task { [self] in
             defer {
                 writingTasks.removeValue(forKey: operationID)
+                writingBooks.removeValue(forKey: operationID)
                 if activeTasks[snapshot.jobId] == operationID {
                     activeTasks.removeValue(forKey: snapshot.jobId)
                 }
@@ -317,6 +334,7 @@ actor AudiobookDownloads {
         var completed = 0
         var totalBytes: Int64 = 0
         let owner = await resolveOwner(snapshot)
+        if let owner { writingBooks[operationID] = owner.bookID }
         // Audio the previous layout already keeps stays there until it is migrated.
         let keptByPreviousLayout = AudiobookDownloadStorage.locallyDownloadedIndices(for: snapshot.jobId)
 

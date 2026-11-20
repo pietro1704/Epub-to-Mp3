@@ -50,6 +50,7 @@ extension LocalAudioArtifactStore {
             let expected = try files.fileSize(at: source)
             guard expected > 0 else { throw StoreError.invalidAudioFile(source) }
             try files.createDirectoryIfNeeded(directory)
+            removeStaleStaging(bookID: request.bookID)
             let staging = directory.appendingPathComponent(".download-\(UUID().uuidString).mp3")
             defer { try? files.fileManager.removeItem(at: staging) }
             // copyItem clones on APFS, so keeping a converted chapter costs no second copy.
@@ -137,6 +138,17 @@ extension LocalAudioArtifactStore {
             throw LocalAudioImportFiles.Failure.destinationConflict
         }
         return manifest
+    }
+
+    /// Removes staging files a killed process left in the book's chapter
+    /// folder. Store writes are serialized by this actor, so no other write can
+    /// have a staging file in flight when one starts.
+    func removeStaleStaging(bookID: String) {
+        let directory = files.chaptersDirectory(bookID: bookID)
+        let names = (try? files.fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.hasPrefix(".download-") || name.hasPrefix(".import-") {
+            try? files.fileManager.removeItem(at: directory.appendingPathComponent(name))
+        }
     }
 
     private func isCanonicalFile(_ url: URL, bookID: String, chapterIndex: Int) -> Bool {

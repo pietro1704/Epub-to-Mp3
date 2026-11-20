@@ -37,6 +37,8 @@ struct BookDownloadStorage: Sendable {
     }
 
     func remove(_ entry: Entry) async throws {
+        // Downloads now write to the book, whatever job they come from.
+        await downloads.quiesceWrites(bookID: entry.book.bookID)
         if let jobID = entry.jobID {
             guard let directory = directory(jobID) else { throw CocoaError(.fileReadInvalidFileName) }
             try await downloads.withBookStorageMaintenance(jobId: jobID) {
@@ -48,7 +50,6 @@ struct BookDownloadStorage: Sendable {
                 try await artifacts.clearDownloadedAudio(bookID: entry.book.bookID)
             }
         } else {
-            await downloads.quiesceLegacyMigration()
             try Task.checkCancellation()
             try await artifacts.clearDownloadedAudio(bookID: entry.book.bookID)
         }

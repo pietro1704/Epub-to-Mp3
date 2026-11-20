@@ -13,8 +13,9 @@ struct RetainedAudioOwner: Equatable, Sendable {
 
     func snapshotIndex(forStoreIndex index: Int) -> Int { index + indexBase }
 
-    /// Nil when the snapshot does not declare its index axis or no record names
-    /// its book. Titles and index heuristics never establish identity.
+    /// Nil when the snapshot does not declare its index axis, its job has no
+    /// ownership record, or the job's indices are the converter's own rather
+    /// than the reader's. Titles and index heuristics never establish identity.
     static func resolve(
         _ snapshot: JobSnapshot, rustOutputs: RustConversionOutputStore = .shared
     ) async -> RetainedAudioOwner? {
@@ -24,7 +25,9 @@ struct RetainedAudioOwner: Equatable, Sendable {
             let bookID = String(snapshot.jobId.dropFirst(embeddedPrefix.count))
             return bookID.isEmpty ? nil : RetainedAudioOwner(bookID: bookID, indexBase: base)
         }
-        guard let bookID = await rustOutputs.bookID(forJob: snapshot.jobId) else { return nil }
-        return RetainedAudioOwner(bookID: bookID, indexBase: base)
+        guard let owner = await rustOutputs.recordedOwner(ofJob: snapshot.jobId), owner.usesReaderAxis else {
+            return nil
+        }
+        return RetainedAudioOwner(bookID: owner.bookID, indexBase: base)
     }
 }
