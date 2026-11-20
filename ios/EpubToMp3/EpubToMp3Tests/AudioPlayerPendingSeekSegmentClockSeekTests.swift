@@ -10,6 +10,69 @@ import UIKit
 
 extension AudioPlayerPendingSeekTests {
     @MainActor
+    func testFifteenThirtyAndSixtySecondSkipsCrossFileChapterBoundaries() async throws {
+        try await withPlayingFixture(fileChapterDuration: 40, providesFileDurations: false, includeReadyThirdChapter: true) { player, snapshot in
+            player.pause()
+            for (seconds, following, forwardTime, preceding, backwardTime) in [
+                (15.0, 1, 10.0, 1, 30.0),
+                (30.0, 1, 25.0, 1, 15.0),
+                (60.0, 2, 15.0, 0, 25.0)
+            ] {
+                player.play(snapshot: snapshot(true), startingAt: 0, restoreAutoplay: false)
+                player.seek(to: 35)
+                try await self.waitForNavigation(player)
+                player.skipForward(seconds: seconds)
+                try await self.waitForNavigation(player)
+                XCTAssertEqual(player.currentChapterIndex, following)
+                XCTAssertEqual(player.positionSeconds, forwardTime, accuracy: 0.15)
+                XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, forwardTime, accuracy: 0.15)
+                XCTAssertFalse(player.isPlaying)
+
+                player.play(snapshot: snapshot(true), startingAt: 2, restoreAutoplay: false)
+                player.seek(to: 5)
+                try await self.waitForNavigation(player)
+                player.skipBackward(seconds: seconds)
+                try await self.waitForNavigation(player)
+                XCTAssertEqual(player.currentChapterIndex, preceding)
+                XCTAssertEqual(player.positionSeconds, backwardTime, accuracy: 0.15)
+                XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, backwardTime, accuracy: 0.15)
+                XCTAssertFalse(player.isPlaying)
+            }
+
+            player.play(snapshot: snapshot(true), startingAt: 0, restoreAutoplay: false)
+            player.seek(to: 35)
+            try await self.waitForNavigation(player)
+            player.resume()
+            player.skipForward(seconds: 15)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.currentChapterIndex, 1)
+            XCTAssertTrue(player.isPlaying)
+        }
+    }
+
+    @MainActor
+    func testStreamingSkipCarriesRemainderWhenCurrentChapterFinishesLate() async throws {
+        try await withPlayingFixture(streaming: true, streamSegmentCount: 1) { player, snapshot in
+            player.pause()
+            player.seek(to: 10)
+            try await self.waitForNavigation(player)
+            player.skipForward(seconds: 15)
+            XCTAssertTrue(player.isSeeking)
+            player.setSnapshot(snapshot(true))
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.currentChapterIndex, 1)
+            XCTAssertEqual(player.positionSeconds, 10, accuracy: 0.15)
+            XCTAssertFalse(player.isPlaying)
+            player.skipBackward(seconds: 15)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.currentChapterIndex, 0)
+            XCTAssertEqual(player.positionSeconds, 10, accuracy: 0.15)
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 10, accuracy: 0.15)
+            XCTAssertFalse(player.isPlaying)
+        }
+    }
+
+    @MainActor
     func testChapterRelativeSeekSelectsRetainedSegmentAndRestoresBaseWhilePaused() async throws {
         try await withPlayingFixture(streaming: true) { player, _ in
             player.pause()

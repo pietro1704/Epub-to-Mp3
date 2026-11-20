@@ -50,13 +50,12 @@ final class PlaybackTransportCommands {
     private let journeys: PlaybackJourneyRecorder
     private let resumePersistence: PlaybackResumeStore
     private let clock: PlaybackClock
-    private let broadcast: PlaybackBroadcast
     private let actions: Actions
     private let log = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
     init(queue: PlaybackQueueSession, segments: PlaybackSegmentSession, chapters: PlaybackChapterSession,
          seeking: PlaybackSeekExecution, system: PlaybackSystemSession, speech: SpeechFallbackPlayer,
          navigation: ChapterNavigationDecision, journeys: PlaybackJourneyRecorder,
-         resume: PlaybackResumeStore, clock: PlaybackClock, broadcast: PlaybackBroadcast, actions: Actions) {
+         resume: PlaybackResumeStore, clock: PlaybackClock, actions: Actions) {
         queueSession = queue
         self.segments = segments
         chapterSession = chapters
@@ -67,7 +66,6 @@ final class PlaybackTransportCommands {
         self.journeys = journeys
         resumePersistence = resume
         self.clock = clock
-        self.broadcast = broadcast
         self.actions = actions
     }
     private var snapshot: JobSnapshot? { actions.state().snapshot }
@@ -90,7 +88,6 @@ final class PlaybackTransportCommands {
         get { clock.positionSeconds }
         set { clock.update(positionSeconds: newValue) }
     }
-    private var durationSeconds: TimeInterval { clock.durationSeconds }
     private var currentChapterIndex: Int {
         get { queueSession.currentChapterIndex }
         set { queueSession.selectChapter(newValue) }
@@ -240,48 +237,18 @@ final class PlaybackTransportCommands {
         actions.publish()
     }
 
-    /// Relative chapter navigation must resolve its target segment through the
-    /// same seek path as the progress slider, including pending audio and intent.
     func skip(by deltaSeconds: TimeInterval) {
-        clock.audioOutput.clear()
-        guard deltaSeconds.isFinite else { return }
-        if isSegmentMode {
-            seeking.seek(to: max(0, positionSeconds + deltaSeconds))
-            return
-        }
-        seeking.cancel()
-        guard let target = queueSession.skip(by: deltaSeconds, duration: durationSeconds) else { return }
-        positionSeconds = target
-        broadcast.publishPosition(positionSeconds)
-        actions.publish()
+        seeking.skip(by: deltaSeconds)
     }
 
-    /// Skip forward by `seconds` (default 15 s). Clamped to [0, duration].
     func skipForward(seconds: Double? = nil) {
         skip(by: seconds ?? PlaybackSystemSession.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey))
     }
 
-    /// Skip backward by `seconds` (default 15 s). Clamped to [0, duration].
     func skipBackward(seconds: Double? = nil) {
-        let seconds = seconds ?? PlaybackSystemSession.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey)
-        guard seconds > 0, positionSeconds <= seconds else {
-            skip(by: -seconds)
-            return
-        }
-        rewindToCurrentChapterStart()
+        skip(by: -(seconds ?? PlaybackSystemSession.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey)))
     }
 
-    func rewindToCurrentChapterStart() {
-        clock.audioOutput.clear()
-        seeking.cancel()
-        guard player != nil else { return }
-        guard queueSession.rewind(chapter: segments.chapterIndex, segmentMode: isSegmentMode,
-                                  isPlaying: isPlaying, rate: rate) else { skip(by: -positionSeconds); return }
-        if isSegmentMode { segments.setBase(0) }
-        positionSeconds = 0
-        broadcast.publishPosition(positionSeconds)
-        actions.publish()
-    }
     #if os(iOS)
     func handleInterruption(typeRaw: UInt?, optionRaw: UInt) {
         switch systemPlayback.interruptionAction(typeRaw: typeRaw, optionRaw: optionRaw, isPlaying: isPlaying) {

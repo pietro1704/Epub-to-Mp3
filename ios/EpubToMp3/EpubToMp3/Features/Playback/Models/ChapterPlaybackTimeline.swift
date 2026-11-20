@@ -28,6 +28,43 @@ struct ChapterPlaybackTimeline: Equatable {
         }
     }
 
+    enum RelativePosition: Equatable {
+        case target(chapter: Int, time: TimeInterval)
+        case needsDuration(chapter: Int)
+    }
+
+    /// Walk only the chapters crossed by the offset. A duration estimate is
+    /// never proof that a forward skip can leave an unfinished stream.
+    static func resolveRelativePosition(
+        chapter: Int, time: TimeInterval, chapters: [Int],
+        waitForForwardDuration: Bool = true, duration: (Int) -> TimeInterval?
+    ) -> RelativePosition? {
+        guard time.isFinite, var index = chapters.firstIndex(of: chapter) else { return nil }
+        var position = time
+        func measured(_ chapter: Int) -> TimeInterval? {
+            guard let value = duration(chapter), value.isFinite, value > 0 else { return nil }
+            return value
+        }
+
+        while position < 0 {
+            guard index > chapters.startIndex else { return .target(chapter: chapters[index], time: 0) }
+            index -= 1
+            let previous = chapters[index]
+            guard let length = measured(previous) else { return .needsDuration(chapter: previous) }
+            position += length
+        }
+        while true {
+            let current = chapters[index]
+            guard let length = measured(current) else {
+                return waitForForwardDuration ? .needsDuration(chapter: current) : .target(chapter: current, time: position)
+            }
+            if position < length { return .target(chapter: current, time: position) }
+            guard index < chapters.count - 1 else { return .target(chapter: current, time: length) }
+            position -= length
+            index += 1
+        }
+    }
+
     func remaining(position: TimeInterval, rate: Double) -> TimeInterval {
         guard position.isFinite, rate.isFinite, rate > 0 else { return 0 }
         return max(0, duration - max(0, position)) / rate

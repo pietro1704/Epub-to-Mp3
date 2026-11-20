@@ -96,6 +96,25 @@ final class NativeTransportFeedbackTests: XCTestCase {
             try await ready(player)
             XCTAssertEqual(player.currentChapterIndex, 0)
             XCTAssertFalse(player.isPlaying)
+            for interval in [15.0, 30.0, 60.0] {
+                try await seek(player, to: 55)
+                player.skipForward(seconds: interval)
+                try await ready(player)
+                XCTAssertEqual(player.currentChapterIndex, 1, "Forward \(interval) s must cross the chapter end")
+                XCTAssertEqual(player.positionSeconds, interval - 5, accuracy: 0.15)
+                XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds,
+                               interval - 5, accuracy: 0.15)
+                XCTAssertFalse(player.isPlaying)
+
+                try await seek(player, to: 5)
+                player.skipBackward(seconds: interval)
+                try await ready(player)
+                XCTAssertEqual(player.currentChapterIndex, 0, "Backward \(interval) s must cross the chapter start")
+                XCTAssertEqual(player.positionSeconds, 65 - interval, accuracy: 0.15)
+                XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds,
+                               65 - interval, accuracy: 0.15)
+                XCTAssertFalse(player.isPlaying)
+            }
         }
     }
 

@@ -239,34 +239,4 @@ final class PlaybackQueueSession: ObservableObject {
         }
     }
 
-    func skip(by delta: TimeInterval, duration: TimeInterval) -> TimeInterval? {
-        guard let player else { return nil }
-        let raw = player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0
-        let cap = duration.isFinite && duration > 0 ? duration : .infinity
-        let target = max(0, min(cap, raw + delta))
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
-        return target
-    }
-
-    func rewind(chapter: Int, segmentMode: Bool, isPlaying: Bool, rate: PlaybackRate) -> Bool {
-        guard let queue = player else { return false }
-        if segmentMode {
-            let items = queue.items()
-            guard let firstIndex = items.firstIndex(where: { item in
-                guard let asset = item.asset as? AVURLAsset else { return false }
-                return PlaybackSegmentSession.chapterIndexForSegmentItem(asset.url) == chapter
-            }) else { return false }
-            let remaining = Array(items[firstIndex...])
-            queue.removeAllItems()
-            var previous: AVPlayerItem?
-            for item in remaining {
-                queue.insert(item, after: previous)
-                previous = item
-            }
-            queue.seek(to: .zero)
-            queue.rate = isPlaying ? rate.rawValue : 0
-        } else { queue.seek(to: .zero) }
-        return true
-    }
-
 }
