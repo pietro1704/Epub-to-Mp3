@@ -171,6 +171,21 @@ module ConverterFfiLocalBuild
     output
   end
 
+  METADATA = %w[mise exec -- cargo metadata --format-version 1 --offline].freeze
+
+  # Offline metadata needs the downloaded .crate archives. Cargo's cache cleanup
+  # can delete them while the extracted sources stay; then fetch exactly the
+  # Cargo.lock versions once and retry offline. The cargo build that follows a
+  # change needs those crates anyway.
+  def cargo_metadata(root, run: method(:capture!))
+    run.call(root, *METADATA)
+  rescue RuntimeError => error
+    raise unless error.message.include?("--offline was specified")
+    warn "converter-ffi local-dev: the Cargo registry cache lacks locked crates; running cargo fetch --locked once"
+    run.call(root, "mise", "exec", "--", "cargo", "fetch", "--locked")
+    run.call(root, *METADATA)
+  end
+
   def main(root: File.expand_path("..", __dir__))
     raise "converter-ffi:build:local supports macOS only" unless RUBY_PLATFORM.include?("darwin")
     runtime = IO.popen(["mise", "exec", "--", "ruby", "scripts/prepare_onnxruntime_macos.rb"], NativeJob.child_options, &:read).strip
@@ -181,7 +196,7 @@ module ConverterFfiLocalBuild
       "rustc" => capture!(root, "mise", "exec", "--", "rustc", "-vV").strip,
       "onnxruntime" => File.file?(runtime_library) ? Digest::SHA256.file(runtime_library).hexdigest : "missing"
     }
-    packages = path_packages(JSON.parse(capture!(root, "mise", "exec", "--", "cargo", "metadata", "--format-version", "1", "--offline")), root)
+    packages = path_packages(JSON.parse(cargo_metadata(root)), root)
     current = inputs(root, packages, environment.merge(fingerprint))
     library = library_path(root)
     decision = plan(current, read_stamp(root), library,
