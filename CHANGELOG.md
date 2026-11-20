@@ -4,6 +4,37 @@
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-11-20
+
+First release since 0.5.8. The version jumps to 0.9.0 to reflect how much of the
+product changed; the release notes published with the tag list every merged pull
+request.
+
+### Added
+
+- PDF reading and audio parity with EPUB in the native reader.
+- Rails web client with in-browser conversion (Rust/WASM + Piper), served by the
+  Hugging Face Space; it replaces the React web app.
+- Rust CLI: PDF input, chapter ranges, `--force-reprocess`, `--retry-failed*`
+  and `--verify-only`.
+- `converter-server` conversion through the shared typed provider/model
+  selection (Piper default, system fallback, Edge only with explicit consent).
+- Automatic release flow: a validated merge opens the version-bump pull request
+  and publishes the tagged release.
+
+### Changed
+
+- Apple clients share one book-open state machine and one playback relaunch
+  restoration between iOS and Mac.
+- Voice preferences use a single `TtsSelection`; persisted keys migrate on first
+  launch.
+- Host scripts are Ruby; the version source is the workspace `Cargo.toml`.
+
+### Removed
+
+- Legacy Python application, Kokoro, the remote HTTP backend of the Apple
+  clients, the Tauri/Capacitor packaging and the React `web/` client.
+
 ## [0.5.8] — 2026-05-19
 
 ### Added (iOS)
