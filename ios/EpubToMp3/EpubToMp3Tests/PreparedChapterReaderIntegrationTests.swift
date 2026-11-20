@@ -30,7 +30,7 @@ final class PreparedChapterReaderIntegrationTests: XCTestCase {
         let directory = root.appendingPathComponent("archives", isDirectory: true)
         let store = PreparedChapterArchiveStore(directory: directory)
         let producer = PreparedChapterRenderer(store: store)
-        let rendered = try XCTUnwrap(producer.render(bookID: id, chapterIndex: 0, chapter: chapter, settings: settings))
+        let rendered = try XCTUnwrap(producer.render(bookID: id, chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         await producer.flush()
         let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
         let envelope = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: file), format: nil) as? [String: Any])
@@ -126,7 +126,7 @@ final class PreparedChapterReaderIntegrationTests: XCTestCase {
         let restoration = PreparedProjectionRestoration(
             projection: PreparedProjectionRead(snapshot: snapshot,
                 progress: .init(chapterIndex: 0, offsetFraction: 0.5)),
-            style: renderer.styleSnapshot(settings: settings, fontDirectoryURL: nil), renderer: nil)
+            style: renderer.styleSnapshot(textSettings: ReaderTextSettings(settings: settings), fontDirectoryURL: nil), renderer: nil)
         // The asynchronous presenter and committed-layout fast path share one
         // result. Hydration releases activePreparedChapter after presentation.
         presentation.restoration.slot.store(restoration)

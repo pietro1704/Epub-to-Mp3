@@ -129,7 +129,7 @@ final class MacReaderViewComposition {
         contentScrollView.documentView = textView
         contentScrollView.hasVerticalScroller = true
         MacReaderTheme.apply(
-            settings: settings,
+            textSettings: ReaderTextSettings(settings: settings),
             surface: view,
             scrollView: contentScrollView,
             textView: textView,

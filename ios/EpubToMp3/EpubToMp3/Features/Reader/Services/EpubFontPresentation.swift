@@ -32,14 +32,14 @@ enum EpubFontPresentation {
     /// override is off.
     static func applyOverrides(
         to attr: NSMutableAttributedString,
-        settings: AppSettings,
+        textSettings: ReaderTextSettings,
         bodyFontSize: CGFloat
     ) {
         let fullRange = NSRange(location: 0, length: attr.length)
         guard fullRange.length > 0 else { return }
 
-        let overrideFamily = settings.readerOverrideFontFamily
-        let overrideSize = settings.readerOverrideFontSize
+        let overrideFamily = textSettings.overridesFontFamily
+        let overrideSize = textSettings.overridesFontSize
         // Override the EPUB's hardcoded colours for every theme except
         // `.light`. `.auto` USED to opt out — but the EPUB's CSS almost
         // always pins `color: #000` (black) on body text and assumes a
@@ -49,20 +49,20 @@ enum EpubFontPresentation {
         // dynamic system colour that flips with appearance) in
         // `.auto` so dark mode renders white text on dark, light mode
         // renders black on white.
-        let overrideColours = settings.readerOverrideColours
-            || settings.readerTheme != .light
-        let boldAll = settings.readerBoldOverride
-        let suppressItalic = settings.readerSuppressItalic
-        let letterSpacing = settings.readerLetterSpacing
+        let overrideColours = textSettings.overridesColours
+            || textSettings.theme != .light
+        let boldAll = textSettings.boldOverride
+        let suppressItalic = textSettings.suppressesItalic
+        let letterSpacing = textSettings.letterSpacing
 
         #if canImport(UIKit)
-        let targetSize = UIFontMetrics(forTextStyle: .body).scaledValue(for: settings.readerPointSize)
+        let targetSize = UIFontMetrics(forTextStyle: .body).scaledValue(for: textSettings.pointSize)
         #else
-        let targetSize = settings.readerPointSize
+        let targetSize = textSettings.pointSize
         #endif
-        let targetFamily = overrideFamily && settings.readerFontFamily != .original
-            ? ReaderFontCatalog.font(for: settings.readerFontFamily, size: targetSize) : nil
-        let colors = settings.readerColors
+        let targetFamily = overrideFamily && textSettings.fontFamily != .original
+            ? ReaderFontCatalog.font(for: textSettings.fontFamily, size: targetSize) : nil
+        let colors = textSettings.colors
 
         attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             // ---- Font ----------------------------------------------
@@ -103,7 +103,7 @@ enum EpubFontPresentation {
             // overridden. Justified text also needs native word breaking;
             // the viewport owns clipping protection and oversized fragments.
             let publisherJustifies = (attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment == .justified
-            guard settings.readerOverrideTextAlignment || settings.readerOverrideLineSpacing || publisherJustifies else { return }
+            guard textSettings.overridesAlignment || textSettings.overridesLineSpacing || publisherJustifies else { return }
             let mutable: NSMutableParagraphStyle = {
                 if let original = attrs[.paragraphStyle] as? NSParagraphStyle,
                    let copy = original.mutableCopy() as? NSMutableParagraphStyle {
@@ -111,7 +111,7 @@ enum EpubFontPresentation {
                 }
                 return NSMutableParagraphStyle()
             }()
-            if settings.readerOverrideLineSpacing { mutable.lineSpacing = CGFloat(settings.readerLineSpacing) }
+            if textSettings.overridesLineSpacing { mutable.lineSpacing = CGFloat(textSettings.lineSpacing) }
             // Preserve the EPUB's INTENTIONAL centred/right alignment only
             // for HEADINGS — detected structurally by the EPUB's OWN
             // typography: a heading run renders larger than the chapter's
@@ -124,11 +124,11 @@ enum EpubFontPresentation {
             // or below the body size always take the user's alignment.
             let epubAlignment = (attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment
             let isHeadingRun = bodyFontSize > 0 && baseFont.pointSize > bodyFontSize + 0.5
-            if settings.readerOverrideTextAlignment {
+            if textSettings.overridesAlignment {
                 if (epubAlignment == .center || epubAlignment == .right), isHeadingRun {
                     mutable.alignment = epubAlignment!
                 } else {
-                    mutable.alignment = settings.readerTextAlignment == .justified ? .justified : .left
+                    mutable.alignment = textSettings.alignment == .justified ? .justified : .left
                 }
             }
             if mutable.alignment == .justified {

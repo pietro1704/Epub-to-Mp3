@@ -132,29 +132,27 @@ final class PreparedChapterRenderer {
         memory.countLimit = 2
     }
 
-    func styleSnapshot(settings: AppSettings, fontDirectoryURL: URL? = nil) -> PreparedChapterRendererStyle {
-        let colors = settings.readerCustomColors
+    func styleSnapshot(textSettings: ReaderTextSettings, fontDirectoryURL: URL? = nil) -> PreparedChapterRendererStyle {
 #if os(iOS)
         let platform = "iOS:\(UIApplication.shared.preferredContentSizeCategory.rawValue)"
 #else
         let platform = "macOS"
 #endif
         return PreparedChapterRendererStyle(
-            boldOverride: settings.readerBoldOverride,
-            customColors: [colors.background.0, colors.background.1, colors.background.2,
-                           colors.foreground.0, colors.foreground.1, colors.foreground.2],
-            fontFamily: settings.readerFontFamily.rawValue + (settings.readerOverrideFontFamily ? ":" + ReaderFontCatalog.font(for: settings.readerFontFamily, size: settings.readerPointSize).fontName : ""),
-            letterSpacing: settings.readerLetterSpacing,
-            lineSpacing: Double(settings.readerLineSpacing),
-            overrideColours: settings.readerOverrideColours,
-            overrideFontFamily: settings.readerOverrideFontFamily,
-            overrideFontSize: settings.readerOverrideFontSize,
-            overrideTextAlignment: settings.readerOverrideTextAlignment,
-            overrideLineSpacing: settings.readerOverrideLineSpacing,
-            pointSize: Double(settings.readerPointSize),
-            suppressItalic: settings.readerSuppressItalic,
-            textAlignment: settings.readerTextAlignment.rawValue,
-            theme: settings.readerTheme.rawValue,
+            boldOverride: textSettings.boldOverride,
+            customColors: textSettings.customColors,
+            fontFamily: textSettings.fontFamily.rawValue + (textSettings.overridesFontFamily ? ":" + ReaderFontCatalog.font(for: textSettings.fontFamily, size: textSettings.pointSize).fontName : ""),
+            letterSpacing: textSettings.letterSpacing,
+            lineSpacing: textSettings.lineSpacing,
+            overrideColours: textSettings.overridesColours,
+            overrideFontFamily: textSettings.overridesFontFamily,
+            overrideFontSize: textSettings.overridesFontSize,
+            overrideTextAlignment: textSettings.overridesAlignment,
+            overrideLineSpacing: textSettings.overridesLineSpacing,
+            pointSize: Double(textSettings.pointSize),
+            suppressItalic: textSettings.suppressesItalic,
+            textAlignment: textSettings.alignment.rawValue,
+            theme: textSettings.theme.rawValue,
             fontDirectory: fontDirectoryURL?.standardizedFileURL.absoluteString,
             platform: platform,
             operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
@@ -173,15 +171,17 @@ final class PreparedChapterRenderer {
     }
 
     func cached(bookID: String, chapterIndex: Int, chapter: EbookFulltext.Chapter,
-                settings: AppSettings, fontDirectoryURL: URL? = nil) -> NSAttributedString? {
-        guard let signature = signature(chapter, settings, fontDirectoryURL) else { return nil }
+                textSettings: ReaderTextSettings, fontDirectoryURL: URL? = nil) -> NSAttributedString? {
+        guard let signature = signature(chapter, textSettings, fontDirectoryURL) else { return nil }
         return cached(key: memoryKey(bookID, chapterIndex, signature))
     }
 
+    /// `currentTextSettings` is read before and again after the disk restore,
+    /// so a settings change during the await discards the restored rendering.
     func restore(bookID: String, chapterIndex: Int, chapter: EbookFulltext.Chapter,
-                 settings: AppSettings, fontDirectoryURL: URL? = nil,
+                 currentTextSettings: () -> ReaderTextSettings, fontDirectoryURL: URL? = nil,
                  stageObserver: (@Sendable (String, UInt64) -> Void)? = nil) async -> NSAttributedString? {
-        let style = styleSnapshot(settings: settings, fontDirectoryURL: fontDirectoryURL)
+        let style = styleSnapshot(textSettings: currentTextSettings(), fontDirectoryURL: fontDirectoryURL)
         guard let signature = Self.makeSignature(chapter, style) else { return nil }
         let key = memoryKey(bookID, chapterIndex, signature)
         if let cached = cached(key: key) { return cached }
@@ -193,18 +193,18 @@ final class PreparedChapterRenderer {
             signature: signature,
             stageObserver: stageObserver
         ),
-              Self.makeSignature(chapter, styleSnapshot(settings: settings,
+              Self.makeSignature(chapter, styleSnapshot(textSettings: currentTextSettings(),
                   fontDirectoryURL: fontDirectoryURL)) == signature else { return nil }
         memory.setObject(restoration.archive as NSData, forKey: key)
         return restoration.attributedText
     }
 
     func render(bookID: String, chapterIndex: Int, chapter: EbookFulltext.Chapter,
-                settings: AppSettings, fontDirectoryURL: URL? = nil) -> NSAttributedString? {
-        let signature = signature(chapter, settings, fontDirectoryURL)
+                textSettings: ReaderTextSettings, fontDirectoryURL: URL? = nil) -> NSAttributedString? {
+        let signature = signature(chapter, textSettings, fontDirectoryURL)
         if let signature, let cached = cached(key: memoryKey(bookID, chapterIndex, signature)) { return cached }
         guard let rendered = EpubHtmlRenderer.render(html: chapter.html ?? "", css: chapter.css,
-                                                     settings: settings, fontDirectoryURL: fontDirectoryURL,
+                                                     textSettings: textSettings, fontDirectoryURL: fontDirectoryURL,
                                                      resources: chapter.resources) else { return nil }
         let immutable = canonicalRendering(NSAttributedString(rendered))
         // Cache encoding cannot turn a valid native render into plain-text fallback.
@@ -284,8 +284,8 @@ final class PreparedChapterRenderer {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private func signature(_ chapter: EbookFulltext.Chapter, _ settings: AppSettings,
+    private func signature(_ chapter: EbookFulltext.Chapter, _ textSettings: ReaderTextSettings,
                            _ fontDirectory: URL?) -> String? {
-        Self.makeSignature(chapter, styleSnapshot(settings: settings, fontDirectoryURL: fontDirectory))
+        Self.makeSignature(chapter, styleSnapshot(textSettings: textSettings, fontDirectoryURL: fontDirectory))
     }
 }

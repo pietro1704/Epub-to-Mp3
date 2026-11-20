@@ -20,7 +20,7 @@ extension EpubHtmlRendererTests {
             #endif
             let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
                 html: "<p><span style='color:red;background-color:yellow'>Body</span></p>",
-                css: nil, settings: settings)))
+                css: nil, textSettings: ReaderTextSettings(settings: settings))))
             let location = (rendered.string as NSString).range(of: "Body").location
             let actual = try XCTUnwrap(rendered.attribute(.foregroundColor, at: location, effectiveRange: nil) as? PlatformColor)
             for (a, e) in zip(rgba(actual), rgba(expected)) {
@@ -37,7 +37,7 @@ extension EpubHtmlRendererTests {
         settings.readerTheme = .dark
         let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
             html: "<p><b>Body</b> <a href='#note'><i>Reference</i></a></p>",
-            css: nil, settings: settings)))
+            css: nil, textSettings: ReaderTextSettings(settings: settings))))
         let body = (rendered.string as NSString).range(of: "Body").location
         let link = (rendered.string as NSString).range(of: "Reference").location
         XCTAssertNotNil(rendered.attribute(.link, at: link, effectiveRange: nil))
@@ -62,7 +62,7 @@ extension EpubHtmlRendererTests {
         settings.readerOverrideColours = false
         let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
             html: "<p><span style='color:#ff0000'>Body</span> <a href='#note' style='color:#008000'>Reference</a></p>",
-            css: nil, settings: settings)))
+            css: nil, textSettings: ReaderTextSettings(settings: settings))))
         let body = (rendered.string as NSString).range(of: "Body").location
         let link = (rendered.string as NSString).range(of: "Reference").location
         let bodyColor = rgba(try XCTUnwrap(rendered.attribute(.foregroundColor, at: body, effectiveRange: nil) as? PlatformColor))
@@ -78,7 +78,7 @@ extension EpubHtmlRendererTests {
     func testRendersBoldAndItalic() {
         let s = makeSettings()
         let html = "<p><b>hi</b> <i>there</i></p>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil for non-empty HTML")
         }
         let n = ns(out)
@@ -108,7 +108,7 @@ extension EpubHtmlRendererTests {
         s.readerOverrideFontFamily = true
         s.readerFontFamily = .mono
         let html = "<p><b>hi</b> <i>there</i></p>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -137,7 +137,7 @@ extension EpubHtmlRendererTests {
         s.readerTheme = .custom
         s.readerCustomColors = (background: (1, 1, 1), foreground: (0, 0, 1)) // blue
         let html = "<p><span style=\"color:red\">hello</span></p>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -170,7 +170,7 @@ extension EpubHtmlRendererTests {
 
         s.restoreOriginal()
 
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -191,7 +191,7 @@ extension EpubHtmlRendererTests {
         let s = makeSettings()
         s.readerBoldOverride = true
         let html = "<p>plain prose, no markup</p>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -215,7 +215,7 @@ extension EpubHtmlRendererTests {
         let s = makeSettings()
         s.readerSuppressItalic = true
         let html = "<p><i>slanted text</i></p>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -234,7 +234,7 @@ extension EpubHtmlRendererTests {
         let s = makeSettings()
         s.readerLetterSpacing = 2
         let html = "<p>hello</p>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)

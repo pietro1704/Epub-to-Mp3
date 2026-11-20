@@ -108,7 +108,7 @@ final class MacReaderTextPresentation {
 
     func applyCurrentReaderTheme() {
         MacReaderTheme.apply(
-            settings: settings,
+            textSettings: ReaderTextSettings(settings: settings),
             surface: view,
             scrollView: contentScrollView,
             textView: textView,
@@ -121,7 +121,8 @@ final class MacReaderTextPresentation {
         guard let chapter = chapter(at: selectedChapter), !chapter.isImageOnly else { return }
         observeOpenStage("selected_chapter_restore_started")
         _ = await preparedRenderer.restore(bookID: bookID, chapterIndex: selectedChapter,
-                                           chapter: chapter, settings: settings, fontDirectoryURL: document.fontDirectoryURL)
+                                           chapter: chapter, currentTextSettings: { ReaderTextSettings(settings: self.settings) },
+                                           fontDirectoryURL: document.fontDirectoryURL)
         observeOpenStage("selected_chapter_restore_completed")
     }
 
@@ -143,7 +144,7 @@ final class MacReaderTextPresentation {
             if let bookID = currentBookId,
                let rendered = preparedRenderer.render(
                    bookID: bookID, chapterIndex: index, chapter: chapter,
-                   settings: settings, fontDirectoryURL: document.fontDirectoryURL
+                   textSettings: ReaderTextSettings(settings: settings), fontDirectoryURL: document.fontDirectoryURL
                ) {
                 textView.textStorage?.setAttributedString(NSAttributedString(attributedString: rendered))
             } else {

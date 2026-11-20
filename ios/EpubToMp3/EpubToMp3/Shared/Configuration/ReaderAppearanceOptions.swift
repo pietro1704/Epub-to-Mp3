@@ -90,35 +90,37 @@ enum ReaderColorScheme: Equatable {
     case dark
 }
 
-extension AppSettings {
+extension ReaderTheme {
     /// The reader page and attributed content share one palette. Explicit
     /// light/dark themes resolve Apple's semantic colors in that appearance;
     /// Auto keeps adaptive colors so it follows the host appearance.
-    var readerColors: (background: PlatformColor, foreground: PlatformColor, link: PlatformColor) {
+    func readerColors(
+        customColors custom: ReaderCustomColorCodec.Colors
+    ) -> (background: PlatformColor, foreground: PlatformColor, link: PlatformColor) {
         let base: (background: PlatformColor, foreground: PlatformColor)
-        if readerTheme == .custom {
-            let custom = readerCustomColors
+        if self == .custom {
             base = (
                 PlatformColor(red: CGFloat(custom.background.0), green: CGFloat(custom.background.1), blue: CGFloat(custom.background.2), alpha: 1),
                 PlatformColor(red: CGFloat(custom.foreground.0), green: CGFloat(custom.foreground.1), blue: CGFloat(custom.foreground.2), alpha: 1)
             )
         } else {
             #if canImport(UIKit)
-            base = readerTheme.previewColors
+            base = previewColors
             #else
-            base = readerTheme.macOSColors
+            base = macOSColors
             #endif
         }
+        let scheme = readerPreferredColorScheme(customColors: custom)
         #if canImport(UIKit)
         let link: UIColor
-        if let scheme = readerPreferredColorScheme {
+        if let scheme {
             link = UIColor.link.resolvedColor(with: UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light))
         } else {
             link = .link
         }
         #else
         var link = NSColor.linkColor
-        if let scheme = readerPreferredColorScheme {
+        if let scheme {
             NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
                 link = NSColor(cgColor: NSColor.linkColor.cgColor) ?? .linkColor
             }
@@ -127,15 +129,25 @@ extension AppSettings {
         return (base.background, base.foreground, link)
     }
 
-    var readerPreferredColorScheme: ReaderColorScheme? {
-        guard readerTheme == .custom else { return readerTheme.preferredColorScheme }
-        let rgb = readerCustomColors.background
+    func readerPreferredColorScheme(customColors custom: ReaderCustomColorCodec.Colors) -> ReaderColorScheme? {
+        guard self == .custom else { return preferredColorScheme }
+        let rgb = custom.background
         func linear(_ value: Double) -> Double {
             let channel = min(1, max(0, value))
             return channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
         }
         let luminance = 0.2126 * linear(rgb.0) + 0.7152 * linear(rgb.1) + 0.0722 * linear(rgb.2)
         return luminance < 0.179 ? .dark : .light
+    }
+}
+
+extension AppSettings {
+    var readerColors: (background: PlatformColor, foreground: PlatformColor, link: PlatformColor) {
+        readerTheme.readerColors(customColors: readerCustomColors)
+    }
+
+    var readerPreferredColorScheme: ReaderColorScheme? {
+        readerTheme.readerPreferredColorScheme(customColors: readerCustomColors)
     }
 }
 

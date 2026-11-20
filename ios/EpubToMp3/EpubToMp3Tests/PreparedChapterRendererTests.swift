@@ -60,17 +60,17 @@ final class PreparedChapterRendererTests: XCTestCase {
         let renderer = PreparedChapterRenderer(store: store)
         let settings = try settings()
         let chapter = chapter()
-        let first = try XCTUnwrap(renderer.render(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
-        let memory = try XCTUnwrap(renderer.cached(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
+        let first = try XCTUnwrap(renderer.render(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
+        let memory = try XCTUnwrap(renderer.cached(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         XCTAssertFalse(first === memory)
         XCTAssertEqual(first, memory)
         XCTAssertFalse(first is NSMutableAttributedString)
         let restoredMemory = await renderer.restore(bookID: "book", chapterIndex: 0,
-            chapter: chapter, settings: settings)
+            chapter: chapter, currentTextSettings: { ReaderTextSettings(settings: settings) })
         XCTAssertEqual(first, try XCTUnwrap(restoredMemory))
         XCTAssertFalse(first === restoredMemory)
         XCTAssertEqual(first, try XCTUnwrap(renderer.render(
-            bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings)))
+            bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings))))
         XCTAssertNotNil(first.attribute(.font, at: 0, effectiveRange: nil))
         XCTAssertNotNil(first.attribute(.paragraphStyle, at: 0, effectiveRange: nil))
         var hasLink = false
@@ -80,10 +80,10 @@ final class PreparedChapterRendererTests: XCTestCase {
         XCTAssertTrue(hasLink)
         await renderer.flush()
         let reopened = PreparedChapterRenderer(store: PreparedChapterArchiveStore(directory: root))
-        XCTAssertNil(reopened.cached(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
-        let restored = await reopened.restore(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings)
+        XCTAssertNil(reopened.cached(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
+        let restored = await reopened.restore(bookID: "book", chapterIndex: 0, chapter: chapter, currentTextSettings: { ReaderTextSettings(settings: settings) })
         XCTAssertEqual(first, try XCTUnwrap(restored))
-        XCTAssertNotNil(reopened.cached(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
+        XCTAssertNotNil(reopened.cached(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
     }
 
     @MainActor
@@ -93,7 +93,7 @@ final class PreparedChapterRendererTests: XCTestCase {
         let chapter = chapter()
         let initial = PreparedChapterRenderer(store: store)
         let expected = try XCTUnwrap(initial.render(
-            bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings
+            bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)
         ))
         await initial.flush()
 
@@ -103,7 +103,7 @@ final class PreparedChapterRendererTests: XCTestCase {
             bookID: "book",
             chapterIndex: 0,
             chapter: chapter,
-            settings: settings,
+            currentTextSettings: { ReaderTextSettings(settings: settings) },
             stageObserver: { stage, _ in stages.record(stage, onMainThread: Thread.isMainThread) }
         )
 
@@ -121,7 +121,7 @@ final class PreparedChapterRendererTests: XCTestCase {
         let renderer = PreparedChapterRenderer(store: store)
         let baseline = try settings()
         let chapter = chapter()
-        XCTAssertNotNil(renderer.render(bookID: "book", chapterIndex: 0, chapter: chapter, settings: baseline))
+        XCTAssertNotNil(renderer.render(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: baseline)))
         await renderer.flush()
         let mutations: [(AppSettings) -> Void] = [
             { $0.readerBoldOverride.toggle() },
@@ -136,10 +136,55 @@ final class PreparedChapterRendererTests: XCTestCase {
         for (index, mutate) in mutations.enumerated() {
             let changed = try settings()
             mutate(changed)
-            XCTAssertNil(renderer.cached(bookID: "book", chapterIndex: 0, chapter: chapter, settings: changed),
+            XCTAssertNil(renderer.cached(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: changed)),
                          "Memory setting mutation \(index)")
-            let restored = await renderer.restore(bookID: "book", chapterIndex: 0, chapter: chapter, settings: changed)
+            let restored = await renderer.restore(bookID: "book", chapterIndex: 0, chapter: chapter, currentTextSettings: { ReaderTextSettings(settings: changed) })
             XCTAssertNil(restored, "Archive setting mutation \(index)")
+        }
+    }
+
+    /// Archives written before renderers took `ReaderTextSettings` must keep
+    /// their signature, so every style field still carries the settings value.
+    @MainActor
+    func testStyleSnapshotCarriesTheSettingsValuesUnchanged() throws {
+        let renderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(directory: root))
+        let settings = try settings()
+        settings.readerCustomColors = (background: (0.1, 0.2, 0.3), foreground: (0.4, 0.5, 0.6))
+        settings.readerFontSize = 4
+        settings.readerFontFamily = .mono
+        settings.readerLineSpacing = 9
+        settings.readerLetterSpacing = 0.5
+        settings.readerTextAlignment = .left
+        settings.readerTheme = .sepia
+        settings.readerOverrideTextAlignment = true
+        settings.readerSuppressItalic = true
+        let style = renderer.styleSnapshot(textSettings: ReaderTextSettings(settings: settings))
+        XCTAssertEqual(style.customColors, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+        XCTAssertEqual(style.pointSize, Double(settings.readerPointSize))
+        XCTAssertEqual(style.fontFamily, ReaderFontFamily.mono.rawValue + ":"
+            + ReaderFontCatalog.font(for: .mono, size: settings.readerPointSize).fontName)
+        XCTAssertEqual(style.lineSpacing, 9)
+        XCTAssertEqual(style.letterSpacing, 0.5)
+        XCTAssertEqual(style.textAlignment, ReaderTextAlignment.left.rawValue)
+        XCTAssertEqual(style.theme, ReaderTheme.sepia.rawValue)
+        XCTAssertTrue(style.overrideFontFamily)
+        XCTAssertTrue(style.overrideTextAlignment)
+        XCTAssertTrue(style.suppressItalic)
+        XCTAssertFalse(style.boldOverride)
+    }
+
+    @MainActor
+    func testTextSettingsPaletteMatchesTheSettingsPalette() throws {
+        let settings = try settings()
+        settings.readerCustomColors = (background: (0.05, 0.1, 0.15), foreground: (0.9, 0.9, 0.8))
+        for theme in ReaderTheme.allCases {
+            settings.readerTheme = theme
+            let textSettings = ReaderTextSettings(settings: settings)
+            let expected = settings.readerColors
+            XCTAssertEqual(textSettings.colors.background, expected.background, "\(theme)")
+            XCTAssertEqual(textSettings.colors.foreground, expected.foreground, "\(theme)")
+            XCTAssertEqual(textSettings.colors.link, expected.link, "\(theme)")
+            XCTAssertEqual(textSettings.preferredColorScheme, settings.readerPreferredColorScheme, "\(theme)")
         }
     }
 
@@ -149,17 +194,17 @@ final class PreparedChapterRendererTests: XCTestCase {
         let renderer = PreparedChapterRenderer(store: store)
         let settings = try settings()
         let original = chapter()
-        XCTAssertNotNil(renderer.render(bookID: "book", chapterIndex: 0, chapter: original, settings: settings))
+        XCTAssertNotNil(renderer.render(bookID: "book", chapterIndex: 0, chapter: original, textSettings: ReaderTextSettings(settings: settings)))
         await renderer.flush()
         for changed in [chapter(html: "<p>Changed HTML</p>"), chapter(css: "p {color:red}"),
                         chapter(text: "Changed parser payload"), chapter(index: 2)] {
-            let value = await renderer.restore(bookID: "book", chapterIndex: 0, chapter: changed, settings: settings)
+            let value = await renderer.restore(bookID: "book", chapterIndex: 0, chapter: changed, currentTextSettings: { ReaderTextSettings(settings: settings) })
             XCTAssertNil(value)
         }
-        let otherChapter = await renderer.restore(bookID: "book", chapterIndex: 1, chapter: original, settings: settings)
-        let otherBook = await renderer.restore(bookID: "other", chapterIndex: 0, chapter: original, settings: settings)
+        let otherChapter = await renderer.restore(bookID: "book", chapterIndex: 1, chapter: original, currentTextSettings: { ReaderTextSettings(settings: settings) })
+        let otherBook = await renderer.restore(bookID: "other", chapterIndex: 0, chapter: original, currentTextSettings: { ReaderTextSettings(settings: settings) })
         let fontChanged = await renderer.restore(bookID: "book", chapterIndex: 0, chapter: original,
-                                                settings: settings, fontDirectoryURL: root)
+                                                currentTextSettings: { ReaderTextSettings(settings: settings) }, fontDirectoryURL: root)
         XCTAssertNil(otherChapter)
         XCTAssertNil(otherBook)
         XCTAssertNil(fontChanged)
@@ -171,11 +216,11 @@ final class PreparedChapterRendererTests: XCTestCase {
         let renderer = PreparedChapterRenderer(store: store)
         let settings = try settings()
         let chapter = chapter()
-        XCTAssertNotNil(renderer.render(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
+        XCTAssertNotNil(renderer.render(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         await renderer.flush()
         let reopened = PreparedChapterRenderer(store: store)
         let mutation = Task { @MainActor in settings.readerBoldOverride = true }
-        let value = await reopened.restore(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings)
+        let value = await reopened.restore(bookID: "book", chapterIndex: 0, chapter: chapter, currentTextSettings: { ReaderTextSettings(settings: settings) })
         await mutation.value
         XCTAssertNil(value)
     }
@@ -186,7 +231,7 @@ final class PreparedChapterRendererTests: XCTestCase {
         let settings = try settings()
         let chapter = chapter()
         let initial = PreparedChapterRenderer(store: store)
-        let expected = try XCTUnwrap(initial.render(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
+        let expected = try XCTUnwrap(initial.render(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         await initial.flush()
         let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first)
         let envelope = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: file), format: nil) as? [String: Any])
@@ -195,16 +240,16 @@ final class PreparedChapterRendererTests: XCTestCase {
         for bad in [Data("Malformed archive".utf8), unsupported] {
             try await store.write(bad, bookID: "book", chapterIndex: 0, signature: signature)
             let reopened = PreparedChapterRenderer(store: store)
-            let miss = await reopened.restore(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings)
+            let miss = await reopened.restore(bookID: "book", chapterIndex: 0, chapter: chapter, currentTextSettings: { ReaderTextSettings(settings: settings) })
             XCTAssertNil(miss)
-            XCTAssertNil(reopened.cached(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
-            let fallback = try XCTUnwrap(reopened.render(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
+            XCTAssertNil(reopened.cached(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
+            let fallback = try XCTUnwrap(reopened.render(bookID: "book", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
             XCTAssertTrue(expected.isEqual(to: fallback))
             await reopened.flush()
         }
         let empty = self.chapter(html: "")
-        let miss = await initial.restore(bookID: "empty", chapterIndex: 0, chapter: empty, settings: settings)
+        let miss = await initial.restore(bookID: "empty", chapterIndex: 0, chapter: empty, currentTextSettings: { ReaderTextSettings(settings: settings) })
         XCTAssertNil(miss)
-        XCTAssertNil(initial.render(bookID: "empty", chapterIndex: 0, chapter: empty, settings: settings))
+        XCTAssertNil(initial.render(bookID: "empty", chapterIndex: 0, chapter: empty, textSettings: ReaderTextSettings(settings: settings)))
     }
 }

@@ -206,7 +206,7 @@ final class ReaderTextPresentation {
             } else {
                 observeOpenStage("prepared_render_generated")
                 rendered = preparedRenderer.render(bookID: document.book.id, chapterIndex: index, chapter: chapter,
-                    settings: settings, fontDirectoryURL: document.registeredFontURLs.first?.deletingLastPathComponent())
+                    textSettings: ReaderTextSettings(settings: settings), fontDirectoryURL: document.registeredFontURLs.first?.deletingLastPathComponent())
             }
             if let rendered, rendered.length > 0 {
                 composition.textView.attributedText = rendered

@@ -82,7 +82,7 @@ final class ReaderLinkPresentation {
     }
 
     private func render(_ html: String?, chapter: EbookFulltext.Chapter) -> NSAttributedString? {
-        if let html, let rendered = EpubHtmlRenderer.render(html: html, css: chapter.css, settings: settings,
+        if let html, let rendered = EpubHtmlRenderer.render(html: html, css: chapter.css, textSettings: ReaderTextSettings(settings: settings),
             fontDirectoryURL: document.registeredFontURLs.first?.deletingLastPathComponent(), resources: chapter.resources) {
             return NSAttributedString(rendered)
         }

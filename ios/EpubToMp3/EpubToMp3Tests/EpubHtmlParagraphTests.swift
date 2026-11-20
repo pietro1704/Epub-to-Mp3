@@ -20,7 +20,7 @@ extension EpubHtmlRendererTests {
         <h1 style="text-align:center">Capitolo I</h1>
         <p>C'era una volta un pezzo di legno.</p>
         """
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -43,7 +43,7 @@ extension EpubHtmlRendererTests {
         guard let output = EpubHtmlRenderer.render(
             html: "<p>First line.</p><p>Second line.</p>",
             css: nil,
-            settings: settings
+            textSettings: ReaderTextSettings(settings: settings)
         ) else {
             return XCTFail("renderer returned nil")
         }
@@ -76,7 +76,7 @@ extension EpubHtmlRendererTests {
         .atx-new { text-indent: 10pt; margin-top: 0; margin-bottom: 0; }
         .p1 { text-indent: 0; margin-top: 1em; margin-bottom: 1em; }
         """
-        guard let out = EpubHtmlRenderer.render(html: html, css: css, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: css, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -107,7 +107,7 @@ extension EpubHtmlRendererTests {
           <ol><li>First item</li><li>Second item</li></ol>
         </article>
         """
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -137,7 +137,7 @@ extension EpubHtmlRendererTests {
         <p>This is an ordinary body paragraph that happens to sit inside a centred container and should not be rendered centred.</p>
         </div>
         """
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -161,7 +161,7 @@ extension EpubHtmlRendererTests {
         guard let out = EpubHtmlRenderer.render(
             html: PinocchioFixture.chapter3HTML,
             css: PinocchioFixture.chapter3CSS,
-            settings: s
+            textSettings: ReaderTextSettings(settings: s)
         ) else { return XCTFail("renderer returned nil for real chapter") }
         let n = ns(out)
 

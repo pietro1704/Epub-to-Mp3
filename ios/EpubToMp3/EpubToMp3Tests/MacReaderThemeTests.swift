@@ -129,7 +129,7 @@ final class MacReaderThemeTests: XCTestCase {
                               range: NSRange(location: 5, length: 4))
         content.addAttribute(.backgroundColor, value: NSColor.yellow, range: NSRange(location: 0, length: 4))
         text.textStorage?.setAttributedString(content)
-        MacReaderTheme.apply(settings: settings, surface: NSView(), scrollView: NSScrollView(), textView: text)
+        MacReaderTheme.apply(textSettings: ReaderTextSettings(settings: settings), surface: NSView(), scrollView: NSScrollView(), textView: text)
         assertColor(try XCTUnwrap(text.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor),
                     equals: .red)
         assertColor(try XCTUnwrap(text.textStorage?.attribute(.foregroundColor, at: 5, effectiveRange: nil) as? NSColor),
@@ -161,7 +161,7 @@ final class MacReaderThemeTests: XCTestCase {
         let title = NSTextField(labelWithString: "Chapter 10: Strider")
 
         MacReaderTheme.apply(
-            settings: settings,
+            textSettings: ReaderTextSettings(settings: settings),
             surface: surface,
             scrollView: scrollView,
             textView: textView,
@@ -191,7 +191,7 @@ final class MacReaderThemeTests: XCTestCase {
         let title = NSTextField(labelWithString: "Chapter 10: Strider")
 
         MacReaderTheme.apply(
-            settings: settings,
+            textSettings: ReaderTextSettings(settings: settings),
             surface: surface,
             scrollView: NSScrollView(),
             textView: NSTextView(),
@@ -216,7 +216,7 @@ final class MacReaderThemeTests: XCTestCase {
         let title = NSTextField(labelWithString: "Chapter 10: Strider")
 
         MacReaderTheme.apply(
-            settings: settings,
+            textSettings: ReaderTextSettings(settings: settings),
             surface: surface,
             scrollView: scrollView,
             textView: textView,
@@ -244,7 +244,7 @@ final class MacReaderThemeTests: XCTestCase {
             let textView = NSTextView()
 
             MacReaderTheme.apply(
-                settings: settings,
+                textSettings: ReaderTextSettings(settings: settings),
                 surface: surface,
                 scrollView: NSScrollView(),
                 textView: textView

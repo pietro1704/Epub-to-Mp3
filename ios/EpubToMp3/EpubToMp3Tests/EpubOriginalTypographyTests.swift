@@ -13,7 +13,7 @@ extension EpubHtmlRendererTests {
         let settings = makeSettings()
         settings.readerFontFamily = .newYork
         let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
-            html: "<p style='font-size:18pt'><b>ação</b> <i>coração</i></p>", css: nil, settings: settings)))
+            html: "<p style='font-size:18pt'><b>ação</b> <i>coração</i></p>", css: nil, textSettings: ReaderTextSettings(settings: settings))))
         for (text, italic) in [("ação", false), ("coração", true)] {
             let location = (rendered.string as NSString).range(of: text).location
             let font = try XCTUnwrap(rendered.attribute(.font, at: location, effectiveRange: nil) as? PlatformFont)
@@ -33,7 +33,7 @@ extension EpubHtmlRendererTests {
         <p style='font-size:24px'>Pixels.</p><p style='font-size:0.25in'>Inches.</p>\
         <p style='font-size:1.5em'>Relative.</p><p>Default.</p>
         """
-        let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: html, css: nil, settings: settings)))
+        let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: settings))))
         func size(_ text: String, in string: NSAttributedString) throws -> CGFloat {
             let location = (string.string as NSString).range(of: text).location
             return try XCTUnwrap(string.attribute(.font, at: location, effectiveRange: nil) as? PlatformFont).pointSize
@@ -45,7 +45,7 @@ extension EpubHtmlRendererTests {
         settings.readerOverrideFontSize = true
         settings.readerLineSpacing = 9
         let overridden = ns(try XCTUnwrap(EpubHtmlRenderer.render(
-            html: "<p style='font-size:18pt;line-height:30pt'>Override.</p>", css: nil, settings: settings)))
+            html: "<p style='font-size:18pt;line-height:30pt'>Override.</p>", css: nil, textSettings: ReaderTextSettings(settings: settings))))
         #if canImport(UIKit)
         let expected = UIFontMetrics(forTextStyle: .body).scaledValue(for: settings.readerPointSize)
         #else
@@ -78,7 +78,7 @@ extension EpubHtmlRendererTests {
     @MainActor
     func testParagraphGeometryUsesTheSameAbsoluteUnitMapping() throws {
         let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
-            html: "<p style='margin-bottom:0.25in;text-indent:16px'>Inches.</p>", css: nil, settings: makeSettings())))
+            html: "<p style='margin-bottom:0.25in;text-indent:16px'>Inches.</p>", css: nil, textSettings: ReaderTextSettings(settings: makeSettings()))))
         let style = try XCTUnwrap(rendered.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
         XCTAssertEqual(style.paragraphSpacing, 18, accuracy: 0.5)
         XCTAssertEqual(style.firstLineHeadIndent, 12, accuracy: 0.5)
@@ -107,7 +107,7 @@ extension EpubHtmlRendererTests {
         <html><head><style>.poem {text-align:right;font-family:Georgia;font-size:18pt}
         h1 {font-size:48pt} p {text-indent:35pt;margin-top:30pt;margin-bottom:28pt}</style></head>
         <body class='poem'><h1>Title</h1><p>Publisher verse.</p></body></html>
-        """, css: nil, settings: settings)))
+        """, css: nil, textSettings: ReaderTextSettings(settings: settings))))
         let body = (rendered.string as NSString).range(of: "Publisher verse").location
         let title = (rendered.string as NSString).range(of: "Title").location
         let font = try XCTUnwrap(rendered.attribute(.font, at: body, effectiveRange: nil) as? PlatformFont)
@@ -134,12 +134,12 @@ extension EpubHtmlRendererTests {
         let html = "<p style='text-align:right;font-size:18pt'>Publisher verse.</p>"
         settings.readerTextAlignment = .left
         settings.readerLineSpacing = 12
-        let overridden = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: html, css: nil, settings: settings)))
+        let overridden = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: settings))))
         let selected = try XCTUnwrap(overridden.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
         XCTAssertEqual(selected.alignment, .left)
         XCTAssertEqual(selected.lineSpacing, 12)
         settings.restoreOriginal()
-        let original = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: html, css: nil, settings: settings)))
+        let original = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: settings))))
         let restored = try XCTUnwrap(original.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
         XCTAssertEqual(restored.alignment, .right)
         XCTAssertFalse(settings.readerOverrideLineSpacing)
@@ -156,7 +156,7 @@ extension EpubHtmlRendererTests {
         let aliases = EpubFontManager.familyAliases(css: css, directory: url.deletingLastPathComponent())
         XCTAssertEqual(aliases["publisheralias"], CTFontCopyFamilyName(installed) as String)
         let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(html: "<p>Publisher text.</p>", css: css,
-            settings: makeSettings(), fontDirectoryURL: url.deletingLastPathComponent())))
+            textSettings: ReaderTextSettings(settings: makeSettings()), fontDirectoryURL: url.deletingLastPathComponent())))
         let font = try XCTUnwrap(rendered.attribute(.font, at: 0, effectiveRange: nil) as? PlatformFont)
         #if canImport(UIKit)
         XCTAssertEqual(font.familyName, CTFontCopyFamilyName(installed) as String)

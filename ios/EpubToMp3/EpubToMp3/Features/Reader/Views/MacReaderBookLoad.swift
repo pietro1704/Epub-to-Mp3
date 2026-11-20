@@ -136,7 +136,7 @@ final class MacReaderBookLoad {
             if let chapter = warmPayload.chapters[safe: selectedChapter],
                chapter.isImageOnly || preparedRenderer.cached(
                    bookID: book.id, chapterIndex: selectedChapter, chapter: chapter,
-                   settings: settings, fontDirectoryURL: document.fontDirectoryURL) != nil {
+                   textSettings: ReaderTextSettings(settings: settings), fontDirectoryURL: document.fontDirectoryURL) != nil {
                 presentLoadedChapter(bookID: book.id)
             } else {
                 send(.showLoading(book))

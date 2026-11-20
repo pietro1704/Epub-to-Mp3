@@ -22,10 +22,10 @@ final class AuditReaderJustificationTests: XCTestCase {
         let body = "Esta é uma leitura de verificação do aplicativo. A biblioteca preserva os livros e a posição de leitura."
         let chapter = EbookFulltext.Chapter(index: 1, name: "Fixture", sourcePath: "chapter.xhtml", text: body,
             html: "<p>\(body)</p>", css: nil, charCount: body.count, segments: nil)
-        let first = try XCTUnwrap(renderer.render(bookID: "warm-audit", chapterIndex: 0, chapter: chapter, settings: settings))
+        let first = try XCTUnwrap(renderer.render(bookID: "warm-audit", chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         await renderer.flush()
         let reopened = PreparedChapterRenderer(store: store)
-        let restored = await reopened.restore(bookID: "warm-audit", chapterIndex: 0, chapter: chapter, settings: settings)
+        let restored = await reopened.restore(bookID: "warm-audit", chapterIndex: 0, chapter: chapter, currentTextSettings: { ReaderTextSettings(settings: settings) })
         let warm = try XCTUnwrap(restored)
         XCTAssertEqual(warm.string, first.string)
         for rendering in [first, warm] {
@@ -45,7 +45,7 @@ final class AuditReaderJustificationTests: XCTestCase {
         settings.readerTextAlignment = .justified
         let body = "Extraordinariamente, a transformação preserva palavras e pontuação."
         let rendered = try XCTUnwrap(EpubHtmlRenderer.render(
-            html: "<h1>Heading</h1><p>\(body)</p>", css: nil, settings: settings))
+            html: "<h1>Heading</h1><p>\(body)</p>", css: nil, textSettings: ReaderTextSettings(settings: settings)))
         let text = NSAttributedString(rendered)
         XCTAssertTrue(text.string.contains(body))
         let bodyRange = (text.string as NSString).range(of: body)

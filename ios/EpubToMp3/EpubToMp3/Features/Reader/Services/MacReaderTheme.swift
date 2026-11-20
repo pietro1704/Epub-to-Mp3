@@ -7,7 +7,7 @@ import AppKit
 @MainActor
 enum MacReaderTheme {
     static func apply(
-        settings: AppSettings,
+        textSettings: ReaderTextSettings,
         surface: NSView,
         scrollView: NSScrollView,
         textView: NSTextView,
@@ -15,7 +15,7 @@ enum MacReaderTheme {
         labels: [NSTextField] = []
     ) {
         let appearanceName: NSAppearance.Name?
-        switch settings.readerPreferredColorScheme {
+        switch textSettings.preferredColorScheme {
         case .dark: appearanceName = .darkAqua
         case .light: appearanceName = .aqua
         case nil: appearanceName = nil
@@ -23,7 +23,7 @@ enum MacReaderTheme {
         if surface.appearance?.name != appearanceName {
             surface.appearance = appearanceName.flatMap { NSAppearance(named: $0) }
         }
-        let baseColors = settings.readerColors
+        let baseColors = textSettings.colors
         // `cgColor` resolves a dynamic AppKit colour immediately. Resolve
         // both colours against this reader surface first so `.auto` cannot
         // combine a Dark Aqua background with an Aqua label colour.
@@ -41,7 +41,7 @@ enum MacReaderTheme {
         scrollView.backgroundColor = colors.background
         textView.drawsBackground = true
         textView.backgroundColor = colors.background
-        let overridesColors = settings.readerTheme != .light || settings.readerOverrideColours
+        let overridesColors = textSettings.theme != .light || textSettings.overridesColours
         if textView.string.isEmpty {
             textView.textColor = colors.foreground
         } else if overridesColors, let storage = textView.textStorage {
