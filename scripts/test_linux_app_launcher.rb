@@ -39,7 +39,9 @@ class LinuxAppLauncherTest < Minitest::Test
     # Desktop Entry string escaping precedes its quoted Exec argument parser.
     value = raw.gsub(/\\([\\sntr])/) { { '\\' => '\\', 's' => ' ', 'n' => "\n", 't' => "\t", 'r' => "\r" }.fetch(Regexp.last_match(1)) }
     arguments = Shellwords.split(value)
-    assert_equal 1, arguments.size
+    assert_equal 2, arguments.size
+    assert_equal '%F', arguments.last
+    assert_includes source, 'MimeType=application/epub+zip;application/pdf;'
     assert_equal File.join(@bundle, 'flutter_app'), arguments.first.gsub('%%', '%')
     assert_includes source, 'StartupWMClass=com.epubtomp3.flutter_app'
     assert_equal 'keep this application', File.read(unrelated)

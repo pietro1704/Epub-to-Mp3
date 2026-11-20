@@ -2,12 +2,14 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/book_entity.dart';
 import '../services/conversion/epub_metadata_reader.dart';
+import '../services/linux_book_import.dart';
 import '../services/storage/library_store.dart';
 import '../state/providers.dart';
 import '../views/tag_editor_sheet.dart';
@@ -34,24 +36,85 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String? _selectedTag;
   String _searchQuery = '';
 
-  Future<void> _pickAndImport(BuildContext context, LibraryStore store) async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['epub', 'pdf'],
-    );
-    if (result.isEmpty) return;
+  LinuxBookImport? _linuxImport;
 
-    for (final file in result) {
-      final path = file.path;
-      if (path == null) continue;
+  @override
+  void initState() {
+    super.initState();
+    if (!LinuxBookImport.isAvailable) return;
+    final receiver = _linuxImport = LinuxBookImport(
+      (paths, {required openInReader}) =>
+          _importBooks(paths, openInReader: openInReader, revealLibrary: true),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) receiver.start();
+    });
+  }
+
+  @override
+  void dispose() {
+    _linuxImport?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAndImport() async {
+    final t = AppLocalizations.of(context)!;
+    try {
+      final paths = LinuxBookImport.isAvailable
+          ? await LinuxBookImport.choose(
+              title: t.addBook,
+              cancel: t.cancel,
+              accept: t.addBook,
+            )
+          : (await FilePicker.pickFiles(
+              type: FileType.custom,
+              allowedExtensions: ['epub', 'pdf'],
+            )).map((file) => file.path).nonNulls;
+      await _importBooks(paths);
+    } on Exception catch (error) {
+      _showImportError(error.toString());
+    }
+  }
+
+  Future<void> _pasteBooks() async {
+    try {
+      await _importBooks(await LinuxBookImport.paste());
+    } on Exception catch (error) {
+      _showImportError(error.toString());
+    }
+  }
+
+  Future<void> _importBooks(
+    Iterable<String> paths, {
+    bool openInReader = false,
+    bool revealLibrary = false,
+  }) async {
+    BookEntity? firstBook;
+    for (final path in paths.toSet()) {
+      if (!mounted) return;
+      if (LinuxBookImport.isAvailable &&
+          !const ['.epub', '.pdf'].any(path.toLowerCase().endsWith)) {
+        continue;
+      }
       try {
-        await store.importBook(path);
-      } on LibraryStoreException catch (e) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        final book = await ref.read(libraryStoreProvider).importBook(path);
+        firstBook ??= book;
+      } on LibraryStoreException catch (error) {
+        _showImportError(error.message);
       }
     }
+    if (!mounted || firstBook == null) return;
+    if (openInReader) {
+      _openInReader(ref, firstBook);
+    } else if (revealLibrary) {
+      ref.read(appDestinationProvider.notifier).state = AppDestination.library;
+    }
+  }
+
+  void _showImportError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _openInReader(WidgetRef ref, BookEntity book) {
@@ -178,7 +241,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final books = _filtered(store.books);
     final allTags = store.allTags;
 
-    return Scaffold(
+    final library = Scaffold(
       appBar: AppBar(
         title: Text(t.libraryTitle),
         actions: [
@@ -198,12 +261,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: t.addBook,
-            onPressed: () => _pickAndImport(context, store),
+            onPressed: _pickAndImport,
           ),
         ],
       ),
       body: store.books.isEmpty
-          ? _EmptyLibrary(onAdd: () => _pickAndImport(context, store))
+          ? _EmptyLibrary(onAdd: _pickAndImport)
           : Column(
               children: [
                 LibraryFilterControls(
@@ -227,6 +290,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ),
               ],
             ),
+    );
+    if (!LinuxBookImport.isAvailable) return library;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): () {
+          if (ref.read(appDestinationProvider) == AppDestination.library) {
+            _pasteBooks();
+          }
+        },
+      },
+      child: Focus(autofocus: true, child: library),
     );
   }
 
