@@ -167,7 +167,7 @@ jobs:
   swiftui-apple:
     needs: gate
     name: SwiftUI · Apple
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 40
     steps:
       - name: Checkout
