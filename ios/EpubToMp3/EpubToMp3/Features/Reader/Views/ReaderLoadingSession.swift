@@ -10,7 +10,7 @@ final class ReaderLoadingSession {
     private let settings: AppSettings
     private let textPresentation: ReaderTextPresentation
     private let readingPosition: ReaderReadingPosition
-    private let observation: ReaderOpenObservation
+    private let observation: ReaderOpenJourney
     private let deferInitialReaderGestures: Bool
     private let observeOpenStage: (String) -> Void
     private let scheduleReaderSettingsUpdate: () -> Void
@@ -22,7 +22,7 @@ final class ReaderLoadingSession {
 
     init(document: ReaderBookDocument, composition: ReaderViewComposition, settings: AppSettings,
          textPresentation: ReaderTextPresentation, readingPosition: ReaderReadingPosition,
-         observation: ReaderOpenObservation, deferInitialReaderGestures: Bool,
+         observation: ReaderOpenJourney, deferInitialReaderGestures: Bool,
          stageObserver: (@Sendable (String, UInt64) -> Void)?,
          scheduleReaderSettingsUpdate: @escaping () -> Void,
          onLoadStateChanged: @escaping (Bool) -> Void, onChromeVisibilityRequested: @escaping (Bool) -> Void) {
@@ -91,7 +91,7 @@ final class ReaderLoadingSession {
             composition.pageTap.isEnabled = true
             textPresentation.applyReaderLayoutMode()
             observeOpenStage("reader_controls_enabled")
-            observation.recordControlsUsable()
+            observation.recordControlsUsable(preparedSnapshot: document.activePreparedChapter, bookID: document.book.id)
             return
         }
         DispatchQueue.main.async { [weak self] in
@@ -102,7 +102,7 @@ final class ReaderLoadingSession {
             self.composition.pageTap.isEnabled = true
             self.textPresentation.applyReaderLayoutMode()
             self.observeOpenStage("reader_controls_enabled")
-            self.observation.recordControlsUsable()
+            self.observation.recordControlsUsable(preparedSnapshot: document.activePreparedChapter, bookID: document.book.id)
         }
     }
 
@@ -174,10 +174,7 @@ final class ReaderLoadingSession {
         }
         document.pendingLoadingCompletionID = nil
         readingPosition.restoreReadingProgressIfNeeded()
-        if let journeyID = document.activeBookOpenJourneyID {
-            _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
-            observeOpenStage("readable_content")
-        }
+        observation.recordReadableContent()
         hideLoadingOverlay()
     }
 

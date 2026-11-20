@@ -18,18 +18,9 @@ final class ReaderBookDocument {
     var pendingLoadingCompletionID: UUID?
     var pendingProjectionAnchor: (loadingID: UUID, progress: ReaderProgressStore.Entry)?
     var presentedProjectionLoadingID: UUID?
-    var activeBookOpenJourneyID: UUID?
-    var pendingPDFPageJourneyID: UUID?
-    var firstPDFPageReadyJourneyID: UUID?
-    var controlsReadyJourneyID: UUID?
+    let openJourney = ReaderOpenJourney()
 
     init(book: BookEntity) { self.book = book }
-
-    deinit {
-        if let journeyID = activeBookOpenJourneyID {
-            _ = LatencyObservationStore.shared.cancel(journeyID)
-        }
-    }
 
     func isCurrentLoad(_ loadingID: UUID, bookID: String) -> Bool {
         loadGenerationID == loadingID && book.id == bookID

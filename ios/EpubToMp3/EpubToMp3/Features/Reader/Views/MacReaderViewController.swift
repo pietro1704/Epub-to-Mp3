@@ -80,6 +80,7 @@ final class MacReaderViewController: NSViewController {
         self.preparedFulltextReader = preparedFulltextReader
         self.preparedFulltextWriter = preparedFulltextWriter
         self.openStageObserver = openStageObserver
+        document.openJourney.stageObserver = openStageObserver
         self.initialPositionScheduler = initialPositionScheduler
         super.init(nibName: nil, bundle: nil)
     }
@@ -165,13 +166,12 @@ final class MacReaderViewController: NSViewController {
     private lazy var settingsPresentation: MacReaderSettingsPresentation = MacReaderSettingsPresentation(settings: settings, popover: composition.settingsPopover)
     @objc private func showSettings(_ sender: NSButton) { settingsPresentation.showSettings(sender) }
 
-    private lazy var openObservation: MacReaderOpenObservation = MacReaderOpenObservation(document: document, stageObserver: openStageObserver)
-    private func cancelActiveBookOpenJourney() { openObservation.cancelActiveBookOpenJourney() }
+    private func cancelActiveBookOpenJourney() { document.openJourney.cancelActiveBookOpenJourney() }
     private lazy var bookLoad: MacReaderBookLoad = MacReaderBookLoad(
         document: document, library: library, settings: settings,
         renderer: preparedRenderer, store: preparedChapterStore,
         readFulltext: preparedFulltextReader, writeFulltext: preparedFulltextWriter,
-        textPresentation: textPresentation, observation: openObservation, stageObserver: openStageObserver,
+        textPresentation: textPresentation, observation: document.openJourney, stageObserver: openStageObserver,
         send: { [weak self] in self?.applyLoadEvent($0) }
     )
     private func loadCurrentBook() {

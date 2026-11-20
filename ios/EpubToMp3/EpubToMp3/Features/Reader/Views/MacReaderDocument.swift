@@ -8,10 +8,7 @@ import Combine
 final class MacReaderDocument {
     var loadGeneration: UUID = UUID()
     var presentationGeneration: UUID = UUID()
-    var activeBookOpenJourneyID: UUID?
-    var pendingPDFPageJourneyID: UUID?
-    var firstPDFPageReadyJourneyID: UUID?
-    var controlsReadyJourneyID: UUID?
+    let openJourney = ReaderOpenJourney()
     var fulltext: EbookFulltext?
     var activePreparedChapter: PreparedReaderChapterStore.Snapshot?
     var lastPreparedChapterOrdinal: Int?
@@ -22,12 +19,6 @@ final class MacReaderDocument {
     var pendingAppearanceRefresh: Bool = false
     var registeredFontURLs: [URL] = []
     var fontDirectoryURL: URL? { registeredFontURLs.first?.deletingLastPathComponent() }
-
-    deinit {
-        if let journeyID = activeBookOpenJourneyID {
-            _ = LatencyObservationStore.shared.cancel(journeyID)
-        }
-    }
 
     func isActiveLoad(_ generation: UUID, bookID: String) -> Bool {
         !Task.isCancelled && loadGeneration == generation && currentBookId == bookID
