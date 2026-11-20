@@ -69,6 +69,11 @@ class NativeLeaseHoldersTest < Minitest::Test
     report = status_report(stubs: never_locks)
     assert_equal({ "path" => @lock, "held" => false, "holder" => nil, "open_in" => [] }, report["lease"])
     assert_nil report.dig("admission", "refusal")
+    assert_equal [], report.dig("admission", "warnings")
+    samples(HEAVY_HISTORY)
+    admission = status_report.fetch("admission")
+    assert_equal [nil, 2], [admission["refusal"], admission["warnings"].length], "status tells a refusal from a warning"
+    samples(IDLE)
     assert_equal File.join(@flight, "flight.jsonl"), report["flight_recorder"]
     refute File.exist?(@lock), "status never creates the lease"
     # The holder keeps reading its own queue; status reads a loaded host from another one.

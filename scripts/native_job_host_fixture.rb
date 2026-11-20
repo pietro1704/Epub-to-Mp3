@@ -29,7 +29,11 @@ module NativeJobHostFixture
   LOADED = IDLE.merge("load" => [7.12, 4.46, 8.85], "cpu_speed_limit" => 81).freeze
   # One serial build measured a load of 4.24: only its process name tells it from an idle host.
   FOREIGN_BUILD = IDLE.merge("load" => [4.24, 4.56, 5.86], "compilers" => ["cargo 61001", "rustc 61020"]).freeze
-  LIMITS = { "max_load_percent_of_cpus" => 75, "max_swap_used_mib" => 1024, "max_compressor_percent_of_memory" => 50,
+  # 00:32 BRT on 2026-11-20 (03:32 UTC): idle, normal memory pressure, 1193 MiB of swap left by earlier work.
+  # The compressor at 57% of memory and swap beyond every reading are added to that host.
+  OLD_SWAP = IDLE.merge("load" => [3.32, 3.77, 3.77], "swap_used_mib" => 1192.75, "compressor_mib" => 368).freeze
+  HEAVY_HISTORY = OLD_SWAP.merge("swap_used_mib" => 6144.0, "compressor_mib" => 4669).freeze
+  LIMITS = { "max_load_percent_of_cpus" => 75, "warn_swap_used_mib" => 1600, "warn_compressor_percent_of_memory" => 25,
              "recheck_seconds" => 1, "default_wait_seconds" => 0, "child_niceness" => 10,
              "foreign_compilers" => %w[cargo rustc] }.freeze
   FLIGHT = { "interval_seconds" => 1, "max_file_bytes" => 65_536, "generations" => 1 }.freeze

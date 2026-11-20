@@ -4,10 +4,13 @@ require "json"
 require "open3"
 
 # Read-only host telemetry and the admission rule for one more heavy job.
-# Limits live under "admission" in config/mac-build-budget.json; the measured
-# values behind them are recorded in docs/agents/execution-policy.md. Admission
-# reduces overlap with load this repository does not control. It is not a
-# kernel-panic or CATERR prevention.
+# Thresholds and the readings behind them live under "admission" in
+# config/mac-build-budget.json. A job is refused for signs of present stress:
+# load, kernel memory pressure, thermal limits, a compiler outside the lease.
+# Swap in use and the compressor's size only warn: macOS keeps swap allocated
+# after the pressure that filled it has ended, so they describe what happened
+# earlier, not what is happening now. Admission reduces overlap with load this
+# repository does not control. It is not a kernel-panic or CATERR prevention.
 module HostLoad
   POLICY = File.expand_path("../config/mac-build-budget.json", __dir__)
   MIB = 1024.0 * 1024
@@ -24,7 +27,7 @@ module HostLoad
   # it runs inside are not a reason to refuse it. Any other compiler on the host
   # still is, and load, memory and thermal limits always apply.
   ENCLOSING_BUILDS = %w[xcodebuild SWBBuildService XCBBuildService Xcode].freeze
-  LIMITS = %w[max_load_percent_of_cpus max_swap_used_mib max_compressor_percent_of_memory
+  LIMITS = %w[max_load_percent_of_cpus warn_swap_used_mib warn_compressor_percent_of_memory
               recheck_seconds default_wait_seconds child_niceness].freeze
 
   # Every probe has a deadline and a fixed locale: stuck telemetry must not hang
@@ -59,7 +62,8 @@ module HostLoad
     raise "Invalid admission recheck_seconds" unless value["recheck_seconds"].positive?
     names = value["foreign_compilers"]
     raise "Invalid admission foreign_compilers" unless names.is_a?(Array) && names.all? { |name| name.is_a?(String) && !name.empty? }
-    value
+    # The "rationale" texts beside the thresholds are for people.
+    value.slice(*LIMITS, "foreign_compilers")
   end
 
   def self.number(text)
@@ -139,15 +143,6 @@ module HostLoad
     end
     pressure = sample.fetch("pressure")
     found << "memory pressure is #{PRESSURE.fetch(pressure)}" unless pressure == 1
-    swap = sample.fetch("swap_used_mib")
-    if swap > limits.fetch("max_swap_used_mib")
-      found << format("swap in use %.0f MiB exceeds %d MiB", swap, limits.fetch("max_swap_used_mib"))
-    end
-    compressor = 100.0 * sample.fetch("compressor_mib") / sample.fetch("memory_mib")
-    if compressor > limits.fetch("max_compressor_percent_of_memory")
-      found << format("memory compressor occupies %.0f%% of memory, above %d%%",
-                      compressor, limits.fetch("max_compressor_percent_of_memory"))
-    end
     { "cpu_speed_limit" => "CPU_Speed_Limit", "cpu_scheduler_limit" => "CPU_Scheduler_Limit" }.each do |key, name|
       value = sample[key]
       found << "#{name} is #{value} (thermal throttling)" if value && value < 100
@@ -162,6 +157,23 @@ module HostLoad
     found
   end
 
+  # Readings worth a look that never refuse a job: sizes that record earlier
+  # pressure. Swap in use was read at 1193 MiB on an idle host whose memory
+  # pressure was normal.
+  def self.warnings(limits, sample)
+    found = []
+    swap = sample.fetch("swap_used_mib")
+    if swap > limits.fetch("warn_swap_used_mib")
+      found << format("swap in use %.0f MiB is above %d MiB", swap, limits.fetch("warn_swap_used_mib"))
+    end
+    compressor = 100.0 * sample.fetch("compressor_mib") / sample.fetch("memory_mib")
+    if compressor > limits.fetch("warn_compressor_percent_of_memory")
+      found << format("memory compressor occupies %.0f%% of memory, above %d%%",
+                      compressor, limits.fetch("warn_compressor_percent_of_memory"))
+    end
+    found
+  end
+
   # Why a heavy job may not start now, as one sentence; nil when it may.
   def self.refusal(limits, sample)
     found = reasons(limits, sample)
@@ -169,19 +181,26 @@ module HostLoad
   end
 
   # What to do about a refusal. The load average outlasts the job that raised
-  # it, so the next job waits before it gives up. Swap is different: it was
-  # read above its limit with no guarded job and no compiler running.
+  # it, so the next job waits before it gives up.
   def self.advice(limits)
     "The load average settles about a minute after another job, so a wait is expected: the default is " \
       "#{limits.fetch('default_wait_seconds')} s, and --wait SECONDS or EPUB_NATIVE_WAIT_SECONDS sets another " \
-      "(0 refuses at once). Swap in use can stay high until the programs that hold that memory exit. " \
-      "Inspect with `ruby scripts/native_job.rb status`."
+      "(0 refuses at once). Inspect with `ruby scripts/native_job.rb status`."
   end
 
-  # Unreadable telemetry blocks the job, like every other native guard here.
-  def self.check(sampler: method(:sample), policy: method(:limits))
-    refusal(policy.call, sampler.call)
+  # One reading judged once: the refusal (nil when the job may start) and the
+  # warnings. Unreadable telemetry blocks the job, like every other native
+  # guard here.
+  def self.assess(sampler: method(:sample), policy: method(:limits))
+    limits = policy.call
+    reading = sampler.call
+    [refusal(limits, reading), warnings(limits, reading)]
   rescue StandardError => error
-    "Host load inspection failed (#{error.class}: #{error.message})."
+    ["Host load inspection failed (#{error.class}: #{error.message}).", []]
   end
+
+  def self.check(sampler: method(:sample), policy: method(:limits))
+    assess(sampler: sampler, policy: policy).first
+  end
+
 end

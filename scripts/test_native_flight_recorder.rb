@@ -112,7 +112,18 @@ class NativeFlightRecorderTest < Minitest::Test
     ENV["PATH"] = path if path
   end
 
+  def test_a_reading_carries_the_warnings_it_earns
+    limits = { "warn_swap_used_mib" => 1600, "warn_compressor_percent_of_memory" => 25 }
+    quiet = { "swap_used_mib" => 1192.75, "compressor_mib" => 368, "memory_mib" => 8192 }
+    assert_equal quiet.merge("warnings" => []), NativeFlightRecorder.reading(sampler: -> { quiet }, policy: -> { limits })
+    grown = quiet.merge("swap_used_mib" => 1700.0)
+    assert_equal ["swap in use 1700 MiB is above 1600 MiB"],
+                 NativeFlightRecorder.reading(sampler: -> { grown }, policy: -> { limits }).fetch("warnings")
+    assert_equal %w[max_load_percent_of_cpus warn_swap_used_mib], HostLoad.limits.keys.first(2), "the real policy names the warning thresholds"
+  end
+
   def test_rotation_bounds_storage_to_the_configured_generations
+
     path = File.join(@dir, "bounded.jsonl")
     40.times { |index| NativeFlightRecorder.append(path, { "n" => index, "pad" => "x" * 90 }, max_bytes: 512, generations: 2) }
     files = Dir.children(@dir).sort

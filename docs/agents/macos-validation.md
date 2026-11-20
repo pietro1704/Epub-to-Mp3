@@ -104,10 +104,13 @@ mise run native:status
 
 It prints the lease holder, every process that keeps the lease file open (a
 browser or daemon left behind by an earlier job shows here), the current
-readings, `refusal` (`null` when another heavy job would be admitted) and the
+readings, `refusal` (`null` when another heavy job would be admitted),
+`warnings` (swap in use or the compressor above their thresholds; these never
+refuse a job, because macOS keeps swap allocated after pressure ends) and the
 flight recorder path. A job that finds the host loaded waits up to 120 seconds
 for it to settle after the previous job, then exits 75 and names every exceeded
 limit. Let one job queue longer for the lease and for admission instead of
+
 polling (whole seconds; any other value fails; `0` refuses at once):
 
 ```sh

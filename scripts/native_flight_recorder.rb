@@ -40,6 +40,13 @@ module NativeFlightRecorder
     File.join(ROOT, ".reports", "native-flight-recorder")
   end
 
+  # One host reading with the warnings it earns, so a line says by itself when
+  # swap or the compressor went above the thresholds that never refuse a job.
+  def self.reading(sampler: HostLoad.method(:sample), policy: HostLoad.method(:limits))
+    sample = sampler.call
+    sample.merge("warnings" => HostLoad.warnings(policy.call, sample))
+  end
+
   # Bounded storage: the current file plus `generations` rotated ones.
   def self.append(path, record, max_bytes:, generations:)
     line = JSON.generate(record) + "\n"
@@ -79,7 +86,7 @@ module NativeFlightRecorder
     JOIN_SECONDS = 0.2
 
     def initialize(holder:, directory: NativeFlightRecorder.directory, limits: NativeFlightRecorder.limits,
-                   sampler: -> { HostLoad.sample },
+                   sampler: -> { NativeFlightRecorder.reading },
                    host: -> { NativeFlightRecorder.host }, wall: -> { Time.now.utc })
       @holder = holder.slice("pid", "phase", "program", "task", "worktree", "session")
       @limits = limits

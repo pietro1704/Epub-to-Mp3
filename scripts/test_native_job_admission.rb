@@ -20,6 +20,43 @@ class NativeJobAdmissionTest < Minitest::Test
     end
   end
 
+  def test_swap_and_compressor_left_by_earlier_work_warn_and_never_refuse
+    flight_log = File.join(@flight, "flight.jsonl")
+    samples(OLD_SWAP)
+    _, error, status = job(phase: "heavy")
+    assert status.success?, "1193 MiB of swap on an idle host with normal memory pressure refused the job: #{error}"
+    refute_match(/warning/, error, "a reading inside the measured range is not worth a line")
+    File.delete(@marker)
+    samples(HEAVY_HISTORY)
+    go = File.join(@dir, "go")
+    pid, log = background_job(child: [RUBY, "-e", "#{until_file(0)}; File.write(ARGV[1], 'ran')", go, @marker])
+    wait_until { File.exist?(flight_log) && File.read(flight_log).include?('"swap_used_mib":6144.0') }
+    File.write(go, "")
+    assert exit_status(pid).success?, "sizes that record earlier pressure refused the job: #{File.read(log)}"
+    assert_equal ["native_job: warning, not a refusal: swap in use 6144 MiB is above 1600 MiB; " \
+                  "memory compressor occupies 57% of memory, above 25%. The flight log records it."],
+                 File.readlines(log, chomp: true).grep(/warning/)
+    recorded = File.readlines(flight_log, chomp: true).map { |line| JSON.parse(line) }.find { |line| line["swap_used_mib"] == 6144.0 }
+    assert_equal [4669, ["swap in use 6144 MiB is above 1600 MiB", "memory compressor occupies 57% of memory, above 25%"]],
+                 recorded.values_at("compressor_mib", "warnings")
+    assert_equal "ran", File.read(@marker)
+    File.delete(@marker)
+
+    # Present stress on that same host still refuses, and says nothing about the sizes.
+    { { "pressure" => 2 } => /memory pressure is warning/, { "cpu_speed_limit" => 81 } => /CPU_Speed_Limit is 81/,
+      { "load" => [7.12, 4.46, 8.85] } => /1-minute load average 7\.12 exceeds 6\.00/,
+      { "compilers" => ["cargo 61001"] } => /a compiler is already running \(cargo 61001\)/ }.each do |change, expected|
+      samples(HEAVY_HISTORY.merge(change))
+      _, error, status = job
+      assert_equal 75, status.exitstatus, "#{change}: #{error}"
+      assert_match(/Heavy job refused\. The host is already loaded: #{expected.source}/, error, change.inspect)
+      refute_match(/swap|compressor|;/, error, "one reason, and never a size that records history: #{change.inspect}")
+
+      refute File.exist?(@marker), change.inspect
+    end
+    assert_released
+  end
+
   def test_a_package_manager_or_ide_compile_outside_the_lease_is_refused_and_can_be_waited_for
     samples(FOREIGN_BUILD)
     _, error, status = job(phase: "heavy")
@@ -150,6 +187,7 @@ class NativeJobAdmissionTest < Minitest::Test
     events[0..-2].each do |event|
       assert_equal IDLE["load"], event["load"]
       assert_equal ["98.2 47168 swift-frontend"], event["top"]
+      assert_equal [], event["warnings"]
     end
     assert_released
   end

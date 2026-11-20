@@ -104,37 +104,50 @@ poll it in a loop.
 
 The lease cannot see work started by other tools: a package manager building
 from source, another agent harness, an IDE build. So before a heavy job starts
-on macOS its lease owner reads the host and refuses (exit 75) when any limit in
-the `admission` object of `config/mac-build-budget.json` is exceeded. The limits
-come from readings on this Intel i5-8259U (8 logical CPUs, 8 GiB) taken between
-21:48 and 22:57 BRT on 2026-11-19 (00:48 to 01:57 UTC on 2026-11-20); those
-marked as a judgment call have no measured boundary:
+on macOS its lease owner reads the host. It refuses (exit 75) for signs of
+present stress and only warns about sizes that record earlier pressure. The
+thresholds and the readings behind each one are in the `admission` object of
+`config/mac-build-budget.json`. The readings were taken on this Intel i5-8259U
+(8 logical CPUs, 8 GiB) between 21:48 BRT on 2026-11-19 and 00:47 BRT on
+2026-11-20 (00:48 to 03:47 UTC on 2026-11-20):
 
-| Limit | Value | Measured basis |
-| --- | --- | --- |
-| 1-minute load | 75% of logical CPUs (6.00) | 2.42-4.96 without a native build; 6.11-14 with overlapping loads |
-| Compiler process outside the lease | none of `foreign_compilers` | one serial build with the usual background work read 4.24-7.12, overlapping the range without one, so only its process name identifies it |
-| Kernel memory pressure | normal | warning level was logged 20:36-20:50 BRT (23:36-23:50 UTC) on 2026-11-19, before the incident below |
-| Swap in use | 1024 MiB | 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build; the Simulator admission value. Judgment call. A later reading was 1193 MiB with no lease holder and no compiler running (00:32 BRT on 2026-11-20, 03:32 UTC), so this limit can refuse while other programs hold memory |
-| Compressor | 50% of memory | 694-1807 MiB (8-22%) measured. Judgment call |
-| `pmset -g therm` | no limit below 100, all CPUs available | `CPU_Speed_Limit` 100 without a build, 81 during the first serial build after the reboot |
+| Signal | Effect | Threshold | Measured basis |
+| --- | --- | --- | --- |
+| 1-minute load average | refuses | 75% of logical CPUs (6.00) | 2.42-4.96 without a native build; 6.11-14 with overlapping loads |
+| Kernel memory pressure | refuses | any level but normal | warning level was logged 20:36-20:50 BRT (23:36-23:50 UTC) on 2026-11-19, before the incident below; normal with swap at 1551, 1016 and 1193 MiB |
+| `pmset -g therm` | refuses | a limit below 100, or fewer CPUs available | `CPU_Speed_Limit` 100 without a build, 81 during the first serial build after the reboot |
+| Compiler process outside the lease | refuses | any of `foreign_compilers` | one serial build with the usual background work read a load of 4.24-7.12, overlapping the range without one, so only its process name identifies it |
+| Free space on the build volume | refuses a build | 20 GiB | the storage floor above |
+| Swap in use | warns | 1600 MiB | 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build, 1193 MiB on an idle host with normal memory pressure (00:32 BRT on 2026-11-20, 03:32 UTC) |
+| Compressor (`vm.compressor_bytes_used`) | warns | 25% of memory | 368-1807 MiB (4-22%); memory pressure was normal at both ends of that range |
+
+Swap and the compressor do not refuse because macOS keeps swap allocated after
+the pressure that filled it has ended: the size records what happened earlier,
+not what is happening now. Used as a limit of 1024 MiB, swap alone gave a
+refusal on an idle host. Both warning thresholds sit above every reading taken
+while the host worked. A job above one starts, prints one warning line, and its
+flight log lines carry the warning. No rule on rising swap was added: admission
+usually takes a single reading, and no growth rate was measured to set one (the
+only one seen is 315 to 1551 MiB in four minutes during a build). The flight
+log now collects that data. The compressor figure is the memory the compressor
+occupies, not the larger "stored in compressor" count of `vm_stat` (3978 MiB
+when this one read 466 MiB).
 
 A probe that fails, exceeds its deadline or answers nothing refuses the job;
 only the optional `sysctl` name may be missing. The 1-minute load average stays
 high for about a minute after the job that raised it ends, so a job that finds
 the host loaded waits before it gives up: `default_wait_seconds` (120, a
 judgment call) when no wait was given, the given wait otherwise, and `0`
-refuses at once. Sustained overload is still refused, and the message says how
-to wait longer. Waiting does not release swap that other programs hold: when
-swap alone refuses a job, close what holds the memory.
+refuses at once. Only a load that stays high for that whole wait refuses the
+job, and the message says how to wait longer.
 
 A guarded step started from inside a build (an Xcode build phase, a compiler
 driver) is not refused for the compiler processes that descend from the builds
-it runs inside; every other compiler and the load, memory and thermal limits
-still refuse it. Children start at niceness 10 (a judgment call, not measured)
-with one compiler job. While the job runs, one line every 30 seconds (load,
-swap, compressor, memory pressure, thermal limits, top three processes by CPU,
-the holder) goes to `.reports/native-flight-recorder/flight.jsonl` in the main
+it runs inside; every other compiler and the load, memory-pressure and thermal
+limits still refuse it. Children start at niceness 10 (a judgment call, not
+measured) with one compiler job. While the job runs, one line every 30 seconds
+(load, swap, compressor, memory pressure, thermal limits, warnings, top three
+processes by CPU, the holder) goes to `.reports/native-flight-recorder/flight.jsonl` in the main
 checkout, at most five files of 1 MiB, readable by their owner only and without
 arguments or absolute paths. The readings are taken off the supervisor's loop,
 so slow telemetry delays neither signal forwarding, the storage check nor the

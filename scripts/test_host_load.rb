@@ -83,11 +83,11 @@ class HostLoadTest < Minitest::Test
     assert_equal ["swift-frontend 48159", "xcodebuild 45965"], reading["compilers"]
     assert_nil reading["enclosing_build"]
     reasons = HostLoad.reasons(limits, reading)
-    assert_equal 4, reasons.length, reasons.inspect
+    assert_equal 3, reasons.length, reasons.inspect
     assert_match(/1-minute load average 11\.41 exceeds 6\.00 \(75% of 8 CPUs\)/, reasons[0])
-    assert_match(/swap in use 1551 MiB exceeds 1024 MiB/, reasons[1])
-    assert_match(/CPU_Speed_Limit is 81/, reasons[2])
-    assert_equal "a compiler is already running (swift-frontend 48159, xcodebuild 45965)", reasons[3]
+    assert_match(/CPU_Speed_Limit is 81/, reasons[1])
+    assert_equal "a compiler is already running (swift-frontend 48159, xcodebuild 45965)", reasons[2]
+    assert_empty HostLoad.warnings(limits, reading), "swap 1551 MiB and compressor 22% are inside the measured range"
   end
 
   def test_sample_accepts_comma_decimals_and_absent_optional_telemetry
@@ -130,13 +130,12 @@ class HostLoadTest < Minitest::Test
     assert_equal ["swift-frontend 9001"], reading["compilers"]
     assert_equal ["swift-frontend 9001"], reading["own_compilers"]
     reasons = HostLoad.reasons(limits, reading)
-    assert_equal 3, reasons.length, "load, swap and thermal limits still refuse inside a build: #{reasons.inspect}"
+    assert_equal 2, reasons.length, "load and thermal limits still refuse inside a build: #{reasons.inspect}"
     assert_match(/load average 11\.41/, reasons[0])
-    assert_match(/swap in use 1551 MiB/, reasons[1])
-    assert_match(/CPU_Speed_Limit is 81/, reasons[2])
+    assert_match(/CPU_Speed_Limit is 81/, reasons[1])
     calm = IDLE.merge(reading.slice("compilers", "own_compilers", "enclosing_build"))
     assert_nil HostLoad.refusal(limits, calm), "its own compilers alone do not refuse the step"
-    { "pressure" => 2, "swap_used_mib" => 1550.75, "compressor_mib" => 4506, "cpu_scheduler_limit" => 50, "cpu_available" => 6 }.each do |key, value|
+    { "pressure" => 2, "load" => [7.12, 4.46, 8.85], "cpu_scheduler_limit" => 50, "cpu_available" => 6 }.each do |key, value|
       refute_nil HostLoad.refusal(limits, calm.merge(key => value)), "#{key} must still refuse inside an enclosing build"
     end
     beside = inside.sub(" #{own} 9002 ", " #{own} 1 ")
@@ -220,26 +219,76 @@ class HostLoadTest < Minitest::Test
     assert_equal ["a compiler is already running (swift-frontend 61379)"], HostLoad.reasons(limits, serial)
   end
 
-  def test_each_memory_and_thermal_limit_refuses_on_its_own
-    { { "swap_used_mib" => 563.25 } => nil, { "swap_used_mib" => 1550.75 } => /swap in use/,
-      { "pressure" => 2 } => /memory pressure is warning/, { "pressure" => 4 } => /memory pressure is critical/,
-      { "compressor_mib" => 2040 } => nil, { "compressor_mib" => 4506 } => /compressor occupies 55% of memory, above 50%/,
-      { "cpu_speed_limit" => 81 } => /CPU_Speed_Limit is 81/, { "cpu_scheduler_limit" => 50 } => /CPU_Scheduler_Limit is 50/,
-      { "cpu_available" => 6 } => /only 6 of 8 CPUs/ }.each do |change, expected|
-      message = HostLoad.refusal(limits, IDLE.merge(change))
-      expected ? assert_match(expected, message, change.inspect) : assert_nil(message, change.inspect)
+  # Signs of present stress. Each one refuses on its own, whatever swap and the compressor hold.
+  STRESS = { { "pressure" => 2 } => /memory pressure is warning/, { "pressure" => 4 } => /memory pressure is critical/,
+             { "cpu_speed_limit" => 81 } => /CPU_Speed_Limit is 81/, { "cpu_scheduler_limit" => 50 } => /CPU_Scheduler_Limit is 50/,
+             { "cpu_available" => 6 } => /only 6 of 8 CPUs/, { "load" => [7.12, 4.46, 8.85] } => /1-minute load average 7\.12 exceeds 6\.00/,
+             { "compilers" => ["cargo 61001"] } => /a compiler is already running \(cargo 61001\)/ }.freeze
+
+  def test_memory_pressure_each_thermal_limit_load_and_a_foreign_compiler_refuse_on_their_own
+    STRESS.each do |change, expected|
+      assert_match(expected, HostLoad.refusal(limits, IDLE.merge(change)), change.inspect)
+      assert_equal 1, HostLoad.reasons(limits, IDLE.merge(change)).length, change.inspect
     end
     assert_equal "The host is already loaded: memory pressure is warning; CPU_Speed_Limit is 81 (thermal throttling).",
                  HostLoad.refusal(limits, IDLE.merge("pressure" => 2, "cpu_speed_limit" => 81))
     advice = HostLoad.advice(limits)
     assert_match(/native_job\.rb status/, advice)
     assert_match(/a wait is expected: the default is 120 s, and --wait SECONDS or EPUB_NATIVE_WAIT_SECONDS sets another \(0 refuses at once\)/, advice)
-    assert_match(/Swap in use can stay high until the programs that hold that memory exit/, advice)
+    refute_match(/swap|compressor/i, advice, "sizes that never refuse need no advice")
+  end
+
+  # 00:32 BRT on 2026-11-20 (03:32 UTC): no lease holder, no compiler, no thermal limit, normal memory pressure.
+  IDLE_WITH_OLD_SWAP = IDLE.merge("load" => [3.32, 3.77, 3.77], "swap_used_mib" => 1192.75, "compressor_mib" => 368).freeze
+
+  def test_an_idle_host_is_admitted_whatever_swap_and_the_compressor_still_hold
+    assert_nil HostLoad.refusal(limits, IDLE_WITH_OLD_SWAP), "swap left by earlier work refused an idle host"
+    assert_empty HostLoad.warnings(limits, IDLE_WITH_OLD_SWAP), "1193 MiB and 4% are inside the measured range"
+    # A compressor at 57% of memory and swap beyond every reading: still no present stress.
+    heavy_history = IDLE_WITH_OLD_SWAP.merge("compressor_mib" => 4669, "swap_used_mib" => 6144.0)
+    assert_empty HostLoad.reasons(limits, heavy_history)
+    assert_nil HostLoad.refusal(limits, IDLE_WITH_OLD_SWAP.merge("compressor_mib" => 4669))
+    expected = ["swap in use 6144 MiB is above 1600 MiB", "memory compressor occupies 57% of memory, above 25%"]
+    assert_equal expected, HostLoad.warnings(limits, heavy_history)
+    assert_equal [nil, expected], HostLoad.assess(sampler: -> { heavy_history })
+    assert_equal [nil, []], HostLoad.assess(sampler: -> { IDLE_WITH_OLD_SWAP })
+    assert_nil HostLoad.check(sampler: -> { heavy_history })
+    assert_equal ["swap in use 1601 MiB is above 1600 MiB"], HostLoad.warnings(limits, IDLE.merge("swap_used_mib" => 1601.0))
+    assert_empty HostLoad.warnings(limits, IDLE.merge("swap_used_mib" => 1600.0, "compressor_mib" => 2048))
+    assert_equal ["memory compressor occupies 26% of memory, above 25%"], HostLoad.warnings(limits, IDLE.merge("compressor_mib" => 2130))
+  end
+
+  def test_present_stress_still_refuses_a_host_with_old_swap_and_keeps_the_warnings
+    heavy_history = IDLE_WITH_OLD_SWAP.merge("compressor_mib" => 4669, "swap_used_mib" => 6144.0)
+    STRESS.each do |change, expected|
+      refusal, warnings = HostLoad.assess(sampler: -> { heavy_history.merge(change) })
+      assert_match(expected, refusal, change.inspect)
+      refute_match(/swap|compressor/, refusal, "a size that records history is never a reason: #{change.inspect}")
+      assert_equal 2, warnings.length, change.inspect
+    end
+  end
+
+  def test_every_threshold_cites_the_readings_behind_it
+    admission = JSON.parse(File.read(HostLoad::POLICY)).fetch("admission")
+    rationale = admission.fetch("rationale")
+    (HostLoad::LIMITS - ["recheck_seconds"] + %w[foreign_compilers memory_pressure thermal readings]).each do |name|
+      assert_operator rationale.fetch(name).length, :>, 40, name
+    end
+    %w[max_load_percent_of_cpus memory_pressure thermal foreign_compilers].each { |name| assert_match(/\ARefuses/, rationale.fetch(name), name) }
+    %w[warn_swap_used_mib warn_compressor_percent_of_memory].each { |name| assert_match(/\AWarns only/, rationale.fetch(name), name) }
+    assert_match(/1193 MiB on an idle host with normal memory pressure/, rationale.fetch("warn_swap_used_mib"))
+    # A warning threshold sits above every reading taken while the host worked, a refusal between two measured ranges.
+    assert_operator admission.fetch("warn_swap_used_mib"), :>, 1551
+    assert_operator admission.fetch("warn_compressor_percent_of_memory"), :>, 100.0 * 1807 / 8192
+    assert_operator admission.fetch("max_load_percent_of_cpus") * 8 / 100.0, :>, 4.96
+    assert_operator admission.fetch("max_load_percent_of_cpus") * 8 / 100.0, :<, 6.11
+    refute_includes HostLoad.limits.keys, "rationale"
   end
 
   def test_check_blocks_when_telemetry_or_policy_cannot_be_read
     assert_nil HostLoad.check(sampler: -> { IDLE })
     assert_equal "Host load inspection failed (RuntimeError: probe).", HostLoad.check(sampler: -> { raise "probe" })
+    assert_equal ["Host load inspection failed (RuntimeError: probe).", []], HostLoad.assess(sampler: -> { raise "probe" })
     assert_match(/inspection failed/, HostLoad.check(sampler: -> { IDLE }, policy: -> { raise KeyError, "limits" }))
   end
 
@@ -251,7 +300,9 @@ class HostLoadTest < Minitest::Test
       File.write(path, JSON.generate("version" => 1))
       assert_match(/Missing admission/, assert_raises(RuntimeError) { HostLoad.limits(path) }.message)
       valid = limits
-      { "max_swap_used_mib" => -1, "max_load_percent_of_cpus" => 0.75, "recheck_seconds" => 0, "child_niceness" => nil,
+      { "warn_swap_used_mib" => -1, "max_load_percent_of_cpus" => 0.75, "recheck_seconds" => 0, "child_niceness" => nil,
+        "warn_compressor_percent_of_memory" => 25.5,
+
         "default_wait_seconds" => "120",
         "foreign_compilers" => "cargo" }.each do |key, value|
         File.write(path, JSON.generate("admission" => valid.merge(key => value)))

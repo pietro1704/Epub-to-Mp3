@@ -21,8 +21,11 @@ module NativeJob
     deadline = monotonic + patience unless explicit
     started = monotonic
     loop do
-      error = HostLoad.check
-      return nil unless error
+      error, notes = HostLoad.assess
+      unless error
+        warn "native_job: warning, not a refusal: #{notes.join('; ')}. The flight log records it." unless notes.empty?
+        return nil
+      end
 
       remaining = deadline - monotonic
       waited = (monotonic - started).round
@@ -82,6 +85,15 @@ module NativeJob
     { "held" => !record.nil? || !holders.empty?, "open_in" => holders }
   rescue StandardError => error
     { "held" => (true if record), "open_in" => nil, "open_in_error" => "#{error.class}: #{error.message}" }
+  end
+
+  # For status: the thresholds, one reading, whether it refuses a new job and
+  # what it only warns about.
+  def self.admission_report
+    limits = HostLoad.limits
+    sample = HostLoad.sample
+    { "limits" => limits, "sample" => sample, "refusal" => HostLoad.refusal(limits, sample),
+      "warnings" => HostLoad.warnings(limits, sample) }
   end
 
   def self.resolvable?(program)

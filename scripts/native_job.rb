@@ -454,9 +454,7 @@ module NativeJob
     if host_services?(path)
       host_services
       report["lease"].update(lease_usage(path, record))
-      limits = HostLoad.limits
-      sample = HostLoad.sample
-      report["admission"] = { "limits" => limits, "sample" => sample, "refusal" => HostLoad.refusal(limits, sample) }
+      report["admission"] = admission_report
       report["flight_recorder"] = File.join(NativeFlightRecorder.directory, NativeFlightRecorder::FILE)
     end
     puts JSON.pretty_generate(report)
