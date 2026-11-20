@@ -167,6 +167,36 @@ end
     assert_equal "crates/core", packages["core"]["directory"]
   end
 
+  # Cargo's cache cleanup can delete the downloaded .crate archives while the
+  # extracted sources stay, and `cargo metadata --offline` then fails
+  # ("--offline was specified"): mac:test:local stopped on adler2 on 2026-11-20.
+  def test_offline_metadata_fetches_the_locked_crates_once_when_the_cache_lost_them
+    calls = []
+    metadata = '{"packages":[]}'
+    run = lambda do |root, *command|
+      calls << command
+      if command.include?("metadata") && calls.count { |call| call.include?("metadata") } == 1
+        raise "mise exec -- cargo metadata failed: error: failed to download `adler2 v2.0.1`\n\n" \
+              "Caused by:\n  attempting to make an HTTP request, but --offline was specified"
+      end
+      command.include?("metadata") ? metadata : ""
+    end
+    assert_equal metadata, Build.cargo_metadata(@root, run: run)
+    offline = %w[mise exec -- cargo metadata --format-version 1 --offline]
+    assert_equal [offline, %w[mise exec -- cargo fetch --locked], offline], calls
+  end
+
+  def test_other_metadata_failures_are_not_retried
+    calls = []
+    run = lambda do |_root, *command|
+      calls << command
+      raise "mise exec -- cargo metadata failed: error: failed to parse manifest"
+    end
+    error = assert_raises(RuntimeError) { Build.cargo_metadata(@root, run: run) }
+    assert_match(/failed to parse manifest/, error.message)
+    assert_equal 1, calls.size, "no fetch for an unrelated failure"
+  end
+
   def test_local_task_is_guarded_and_release_tasks_never_use_the_local_profile
     bodies = MiseTaskBodies.load(ROOT, %w[converter-ffi:build:local mac:test:local converter-ffi:build mac:build
                                           mac:validate converter-ffi:ios-device])
