@@ -100,8 +100,13 @@ test('publisher boundaries keep releases behind the whole validation and seriali
     assert.match(text, /github\.event\.workflow_run\.conclusion == 'success'/, name);
     assert.match(text, /\(github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/master'\)/, name);
     assert.match(text, /validated_merge\.mjs" --repo "\$GITHUB_REPOSITORY" --ref "\$SOURCE_REF" --latest\n/, name);
-    assert.doesNotMatch(text, /gh workflow run|release-desktop|gh pr merge/, name);
+    assert.doesNotMatch(text, /gh pr merge/, name);
   }
+  // Owner decision 2026-11-20: Auto Release starts Release Desktop for its new tag;
+  // nothing else dispatches workflows from the publishers.
+  assert.equal(workflow('auto-release').match(/gh workflow run [^\n]*/g)?.join(),
+    'gh workflow run release-desktop.yml --repo "$GITHUB_REPOSITORY" --ref master -f tag="$VERSION_TAG"');
+  assert.doesNotMatch(workflow('release-pr'), /gh workflow run|release-desktop/);
   assert.match(workflow('sync-hf'), /workflows: \["Post-merge validation"\]/);
   for (const name of ['sync-hf', 'rollback-hf']) {
     assert.match(workflow(name), /group: sync-hf\n  cancel-in-progress: false/);

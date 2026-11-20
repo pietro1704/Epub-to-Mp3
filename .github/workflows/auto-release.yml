@@ -4,8 +4,8 @@ name: Auto Release
 # latest master commit once its committed version is newer than the last tag.
 # The version is deliberate: scripts/bump.sh raises Cargo.toml, Cargo.lock,
 # ruby_app/rails_gateway/VERSION and CHANGELOG.md in a pull request; this workflow never edits master. It does not
-# build or attach artifacts; the multi-platform Release Desktop run stays a
-# separate, manual dispatch with the published tag.
+# build or attach artifacts itself: it starts the multi-platform Release Desktop
+# run for the published tag.
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -27,6 +27,8 @@ on:
 permissions:
   contents: write
   pull-requests: read
+  # Only to start Release Desktop for the new tag.
+  actions: write
 
 # One release publication at a time; never cancel a partially published release.
 concurrency:
@@ -197,6 +199,16 @@ jobs:
           args=(--target "$VALIDATED_SHA" --title "$VERSION_TAG" --generate-notes --latest)
           [[ -z "$LAST_TAG" ]] || args+=(--notes-start-tag "$LAST_TAG")
           gh release create "$VERSION_TAG" "${args[@]}"
+
+      # The tag above is created with GITHUB_TOKEN, which starts no workflow, so the
+      # release packages (Docker image, Android, macOS, Linux, Windows) are started
+      # explicitly for exactly this tag. Release Desktop revalidates the tag itself.
+      - name: Start the release packages
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_TAG: ${{ steps.bump.outputs.tag }}
+        run: gh workflow run release-desktop.yml --repo "$GITHUB_REPOSITORY" --ref master -f tag="$VERSION_TAG"
 
       - name: Report unchanged version without publishing
         if: steps.bump.outputs.skip == 'true'
