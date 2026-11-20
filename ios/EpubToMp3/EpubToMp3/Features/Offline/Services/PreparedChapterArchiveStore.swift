@@ -83,6 +83,21 @@ actor PreparedChapterArchiveStore {
         if try existingRegularFileSize(target) != nil { try manager.removeItem(at: target) }
     }
 
+    /// Removes every archive of this book: only regular files named for this book's
+    /// digest, never a directory, a link or another book's archive.
+    func removeAll(bookID: String) throws {
+        let prefix = try targetURL(bookID: bookID, chapterIndex: 0).lastPathComponent.dropLast("0.archive".count)
+        do { try validateRoot(create: false) } catch let error as NSError where error.domain == NSCocoaErrorDomain &&
+            (error.code == NSFileNoSuchFileError || error.code == NSFileReadNoSuchFileError) { return }
+        for entry in try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+            let name = entry.lastPathComponent
+            guard name.hasPrefix(prefix), name.hasSuffix(".archive"),
+                  Int(name.dropFirst(prefix.count).dropLast(".archive".count)) != nil,
+                  (try? existingRegularFileSize(entry)).flatMap({ $0 }) != nil else { continue }
+            try manager.removeItem(at: entry)
+        }
+    }
+
     private func targetURL(bookID: String, chapterIndex: Int, signature: String? = nil) throws -> URL {
         guard !bookID.isEmpty, bookID.utf8.count <= 1024, chapterIndex >= 0,
               signature.map({ $0.utf8.count == 64

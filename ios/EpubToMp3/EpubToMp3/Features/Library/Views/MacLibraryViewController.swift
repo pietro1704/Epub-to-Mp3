@@ -14,6 +14,9 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private let onOpenBook: (String) -> Void
     private let onDownloadBook: (String) -> Void
     private let onConvertBook: (String) -> Void
+    /// Asks the listener before a book is removed, like the iOS action sheet.
+    typealias RemovalConfirmation = @MainActor (_ title: String, _ window: NSWindow?) async -> Bool
+    private let confirmRemoval: RemovalConfirmation
     private var cancellables: Set<AnyCancellable> = []
     private var sortMode: LibraryGridModel.SortMode = .lastOpened
     private var selectedTag: String?
@@ -36,13 +39,15 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         bookmarkStore: BookmarkStore,
         onOpenBook: @escaping (String) -> Void,
         onDownloadBook: @escaping (String) -> Void,
-        onConvertBook: @escaping (String) -> Void
+        onConvertBook: @escaping (String) -> Void,
+        confirmRemoval: @escaping RemovalConfirmation = MacLibraryViewController.presentRemovalConfirmation
     ) {
         self.library = library
         self.bookmarkStore = bookmarkStore
         self.onOpenBook = onOpenBook
         self.onDownloadBook = onDownloadBook
         self.onConvertBook = onConvertBook
+        self.confirmRemoval = confirmRemoval
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("library.title")
     }
@@ -354,11 +359,27 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         onDownloadBook(id)
     }
 
+    /// Same choice as the iOS action sheet: the book's title, a destructive
+    /// "Remove from library" and "Cancel". Without a window nothing is removed.
+    static func presentRemovalConfirmation(title: String, window: NSWindow?) async -> Bool {
+        guard let window else { return false }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L10n.string("library.removeFromLibrary")).hasDestructiveAction = true
+        alert.addButton(withTitle: L10n.string("library.cancel"))
+        return await withCheckedContinuation { continuation in
+            alert.beginSheetModal(for: window) { continuation.resume(returning: $0 == .alertFirstButtonReturn) }
+        }
+    }
+
     @objc
     private func removeSelectedBook(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        let jobID = library.books.first(where: { $0.id == id })?.lastJobId
+        let book = library.books.first(where: { $0.id == id })
+        let jobID = book?.lastJobId
         Task {
+            guard await confirmRemoval(book?.resolvedTitle ?? id, view.window) else { return }
             do {
                 try await LibraryBookRemoval(library: library, bookmarks: bookmarkStore)
                     .remove(bookID: id, legacyJobID: jobID)
