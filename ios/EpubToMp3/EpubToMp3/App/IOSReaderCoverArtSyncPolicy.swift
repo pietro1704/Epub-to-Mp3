@@ -1,5 +1,4 @@
-#if os(iOS)
-import UIKit
+import Foundation
 
 enum IOSReaderCoverArtSyncPolicy {
     static func shouldPublishNowPlayingCover(
@@ -10,5 +9,3 @@ enum IOSReaderCoverArtSyncPolicy {
         hasSnapshot || isConverting || hasLoadedAudioQueue
     }
 }
-
-#endif

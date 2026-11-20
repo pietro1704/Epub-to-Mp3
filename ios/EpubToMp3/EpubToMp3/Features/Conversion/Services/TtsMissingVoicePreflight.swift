@@ -1,4 +1,3 @@
-#if os(iOS)
 import AVFoundation
 import Foundation
 
@@ -48,4 +47,3 @@ enum TtsMissingVoicePreflight {
                 + String(decoding: context, as: UTF8.self) + "[[/tts_language_mismatch_v1]]")
     }
 }
-#endif

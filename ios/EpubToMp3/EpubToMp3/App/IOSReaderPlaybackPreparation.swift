@@ -1,5 +1,4 @@
-#if os(iOS)
-import UIKit
+import Foundation
 
 @MainActor
 enum IOSReaderPlaybackPreparation {
@@ -27,4 +26,3 @@ enum IOSReaderPlaybackPreparation {
     }
 
 }
-#endif
