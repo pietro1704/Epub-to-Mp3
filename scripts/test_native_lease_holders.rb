@@ -25,7 +25,7 @@ class NativeLeaseHoldersTest < Minitest::Test
     assert status.success?, error
     seen = JSON.parse(File.read(@marker))
     record = seen.fetch("record")
-    assert_equal %w[build running ruby mac:test:local], record.values_at("phase", "state", "program", "task")
+    assert_equal ["build", "running", PROGRAM, "mac:test:local"], record.values_at("phase", "state", "program", "task")
     assert_match(/\A#{WORKTREE}\z/, record["worktree"])
     assert_equal seen.fetch("pid"), record["child"], "the record names the job's process group"
     assert_operator record["pid"], :>, 1
@@ -38,8 +38,8 @@ class NativeLeaseHoldersTest < Minitest::Test
     holding(env: { "MISE_TASK_NAME" => "ios:device:test" }) do |pid, child, release|
       _, error, status = job
       assert_equal 75, status.exitstatus, error
-      assert_match(/Another native\/heavy job is active \(pid #{pid}, build running since \S+, #{WORKTREE}: ruby in ios:device:test; lease file open in /, error)
-      assert_match(/\b#{child} ruby\b/, error, "the job's own process keeps the lease file open")
+      assert_match(/Another native\/heavy job is active \(pid #{pid}, build running since \S+, #{WORKTREE}: #{Regexp.escape(PROGRAM)} in ios:device:test; lease file open in /, error)
+      assert_match(/#{listed(child)}/, error, "the job's own process keeps the lease file open")
       refute File.exist?(@marker)
       waiter, log = background_job("--wait", "600")
       wait_until { said?(log, "retrying in 1 s") }
@@ -58,9 +58,9 @@ class NativeLeaseHoldersTest < Minitest::Test
       retries = refusals.grep(/; retrying in \d+ s\z/)
       assert_operator retries.length, :>=, 1, error
       assert_equal retries, refusals[0..-2], "every refusal but the last announces a retry"
-      assert_match(/lease file open in .*\b#{child} ruby\b/, retries.first)
+      assert_match(/lease file open in .*#{listed(child)}/, retries.first)
       retries.drop(1).each { |line| refute_match(/lease file open in/, line, "a retry must not scan the process table again") }
-      assert_match(/lease file open in .*\b#{child} ruby\b/, refusals.last)
+      assert_match(/lease file open in .*#{listed(child)}/, refusals.last)
     end
   end
 
@@ -78,7 +78,7 @@ class NativeLeaseHoldersTest < Minitest::Test
       report = status_report(env: { "FIXTURE_SAMPLES" => loaded }, stubs: never_locks)
       assert_equal [true, pid, child, "running"],
                    [report.dig("lease", "held"), *report.dig("lease", "holder").values_at("pid", "child", "state")]
-      assert_includes report.dig("lease", "open_in"), "#{child} ruby"
+      assert_includes report.dig("lease", "open_in"), "#{child} #{LISTED}"
       assert_match(/load average 7\.12/, report.dig("admission", "refusal"))
       assert_equal LOADED["load"], report.dig("admission", "sample", "load")
     end
@@ -96,6 +96,24 @@ class NativeLeaseHoldersTest < Minitest::Test
       assert_equal 75, status.exitstatus, error
       assert_match(/is active \(pid #{pid}, .*; the processes that keep the lease file open could not be listed \(RuntimeError: lsof telemetry deadline exceeded\)\)/, error)
     end
+  end
+
+  def test_the_linux_listing_reads_one_link_per_open_descriptor
+    NativeJob.host_services
+    File.write(@lock, "")
+    other = File.join(@dir, "other")
+    File.write(other, "")
+    holder = start(RUBY, "-e", until_file(0), File.join(@dir, "never"))
+    table = File.join(@dir, "proc")
+    # The holder twice, this process, another file, a link to nothing and a name that is not a process ID.
+    { "self/fd" => {}, "#{holder}/fd" => { "0" => File::NULL, "9" => @lock, "12" => @lock, "13" => File.join(@dir, "gone") },
+      "#{Process.pid}/fd" => { "9" => @lock }, "77777777/fd" => { "3" => other }, "12abc/fd" => { "9" => @lock } }.each do |directory, links|
+      FileUtils.mkdir_p(File.join(table, directory))
+      links.each { |name, target| File.symlink(target, File.join(table, directory, name)) }
+    end
+    assert_equal ["#{holder} #{LISTED}"], NativeJob.lease_holders(@lock, proc_root: table)
+    File.delete(File.join(table, holder.to_s, "fd", "9"), File.join(table, holder.to_s, "fd", "12"))
+    assert_empty NativeJob.lease_holders(@lock, proc_root: table)
   end
 
   def test_lease_file_replaced_during_acquisition_is_refused
@@ -178,14 +196,14 @@ class NativeLeaseHoldersTest < Minitest::Test
     _, error, status = job
     assert_equal 75, status.exitstatus, error
     assert_match(/Another native\/heavy job is active \(pid #{supervisor}, heavy orphaned, supervisor gone/, error)
-    assert_match(/lease file open in .*\b#{load.fetch('runner')} ruby\b/, error)
+    assert_match(/lease file open in .*#{listed(load.fetch('runner'))}/, error)
     refute File.exist?(@marker), "a new heavy job started on top of the orphaned load"
     Process.kill("KILL", load.fetch("runner"))
     wait_until { gone?(load.fetch("runner")) }
     refute lease_free?, "the suite's own step still runs and must keep the lease"
     _, error, status = job
     assert_equal 75, status.exitstatus, error
-    assert_match(/lease file open in #{load.fetch('step')} ruby\)/, error, "the refusal names the one process that still holds the lease")
+    assert_match(/lease file open in #{listed(load.fetch('step'))}\)/, error, "the refusal names the one process that still holds the lease")
     Process.kill("KILL", load.fetch("step"))
     wait_until { lease_free? }
     _, error, status = job
@@ -201,9 +219,9 @@ class NativeLeaseHoldersTest < Minitest::Test
     refute lease_free?, "this browser inherited the lease, so it holds it after the job ended"
     _, error, status = job
     assert_equal 75, status.exitstatus, error
-    assert_match(/Another native\/heavy job is active \(no holder record[^;]*; lease file open in #{browser} ruby\)/, error)
+    assert_match(/Another native\/heavy job is active \(no holder record[^;]*; lease file open in #{listed(browser)}\)/, error)
     lease = status_report.fetch("lease")
-    assert_equal [true, nil, ["#{browser} ruby"]], lease.values_at("held", "holder", "open_in"),
+    assert_equal [true, nil, ["#{browser} #{LISTED}"]], lease.values_at("held", "holder", "open_in"),
                  "status must show a lease that only a left-behind process holds"
     Process.kill("KILL", browser)
     wait_until { lease_free? }
@@ -261,7 +279,8 @@ class NativeLeaseHoldersTest < Minitest::Test
           refute_includes text, forbidden, "the #{name} must not carry #{forbidden}"
         end
       end
-      assert_equal ["ruby", "ios:device:test", ""], JSON.parse(record).values_at("program", "task", "session")
+      assert_equal [PROGRAM, "ios:device:test", ""], JSON.parse(record).values_at("program", "task", "session")
+
     end
     assert_equal "600", format("%o", File.stat(@lock).mode & 0o777), "only the owner reads the lease record"
     assert_equal %w[700 600], [@flight, flight_log].map { |path| format("%o", File.stat(path).mode & 0o777) }

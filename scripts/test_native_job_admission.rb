@@ -146,7 +146,7 @@ class NativeJobAdmissionTest < Minitest::Test
     assert_empty kinds - %w[start sample end]
     assert_equal 17, events.last["exit_status"]
     assert_equal "4f00000000000000", events.first["startup_power_events"]
-    events.each { |event| assert_equal %w[build ruby], event["holder"].values_at("phase", "program") }
+    events.each { |event| assert_equal ["build", PROGRAM], event["holder"].values_at("phase", "program") }
     events[0..-2].each do |event|
       assert_equal IDLE["load"], event["load"]
       assert_equal ["98.2 47168 swift-frontend"], event["top"]

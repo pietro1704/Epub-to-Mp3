@@ -17,15 +17,11 @@ require_relative "native_job"
 module NativeJobHostFixture
   SCRIPT = File.expand_path("native_job.rb", __dir__)
   RUBY = RbConfig.ruby
-  # Inside the heavy host-suite job this suite holds the host lease on
-  # descriptor 9. No fixture process inherits it: one left behind by a killed
-  # run would keep the host lease.
-  WITHOUT_OUTER_LEASE = begin
-    IO.for_fd(NativeJob::CHILD_FD, autoclose: false).stat
-    { NativeJob::CHILD_FD => :close }.freeze
-  rescue StandardError
-    {}.freeze
-  end
+  # What a holder record and a process list call this interpreter: "ruby" for a
+  # mise installation, "ruby3.2" for a distribution package. Linux keeps at most
+  # 15 characters of a process name.
+  PROGRAM = File.basename(RUBY)
+  LISTED = RUBY_PLATFORM.include?("linux") ? PROGRAM[0, 15] : PROGRAM
   IDLE = { "load" => [2.56, 3.25, 9.03], "cpus" => 8, "memory_mib" => 8192, "swap_used_mib" => 331.25,
            "swap_total_mib" => 2048.0, "compressor_mib" => 782, "pressure" => 1, "cpu_speed_limit" => 100,
            "cpu_scheduler_limit" => 100, "cpu_available" => 8, "thermal_level" => 52,
@@ -121,9 +117,19 @@ module NativeJobHostFixture
     File.join(@dir, "#{@sequence = @sequence.to_i + 1}-#{name}")
   end
 
+  # Inside the heavy host-suite job this suite holds the host lease on
+  # descriptor 9. No fixture process inherits it: one left behind by a killed
+  # run would keep the host lease.
+  def without_outer_lease
+    IO.for_fd(NativeJob::CHILD_FD, autoclose: false).stat
+    { NativeJob::CHILD_FD => :close }
+  rescue StandardError
+    {}
+  end
+
   # Starts a fixture process that teardown stops if the test does not.
   def start(*command, env: {}, out: File::NULL, err: File::NULL, descriptors: {})
-    options = { in: File::NULL, out: out, err: err }.merge(WITHOUT_OUTER_LEASE).merge(descriptors)
+    options = { in: File::NULL, out: out, err: err }.merge(without_outer_lease).merge(descriptors)
     Process.spawn(@env.merge(env), *command, options).tap { |pid| @children << pid }
   end
 
@@ -144,6 +150,11 @@ module NativeJobHostFixture
   def background_job(*arguments, child: record_reader, env: {})
     log = fresh("job.err")
     [start(*supervisor(*arguments, "build", "--", *child), env: env, err: log), log]
+  end
+
+  # Pattern source for one process in a list of lease holders.
+  def listed(pid)
+    "\\b#{pid} #{Regexp.escape(LISTED)}(?![\\w.])"
   end
 
   def said?(log, text)

@@ -42,12 +42,14 @@ module NativeJob
   # behind by a finished job). Read-only; process IDs and program names only,
   # and only processes this user may inspect. Raises when the processes cannot
   # be listed: unknown is not "nobody".
-  def self.lease_holders(path)
+  def self.lease_holders(path, proc_root: "/proc")
     target = File.stat(path)
-    pids = if File.directory?("/proc/self/fd")
-             Dir.glob("/proc/[0-9]*/fd/*").filter_map do |entry|
-               stat = File.stat(entry) rescue next
-               Integer(entry.split("/")[2]) if [stat.dev, stat.ino] == [target.dev, target.ino]
+    pids = if File.directory?(File.join(proc_root, "self/fd"))
+             # Linux: one link per open descriptor of every process.
+             Dir.glob("[0-9]*/fd/*", base: proc_root).filter_map do |entry|
+               stat = File.stat(File.join(proc_root, entry)) rescue next
+               pid = entry[/\A(\d+)\//, 1]
+               Integer(pid) if pid && [stat.dev, stat.ino] == [target.dev, target.ino]
              end
            else
              # lsof exits 1 when no process has the file open.
