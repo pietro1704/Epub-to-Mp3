@@ -15,9 +15,7 @@ class TtsCatalog {
   final int? androidApi;
   final TtsSelection? defaultSelection;
 
-  TtsPreferences get recommendedPreferences => TtsPreferences.appDefaults(
-    primary: defaultSelection ?? TtsSelection.faber,
-  );
+  TtsPreferences get recommendedPreferences => const TtsPreferences.appDefaults();
   factory TtsCatalog.decode(String json) {
     final decoded = jsonDecode(json);
     if (decoded is! Map || decoded['schema_version'] != 3) {

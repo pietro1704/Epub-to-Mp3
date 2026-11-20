@@ -379,6 +379,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ttsFaberOffline => 'Faber medium · Offline';
 
   @override
+  String get ttsAutomaticPiper => 'Piper · Book language';
+
+  @override
+  String get ttsDetectLanguage => 'Detect from book';
+
+  @override
   String get ttsEdgeOnline => 'Edge · Online';
 
   @override
@@ -389,7 +395,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ttsUseRecommendedDefaults =>
-      'Use Faber with system voice fallback';
+      'Use book-language Piper with system voice fallback';
 
   @override
   String get ttsAllowOnlineSecondary => 'Allow online secondary';

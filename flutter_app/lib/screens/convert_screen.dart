@@ -17,7 +17,6 @@ import 'library_screen.dart' show libraryStoreProvider;
 
 import '../state/providers.dart';
 import '../l10n/app_localizations.dart';
-import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
 
 part 'conversion_options_section.dart';
@@ -40,7 +39,7 @@ class ConversionRequest {
   final String filePath;
   final String engine;
   final String voice;
-  final String language;
+  final String? language;
   final int? chapterStart;
   final int? chapterEnd;
   final bool includeCover;
@@ -65,7 +64,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   String _engine = 'preferences';
   bool _allowSecondary = false;
   String _voice = 'pt-BR-AntonioNeural';
-  String _language = 'pt';
+  String _language = '';
   final _startController = TextEditingController();
   final _endController = TextEditingController();
   bool _includeCover = true;
@@ -205,7 +204,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     final engine = _engine;
     final voice = _voice;
     final allowSecondary = _allowSecondary;
-    final language = _language;
+    final language = _language.isEmpty ? null : _language;
     final includeCover = _includeCover;
     final normalizeAudio = _normalizeAudio;
     final startedAt = DateTime.now().toUtc();
@@ -224,24 +223,9 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     });
     try {
       final settings = ref.read(settingsProvider);
-      final configured = settings.configuredTtsPreferences;
-      TtsCatalog? catalog;
-      if (engine == 'piper' || (engine == 'preferences' && configured == null)) {
-        try {
-          catalog = await ref.read(ttsCatalogProvider.future);
-        } catch (error) {
-          debugPrint('Conversion voice catalog unavailable: $error');
-        }
-        if (!mounted) return;
-      }
-      final saved =
-          configured ?? catalog?.recommendedPreferences ?? settings.ttsPreferences;
-      final recommended = catalog?.defaultSelection;
-      final piperPrimary = recommended != null && recommended.engine == 'piper'
-          ? recommended
-          : TtsSelection.faber;
+      final saved = settings.ttsPreferences;
       final manualPrimary = engine == 'piper'
-          ? piperPrimary
+          ? TtsSelection.automaticPiper
           : TtsSelection(engine: 'edge', voice: voice);
       final selected = engine == 'preferences'
           ? saved

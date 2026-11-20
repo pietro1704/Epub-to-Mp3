@@ -1,8 +1,10 @@
 //! Shared, platform-independent voice selection and isolated-segment policy.
 use serde::{Deserialize, Serialize};
+mod automatic_piper;
 mod legacy_selection;
 
 pub const FABER_MODEL_ID: &str = "pt_BR-faber-medium";
+pub const AUTOMATIC_PIPER_MODEL_ID: &str = "piper-auto";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TtsSelection {

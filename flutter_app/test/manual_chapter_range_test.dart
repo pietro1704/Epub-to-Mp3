@@ -135,11 +135,7 @@ void main() {
       '$description reaches the Android adapter unchanged',
       (tester) async {
         await submitRange(tester, start, end);
-        expect(converterCalls.map((call) => call.method), [
-          'ttsModels',
-          'status',
-          'convert',
-        ]);
+        expect(converterCalls.map((call) => call.method), ['status', 'convert']);
         final arguments = converterCalls.last.arguments as Map;
         expect(arguments['inputPath'], '/owned/book.epub');
         expect(arguments['chapterStart'], expectedStart);

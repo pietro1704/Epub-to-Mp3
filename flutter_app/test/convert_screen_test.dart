@@ -67,7 +67,7 @@ Future<void> _pumpManualResult(
 }
 
 void main() {
-  testWidgets('manual conversion captures the delayed Rust default', (tester) async {
+  testWidgets('manual conversion captures automatic Piper without waiting for the catalog', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final converter = _CatalogConverter();
@@ -76,25 +76,11 @@ void main() {
       request = value;
       return 'job';
     }, converter: converter);
-    await tester.pump(const Duration(seconds: 1));
-    expect(request, isNull);
-
-    converter.catalog.complete(jsonEncode({
-      'schema_version': 3,
-      'entries': [],
-      'providers': [],
-      'default_selection': {
-        'version': 2,
-        'provider': 'piper',
-        'runtime': 'piper',
-        'model_id': 'fixture-model',
-        'model_revision': 'fixture-revision',
-      },
-    }));
     await tester.pumpAndSettle();
-
-    expect(request?.ttsPreferences.primary.modelId, 'fixture-model');
-    expect(request?.ttsPreferences.primary.session?.modelRevision, 'fixture-revision');
+    expect(converter.catalog.isCompleted, isFalse);
+    expect(request?.ttsPreferences.primary.modelId, 'piper-auto');
+    expect(request?.ttsPreferences.primary.session, isNull);
+    expect(request?.language, isNull);
     expect(request?.ttsPreferences.secondary?.engine, 'system');
     expect(request?.ttsPreferences.allowOnlineFallback, isFalse);
   });

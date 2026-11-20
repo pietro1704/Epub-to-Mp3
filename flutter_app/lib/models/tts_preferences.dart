@@ -17,6 +17,7 @@ class TtsSelection {
     final otherOptions = second?.options ?? const <String, String>{};
     return options.length == otherOptions.length && options.entries.every((entry) => otherOptions[entry.key] == entry.value);
   }
+  static const automaticPiper = TtsSelection(engine: 'piper', modelId: 'piper-auto');
   static const faber = TtsSelection(
     engine: 'piper',
     modelId: 'pt_BR-faber-medium',
@@ -60,7 +61,7 @@ class TtsPreferences {
     this.policyVersion = 1,
   });
   /// New app preferences only; legacy jobs retain their captured strict policy.
-  const TtsPreferences.appDefaults({this.primary = TtsSelection.faber})
+  const TtsPreferences.appDefaults({this.primary = TtsSelection.automaticPiper})
     : secondary = TtsSelection.system,
       allowOnlineFallback = false,
       policyVersion = 2;

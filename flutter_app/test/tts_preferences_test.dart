@@ -20,7 +20,7 @@ void main() {
   test('new defaults round trip without changing strict overrides', () {
     const defaults = TtsPreferences.appDefaults();
     final restored = TtsPreferences.fromJson(defaults.toJson());
-    expect(restored.primary.modelId, 'pt_BR-faber-medium');
+    expect(restored.primary.modelId, 'piper-auto');
     expect(restored.secondary!.engine, 'system');
     expect(restored.policyVersion, 2);
     expect(restored.allowOnlineFallback, false);
@@ -46,10 +46,10 @@ void main() {
     );
   });
 
-  test('fresh settings choose Faber without online consent', () async {
+  test('fresh settings select Piper by book language without online consent', () async {
     SharedPreferences.setMockInitialValues({});
     final settings = MirrorAppSettings(await SharedPreferences.getInstance());
-    expect(settings.ttsPreferences.primary.modelId, 'pt_BR-faber-medium');
+    expect(settings.ttsPreferences.primary.modelId, 'piper-auto');
     expect(settings.ttsPreferences.secondary!.engine, 'system');
     expect(settings.ttsPreferences.policyVersion, 2);
     expect(settings.ttsPreferences.allowOnlineFallback, false);
@@ -75,7 +75,7 @@ void main() {
     expect(options['models_root'], '/models');
     expect(
       options['tts_preferences']['primary']['model_id'],
-      'pt_BR-faber-medium',
+      'piper-auto',
     );
     expect(MirrorAppSettings(prefs).ttsPreferences.primary.engine, 'edge');
   });

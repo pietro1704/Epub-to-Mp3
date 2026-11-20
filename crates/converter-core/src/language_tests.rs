@@ -191,3 +191,92 @@ fn cancellation_interrupts_candidate_collection_inside_one_long_chapter() {
     assert!(result.is_err());
     assert!(checks.get() < 10);
 }
+
+#[test]
+fn automatic_piper_ranks_eligible_voices_and_preserves_explicit_choices() {
+    use crate::tts_preferences::{TtsPreferences, AUTOMATIC_PIPER_MODEL_ID};
+    let mut defaults = TtsPreferences::app_default(true);
+    assert!(defaults
+        .resolve_automatic_piper(Some("en"), |_| true)
+        .is_none());
+    defaults.primary.model_id = Some(AUTOMATIC_PIPER_MODEL_ID.into());
+    let selected = |language, available: fn(&crate::tts_preferences::TtsSelection) -> bool| {
+        defaults
+            .resolve_automatic_piper(Some(language), available)
+            .unwrap()
+            .primary
+    };
+    assert_eq!(
+        selected("pt_BR", |_| true).model_id.as_deref(),
+        Some("pt_BR-faber-medium")
+    );
+    assert_eq!(
+        selected("en-GB", |_| true).model_id.as_deref(),
+        Some("en_US-ljspeech-high")
+    );
+    assert_eq!(
+        selected("en-US", |voice| voice.model_id.as_deref()
+            == Some("en_US-ljspeech-medium"))
+        .model_id
+        .as_deref(),
+        Some("en_US-ljspeech-medium")
+    );
+    assert_eq!(
+        selected("es", |_| true).model_id.as_deref(),
+        Some("es_ES-davefx-medium")
+    );
+    assert_eq!(
+        selected("en", |_| false).model_id.as_deref(),
+        Some("en_US-ljspeech-high")
+    );
+    assert_eq!(
+        selected("ar", |_| false).model_id.as_deref(),
+        Some("ar_JO-kareem-medium")
+    );
+    assert_eq!(
+        selected("pt-PT", |_| true).model_id.as_deref(),
+        Some("pt_PT-tugão-medium")
+    );
+    assert_eq!(
+        selected("de-DE", |_| true).model_id.as_deref(),
+        Some("de_DE-thorsten-high")
+    );
+    assert_eq!(
+        selected("fr-FR", |_| true).model_id.as_deref(),
+        Some("fr_FR-siwis-medium")
+    );
+    assert_eq!(selected("ja", |_| false).engine, "system");
+    assert_eq!(selected("zz", |_| false).engine, "system");
+    assert_eq!(
+        defaults.primary.model_id.as_deref(),
+        Some(AUTOMATIC_PIPER_MODEL_ID)
+    );
+}
+
+#[test]
+fn automatic_piper_extended_catalog_has_installable_language_defaults() {
+    use crate::model_catalog::{automatic_piper_models, ModelPlatform, QualityTier};
+    use crate::speech_model_library::{CatalogQuery, SpeechModelLibrary};
+    let snapshot = SpeechModelLibrary
+        .snapshot(CatalogQuery {
+            language: "en-US".into(),
+            platform: ModelPlatform::Linux,
+            android_api: None,
+            architecture: "x86_64".into(),
+            os_version: None,
+        })
+        .expect("all pinned voice descriptors are valid");
+    for language in ["ar", "de", "en", "fr", "hi", "nb", "te", "uk", "zh"] {
+        let models = automatic_piper_models(language);
+        let preferred = models
+            .first()
+            .expect("catalog language has a Piper default");
+        assert!(matches!(
+            preferred.metadata.presentation.quality,
+            QualityTier::High | QualityTier::Medium
+        ));
+        assert!(snapshot.entries.iter().any(|entry| {
+            entry.identity.model_id == preferred.id && entry.distribution.installable
+        }));
+    }
+}
