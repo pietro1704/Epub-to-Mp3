@@ -23,23 +23,25 @@ final class LegacyAudioMigrationCoordinatorTests: XCTestCase {
     /// Writes the job's own converted chapter files, as the Rust output holds them.
     private func converted(
         _ fixture: LegacyAudioImportFixture, job: String = "job", base: Int, chapters: [Int],
-        bytes: Data = LegacyAudioImportFixture.audio, fileExtension: String = "mp3"
+        bytes: Data = LegacyAudioImportFixture.audio, bookID: String? = "book", readerAxis: Bool = true
     ) throws -> Converted {
         let directory = fixture.root.appendingPathComponent("RustConversions/\(job)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var files: [Int: URL] = [:]
         for chapter in chapters {
-            let url = directory.appendingPathComponent("converted-\(chapter).\(fileExtension)")
+            let url = directory.appendingPathComponent("converted-\(chapter).mp3")
             try bytes.write(to: url)
             files[chapter] = url
         }
-        return Converted(indexBase: base, files: files)
+        return Converted(bookID: bookID, usesReaderAxis: readerAxis, indexBase: base, files: files)
     }
 
     private func coordinator(_ fixture: LegacyAudioImportFixture, _ defaults: UserDefaults,
-                             converted: [String: Converted]) -> LegacyAudioMigrationCoordinator {
+                             converted: [String: Converted],
+                             unplayable: Set<URL> = []) -> LegacyAudioMigrationCoordinator {
         .init(store: LocalAudioArtifactStore(root: fixture.storeRoot), legacyRoot: fixture.legacyRoot,
-              defaults: defaults, convertedChapters: { converted[$0] })
+              defaults: defaults, convertedChapters: { converted[$0] },
+              isPlayable: { !unplayable.contains($0) })
     }
 
     private func book(_ id: String = "book", job: String? = "job") -> LegacyAudioMigrationCoordinator.Book {
@@ -92,7 +94,8 @@ final class LegacyAudioMigrationCoordinatorTests: XCTestCase {
         let store = LocalAudioArtifactStore(
             root: fixture.storeRoot, visibleCopies: DownloadedAudioFilesMirror(root: fixture.legacyRoot))
         let migration = LegacyAudioMigrationCoordinator(
-            store: store, legacyRoot: fixture.legacyRoot, defaults: defaults, convertedChapters: { _ in job })
+            store: store, legacyRoot: fixture.legacyRoot, defaults: defaults,
+            convertedChapters: { _ in job }, isPlayable: { _ in true })
         let report = try await migration.run(books: [book()])
         XCTAssertEqual(report.books["book"], .complete(imported: 2, alreadyPresent: 0))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.legacyRoot.path), ["Library title"],
@@ -150,7 +153,10 @@ final class LegacyAudioMigrationCoordinatorTests: XCTestCase {
         manifest.chapters[1] = .init(index: 2, title: "Chapter 2", mp3FileName: "chapter-2.mp3", mp3Bytes: 7,
                                      downloadedAt: manifest.chapters[1].downloadedAt)
         try JSONEncoder().encode(manifest).write(to: fixture.sourceManifest())
-        let job = try converted(fixture, base: 1, chapters: [1, 2])
+        // The converted file holds the same damaged bytes, so identity is proven
+        // and it is the importer's own decoding that refuses the chapter.
+        var job = try converted(fixture, base: 1, chapters: [1, 2])
+        try damaged.write(to: XCTUnwrap(job.files[2]))
         let migration = coordinator(fixture, defaults, converted: ["job": job])
         let first = try await migration.run(books: [book()])
         XCTAssertEqual(first.books["book"], .partial(imported: 1, alreadyPresent: 0, deferred: 1))
@@ -162,6 +168,8 @@ final class LegacyAudioMigrationCoordinatorTests: XCTestCase {
         XCTAssertEqual(try LocalAudioArtifactFixture.manifest(root: fixture.storeRoot, bookID: "book")?.chapters.map(\.index), [0])
 
         try fixture.writeSource(chapters: [2])
+        try LegacyAudioImportFixture.audio.write(to: XCTUnwrap(job.files[2]))
+        job = Converted(bookID: job.bookID, usesReaderAxis: true, indexBase: 1, files: job.files)
         let retry = try await migration.run(books: [book()])
         XCTAssertEqual(retry.books["book"], .complete(imported: 1, alreadyPresent: 0))
         XCTAssertEqual(try LocalAudioArtifactFixture.manifest(root: fixture.storeRoot, bookID: "book")?.chapters.map(\.index), [0, 1])
@@ -202,22 +210,44 @@ final class LegacyAudioMigrationCoordinatorTests: XCTestCase {
             atPath: fixture.legacyRoot.appendingPathComponent("job").path), ["fulltext.json"])
     }
 
-    func testLegacyCopyIsKeptWhileTheConvertedFileIsNotProvenPlayable() async throws {
+    func testOnlyAChapterProvenIdenticalAndPlayableLeavesTheLegacyLayout() async throws {
         let (fixture, defaults) = try fixture()
-        try fixture.writeSource(chapters: [0, 1])
-        // Chapter 0: the converted file is different, undecodable bytes. Chapter 1:
-        // different bytes that decode to their end (a repaired or re-encoded file).
-        var job = try converted(fixture, base: 0, chapters: [0], bytes: Data("truncated".utf8))
-        let playable = try converted(fixture, base: 0, chapters: [1],
-                                     bytes: LegacyAudioImportFixture.wave(), fileExtension: "wav")
-        job = Converted(indexBase: 0, files: job.files.merging(playable.files) { $1 })
-        let report = try await coordinator(fixture, defaults, converted: ["job": job]).run(books: [book()])
-        XCTAssertEqual(report.books["book"], .partial(imported: 2, alreadyPresent: 0, deferred: 1))
-        XCTAssertEqual(try Data(contentsOf: fixture.source(chapter: 0)), LegacyAudioImportFixture.audio,
-                       "The only proven copy of chapter 0 outside the store must stay playable")
-        XCTAssertFalse(exists(fixture.source(chapter: 1)))
-        XCTAssertEqual(try Data(contentsOf: fixture.destination(chapter: 0)), LegacyAudioImportFixture.audio)
+        try fixture.writeSource(chapters: [0, 1, 2])
+        // Chapter 0: the converted file of index 0 holds other audio, while the
+        // legacy bytes equal the converted file of ANOTHER index. That is a
+        // shifted axis, not proof. Chapter 1: identical, but playback refuses
+        // the converted file. Chapter 2: identical and playable.
+        var job = try converted(fixture, base: 0, chapters: [0, 1, 2])
+        try Data(repeating: 3, count: 512).write(to: XCTUnwrap(job.files[0]))
+        job = Converted(bookID: "book", usesReaderAxis: true, indexBase: 0, files: job.files)
+        let unplayable = try XCTUnwrap(job.files[1])
+        let report = try await coordinator(fixture, defaults, converted: ["job": job], unplayable: [unplayable])
+            .run(books: [book()])
+        XCTAssertEqual(report.books["book"], .partial(imported: 2, alreadyPresent: 0, deferred: 2))
+        XCTAssertEqual(try Data(contentsOf: fixture.source(chapter: 0)), LegacyAudioImportFixture.audio)
+        XCTAssertFalse(exists(fixture.destination(chapter: 0)), "An unproven chapter is not even copied")
+        XCTAssertEqual(try Data(contentsOf: fixture.source(chapter: 1)), LegacyAudioImportFixture.audio,
+                       "While playback cannot use the converted file, the legacy copy must stay")
         XCTAssertEqual(try Data(contentsOf: fixture.destination(chapter: 1)), LegacyAudioImportFixture.audio)
+        XCTAssertFalse(exists(fixture.source(chapter: 2)))
+        XCTAssertEqual(try Data(contentsOf: fixture.destination(chapter: 2)), LegacyAudioImportFixture.audio)
+        let remaining = try JSONDecoder().decode(AudiobookManifest.self, from: Data(contentsOf: fixture.sourceManifest()))
+        XCTAssertEqual(remaining.chapters.map(\.index), [0, 1])
+    }
+
+    func testAJobOfAnotherBookOrOnTheConvertersOwnAxisIsLeftAlone() async throws {
+        let (fixture, defaults) = try fixture()
+        try fixture.writeSource(chapters: [0])
+        let before = try Data(contentsOf: fixture.sourceManifest())
+        for declared in [try converted(fixture, base: 0, chapters: [0], bookID: "another-book"),
+                         try converted(fixture, base: 0, chapters: [0], bookID: nil),
+                         try converted(fixture, base: 0, chapters: [0], readerAxis: false)] {
+            let report = try await coordinator(fixture, defaults, converted: ["job": declared]).run(books: [book()])
+            XCTAssertEqual(report.books["book"], .unprovenMapping)
+        }
+        XCTAssertFalse(exists(fixture.storeRoot))
+        XCTAssertEqual(try Data(contentsOf: fixture.sourceManifest()), before)
+        XCTAssertEqual(try Data(contentsOf: fixture.source(chapter: 0)), LegacyAudioImportFixture.audio)
     }
 
     func testDifferentAudioAlreadyInTheStoreIsNeverReplacedAndTheLegacyCopyStays() async throws {

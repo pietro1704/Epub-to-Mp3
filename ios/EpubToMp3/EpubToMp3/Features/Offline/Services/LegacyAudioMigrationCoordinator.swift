@@ -130,7 +130,12 @@ struct LegacyAudioMigrationCoordinator {
                 // A Download copied the converted file, so only identical bytes
                 // prove that this entry is that chapter.
                 guard entry.index >= converted.indexBase, let file = converted.files[entry.index],
-                      Self.sameBytes(file, Self.chapterFile(entry, in: directory)) else { continue }
+                      let legacyFile = Self.chapterFile(entry, in: directory) else { continue }
+                // An entry whose file an interrupted run already removed has
+                // nothing to compare; retirement only drops it when the store
+                // holds that chapter.
+                guard !FileManager.default.fileExists(atPath: legacyFile.path)
+                        || Self.sameBytes(file, legacyFile) else { continue }
                 canonicalIndex = entry.index - converted.indexBase
                 convertedFile = [entry.index: file]
             } else {
