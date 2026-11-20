@@ -96,6 +96,70 @@ final class DownloadedAudioFilesMirrorTests: XCTestCase {
         XCTAssertEqual(try folders(), [])
     }
 
+    func testRedownloadKeepsAFileTheListenerEditedAtTheOriginalPath() throws {
+        let source = try audio("converted.mp3", 1)
+        let original = mirror.root.appendingPathComponent("Book/01 - One.mp3")
+        try mirror.publish(source, bookID: "book", bookTitle: "Book", chapterIndex: 0, chapterTitle: "One")
+        let edited = Data(repeating: 7, count: 16)
+        try edited.write(to: original)
+
+        try mirror.publish(source, bookID: "book", bookTitle: "Book", chapterIndex: 0, chapterTitle: "One")
+
+        XCTAssertEqual(try Data(contentsOf: original), edited)
+        XCTAssertEqual(try visible("Book"), ["01 - One (2).mp3", "01 - One.mp3"])
+        try mirror.withdraw(bookID: "book", chapterIndex: 0)
+        XCTAssertEqual(try visible("Book"), ["01 - One.mp3"])
+    }
+
+    func testWithdrawAllKeepsAListenerDirectoryAtAnIndexedPath() throws {
+        let source = try audio("converted.mp3", 1)
+        try mirror.publish(source, bookID: "book", bookTitle: "Book", chapterIndex: 0, chapterTitle: "One")
+        let replacement = mirror.root.appendingPathComponent("Book/01 - One.mp3", isDirectory: true)
+        try FileManager.default.removeItem(at: replacement)
+        try FileManager.default.createDirectory(at: replacement, withIntermediateDirectories: false)
+        let personalFile = replacement.appendingPathComponent("personal.txt")
+        try Data([7]).write(to: personalFile)
+
+        try mirror.withdrawAll()
+
+        XCTAssertEqual(try Data(contentsOf: personalFile), Data([7]))
+    }
+
+    func testFailedRedownloadKeepsTheExistingVisibleCopy() throws {
+        let source = try audio("converted.mp3", 1)
+        try mirror.publish(source, bookID: "book", bookTitle: "Book", chapterIndex: 0, chapterTitle: "One")
+        try FileManager.default.removeItem(at: source)
+
+        XCTAssertThrowsError(try mirror.publish(
+            source, bookID: "book", bookTitle: "Book", chapterIndex: 0, chapterTitle: "One"))
+
+        XCTAssertEqual(try visible("Book"), ["01 - One.mp3"])
+    }
+
+    func testRedownloadOfAnUnchangedCopyKeepsItsNameAndUpdatesItsBytes() throws {
+        try mirror.publish(try audio("old.mp3", 1), bookID: "book", bookTitle: "Book", chapterIndex: 0, chapterTitle: "One")
+        try mirror.publish(try audio("new.mp3", 2), bookID: "book", bookTitle: "Book", chapterIndex: 0, chapterTitle: "One")
+
+        XCTAssertEqual(try visible("Book"), ["01 - One.mp3"])
+        let published = mirror.root.appendingPathComponent("Book/01 - One.mp3")
+        XCTAssertEqual(try Data(contentsOf: published), Data(repeating: 2, count: 16))
+        try mirror.withdrawBook(bookID: "book")
+        XCTAssertEqual(try folders(), [])
+    }
+
+    func testPreviewIndexWithNamesOnlyCannotAuthorizeDeletion() throws {
+        let folder = mirror.root.appendingPathComponent("Book", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(#"{"bookID":"book","files":{"0":"01 - One.mp3"}}"#.utf8).write(
+            to: folder.appendingPathComponent(DownloadedAudioFilesMirror.indexFileName))
+        let copy = folder.appendingPathComponent("01 - One.mp3")
+        try Data([7]).write(to: copy)
+
+        try mirror.withdrawBook(bookID: "book")
+
+        XCTAssertEqual(try Data(contentsOf: copy), Data([7]))
+    }
+
     func testWithdrawAllLeavesFoldersItDidNotCreate() throws {
         let source = try audio("converted.mp3", 1)
         try mirror.publish(source, bookID: "a", bookTitle: "A", chapterIndex: 0, chapterTitle: "One")

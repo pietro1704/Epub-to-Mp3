@@ -107,6 +107,33 @@ final class LegacyAudioMigrationCoordinatorTests: XCTestCase {
                        LegacyAudioImportFixture.audio)
     }
 
+    func testFailedVisibleCopyKeepsTheLegacyFileUntilMigrationCanRetry() async throws {
+        let (fixture, defaults) = try fixture()
+        try fixture.writeSource(chapters: [0])
+        let job = try converted(fixture, base: 0, chapters: [0])
+        let visibleRoot = fixture.root.appendingPathComponent("Visible")
+        try Data([0]).write(to: visibleRoot)
+        let store = LocalAudioArtifactStore(
+            root: fixture.storeRoot, visibleCopies: DownloadedAudioFilesMirror(root: visibleRoot))
+        let migration = LegacyAudioMigrationCoordinator(
+            store: store, legacyRoot: fixture.legacyRoot, defaults: defaults,
+            convertedChapters: { _ in job }, isPlayable: { _ in true })
+
+        let first = try await migration.run(books: [book()])
+        XCTAssertEqual(first.books["book"], .partial(imported: 1, alreadyPresent: 0, deferred: 1))
+        let legacy = fixture.source(chapter: 0)
+        XCTAssertEqual(try Data(contentsOf: legacy), LegacyAudioImportFixture.audio)
+        XCTAssertEqual(try Data(contentsOf: fixture.destination()), LegacyAudioImportFixture.audio)
+        guard FileManager.default.fileExists(atPath: legacy.path) else { return }
+
+        try FileManager.default.removeItem(at: visibleRoot)
+        let retry = try await migration.run(books: [book()])
+        XCTAssertEqual(retry.books["book"], .complete(imported: 0, alreadyPresent: 1))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertEqual(try Data(contentsOf: visibleRoot.appendingPathComponent("Library title/01 - Chapter 0.mp3")),
+                       LegacyAudioImportFixture.audio)
+    }
+
     func testASecondRunDoesNothing() async throws {
         let (fixture, defaults) = try fixture()
         try fixture.writeSource(chapters: [0, 1])

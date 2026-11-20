@@ -44,6 +44,15 @@ actor LocalAudioArtifactStore {
         try? visibleCopies?.withdraw(bookID: bookID, chapterIndex: chapterIndex)
     }
 
+    /// Migration must keep a chapter visible before removing its legacy Files copy.
+    func ensureVisibleCopyForLegacyRetirement(
+        _ audio: URL, manifest: Manifest, chapter: ChapterArtifact, digest: Data
+    ) throws {
+        try visibleCopies?.publish(
+            audio, bookID: manifest.bookID, bookTitle: manifest.bookTitle,
+            chapterIndex: chapter.index, chapterTitle: chapter.title, expectedDigest: digest)
+    }
+
     nonisolated static func defaultRoot() -> URL {
         let support = FileManager.default.urls(
             for: .applicationSupportDirectory,

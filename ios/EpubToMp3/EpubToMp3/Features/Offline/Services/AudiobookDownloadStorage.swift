@@ -48,7 +48,7 @@ enum AudiobookDownloadStorage {
 
     /// `chapters/` inside the job folder, refused when it is a symlink so
     /// chapter reads and removals cannot follow it outside the root.
-    private static func chaptersDirectory(for jobId: String, operation: String) -> URL? {
+    fileprivate static func chaptersDirectory(for jobId: String, operation: String) -> URL? {
         guard let directory = jobDirectory(for: jobId, operation: operation) else { return nil }
         return LegacyJobDirectory.directory(for: "chapters", under: directory, operation: operation)
     }
@@ -64,8 +64,10 @@ enum AudiobookDownloadStorage {
     }
 
     static func loadManifest(for jobId: String) -> AudiobookManifest? {
-        guard let url = manifestURL(for: jobId), let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(AudiobookManifest.self, from: data)
+        guard let url = manifestURL(for: jobId), let data = try? Data(contentsOf: url),
+              let manifest = try? JSONDecoder().decode(AudiobookManifest.self, from: data),
+              manifest.jobId == jobId else { return nil }
+        return manifest
     }
 
     /// Chapter indices (same axis as `JobSnapshot.Chapter.index`) whose MP3
@@ -80,20 +82,20 @@ enum AudiobookDownloadStorage {
         // here because that helper creates missing directories, causing
         // filesystem work for every absent/evicted manifest lookup.
         guard let folder = chaptersDirectory(for: jobId, operation: #function) else { return [] }
-        let fm = FileManager.default
-        return Set(
-            manifest.chapters
-                .filter { fm.fileExists(atPath: folder.appendingPathComponent($0.mp3FileName).path) }
-                .map(\.index)
-        )
+        return Set(manifest.chapters.filter { keptAudio($0, in: folder) != nil }.map(\.index))
     }
 
     static func localAudioURL(jobId: String, chapterIndex: Int) -> URL? {
         guard let entry = loadManifest(for: jobId)?.chapters.first(where: { $0.index == chapterIndex }),
-              let url = audiobookFolder(for: jobId)?.appendingPathComponent(entry.mp3FileName) else { return nil }
-        guard FileManager.default.fileExists(atPath: url.path),
-              let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64,
-              size > 0 else { return nil }
+              let folder = chaptersDirectory(for: jobId, operation: #function) else { return nil }
+        return keptAudio(entry, in: folder)
+    }
+
+    fileprivate static func keptAudio(_ entry: AudiobookManifest.ChapterEntry, in folder: URL) -> URL? {
+        guard LegacyJobDirectory.isSafeComponent(entry.mp3FileName) else { return nil }
+        let url = folder.appendingPathComponent(entry.mp3FileName)
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+              values.isRegularFile == true, values.isSymbolicLink != true, (values.fileSize ?? 0) > 0 else { return nil }
         return url
     }
 
@@ -114,7 +116,8 @@ enum AudiobookDownloadStorage {
                 progressRatio: 1,
                 durationSeconds: nil,
                 startedAt: nil,
-                completedAt: entry.downloadedAt.timeIntervalSince1970
+                completedAt: entry.downloadedAt.timeIntervalSince1970,
+                textOffset: entry.textOffset
             )
         }
         guard !chapters.isEmpty else { return nil }
@@ -136,7 +139,8 @@ enum AudiobookDownloadStorage {
             outputs: nil,
             logUrl: nil,
             error: nil,
-            lastActivityAt: manifest.completedAt?.timeIntervalSince1970
+            lastActivityAt: manifest.completedAt?.timeIntervalSince1970,
+            chapterIndexBase: manifest.chapterIndexBase
         )
     }
 
@@ -163,12 +167,14 @@ enum AudiobookDownloadStorage {
     /// Remove exactly one job's folder. An unsafe id is a logged no-op, so a
     /// library removal still clears the book's other stores.
     static func deleteAudiobook(jobId: String) {
-        guard let folder = jobDirectory(for: jobId) else { return }
+        guard let folder = jobDirectory(for: jobId),
+              !DownloadedAudioFilesMirror.isMirrorFolder(folder) else { return }
         try? FileManager.default.removeItem(at: folder)
     }
 
     static func deleteChapter(jobId: String, chapterIndex: Int) {
         guard let directory = jobDirectory(for: jobId),
+              !DownloadedAudioFilesMirror.isMirrorFolder(directory),
               var manifest = loadManifest(for: jobId),
               let entry = manifest.chapters.first(where: { $0.index == chapterIndex }) else { return }
         // The file name comes from the manifest on disk; it must stay inside chapters/.
@@ -179,7 +185,85 @@ enum AudiobookDownloadStorage {
         }
         manifest.chapters.removeAll { $0.index == chapterIndex }
         manifest.totalBytes = max(0, manifest.totalBytes - entry.mp3Bytes)
+        manifest.completedAt = nil
         try? JSONEncoder().encode(manifest).write(to: directory.appendingPathComponent("manifest.json"), options: .atomic)
     }
 
+}
+
+extension LocalAudioArtifactStore {
+    /// Publishes a job-scoped chapter with its own index. The same actor
+    /// serializes publication and any migration that later proves the mapping.
+    func retainJobDownload(from source: URL, snapshot: JobSnapshot, chapter: JobSnapshot.Chapter) throws -> Int64 {
+        try Task.checkCancellation()
+        let jobID = snapshot.jobId
+        let root = AudiobookDownloadStorage.audiobooksRootLocation().standardizedFileURL.resolvingSymlinksInPath()
+        guard chapter.index >= 0,
+              let directory = AudiobookDownloadStorage.jobDirectory(for: jobID),
+              !DownloadedAudioFilesMirror.isMirrorFolder(directory),
+              let folder = AudiobookDownloadStorage.chaptersDirectory(for: jobID, operation: #function) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        let manifestURL = directory.appendingPathComponent("manifest.json")
+        try LocalAudioImportFiles.checkPath(manifestURL, under: root)
+        let fileManager = FileManager.default
+        var manifest = AudiobookManifest(
+            jobId: jobID, bookTitle: snapshot.bookTitle ?? jobID, chapters: [], totalBytes: 0, completedAt: nil)
+        if fileManager.fileExists(atPath: manifestURL.path) {
+            try LocalAudioImportFiles.requireRegularFile(manifestURL, under: root)
+            manifest = try JSONDecoder().decode(AudiobookManifest.self, from: Data(contentsOf: manifestURL))
+            guard manifest.jobId == jobID,
+                  Set(manifest.chapters.map(\.index)).count == manifest.chapters.count,
+                  Set(manifest.chapters.map(\.mp3FileName)).count == manifest.chapters.count else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if let savedBase = manifest.chapterIndexBase, let incomingBase = snapshot.chapterIndexBase,
+               savedBase != incomingBase {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+        }
+        let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+              let size = values.fileSize, size > 0 else { throw StoreError.invalidAudioFile(source) }
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        let staging = folder.appendingPathComponent(".download-\(UUID().uuidString).mp3")
+        defer { try? fileManager.removeItem(at: staging) }
+        try fileManager.copyItem(at: source, to: staging)
+        guard try staging.resourceValues(forKeys: [.fileSizeKey]).fileSize == size else {
+            throw StoreError.invalidAudioFile(source)
+        }
+        try Task.checkCancellation()
+        let title = DownloadedAudioFilesMirror.component(chapter.displayTitle, fallback: "Chapter")
+        let stem = "\(chapter.index) - \(title)"
+        var destination = folder.appendingPathComponent("\(stem).mp3")
+        if fileManager.fileExists(atPath: destination.path) {
+            destination = folder.appendingPathComponent("\(stem) (\(UUID().uuidString)).mp3")
+        }
+        // The new file gets its own name, so a failed manifest write cannot
+        // replace a different file that the listener already has.
+        try fileManager.moveItem(at: staging, to: destination)
+        do {
+            manifest.chapters.removeAll { $0.index == chapter.index }
+            manifest.chapters.append(.init(index: chapter.index, title: chapter.displayTitle,
+                mp3FileName: destination.lastPathComponent, mp3Bytes: Int64(size), downloadedAt: Date(),
+                textOffset: chapter.textOffset))
+            manifest.chapters.sort { $0.index < $1.index }
+            var keptIndices: Set<Int> = []
+            manifest.totalBytes = 0
+            for entry in manifest.chapters {
+                guard let file = AudiobookDownloadStorage.keptAudio(entry, in: folder),
+                      let fileSize = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize else { continue }
+                keptIndices.insert(entry.index)
+                manifest.totalBytes += Int64(fileSize)
+            }
+            let complete = Set(snapshot.playableChapters.map(\.index)).isSubset(of: keptIndices)
+            manifest.completedAt = complete ? Date() : nil
+            if let indexBase = snapshot.chapterIndexBase { manifest.chapterIndexBase = indexBase }
+            try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            throw error
+        }
+        return Int64(size)
+    }
 }

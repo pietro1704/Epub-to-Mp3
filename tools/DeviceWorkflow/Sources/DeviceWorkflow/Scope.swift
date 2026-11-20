@@ -143,6 +143,15 @@ public struct Options {
                 "testAlertMessageAlsoWritesErrorIdentityAndCauseToTerminal",
                 "testStringFailureRetainsLocalizedAlertAndPrefixesEveryDiagnosticLine",
             ],
+            "DownloadedAudioFilesMirrorTests": [
+                "testRedownloadKeepsAFileTheListenerEditedAtTheOriginalPath",
+            ],
+            "LegacyAudioMigrationCoordinatorTests": [
+                "testFailedVisibleCopyKeepsTheLegacyFileUntilMigrationCanRetry",
+            ],
+            "DownloadManagerBackgroundTests": [
+                "testDownloadWithoutAKnownBookKeepsTheJobAndChapterIndices",
+            ],
             "RustOutputRootValidationTests": [
                 "testSystemTemporaryRootSupportsWritingCountingAndOwnedRemoval",
                 "testCustomSymlinkAncestorStillRejectsWritesAndRemoval",

@@ -24,6 +24,7 @@ extension LocalAudioArtifactStore {
     /// - the store has the chapter as available audio with exactly the same bytes;
     /// - that chapter is, or is first made, a protected download, because the
     ///   legacy copy was the listener's explicit Download;
+    /// - on platforms with a Files mirror, an identical visible copy exists;
     /// - the file playback uses once the copy is gone is proven: for a converted
     ///   job its own chapter file in `convertedFiles` must be byte-identical to
     ///   the copy and pass `isPlayable`, the same readiness test playback
@@ -98,8 +99,8 @@ extension LocalAudioArtifactStore {
             throw LocalAudioImportFiles.Failure.invalidIdentity
         }
         let relativePath = files.relativePath(for: canonicalIndex)
-        guard let artifact = try validatedManifest(bookID: bookID)?.chapters
-            .first(where: { $0.index == canonicalIndex }),
+        guard let manifest = try validatedManifest(bookID: bookID),
+              let artifact = manifest.chapters.first(where: { $0.index == canonicalIndex }),
               artifact.state == .available, artifact.relativePath == relativePath else { return .notImported }
         let kept = files.bookDirectory(bookID: bookID).appendingPathComponent(relativePath)
         try LocalAudioImportFiles.requireRegularFile(kept, under: files.root)
@@ -124,6 +125,8 @@ extension LocalAudioArtifactStore {
         if artifact.retention != .downloaded {
             try promote(bookID: bookID, chapterIndex: canonicalIndex)
         }
+        try ensureVisibleCopyForLegacyRetirement(
+            kept, manifest: manifest, chapter: artifact, digest: Data(keptBytes.digest))
         if sourceExists { try files.fileManager.removeItem(at: source) }
         return .retired
     }

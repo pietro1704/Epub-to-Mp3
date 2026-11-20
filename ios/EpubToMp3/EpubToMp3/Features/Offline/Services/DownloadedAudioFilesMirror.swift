@@ -28,61 +28,110 @@ struct DownloadedAudioFilesMirror: Sendable {
         var bookID: String
         /// Store chapter index -> file name inside the book folder.
         var files: [String: String]
+        /// Preview builds recorded names without file identity.
+        var identities: [String: CopyIdentity]?
+    }
+
+    private struct CopyIdentity: Codable, Equatable {
+        let fileNumber: UInt64
+        let digest: Data
+
+        init(file: URL, under root: URL, knownDigest: Data? = nil) throws {
+            try LocalAudioImportFiles.requireRegularFile(file, under: root)
+            let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+            guard let fileNumber = attributes[.systemFileNumber] as? NSNumber else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            self.fileNumber = fileNumber.uint64Value
+            digest = try knownDigest ?? Data(LocalAudioImportFiles.fingerprint(file).digest)
+        }
     }
 
     /// Publishes one chapter. The copy is an APFS clone on the same volume.
     func publish(
-        _ audio: URL, bookID: String, bookTitle: String, chapterIndex: Int, chapterTitle: String
+        _ audio: URL, bookID: String, bookTitle: String, chapterIndex: Int, chapterTitle: String,
+        expectedDigest: Data? = nil
     ) throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         let folder = try existingFolder(bookID: bookID) ?? newFolder(bookTitle: bookTitle)
         var index = loadIndex(in: folder, bookID: bookID) ?? Index(bookID: bookID, files: [:])
         let key = String(chapterIndex)
-        if let previous = index.files[key], Self.isComponent(previous) {
-            try? fileManager.removeItem(at: folder.appendingPathComponent(previous))
+        let previous = ownedCopy(key, in: index, folder: folder)
+        if let expectedDigest, previous != nil, index.identities?[key]?.digest == expectedDigest {
+            return
         }
-        index.files[key] = nil
-        let title = Self.component(chapterTitle, fallback: "Chapter \(chapterIndex + 1)")
-        let name = Self.freeName(
-            String(format: "%02d - %@", chapterIndex + 1, title), fileExtension: "mp3", in: folder)
         let staging = folder.appendingPathComponent(".publish-\(UUID().uuidString)")
         defer { try? fileManager.removeItem(at: staging) }
         try fileManager.copyItem(at: audio, to: staging)
-        try fileManager.moveItem(at: staging, to: folder.appendingPathComponent(name))
+        let identity = try CopyIdentity(file: staging, under: folder)
+        if let expectedDigest, identity.digest != expectedDigest {
+            throw LocalAudioImportFiles.Failure.sourceChanged
+        }
+        let title = Self.component(chapterTitle, fallback: "Chapter \(chapterIndex + 1)")
+        let name = Self.freeName(
+            String(format: "%02d - %@", chapterIndex + 1, title), fileExtension: "mp3",
+            in: folder, reusing: previous?.lastPathComponent)
+        let destination = folder.appendingPathComponent(name)
+        if destination.path == previous?.path {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: staging, options: .usingNewMetadataOnly)
+        } else {
+            try fileManager.moveItem(at: staging, to: destination)
+        }
+        let oldIndex = index
         index.files[key] = name
+        index.identities = index.identities ?? [:]
+        index.identities?[key] = try CopyIdentity(file: destination, under: folder, knownDigest: identity.digest)
         try save(index, in: folder)
+        if previous?.path != destination.path {
+            try removeOwnedCopy(key, in: oldIndex, folder: folder)
+        }
     }
 
     /// Removes the copy of one chapter, and the book folder once nothing is left in it.
     func withdraw(bookID: String, chapterIndex: Int) throws {
         guard let folder = try existingFolder(bookID: bookID),
               var index = loadIndex(in: folder, bookID: bookID) else { return }
-        if let name = index.files.removeValue(forKey: String(chapterIndex)), Self.isComponent(name) {
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
-        }
+        let key = String(chapterIndex)
+        try removeOwnedCopy(key, in: index, folder: folder)
+        index.files[key] = nil
+        index.identities?[key] = nil
         try finish(index, in: folder)
     }
 
     func withdrawBook(bookID: String) throws {
         guard let folder = try existingFolder(bookID: bookID),
               var index = loadIndex(in: folder, bookID: bookID) else { return }
-        for name in index.files.values where Self.isComponent(name) {
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
-        }
-        index.files.removeAll()
-        try finish(index, in: folder)
+        try withdrawCopies(&index, in: folder)
     }
 
     func withdrawAll() throws {
         for folder in try folders() {
             guard var index = loadIndex(in: folder, bookID: nil) else { continue }
-            for name in index.files.values where Self.isComponent(name) {
-                try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
-            }
-            index.files.removeAll()
-            try finish(index, in: folder)
+            try withdrawCopies(&index, in: folder)
         }
+    }
+
+    private func withdrawCopies(_ index: inout Index, in folder: URL) throws {
+        for key in index.files.keys {
+            try removeOwnedCopy(key, in: index, folder: folder)
+        }
+        index.files.removeAll()
+        index.identities?.removeAll()
+        try finish(index, in: folder)
+    }
+
+    private func ownedCopy(_ key: String, in index: Index, folder: URL) -> URL? {
+        guard let name = index.files[key], Self.isComponent(name),
+              let expected = index.identities?[key] else { return nil }
+        let url = folder.appendingPathComponent(name)
+        guard (try? CopyIdentity(file: url, under: folder)) == expected else { return nil }
+        return url
+    }
+
+    private func removeOwnedCopy(_ key: String, in index: Index, folder: URL) throws {
+        guard let url = ownedCopy(key, in: index, folder: folder) else { return }
+        try FileManager.default.removeItem(at: url)
     }
 
     /// True for a folder this type created; storage accounting skips those,
@@ -161,13 +210,16 @@ struct DownloadedAudioFilesMirror: Sendable {
     }
 
     /// `base` with its extension, or `base (2)`, `base (3)`… when the name is taken.
-    private static func freeName(_ base: String, fileExtension: String?, in directory: URL) -> String {
+    private static func freeName(
+        _ base: String, fileExtension: String?, in directory: URL, reusing existingName: String? = nil
+    ) -> String {
         func name(_ attempt: Int) -> String {
             let stem = attempt == 1 ? base : "\(base) (\(attempt))"
             return fileExtension.map { "\(stem).\($0)" } ?? stem
         }
         var attempt = 1
-        while FileManager.default.fileExists(atPath: directory.appendingPathComponent(name(attempt)).path) {
+        while name(attempt) != existingName,
+              FileManager.default.fileExists(atPath: directory.appendingPathComponent(name(attempt)).path) {
             attempt += 1
         }
         return name(attempt)

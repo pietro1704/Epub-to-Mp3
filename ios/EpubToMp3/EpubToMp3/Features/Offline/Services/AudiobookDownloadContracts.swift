@@ -35,6 +35,7 @@ struct AudiobookManifest: Codable, Equatable, Sendable {
         let mp3FileName: String
         let mp3Bytes: Int64
         let downloadedAt: Date
+        var textOffset: Int? = nil
     }
 
     var jobId: String
@@ -42,4 +43,5 @@ struct AudiobookManifest: Codable, Equatable, Sendable {
     var chapters: [ChapterEntry]
     var totalBytes: Int64
     var completedAt: Date?
+    var chapterIndexBase: Int? = nil
 }
