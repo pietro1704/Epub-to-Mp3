@@ -64,6 +64,16 @@ class MacBuildBudgetTest < Minitest::Test
     FileUtils.remove_entry(@dir)
   end
 
+  # Owner decision 2026-11-20: free space is the only storage limit, and only a
+  # nearly full disk stops a build. 20 GiB refused builds with 20 GiB free.
+  def test_shipped_floor_only_protects_a_nearly_full_disk
+    shipped = JSON.parse(File.read(File.expand_path("../config/mac-build-budget.json", __dir__)))
+    assert_equal 5, shipped.fetch("minimum_free_gib")
+    floor = shipped.fetch("minimum_free_gib") * MacBuildBudget::GIB
+    assert_nil MacBuildBudget.evaluate(shipped, free_bytes: 6 * MacBuildBudget::GIB, destination: @dir)
+    assert_match(/Free disk below 5 GiB/, MacBuildBudget.evaluate(shipped, free_bytes: floor - 1, destination: @dir))
+  end
+
   def test_floor_and_host_scope
     floor = 20 * MacBuildBudget::GIB
     assert_nil MacBuildBudget.evaluate(@limits, free_bytes: floor, destination: @dir)

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "minimum_free_gib": 20,
+  "minimum_free_gib": 5,
   "check_interval_seconds": 10,
   "admission": {
     "max_load_percent_of_cpus": 75,
