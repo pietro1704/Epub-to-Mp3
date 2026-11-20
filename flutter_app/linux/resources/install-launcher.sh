@@ -31,9 +31,10 @@ cat > "$temporary" <<EOF
 Type=Application
 Name=EpubToMp3
 Comment=Read books and listen to audiobooks
-Exec="$executable"
+Exec="$executable" %F
 Icon=$icon
 Terminal=false
+MimeType=application/epub+zip;application/pdf;
 Categories=AudioVideo;Audio;Education;
 StartupWMClass=com.epubtomp3.flutter_app
 EOF

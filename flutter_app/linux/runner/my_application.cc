@@ -1,5 +1,7 @@
 #include "my_application.h"
 
+#include "book_import.h"
+
 #include <flutter_linux/flutter_linux.h>
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
@@ -9,7 +11,8 @@
 
 struct _MyApplication {
   GtkApplication parent_instance;
-  char** dart_entrypoint_arguments;
+  FlView* view;
+  FlValue* pending_books;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -22,6 +25,11 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  if (self->view) {
+    gtk_window_present(
+        GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(self->view))));
+    return;
+  }
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -63,10 +71,10 @@ static void my_application_activate(GApplication* application) {
   }
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
-  fl_dart_project_set_dart_entrypoint_arguments(
-      project, self->dart_entrypoint_arguments);
 
   FlView* view = fl_view_new(project);
+  self->view = view;
+  g_object_add_weak_pointer(G_OBJECT(view), reinterpret_cast<gpointer*>(&self->view));
   GdkRGBA background_color;
   // Background defaults to black, override it here if necessary, e.g. #00000000
   // for transparent.
@@ -82,66 +90,47 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  book_import_connect(view, self->pending_books);
+  fl_value_unref(self->pending_books);
+  self->pending_books = fl_value_new_list();
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
-// Implements GApplication::local_command_line.
-static gboolean my_application_local_command_line(GApplication* application,
-                                                  gchar*** arguments,
-                                                  int* exit_status) {
+// Implements GApplication::open for files selected in the file manager.
+static void my_application_open(GApplication* application, GFile** files,
+                                gint count, const gchar*) {
   MyApplication* self = MY_APPLICATION(application);
-  // Strip out the first argument as it is the binary name.
-  self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
-
-  g_autoptr(GError) error = nullptr;
-  if (!g_application_register(application, nullptr, &error)) {
-    g_warning("Failed to register: %s", error->message);
-    *exit_status = 1;
-    return TRUE;
+  g_autoptr(FlValue) paths = fl_value_new_list();
+  for (gint i = 0; i < count; ++i) {
+    g_autofree gchar* path = g_file_get_path(files[i]);
+    if (path) fl_value_append_take(paths, fl_value_new_string(path));
   }
-
+  book_import_enqueue(self->view, self->pending_books, paths, true);
   g_application_activate(application);
-  *exit_status = 0;
-
-  return TRUE;
-}
-
-// Implements GApplication::startup.
-static void my_application_startup(GApplication* application) {
-  // MyApplication* self = MY_APPLICATION(object);
-
-  // Perform any actions required at application startup.
-
-  G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
-}
-
-// Implements GApplication::shutdown.
-static void my_application_shutdown(GApplication* application) {
-  // MyApplication* self = MY_APPLICATION(object);
-
-  // Perform any actions required at application shutdown.
-
-  G_APPLICATION_CLASS(my_application_parent_class)->shutdown(application);
 }
 
 // Implements GObject::dispose.
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
-  g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  if (self->view) {
+    g_object_remove_weak_pointer(G_OBJECT(self->view),
+                                 reinterpret_cast<gpointer*>(&self->view));
+    self->view = nullptr;
+  }
+  g_clear_pointer(&self->pending_books, fl_value_unref);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 
 static void my_application_class_init(MyApplicationClass* klass) {
   G_APPLICATION_CLASS(klass)->activate = my_application_activate;
-  G_APPLICATION_CLASS(klass)->local_command_line =
-      my_application_local_command_line;
-  G_APPLICATION_CLASS(klass)->startup = my_application_startup;
-  G_APPLICATION_CLASS(klass)->shutdown = my_application_shutdown;
+  G_APPLICATION_CLASS(klass)->open = my_application_open;
   G_OBJECT_CLASS(klass)->dispose = my_application_dispose;
 }
 
-static void my_application_init(MyApplication* self) {}
+static void my_application_init(MyApplication* self) {
+  self->pending_books = fl_value_new_list();
+}
 
 MyApplication* my_application_new() {
   // Set the program name to the application ID, which helps various systems
@@ -152,5 +141,5 @@ MyApplication* my_application_new() {
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     G_APPLICATION_HANDLES_OPEN, nullptr));
 }
