@@ -3,6 +3,7 @@ require "minitest/autorun"
 require "json"
 require "tmpdir"
 require "fileutils"
+require "timeout"
 require_relative "native_flight_recorder"
 
 class NativeFlightRecorderTest < Minitest::Test
@@ -30,6 +31,17 @@ class NativeFlightRecorderTest < Minitest::Test
     File.readlines(path, chomp: true).map { |line| JSON.parse(line) }
   end
 
+  # Readings are taken on a probe thread; wait for the one in flight.
+  def settle(flight)
+    flight.instance_variable_get(:@worker)&.join(10)
+  end
+
+  def seconds
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    yield
+    Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+  end
+
   def test_records_start_one_sample_per_interval_and_end_with_the_holder
     @samples = [{ "load" => [7.12, 4.46, 8.85], "cpu_speed_limit" => 81, "top" => ["98.2 47168 swift-frontend"] },
                 { "load" => [11.41, 7.35, 9.44], "swap_used_mib" => 1550.75 }, { "load" => [4.96, 7.53, 9.13] }]
@@ -37,14 +49,17 @@ class NativeFlightRecorderTest < Minitest::Test
     flight.tick(5.0)
     refute File.exist?(flight.path), "nothing is recorded before the job starts"
     flight.start(100.0)
+    settle(flight)
     flight.tick(129.9)
     flight.tick(130.0)
+    settle(flight)
     flight.tick(131.0)
     flight.finish(143)
     flight.tick(500.0)
     flight.finish(0)
     events = lines
     assert_equal %w[start sample end], events.map { |event| event["event"] }
+    refute events[2].key?("load"), "the end line reads nothing from the host"
     assert_equal ["2026-11-20T01:08:37Z"], events.map { |event| event["t"] }.uniq
     events.each { |event| assert_equal HOLDER.slice("pid", "phase", "command", "worktree", "session"), event["holder"] }
     assert_equal "4f00000000000000", events[0]["startup_power_events"]
@@ -66,17 +81,33 @@ class NativeFlightRecorderTest < Minitest::Test
     assert_operator kept.min, :>, 0
   end
 
+  def test_slow_telemetry_never_holds_the_supervisor_loop_or_the_exit_code
+    reads = 0
+    flight = recorder(sampler: -> { reads += 1; sleep 3; { "load" => [9.0, 9.0, 9.0] } })
+    assert_operator seconds { flight.start(0.0) }, :<, 0.5, "start read the host on the supervisor loop"
+    Timeout.timeout(5) { sleep 0.01 until reads == 1 }
+    assert_operator seconds { flight.tick(30.0) }, :<, 0.5, "tick read the host on the supervisor loop"
+    assert_operator seconds { flight.tick(60.0) }, :<, 0.5
+    assert_equal 1, reads, "a probe that is still running is skipped, never queued"
+    assert_operator seconds { flight.finish(143) }, :<, 1.0, "finish delayed the exit code"
+    assert_equal [["end", 143]], lines.map { |event| event.values_at("event", "exit_status") }
+    refute flight.instance_variable_get(:@worker).alive?, "no probe outlives the job"
+  end
+
   def test_sampling_and_storage_failures_never_raise_into_the_supervisor
     flight = recorder(sampler: -> { raise "telemetry lost" })
     flight.start(0.0)
+    settle(flight)
     flight.finish(0)
-    assert_equal ["RuntimeError: telemetry lost"] * 2, lines.map { |event| event["sample_error"] }
+    assert_equal ["RuntimeError: telemetry lost", nil], lines.map { |event| event["sample_error"] }
+    assert_equal %w[start end], lines.map { |event| event["event"] }
 
     blocked = File.join(@dir, "not-a-directory")
     File.write(blocked, "")
     flight = recorder(directory: blocked)
     _, warnings = capture_io do
       flight.start(0.0)
+      settle(flight)
       flight.tick(60.0)
       flight.finish(1)
     end

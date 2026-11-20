@@ -5,7 +5,8 @@ require "tmpdir"
 require_relative "host_load"
 
 # Fixtures are the readings taken on the Intel i5-8259U (8 logical CPUs, 8 GiB)
-# around the 2026-11-20 CATERR report; no host telemetry is read here.
+# after the CATERR report of 2026-11-19 21:35 BRT (2026-11-20 00:35 UTC); no
+# host telemetry is read here.
 class HostLoadTest < Minitest::Test
   SYSCTL_DURING_BUILD = <<~TEXT
     vm.loadavg: { 11.41 7.35 9.44 }
@@ -110,7 +111,7 @@ class HostLoadTest < Minitest::Test
                  HostLoad.refusal(limits, IDLE.merge("compilers" => reading["compilers"])))
   end
 
-  def test_a_step_started_inside_an_xcode_build_is_part_of_that_build
+  def test_an_enclosing_build_excuses_only_its_own_compilers_never_load_memory_or_thermal_limits
     own = Process.pid
     inside = "  90.0 9001 9000 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend\n" \
              "   0.1 #{own} 9002 /usr/bin/ruby\n   0.1 9002 9000 /bin/bash\n" \
@@ -119,7 +120,16 @@ class HostLoadTest < Minitest::Test
     reading = sample(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD, inside)
     assert_equal "SWBBuildService 9000", reading["enclosing_build"]
     assert_equal ["swift-frontend 9001"], reading["compilers"]
-    assert_nil HostLoad.refusal(limits, reading), "the enclosing build owns this load"
+    reasons = HostLoad.reasons(limits, reading)
+    assert_equal 3, reasons.length, "load, swap and thermal limits still refuse inside a build: #{reasons.inspect}"
+    assert_match(/load average 11\.41/, reasons[0])
+    assert_match(/swap in use 1551 MiB/, reasons[1])
+    assert_match(/CPU_Speed_Limit is 81/, reasons[2])
+    calm = IDLE.merge("compilers" => reading["compilers"], "enclosing_build" => reading["enclosing_build"])
+    assert_nil HostLoad.refusal(limits, calm), "its own compilers alone do not refuse the step"
+    { "pressure" => 2, "swap_used_mib" => 1550.75, "compressor_mib" => 4506, "cpu_scheduler_limit" => 50, "cpu_available" => 6 }.each do |key, value|
+      refute_nil HostLoad.refusal(limits, calm.merge(key => value)), "#{key} must still refuse inside an enclosing build"
+    end
     beside = inside.sub(" #{own} 9002 ", " #{own} 1 ")
     reading = sample(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD, beside)
     assert_nil reading["enclosing_build"]
@@ -127,7 +137,8 @@ class HostLoadTest < Minitest::Test
     driver = "   5.0 7000 1 /usr/local/opt/rust/bin/cargo\n   0.1 #{own} 7000 /usr/bin/ruby\n"
     reading = sample(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD, driver)
     assert_equal "cargo 7000", reading["enclosing_build"]
-    assert_nil HostLoad.refusal(limits, reading)
+    refute HostLoad.reasons(limits, reading).any? { |reason| reason.include?("compiler") }
+    assert_nil HostLoad.refusal(limits, IDLE.merge("compilers" => ["cargo 7000"], "enclosing_build" => "cargo 7000"))
   end
 
   def test_measured_samples_without_a_heavy_job_are_admitted_and_overlapping_ones_are_refused

@@ -20,8 +20,8 @@ module HostLoad
   OPTIONAL = %w[machdep.xcpm.cpu_thermal_level].freeze
   PRESSURE = { 1 => "normal", 2 => "warning", 4 => "critical" }.freeze
   # A guarded step started from inside a build (an Xcode build phase, a compiler
-  # driver) is part of that build: the compilers and load are its own, and
-  # refusing it would fail the build that asked for it.
+  # driver) is part of that build, so that build's own compiler processes are
+  # not a reason to refuse it. Load, memory and thermal limits still apply.
   ENCLOSING_BUILDS = %w[xcodebuild SWBBuildService XCBBuildService Xcode].freeze
   LIMITS = %w[max_load_percent_of_cpus max_swap_used_mib max_compressor_percent_of_memory
               recheck_seconds child_niceness].freeze
@@ -32,13 +32,16 @@ module HostLoad
     Open3.popen3({ "LC_ALL" => "C", "LANG" => "C" }, *argv, pgroup: true) do |input, stdout, stderr, waiter|
       input.close
       readers = [Thread.new { stdout.read }, Thread.new { stderr.read }]
-      unless waiter.join(seconds)
+      raise "#{File.basename(argv.first)} telemetry deadline exceeded" unless waiter.join(seconds)
+
+      readers.map(&:value).first
+    ensure
+      # Also reached when the reading thread is stopped: no probe outlives its reader.
+      if waiter.alive?
         Process.kill("KILL", -waiter.pid) rescue Errno::ESRCH
         waiter.join
-        readers.each(&:join)
-        raise "#{File.basename(argv.first)} telemetry deadline exceeded"
+        readers&.each(&:join)
       end
-      readers.map(&:value).first
     end
   end
 
@@ -100,8 +103,6 @@ module HostLoad
 
   # Every reason a new heavy job must not start now; empty when admitted.
   def self.reasons(limits, sample)
-    return [] if sample["enclosing_build"]
-
     found = []
     cpus = sample.fetch("cpus")
     ceiling = limits.fetch("max_load_percent_of_cpus") * cpus / 100.0
@@ -128,9 +129,12 @@ module HostLoad
     available = sample["cpu_available"]
     found << "only #{available} of #{cpus} CPUs available (thermal throttling)" if available && available < cpus
     # The lease owner has started nothing yet, so these belong to work this
-    # lease does not coordinate: a package-manager source build, an IDE, another tool.
+    # lease does not coordinate: a package-manager source build, an IDE, another
+    # tool. Inside an enclosing build they are that build's own and expected.
     running = Array(sample["compilers"])
-    found << "a compiler is already running (#{running.first(4).join(', ')})" unless running.empty?
+    unless running.empty? || sample["enclosing_build"]
+      found << "a compiler is already running (#{running.first(4).join(', ')})"
+    end
     found
   end
 

@@ -105,7 +105,8 @@ mise run native:status
 It prints the lease holder, the current readings, `refusal` (`null` when another
 heavy job would be admitted) and the flight recorder path. A refused job exits
 75 and names every exceeded limit. Wait for the other load, or let one job queue
-for the lease and for admission instead of polling:
+for the lease and for admission instead of polling (whole seconds; any other
+value fails):
 
 ```sh
 EPUB_NATIVE_WAIT_SECONDS=900 mise run mac:test:local -- -only-testing:ID
@@ -115,8 +116,9 @@ Keep the log, the PID and the exit status of a long run in a persistent
 directory under `.reports/`, never in `/tmp` or a session scratch directory: a
 reboot empties both. Decide the outcome from the recorded exit status. A watcher
 that only greps for `** BUILD` markers misses an `xcodebuild: error:` exit:
-on 2026-11-19 an iOS `build-for-testing` wrote an error result bundle and exited
-in under two seconds, and was reported as compiling for 22 minutes. The same
+at 21:11 BRT on 2026-11-19 (00:11 UTC on 2026-11-20) an iOS `build-for-testing`
+wrote an error result bundle and exited in under two seconds, and was reported
+as compiling for 22 minutes. The same
 command repeated later failed with `xcodebuild: error: Unable to find a
 destination`: `mise exec` replaces a `DEVELOPER_DIR` set in front of it with the
 Xcode 16.4 path. Select Xcode 26.3 for iOS with `IOS_DEVICE_ID`, as the
@@ -124,7 +126,8 @@ execution policy says.
 
 After the run, read the last lines of the recorder file. Reference readings on
 this host for one serial iOS `build-for-testing` (Xcode 26.3, `-jobs 1`, five
-targets) with the usual background work:
+targets) with the usual background work, taken between 22:10 and 22:37 BRT on
+2026-11-19 (01:10 to 01:37 UTC on 2026-11-20):
 
 | Moment | 1-minute load | Swap in use | `CPU_Speed_Limit` |
 | --- | --- | --- | --- |
@@ -133,9 +136,11 @@ targets) with the usual background work:
 | 5 min 39 s after it was stopped | 3.79 | 331 MiB | 100 |
 | Second run (resumed, 4 min 38 s in total), 2 min 45 s in | 4.24 | 1016 MiB | 100 |
 
-A guarded step that Xcode starts from a build phase is admitted as part of that
-build. Prepare Rust artifacts through their guarded task before a manual Xcode
-build so the two do not compile at once. The build preflight matches the
+A guarded step that Xcode starts from a build phase is not refused for that
+build's own compiler processes, but the load, memory and thermal limits still
+apply and can refuse it while Xcode compiles. Prepare Rust artifacts through
+their guarded task before a manual Xcode build so the two do not compile at
+once. The build preflight matches the
 `SimMetalHost` and `Simulator` process names exactly; a command line that only
 mentions them does not block a build. None of this is evidence about kernel or
 driver stability.

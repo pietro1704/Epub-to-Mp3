@@ -115,7 +115,7 @@ run = "ruby scripts/native_build_preflight.rb && ruby scripts/mac_build_budget.r
 
 [tasks."native:status"]
 description = "Show who holds the heavy-job lease and whether the host would admit another heavy job; read-only"
-run = "ruby scripts/native_job.rb status"
+run = "mise exec -- ruby scripts/native_job.rb status"
 
 [tasks."models:catalog:test"]
 description = "Verify model catalog and atomic/checksummed installation contracts without downloading models"

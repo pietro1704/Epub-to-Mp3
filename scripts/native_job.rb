@@ -64,10 +64,10 @@ module NativeJob
     host.include?("darwin") && !hosted_runner? && File.expand_path(path) == HOST_LEASE
   end
 
-  # Loaded on demand so a fixture copy of this script stays self-contained.
+  # Admission, priority and the flight recorder, loaded on demand so a fixture
+  # copy of this script stays self-contained.
   def self.host_services
-    require_relative "host_load"
-    require_relative "native_flight_recorder"
+    require_relative "native_host_services"
   end
 
   def self.monotonic
@@ -111,12 +111,15 @@ module NativeJob
   end
 
   # Full host suites fork for minutes and are a heavy class on this Mac. They
-  # run under the host lease without receiving it, so every suite keeps its own
-  # fixture isolation. Other hosts, including hosted CI, are unchanged.
+  # run under the host lease and keep its open file description, but see no
+  # variable announcing it, so every suite keeps its own fixture isolation.
+  # Other hosts, including hosted CI, are unchanged.
   def self.heavy_entrypoint(file, arguments = [], path: LOCK_PATH)
     return nil unless host_services?(path)
-    return nil if supervised?(path)
-
+    if supervised?(path)
+      [FD_ENV, PATH_ENV].each { |name| ENV.delete(name) }
+      return nil
+    end
     exit run(phase: "heavy", command: [RbConfig.ruby, File.expand_path(file), *arguments], path: path, expose_lease: false)
   end
 
@@ -134,37 +137,47 @@ module NativeJob
     handle.flush
   end
 
-  # Advisory: an older checkout holds the same lease without publishing a record.
+  def self.alive?(pid)
+    Process.kill(0, pid)
+    true
+  rescue Errno::EPERM
+    true
+  rescue SystemCallError, RangeError
+    false
+  end
+
+  # Advisory and read-only: it never takes the lock, so asking cannot refuse a
+  # real job. A holder older than this record (an earlier checkout, a descendant
+  # left behind by a finished job) holds the lease without one.
   def self.holder(path)
     record = JSON.parse(File.read(path))
     return nil unless record.is_a?(Hash) && record["pid"].is_a?(Integer)
+    return record if alive?(record["pid"])
 
-    Process.kill(0, record["pid"])
-    record
-  rescue Errno::EPERM
-    record
+    # The supervisor died without releasing: its job still holds the lease.
+    child = record["child"]
+    record.merge("state" => "orphaned, supervisor gone") if child.is_a?(Integer) && child > 1 && alive?(-child)
   rescue JSON::ParserError, SystemCallError
     nil
   end
 
-  def self.held?(path)
-    return false unless File.file?(path)
+  # True inside a job of the current holder: this process inherited the lease's
+  # own open file description, which no environment variable can stand in for.
+  # Reasserting the lock on that description changes nothing and probes nobody.
+  def self.supervised?(path)
+    return false unless holder(path)
 
-    File.open(path, "a+") do |probe|
-      return true unless probe.flock(File::LOCK_EX | File::LOCK_NB)
-
-      probe.flock(File::LOCK_UN)
-    end
+    handle = File.for_fd(CHILD_FD, autoclose: false)
+    stat = handle.stat
+    expected = File.stat(path)
+    stat.file? && [stat.dev, stat.ino] == [expected.dev, expected.ino] &&
+      handle.flock(File::LOCK_EX | File::LOCK_NB) != false
+  rescue SystemCallError, ArgumentError
     false
   end
 
-  def self.supervised?(path)
-    record = holder(path)
-    !record.nil? && record["pid"] == Process.ppid && held?(path)
-  end
-
   def self.describe(record)
-    return " (holder not published)" unless record
+    return " (no holder record: an older checkout or a process left behind by an earlier job holds it)" unless record
 
     " (pid #{record['pid']}, #{record['phase']} #{record['state']} since #{record['started']}, " \
       "#{record['worktree']}: #{record['command']})"
@@ -203,27 +216,27 @@ module NativeJob
     [handle, false]
   end
 
+  # Whole seconds only: "15m" or " 900" must fail instead of silently meaning
+  # "do not wait".
+  def self.wait_seconds(explicit)
+    value = explicit.nil? ? ENV[WAIT_ENV].to_s : explicit.to_s
+    return 0 if value.empty?
+    raise ArgumentError, "Invalid wait #{value.inspect}: give whole seconds, for example 900" unless value.match?(/\A\d+\z/)
+
+    Integer(value, 10)
+  end
+
+  # A wait shorter than the retry interval still retries once, at its end.
   def self.acquire(path, deadline)
     lease(path)
   rescue Busy => error
-    raise if monotonic + LEASE_RETRY_SECONDS > deadline
+    remaining = deadline - monotonic
+    raise unless remaining.positive?
 
-    warn "native_job: #{error.message}; retrying in #{LEASE_RETRY_SECONDS} s"
-    sleep LEASE_RETRY_SECONDS
+    pause = [remaining, LEASE_RETRY_SECONDS].min
+    warn "native_job: #{error.message}; retrying in #{pause.ceil} s"
+    sleep pause
     retry
-  end
-
-  # Holds the lease while waiting, so one job queues and the others are refused.
-  def self.admit(handle, record, deadline)
-    pause = HostLoad.limits.fetch("recheck_seconds")
-    loop do
-      error = HostLoad.check
-      return error if error.nil? || monotonic + pause > deadline
-
-      publish(handle, record.merge("state" => "waiting for admission"))
-      warn "native_job: #{error} Rechecking in #{pause} s."
-      sleep pause
-    end
   end
 
   def self.stop_group(pid)
@@ -296,24 +309,6 @@ module NativeJob
     [Dir.pwd]
   end
 
-  # The owner's interface keeps priority over a job that runs for minutes.
-  # Descendants inherit the value; an already lower priority is kept.
-  def self.lower_priority(pid)
-    niceness = [HostLoad.limits.fetch("child_niceness"), Process.getpriority(Process::PRIO_PROCESS, 0)].max
-    Process.setpriority(Process::PRIO_PGRP, pid, niceness) if niceness.positive?
-  rescue SystemCallError
-    nil
-  end
-
-  def self.recorder(record)
-    instance = NativeFlightRecorder::Recorder.new(holder: record)
-    instance.start(monotonic)
-    instance
-  rescue StandardError => error
-    warn "native flight recorder unavailable: #{error.class}: #{error.message}"
-    nil
-  end
-
   def self.run(phase:, command:, path: LOCK_PATH, build_dir: nil, wait: nil, expose_lease: true)
     # Recurrent IGGuC.cpp:2913 panics occurred inside SimMetalHost on this
     # Intel host. A lease cannot make the GPU driver safe. Keep Simulator
@@ -328,8 +323,7 @@ module NativeJob
       return 75
     end
     path = File.expand_path(path)
-    seconds = (wait || ENV[WAIT_ENV]).to_s
-    deadline = monotonic + (seconds.match?(/\A\d+\z/) ? Integer(seconds, 10) : 0)
+    deadline = monotonic + wait_seconds(wait)
     handle, inherited = acquire(path, deadline)
     if phase == "build"
       destinations = build_directories(command, build_dir, inherited: inherited)
@@ -351,24 +345,20 @@ module NativeJob
         return 75
       end
     end
-    publish(handle, record.merge("state" => "running")) if published
+    argv = services ? prioritized(command) : command
     signal = nil
     previous = {}
     %w[INT TERM HUP].each { |name| previous[name] = Signal.trap(name) { signal ||= name } }
     environment = { "CARGO_BUILD_JOBS" => build_jobs.to_s, "CMAKE_BUILD_PARALLEL_LEVEL" => build_jobs.to_s }
-    options = { pgroup: true }
-    if expose_lease
-      environment.update(FD_ENV => CHILD_FD.to_s, PATH_ENV => path)
-      options[CHILD_FD] = handle
-    else
-      environment.update(FD_ENV => nil, PATH_ENV => nil)
-    end
+    # Every job keeps the lease's open file description: the lock then lasts as
+    # long as the load does, even if this supervisor is killed. A suite that
+    # must not join the lease gets the description without the variables.
+    lease_variables = expose_lease ? { FD_ENV => CHILD_FD.to_s, PATH_ENV => path } : { FD_ENV => nil, PATH_ENV => nil }
+    environment.update(lease_variables)
     environment[BUILD_DIRS_ENV] = JSON.generate(destinations) if destinations
-    pid = Process.spawn(environment, [command.first, command.first], *command.drop(1), options)
-    if services
-      lower_priority(pid)
-      flight = recorder(record)
-    end
+    pid = Process.spawn(environment, [argv.first, argv.first], *argv.drop(1), CHILD_FD => handle, pgroup: true)
+    publish(handle, record.merge("state" => "running", "child" => pid)) if published
+    flight = recorder(record) if services
     status = nil
     cancelled_at = nil
     storage_error = nil
@@ -419,10 +409,11 @@ module NativeJob
   end
 
   # Who holds the lease and whether a new heavy job would be admitted now.
+  # Read-only: it reads the holder record and never takes the lock.
   def self.status(path)
     path = File.expand_path(path)
-    held = held?(path)
-    report = { "lease" => { "path" => path, "held" => held, "holder" => (holder(path) if held) } }
+    record = holder(path)
+    report = { "lease" => { "path" => path, "held" => !record.nil?, "holder" => record } }
     if host_services?(path)
       host_services
       limits = HostLoad.limits
@@ -445,7 +436,7 @@ module NativeJob
       opts.on("--build-dir PATH") { |value| options[:build_dir] << value }
       # Explicit fixture isolation; production callers always use LOCK_PATH.
       opts.on("--lock-path PATH") { |value| options[:path] = value }
-      opts.on("--wait SECONDS", Integer) { |value| options[:wait] = value }
+      opts.on("--wait SECONDS") { |value| options[:wait] = value }
     end
     parser.order!(arguments)
     phase = arguments.shift

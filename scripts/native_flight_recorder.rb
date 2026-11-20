@@ -69,6 +69,9 @@ module NativeFlightRecorder
   class Recorder
     attr_reader :path
 
+    # Longest a finishing job waits for a probe that is already running.
+    JOIN_SECONDS = 0.2
+
     def initialize(holder:, directory: NativeFlightRecorder.directory, limits: NativeFlightRecorder.limits,
                    sampler: -> { HostLoad.sample },
                    host: -> { NativeFlightRecorder.host }, wall: -> { Time.now.utc })
@@ -79,10 +82,14 @@ module NativeFlightRecorder
       @wall = wall
       @path = File.join(directory, FILE)
       @next = nil
+      @worker = nil
     end
 
+    # Every host reading happens on a probe thread. The supervisor loop that
+    # calls these methods forwards signals and checks storage; slow telemetry on
+    # a loaded host must not hold it up.
     def start(now)
-      write("start", @host.call.merge(sample))
+      probe("start") { @host.call.merge(sample) }
       schedule(now)
     end
 
@@ -90,18 +97,30 @@ module NativeFlightRecorder
     def tick(now)
       return unless @next && now >= @next
 
-      write("sample", sample)
       schedule(now)
+      probe("sample") { sample }
     end
 
+    # Reads nothing from the host, so the job's exit code is not delayed. The
+    # last periodic line carries the final readings.
     def finish(exit_status)
       return unless @next
 
-      write("end", sample.merge("exit_status" => exit_status))
       @next = nil
+      @worker&.kill unless @worker&.join(JOIN_SECONDS)
+      write("end", "exit_status" => exit_status)
     end
 
     private
+
+    # One probe at a time. A probe still running at the next interval is
+    # skipped, never queued.
+    def probe(event, &reading)
+      return if @worker&.alive?
+
+      @worker = Thread.new { write(event, reading.call) }
+      @worker.report_on_exception = false
+    end
 
     # A recorder that could not write stays stopped for the rest of the job.
     def schedule(now)
