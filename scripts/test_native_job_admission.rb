@@ -104,6 +104,14 @@ class NativeJobAdmissionTest < Minitest::Test
     Timeout.timeout(seconds) { sleep 0.02 until yield }
   end
 
+  # Dead for the lease's purposes: a process that was killed has closed its
+  # descriptors even while it waits, as a zombie, for a parent to collect it.
+  def gone?(pid)
+    return true unless NativeJob.alive?(pid)
+
+    Open3.capture2("ps", "-o", "stat=", "-p", pid.to_s).first.strip.start_with?("Z")
+  end
+
   def lease_free?
     File.open(@lock, "a+") { |file| file.flock(File::LOCK_EX | File::LOCK_NB) != false }
   end
@@ -389,7 +397,7 @@ class NativeJobAdmissionTest < Minitest::Test
     assert_match(/Another native\/heavy job is active \(pid #{supervisor}, heavy orphaned, supervisor gone/, error)
     refute File.exist?(@marker), "a new heavy job started on top of the orphaned load"
     Process.kill("KILL", load.fetch("runner"))
-    wait_until { !NativeJob.alive?(load.fetch("runner")) }
+    wait_until { gone?(load.fetch("runner")) }
     refute lease_free?, "the suite's own step still runs and must keep the lease"
     Process.kill("KILL", load.fetch("step"))
     wait_until { lease_free? }
