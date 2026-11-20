@@ -1,6 +1,12 @@
 import 'dart:convert';
 import 'tts_session_selection.dart';
 
+bool isLowQualityPiperModel(String engine, String? modelId) {
+  if (engine != 'piper' || modelId == null) return false;
+  final stem = modelId.trim().toLowerCase().split('.').first;
+  return stem == 'low' || stem.endsWith('-low') || stem.endsWith('_low');
+}
+
 /// Immutable provider selection captured when a conversion starts.
 class TtsSelection {
   const TtsSelection({required this.engine, this.modelId, this.voice, this.session});
@@ -48,6 +54,24 @@ class TtsSelection {
 }
 
 class TtsPreferences {
+  /// Use supported app choices without rewriting a saved preference or job.
+  TtsPreferences withSupportedPiperQuality() {
+    bool isLow(TtsSelection selection) => isLowQualityPiperModel(
+      selection.engine,
+      selection.modelId ?? selection.session?.modelId,
+    );
+    final savedSecondary = secondary;
+    final primaryIsLow = isLow(primary);
+    final secondaryIsLow = savedSecondary != null && isLow(savedSecondary);
+    if (!primaryIsLow && !secondaryIsLow) return this;
+    return TtsPreferences(
+      primary: primaryIsLow ? TtsSelection.automaticPiper : primary,
+      secondary: secondaryIsLow ? null : savedSecondary,
+      allowOnlineFallback: allowOnlineFallback,
+      policyVersion: policyVersion,
+    );
+  }
+
   TtsPreferences withPrimary(TtsSelection selection) => TtsPreferences(
     primary: selection,
     secondary: secondary?.representsSameRequest(selection) == true ? null : secondary,

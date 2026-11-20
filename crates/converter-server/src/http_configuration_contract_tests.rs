@@ -261,9 +261,6 @@ async fn models_are_listed_without_installing_and_unknown_models_are_refused() {
     assert!(faber["downloadBytes"].as_u64().unwrap() > 0);
     // A voice the conversion refuses must be neither offered nor installable.
     let refused = "pt_BR-edresson-low";
-    assert!(converter_core::model_catalog::MODELS
-        .iter()
-        .any(|model| model.id == refused && !model.runtime_available));
     assert!(body["models"]
         .as_array()
         .unwrap()

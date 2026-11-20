@@ -166,24 +166,31 @@ fn model_catalog_v2_preserves_representative_legacy_entries() {
 }
 
 #[test]
-fn model_catalog_v3_preserves_disabled_low_quality_policy() {
+fn public_catalogs_exclude_piper_low_voices() {
+    let legacy: serde_json::Value =
+        serde_json::from_str(&converter_core::tts_session::catalog_json()).unwrap();
     let snapshot = SpeechModelLibrary
         .snapshot(portuguese_macos_query())
         .expect("static catalogue must be valid");
-    let value = serde_json::to_value(snapshot).unwrap();
-    let edresson = value["entries"]
+    let current = serde_json::to_value(snapshot).unwrap();
+
+    for voice in ["pt_BR-edresson-low", "en_US-lessac-low"] {
+        assert!(legacy["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["id"] != voice));
+        assert!(current["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["identity"]["model_id"] != voice));
+    }
+    assert!(current["entries"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|entry| entry["identity"]["model_id"] == "pt_BR-edresson-low")
-        .unwrap();
-
-    assert_eq!(edresson["compatibility"]["compatible"], false);
-    assert!(edresson["compatibility"]["reasons"]
-        .as_array()
-        .unwrap()
-        .contains(&serde_json::json!("quality_disabled")));
-    assert_eq!(edresson["selection"]["selectable"], false);
+        .all(|entry| entry["presentation"]["quality"] != "low"));
 }
 
 #[test]

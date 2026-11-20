@@ -37,6 +37,24 @@ Future<void> _pump(
 
 void main() {
   group('SettingsScreen M3', () {
+    testWidgets('saved Piper Low choices never return to the picker', (t) async {
+      const preferences = TtsPreferences(
+        primary: TtsSelection(engine: 'piper', modelId: 'pt_BR-edresson-low'),
+        secondary: TtsSelection(engine: 'piper', modelId: 'en_US-lessac-low'),
+      );
+      final saved = jsonEncode(preferences.toJson());
+      await _pump(t, prefsData: {'ttsPreferences': saved});
+
+      expect(find.text('Piper · Book language'), findsOneWidget);
+      expect(find.textContaining('-low'), findsNothing);
+      final prefs = await SharedPreferences.getInstance();
+      final effective = AppSettings(prefs).ttsPreferences;
+      expect(effective.primary, TtsSelection.automaticPiper);
+      expect(effective.secondary, isNull);
+      expect(effective.allowOnlineFallback, isFalse);
+      expect(prefs.getString('ttsPreferences'), saved);
+    });
+
     testWidgets('reset activates Piper selection by book language', (t) async {
       final catalog = TtsCatalog.decode(jsonEncode({
         'schema_version': 3,

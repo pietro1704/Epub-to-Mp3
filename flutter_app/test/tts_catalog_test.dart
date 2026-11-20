@@ -4,6 +4,43 @@ import 'package:flutter_app/models/tts_catalog.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 
 void main() {
+  test('stale catalogs cannot list or offer Piper Low models', () {
+    final catalog = TtsCatalog.decode(jsonEncode({
+      'schema_version': 3,
+      'default_selection': {
+        'version': 2,
+        'provider': 'piper',
+        'runtime': 'piper',
+        'model_id': 'en_US-lessac-low',
+        'model_revision': 'old',
+      },
+      'providers': [
+        {
+          'provider': 'piper',
+          'runtime': 'piper',
+          'targets': ['linux'],
+          'capabilities': {'audio_bytes': true},
+        },
+      ],
+      'entries': [
+        _entry('en_US-lessac-low', 'piper', 'piper', 'old'),
+        _entry('custom_x_low', 'piper', 'piper', 'old'),
+        {
+          ..._entry('legacy-id', 'piper', 'piper', 'old'),
+          'presentation': {'quality': 'low'},
+        },
+        _entry('en_US-ljspeech-high', 'piper', 'piper', 'sha'),
+      ],
+    }));
+
+    expect(catalog.models.map((entry) => entry['id']), ['en_US-ljspeech-high']);
+    expect(
+      catalog.selections(target: 'Linux').single.modelId,
+      'en_US-ljspeech-high',
+    );
+    expect(catalog.defaultSelection, isNull);
+  });
+
   test('catalog configuration adds distinct models on one runtime and survives capture', () {
     final catalog = TtsCatalog.decode(jsonEncode({'schema_version':3, 'providers': [
       {'provider':'provider', 'runtime':'runtime', 'targets':['linux','macos','android','ios','windows'], 'capabilities':{'audio_bytes':true}},
