@@ -6,6 +6,9 @@
 #   git log v0.5.8..HEAD --format='%s%n%b%x00' | ruby scripts/next_release_version.rb \
 #     --last-tag v0.5.8 --committed 0.5.8
 #
+# Only the commit subject (the pull request title of a squash merge) decides feat, fix and perf;
+# a body can only add a breaking change (a BREAKING CHANGE footer or an inner `type!:` commit).
+#
 # Prints `bump=` (none|patch|minor|major|committed) and, unless none, `version=`.
 # `committed` means master already carries a version newer than the last tag; the
 # Auto Release workflow publishes that one and no release pull request is needed.
@@ -13,6 +16,9 @@ module NextReleaseVersion
   Plan = Struct.new(:bump, :version, keyword_init: true)
 
   CONVENTIONAL = /\A(?<type>[a-z]+)(?:\([^)]*\))?(?<breaking>!)?:\s/
+  # A squash-merge body lists the inner commits as `* subject` lines, so a bullet may precede these.
+  BODY_BREAKING_FOOTER = /^(?:[*-]\s*)?BREAKING[ -]CHANGE:/
+  BODY_BREAKING_SUBJECT = /^(?:[*-]\s*)?[a-z]+(?:\([^)]*\))?!:\s/
   PATCH_TYPES = %w[fix perf].freeze
   MINOR_TYPES = %w[feat].freeze
 
@@ -38,7 +44,7 @@ module NextReleaseVersion
 
       PATCH_TYPES.include?(match[:type]) ? :patch : :none
     end
-    levels << :breaking if bodies.any? { |body| body.match?(/^BREAKING[ -]CHANGE:/) }
+    levels << :breaking if bodies.any? { |body| body.match?(BODY_BREAKING_FOOTER) || body.match?(BODY_BREAKING_SUBJECT) }
     %i[breaking minor patch].find { |candidate| levels.include?(candidate) } || :none
   end
 

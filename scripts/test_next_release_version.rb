@@ -62,6 +62,24 @@ class NextReleaseVersionTest < Minitest::Test
     assert_equal "0.1.0", result.version
   end
 
+  def test_squash_merge_bodies_prefix_inner_commit_lines_with_a_bullet
+    squash = "* fix: inner\n\n* BREAKING CHANGE: dropped the old api"
+    assert_equal "0.6.0", plan(["chore: squash title (#9)"], bodies: [squash]).version
+    assert_equal "0.6.0", plan(["chore: squash title (#9)"], bodies: ["- BREAKING-CHANGE: x"]).version
+  end
+
+  def test_a_breaking_inner_commit_in_a_squash_body_counts
+    assert_equal "0.6.0", plan(["chore: squash title (#9)"], bodies: ["* feat(api)!: new contract"]).version
+  end
+
+  def test_only_the_pull_request_title_counts_for_feat_and_fix
+    assert_equal "none", plan(["chore: squash title (#9)"], bodies: ["* feat: inner feature\n* fix: inner fix"]).bump
+  end
+
+  def test_breaking_text_in_the_middle_of_a_line_is_not_a_breaking_change
+    assert_equal "none", plan(["chore: a"], bodies: ["explains why BREAKING CHANGE: is not used here"]).bump
+  end
+
   def test_the_command_line_reads_subjects_and_prints_outputs
     input = "fix: a\n\0feat: b\n\0"
     out, status = Open3.capture2("ruby", File.expand_path("next_release_version.rb", __dir__),

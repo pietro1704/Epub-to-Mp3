@@ -3,8 +3,8 @@ name: Release Pull Request
 # Opens the pull request that raises the product version when the validated latest
 # master commit carries releasable Conventional Commits (feat, fix, perf, breaking)
 # since the last tag. Merging it lets Auto Release tag and publish. The version
-# stays committed (Cargo.toml, Cargo.lock, VERSION, CHANGELOG.md), so this
-# workflow never edits master directly.
+# stays committed (Cargo.toml, Cargo.lock, ruby_app/rails_gateway/VERSION,
+# CHANGELOG.md), so this workflow never edits master directly.
 #
 # Needs the RELEASE_PR_TOKEN secret (a token allowed to push a branch and open a
 # pull request). A pull request opened with the default GITHUB_TOKEN does not
@@ -33,8 +33,9 @@ jobs:
     name: Prepare release pull request
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # A manual run may only use master's workflow definition: this job holds a write token.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
       (github.event.workflow_run.conclusion == 'success' &&
        contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event) &&
        github.event.workflow_run.head_branch == 'master' &&
@@ -87,16 +88,26 @@ jobs:
             none) emit "No releasable commit since ${LAST_TAG:-the start}; no release pull request."; exit 0 ;;
             committed) emit "Version ${VERSION} is already committed; Auto Release publishes it."; exit 0 ;;
           esac
-          OPEN=$(gh pr list --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("release/"))] | length')
-          if [[ "$OPEN" != "0" ]]; then
-            emit "A release pull request is already open; not opening another."
-            exit 0
-          fi
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 64
+          # An open release pull request for the same or a newer version blocks a new one;
+          # a lower one is stale (the plan moved on) and is closed when the new one opens.
+          SUPERSEDE=""
+          while read -r NUMBER HEAD; do
+            [[ -n "${NUMBER:-}" ]] || continue
+            OPEN_VERSION="${HEAD#release/v}"
+            [[ "$OPEN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+            if [[ "$(ruby -e 'a, b = ARGV.map { |v| v.split(".").map(&:to_i) }; print(a <=> b)' "$OPEN_VERSION" "$VERSION")" != "-1" ]]; then
+              emit "A release pull request is already open for ${OPEN_VERSION}; not opening another for ${VERSION}."
+              exit 0
+            fi
+            SUPERSEDE="${SUPERSEDE:+$SUPERSEDE }$NUMBER"
+          done < <(gh pr list --state open --limit 100 --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("release/v")) | "\(.number) \(.headRefName)"')
           {
             echo "prepare=true"
             echo "version=$VERSION"
             echo "last_tag=$LAST_TAG"
+            echo "supersede=$SUPERSEDE"
           } >> "$GITHUB_OUTPUT"
 
       - name: Raise the version and the changelog
@@ -135,12 +146,21 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
           VERSION: ${{ steps.plan.outputs.version }}
           LAST_TAG: ${{ steps.plan.outputs.last_tag }}
+          SUPERSEDE: ${{ steps.plan.outputs.supersede }}
         run: |
           set -euo pipefail
+          # Close release pull requests for a lower version, with their branches.
+          for number in ${SUPERSEDE:-}; do
+            gh pr close "$number" --delete-branch \
+              --comment "Superseded by the release pull request for v${VERSION}."
+          done
+          # A branch left by a closed pull request or by a run that stopped before
+          # opening one is stale (no open pull request has this version): remove it.
+          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v${VERSION}" 2>/dev/null || true
           git -c credential.helper= -c "credential.helper=!gh auth git-credential" \
             push origin "HEAD:refs/heads/release/v${VERSION}"
           gh pr create --base master --head "release/v${VERSION}" \
             --title "chore(release): v${VERSION}" \
-            --body "Raises the product version from ${LAST_TAG:-the previous release} to ${VERSION} (Cargo.toml, Cargo.lock, VERSION, CHANGELOG.md) from the Conventional Commits since the last tag. Merging it lets Auto Release tag v${VERSION} and publish the GitHub release. Opened by the Release Pull Request workflow."
+            --body "Raises the product version from ${LAST_TAG:-the previous release} to ${VERSION} (Cargo.toml, Cargo.lock, ruby_app/rails_gateway/VERSION, CHANGELOG.md) from the Conventional Commits since the last tag. Merging it lets Auto Release tag v${VERSION} and publish the GitHub release. Opened by the Release Pull Request workflow."
           gh pr merge "release/v${VERSION}" --auto --squash \
             || echo "::notice::Auto-merge could not be enabled; merge the release pull request manually."

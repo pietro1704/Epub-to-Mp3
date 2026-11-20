@@ -2,8 +2,8 @@ name: Auto Release
 
 # Tags and publishes a GitHub release (with generated notes) for the validated
 # latest master commit once its committed version is newer than the last tag.
-# The version is deliberate: scripts/bump.sh raises Cargo.toml, VERSION and
-# CHANGELOG.md in a pull request; this workflow never edits master. It does not
+# The version is deliberate: scripts/bump.sh raises Cargo.toml, Cargo.lock,
+# ruby_app/rails_gateway/VERSION and CHANGELOG.md in a pull request; this workflow never edits master. It does not
 # build or attach artifacts; the multi-platform Release Desktop run stays a
 # separate, manual dispatch with the published tag.
 
@@ -32,8 +32,9 @@ jobs:
     name: Auto version tag
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # A manual run may only use master's workflow definition: this job holds a write token.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
       (github.event.workflow_run.conclusion == 'success' &&
        contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event) &&
        github.event.workflow_run.head_branch == 'master' &&
@@ -97,6 +98,7 @@ jobs:
       - name: Determine next version
         id: bump
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_VERSION: ${{ steps.version.outputs.base_version }}
         run: |
           set -euo pipefail
@@ -129,14 +131,16 @@ jobs:
             exit 0
           fi
 
-          if git rev-parse "v${NEW}" >/dev/null 2>&1; then
+          # A tag without a GitHub release still gets its release; the publish step
+          # refuses a tag that names another commit than the validated one.
+          if gh release view "v${NEW}" >/dev/null 2>&1; then
             {
               echo "skip=true"
               echo "base_version=$BASE_VERSION"
               echo "last_tag=${LAST_TAG}"
               echo "range=${RANGE}"
             } >> "$GITHUB_OUTPUT"
-            echo "Tag v${NEW} already exists; skipping"
+            echo "Release v${NEW} already exists; skipping"
             exit 0
           fi
 

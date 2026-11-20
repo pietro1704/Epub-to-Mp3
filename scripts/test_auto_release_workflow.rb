@@ -29,7 +29,7 @@ class AutoReleaseWorkflowTest < Minitest::Test
     assert_includes condition, "github.event.workflow_run.conclusion == 'success'"
     assert_includes condition, "github.event.workflow_run.head_branch == 'master'"
     assert_includes condition, "github.event.workflow_run.head_repository.full_name == github.repository"
-    assert_includes condition, "github.event_name == 'workflow_dispatch'"
+    assert_includes condition, "(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')"
   end
 
   def test_the_released_commit_is_the_validated_latest_master_commit
@@ -50,6 +50,22 @@ class AutoReleaseWorkflowTest < Minitest::Test
     assert_includes run, '--notes-start-tag "$LAST_TAG"'
     refute_match(/release-desktop|gh workflow run|actions\/upload-artifact/, @text.sub(/^#.*$/, ""),
                  "artifact builds stay a separate, manual release-desktop run")
+  end
+
+  def test_a_manual_run_can_only_use_the_workflow_definition_of_master
+    # The job holds a contents: write token, so a feature branch must not be able to run its own copy.
+    refute_match(/github\.event_name == 'workflow_dispatch' \|\|/, @workflow.fetch("jobs").fetch("auto-release").fetch("if"))
+  end
+
+  def test_a_tag_without_a_release_still_gets_one
+    bump = step("Determine next version").fetch("run")
+    assert_includes bump, 'gh release view "v${NEW}"'
+    refute_match(/Tag v\$\{NEW\} already exists; skipping/, bump)
+  end
+
+  def test_comments_name_the_real_version_files
+    assert_includes @text, "ruby_app/rails_gateway/VERSION"
+    refute_match(/raises Cargo\.toml, VERSION and CHANGELOG/, @text)
   end
 
   def test_an_existing_tag_must_already_identify_the_validated_commit
