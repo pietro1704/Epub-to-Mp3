@@ -143,7 +143,7 @@ extension MacAppKitRootControllerTests {
         )
         player.play(snapshot: snapshot, startingAt: 0)
         player.resume()
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem)
         for _ in 0..<100 where item.status == .unknown {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -167,9 +167,9 @@ extension MacAppKitRootControllerTests {
         XCTAssertGreaterThanOrEqual(pausedTime, 7)
         button.performClick(nil)
         XCTAssertTrue(player.isPlaying)
-        XCTAssertTrue(player.testHook_currentPlayerItem() === item,
+        XCTAssertTrue(player.services.queue.player?.currentItem === item,
                       "Play after Pause must retain the actual AVPlayerItem, not reload the chapter.")
-        XCTAssertEqual(player.testHook_currentPlayerItem()?.currentTime().seconds ?? -1,
+        XCTAssertEqual(player.services.queue.player?.currentItem?.currentTime().seconds ?? -1,
                        pausedTime, accuracy: 0.5)
     }
 }

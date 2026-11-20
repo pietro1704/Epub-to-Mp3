@@ -181,7 +181,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         for _ in 0..<100 where !descendants(root.view).contains(where: {
             ($0 as? NSTextView)?.string.contains("Source chapter 1 opening words.") == true
         }) { try await Task.sleep(nanoseconds: 50_000_000) }
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem)
         for _ in 0..<30 where item.status == .unknown { try await Task.sleep(nanoseconds: 100_000_000) }
         XCTAssertEqual(item.status, .readyToPlay)
         player.resume()

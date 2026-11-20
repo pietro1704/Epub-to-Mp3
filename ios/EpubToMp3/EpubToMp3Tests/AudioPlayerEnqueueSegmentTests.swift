@@ -47,17 +47,17 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         }
         await Task.yield()
         XCTAssertFalse(player.firstSegmentReady, "Writing bytes alone must not publish an unfinished request.")
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), 0)
+        XCTAssertEqual(player.services.segments.files.count, 0)
         release.signal()
         let firstAccepted = await first.value
         let secondAccepted = await second.value
         XCTAssertTrue(firstAccepted)
         XCTAssertTrue(secondAccepted)
-        XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), 2)
+        XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 0)
+        XCTAssertEqual(player.services.segments.files.count, 2)
         XCTAssertFalse(player.isPlaying)
         for segment in 0...1 {
-            let url = try XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: segment))
+            let url = try XCTUnwrap(player.services.segments.files[.init(chapterIndex: 0, segmentIndex: segment)])
             XCTAssertEqual(try Data(contentsOf: url), bytes)
         }
     }
@@ -82,18 +82,18 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
             await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: 0)
         }
         await fulfillment(of: [started], timeout: 2)
-        let directory = try XCTUnwrap(player.testHook_segmentTempDirectory())
+        let directory = try XCTUnwrap(player.services.persistence.directory)
         player.stop()
         release.signal()
         let oldAccepted = await old.value
         XCTAssertFalse(oldAccepted)
-        XCTAssertNil(player.testHook_currentPlayerItem())
+        XCTAssertNil(player.services.queue.player?.currentItem)
         XCTAssertFalse(player.firstSegmentReady)
         XCTAssertNil(player.lastError, "Session cancellation is not a write failure.")
         let newAccepted = await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: 1)
         XCTAssertTrue(newAccepted)
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), 1)
-        XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 1)
+        XCTAssertEqual(player.services.segments.files.count, 1)
+        XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 1)
         for _ in 0..<100 where FileManager.default.fileExists(atPath: directory.path) {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
@@ -108,8 +108,8 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         let accepted = await player.enqueueSegmentAsync(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
         XCTAssertFalse(accepted)
         XCTAssertFalse(player.firstSegmentReady)
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), 0)
-        XCTAssertNil(player.testHook_currentPlayerItem())
+        XCTAssertEqual(player.services.segments.files.count, 0)
+        XCTAssertNil(player.services.queue.player?.currentItem)
         XCTAssertEqual(player.lastError, .segmentWriteFailed)
     }
 
@@ -119,13 +119,13 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         defer { player.stop() }
         let original = fakeMP3()
         let first = await player.enqueueSegmentAsync(data: original, chapterIndex: 0, segmentIndex: 0)
-        let url = try XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0))
+        let url = try XCTUnwrap(player.services.segments.files[.init(chapterIndex: 0, segmentIndex: 0)])
         let duplicate = await player.enqueueSegmentAsync(data: fakeMP3(size: 1024), chapterIndex: 0, segmentIndex: 0)
         XCTAssertTrue(first)
         XCTAssertTrue(duplicate)
-        XCTAssertEqual(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0), url)
+        XCTAssertEqual(player.services.segments.files[.init(chapterIndex: 0, segmentIndex: 0)], url)
         XCTAssertEqual(try Data(contentsOf: url), original)
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), 1)
+        XCTAssertEqual(player.services.segments.files.count, 1)
     }
 
     @MainActor
@@ -141,20 +141,20 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
             await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: total)
         }
         for _ in 0..<100 {
-            if player.testHook_segmentCapacityWaiterCount() == 1 { break }
+            if player.services.segments.capacityWaiterCount == 1 { break }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 1)
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), total)
+        XCTAssertEqual(player.services.segments.capacityWaiterCount, 1)
+        XCTAssertEqual(player.services.segments.files.count, total)
         operation.cancel()
         let accepted = await operation.value
         XCTAssertFalse(accepted)
-        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 0)
-        XCTAssertEqual(player.testHook_retainedSegmentCount(), total)
-        XCTAssertTrue(player.testHook_finishCurrentSegment())
+        XCTAssertEqual(player.services.segments.capacityWaiterCount, 0)
+        XCTAssertEqual(player.services.segments.files.count, total)
+        XCTAssertTrue(player.finishCurrentSegment())
         let retried = await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: total)
         XCTAssertTrue(retried)
-        XCTAssertEqual(player.testHook_backlogCount(), SegmentBacklog.maximumDeferredSegmentCount)
+        XCTAssertEqual(player.services.segments.deferredCount, SegmentBacklog.maximumDeferredSegmentCount)
     }
 
     // MARK: - Queue item count
@@ -268,7 +268,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     @MainActor
     func testBufferingAheadWhilePlayingDoesNotMoveCurrentChapter() {
         let player = AudioPlayer()
-        player.testHook_setIsPlaying(true)
+        player.playbackPlayingChanged(true)
 
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0)
@@ -286,8 +286,8 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
 
-        XCTAssertEqual(player.testHook_segmentChapterIndex(), 0)
-        XCTAssertEqual(player.testHook_activeSegmentSentenceCount(), 1)
+        XCTAssertEqual(player.services.segments.chapterIndex, 0)
+        XCTAssertEqual(player.activeChapterSegmentCount(), 1)
     }
 
     @MainActor
@@ -297,7 +297,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 1, sentenceId: "ch0-s1")
 
         XCTAssertEqual(
-            player.testHook_activeSegmentSentenceCount(),
+            player.activeChapterSegmentCount(),
             2,
             "Every queued segment must occupy a timing slot, even when it has no sentence ID"
         )
@@ -309,9 +309,9 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
 
-        player.testHook_activateSegmentChapter(1)
+        player.activateFirstSegment(ofChapter: 1)
 
-        XCTAssertEqual(player.testHook_bufferedSegmentChapterCount(), 1)
+        XCTAssertEqual(player.activeChapterSegmentCount(), 1)
         XCTAssertEqual(player.activeSentenceId, "ch1-s0")
     }
 
@@ -322,11 +322,11 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 1, sentenceId: "ch1-s1")
 
-        player.testHook_activateSegmentChapter(1)
-        player.testHook_completeSegmentTiming(chapterIndex: 0)
+        player.activateFirstSegment(ofChapter: 1)
+        player.completeSegmentTiming(chapterIndex: 0)
 
         XCTAssertEqual(player.activeSentenceId, "ch1-s0")
-        XCTAssertEqual(player.testHook_activeSegmentSentenceCount(), 2)
+        XCTAssertEqual(player.activeChapterSegmentCount(), 2)
     }
 
     @MainActor
@@ -335,14 +335,14 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         let owned = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/owned-segment.mp3"))
         let unrelated = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/unrelated-segment.mp3"))
 
-        player.testHook_registerOwnedSegmentItem(owned)
+        player.services.queue.register(ObjectIdentifier(owned))
 
-        XCTAssertTrue(player.testHook_isOwnedSegmentItem(owned))
-        XCTAssertFalse(player.testHook_isOwnedSegmentItem(unrelated))
+        XCTAssertTrue(player.services.queue.owns(ObjectIdentifier(owned)))
+        XCTAssertFalse(player.services.queue.owns(ObjectIdentifier(unrelated)))
 
-        player.testHook_removeOwnedSegmentItem(owned)
+        player.services.queue.removeOwnership(ObjectIdentifier(owned))
 
-        XCTAssertFalse(player.testHook_isOwnedSegmentItem(owned))
+        XCTAssertFalse(player.services.queue.owns(ObjectIdentifier(owned)))
     }
 
     @MainActor
@@ -358,12 +358,12 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
             )
         }
 
-        XCTAssertGreaterThan(player.testHook_backlogCount(), 0)
+        XCTAssertGreaterThan(player.services.segments.deferredCount, 0)
 
-        player.testHook_teardownPlayer()
+        player.services.lifecycle.teardown()
 
         XCTAssertEqual(
-            player.testHook_backlogCount(),
+            player.services.segments.deferredCount,
             0,
             "A new playback session must not inherit deferred files from the previous queue"
         )
@@ -382,7 +382,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
             )
         }
         XCTAssertEqual(
-            player.testHook_backlogCount(),
+            player.services.segments.deferredCount,
             SegmentBacklog.maximumDeferredSegmentCount
         )
 
@@ -396,13 +396,13 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         }
         await fulfillment(of: [waiting], timeout: 1)
         XCTAssertEqual(
-            player.testHook_backlogCount(),
+            player.services.segments.deferredCount,
             SegmentBacklog.maximumDeferredSegmentCount,
             "The producer must remain paused while the deferred backlog is full"
         )
-        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 1)
+        XCTAssertEqual(player.services.segments.capacityWaiterCount, 1)
 
-        XCTAssertTrue(player.testHook_finishCurrentSegment())
+        XCTAssertTrue(player.finishCurrentSegment())
         await fulfillment(of: [resumed], timeout: 1)
     }
 
@@ -428,9 +428,9 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
             }
         }
         await fulfillment(of: [waiting], timeout: 1)
-        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 1)
+        XCTAssertEqual(player.services.segments.capacityWaiterCount, 1)
 
-        player.testHook_teardownPlayer()
+        player.services.lifecycle.teardown()
         await fulfillment(of: [cancelled], timeout: 1)
     }
 

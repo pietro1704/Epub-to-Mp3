@@ -79,7 +79,7 @@ final class ReaderPagePlaybackChoiceTests: XCTestCase {
             language: nil, progressPercent: 100, chaptersTotal: 1, chaptersCompleted: 1,
             chapterProgress: [chapter], outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil)
         player.play(snapshot: snapshot, restoreAutoplay: false)
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem)
         for _ in 0..<30 where item.status == .unknown { try await Task.sleep(nanoseconds: 100_000_000) }
         XCTAssertEqual(item.status, .readyToPlay)
         player.resume()

@@ -16,14 +16,14 @@ extension AudioPlayerPendingSeekTests {
             player.nextChapter()
             try await self.waitForNavigation(player)
             XCTAssertEqual(player.currentChapterIndex, 1)
-            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
+            XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 0)
             XCTAssertFalse(player.isPlaying)
             player.previousChapter()
             try await self.waitForNavigation(player)
             XCTAssertEqual(player.currentChapterIndex, 0)
-            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
+            XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 0)
             XCTAssertFalse(player.isPlaying)
-            XCTAssertLessThanOrEqual(player.testHook_deferredSegmentCount(), 12)
+            XCTAssertLessThanOrEqual(player.services.segments.deferredCount, 12)
         }
     }
 
@@ -39,7 +39,7 @@ extension AudioPlayerPendingSeekTests {
             try await self.waitForNavigation(player)
             XCTAssertEqual(player.currentChapterIndex, 1)
             XCTAssertFalse(player.isPlaying)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 0, accuracy: 0.1)
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 0, accuracy: 0.1)
         }
     }
 
@@ -52,7 +52,7 @@ extension AudioPlayerPendingSeekTests {
             player.previousChapter()
             try await self.waitForNavigation(player)
             XCTAssertEqual(player.currentChapterIndex, 0)
-            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
+            XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 0)
             XCTAssertEqual(player.positionSeconds, 0, accuracy: 0.1)
             XCTAssertFalse(player.isPlaying)
         }
@@ -134,7 +134,7 @@ extension AudioPlayerPendingSeekTests {
             }
             XCTAssertEqual(player.currentChapterIndex, 1,
                            "Segment target 1 must resolve to manifest chapter 2, not replay manifest chapter 1.")
-            let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+            let item = try XCTUnwrap(player.services.queue.player?.currentItem)
             let asset = try XCTUnwrap(item.asset as? AVURLAsset)
             let target = try XCTUnwrap(snapshot(true).chapterProgress?.first { $0.index == 2 }?.downloadUrl)
             XCTAssertEqual(asset.url, URL(string: target),

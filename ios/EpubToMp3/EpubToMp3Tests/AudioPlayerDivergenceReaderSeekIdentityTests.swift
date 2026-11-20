@@ -87,8 +87,8 @@ extension AudioPlayerDivergenceTests {
         try await waitForReaderState("first file's reader-page seek") {
             !player.isSeeking && player.pendingNavigation == nil && abs(player.positionSeconds - 5) < 0.1
         }
-        XCTAssertEqual(player.testHook_playbackChapterCount(), 1)
-        XCTAssertEqual((player.testHook_currentPlayerItem()?.asset as? AVURLAsset)?.url, url)
+        XCTAssertEqual(player.services.chapters.chapters.count, 1)
+        XCTAssertEqual((player.services.queue.player?.currentItem?.asset as? AVURLAsset)?.url, url)
         XCTAssertEqual(player.positionSeconds, 5, accuracy: 0.1)
         XCTAssertFalse(player.isPlaying)
     }

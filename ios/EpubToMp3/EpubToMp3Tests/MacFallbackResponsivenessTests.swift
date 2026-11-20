@@ -159,7 +159,7 @@ final class MacFallbackResponsivenessTests: XCTestCase {
         }
         XCTAssertTrue(observedFallback, "Missing primary must select the captured installed-system secondary.")
         XCTAssertTrue(player.firstSegmentReady)
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem(), "The initial selected chapter must remain playable")
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem, "The initial selected chapter must remain playable")
         for _ in 0..<50 where item.status == .unknown {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -215,7 +215,7 @@ final class MacFallbackResponsivenessTests: XCTestCase {
             XCTAssertNotEqual(requests.last?.jobID, firstJob)
             XCTAssertEqual(player.snapshot?.jobId, requests.last?.jobID)
             XCTAssertNil(window.attachedSheet)
-            let replacement = try XCTUnwrap(player.testHook_currentPlayerItem(), "The replacement selected chapter must be playable")
+            let replacement = try XCTUnwrap(player.services.queue.player?.currentItem, "The replacement selected chapter must be playable")
             for _ in 0..<30 where replacement.status == .unknown { try await Task.sleep(nanoseconds: 100_000_000) }
             try await Task.sleep(nanoseconds: 400_000_000)
             XCTAssertTrue(player.isPlaying)

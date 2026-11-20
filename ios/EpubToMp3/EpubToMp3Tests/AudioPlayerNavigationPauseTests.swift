@@ -58,7 +58,7 @@ final class AudioPlayerNavigationPauseTests: XCTestCase {
 
         XCTAssertEqual(player.currentChapterIndex, 0)
         XCTAssertFalse(player.isPlaying, "An explicit paused state must override a previous chapter's old playing marker.")
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem)
         for _ in 0..<30 where item.status == .unknown {
             try await Task.sleep(nanoseconds: 100_000_000)
         }

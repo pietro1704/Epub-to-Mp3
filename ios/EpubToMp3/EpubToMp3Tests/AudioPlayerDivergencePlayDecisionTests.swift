@@ -8,8 +8,8 @@ extension AudioPlayerDivergenceTests {
     @MainActor
     func testEffectiveChapterTitleUsesAudioCursor() {
         let player = makePlayer()
-        player.testHook_setSnapshot(snapshotWithChapters(3))
-        player.testHook_setCurrentChapterIndex(1)
+        player.playbackSnapshotChanged(snapshotWithChapters(3))
+        player.services.queue.selectChapter(1)
 
         XCTAssertEqual(player.effectiveChapterTitle, "Chapter 2")
     }
@@ -28,7 +28,7 @@ extension AudioPlayerDivergenceTests {
         let player = makePlayer()
         // Force the isPlaying flag for the decision check; we don't
         // need a real queue for this branch.
-        player.testHook_setIsPlaying(true)
+        player.playbackPlayingChanged(true)
         XCTAssertEqual(player.playTapDecision(readerChapterIndex: 99), .pause)
     }
 
@@ -36,8 +36,8 @@ extension AudioPlayerDivergenceTests {
     @MainActor
     func testDecisionWithMatchingChaptersIsResume() {
         let player = makePlayer()
-        player.testHook_setSnapshot(snapshotWithChapters(5))
-        player.testHook_setCurrentChapterIndex(2)
+        player.playbackSnapshotChanged(snapshotWithChapters(5))
+        player.services.queue.selectChapter(2)
         XCTAssertEqual(player.playTapDecision(readerChapterIndex: 2), .resume)
     }
 
@@ -45,8 +45,8 @@ extension AudioPlayerDivergenceTests {
     @MainActor
     func testDecisionWithDivergentChaptersOffersDialog() {
         let player = makePlayer()
-        player.testHook_setSnapshot(snapshotWithChapters(5))
-        player.testHook_setCurrentChapterIndex(2)
+        player.playbackSnapshotChanged(snapshotWithChapters(5))
+        player.services.queue.selectChapter(2)
         XCTAssertEqual(
             player.playTapDecision(readerChapterIndex: 0),
             .offerStartChoice
@@ -90,9 +90,9 @@ extension AudioPlayerDivergenceTests {
             chapterProgress: [playable0, unplayable1, playable2, playable3],
             outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
         )
-        player.testHook_setSnapshot(snap)
+        player.playbackSnapshotChanged(snap)
         // Audio is on playable index 1 = EPUB chapter 2.
-        player.testHook_setCurrentChapterIndex(1)
+        player.services.queue.selectChapter(1)
         // Reader at EPUB index 2 — same physical chapter; resume, no dialog.
         XCTAssertEqual(
             player.playTapDecision(readerChapterIndex: 2),
@@ -122,9 +122,9 @@ extension AudioPlayerDivergenceTests {
     @MainActor
     func testDecisionWithSameChapterAndKnownPageStartsFromReaderPage() {
         let player = makePlayer()
-        player.testHook_setSnapshot(snapshotWithChapters(5))
-        player.testHook_setCurrentChapterIndex(2)
-        player.testHook_setDurationSeconds(100)
+        player.playbackSnapshotChanged(snapshotWithChapters(5))
+        player.services.queue.selectChapter(2)
+        player.services.clock.update(durationSeconds: 100)
         player.seek(to: 10)
 
         XCTAssertEqual(
@@ -138,9 +138,9 @@ extension AudioPlayerDivergenceTests {
     @MainActor
     func testDecisionWithSameChapterAndNearbyPageStartsFromReaderPage() {
         let player = makePlayer()
-        player.testHook_setSnapshot(snapshotWithChapters(5))
-        player.testHook_setCurrentChapterIndex(2)
-        player.testHook_setDurationSeconds(100)
+        player.playbackSnapshotChanged(snapshotWithChapters(5))
+        player.services.queue.selectChapter(2)
+        player.services.clock.update(durationSeconds: 100)
         player.seek(to: 52)
 
         XCTAssertEqual(
@@ -154,7 +154,7 @@ extension AudioPlayerDivergenceTests {
         let player = makePlayer()
         player.backendBaseURL = URL(string: "http://localhost:0/")!
         player.play(snapshot: snapshotWithChapters(3), startingAt: 1)
-        player.testHook_setIsPlaying(true)
+        player.playbackPlayingChanged(true)
 
         player.pause()
 
@@ -227,7 +227,7 @@ extension AudioPlayerDivergenceTests {
             lastActivityAt: nil
         )
 
-        // Drive the FULL play path (rather than `testHook_setSnapshot`)
+        // Drive the FULL play path (rather than `playbackSnapshotChanged`)
         // so the snapshot lands through the production code path that
         // populates `playableChapters` lazily AND advances the queue
         // head. We give the player a base URL so the relative

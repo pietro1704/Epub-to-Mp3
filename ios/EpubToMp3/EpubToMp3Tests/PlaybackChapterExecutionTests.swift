@@ -42,12 +42,12 @@ final class PlaybackChapterExecutionTests: XCTestCase {
         let earlierURL = try audioFile(in: directory)
         let id = UUID().uuidString
         player.play(snapshot: snapshot(id: id, chapters: [chapter(7, url: currentURL)]), restoreAutoplay: false)
-        let current = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let current = try XCTUnwrap(player.services.queue.player?.currentItem)
         XCTAssertTrue(player.hasLoadedAudioQueue)
         XCTAssertFalse(player.isPlaying)
         player.updateSnapshot(snapshot(id: id, chapters: [chapter(3, url: earlierURL), chapter(7, url: currentURL)]))
-        XCTAssertTrue(player.testHook_currentPlayerItem() === current)
-        XCTAssertEqual(player.testHook_playbackChapterCount(), 2)
+        XCTAssertTrue(player.services.queue.player?.currentItem === current)
+        XCTAssertEqual(player.services.chapters.chapters.count, 2)
         XCTAssertFalse(player.isPlaying)
     }
 

@@ -32,14 +32,14 @@ final class PlaybackReadinessPublicationTests: XCTestCase {
     func testConversionCancellationKeepsAudibleReadinessUntilTransportIsReleased() {
         let player = AudioPlayer()
         player.markFirstChapterReady()
-        player.testHook_setIsPlaying(true)
+        player.playbackPlayingChanged(true)
         player.isConverting = true
         player.conversionProgress = 0.5
         player.clearConversionState()
         XCTAssertFalse(player.isConverting)
         XCTAssertNil(player.conversionProgress)
         XCTAssertTrue(player.firstChapterReady, "Cancellation cannot hide an existing transport")
-        player.testHook_setIsPlaying(false)
+        player.playbackPlayingChanged(false)
         player.clearConversionState()
         XCTAssertFalse(player.firstChapterReady)
         XCTAssertFalse(player.firstSegmentReady)

@@ -21,7 +21,7 @@ extension AudioPlayerPendingSeekTests {
             XCTAssertFalse(try XCTUnwrap(player.pendingListeningSeek(for: navigation)).autoplay)
             player.seek(to: 2)
             try await self.waitForNavigation(player)
-            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
+            XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 0)
             XCTAssertEqual(player.positionSeconds, 2, accuracy: 0.1)
             XCTAssertFalse(player.isPlaying)
             XCTAssertFalse(player.isPositionApproximate)
@@ -42,8 +42,8 @@ extension AudioPlayerPendingSeekTests {
             let url = try XCTUnwrap(URL(string: try XCTUnwrap(snapshot(true).playableChapters.first?.downloadUrl)))
             player.enqueueSegment(data: try Data(contentsOf: url), chapterIndex: 0, segmentIndex: 1)
             try await self.waitForNavigation(player)
-            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 0, accuracy: 0.1)
+            XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 0)
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 0, accuracy: 0.1)
             XCTAssertEqual(player.positionSeconds, 150, accuracy: 0.1)
             XCTAssertFalse(player.isPlaying)
             XCTAssertTrue(player.isPositionApproximate)
@@ -77,13 +77,13 @@ extension AudioPlayerPendingSeekTests {
             XCTAssertEqual(accepted, Array(repeating: true, count: 10))
             guard player.snapshot != nil else { return }
             try await self.waitForNavigation(player)
-            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 10)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 5, accuracy: 0.1)
+            XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 10)
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 5, accuracy: 0.1)
             XCTAssertEqual(player.positionSeconds, 155, accuracy: 0.1)
             XCTAssertFalse(player.isPlaying)
             player.seek(to: 2)
             try await self.waitForNavigation(player)
-            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0,
+            XCTAssertEqual(player.services.segments.activeIdentity?.segmentIndex, 0,
                 "Releasing live queue capacity must preserve the earlier segment file.")
             XCTAssertEqual(player.positionSeconds, 2, accuracy: 0.1)
         }
@@ -113,7 +113,7 @@ extension AudioPlayerPendingSeekTests {
                 generation: generation, chapterIndex: 0, segmentIndex: 11, publication: nil)
             XCTAssertFalse(accepted)
             XCTAssertNil(player.pendingNavigation)
-            XCTAssertNil(player.testHook_currentPlayerItem())
+            XCTAssertNil(player.services.queue.player?.currentItem)
         }
     }
 }

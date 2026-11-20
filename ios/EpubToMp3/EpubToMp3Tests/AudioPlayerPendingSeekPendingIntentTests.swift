@@ -46,7 +46,7 @@ extension AudioPlayerPendingSeekTests {
             player.updateSnapshot(snapshot(true))
             try await self.waitForNavigation(player)
             XCTAssertEqual(player.currentChapterIndex, 1)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 7.5, accuracy: 1,
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 7.5, accuracy: 1,
                            "The chosen page must survive duration discovery, rather than restarting at zero.")
             XCTAssertTrue(player.isPlaying)
         }
@@ -62,7 +62,7 @@ extension AudioPlayerPendingSeekTests {
             XCTAssertEqual(player.pendingNavigation?.chapterIndex, 1)
             player.finishStreaming(snapshot: snapshot(true))
             try await self.waitForNavigation(player)
-            let targetItem = try XCTUnwrap(player.testHook_currentPlayerItem())
+            let targetItem = try XCTUnwrap(player.services.queue.player?.currentItem)
             // A completed seek can precede readiness of the replacement item.
             // Its clock is authoritative only after AVFoundation prepares it.
             for _ in 0..<100 {
@@ -70,14 +70,14 @@ extension AudioPlayerPendingSeekTests {
                 try await Task.sleep(nanoseconds: 50_000_000)
             }
             XCTAssertEqual(targetItem.status, .readyToPlay)
-            XCTAssertTrue(player.testHook_currentPlayerItem() === targetItem)
+            XCTAssertTrue(player.services.queue.player?.currentItem === targetItem)
             XCTAssertEqual(player.currentChapterIndex, 1)
             XCTAssertEqual(targetItem.currentTime().seconds, 7.5, accuracy: 1)
             XCTAssertTrue(player.isPlaying)
             let resumedPosition = targetItem.currentTime().seconds
             try await Task.sleep(nanoseconds: 300_000_000)
             XCTAssertGreaterThan(targetItem.currentTime().seconds, resumedPosition)
-            XCTAssertTrue(player.testHook_currentPlayerItem() === targetItem)
+            XCTAssertTrue(player.services.queue.player?.currentItem === targetItem)
         }
     }
 
