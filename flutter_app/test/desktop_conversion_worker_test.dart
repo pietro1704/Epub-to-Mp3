@@ -76,7 +76,7 @@ char* converter_session_convert_streaming_job_options_json_v1(void* session,
  if (!matches_job_directory(output, job)) return NULL;
  if (strstr(options, "system") && !atomic_load(&native_speech_registered)) return NULL;
  if (!control->chunks_enabled) {
-  if (!strstr(options, "pt_BR-faber-medium") || start != 2 || end != 3) return NULL;
+  if ((!strstr(options, "piper-auto") && !strstr(options, "pt_BR-faber-medium")) || start != 2 || end != 3) return NULL;
   for (int i=0; i<100; i++) {
    if (atomic_load(&control->cancelled)) return NULL;
    usleep(2000);

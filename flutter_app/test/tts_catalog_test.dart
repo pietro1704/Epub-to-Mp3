@@ -27,7 +27,7 @@ void main() {
     ], 'entries':[
       _entry('pt_BR-faber-medium', 'piper', 'piper', 'sha'),
     ]}));
-    const original = TtsPreferences.appDefaults();
+    const original = TtsPreferences.appDefaults(primary: TtsSelection.faber);
     final captured = catalog.captureNewPreferences(original, target:'Linux');
     expect(captured.primary.session!.modelRevision, 'sha');
     expect(captured.secondary!.engine, 'system');

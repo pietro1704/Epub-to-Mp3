@@ -28,6 +28,7 @@ class VoiceSelectionSettings extends ConsumerWidget {
     final primaryOptions = uniqueOptions([
       preferences.primary,
       ...catalogSelections,
+      TtsSelection.faber,
       recommended.primary,
       TtsSelection.edge,
       TtsSelection.system,
@@ -36,7 +37,7 @@ class VoiceSelectionSettings extends ConsumerWidget {
       [
         ?preferences.secondary,
         ...catalogSelections,
-        recommended.primary,
+        TtsSelection.faber,
         TtsSelection.edge,
         TtsSelection.system,
       ].where(
@@ -44,6 +45,9 @@ class VoiceSelectionSettings extends ConsumerWidget {
       ),
     );
     String selectionLabel(TtsSelection selection) {
+      if (selection.representsSameRequest(TtsSelection.automaticPiper)) {
+        return t.ttsAutomaticPiper;
+      }
       if (selection.representsSameRequest(TtsSelection.faber)) {
         return t.ttsFaberOffline;
       }

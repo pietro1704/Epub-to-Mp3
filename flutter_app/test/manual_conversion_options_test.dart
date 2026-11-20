@@ -38,7 +38,7 @@ char* converter_session_convert_streaming_job_options_json_v1(void* session,
  const char* output, const char* job, const char* options, int start, int end,
  void* progress, void* chapter, void* chunk, void* context, Control* control) {
  if (strcmp(session, "/owned/options.epub") || start != 5 || end != 6 ||
-     !strstr(options, "pt_BR-faber-medium") || !strstr(options, "tts-models")) return NULL;
+     !strstr(options, "piper-auto") || !strstr(options, "tts-models")) return NULL;
  const char* name = strrchr(output, '/');
  if (!name || strcmp(name + 1, job)) return NULL;
  if (mkdir(output, 0700)) return NULL;
@@ -242,7 +242,7 @@ void main() {
         await tester.tap(find.text('Start conversion'));
         await tester.pumpAndSettle();
 
-        expect(calls.map((call) => call.method), ['ttsModels', 'status', 'convert']);
+        expect(calls.map((call) => call.method), ['status', 'convert']);
         final arguments = Map<String, dynamic>.from(
           calls.last.arguments as Map,
         );
@@ -258,10 +258,9 @@ void main() {
         final options = jsonDecode(arguments['optionsJson'] as String) as Map;
         final preferences = options['tts_preferences'] as Map;
         final primary = preferences['primary'] as Map;
-        expect(options['contract_version'], 2);
-        expect(primary['model_id'], 'fixture-model');
-        expect(primary['session']['model_revision'], 'fixture-revision');
-        expect(options['language'], 'pt');
+        expect(primary['model_id'], 'piper-auto');
+        expect(primary['session'], isNull);
+        expect(options.containsKey('language'), isFalse);
         expect(options['models_root'], '${directory.path}/tts-models');
         expect(find.text('manual-options-result'), findsOneWidget);
       } finally {
@@ -324,8 +323,8 @@ void main() {
           expect(
             calls.map((call) => call.method),
             unavailableAtStatus
-                ? ['ttsModels', 'status']
-                : ['ttsModels', 'status', 'convert'],
+                ? ['status']
+                : ['status', 'convert'],
           );
           expect(
             find.textContaining(
@@ -399,7 +398,7 @@ void main() {
         expect(request['job'], job);
         expect(request['start'], 5);
         expect(request['end'], 6);
-        expect(request['options']['language'], 'pt');
+        expect((request['options'] as Map).containsKey('language'), isFalse);
         expect(
           request['options']['models_root'],
           '${directory.path}/tts-models',
@@ -410,7 +409,7 @@ void main() {
         );
         expect(
           request['options']['tts_preferences']['primary']['model_id'],
-          'pt_BR-faber-medium',
+          'piper-auto',
         );
         expect(request['options'].containsKey('include_cover'), isFalse);
         expect(request['options'].containsKey('normalize_audio'), isFalse);

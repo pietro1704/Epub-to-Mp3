@@ -784,6 +784,18 @@ abstract class AppLocalizations {
   /// **'Faber medium · Offline'**
   String get ttsFaberOffline;
 
+  /// No description provided for @ttsAutomaticPiper.
+  ///
+  /// In en, this message translates to:
+  /// **'Piper · Book language'**
+  String get ttsAutomaticPiper;
+
+  /// No description provided for @ttsDetectLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Detect from book'**
+  String get ttsDetectLanguage;
+
   /// No description provided for @ttsEdgeOnline.
   ///
   /// In en, this message translates to:
@@ -805,7 +817,7 @@ abstract class AppLocalizations {
   /// No description provided for @ttsUseRecommendedDefaults.
   ///
   /// In en, this message translates to:
-  /// **'Use Faber with system voice fallback'**
+  /// **'Use book-language Piper with system voice fallback'**
   String get ttsUseRecommendedDefaults;
 
   /// No description provided for @ttsAllowOnlineSecondary.

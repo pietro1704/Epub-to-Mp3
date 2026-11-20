@@ -1,7 +1,7 @@
 //! Additional immutable Piper voices. Audit: docs/research/2026-10-26-piper-voice-audit/.
 use super::*;
 
-const NATIVE_PLATFORMS: &[ModelPlatform] = &[
+pub(super) const NATIVE_PLATFORMS: &[ModelPlatform] = &[
     ModelPlatform::Android,
     ModelPlatform::Ios,
     ModelPlatform::Macos,

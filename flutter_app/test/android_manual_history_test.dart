@@ -138,7 +138,7 @@ void main() {
             TtsSelection.faber.toJson(),
           );
           final preferences = capturedOptions['tts_preferences'] as Map;
-          expect(preferences['primary'], TtsSelection.faber.toJson());
+          expect(preferences['primary'], TtsSelection.automaticPiper.toJson());
           expect(
             jsonDecode(restored.conversionOptionsJson!)['tts_preferences'],
             preferences,

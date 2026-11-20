@@ -37,7 +37,7 @@ Future<void> _pump(
 
 void main() {
   group('SettingsScreen M3', () {
-    testWidgets('reset uses the catalog recommendation for existing preferences', (t) async {
+    testWidgets('reset activates Piper selection by book language', (t) async {
       final catalog = TtsCatalog.decode(jsonEncode({
         'schema_version': 3,
         'entries': [],
@@ -67,23 +67,23 @@ void main() {
       await t.pumpAndSettle();
 
       final saved = settings.ttsPreferences;
-      expect(saved.primary.modelId, 'fixture-model');
-      expect(saved.primary.session?.modelRevision, 'fixture-revision');
+      expect(saved.primary.modelId, 'piper-auto');
+      expect(saved.primary.session, isNull);
       expect(saved.secondary?.engine, 'system');
       expect(saved.allowOnlineFallback, isFalse);
     });
 
     testWidgets(
-      'fresh speech defaults choose Faber and offline native fallback',
+      'fresh speech defaults choose Piper by book language with offline fallback',
       (t) async {
         await _pump(t);
         final saved = AppSettings(await SharedPreferences.getInstance())
             .ttsPreferences;
-        expect(saved.primary.modelId, 'pt_BR-faber-medium');
+        expect(saved.primary.modelId, 'piper-auto');
         expect(saved.secondary!.engine, 'system');
         expect(saved.policyVersion, 2);
         expect(saved.allowOnlineFallback, false);
-        expect(find.text('Faber medium · Offline'), findsOneWidget);
+        expect(find.text('Piper · Book language'), findsOneWidget);
         expect(find.text('System voice · Offline fallback'), findsOneWidget);
       },
     );

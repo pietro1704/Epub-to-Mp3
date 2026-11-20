@@ -55,7 +55,7 @@ void registerManualConversionControlsCases() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Usar preferências de áudio'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Faber medium · Sem internet').last);
+    await tester.tap(find.text('Piper · Idioma do livro').last);
     await tester.pumpAndSettle();
     expect(
       find.text('Permitir a voz secundária configurada nesta conversão'),
@@ -149,7 +149,7 @@ void registerManualConversionControlsCases() {
                 expect(request.engine, 'piper');
                 expect(
                   request.ttsPreferences.primary.modelId,
-                  'pt_BR-faber-medium',
+                  'piper-auto',
                 );
                 expect(request.ttsPreferences.secondary!.engine, 'system');
                 expect(request.ttsPreferences.policyVersion, 2);

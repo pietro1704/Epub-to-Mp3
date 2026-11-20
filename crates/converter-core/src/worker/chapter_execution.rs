@@ -96,8 +96,13 @@ impl ConversionWorker {
         )
         .map_err(|_| WorkerError::Cancelled)?;
         let language = detected_language.or(chapter_analysis.confirmed.as_deref());
-        let engine = &preferences.primary.engine;
         let language = request.language.as_deref().or(language);
+        let resolved = preferences.resolve_automatic_piper(language, |selection| {
+            let (model, config) = self.selection_model_paths(request, selection);
+            model.is_file() && config.is_file()
+        });
+        let preferences = resolved.as_ref().unwrap_or(preferences);
+        let engine = &preferences.primary.engine;
         let base_request_key = chapter_audio_request_key(
             &book_key,
             &chapter.index,

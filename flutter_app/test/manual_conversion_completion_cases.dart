@@ -10,7 +10,7 @@ void registerManualConversionCompletionCases() {
       captured = request;
       return result.future;
     });
-    expect(captured!.ttsPreferences.primary.modelId, 'pt_BR-faber-medium');
+    expect(captured!.ttsPreferences.primary.modelId, 'piper-auto');
     final container = ProviderScope.containerOf(tester.element(find.byType(ConvertScreen)));
     await container.read(settingsProvider.notifier).setTtsPreferences(
       const TtsPreferences(primary: TtsSelection.edge),
@@ -22,7 +22,7 @@ void registerManualConversionCompletionCases() {
     await tester.pumpAndSettle();
     final job = (await LocalConversionJobStore(prefs).loadHistory()).jobs.single;
     final options = jsonDecode(job.conversionOptionsJson!);
-    expect(options['tts_preferences']['primary']['model_id'], 'pt_BR-faber-medium');
+    expect(options['tts_preferences']['primary']['model_id'], 'piper-auto');
     expect(options['tts_preferences']['secondary']['engine'], 'system');
     expect(options['tts_preferences']['policy_version'], 2);
     expect(options['tts_preferences']['allow_online_fallback'], false);

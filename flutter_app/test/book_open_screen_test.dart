@@ -244,7 +244,7 @@ void main() {
             jsonDecode(
               converter.options.single!,
             )['tts_preferences']['primary']['model_id'],
-            'pt_BR-faber-medium',
+            'piper-auto',
           );
           expect(player.hasQueuedAudio, true);
           expect(player.isPlaying, true);

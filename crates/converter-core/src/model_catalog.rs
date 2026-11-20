@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 mod metadata;
+mod piper_language_models;
 mod piper_voices;
 pub use metadata::{
     ExactLanguageDescriptor, LanguageValidation, LicenceCategory, LicenceDescriptor,
@@ -36,7 +37,7 @@ pub struct TtsArtifactDescriptor {
     pub bytes: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct TtsModelDescriptor {
     pub id: &'static str,
     pub engine: &'static str,
@@ -131,7 +132,7 @@ static PIPER_FABER_ARTIFACTS: &[TtsArtifactDescriptor] = &[
     TtsArtifactDescriptor { name: "model.onnx.json", url: "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json?download=true", sha256: "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f", bytes: 4_855 },
 ];
 
-pub static MODELS: &[TtsModelDescriptor] = &[
+const BASE_MODELS: &[TtsModelDescriptor] = &[
     TtsModelDescriptor {
         id: "pt_BR-faber-medium",
         engine: "piper",
@@ -245,6 +246,22 @@ pub static MODELS: &[TtsModelDescriptor] = &[
     piper_voices::KRISTIN_MEDIUM,
 ];
 
+pub static MODELS: &[TtsModelDescriptor] = &{
+    let additional = piper_language_models::MODELS;
+    let mut result = [BASE_MODELS[0]; BASE_MODELS.len() + piper_language_models::MODELS.len()];
+    let mut index = 0;
+    while index < BASE_MODELS.len() {
+        result[index] = BASE_MODELS[index];
+        index += 1;
+    }
+    let mut extra = 0;
+    while extra < additional.len() {
+        result[index + extra] = additional[extra];
+        extra += 1;
+    }
+    result
+};
+
 pub fn candidates(
     language: &str,
     platform: ModelPlatform,
@@ -260,6 +277,48 @@ pub fn candidates(
         .collect();
     result.sort_by_key(|model| model.default_rank);
     result
+}
+
+/// Catalog voices for automatic narration in preference order. A bare `pt`
+/// keeps the app's Brazilian Portuguese default.
+pub(crate) fn automatic_piper_models(language: &str) -> Vec<&'static TtsModelDescriptor> {
+    let tag = language.replace('_', "-");
+    if tag.eq_ignore_ascii_case("pt") || tag.eq_ignore_ascii_case("pt-BR") {
+        return MODELS
+            .iter()
+            .filter(|model| model.id == crate::tts_preferences::FABER_MODEL_ID)
+            .collect();
+    }
+    let base = tag.split('-').next().unwrap_or(&tag);
+    let mut voices: Vec<_> = MODELS
+        .iter()
+        .filter(|model| {
+            model.engine == "piper"
+                && model.runtime_available
+                && !model.artifacts.is_empty()
+                && matches!(
+                    model.metadata.presentation.quality,
+                    QualityTier::High | QualityTier::Medium
+                )
+                && model
+                    .languages
+                    .iter()
+                    .any(|value| value.eq_ignore_ascii_case(base))
+        })
+        .collect();
+    voices.sort_by_key(|model| {
+        let exact = model
+            .metadata
+            .exact_languages
+            .iter()
+            .any(|value| value.tag.eq_ignore_ascii_case(&tag));
+        (
+            model.metadata.presentation.quality != QualityTier::High,
+            !exact,
+            model.default_rank,
+        )
+    });
+    voices
 }
 
 pub fn default_engine(
@@ -349,6 +408,6 @@ mod tests {
 
     #[test]
     fn does_not_select_wrong_language() {
-        assert!(candidates("ar", ModelPlatform::Linux, None).is_empty());
+        assert!(candidates("zz", ModelPlatform::Linux, None).is_empty());
     }
 }
