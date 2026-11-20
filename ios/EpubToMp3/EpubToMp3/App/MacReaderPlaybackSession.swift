@@ -214,52 +214,5 @@ final class MacReaderPlaybackSession {
         }
     }
 
-    func restorePlaybackIfPossible(owner: AnyObject, onRestored: @escaping @MainActor () -> Void) {
-        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
-        guard let bookID else { return }
-        let epubChapterIndex = UserDefaults.standard.object(
-            forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey
-        ) as? Int ?? 0
-        Task { [weak self, owner] in
-            guard let self else { return }
-            defer { withExtendedLifetime(owner) {} }
-            let embeddedSnapshot = try? await LocalAudioArtifactStore.shared.playableSnapshot(
-                bookID: bookID,
-                engine: settings.primaryEngine,
-                voice: "auto",
-                language: nil
-            )
-            let conversionJobID = library.books.first(where: { $0.id == bookID })?.lastJobId
-            let restoredSnapshot: JobSnapshot?
-            if let conversionJobID {
-                restoredSnapshot = await Task.detached(priority: .utility) {
-                    let converted = RustConversionCoordinator.persistedSnapshot(jobID: conversionJobID)
-                    return AudiobookDownloadStorage.restoredPlaybackSnapshot(jobId: conversionJobID,
-                                                                   conversionSnapshot: converted)
-                }.value
-            } else {
-                restoredSnapshot = nil
-            }
-            guard localPlaybackGeneration == nil, player.snapshot == nil,
-                  UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == bookID
-                    || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
-                  let snapshot = LocalAudioPlaybackRestoration.snapshot(
-                    bookID: bookID, conversionJobID: conversionJobID,
-                    retained: embeddedSnapshot, converted: restoredSnapshot) else {
-                return
-            }
-            player.play(
-                snapshot: snapshot,
-                startingAt: AudioPlayer.restoredPlayableChapterOffset(
-                    snapshot: snapshot,
-                    persistedEpubChapterIndex: epubChapterIndex
-                ),
-                restoreAutoplay: false
-            )
-            onRestored()
-        }
-    }
-
 }
 #endif

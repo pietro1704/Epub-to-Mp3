@@ -129,7 +129,11 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 }
             }
             .store(in: &cancellables)
-        playbackSession.restorePlaybackIfPossible(owner: self) { [weak self] in self?.refreshPlayerBar() }
+        PlaybackRelaunchRestoration.restore(
+            settings: settings, library: library,
+            player: player, owner: self,
+            isListeningActive: { [weak playbackSession] in playbackSession?.localPlaybackGeneration != nil }
+        ) { [weak self] in self?.refreshPlayerBar() }
         LocalFulltextCache.startPrewarmingRecentBooks()
         show(.library)
         refreshPlayerBar()
