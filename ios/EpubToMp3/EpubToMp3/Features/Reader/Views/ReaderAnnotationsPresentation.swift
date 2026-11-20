@@ -65,29 +65,32 @@ func repaintSavedHighlights(chapterIndex: Int) {
     }
 
 var onPlayFromHere: ((Int, Double) -> Void)?
+private lazy var highlightEditor = ReaderHighlightEditor(store: bookmarkStore)
+
+/// Captures book, chapter and title now; every later write uses these values.
+private func captureSelection(_ range: NSRange) -> ReaderHighlightEditor.Selection? {
+    highlightEditor.selection(range: range, in: textView.attributedText, bookID: document.book.id,
+        chapterIndex: document.selectedChapter,
+        chapterTitle: document.fulltext?.chapters[safe: document.selectedChapter]?.displayTitle ?? "")
+}
 
 @available(iOS 16.0, *)
 func textView(_ textView: UITextView, editMenuForTextIn range: NSRange,
               suggestedActions: [UIMenuElement]) -> UIMenu? {
-    guard valid(range) else { return UIMenu(children: suggestedActions) }
-    let chapter = document.selectedChapter
-    let bookID = document.book.id
-    let target = ReaderSavedHighlights.target(at: range, highlights:
-        bookmarkStore.bookmarks(for: bookID, chapterIndex: chapter), in: textView.attributedText)
-    let playbackRange = target.flatMap { ReaderSavedHighlights.range(for: $0, in: textView.attributedText) } ?? range
+    guard let selection = captureSelection(range) else { return UIMenu(children: suggestedActions) }
+    let playbackRange = highlightEditor.playbackRange(for: selection, in: textView.attributedText)
     let play = UIAction(title: L10n.string("reader.action.playFromHere"), image: UIImage(systemName: "play")) { [weak self] _ in
-        guard let self, self.isCurrent(bookID: bookID, chapter: chapter) else { return }
+        guard let self, self.isCurrent(selection) else { return }
         self.play(from: playbackRange)
     }
-    let change = UIAction(title: L10n.string(target == nil ? "reader.action.highlight" : "reader.action.removeHighlight"),
-                          image: UIImage(systemName: target == nil ? "highlighter" : "trash")) { [weak self] _ in
-        guard let self, self.isCurrent(bookID: bookID, chapter: chapter) else { return }
-        if let target { self.removeHighlight(target) }
-        else { self.addBookmark(range: range, selectedText: (textView.text as NSString).substring(with: range), note: nil) }
+    let change = UIAction(title: L10n.string(selection.existing == nil ? "reader.action.highlight" : "reader.action.removeHighlight"),
+                          image: UIImage(systemName: selection.existing == nil ? "highlighter" : "trash")) { [weak self] _ in
+        guard let self, self.isCurrent(selection) else { return }
+        self.toggleHighlight(selection)
     }
     let note = UIAction(title: L10n.string("reader.action.addNote")) { [weak self] _ in
-        guard let self, self.isCurrent(bookID: bookID, chapter: chapter) else { return }
-        self.promptForNote(range: range, selectedText: (textView.text as NSString).substring(with: range))
+        guard let self, self.isCurrent(selection) else { return }
+        self.promptForNote(selection)
     }
     let more = UIMenu(title: L10n.string("reader.selection.more"), image: UIImage(systemName: "ellipsis"), children: [change, note] + (selectionLanguageAction(range: range).map { [$0] } ?? []))
     return UIMenu(children: [play, more] + suggestedActions)
@@ -97,25 +100,21 @@ func installLegacySelectionActions() {
     (textView as? ReaderSelectionTextView)?.onLegacyCommand = { [weak self] more, range in
         guard let self, self.valid(range) else { return }
         if !more { self.play(from: range); return }
-        let chapter = self.document.selectedChapter
-        let bookID = self.document.book.id
-        let target = ReaderSavedHighlights.target(at: range, highlights:
-            self.bookmarkStore.bookmarks(for: bookID, chapterIndex: chapter), in: self.textView.attributedText)
+        guard let selection = self.captureSelection(range) else { return }
         let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: L10n.string(target == nil ? "reader.action.highlight" : "reader.action.removeHighlight"),
-            style: target == nil ? .default : .destructive) { [weak self] _ in
-            guard let self, self.isCurrent(bookID: bookID, chapter: chapter) else { return }
-            if let target { self.removeHighlight(target) }
-            else { self.addBookmark(range: range, selectedText: (self.textView.text as NSString).substring(with: range), note: nil) }
+        alert.addAction(UIAlertAction(title: L10n.string(selection.existing == nil ? "reader.action.highlight" : "reader.action.removeHighlight"),
+            style: selection.existing == nil ? .default : .destructive) { [weak self] _ in
+            guard let self, self.isCurrent(selection) else { return }
+            self.toggleHighlight(selection)
         })
         alert.addAction(UIAlertAction(title: L10n.string("reader.action.addNote"), style: .default) { [weak self] _ in
-            guard let self, self.isCurrent(bookID: bookID, chapter: chapter) else { return }
-            self.promptForNote(range: range, selectedText: (self.textView.text as NSString).substring(with: range))
+            guard let self, self.isCurrent(selection) else { return }
+            self.promptForNote(selection)
         })
         if let scope = self.selectionLanguageScope(range: range) {
             alert.addAction(UIAlertAction(title: L10n.string("language.passage"), style: .default) { [weak self] _ in
-                guard let self, self.isCurrent(bookID: bookID, chapter: chapter) else { return }
-                self.chooseSelectionLanguage(scope, bookID: bookID, chapter: chapter)
+                guard let self, self.isCurrent(selection) else { return }
+                self.chooseSelectionLanguage(scope, bookID: selection.bookID, chapter: selection.chapterIndex)
             })
         }
         alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
@@ -129,8 +128,8 @@ private func valid(_ range: NSRange) -> Bool {
     range.location != NSNotFound && range.location >= 0 && range.length > 0
         && range.location < textView.textStorage.length && range.length <= textView.textStorage.length - range.location
 }
-private func isCurrent(bookID: String, chapter: Int) -> Bool {
-    isCurrentBook() && document.book.id == bookID && document.selectedChapter == chapter
+private func isCurrent(_ selection: ReaderHighlightEditor.Selection) -> Bool {
+    isCurrentBook() && ReaderHighlightEditor.isCurrent(selection, bookID: document.book.id, chapterIndex: document.selectedChapter)
 }
 private func play(from range: NSRange) {
     guard valid(range),
@@ -138,9 +137,9 @@ private func play(from range: NSRange) {
           let ratio = ReaderSavedHighlights.playbackRatio(selection: range, rendered: textView.text, source: source.text) else { return }
     onPlayFromHere?(source.zeroBasedEpubIndex, ratio)
 }
-private func removeHighlight(_ bookmark: Bookmark) {
-    bookmarkStore.remove(id: bookmark.id)
-    repaintSavedHighlights(chapterIndex: document.selectedChapter)
+private func toggleHighlight(_ selection: ReaderHighlightEditor.Selection) {
+    highlightEditor.toggleHighlight(selection)
+    repaintSavedHighlights(chapterIndex: selection.chapterIndex)
 }
 
 private func selectionLanguageScope(range: NSRange) -> PassageLanguageCorrection? {
@@ -166,15 +165,18 @@ private func chooseSelectionLanguage(_ scope: PassageLanguageCorrection, bookID:
     }
 }
 
-    private func promptForNote(range: NSRange, selectedText: String) {
+    private func promptForNote(_ selection: ReaderHighlightEditor.Selection) {
         let alert = UIAlertController(
-            title: L10n.string("reader.action.addNote"), message: selectedText, preferredStyle: .alert
+            title: L10n.string("reader.action.addNote"), message: selection.text, preferredStyle: .alert
         )
         alert.addTextField { $0.placeholder = L10n.string("reader.note.placeholder") }
         alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: L10n.string("common.save"), style: .default) { [weak self, weak alert] _ in
-            let note = alert?.textFields?.first?.text
-            self?.addBookmark(range: range, selectedText: selectedText, note: note)
+            guard let self else { return }
+            // Stored against the chapter the text was selected in, even if the reader
+            // moved on (for example by following playback) while the alert was open.
+            self.highlightEditor.addNote(selection, note: alert?.textFields?.first?.text)
+            if self.isCurrent(selection) { self.repaintSavedHighlights(chapterIndex: selection.chapterIndex) }
         })
         present(alert)
     }
@@ -202,20 +204,6 @@ private func chooseSelectionLanguage(_ scope: PassageLanguageCorrection, bookID:
     func performSearch(query: String) { search.performSearch(query: query) }
     func waitForSearchCompletion() async { await search.waitForCompletion() }
     func cancelSearch() { search.cancel() }
-
-    private func addBookmark(range: NSRange, selectedText: String, note: String?) {
-        bookmarkStore.addBookmark(
-            bookId: document.book.id,
-            chapterIndex: document.selectedChapter,
-            chapterTitle: document.fulltext?.chapters[safe: document.selectedChapter]?.displayTitle ?? "",
-            startChar: range.location,
-            endChar: range.location + range.length,
-            selectedText: selectedText,
-            note: note,
-            color: .yellow
-        )
-        repaintSavedHighlights(chapterIndex: document.selectedChapter)
-    }
 
 }
 

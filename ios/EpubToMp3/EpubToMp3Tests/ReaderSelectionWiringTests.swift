@@ -27,7 +27,11 @@ final class ReaderSelectionWiringTests: XCTestCase {
         if #available(iOS 16.0, *) {
             let menu = try XCTUnwrap(harness.annotations.textView(harness.composition.textView,
                 editMenuForTextIn: range, suggestedActions: []))
-            let actions = try XCTUnwrap(menu.children.first as? UIMenu).children.compactMap { $0 as? UIAction }
+            // Like the Mac since #1152: Play from here first, the highlight actions under More.
+            XCTAssertEqual(menu.children.prefix(2).map(\.title),
+                           [L10n.string("reader.action.playFromHere"), L10n.string("reader.selection.more")])
+            let more = try XCTUnwrap(menu.children.dropFirst().first as? UIMenu)
+            let actions = Array(more.children.compactMap { $0 as? UIAction }.prefix(2))
             XCTAssertEqual(actions.map(\.title), [L10n.string("reader.action.highlight"), L10n.string("reader.action.addNote")])
             let button = UIButton()
             button.addAction(try XCTUnwrap(actions.first), for: .touchUpInside)
