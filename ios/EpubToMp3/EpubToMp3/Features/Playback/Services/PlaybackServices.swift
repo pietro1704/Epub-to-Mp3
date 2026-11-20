@@ -17,6 +17,7 @@ final class PlaybackServices {
     let queue: PlaybackQueueSession
     let persistence: PlaybackSegmentPersistence
     let resume: PlaybackResumeStore
+    let retention: PlaybackArtifactRetention
     let speech: SpeechFallbackPlayer
     let broadcast = PlaybackBroadcast()
     let readiness = PlaybackConversionReadiness()
@@ -34,7 +35,8 @@ final class PlaybackServices {
         clock = configuration.clock
         queue = PlaybackQueueSession(clock: configuration.clock)
         persistence = PlaybackSegmentPersistence(writer: configuration.writer ?? SegmentFileWriter())
-        resume = PlaybackResumeStore(store: configuration.resumeStore, artifactStore: configuration.artifacts)
+        resume = PlaybackResumeStore(store: configuration.resumeStore)
+        retention = PlaybackArtifactRetention(artifactStore: configuration.artifacts)
         speech = configuration.speech ?? SpeechFallbackPlayer()
         sleep = SleepPlaybackTimer(clock: configuration.clock)
     }
@@ -82,7 +84,7 @@ final class PlaybackServices {
 
     lazy var observation: PlaybackObservation = PlaybackObservation(
         queue: queue, segments: segments, chapters: chapters, seeking: seeking,
-        navigation: navigation, journeys: journeys, resume: resume, clock: clock,
+        navigation: navigation, journeys: journeys, resume: resume, retention: retention, clock: clock,
         broadcast: broadcast, publication: publication, sleepTimer: sleep, actions: .init(
             state: { [weak authority] in
                 guard let authority else { return .empty }
@@ -96,7 +98,7 @@ final class PlaybackServices {
             resolveURL: { [weak self] in self?.resolveURL($0, job: $1, chapter: $2) }))
 
     lazy var lifecycle: PlaybackSessionLifecycle = PlaybackSessionLifecycle(
-        queue: queue, segments: segments, persistence: persistence, resume: resume,
+        queue: queue, segments: segments, persistence: persistence, retention: retention,
         seeking: seeking, chapters: chapters, readiness: readiness, navigation: navigation,
         journeys: journeys, speech: speech, clock: clock, actions: .init(
             state: { [weak authority] in

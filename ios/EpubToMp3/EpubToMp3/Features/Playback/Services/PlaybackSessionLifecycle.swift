@@ -33,7 +33,7 @@ final class PlaybackSessionLifecycle {
     private let queueSession: PlaybackQueueSession
     private let segments: PlaybackSegmentSession
     private let segmentPersistence: PlaybackSegmentPersistence
-    private let resumePersistence: PlaybackResumeStore
+    private let retention: PlaybackArtifactRetention
     private let seeking: PlaybackSeekExecution
     private let chapterSession: PlaybackChapterSession
     private let readiness: PlaybackConversionReadiness
@@ -43,13 +43,13 @@ final class PlaybackSessionLifecycle {
     private let clock: PlaybackClock
     private let actions: Actions
     init(queue: PlaybackQueueSession, segments: PlaybackSegmentSession, persistence: PlaybackSegmentPersistence,
-         resume: PlaybackResumeStore, seeking: PlaybackSeekExecution, chapters: PlaybackChapterSession,
+         retention: PlaybackArtifactRetention, seeking: PlaybackSeekExecution, chapters: PlaybackChapterSession,
          readiness: PlaybackConversionReadiness, navigation: ChapterNavigationDecision,
          journeys: PlaybackJourneyRecorder, speech: SpeechFallbackPlayer, clock: PlaybackClock, actions: Actions) {
         queueSession = queue
         self.segments = segments
         segmentPersistence = persistence
-        resumePersistence = resume
+        self.retention = retention
         self.seeking = seeking
         chapterSession = chapters
         self.readiness = readiness
@@ -75,7 +75,7 @@ final class PlaybackSessionLifecycle {
         }
 
         if !isSameJob {
-            resumePersistence.resetRetention()
+            retention.resetRetention()
             actions.invalidateGeneration()
             readiness.reset(clearLatches: !isPlaying && player == nil)
             navigation.clearTitles()
@@ -130,7 +130,7 @@ final class PlaybackSessionLifecycle {
 
     func teardown() {
         pendingSeek.proportional = nil
-        resumePersistence.resetRetention()
+        retention.resetRetention()
         actions.invalidateGeneration()
         segmentPersistence.cancelOperations()
         journeys.cancelPendingPlaybackJourney()

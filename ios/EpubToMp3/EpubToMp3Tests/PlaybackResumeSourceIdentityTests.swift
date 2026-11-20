@@ -40,4 +40,29 @@ final class PlaybackResumeSourceIdentityTests: XCTestCase {
             positionSeconds: 0, isPlaying: false, force: true)
         XCTAssertEqual(UserDefaults.standard.integer(forKey: key), 18)
     }
+
+    func testUnforcedResumeWritesAreThrottledAndForcedWritesAreNot() throws {
+        let suite = "ResumeThrottle.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = PlaybackResumeStore.currentChapterIndexDefaultsKey
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(previous, forKey: key) }
+        let store = PlaybackResumeStore(store: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data(
+            #"{"jobId":"throttle","state":"running","chapterProgress":[]}"#.utf8))
+        store.persist(snapshot: snapshot, chapterIndex: 0, sourceChapterIndex: 3,
+            positionSeconds: 10, isPlaying: false, force: false)
+        XCTAssertEqual(store.marker(jobId: "throttle", chapterIndex: 0)?.positionSeconds, 10,
+                       "The first unforced write is not throttled")
+        store.persist(snapshot: snapshot, chapterIndex: 0, sourceChapterIndex: 3,
+            positionSeconds: 20, isPlaying: false, force: false)
+        XCTAssertEqual(store.marker(jobId: "throttle", chapterIndex: 0)?.positionSeconds, 10,
+                       "An unforced write within five seconds is dropped")
+        store.persist(snapshot: snapshot, chapterIndex: 0, sourceChapterIndex: 3,
+            positionSeconds: 30, isPlaying: true, force: true)
+        let marker = try XCTUnwrap(store.marker(jobId: "throttle", chapterIndex: 0))
+        XCTAssertEqual(marker.positionSeconds, 15, "A playing state resumes 15 seconds earlier")
+        XCTAssertTrue(marker.wasPlaying)
+    }
 }
