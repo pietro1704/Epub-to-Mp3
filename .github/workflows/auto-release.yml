@@ -1,25 +1,43 @@
 name: Auto Release
 
-# Releases are deliberate manual operations. Passing CI validates code only;
-# it must not create tags, publish artifacts, or rebuild desktop releases.
+# Tags and publishes a GitHub release (with generated notes) for the validated
+# latest master commit once its committed version is newer than the last tag.
+# The version is deliberate: scripts/bump.sh raises Cargo.toml, VERSION and
+# CHANGELOG.md in a pull request; this workflow never edits master. It does not
+# build or attach artifacts; the multi-platform Release Desktop run stays a
+# separate, manual dispatch with the published tag.
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
+  # After post-merge validation of a master merge, like the Hugging Face sync.
+  workflow_run:
+    workflows: ["Post-merge validation"]
+    types: [completed]
+  # Manual run for the current latest master commit.
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: write
   pull-requests: read
+
+# One release publication at a time; never cancel a partially published release.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
 
 jobs:
   auto-release:
     name: Auto version tag
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    if: github.ref == 'refs/heads/master'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event) &&
+       github.event.workflow_run.head_branch == 'master' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     steps:
       - name: Checkout trusted publication policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,7 +51,7 @@ jobs:
         id: validated
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_REF: ${{ github.sha }}
+          SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -139,10 +157,12 @@ jobs:
           SOURCE_REF: ${{ steps.validated.outputs.sha }}
         run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest
 
-      - name: Create release tag
+      - name: Create release tag and GitHub release
         if: steps.bump.outputs.skip != 'true'
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION_TAG: ${{ steps.bump.outputs.tag }}
+          LAST_TAG: ${{ steps.bump.outputs.last_tag }}
           VALIDATED_SHA: ${{ steps.validated.outputs.sha }}
         run: |
           set -euo pipefail
@@ -151,22 +171,15 @@ jobs:
           if git rev-parse --verify "refs/tags/${VERSION_TAG}^{commit}" >/dev/null 2>&1; then
             [[ "$(git rev-parse --verify "refs/tags/${VERSION_TAG}^{commit}")" == "$VALIDATED_SHA" ]] || exit 66
             echo "The existing tag already identifies the validated merge."
+          fi
+          if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
+            echo "Release ${VERSION_TAG} already exists; nothing to publish."
             exit 0
           fi
-          git tag -- "$VERSION_TAG" "$VALIDATED_SHA"
-          git push origin "refs/tags/$VERSION_TAG"
+          args=(--target "$VALIDATED_SHA" --title "$VERSION_TAG" --generate-notes --latest)
+          [[ -z "$LAST_TAG" ]] || args+=(--notes-start-tag "$LAST_TAG")
+          gh release create "$VERSION_TAG" "${args[@]}"
 
-      - name: Dispatch Release Desktop (new version)
-        if: steps.bump.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION_TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          set -euo pipefail
-          gh workflow run release-desktop.yml \
-            --ref master \
-            -f tag="$VERSION_TAG"
-
-      - name: Report unchanged version without rebuilding a historical tag
+      - name: Report unchanged version without publishing
         if: steps.bump.outputs.skip == 'true'
-        run: echo 'No new committed version; no tag or publication was requested.'
+        run: echo 'No new committed version; no tag or release was created.'
