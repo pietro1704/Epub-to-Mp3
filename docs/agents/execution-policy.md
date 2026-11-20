@@ -83,14 +83,24 @@ complete host suites (`scripts/run_ci_contracts.rb`, and
 `native_job.rb heavy`. One selected host suite stays outside the lease. Every
 job keeps the lease's open file description in its own processes, so the lock
 lasts as long as the load does: if a supervisor is killed, the next job is
-refused until that orphaned load ends. While held, the file names its holder
-(PID, phase, state, command, start, worktree, session, job process group).
-`mise run native:status` prints that record with the current admission reading.
-It never takes the lock, so a holder without a record (an older checkout, a
-descendant left behind by a finished job) shows only as a refusal. A reboot
-empties `/tmp` and the next job recreates the file. `--wait SECONDS` or
-`EPUB_NATIVE_WAIT_SECONDS` (whole seconds; any other value fails) queues for the
-lease and for admission; never poll it in a loop.
+refused until that orphaned load ends. The cost: a process that leaves the job's
+process group with that description (a browser, a daemon) keeps the lease after
+the job. Two things bound it. The Rails task starts its test runners through
+`scripts/without_native_lease.rb`, so they and the browsers they launch never
+hold the lease; there it follows the shell that runs the suite, not each test
+process. And a lease refusal and `mise run native:status` list the processes
+that keep the lease file open (PID and program name), so a leftover holder is
+named and can be stopped.
+
+While held, the file (mode 0600) names its holder: PID, phase, state, program
+name, mise task, start, checkout directory name, session and job process group,
+never arguments or absolute paths. `mise run native:status` prints that record,
+the processes that keep the file open and the current admission reading; it
+never takes the lock, and reports `held` as unknown when nothing names a holder
+and the processes cannot be listed. A reboot empties `/tmp` and the next job
+recreates the file. `--wait SECONDS` or `EPUB_NATIVE_WAIT_SECONDS` (whole
+seconds; any other value fails) queues for the lease and for admission; never
+poll it in a loop.
 
 The lease cannot see work started by other tools: a package manager building
 from source, another agent harness, an IDE build. So before a heavy job starts
@@ -105,19 +115,30 @@ marked as a judgment call have no measured boundary:
 | 1-minute load | 75% of logical CPUs (6.00) | 2.42-4.96 without a native build; 6.11-14 with overlapping loads |
 | Compiler process outside the lease | none of `foreign_compilers` | one serial build with the usual background work read 4.24-7.12, overlapping the range without one, so only its process name identifies it |
 | Kernel memory pressure | normal | warning level was logged 20:36-20:50 BRT (23:36-23:50 UTC) on 2026-11-19, before the incident below |
-| Swap in use | 1024 MiB | 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build; the Simulator admission value. Judgment call |
+| Swap in use | 1024 MiB | 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build; the Simulator admission value. Judgment call. A later reading was 1193 MiB with no lease holder and no compiler running (00:32 BRT on 2026-11-20, 03:32 UTC), so this limit can refuse while other programs hold memory |
 | Compressor | 50% of memory | 694-1807 MiB (8-22%) measured. Judgment call |
 | `pmset -g therm` | no limit below 100, all CPUs available | `CPU_Speed_Limit` 100 without a build, 81 during the first serial build after the reboot |
 
+A probe that fails, exceeds its deadline or answers nothing refuses the job;
+only the optional `sysctl` name may be missing. The 1-minute load average stays
+high for about a minute after the job that raised it ends, so a job that finds
+the host loaded waits before it gives up: `default_wait_seconds` (120, a
+judgment call) when no wait was given, the given wait otherwise, and `0`
+refuses at once. Sustained overload is still refused, and the message says how
+to wait longer. Waiting does not release swap that other programs hold: when
+swap alone refuses a job, close what holds the memory.
+
 A guarded step started from inside a build (an Xcode build phase, a compiler
-driver) is not refused for that build's own compiler processes; the load,
-memory and thermal limits still apply to it. Children start at niceness 10 (a
-judgment call, not measured) with one compiler job. While the job runs, one line
-every 30 seconds (load, swap, compressor, memory pressure, thermal limits, top
-three processes by CPU, the holder) goes to
-`.reports/native-flight-recorder/flight.jsonl` in the main checkout, at most
-five files of 1 MiB. The readings are taken off the supervisor's loop, so slow
-telemetry delays neither signal forwarding, the storage check nor the exit code.
+driver) is not refused for the compiler processes that descend from the builds
+it runs inside; every other compiler and the load, memory and thermal limits
+still refuse it. Children start at niceness 10 (a judgment call, not measured)
+with one compiler job. While the job runs, one line every 30 seconds (load,
+swap, compressor, memory pressure, thermal limits, top three processes by CPU,
+the holder) goes to `.reports/native-flight-recorder/flight.jsonl` in the main
+checkout, at most five files of 1 MiB, readable by their owner only and without
+arguments or absolute paths. The readings are taken off the supervisor's loop,
+so slow telemetry delays neither signal forwarding, the storage check nor the
+exit code.
 The first line of a job records boot time, the EFI `StartupPowerEvents` value
 and the newest panic report, the baseline a later incident is compared with.
 Admission, priority and the recorder reduce overlap and leave evidence. They do
@@ -185,14 +206,14 @@ in Git):
 - The T2 report of 2026-11-18 20:03 BRT (23:03 UTC) was a forced power-off after
   a stalled shutdown, not a CATERR.
 - A report with the same panic string was supplied on 2026-10-16. It is no
-  longer retained on this host, so the two were not compared. `ARM64/T8010` in
-  such a report is the T2 chip that writes it on an Intel Mac, not a second
-  machine, so this incident is most likely a repeat.
+  longer retained on this host; the two reports were not compared, so a
+  recurrence is unconfirmed. `ARM64/T8010` in such a report is the T2 chip that
+  writes it on an Intel Mac, not a second machine.
 
 Not established: any cause. Hardware or firmware (logic board, CPU, power
 delivery, battery), a thermal trip and a driver fault all remain open; the load
-of the campaign is not shown to be the cause, and no guard is shown to prevent a
-repeat.
+of the campaign is not shown to be the cause, and no guard is shown to prevent
+another CATERR.
 
 ## Real-app acceptance
 

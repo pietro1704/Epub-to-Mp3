@@ -7,6 +7,7 @@
     "max_swap_used_mib": 1024,
     "max_compressor_percent_of_memory": 50,
     "recheck_seconds": 30,
+    "default_wait_seconds": 120,
     "child_niceness": 10,
     "foreign_compilers": ["cargo", "rustc", "xcodebuild", "swift-frontend", "swift-build", "clang"]
   },

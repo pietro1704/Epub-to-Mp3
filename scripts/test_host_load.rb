@@ -39,14 +39,22 @@ class HostLoadTest < Minitest::Test
   IDLE = { "load" => [3.79, 6.58, 8.49], "cpus" => 8, "memory_mib" => 8192, "swap_used_mib" => 331.25,
            "swap_total_mib" => 2048.0, "compressor_mib" => 782, "pressure" => 1, "cpu_speed_limit" => 100,
            "cpu_scheduler_limit" => 100, "cpu_available" => 8, "thermal_level" => 52, "top" => [], "compilers" => [],
-           "enclosing_build" => nil }.freeze
+           "own_compilers" => [], "enclosing_build" => nil }.freeze
+
+  # A real process list always contains the reader itself; fixtures get that row
+  # appended unless they place this process somewhere on purpose.
+  def own_row(processes)
+    processes.match?(/^\s*\S+\s+#{Process.pid}\s/) ? processes : "#{processes}  0.0 #{Process.pid} 1 /usr/bin/ruby\n"
+  end
 
   def capture(sysctl, pmset, processes = QUIET_PS)
-    lambda do |*argv, **|
+    @probes = []
+    lambda do |*argv, **options|
+      @probes << [File.basename(argv.first), argv.drop(1), options]
       case argv.first
       when HostLoad::SYSCTL then sysctl
       when HostLoad::PMSET then pmset
-      when HostLoad::PS then processes
+      when HostLoad::PS then own_row(processes)
       else flunk "unexpected probe #{argv.inspect}"
       end
     end
@@ -90,7 +98,7 @@ class HostLoadTest < Minitest::Test
     assert_in_delta 331.25, reading["swap_used_mib"]
     assert_nil reading["thermal_level"]
     assert_equal [nil, nil, nil], reading.values_at("cpu_speed_limit", "cpu_scheduler_limit", "cpu_available")
-    assert_equal ["3.0 171 WindowServer"], reading["top"]
+    assert_equal ["3.0 171 WindowServer", "0.0 #{Process.pid} ruby"], reading["top"]
     assert_empty reading["compilers"]
     assert_empty HostLoad.reasons(limits, reading), "no power notification since boot is not throttling"
   end
@@ -120,12 +128,13 @@ class HostLoadTest < Minitest::Test
     reading = sample(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD, inside)
     assert_equal "SWBBuildService 9000", reading["enclosing_build"]
     assert_equal ["swift-frontend 9001"], reading["compilers"]
+    assert_equal ["swift-frontend 9001"], reading["own_compilers"]
     reasons = HostLoad.reasons(limits, reading)
     assert_equal 3, reasons.length, "load, swap and thermal limits still refuse inside a build: #{reasons.inspect}"
     assert_match(/load average 11\.41/, reasons[0])
     assert_match(/swap in use 1551 MiB/, reasons[1])
     assert_match(/CPU_Speed_Limit is 81/, reasons[2])
-    calm = IDLE.merge("compilers" => reading["compilers"], "enclosing_build" => reading["enclosing_build"])
+    calm = IDLE.merge(reading.slice("compilers", "own_compilers", "enclosing_build"))
     assert_nil HostLoad.refusal(limits, calm), "its own compilers alone do not refuse the step"
     { "pressure" => 2, "swap_used_mib" => 1550.75, "compressor_mib" => 4506, "cpu_scheduler_limit" => 50, "cpu_available" => 6 }.each do |key, value|
       refute_nil HostLoad.refusal(limits, calm.merge(key => value)), "#{key} must still refuse inside an enclosing build"
@@ -137,8 +146,65 @@ class HostLoadTest < Minitest::Test
     driver = "   5.0 7000 1 /usr/local/opt/rust/bin/cargo\n   0.1 #{own} 7000 /usr/bin/ruby\n"
     reading = sample(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD, driver)
     assert_equal "cargo 7000", reading["enclosing_build"]
+    assert_equal ["cargo 7000"], reading["own_compilers"], "the enclosing compiler driver is its own build"
     refute HostLoad.reasons(limits, reading).any? { |reason| reason.include?("compiler") }
-    assert_nil HostLoad.refusal(limits, IDLE.merge("compilers" => ["cargo 7000"], "enclosing_build" => "cargo 7000"))
+  end
+
+  def test_an_enclosing_build_does_not_excuse_a_compiler_it_did_not_start
+    own = Process.pid
+    processes = "  90.0 9001 9000 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend\n" \
+                "  80.0 9003 9001 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang\n" \
+                "  70.0 7000 1 /usr/local/opt/rust/bin/cargo\n  60.0 7001 7000 /usr/local/opt/rust/bin/rustc\n" \
+                "   0.1 #{own} 9002 /usr/bin/ruby\n   0.1 9002 9000 /bin/bash\n" \
+                "   0.2 9000 8999 /Applications/Xcode.app/Contents/SharedFrameworks/SwiftBuild.framework/SWBBuildService\n" \
+                "   1.0 8999 1 /Applications/Xcode.app/Contents/MacOS/Xcode\n"
+    reading = sample(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD, processes)
+    assert_equal "SWBBuildService 9000", reading["enclosing_build"]
+    assert_equal ["swift-frontend 9001", "clang 9003", "cargo 7000", "rustc 7001"], reading["compilers"]
+    calm = IDLE.merge(reading.slice("compilers", "own_compilers", "enclosing_build"))
+    assert_equal ["a compiler is already running (cargo 7000, rustc 7001)"], HostLoad.reasons(limits, calm),
+                 "a package-manager build beside the enclosing Xcode build is still another job"
+    assert_equal ["swift-frontend 9001", "clang 9003"], reading["own_compilers"]
+    # A compiler driver started by that build is one more build this step runs inside.
+    nested = processes.sub(" #{own} 9002 ", " #{own} 9004 ") +
+             "  50.0 9004 9002 /usr/local/opt/rust/bin/cargo\n  40.0 9005 9004 /usr/local/opt/rust/bin/rustc\n"
+    reading = sample(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD, nested)
+    assert_equal "cargo 9004", reading["enclosing_build"], "the nearest one is named"
+    assert_equal ["swift-frontend 9001", "clang 9003", "cargo 9004", "rustc 9005"], reading["own_compilers"]
+    calm = IDLE.merge(reading.slice("compilers", "own_compilers", "enclosing_build"))
+    assert_equal ["a compiler is already running (cargo 7000, rustc 7001)"], HostLoad.reasons(limits, calm)
+  end
+
+  def test_a_probe_that_fails_or_answers_nothing_blocks_the_job_instead_of_admitting_it
+    assert_match(/false failed \(exit 1\)/, assert_raises(RuntimeError) { HostLoad.capture("/usr/bin/false") }.message)
+    assert_equal "", HostLoad.capture("/usr/bin/false", tolerate_failure: true)
+    failing = lambda do |tool|
+      lambda do |*argv, **|
+        raise "#{File.basename(tool)} failed (exit 1)" if argv.first == tool
+
+        capture(SYSCTL_DURING_BUILD.sub("{ 11.41 7.35 9.44 }", "{ 4.24 4.56 5.86 }").sub("1550.75M", "331.25M"),
+                PMSET_DURING_BUILD.sub("= 81", "= 100")).call(*argv)
+      end
+    end
+    assert_nil HostLoad.check(sampler: -> { HostLoad.sample(capture: failing.call("/nothing"), compilers: COMPILERS) })
+    [HostLoad::PS, HostLoad::PMSET, HostLoad::SYSCTL].each do |tool|
+      message = HostLoad.check(sampler: -> { HostLoad.sample(capture: failing.call(tool), compilers: COMPILERS) })
+      assert_equal "Host load inspection failed (RuntimeError: #{File.basename(tool)} failed (exit 1)).", message
+    end
+    no_processes = ->(*argv, **) { argv.first == HostLoad::PS ? "" : capture(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD).call(*argv) }
+    assert_match(/Invalid process telemetry/, assert_raises(RuntimeError) { HostLoad.sample(capture: no_processes, compilers: COMPILERS) }.message)
+    assert_match(/Invalid thermal telemetry/, assert_raises(RuntimeError) { sample(SYSCTL_DURING_BUILD, "\n") }.message)
+    sample
+    assert_equal [["sysctl", HostLoad::REQUIRED, {}], ["sysctl", HostLoad::OPTIONAL, { tolerate_failure: true }]], @probes.first(2),
+                 "only the optional names may make sysctl exit non-zero"
+    assert_equal [["pmset", {}], ["ps", {}]], @probes.drop(2).map { |name, _, options| [name, options] }
+    # A host without the optional name: that call fails and answers nothing.
+    required = SYSCTL_DURING_BUILD.lines.reject { |line| line.start_with?("machdep") }.join
+    without_optional = lambda do |*argv, **options|
+      options[:tolerate_failure] ? "" : capture(required, PMSET_DURING_BUILD).call(*argv, **options)
+    end
+    reading = HostLoad.sample(capture: without_optional, compilers: COMPILERS)
+    assert_equal [nil, [11.41, 7.35, 9.44]], reading.values_at("thermal_level", "load")
   end
 
   def test_measured_samples_without_a_heavy_job_are_admitted_and_overlapping_ones_are_refused
@@ -163,15 +229,17 @@ class HostLoadTest < Minitest::Test
       message = HostLoad.refusal(limits, IDLE.merge(change))
       expected ? assert_match(expected, message, change.inspect) : assert_nil(message, change.inspect)
     end
-    message = HostLoad.refusal(limits, IDLE.merge("pressure" => 2, "cpu_speed_limit" => 81))
-    assert_match(/memory pressure is warning; CPU_Speed_Limit is 81/, message)
-    assert_match(/native_job\.rb status/, message)
+    assert_equal "The host is already loaded: memory pressure is warning; CPU_Speed_Limit is 81 (thermal throttling).",
+                 HostLoad.refusal(limits, IDLE.merge("pressure" => 2, "cpu_speed_limit" => 81))
+    advice = HostLoad.advice(limits)
+    assert_match(/native_job\.rb status/, advice)
+    assert_match(/a wait is expected: the default is 120 s, and --wait SECONDS or EPUB_NATIVE_WAIT_SECONDS sets another \(0 refuses at once\)/, advice)
+    assert_match(/Swap in use can stay high until the programs that hold that memory exit/, advice)
   end
 
   def test_check_blocks_when_telemetry_or_policy_cannot_be_read
     assert_nil HostLoad.check(sampler: -> { IDLE })
-    assert_match(/inspection failed \(RuntimeError: probe\); heavy job blocked/,
-                 HostLoad.check(sampler: -> { raise "probe" }))
+    assert_equal "Host load inspection failed (RuntimeError: probe).", HostLoad.check(sampler: -> { raise "probe" })
     assert_match(/inspection failed/, HostLoad.check(sampler: -> { IDLE }, policy: -> { raise KeyError, "limits" }))
   end
 
@@ -184,6 +252,7 @@ class HostLoadTest < Minitest::Test
       assert_match(/Missing admission/, assert_raises(RuntimeError) { HostLoad.limits(path) }.message)
       valid = limits
       { "max_swap_used_mib" => -1, "max_load_percent_of_cpus" => 0.75, "recheck_seconds" => 0, "child_niceness" => nil,
+        "default_wait_seconds" => "120",
         "foreign_compilers" => "cargo" }.each do |key, value|
         File.write(path, JSON.generate("admission" => valid.merge(key => value)))
         assert_match(/Invalid admission #{key}/, assert_raises(RuntimeError) { HostLoad.limits(path) }.message)
@@ -196,6 +265,6 @@ class HostLoadTest < Minitest::Test
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     error = assert_raises(RuntimeError) { HostLoad.capture("/bin/sleep", "20", seconds: 0.2) }
     assert_match(/sleep telemetry deadline exceeded/, error.message)
-    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 5
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 15, "the probe was not stopped at its deadline"
   end
 end

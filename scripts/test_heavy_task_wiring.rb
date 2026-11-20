@@ -10,8 +10,11 @@ require_relative "mise_task_bodies"
 class HeavyTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
   BODY = MiseTaskBodies.load(ROOT, %w[rails:web:test]).fetch("rails:web:test")
-  RAILS = "exec -- ruby bin/rails test:all"
-  NODE = "exec -- node --import ./browser_runtime/importmap_resolver.mjs --test --test-concurrency=2 browser_runtime/*.test.mjs"
+  RAILS = "ruby bin/rails test:all"
+  NODE = "node --import ./browser_runtime/importmap_resolver.mjs --test --test-concurrency=2 browser_runtime/*.test.mjs"
+  PLAIN = "exec -- "
+  # On macOS each runner starts without the lease the suite's shell keeps.
+  WITHHELD = "exec -- ruby ../../scripts/without_native_lease.rb "
 
   def setup
     @dir = File.realpath(Dir.mktmpdir("heavy-task-wiring-"))
@@ -28,7 +31,7 @@ class HeavyTaskWiringTest < Minitest::Test
         shift 6
         exec "$@"
       fi
-      [[ "$*" == "exec -- ruby bin/rails test:all" ]] && exit "${FIXTURE_RAILS_STATUS:-0}"
+      [[ "$*" == *" ruby bin/rails test:all" ]] && exit "${FIXTURE_RAILS_STATUS:-0}"
       exit 0
     SH
   end
@@ -55,22 +58,24 @@ class HeavyTaskWiringTest < Minitest::Test
     events, status, error = run_task("Darwin")
     assert status.success?, error
     assert_equal 3, events.length, events.inspect
-    assert_match(%r{\Aexec -- ruby \.\./\.\./scripts/native_job\.rb heavy -- sh -euc mise exec -- ruby bin/rails test:all && }, events[0])
-    assert_equal [RAILS, NODE], events.drop(1)
+    assert_match(%r{\Aexec -- ruby \.\./\.\./scripts/native_job\.rb heavy -- sh -euc \$0 ruby bin/rails test:all && \$0 node .* mise exec -- ruby \.\./\.\./scripts/without_native_lease\.rb\z}, events[0])
+    assert_equal [WITHHELD + RAILS, WITHHELD + NODE], events.drop(1),
+                 "a test runner or the browser it starts must not inherit the lease"
+    assert File.file?(File.join(ROOT, "scripts/without_native_lease.rb"))
   end
 
   def test_other_hosts_run_the_same_suite_without_the_lease
     events, status, error = run_task("Linux")
     assert status.success?, error
-    assert_equal [RAILS, NODE], events
+    assert_equal [PLAIN + RAILS, PLAIN + NODE], events
   end
 
   def test_a_failing_rails_suite_stops_before_node_and_keeps_its_status
-    %w[Darwin Linux].each do |system|
+    { "Darwin" => WITHHELD, "Linux" => PLAIN }.each do |system, prefix|
       events, status, = run_task(system, "FIXTURE_RAILS_STATUS" => "5")
       assert_equal 5, status.exitstatus, system
-      assert_equal RAILS, events.last, system
-      refute_includes events, NODE
+      assert_equal prefix + RAILS, events.last, system
+      refute events.any? { |event| event.end_with?(NODE) }, system
     end
   end
 end

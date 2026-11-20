@@ -102,11 +102,13 @@ Read the host once before a guarded build or test:
 mise run native:status
 ```
 
-It prints the lease holder, the current readings, `refusal` (`null` when another
-heavy job would be admitted) and the flight recorder path. A refused job exits
-75 and names every exceeded limit. Wait for the other load, or let one job queue
-for the lease and for admission instead of polling (whole seconds; any other
-value fails):
+It prints the lease holder, every process that keeps the lease file open (a
+browser or daemon left behind by an earlier job shows here), the current
+readings, `refusal` (`null` when another heavy job would be admitted) and the
+flight recorder path. A job that finds the host loaded waits up to 120 seconds
+for it to settle after the previous job, then exits 75 and names every exceeded
+limit. Let one job queue longer for the lease and for admission instead of
+polling (whole seconds; any other value fails; `0` refuses at once):
 
 ```sh
 EPUB_NATIVE_WAIT_SECONDS=900 mise run mac:test:local -- -only-testing:ID
@@ -136,9 +138,10 @@ targets) with the usual background work, taken between 22:10 and 22:37 BRT on
 | 5 min 39 s after it was stopped | 3.79 | 331 MiB | 100 |
 | Second run (resumed, 4 min 38 s in total), 2 min 45 s in | 4.24 | 1016 MiB | 100 |
 
-A guarded step that Xcode starts from a build phase is not refused for that
-build's own compiler processes, but the load, memory and thermal limits still
-apply and can refuse it while Xcode compiles. Prepare Rust artifacts through
+A guarded step that Xcode starts from a build phase is not refused for the
+compiler processes that descend from that build, but any other compiler and the
+load, memory and thermal limits still apply and can refuse it while Xcode
+compiles. Prepare Rust artifacts through
 their guarded task before a manual Xcode build so the two do not compile at
 once. The build preflight matches the
 `SimMetalHost` and `Simulator` process names exactly; a command line that only

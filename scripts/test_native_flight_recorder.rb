@@ -7,8 +7,11 @@ require "timeout"
 require_relative "native_flight_recorder"
 
 class NativeFlightRecorderTest < Minitest::Test
-  HOLDER = { "pid" => 45_932, "phase" => "build", "state" => "running", "command" => "xcodebuild -jobs 1 build-for-testing",
-             "started" => "2026-11-20T01:08:37Z", "worktree" => "/work/tree", "cwd" => "/work/tree/ios", "session" => "claude=abc" }.freeze
+  # A holder that still carries what a record must never store: arguments and absolute paths.
+  HOLDER = { "pid" => 45_932, "phase" => "build", "state" => "running", "program" => "xcodebuild", "task" => "mac:test:local",
+             "started" => "2026-11-20T01:08:37Z", "worktree" => "epubtomp3-pr-h", "session" => "claude=abc",
+             "command" => "xcodebuild -authenticationKeyPath /Users/someone/AuthKey_SECRET123.p8", "cwd" => "/Users/someone/work" }.freeze
+  RECORDED = %w[pid phase program task worktree session].freeze
   LIMITS = { "interval_seconds" => 30, "max_file_bytes" => 4096, "generations" => 2 }.freeze
 
   def setup
@@ -61,12 +64,52 @@ class NativeFlightRecorderTest < Minitest::Test
     assert_equal %w[start sample end], events.map { |event| event["event"] }
     refute events[2].key?("load"), "the end line reads nothing from the host"
     assert_equal ["2026-11-20T01:08:37Z"], events.map { |event| event["t"] }.uniq
-    events.each { |event| assert_equal HOLDER.slice("pid", "phase", "command", "worktree", "session"), event["holder"] }
+    events.each { |event| assert_equal HOLDER.slice(*RECORDED), event["holder"] }
     assert_equal "4f00000000000000", events[0]["startup_power_events"]
     assert_equal [7.12, 4.46, 8.85], events[0]["load"]
     assert_equal ["98.2 47168 swift-frontend"], events[0]["top"]
     assert_in_delta 1550.75, events[1]["swap_used_mib"]
     assert_equal 143, events[2]["exit_status"]
+  end
+
+  def test_lines_carry_no_argument_or_absolute_path_and_only_the_owner_can_read_them
+    created = File.join(@dir, "evidence", "native-flight-recorder")
+    flight = recorder(directory: created,
+                      sampler: -> { { "load" => [1.0, 1.0, 1.0], "top" => ["9.0 1 xcodebuild"], "compilers" => ["xcodebuild 1"] } })
+    flight.start(0.0)
+    settle(flight)
+    flight.tick(30.0)
+    settle(flight)
+    flight.finish(0)
+    text = File.read(flight.path)
+    ["SECRET123", "authenticationKey", "/Users/", "someone", @dir, Dir.home].each do |forbidden|
+      refute_includes text, forbidden, "the flight log must not carry #{forbidden}"
+    end
+    assert_equal 3, lines(flight.path).length
+    assert_equal %w[700 700 600], [File.dirname(created), created, flight.path].map { |path| format("%o", File.stat(path).mode & 0o777) },
+                 "what the recorder creates is the owner's alone"
+    loose = File.join(@dir, "loose")
+    Dir.mkdir(loose, 0o755)
+    File.write(File.join(loose, NativeFlightRecorder::FILE), "")
+    File.chmod(0o644, File.join(loose, NativeFlightRecorder::FILE))
+    flight = recorder(directory: loose)
+    flight.start(0.0)
+    settle(flight)
+    assert_equal %w[755 600], [loose, flight.path].map { |path| format("%o", File.stat(path).mode & 0o777) },
+                 "an existing file is tightened; a directory the recorder did not create is left as it is"
+  end
+
+  def test_finding_the_shared_directory_cannot_hang_on_git
+    stalled = File.join(@dir, "bin")
+    Dir.mkdir(stalled)
+    File.write(File.join(stalled, "git"), "#!/bin/sh\nsleep 60\n")
+    File.chmod(0o755, File.join(stalled, "git"))
+    path = ENV.fetch("PATH")
+    ENV["PATH"] = "#{stalled}:#{path}"
+    elapsed = seconds { assert_equal File.join(NativeFlightRecorder::ROOT, ".reports", "native-flight-recorder"), NativeFlightRecorder.directory({}) }
+    assert_operator elapsed, :<, 20, "the lookup must give up on a git that does not answer"
+  ensure
+    ENV["PATH"] = path if path
   end
 
   def test_rotation_bounds_storage_to_the_configured_generations
@@ -75,6 +118,7 @@ class NativeFlightRecorderTest < Minitest::Test
     files = Dir.children(@dir).sort
     assert_equal %w[bounded.jsonl bounded.jsonl.1 bounded.jsonl.2], files
     files.each { |name| assert_operator File.size(File.join(@dir, name)), :<=, 512, name }
+    files.each { |name| assert_equal "600", format("%o", File.stat(File.join(@dir, name)).mode & 0o777), name }
     assert_equal 39, lines(path).last["n"]
     kept = files.flat_map { |name| lines(File.join(@dir, name)).map { |record| record["n"] } }.sort
     assert_equal (kept.min..39).to_a, kept, "only the oldest records are dropped"
@@ -83,13 +127,13 @@ class NativeFlightRecorderTest < Minitest::Test
 
   def test_slow_telemetry_never_holds_the_supervisor_loop_or_the_exit_code
     reads = 0
-    flight = recorder(sampler: -> { reads += 1; sleep 3; { "load" => [9.0, 9.0, 9.0] } })
-    assert_operator seconds { flight.start(0.0) }, :<, 0.5, "start read the host on the supervisor loop"
-    Timeout.timeout(5) { sleep 0.01 until reads == 1 }
-    assert_operator seconds { flight.tick(30.0) }, :<, 0.5, "tick read the host on the supervisor loop"
-    assert_operator seconds { flight.tick(60.0) }, :<, 0.5
+    flight = recorder(sampler: -> { reads += 1; sleep 30; { "load" => [9.0, 9.0, 9.0] } })
+    assert_operator seconds { flight.start(0.0) }, :<, 10, "start read the host on the supervisor loop"
+    Timeout.timeout(20) { sleep 0.01 until reads == 1 }
+    assert_operator seconds { flight.tick(30.0) }, :<, 10, "tick read the host on the supervisor loop"
+    assert_operator seconds { flight.tick(60.0) }, :<, 10
     assert_equal 1, reads, "a probe that is still running is skipped, never queued"
-    assert_operator seconds { flight.finish(143) }, :<, 1.0, "finish delayed the exit code"
+    assert_operator seconds { flight.finish(143) }, :<, 10, "finish delayed the exit code"
     assert_equal [["end", 143]], lines.map { |event| event.values_at("event", "exit_status") }
     refute flight.instance_variable_get(:@worker).alive?, "no probe outlives the job"
   end

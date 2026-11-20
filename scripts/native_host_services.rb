@@ -3,25 +3,83 @@
 require_relative "host_load"
 require_relative "native_flight_recorder"
 
-# The host-wide half of the native supervisor: admission, priority and the
-# flight recorder. NativeJob loads it only for the real host lease, so a
-# fixture copy of native_job.rb needs none of these files.
+# The host-wide half of the native supervisor: admission, priority, the flight
+# recorder and the list of processes that keep the lease file open. NativeJob
+# loads it only for the real host lease, so a fixture copy of native_job.rb
+# needs none of these files.
 module NativeJob
   NICE = "/usr/bin/nice"
+  LSOF = "/usr/sbin/lsof"
 
   # Holds the lease while waiting, so one job queues and the others are refused.
-  def self.admit(handle, record, deadline)
-    interval = HostLoad.limits.fetch("recheck_seconds")
+  # The load average takes about a minute to settle after a job, so without an
+  # explicit wait a job still waits for the bounded default before it refuses:
+  # consecutive guarded tasks then run, sustained overload is still refused.
+  def self.admit(handle, record, explicit, deadline)
+    limits = HostLoad.limits
+    patience = explicit || limits.fetch("default_wait_seconds")
+    deadline = monotonic + patience unless explicit
+    started = monotonic
     loop do
       error = HostLoad.check
-      remaining = deadline - monotonic
-      return error if error.nil? || !remaining.positive?
+      return nil unless error
 
-      pause = [remaining, interval].min
+      remaining = deadline - monotonic
+      waited = (monotonic - started).round
+      unless remaining.positive?
+        return "Heavy job refused. #{error}#{" Still so after waiting #{waited} s." if waited.positive?} #{HostLoad.advice(limits)}"
+      end
+
+      pause = [remaining, limits.fetch("recheck_seconds")].min
       publish(handle, record.merge("state" => "waiting for admission"))
-      warn "native_job: #{error} Rechecking in #{pause.ceil} s."
+      warn "native_job: not started yet. #{error} Rechecking in #{pause.ceil} s, waiting up to #{patience} s in all#{' (the default)' unless explicit}."
       sleep pause
     end
+  end
+
+  # Every process that has the lease file open, whoever started it: what really
+  # keeps the lease when no record names a holder (a browser or daemon left
+  # behind by a finished job). Read-only; process IDs and program names only,
+  # and only processes this user may inspect. Raises when the processes cannot
+  # be listed: unknown is not "nobody".
+  def self.lease_holders(path)
+    target = File.stat(path)
+    pids = if File.directory?("/proc/self/fd")
+             Dir.glob("/proc/[0-9]*/fd/*").filter_map do |entry|
+               stat = File.stat(entry) rescue next
+               Integer(entry.split("/")[2]) if [stat.dev, stat.ino] == [target.dev, target.ino]
+             end
+           else
+             # lsof exits 1 when no process has the file open.
+             HostLoad.capture(LSOF, "-t", path, tolerate_failure: true).split.map { |pid| Integer(pid) }
+           end
+    pids = pids.uniq - [Process.pid]
+    return [] if pids.empty?
+
+    HostLoad.capture(HostLoad::PS, "-o", "pid=", "-o", "comm=", "-p", pids.join(","), tolerate_failure: true).lines.filter_map do |line|
+      pid, command = line.strip.split(/\s+/, 2)
+      "#{pid} #{File.basename(command)}" if command
+    end
+  end
+
+  # For a refusal: the processes to look at, or why they could not be listed.
+  def self.lease_users(path)
+    holders = lease_holders(path)
+    return nil if holders.empty?
+
+    more = holders.length - 6
+    "lease file open in #{holders.first(6).join(', ')}#{" and #{more} more" if more.positive?}"
+  rescue StandardError => error
+    "the processes that keep the lease file open could not be listed (#{error.class}: #{error.message})"
+  end
+
+  # For status. Held means a published holder or any process that keeps the
+  # file open; with neither a record nor a listing it is unknown, not false.
+  def self.lease_usage(path, record)
+    holders = File.file?(path) ? lease_holders(path) : []
+    { "held" => !record.nil? || !holders.empty?, "open_in" => holders }
+  rescue StandardError => error
+    { "held" => (true if record), "open_in" => nil, "open_in_error" => "#{error.class}: #{error.message}" }
   end
 
   def self.resolvable?(program)
@@ -32,7 +90,8 @@ module NativeJob
   # The owner's interface keeps priority over a job that runs for minutes.
   # `nice` lowers the priority and then becomes the command in the same process,
   # so the job never runs at normal priority and its PID and group are unchanged.
-  # Descendants inherit the value; an already lower priority is kept.
+  # Descendants inherit the value. A job that already runs at that priority or
+  # lower needs no change, so nothing is done and nothing is reported.
   def self.prioritized(command)
     increment = HostLoad.limits.fetch("child_niceness") - Process.getpriority(Process::PRIO_PROCESS, 0)
     return command unless increment.positive?
@@ -46,10 +105,10 @@ module NativeJob
     [NICE, "-n", increment.to_s, *command]
   end
 
+  # Built before the job starts: finding the shared evidence directory asks git,
+  # which must not run on the supervisor's loop once a child exists.
   def self.recorder(record)
-    instance = NativeFlightRecorder::Recorder.new(holder: record)
-    instance.start(monotonic)
-    instance
+    NativeFlightRecorder::Recorder.new(holder: record)
   rescue StandardError => error
     warn "native flight recorder unavailable: #{error.class}: #{error.message}"
     nil

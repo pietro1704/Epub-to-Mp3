@@ -2,13 +2,15 @@
 
 require "json"
 require "fileutils"
-require "open3"
 require "time"
 require_relative "host_load"
 
 # One JSON line per interval while a guarded heavy job runs, so the next host
 # incident has load, memory, thermal and process data from before it. Recording
-# is best effort: it never delays, fails or outlives the job it describes.
+# is best effort: it never delays, fails or outlives the job it describes. A
+# line names programs and process IDs only, never arguments or absolute paths.
+# The files are readable by their owner alone, and so is a directory created
+# here; an existing directory is used as it is.
 module NativeFlightRecorder
   ROOT = File.expand_path("..", __dir__)
   DIRECTORY_ENV = "EPUB_NATIVE_FLIGHT_DIR"
@@ -31,12 +33,10 @@ module NativeFlightRecorder
     explicit = environment[DIRECTORY_ENV].to_s
     return File.expand_path(explicit) unless explicit.empty?
 
-    common, status = Open3.capture2("git", "-C", ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir",
-                                    err: File::NULL)
-    common = common.strip
-    main = status.success? && File.basename(common) == ".git" ? File.dirname(common) : ROOT
+    common = HostLoad.capture("git", "-C", ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir", seconds: 3).strip
+    main = File.basename(common) == ".git" ? File.dirname(common) : ROOT
     File.join(main, ".reports", "native-flight-recorder")
-  rescue SystemCallError
+  rescue StandardError
     File.join(ROOT, ".reports", "native-flight-recorder")
   end
 
@@ -46,10 +46,16 @@ module NativeFlightRecorder
     if File.size?(path).to_i + line.bytesize > max_bytes
       generations.downto(1) do |index|
         source = index == 1 ? path : "#{path}.#{index - 1}"
-        File.rename(source, "#{path}.#{index}") if File.exist?(source)
+        next unless File.exist?(source)
+
+        File.chmod(0o600, source)
+        File.rename(source, "#{path}.#{index}")
       end
     end
-    File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o644) { |file| file.write(line) }
+    File.open(path, File::WRONLY | File::APPEND | File::CREAT, 0o600) do |file|
+      file.chmod(0o600)
+      file.write(line)
+    end
   end
 
   # Boot identity for the first line of a job: what the previous shutdown left
@@ -75,7 +81,7 @@ module NativeFlightRecorder
     def initialize(holder:, directory: NativeFlightRecorder.directory, limits: NativeFlightRecorder.limits,
                    sampler: -> { HostLoad.sample },
                    host: -> { NativeFlightRecorder.host }, wall: -> { Time.now.utc })
-      @holder = holder.slice("pid", "phase", "command", "worktree", "session")
+      @holder = holder.slice("pid", "phase", "program", "task", "worktree", "session")
       @limits = limits
       @sampler = sampler
       @host = host
@@ -134,7 +140,7 @@ module NativeFlightRecorder
     end
 
     def write(event, fields)
-      FileUtils.mkdir_p(File.dirname(@path))
+      FileUtils.mkdir_p(File.dirname(@path), mode: 0o700)
       record = { "t" => @wall.call.iso8601, "event" => event, "holder" => @holder }.merge(fields)
       NativeFlightRecorder.append(@path, record, max_bytes: @limits.fetch("max_file_bytes"),
                                                  generations: @limits.fetch("generations"))

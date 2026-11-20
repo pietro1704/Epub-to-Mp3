@@ -20,21 +20,28 @@ module HostLoad
   OPTIONAL = %w[machdep.xcpm.cpu_thermal_level].freeze
   PRESSURE = { 1 => "normal", 2 => "warning", 4 => "critical" }.freeze
   # A guarded step started from inside a build (an Xcode build phase, a compiler
-  # driver) is part of that build, so that build's own compiler processes are
-  # not a reason to refuse it. Load, memory and thermal limits still apply.
+  # driver) is part of that build, so the compilers that descend from the builds
+  # it runs inside are not a reason to refuse it. Any other compiler on the host
+  # still is, and load, memory and thermal limits always apply.
   ENCLOSING_BUILDS = %w[xcodebuild SWBBuildService XCBBuildService Xcode].freeze
   LIMITS = %w[max_load_percent_of_cpus max_swap_used_mib max_compressor_percent_of_memory
-              recheck_seconds child_niceness].freeze
+              recheck_seconds default_wait_seconds child_niceness].freeze
 
   # Every probe has a deadline and a fixed locale: stuck telemetry must not hang
-  # a supervisor, and a comma decimal separator must not change the reading.
-  def self.capture(*argv, seconds: 4)
+  # a supervisor, and a comma decimal separator must not change the reading. A
+  # probe that fails is an error, never an empty reading: an empty process list
+  # would admit a job beside a running compiler.
+  def self.capture(*argv, seconds: 4, tolerate_failure: false)
     Open3.popen3({ "LC_ALL" => "C", "LANG" => "C" }, *argv, pgroup: true) do |input, stdout, stderr, waiter|
       input.close
       readers = [Thread.new { stdout.read }, Thread.new { stderr.read }]
-      raise "#{File.basename(argv.first)} telemetry deadline exceeded" unless waiter.join(seconds)
+      name = File.basename(argv.first)
+      raise "#{name} telemetry deadline exceeded" unless waiter.join(seconds)
 
-      readers.map(&:value).first
+      status = waiter.value
+      raise "#{name} failed (#{status.exitstatus ? "exit #{status.exitstatus}" : "signal #{status.termsig}"})" unless status.success? || tolerate_failure
+
+      readers.first.value
     ensure
       # Also reached when the reading thread is stopped: no probe outlives its reader.
       if waiter.alive?
@@ -59,8 +66,23 @@ module HostLoad
     Float(text.to_s.tr(",", "."))
   end
 
+  # Executable names sorted by CPU, with each process's parent. Arguments are
+  # never read or recorded. The list always contains this process, so an empty
+  # or foreign answer is rejected instead of trusted.
+  def self.processes(capture)
+    rows = capture.call(PS, "-A", "-r", "-o", "pcpu=", "-o", "pid=", "-o", "ppid=", "-o", "comm=").lines.filter_map do |line|
+      cpu, pid, parent, command = line.strip.split(/\s+/, 4)
+      [cpu, pid, parent, File.basename(command)] if command
+    end
+    raise "Invalid process telemetry" unless rows.any? { |_, pid, _, _| pid == Process.pid.to_s }
+
+    rows
+  end
+
   def self.sample(capture: method(:capture), compilers: limits.fetch("foreign_compilers"))
-    values = capture.call(SYSCTL, *REQUIRED, *OPTIONAL).lines.filter_map do |line|
+    # Only an OPTIONAL name may be unknown to sysctl, which then exits non-zero.
+    text = capture.call(SYSCTL, *REQUIRED) + capture.call(SYSCTL, *OPTIONAL, tolerate_failure: true)
+    values = text.lines.filter_map do |line|
       name, value = line.chomp.split(": ", 2)
       [name, value] if value
     end.to_h
@@ -75,17 +97,21 @@ module HostLoad
     raise "Invalid memory pressure telemetry" unless PRESSURE.key?(pressure)
 
     thermal = capture.call(PMSET, "-g", "therm")
+    raise "Invalid thermal telemetry" if thermal.strip.empty?
     limit = ->(name) { thermal[/#{name}\s*=\s*(\d+)/, 1]&.to_i }
-    # Executable names sorted by CPU; arguments are never read or recorded.
-    processes = capture.call(PS, "-A", "-r", "-o", "pcpu=", "-o", "pid=", "-o", "ppid=", "-o", "comm=").lines.filter_map do |line|
-      cpu, pid, parent, command = line.strip.split(/\s+/, 4)
-      [cpu, pid, parent, File.basename(command)] if command
+    rows = processes(capture)
+    parents = rows.to_h { |_, pid, parent, _| [pid, parent] }
+    names = rows.to_h { |_, pid, _, name| [pid, name] }
+    lineage = lambda do |pid|
+      chain = [parents[pid]]
+      chain << parents[chain.last] while chain.last && chain.length < 64
+      chain.compact
     end
-    parents = processes.to_h { |_, pid, parent, _| [pid, parent] }
-    names = processes.to_h { |_, pid, _, name| [pid, name] }
-    ancestors = [parents[Process.pid.to_s]]
-    ancestors << parents[ancestors.last] while ancestors.last && ancestors.length < 64
-    enclosing = ancestors.compact.find { |pid| ENCLOSING_BUILDS.include?(names[pid]) || compilers.include?(names[pid]) }
+    # Nearest first: every build this process runs inside.
+    enclosing = lineage.call(Process.pid.to_s).select { |pid| ENCLOSING_BUILDS.include?(names[pid]) || compilers.include?(names[pid]) }
+    running = rows.select { |_, _, _, name| compilers.include?(name) }
+    own = running.select { |_, pid, _, _| enclosing.include?(pid) || !(lineage.call(pid) & enclosing).empty? }
+    label = ->(list) { list.map { |_, pid, _, name| "#{name} #{pid}" } }
     level = values["machdep.xcpm.cpu_thermal_level"]
     { "load" => load, "cpus" => Integer(values["hw.logicalcpu"]),
       "memory_mib" => (Integer(values["hw.memsize"]) / MIB).round,
@@ -96,9 +122,9 @@ module HostLoad
       "cpu_speed_limit" => limit.call("CPU_Speed_Limit"), "cpu_scheduler_limit" => limit.call("CPU_Scheduler_Limit"),
       "cpu_available" => limit.call("CPU_Available_CPUs"),
       "thermal_level" => (Integer(level) if level.to_s.match?(/\A\d+\z/)),
-      "top" => processes.first(3).map { |cpu, pid, _, name| "#{cpu} #{pid} #{name}" },
-      "compilers" => processes.filter_map { |_, pid, _, name| "#{name} #{pid}" if compilers.include?(name) },
-      "enclosing_build" => ("#{names[enclosing]} #{enclosing}" if enclosing) }
+      "top" => rows.first(3).map { |cpu, pid, _, name| "#{cpu} #{pid} #{name}" },
+      "compilers" => label.call(running), "own_compilers" => label.call(own),
+      "enclosing_build" => ("#{names[enclosing.first]} #{enclosing.first}" unless enclosing.empty?) }
   end
 
   # Every reason a new heavy job must not start now; empty when admitted.
@@ -130,26 +156,32 @@ module HostLoad
     found << "only #{available} of #{cpus} CPUs available (thermal throttling)" if available && available < cpus
     # The lease owner has started nothing yet, so these belong to work this
     # lease does not coordinate: a package-manager source build, an IDE, another
-    # tool. Inside an enclosing build they are that build's own and expected.
-    running = Array(sample["compilers"])
-    unless running.empty? || sample["enclosing_build"]
-      found << "a compiler is already running (#{running.first(4).join(', ')})"
-    end
+    # tool. Only the compilers of the build this step runs inside are its own.
+    foreign = Array(sample["compilers"]) - Array(sample["own_compilers"])
+    found << "a compiler is already running (#{foreign.first(4).join(', ')})" unless foreign.empty?
     found
   end
 
+  # Why a heavy job may not start now, as one sentence; nil when it may.
   def self.refusal(limits, sample)
     found = reasons(limits, sample)
-    return nil if found.empty?
+    "The host is already loaded: #{found.join('; ')}." unless found.empty?
+  end
 
-    "Heavy job refused, the host is already loaded: #{found.join('; ')}. " \
-      "Inspect with `ruby scripts/native_job.rb status`; wait or stop the other load."
+  # What to do about a refusal. The load average outlasts the job that raised
+  # it, so the next job waits before it gives up. Swap is different: it was
+  # read above its limit with no guarded job and no compiler running.
+  def self.advice(limits)
+    "The load average settles about a minute after another job, so a wait is expected: the default is " \
+      "#{limits.fetch('default_wait_seconds')} s, and --wait SECONDS or EPUB_NATIVE_WAIT_SECONDS sets another " \
+      "(0 refuses at once). Swap in use can stay high until the programs that hold that memory exit. " \
+      "Inspect with `ruby scripts/native_job.rb status`."
   end
 
   # Unreadable telemetry blocks the job, like every other native guard here.
   def self.check(sampler: method(:sample), policy: method(:limits))
     refusal(policy.call, sampler.call)
   rescue StandardError => error
-    "Host load inspection failed (#{error.class}: #{error.message}); heavy job blocked."
+    "Host load inspection failed (#{error.class}: #{error.message})."
   end
 end

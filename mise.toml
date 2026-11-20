@@ -76,13 +76,16 @@ description = "Run the Rails web client tests with at most two workers; uses the
 dir = "{{config_root}}/ruby_app/rails_gateway"
 run = '''
 set -eu
-suite='mise exec -- ruby bin/rails test:all && mise exec -- node --import ./browser_runtime/importmap_resolver.mjs --test --test-concurrency=2 "browser_runtime/*.test.mjs"'
+# $0 is the prefix that runs one tool; its words are split on purpose.
+suite='$0 ruby bin/rails test:all && $0 node --import ./browser_runtime/importmap_resolver.mjs --test --test-concurrency=2 "browser_runtime/*.test.mjs"'
 # Rails system tests drive Chromium: on macOS they are one heavy job under the
-# shared host lease and admission. Other hosts run the suite as before.
+# shared host lease and admission. The shell that runs the suite keeps the
+# lease; the test runners start without it, so a browser left behind by a
+# cancelled run cannot hold it. Other hosts run the suite as before.
 if [ "$(uname -s)" = Darwin ]; then
-  exec mise exec -- ruby ../../scripts/native_job.rb heavy -- sh -euc "$suite"
+  exec mise exec -- ruby ../../scripts/native_job.rb heavy -- sh -euc "$suite" "mise exec -- ruby ../../scripts/without_native_lease.rb"
 fi
-sh -euc "$suite"
+sh -euc "$suite" "mise exec --"
 '''
 
 [tasks."migration:product-boundary-audit"]

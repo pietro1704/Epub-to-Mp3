@@ -123,18 +123,26 @@ module NativeJob
     exit run(phase: "heavy", command: [RbConfig.ruby, File.expand_path(file), *arguments], path: path, expose_lease: false)
   end
 
+  # Names only: the program, the mise task and the checkout directory. Never
+  # the arguments or an absolute path, which can carry a credential or a user
+  # name into a file that other tools read. A value that is not a plain name
+  # is left out.
   def self.holder_record(phase, command)
-    session = SESSION_KEYS.filter_map { |name, key| "#{name}=#{ENV[key]}" unless ENV[key].to_s.empty? }.join(" ")
-    { "pid" => Process.pid, "phase" => phase, "state" => "starting", "command" => command.join(" ")[0, 200],
-      "started" => Time.now.utc.iso8601, "worktree" => File.expand_path("..", __dir__), "cwd" => Dir.pwd,
-      "session" => session }
+    name = ->(value) { value.to_s[/\A[\w.:@+-]{1,80}\z/] }
+    session = SESSION_KEYS.filter_map { |label, key| "#{label}=#{name.call(ENV[key])}" if name.call(ENV[key]) }.join(" ")
+    { "pid" => Process.pid, "phase" => phase, "state" => "starting",
+      "program" => name.call(File.basename(command.first.to_s)) || "unnamed",
+      "task" => name.call(ENV["MISE_TASK_NAME"]), "started" => Time.now.utc.iso8601,
+      "worktree" => name.call(File.basename(File.expand_path("..", __dir__))) || "unnamed", "session" => session }
   end
 
-  # The lease file names its holder while held and is empty otherwise.
+  # The lease file names its holder while held and is empty otherwise. One
+  # write covers the previous text before the tail is cut, so one read never
+  # finds an empty or half-written record (JSON ignores the padding).
   def self.publish(handle, record)
-    handle.truncate(0)
-    handle.write(JSON.generate(record) + "\n") if record
-    handle.flush
+    text = record ? JSON.generate(record) + "\n" : ""
+    handle.pwrite(text + (" " * [handle.size - text.bytesize, 0].max), 0) unless text.empty?
+    handle.truncate(text.bytesize)
   end
 
   def self.alive?(pid)
@@ -146,67 +154,90 @@ module NativeJob
     false
   end
 
+  # One read call: the record is rewritten in place, and a second call could
+  # join an older record to the tail of a newer one. Repeated if a rewrite
+  # still shows through.
+  def self.read_record(path, attempts = 3)
+    JSON.parse(File.open(path) { |file| file.sysread(65_536) })
+  rescue JSON::ParserError
+    retry if (attempts -= 1).positive?
+  rescue EOFError, SystemCallError
+    nil
+  end
+
   # Advisory and read-only: it never takes the lock, so asking cannot refuse a
   # real job. A holder older than this record (an earlier checkout, a descendant
   # left behind by a finished job) holds the lease without one.
   def self.holder(path)
-    record = JSON.parse(File.read(path))
+    record = read_record(path)
     return nil unless record.is_a?(Hash) && record["pid"].is_a?(Integer)
     return record if alive?(record["pid"])
 
     # The supervisor died without releasing: its job still holds the lease.
     child = record["child"]
     record.merge("state" => "orphaned, supervisor gone") if child.is_a?(Integer) && child > 1 && alive?(-child)
-  rescue JSON::ParserError, SystemCallError
-    nil
+  end
+
+  # Proof that a descriptor is the lease itself: an independently opened
+  # descriptor is excluded while this open file description can reassert the
+  # lock. Both are required to reject a stale descriptor or one that merely
+  # points at the same file.
+  def self.inherited_lease(descriptor, path)
+    handle = File.for_fd(descriptor, autoclose: false)
+    stat = handle.stat
+    expected = File.stat(path)
+    raise "Inherited native lease points to another file" unless stat.file? && [stat.dev, stat.ino] == [expected.dev, expected.ino]
+    File.open(path, "a+") do |probe|
+      if probe.flock(File::LOCK_EX | File::LOCK_NB)
+        probe.flock(File::LOCK_UN)
+        raise "Inherited native lease is no longer held"
+      end
+    end
+    raise "Inherited native lease does not own the lock" unless handle.flock(File::LOCK_EX | File::LOCK_NB)
+    handle
   end
 
   # True inside a job of the current holder: this process inherited the lease's
-  # own open file description, which no environment variable can stand in for.
-  # Reasserting the lock on that description changes nothing and probes nobody.
+  # own open file description, which neither an environment variable nor the
+  # holder record can stand in for.
   def self.supervised?(path)
-    return false unless holder(path)
-
-    handle = File.for_fd(CHILD_FD, autoclose: false)
-    stat = handle.stat
-    expected = File.stat(path)
-    stat.file? && [stat.dev, stat.ino] == [expected.dev, expected.ino] &&
-      handle.flock(File::LOCK_EX | File::LOCK_NB) != false
-  rescue SystemCallError, ArgumentError
+    inherited_lease(CHILD_FD, path)
+    true
+  rescue StandardError
     false
   end
 
-  def self.describe(record)
-    return " (no holder record: an older checkout or a process left behind by an earlier job holds it)" unless record
-
-    " (pid #{record['pid']}, #{record['phase']} #{record['state']} since #{record['started']}, " \
-      "#{record['worktree']}: #{record['command']})"
+  # Who to look at when the lease is busy: the published holder and, on the
+  # host lease, every process that really keeps the file open. That listing
+  # scans the process table, so a waiting job asks for it once, not per retry.
+  def self.describe(path, listing: true)
+    record = holder(path)
+    named = record.to_h.values_at("program", "task").compact.join(" in ")
+    parts = [if record
+               "pid #{record['pid']}, #{record['phase']} #{record['state']} since #{record['started']}, " \
+                 "#{record['worktree']}#{": #{named}" unless named.empty?}"
+             else
+               "no holder record: an older checkout or a process left behind by an earlier job holds it"
+             end]
+    if listing && host_services?(path)
+      host_services
+      parts << lease_users(path)
+    end
+    " (#{parts.compact.join('; ')})"
   end
 
-  def self.lease(path)
+  def self.lease(path, listing: true)
     inherited = ENV[FD_ENV]
     if inherited || ENV[PATH_ENV]
       raise "Invalid inherited native lease" unless inherited&.match?(/\A\d+\z/) && ENV[PATH_ENV] == path
-      handle = File.for_fd(Integer(inherited), autoclose: false)
-      stat = handle.stat
-      expected = File.stat(path)
-      raise "Inherited native lease points to another file" unless stat.file? && [stat.dev, stat.ino] == [expected.dev, expected.ino]
-      # An independently opened descriptor must be excluded, while the inherited
-      # description can reassert the lock. Both are required to reject stale FDs.
-      File.open(path, "a+") do |probe|
-        if probe.flock(File::LOCK_EX | File::LOCK_NB)
-          probe.flock(File::LOCK_UN)
-          raise "Inherited native lease is no longer held"
-        end
-      end
-      raise "Inherited native lease does not own the lock" unless handle.flock(File::LOCK_EX | File::LOCK_NB)
-      return [handle, true]
+      return [inherited_lease(Integer(inherited), path), true]
     end
-    handle = File.open(path, "a+")
+    handle = File.open(path, File::RDWR | File::CREAT, 0o600)
     unless handle.flock(File::LOCK_EX | File::LOCK_NB)
       handle.close
-      raise Busy, "Another native/heavy job is active#{describe(holder(path))}"
+      raise Busy, "Another native/heavy job is active#{describe(path, listing: listing)}"
     end
+    handle.chmod(0o600) rescue nil
     # A lock on a file that was unlinked or replaced meanwhile excludes nobody.
     current = File.stat(path) rescue nil
     unless current && [current.dev, current.ino] == [handle.stat.dev, handle.stat.ino]
@@ -217,25 +248,28 @@ module NativeJob
   end
 
   # Whole seconds only: "15m" or " 900" must fail instead of silently meaning
-  # "do not wait".
+  # "do not wait". Nil when the caller asked for nothing.
   def self.wait_seconds(explicit)
     value = explicit.nil? ? ENV[WAIT_ENV].to_s : explicit.to_s
-    return 0 if value.empty?
+    return nil if value.empty?
     raise ArgumentError, "Invalid wait #{value.inspect}: give whole seconds, for example 900" unless value.match?(/\A\d+\z/)
 
     Integer(value, 10)
   end
 
-  # A wait shorter than the retry interval still retries once, at its end.
-  def self.acquire(path, deadline)
-    lease(path)
+  # A wait shorter than the retry interval still retries once, at its end. The
+  # first refusal and the final one, made once the wait is over, list the
+  # processes that keep the lease open.
+  def self.acquire(path, deadline, listing = true)
+    final = deadline <= monotonic
+    lease(path, listing: listing || final)
   rescue Busy => error
-    remaining = deadline - monotonic
-    raise unless remaining.positive?
+    raise if final
 
-    pause = [remaining, LEASE_RETRY_SECONDS].min
+    pause = [[deadline - monotonic, 0.01].max, LEASE_RETRY_SECONDS].min
     warn "native_job: #{error.message}; retrying in #{pause.ceil} s"
     sleep pause
+    listing = false
     retry
   end
 
@@ -323,7 +357,8 @@ module NativeJob
       return 75
     end
     path = File.expand_path(path)
-    deadline = monotonic + wait_seconds(wait)
+    explicit = wait_seconds(wait)
+    deadline = monotonic + (explicit || 0)
     handle, inherited = acquire(path, deadline)
     if phase == "build"
       destinations = build_directories(command, build_dir, inherited: inherited)
@@ -340,10 +375,11 @@ module NativeJob
     services = published && host_services?(path)
     if services
       host_services
-      if (error = admit(handle, record, deadline))
+      if (error = admit(handle, record, explicit, deadline))
         warn error
         return 75
       end
+      flight = recorder(record)
     end
     argv = services ? prioritized(command) : command
     signal = nil
@@ -358,7 +394,7 @@ module NativeJob
     environment[BUILD_DIRS_ENV] = JSON.generate(destinations) if destinations
     pid = Process.spawn(environment, [argv.first, argv.first], *argv.drop(1), CHILD_FD => handle, pgroup: true)
     publish(handle, record.merge("state" => "running", "child" => pid)) if published
-    flight = recorder(record) if services
+    flight&.start(monotonic)
     status = nil
     cancelled_at = nil
     storage_error = nil
@@ -409,13 +445,15 @@ module NativeJob
   end
 
   # Who holds the lease and whether a new heavy job would be admitted now.
-  # Read-only: it reads the holder record and never takes the lock.
+  # Read-only: it never takes the lock. On the host lease it also lists every
+  # process that keeps the lease file open, with or without a holder record.
   def self.status(path)
     path = File.expand_path(path)
     record = holder(path)
     report = { "lease" => { "path" => path, "held" => !record.nil?, "holder" => record } }
     if host_services?(path)
       host_services
+      report["lease"].update(lease_usage(path, record))
       limits = HostLoad.limits
       sample = HostLoad.sample
       report["admission"] = { "limits" => limits, "sample" => sample, "refusal" => HostLoad.refusal(limits, sample) }
