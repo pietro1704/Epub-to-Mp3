@@ -35,6 +35,7 @@ final class PlaybackObservation {
     private let navigation: ChapterNavigationDecision
     private let journeys: PlaybackJourneyRecorder
     private let resumePersistence: PlaybackResumeStore
+    private let retention: PlaybackArtifactRetention
     private let playbackClock: PlaybackClock
     private let broadcast: PlaybackBroadcast
     private let nowPlayingPublication: NowPlayingPublication
@@ -43,7 +44,7 @@ final class PlaybackObservation {
     private let speechAlignment = PlaybackSpeechAlignment()
     init(queue: PlaybackQueueSession, segments: PlaybackSegmentSession, chapters: PlaybackChapterSession,
          seeking: PlaybackSeekExecution, navigation: ChapterNavigationDecision, journeys: PlaybackJourneyRecorder,
-         resume: PlaybackResumeStore, clock: PlaybackClock, broadcast: PlaybackBroadcast,
+         resume: PlaybackResumeStore, retention: PlaybackArtifactRetention, clock: PlaybackClock, broadcast: PlaybackBroadcast,
          publication: NowPlayingPublication, sleepTimer: SleepPlaybackTimer, actions: Actions) {
         queueSession = queue
         self.segments = segments
@@ -52,6 +53,7 @@ final class PlaybackObservation {
         self.navigation = navigation
         self.journeys = journeys
         resumePersistence = resume
+        self.retention = retention
         playbackClock = clock
         self.broadcast = broadcast
         nowPlayingPublication = publication
@@ -99,7 +101,7 @@ final class PlaybackObservation {
     }
 
     func requestRetentionForAudibleChapter() {
-        resumePersistence.recordAudibleChapter(player: player, snapshot: snapshot, isSegmentMode: isSegmentMode,
+        retention.recordAudibleChapter(player: player, snapshot: snapshot, isSegmentMode: isSegmentMode,
             segments: segments, playbackChapters: chapterSession.chapters, currentChapterIndex: currentChapterIndex,
             resolveURL: { self.actions.resolveURL($0, $1, $2) })
     }

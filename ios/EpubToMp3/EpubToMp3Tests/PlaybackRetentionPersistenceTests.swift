@@ -8,7 +8,7 @@ final class PlaybackRetentionPersistenceTests: XCTestCase {
     func testAudibleRetentionDeduplicatesPendingAndConfirmedIdentity() async throws {
         var calls: [(String, Int)] = []
         var release: CheckedContinuation<Void, Never>?
-        let owner = PlaybackResumeStore(store: ResumeStore(), retainArtifact: { book, chapter in
+        let owner = PlaybackArtifactRetention(retainArtifact: { book, chapter in
             calls.append((book, chapter))
             if calls.count == 1 { await withCheckedContinuation { release = $0 } }
         })
@@ -31,7 +31,7 @@ final class PlaybackRetentionPersistenceTests: XCTestCase {
     func testRetentionFailureIsRetryableAndStopDoesNotCancelAudibleIntent() async throws {
         enum Failure: Error { case save }
         var attempts = 0
-        let owner = PlaybackResumeStore(store: ResumeStore(), retainArtifact: { _, _ in
+        let owner = PlaybackArtifactRetention(retainArtifact: { _, _ in
             attempts += 1
             if attempts == 1 { throw Failure.save }
         })
