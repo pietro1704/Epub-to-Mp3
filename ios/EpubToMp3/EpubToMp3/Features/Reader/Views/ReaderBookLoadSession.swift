@@ -82,7 +82,7 @@ final class ReaderBookLoadSession {
         document.activePreparedChapter = nil
         document.pendingProjectionAnchor = nil
         document.presentedProjectionLoadingID = nil
-        document.lastPreparedProjectionOrdinal = nil
+        document.lastPreparedChapterOrdinal = nil
         let journeyID = document.openJourney.begin(for: document.book)
         observeOpenStage("reader_open_requested")
 
@@ -94,7 +94,7 @@ final class ReaderBookLoadSession {
             document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
             if let index = preparedPresentation.preparedChapterIndex(in: warmPayload),
                let source = LocalFulltextCache.storageURL(bookId: loadingBookID) {
-                document.lastPreparedProjectionOrdinal = index
+                document.lastPreparedChapterOrdinal = index
                 let store = preparedChapterStore
                 Task.detached(priority: .utility) {
                     try? await store.write(bookID: loadingBookID, chapterOrdinal: index, fulltextURL: source)
@@ -193,7 +193,7 @@ final class ReaderBookLoadSession {
                 }
                 let preparedRendering = await preparedPresentation.restorePreparedChapter(in: payload)
                 guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                document.lastPreparedProjectionOrdinal = preparedIndex
+                document.lastPreparedChapterOrdinal = preparedIndex
                 observeOpenStage("prepared_payload_display_started")
                 preparedPresentation.displayPreparedPayload(payload, loadingID: loadingID,
                                        preparedRendering: preparedRendering)

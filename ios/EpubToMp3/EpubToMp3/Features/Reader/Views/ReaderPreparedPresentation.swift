@@ -284,9 +284,9 @@ final class ReaderPreparedPresentation {
     }
 
     func prepareChapterProjection(ordinal: Int) {
-        guard ordinal != document.lastPreparedProjectionOrdinal,
+        guard ordinal != document.lastPreparedChapterOrdinal,
               let fulltextURL = LocalFulltextCache.storageURL(bookId: document.book.id) else { return }
-        document.lastPreparedProjectionOrdinal = ordinal
+        document.lastPreparedChapterOrdinal = ordinal
         let bookID = document.book.id
         let store = preparedChapterStore
         Task.detached(priority: .utility) {
