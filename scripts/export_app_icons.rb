@@ -16,6 +16,7 @@ module AppIcons
   DOCUMENT = 'ios/EpubToMp3/EpubToMp3/AppIcon.icon'
   CATALOG = 'ios/EpubToMp3/EpubToMp3/AppIcons.xcassets'
   ARTWORK = 'artwork/app-icons'
+  MAC_BODY_RATIO = 824.0 / 1024
   ANDROID = 'flutter_app/android/app/src/main/res'
   DENSITIES = { 'mdpi' => 1, 'hdpi' => 1.5, 'xhdpi' => 2, 'xxhdpi' => 3, 'xxxhdpi' => 4 }.freeze
 
@@ -110,9 +111,16 @@ module AppIcons
       entries = JSON.parse(File.read(File.join(ROOT, CATALOG, 'AppIcon.appiconset/Contents.json'))).fetch('images')
       entries.each do |entry|
         size = (entry.fetch('size').split('x').first.to_f * entry.fetch('scale').to_f).round
-        source = entry['idiom'] == 'mac' ? mac : square
-        arguments = entry['idiom'] == 'mac' ? [] : ['-alpha', 'off']
-        export.call(source, "#{CATALOG}/AppIcon.appiconset/#{entry.fetch('filename')}", size, *arguments)
+        if entry['idiom'] == 'mac'
+          # The macOS icon grid keeps the body at 824 of 1024 points and leaves the rest
+          # transparent; the Composer render fills the whole canvas, which makes the
+          # Dock icon larger than every other app.
+          body = (size * MAC_BODY_RATIO).round
+          export.call(mac, "#{CATALOG}/AppIcon.appiconset/#{entry.fetch('filename')}", body,
+                      '-gravity', 'center', '-background', 'none', '-extent', "#{size}x#{size}")
+        else
+          export.call(square, "#{CATALOG}/AppIcon.appiconset/#{entry.fetch('filename')}", size, '-alpha', 'off')
+        end
       end
       { 'ruby_app/rails_gateway/public/favicon.png' => 64, 'ruby_app/rails_gateway/public/apple-touch-icon.png' => 180,
         'ruby_app/rails_gateway/public/app-icon-192.png' => 192, 'ruby_app/rails_gateway/public/app-icon-512.png' => 512,

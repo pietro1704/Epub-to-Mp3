@@ -21,6 +21,13 @@ catalog.fetch('images').each do |image|
   png("#{AppIcons::CATALOG}/AppIcon.appiconset/#{image.fetch('filename')}", size, opaque: image['idiom'] != 'mac')
 end
 
+# The macOS Dock draws the file as given: the icon body must keep the 824/1024 grid.
+mac_largest = File.join(AppIcons::ROOT, AppIcons::CATALOG, 'AppIcon.appiconset/icon-mac-512@2x.png')
+body = IO.popen(['magick', mac_largest, '-trim', '-format', '%w', 'info:'], &:read).to_i
+unless body.between?((1024 * AppIcons::MAC_BODY_RATIO).round - 2, (1024 * AppIcons::MAC_BODY_RATIO).round + 2)
+  raise "macOS icon body is #{body}px wide in 1024; expected about #{(1024 * AppIcons::MAC_BODY_RATIO).round}"
+end
+
 AppIcons::DENSITIES.each do |density, scale|
   png("#{AppIcons::ANDROID}/mipmap-#{density}/ic_launcher.png", (48 * scale).round)
   png("#{AppIcons::ANDROID}/drawable-#{density}/ic_launcher_foreground.png", (108 * scale).round)
