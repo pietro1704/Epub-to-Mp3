@@ -71,4 +71,10 @@ module CiContracts
   end
 end
 
-exit CiContracts.run(ARGV) if $PROGRAM_NAME == __FILE__
+if $PROGRAM_NAME == __FILE__
+  # On this Mac the whole suite is one heavy job: it takes the host lease and
+  # admission before forking. Hosted CI and other hosts run it unchanged.
+  require_relative "native_job"
+  NativeJob.heavy_entrypoint(__FILE__, ARGV)
+  exit CiContracts.run(ARGV)
+end

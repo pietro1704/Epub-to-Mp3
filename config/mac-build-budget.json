@@ -1,5 +1,18 @@
 {
   "version": 1,
   "minimum_free_gib": 20,
-  "check_interval_seconds": 10
+  "check_interval_seconds": 10,
+  "admission": {
+    "max_load_percent_of_cpus": 75,
+    "max_swap_used_mib": 1024,
+    "max_compressor_percent_of_memory": 50,
+    "recheck_seconds": 30,
+    "child_niceness": 10,
+    "foreign_compilers": ["cargo", "rustc", "xcodebuild", "swift-frontend", "swift-build", "clang"]
+  },
+  "flight_recorder": {
+    "interval_seconds": 30,
+    "max_file_bytes": 1048576,
+    "generations": 4
+  }
 }

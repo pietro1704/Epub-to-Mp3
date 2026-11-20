@@ -75,6 +75,45 @@ free space or selecting a build volume with enough capacity. Keep compatible
 caches across worktrees. When cleanup is needed, `mise run clean:build` removes only superseded Mac DerivedData
 under the shared lease. Verify changes with `mise run build:storage:test`.
 
+One host lease, `/tmp/epub2mp3.heavy-job.lock`, serializes every heavy class for
+all worktrees and sessions: compiler and Simulator jobs, and on macOS the Rails
+web suite with its Chromium system tests (`mise run rails:web:test`) and the
+complete host suites (`scripts/run_ci_contracts.rb`, and
+`scripts/run_host_checks.rb` without `--suite`), which run as
+`native_job.rb heavy`. One selected host suite stays outside the lease. While
+held, the file names its holder (PID, phase, command, start, worktree, session);
+`mise run native:status` prints it with the current admission reading. A reboot
+empties `/tmp` and the next job recreates the file. `--wait SECONDS` or
+`EPUB_NATIVE_WAIT_SECONDS` queues for the lease and for admission; never poll it
+in a loop.
+
+The lease cannot see work started by other tools: a package manager building
+from source, another agent harness, an IDE build. So before a heavy job starts
+on macOS its lease owner reads the host and refuses (exit 75) when any limit in
+the `admission` object of `config/mac-build-budget.json` is exceeded. The limits
+come from readings on this Intel i5-8259U (8 logical CPUs, 8 GiB) on 2026-11-19;
+those marked as a judgment call have no measured boundary:
+
+| Limit | Value | Measured basis |
+| --- | --- | --- |
+| 1-minute load | 75% of logical CPUs (6.00) | 2.42-4.96 without a native build; 6.11-14 with overlapping loads |
+| Compiler process outside the lease | none of `foreign_compilers` | one serial build with the usual background work read 4.24-7.12, overlapping the range without one, so only its process name identifies it |
+| Kernel memory pressure | normal | warning level was logged 20:36-20:50 before the incident below |
+| Swap in use | 1024 MiB | 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build; the Simulator admission value. Judgment call |
+| Compressor | 50% of memory | 694-1807 MiB (8-22%) measured. Judgment call |
+| `pmset -g therm` | no limit below 100, all CPUs available | `CPU_Speed_Limit` 100 without a build, 81 during the first serial build after the reboot |
+
+A guarded step started from inside an Xcode build is admitted as part of that
+build. Children run at niceness 10 (a judgment call, not measured) with one
+compiler job. While the job runs, its supervisor appends one line every 30
+seconds (load, swap, compressor, memory pressure, thermal limits, top three
+processes by CPU, the holder) to `.reports/native-flight-recorder/flight.jsonl`
+in the main checkout, at most five files of 1 MiB. The first line of a job
+records boot time, the EFI `StartupPowerEvents` value and the newest panic
+report, the baseline a later incident is compared with. Admission, priority and
+the recorder reduce overlap and leave evidence. They do not make a job safe on
+their own and are not proven to prevent any kernel panic.
+
 Generic Intel Simulator execution remains quarantined after recurrent
 `SimMetalHost` / `IGGuC.cpp:2913` kernel panics. `native_job.rb simulator` refuses
 before launch, including inherited leases. The reviewed exception is the
@@ -90,9 +129,52 @@ Any new host kernel panic is a stop event: stop agent-started local/native and
 resource-intensive work, preserve the report and execution evidence, and avoid
 automatic retry, reboot or hardware/firmware changes. Continue only through
 externally hosted tools that start no process on the affected host; otherwise
-wait for the user to confirm stability. The separately reported ARM64/T8010
-`x86 CPU CATERR detected` panic has no established agent-process cause. Guards
-and monitoring establish neither a GPU-driver fix nor CATERR prevention.
+wait for the user to confirm stability. Guards and monitoring establish neither
+a GPU-driver fix nor CATERR prevention.
+
+Resuming after a stop event:
+
+1. Copy the report and every log into a persistent evidence directory first.
+   A reboot empties `/tmp` and each session's temporary scratch directory.
+2. Treat every background task of the earlier sessions as lost. Re-derive state
+   from files; a job counts as finished only with its recorded exit status.
+3. Wait for Pietro's own confirmation in the current conversation, for the
+   scope he names. Another session's or agent's relayed permission is not it.
+4. Then run one guarded load at a time through its official task. Read
+   `mise run native:status` first and keep the log, PID and exit status in a
+   persistent directory. Watch the exit status, not only success markers:
+   `xcodebuild: error:` ends a run without printing `** BUILD FAILED **`.
+5. Read `.reports/native-flight-recorder/flight.jsonl` after the run and stop
+   again on a refusal, a throttled reading or any new report.
+
+### Host incident of 2026-11-20 (x86 CPU CATERR)
+
+Established from the Apple report, the unified log and session transcripts
+(retained in the local incident evidence directory, not in Git):
+
+- The T2 recorded `x86 CPU CATERR detected` at 21:34:29 BRT (its own clock;
+  report written 21:35:04). There is no macOS panic log; the report describes
+  bridgeOS only and names no macOS process.
+- The last persisted macOS activity is 21:33:34. No thermal-pressure change was
+  logged after 21:12:14 and no memory-pressure event after 20:53; the kernel log
+  of the last seven minutes shows no storage or driver error.
+- No native build was running. The last guarded job, a full Mac test suite,
+  ended at 21:10:31; an iOS build started at 21:11:14 exited with an error after
+  1.7 seconds and its watcher did not notice. OS thermal pressure was Nominal
+  from 21:12:14 on. Its only Heavy reading after 20:30, at 21:00:06, fell while
+  a complete host contract suite from another session overlapped the Rust step
+  of a guarded Mac test run.
+- The next boot logged `Previous shutdown cause: -63` and EFI
+  `StartupPowerEvents 0x4f` (PWROK, SYS_PWROK, THRMTRIP#, SYS_RESET#, general
+  reset). No earlier boot is retained for comparison, so the THRMTRIP# flag is
+  not attributed.
+- The T2 report of 2026-11-18 was a forced power-off after a stalled shutdown,
+  not a CATERR.
+
+Not established: any cause. Hardware or firmware (logic board, CPU, power
+delivery, battery), a thermal trip and a driver fault all remain open; the load
+of the campaign is not shown to be the cause, and no guard is shown to prevent a
+repeat.
 
 ## Real-app acceptance
 
