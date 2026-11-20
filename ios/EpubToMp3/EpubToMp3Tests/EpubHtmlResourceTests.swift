@@ -14,7 +14,7 @@ extension EpubHtmlRendererTests {
         // Full valid 1x1 transparent GIF (header + image data + trailer) — a
         // truncated header-only payload is not decodable by UIImage/NSImage.
         let html = "<p>text</p><img src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEKAAAALAAAAAABAAEAAAICTAEAOw==\" alt=\"pixel\"/>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil for HTML with inline image")
         }
         let n = ns(out)
@@ -36,7 +36,7 @@ extension EpubHtmlRendererTests {
         )
         let html = "<p>text</p><img src=\"../images/cover%20art.png\"/>"
         guard let out = EpubHtmlRenderer.render(
-            html: html, css: nil, settings: s, resources: [resource]
+            html: html, css: nil, textSettings: ReaderTextSettings(settings: s), resources: [resource]
         ) else { return XCTFail("renderer returned nil") }
         let n = ns(out)
         var attachmentCount = 0
@@ -50,7 +50,7 @@ extension EpubHtmlRendererTests {
     func testPreservesFragmentAndRelativeEPUBLinksForNativeRouting() {
         let s = makeSettings()
         let html = "<p><a href=\"#footnote_1\">*</a> <a href=\"chapter-2.xhtml#part\">Chapter Two</a></p>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil")
         }
         let n = ns(out)
@@ -78,7 +78,7 @@ extension EpubHtmlRendererTests {
         let s = makeSettings()
         let bigPNG = try Self.makeSolidPNGBase64(width: 2000, height: 2000)
         let html = "<p>text</p><img src=\"data:image/png;base64,\(bigPNG)\" alt=\"big\"/>"
-        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, textSettings: ReaderTextSettings(settings: s)) else {
             return XCTFail("renderer returned nil for HTML with large inline image")
         }
         let n = ns(out)

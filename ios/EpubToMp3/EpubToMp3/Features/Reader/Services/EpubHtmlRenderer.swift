@@ -51,7 +51,7 @@ typealias PlatformColor = NSColor
 enum EpubHtmlRenderer {
 
     /// Convert a chapter's raw HTML + CSS into a native-renderable
-    /// `AttributedString`, applying any overrides from `settings`.
+    /// `AttributedString`, applying any overrides from `textSettings`.
     ///
     /// Returns `nil` when:
     ///   - `html` is empty / whitespace-only (caller falls back to
@@ -61,7 +61,7 @@ enum EpubHtmlRenderer {
     static func render(
         html: String,
         css: String?,
-        settings: AppSettings,
+        textSettings: ReaderTextSettings,
         fontDirectoryURL: URL? = nil,
         resources: [EbookFulltext.Chapter.Resource]? = nil
     ) -> AttributedString? {
@@ -127,7 +127,7 @@ enum EpubHtmlRenderer {
             css: cleanedCSS,
             bodyFontSize: bodyFontSize
         )
-        EpubFontPresentation.applyOverrides(to: mutated, settings: settings, bodyFontSize: bodyFontSize)
+        EpubFontPresentation.applyOverrides(to: mutated, textSettings: textSettings, bodyFontSize: bodyFontSize)
         return AttributedString(mutated)
     }
 

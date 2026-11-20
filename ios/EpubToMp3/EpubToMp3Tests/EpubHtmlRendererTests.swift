@@ -40,8 +40,8 @@ final class EpubHtmlRendererTests: XCTestCase {
     @MainActor
     func testEmptyHtmlReturnsNilSoCallerFallsBackToPlain() {
         let s = makeSettings()
-        XCTAssertNil(EpubHtmlRenderer.render(html: "", css: nil, settings: s))
-        XCTAssertNil(EpubHtmlRenderer.render(html: "   \n  ", css: nil, settings: s))
+        XCTAssertNil(EpubHtmlRenderer.render(html: "", css: nil, textSettings: ReaderTextSettings(settings: s)))
+        XCTAssertNil(EpubHtmlRenderer.render(html: "   \n  ", css: nil, textSettings: ReaderTextSettings(settings: s)))
     }
 
     @MainActor
@@ -50,7 +50,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertNil(EpubHtmlRenderer.render(
             html: "<html><head><style>body { color: red; }</style></head><body><br/></body></html>",
             css: nil,
-            settings: s
+            textSettings: ReaderTextSettings(settings: s)
         ))
     }
 

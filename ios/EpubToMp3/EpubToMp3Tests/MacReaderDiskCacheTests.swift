@@ -28,7 +28,7 @@ final class MacReaderDiskCacheTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         let store = PreparedChapterArchiveStore(directory: root)
         let producer = PreparedChapterRenderer(store: store)
-        XCTAssertNotNil(producer.render(bookID: id, chapterIndex: 0, chapter: chapter, settings: settings))
+        XCTAssertNotNil(producer.render(bookID: id, chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         await producer.flush()
         let archives = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
         let archive = try XCTUnwrap(archives.first)
@@ -36,7 +36,7 @@ final class MacReaderDiskCacheTests: XCTestCase {
         let envelope = try XCTUnwrap(PropertyListSerialization.propertyList(
             from: Data(contentsOf: archive), format: nil) as? [String: Any])
         let markerKey = NSAttributedString.Key("test.preparedArchive")
-        let prepared = try XCTUnwrap(producer.cached(bookID: id, chapterIndex: 0, chapter: chapter, settings: settings))
+        let prepared = try XCTUnwrap(producer.cached(bookID: id, chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         let marked = NSMutableAttributedString(attributedString: prepared)
         marked.addAttribute(markerKey, value: id, range: NSRange(location: 0, length: marked.length))
         let markerData = try NSKeyedArchiver.archivedData(withRootObject: NSAttributedString(attributedString: marked),
@@ -44,7 +44,7 @@ final class MacReaderDiskCacheTests: XCTestCase {
         try await store.write(markerData, bookID: id, chapterIndex: 0,
                               signature: try XCTUnwrap(envelope["signature"] as? String))
         let renderer = PreparedChapterRenderer(store: store)
-        XCTAssertNil(renderer.cached(bookID: id, chapterIndex: 0, chapter: chapter, settings: settings))
+        XCTAssertNil(renderer.cached(bookID: id, chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         let payload = EbookFulltext(jobId: id, bookTitle: "Archive fixture", bookAuthor: nil, chapters: [chapter])
         let cache = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
         XCTAssertFalse(FileManager.default.fileExists(atPath: cache.path))
@@ -84,7 +84,7 @@ final class MacReaderDiskCacheTests: XCTestCase {
                 && $0.records.contains { $0.transition == .controlsUsable }
         })
         settings.readerFontSize = settings.readerFontSize == 4 ? 0 : 4
-        XCTAssertNil(renderer.cached(bookID: id, chapterIndex: 0, chapter: chapter, settings: settings))
+        XCTAssertNil(renderer.cached(bookID: id, chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
         controller.setBook(id)
         for _ in 0..<500 {
             if textView.textStorage?.attribute(markerKey, at: 0, effectiveRange: nil) == nil { break }
@@ -93,7 +93,7 @@ final class MacReaderDiskCacheTests: XCTestCase {
         await renderer.flush()
         XCTAssertEqual(textView.string.trimmingCharacters(in: .whitespacesAndNewlines), chapter.text)
         XCTAssertNil(textView.textStorage?.attribute(markerKey, at: 0, effectiveRange: nil))
-        XCTAssertNotNil(renderer.cached(bookID: id, chapterIndex: 0, chapter: chapter, settings: settings))
+        XCTAssertNotNil(renderer.cached(bookID: id, chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
     }
 
     private func findTextView(in view: NSView) -> NSTextView? {

@@ -75,7 +75,7 @@ final class ReaderPreparedRestoration {
     func schedule(loadingID: UUID, bookID loadingBookID: String) {
         let fontDirectoryURL = document.registeredFontURLs.first?.deletingLastPathComponent()
         let rendererStyle = preparedRenderer.styleSnapshot(
-            settings: settings,
+            textSettings: ReaderTextSettings(settings: settings),
             fontDirectoryURL: fontDirectoryURL
         )
         let rendererWorker = preparedRenderer.backgroundRestoreWorker()

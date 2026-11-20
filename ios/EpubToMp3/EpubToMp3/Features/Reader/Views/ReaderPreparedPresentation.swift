@@ -70,7 +70,7 @@ final class ReaderPreparedPresentation {
         }
 
         let fontDirectoryURL = document.registeredFontURLs.first?.deletingLastPathComponent()
-        let currentStyle = preparedRenderer.styleSnapshot(settings: settings, fontDirectoryURL: fontDirectoryURL)
+        let currentStyle = preparedRenderer.styleSnapshot(textSettings: ReaderTextSettings(settings: settings), fontDirectoryURL: fontDirectoryURL)
         guard restoration.style == currentStyle else {
             self.restoration.slot.store(restoration)
             return
@@ -145,7 +145,7 @@ final class ReaderPreparedPresentation {
             LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
         }
         let fontDirectoryURL = document.registeredFontURLs.first?.deletingLastPathComponent()
-        let currentStyle = preparedRenderer.styleSnapshot(settings: settings, fontDirectoryURL: fontDirectoryURL)
+        let currentStyle = preparedRenderer.styleSnapshot(textSettings: ReaderTextSettings(settings: settings), fontDirectoryURL: fontDirectoryURL)
         let preparedRendering: NSAttributedString?
         if restoration.style == currentStyle, let rendererRestoration = restoration.renderer {
             preparedRenderer.cacheRestoration(
@@ -159,7 +159,7 @@ final class ReaderPreparedPresentation {
                 bookID: bookID,
                 chapterIndex: snapshot.chapterOrdinal,
                 chapter: snapshot.chapter,
-                settings: settings,
+                currentTextSettings: { ReaderTextSettings(settings: self.settings) },
                 fontDirectoryURL: fontDirectoryURL
             )
         } else {
@@ -247,7 +247,7 @@ final class ReaderPreparedPresentation {
     func restorePreparedChapter(in payload: EbookFulltext) async -> NSAttributedString? {
         guard let index = preparedChapterIndex(in: payload), !payload.chapters[index].isImageOnly else { return nil }
         return await preparedRenderer.restore(bookID: document.book.id, chapterIndex: index, chapter: payload.chapters[index],
-            settings: settings, fontDirectoryURL: document.registeredFontURLs.first?.deletingLastPathComponent())
+            currentTextSettings: { ReaderTextSettings(settings: self.settings) }, fontDirectoryURL: document.registeredFontURLs.first?.deletingLastPathComponent())
     }
 
     /// Applies prepared reader content after either a warm-cache hit or a

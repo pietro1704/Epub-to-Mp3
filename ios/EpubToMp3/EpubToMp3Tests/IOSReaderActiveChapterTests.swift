@@ -80,7 +80,7 @@ final class IOSReaderActiveChapterTests: XCTestCase {
         let rendererStore = PreparedChapterArchiveStore(directory: root.appendingPathComponent("rendered"))
         let preparingRenderer = PreparedChapterRenderer(store: rendererStore)
         let preparedRendering = try XCTUnwrap(preparingRenderer.render(bookID: id, chapterIndex: 1,
-            chapter: payload.chapters[1], settings: settings))
+            chapter: payload.chapters[1], textSettings: ReaderTextSettings(settings: settings)))
         let activeText = preparedRendering.string
         await preparingRenderer.flush()
         let reopenedRenderer = PreparedChapterRenderer(store: rendererStore)

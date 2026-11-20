@@ -106,7 +106,7 @@ final class ReaderBookLoadSession {
                     bookID: loadingBookID,
                     chapterIndex: index,
                     chapter: chapter,
-                    settings: settings,
+                    textSettings: ReaderTextSettings(settings: settings),
                     fontDirectoryURL: document.registeredFontURLs.first?.deletingLastPathComponent()
                 )
                 if chapter.isImageOnly || chapter.html?.isEmpty != false
