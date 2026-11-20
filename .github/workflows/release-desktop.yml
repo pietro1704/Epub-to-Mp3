@@ -298,10 +298,22 @@ jobs:
         with:
           version: 2026.11.3
 
+      # The helper comes from master, not from the tag being built, so a tag that
+      # predates it (v0.9.0) still gets the pinned runtime.
+      - name: Checkout trusted release helpers
+        if: runner.os == 'Windows'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          path: release-helpers
+          sparse-checkout: scripts/provision_onnxruntime_windows.ps1
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Provision the pinned ONNX Runtime and libclang
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/provision_onnxruntime_windows.ps1 -Owned (Join-Path $env:RUNNER_TEMP 'release-windows')
+        run: ./release-helpers/scripts/provision_onnxruntime_windows.ps1 -Owned (Join-Path $env:RUNNER_TEMP 'release-windows')
 
       - name: Enable desktop platform
         working-directory: flutter_app

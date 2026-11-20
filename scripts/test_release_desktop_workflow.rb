@@ -57,6 +57,13 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     steps = job.fetch("steps")
     provision = index(steps) { |step| step.fetch("run", "").include?("scripts/provision_onnxruntime_windows.ps1") }
     assert_equal "runner.os == 'Windows'", steps[provision].fetch("if")
+    # The helper comes from master, not from the tag being built: v0.9.0 predates it.
+    assert_match %r{\A\./release-helpers/scripts/provision_onnxruntime_windows\.ps1 }, steps[provision].fetch("run")
+    helpers = index(steps) { |step| step.dig("with", "path") == "release-helpers" }
+    assert_operator helpers, :<, provision
+    assert_equal "master", steps[helpers].fetch("with").fetch("ref")
+    assert_equal false, steps[helpers].fetch("with").fetch("persist-credentials")
+    assert_equal "runner.os == 'Windows'", steps[helpers].fetch("if")
     assert_operator provision, :<, index(steps) { |step| step["name"] == "Build" }
     env = job.fetch("env")
     assert_equal "1", env.fetch("ORT_SKIP_DOWNLOAD")
