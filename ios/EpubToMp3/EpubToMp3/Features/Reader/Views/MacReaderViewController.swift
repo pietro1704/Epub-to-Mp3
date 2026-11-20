@@ -217,7 +217,7 @@ final class MacReaderViewController: NSViewController {
         loadCurrentBook()
     }
 
-    private lazy var annotations: MacReaderAnnotationsPresentation = MacReaderAnnotationsPresentation(
+    private(set) lazy var annotations: MacReaderAnnotationsPresentation = MacReaderAnnotationsPresentation(
         document: document, composition: composition, bookmarkStore: bookmarkStore,
         persistProgress: { [weak self] in self?.persistReadingProgress() },
         showChapter: { [weak self] in self?.showChapter($0) }
