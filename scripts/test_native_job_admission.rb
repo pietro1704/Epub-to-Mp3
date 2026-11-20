@@ -111,6 +111,22 @@ class NativeJobAdmissionTest < Minitest::Test
     assert_released
   end
 
+  def test_only_a_load_that_stays_high_for_the_whole_wait_refuses
+    busy = OLD_SWAP.merge("load" => [7.12, 4.46, 8.85])
+    waiting = "not started yet. The host is already loaded: 1-minute load average 7.12 exceeds 6.00 (75% of 8 CPUs). Rechecking in 1 s"
+    samples(busy, busy, OLD_SWAP)
+    _, error, status = job(env: limits("default_wait_seconds" => 60))
+    assert status.success?, "a load that settled within the wait refused the job: #{error}"
+    assert_equal 2, error.scan(waiting).length, error
+    File.delete(@marker)
+    samples(busy)
+    _, error, status = job(env: limits("default_wait_seconds" => 2))
+    assert_equal 75, status.exitstatus, error
+    assert_match(/Heavy job refused\. The host is already loaded: 1-minute load average 7\.12 exceeds 6\.00 \(75% of 8 CPUs\)\. Still so after waiting \d+ s\./, error)
+    refute File.exist?(@marker)
+    assert_released
+  end
+
   def test_a_wait_that_is_not_whole_seconds_fails_instead_of_meaning_no_wait
     samples(LOADED)
     ["15m", "900s", " 900", "-5", "1.5"].each do |value|

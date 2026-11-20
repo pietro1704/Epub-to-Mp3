@@ -185,9 +185,9 @@ class HostLoadTest < Minitest::Test
                 PMSET_DURING_BUILD.sub("= 81", "= 100")).call(*argv)
       end
     end
-    assert_nil HostLoad.check(sampler: -> { HostLoad.sample(capture: failing.call("/nothing"), compilers: COMPILERS) })
+    assert_nil HostLoad.assess(sampler: -> { HostLoad.sample(capture: failing.call("/nothing"), compilers: COMPILERS) }).first
     [HostLoad::PS, HostLoad::PMSET, HostLoad::SYSCTL].each do |tool|
-      message = HostLoad.check(sampler: -> { HostLoad.sample(capture: failing.call(tool), compilers: COMPILERS) })
+      message = HostLoad.assess(sampler: -> { HostLoad.sample(capture: failing.call(tool), compilers: COMPILERS) }).first
       assert_equal "Host load inspection failed (RuntimeError: #{File.basename(tool)} failed (exit 1)).", message
     end
     no_processes = ->(*argv, **) { argv.first == HostLoad::PS ? "" : capture(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD).call(*argv) }
@@ -252,7 +252,6 @@ class HostLoadTest < Minitest::Test
     assert_equal expected, HostLoad.warnings(limits, heavy_history)
     assert_equal [nil, expected], HostLoad.assess(sampler: -> { heavy_history })
     assert_equal [nil, []], HostLoad.assess(sampler: -> { IDLE_WITH_OLD_SWAP })
-    assert_nil HostLoad.check(sampler: -> { heavy_history })
     assert_equal ["swap in use 1601 MiB is above 1600 MiB"], HostLoad.warnings(limits, IDLE.merge("swap_used_mib" => 1601.0))
     assert_empty HostLoad.warnings(limits, IDLE.merge("swap_used_mib" => 1600.0, "compressor_mib" => 2048))
     assert_equal ["memory compressor occupies 26% of memory, above 25%"], HostLoad.warnings(limits, IDLE.merge("compressor_mib" => 2130))
@@ -286,10 +285,9 @@ class HostLoadTest < Minitest::Test
   end
 
   def test_check_blocks_when_telemetry_or_policy_cannot_be_read
-    assert_nil HostLoad.check(sampler: -> { IDLE })
-    assert_equal "Host load inspection failed (RuntimeError: probe).", HostLoad.check(sampler: -> { raise "probe" })
+    assert_nil HostLoad.assess(sampler: -> { IDLE }).first
     assert_equal ["Host load inspection failed (RuntimeError: probe).", []], HostLoad.assess(sampler: -> { raise "probe" })
-    assert_match(/inspection failed/, HostLoad.check(sampler: -> { IDLE }, policy: -> { raise KeyError, "limits" }))
+    assert_match(/inspection failed/, HostLoad.assess(sampler: -> { IDLE }, policy: -> { raise KeyError, "limits" }).first)
   end
 
   def test_limits_require_every_non_negative_integer_and_a_compiler_list

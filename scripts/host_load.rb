@@ -198,9 +198,4 @@ module HostLoad
   rescue StandardError => error
     ["Host load inspection failed (#{error.class}: #{error.message}).", []]
   end
-
-  def self.check(sampler: method(:sample), policy: method(:limits))
-    assess(sampler: sampler, policy: policy).first
-  end
-
 end
