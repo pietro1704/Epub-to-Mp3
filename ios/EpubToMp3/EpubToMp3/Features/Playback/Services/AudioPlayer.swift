@@ -292,7 +292,9 @@ final class AudioPlayer: ObservableObject {
 
     func pendingListeningSeek(for navigation: PendingNavigation) -> PendingPlaybackSeek.ChapterRequest? {
         guard let request = pendingSeek.chapter, request.id == navigation.requestID,
-              request.jobID == navigation.jobID, snapshot?.jobId == navigation.jobID else { return nil }
+              request.jobID == navigation.jobID, snapshot?.jobId == navigation.jobID,
+              request.chapterIndex == navigation.chapterIndex,
+              (request.navigationTarget ?? .chapterTime(request.position)) == navigation.target else { return nil }
         return request
     }
 

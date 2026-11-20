@@ -120,7 +120,7 @@ final class PlaybackServices {
     lazy var transport: PlaybackTransportCommands = PlaybackTransportCommands(
         queue: queue, segments: segments, chapters: chapters, seeking: seeking,
         system: system, speech: speech, navigation: navigation, journeys: journeys,
-        resume: resume, clock: clock, broadcast: broadcast, actions: .init(
+        resume: resume, clock: clock, actions: .init(
             state: { [weak authority] in
                 guard let authority else { return .empty }
                 return .init(snapshot: authority.snapshot, isPlaying: authority.isPlaying, isSegmentMode: authority.usesSegmentQueue,

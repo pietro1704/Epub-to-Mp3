@@ -13,6 +13,8 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
         streaming: Bool = false,
         streamTargetReady: Bool = true,
         streamSegmentCount: Int = 12,
+        fileChapterDuration: Double = 15,
+        providesFileDurations: Bool = true,
         streamCurrentComplete: Bool = false,
         providesStreamEstimates: Bool = true,
         includeReadyThirdChapter: Bool = false,
@@ -47,7 +49,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             try? FileManager.default.removeItem(at: thirdURL)
         }
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1))
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 120_000))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount((streaming ? 15 : fileChapterDuration) * 8_000)))
         buffer.frameLength = buffer.frameCapacity
         let samples = try XCTUnwrap(buffer.floatChannelData?[0])
         for frame in 0..<Int(buffer.frameLength) {
@@ -77,17 +79,18 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
                       downloadUrl: streaming && !targetReady ? nil : audioURL.absoluteString, chars: 100,
                       charsProcessed: streaming && !targetReady ? 0 : 100,
                       progressRatio: streaming && !targetReady ? 0 : 1,
-                      durationSeconds: streaming && !targetReady && streamCurrentComplete ? Double(streamSegmentCount) * 15 : 15,
+                      durationSeconds: streaming && !targetReady && streamCurrentComplete ? Double(streamSegmentCount) * 15
+                          : (providesFileDurations ? fileChapterDuration : nil),
                       startedAt: nil, completedAt: nil),
                 .init(index: snapshotIndexBase + 1, name: "Pending", status: targetReady ? "completed" : "pending",
                       downloadUrl: targetReady ? targetURL.absoluteString : nil,
                       chars: 100, charsProcessed: targetReady ? 100 : 0,
-                      progressRatio: targetReady ? 1 : 0, durationSeconds: targetReady ? 15 : nil,
+                      progressRatio: targetReady ? 1 : 0, durationSeconds: targetReady && providesFileDurations ? fileChapterDuration : nil,
                       startedAt: nil, completedAt: nil),
             ] + (includeReadyThirdChapter ? [
                 .init(index: snapshotIndexBase + 2, name: "Already converted successor", status: "completed",
                       downloadUrl: thirdURL.absoluteString, chars: 100, charsProcessed: 100,
-                      progressRatio: 1, durationSeconds: 15, startedAt: nil, completedAt: nil),
+                      progressRatio: 1, durationSeconds: providesFileDurations ? fileChapterDuration : nil, startedAt: nil, completedAt: nil),
             ] : []), outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil)
         }
         if streaming {

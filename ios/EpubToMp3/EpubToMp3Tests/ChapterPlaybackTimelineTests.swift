@@ -55,6 +55,40 @@ final class ChapterPlaybackTimelineTests: XCTestCase {
         }
     }
 
+    func testRelativeSkipsCarryTheRemainderAcrossSparseChapterIndices() {
+        let durations: [Int: Double] = [3: 40, 8: 40, 12: 40]
+        for (seconds, following, forwardTime, preceding, backwardTime) in [
+            (15.0, 8, 10.0, 8, 30.0),
+            (30.0, 8, 25.0, 8, 15.0),
+            (60.0, 12, 15.0, 3, 25.0)
+        ] {
+            XCTAssertEqual(ChapterPlaybackTimeline.resolveRelativePosition(
+                chapter: 3, time: 35 + seconds, chapters: [3, 8, 12], duration: { durations[$0] }),
+                .target(chapter: following, time: forwardTime))
+            XCTAssertEqual(ChapterPlaybackTimeline.resolveRelativePosition(
+                chapter: 12, time: 5 - seconds, chapters: [3, 8, 12], duration: { durations[$0] }),
+                .target(chapter: preceding, time: backwardTime))
+        }
+        XCTAssertEqual(ChapterPlaybackTimeline.resolveRelativePosition(
+            chapter: 3, time: 40, chapters: [3, 8, 12], duration: { durations[$0] }),
+            .target(chapter: 8, time: 0))
+        XCTAssertEqual(ChapterPlaybackTimeline.resolveRelativePosition(
+            chapter: 3, time: -15, chapters: [3, 8, 12], duration: { durations[$0] }),
+            .target(chapter: 3, time: 0))
+        XCTAssertEqual(ChapterPlaybackTimeline.resolveRelativePosition(
+            chapter: 12, time: 75, chapters: [3, 8, 12], duration: { durations[$0] }),
+            .target(chapter: 12, time: 40))
+    }
+
+    func testUnconfirmedChapterEndCannotConsumeTheForwardOffset() {
+        XCTAssertEqual(ChapterPlaybackTimeline.resolveRelativePosition(
+            chapter: 3, time: 50, chapters: [3, 8], waitForForwardDuration: false, duration: { _ in nil }),
+            .target(chapter: 3, time: 50))
+        XCTAssertEqual(ChapterPlaybackTimeline.resolveRelativePosition(
+            chapter: 8, time: -10, chapters: [3, 8], duration: { _ in nil }),
+            .needsDuration(chapter: 3))
+    }
+
     func testRemainingUsesWallTimeAtTheSelectedPlaybackRate() {
         let value = ChapterPlaybackTimeline(estimate: 600, confirmed: nil)
         XCTAssertEqual(value.remaining(position: 120, rate: 2), 240)

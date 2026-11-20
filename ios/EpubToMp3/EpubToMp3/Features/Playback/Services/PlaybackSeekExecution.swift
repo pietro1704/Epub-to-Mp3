@@ -68,7 +68,8 @@ final class PlaybackSeekExecution {
         begin()
         pending.chapter = .init(id: request.id, jobID: jobID, chapterIndex: request.chapterIndex,
             autoplay: request.autoplay, position: request.position, startsAtGeneratedOrigin: request.startsAtGeneratedOrigin,
-            navigationTarget: request.navigationTarget ?? .chapterTime(request.position))
+            navigationTarget: request.navigationTarget ?? .chapterTime(request.position),
+            relativeSkip: request.relativeSkip)
         queueSession.selectChapter(request.chapterIndex)
         actions.seeking(true)
         actions.pauseTransport()
@@ -151,13 +152,48 @@ final class PlaybackSeekExecution {
         pending.proportional = nil
     }
 
-    func seek(to seconds: TimeInterval, allowsApproximation: Bool = false) {
+    func skip(by delta: TimeInterval) {
+        guard delta.isFinite, let snapshot, let player else { return }
+        let previous = pending.chapter.flatMap { $0.jobID == snapshot.jobId ? $0 : nil }
+        var origin = previous?.position ?? positionSeconds
+        if !isSegmentMode, previous == nil, pending.activeID == nil, let item = player.currentItem {
+            _ = queueSession.reconcileChapter(segmentMode: false, segments: segments, chapterURLs: actions.chapterURLs)
+            let itemTime = item.currentTime().seconds
+            if itemTime.isFinite, itemTime >= 0 { origin = itemTime }
+        }
+        let current = PlaybackChapterQueue.chapterValue(snapshot: snapshot,
+            playbackChapters: chapterSession.chapters, currentChapterIndex: currentChapterIndex,
+            isSegmentMode: isSegmentMode)
+        guard let index = previous?.chapterIndex ?? (isSegmentMode ? currentChapterIndex : current?.index) else { return }
+        let time = origin + delta
+        guard time.isFinite else { return }
+        clock.audioOutput.clear()
+        if !isSegmentMode, previous == nil, time >= 0,
+           let duration = player.currentItem?.duration.seconds, duration.isFinite, time < duration {
+            seek(to: time, advanceAtEnd: false)
+            return
+        }
+        let autoplay = previous?.autoplay ?? pending.autoplay ?? isPlaying
+        begin()
+        pending.chapter = .init(id: UUID(), jobID: snapshot.jobId, chapterIndex: index,
+                                autoplay: autoplay, position: time, relativeSkip: true)
+        actions.seeking(true)
+        actions.pauseTransport()
+        applyPending()
+        if isSegmentMode, let request = pending.chapter, request.chapterIndex == currentChapterIndex {
+            positionSeconds = max(0, request.position)
+            broadcast.publishPosition(positionSeconds)
+        }
+        actions.publish()
+    }
+
+    func seek(to seconds: TimeInterval, allowsApproximation: Bool = false, advanceAtEnd: Bool = true) {
         let requested = seconds.isFinite ? max(0, seconds) : 0
         let confirmedEnd = isSegmentMode ? confirmedSegmentChapterEnd(for: currentChapterIndex) : nil
         let target = confirmedEnd.map { min($0, requested) } ?? requested
         let autoplay = pending.chapter?.autoplay ?? pending.autoplay ?? isPlaying
         begin()
-        if (!isSegmentMode || confirmedEnd != nil),
+        if advanceAtEnd, (!isSegmentMode || confirmedEnd != nil),
            PlaybackChapterQueue.shouldAdvanceAtSeekEnd(position: target, duration: confirmedEnd ?? durationSeconds),
            let snapshot, let nextIndex = nextCanonicalChapterIndex {
             pending.chapter = PendingPlaybackSeek.ChapterRequest(
