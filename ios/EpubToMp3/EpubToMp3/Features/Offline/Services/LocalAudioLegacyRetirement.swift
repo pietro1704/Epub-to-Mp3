@@ -25,15 +25,17 @@ extension LocalAudioArtifactStore {
     /// - that chapter is, or is first made, a protected download, because the
     ///   legacy copy was the listener's explicit Download;
     /// - the file playback uses once the copy is gone is proven: for a converted
-    ///   job its own chapter file in `convertedFiles`, identical to the copy or
-    ///   decodable to its end; for the store's own audio (`convertedFiles` nil)
-    ///   the store file that was just compared.
+    ///   job its own chapter file in `convertedFiles` must be byte-identical to
+    ///   the copy and pass `isPlayable`, the same readiness test playback
+    ///   applies; for the store's own audio (`convertedFiles` nil) it is the
+    ///   store file that was just compared.
     ///
     /// The file goes first and its manifest entry after, so an interruption leaves
     /// an entry without a file; the next run recognizes and drops such an entry.
     /// Everything else in the job folder, including reader text, is left alone.
     func retireLegacyAudio(
-        from legacyRoot: URL, identity: LegacyImportIdentity, convertedFiles: [Int: URL]?
+        from legacyRoot: URL, identity: LegacyImportIdentity, convertedFiles: [Int: URL]?,
+        isPlayable: @Sendable (URL) -> Bool
     ) throws -> LegacyRetirementReport {
         try Task.checkCancellation()
         let sourceRoot = legacyRoot.standardizedFileURL
@@ -59,7 +61,7 @@ extension LocalAudioArtifactStore {
                 report.chapters[chapter.index] = try retireLegacyChapter(
                     chapter, canonicalIndex: canonicalIndex, bookID: identity.bookID,
                     sourceRoot: sourceRoot, sourceDirectory: sourceDirectory,
-                    converted: convertedFiles.map { $0[chapter.index] })
+                    converted: convertedFiles.map { $0[chapter.index] }, isPlayable: isPlayable)
             } catch is CancellationError {
                 cancelled = true
                 break
@@ -90,7 +92,7 @@ extension LocalAudioArtifactStore {
     /// has no file for this chapter.
     private func retireLegacyChapter(
         _ chapter: AudiobookManifest.ChapterEntry, canonicalIndex: Int, bookID: String,
-        sourceRoot: URL, sourceDirectory: URL, converted: URL??
+        sourceRoot: URL, sourceDirectory: URL, converted: URL??, isPlayable: (URL) -> Bool
     ) throws -> LegacyRetirementOutcome {
         guard LocalAudioImportFiles.isComponent(chapter.mp3FileName) else {
             throw LocalAudioImportFiles.Failure.invalidIdentity
@@ -110,7 +112,8 @@ extension LocalAudioArtifactStore {
             try LocalAudioImportFiles.requireRegularFile(source, under: sourceRoot)
             guard try LocalAudioImportFiles.fingerprint(source) == keptBytes else { return .notImported }
             if let converted {
-                guard let converted, try isProvenPlayback(converted, identicalTo: keptBytes) else {
+                guard let converted, try isProvenPlayback(converted, identicalTo: keptBytes),
+                      isPlayable(converted) else {
                     return .playbackUnproven
                 }
             }
@@ -129,13 +132,7 @@ extension LocalAudioArtifactStore {
         guard url.isFileURL,
               let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
               values.isRegularFile == true, values.isSymbolicLink != true else { return false }
-        if try LocalAudioImportFiles.fingerprint(url) == kept { return true }
-        do {
-            try LocalAudioImportFiles.validateAudio(url)
-            return true
-        } catch LocalAudioImportFiles.Failure.invalidAudio {
-            return false
-        }
+        return try LocalAudioImportFiles.fingerprint(url) == kept
     }
 
     private func removeIfEmpty(_ directory: URL) {

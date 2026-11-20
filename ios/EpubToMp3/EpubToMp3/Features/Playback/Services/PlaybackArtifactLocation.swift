@@ -37,6 +37,12 @@ enum PlaybackArtifactLocation {
         return own
     }
 
+    /// Whether playback would use this local file as it is: it exists and is
+    /// prepared. The legacy migration asks this before it removes a kept copy.
+    static func isPlayable(_ url: URL) -> Bool {
+        url.isFileURL && FileManager.default.fileExists(atPath: url.path) && prepared(url) != nil
+    }
+
     private static func prepared(_ url: URL) -> URL? {
         guard url.isFileURL else { return url }
         do {

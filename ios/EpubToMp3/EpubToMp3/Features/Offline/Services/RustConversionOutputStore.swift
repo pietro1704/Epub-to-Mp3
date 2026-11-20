@@ -104,6 +104,15 @@ actor RustConversionOutputStore {
         return await legacyBookID(at: directory)
     }
 
+    /// What the job's output directory itself records: the book in its
+    /// ownership file, and whether its chapter indices were projected onto the
+    /// reader's axis (the conversion wrote `reader-chapter-map.json`). Nil for a
+    /// job without an ownership file; nothing is derived from a source path.
+    func recordedOwner(ofJob jobID: String) -> (bookID: String, usesReaderAxis: Bool)? {
+        guard let directory = try? jobDirectory(jobID), let identity = ownership(at: directory) else { return nil }
+        return (identity.bookID, regularMetadata(at: directory.appendingPathComponent("reader-chapter-map.json")))
+    }
+
     /// All Rust outputs are protected audio; temporary-cache cleanup never visits this root.
     nonisolated static func storageBytes(at root: URL = defaultRoot) -> Int64 {
         guard hasCanonicalRoot(root) else { return 0 }

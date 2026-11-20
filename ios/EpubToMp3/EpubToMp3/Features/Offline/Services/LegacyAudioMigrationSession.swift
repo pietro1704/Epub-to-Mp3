@@ -76,8 +76,8 @@ final class LegacyAudioMigrationSession {
 }
 
 extension LegacyAudioMigrationCoordinator {
-    /// The migration over the app's real stores. A job's chapter axis and files
-    /// come from its persisted Rust conversion, never from the legacy manifest.
+    /// The migration over the app's real stores. A job's book, chapter axis and
+    /// files come from its own Rust output, never from the legacy manifest.
     static var launch: LegacyAudioMigrationCoordinator {
         LegacyAudioMigrationCoordinator(
             store: .shared, legacyRoot: AudiobookDownloadStorage.audiobooksRootLocation(), defaults: .standard,
@@ -91,7 +91,11 @@ extension LegacyAudioMigrationCoordinator {
                     files[chapter.index] = URL(fileURLWithPath: path)
                     if let offset = chapter.textOffset, offset > 0 { textOffsets[chapter.index] = offset }
                 }
-                return ConvertedChapters(indexBase: base, files: files, textOffsets: textOffsets)
-            })
+                let owner = await RustConversionOutputStore.shared.recordedOwner(ofJob: jobID)
+                return ConvertedChapters(
+                    bookID: owner?.bookID, usesReaderAxis: owner?.usesReaderAxis ?? false,
+                    indexBase: base, files: files, textOffsets: textOffsets)
+            },
+            isPlayable: { PlaybackArtifactLocation.isPlayable($0) })
     }
 }
