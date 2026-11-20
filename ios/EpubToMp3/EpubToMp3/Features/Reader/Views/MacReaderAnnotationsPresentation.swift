@@ -65,38 +65,29 @@ final class MacReaderAnnotationsPresentation: NSObject {
     // MARK: - Selection → bookmark/highlight/note
 
 var onPlayFromHere: ((Int, Double) -> Void)?
-private struct PendingSelection {
-    let range: NSRange
-    let text: String
-    let bookID: String
-    let chapter: Int
-    let highlight: Bookmark?
-}
+private lazy var highlightEditor = ReaderHighlightEditor(store: bookmarkStore)
 
 func repaintSavedHighlights(chapterIndex: Int) {
     guard let bookID = currentBookId, let storage = textView.textStorage else { return }
     let selection = textView.selectedRange()
     storage.setAttributedString(ReaderSavedHighlights.repaint(storage,
-        highlights: bookmarkStore.bookmarks(for: bookID, chapterIndex: chapterIndex)))
+        highlights: highlightEditor.highlights(bookID: bookID, chapterIndex: chapterIndex)))
     textView.setSelectedRange(selection)
 }
 
 func buildSelectionMenuItems(range: NSRange) -> [NSMenuItem] {
     guard let bookID = currentBookId, let storage = textView.textStorage,
-          range.location != NSNotFound, range.location >= 0, range.length > 0,
-          range.location < storage.length, range.length <= storage.length - range.location else { return [] }
-    let target = ReaderSavedHighlights.target(at: range,
-        highlights: bookmarkStore.bookmarks(for: bookID, chapterIndex: selectedChapter), in: storage)
-    let payload = PendingSelection(range: range, text: (textView.string as NSString).substring(with: range),
-        bookID: bookID, chapter: selectedChapter, highlight: target)
+          let selection = highlightEditor.selection(range: range, in: storage, bookID: bookID,
+              chapterIndex: selectedChapter, chapterTitle: chapter(at: selectedChapter)?.displayTitle ?? "") else { return [] }
     func item(_ key: String, _ action: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: L10n.string(key), action: action, keyEquivalent: "")
         item.target = self
-        item.representedObject = payload
+        item.representedObject = selection
         return item
     }
     let play = item("reader.action.playFromHere", #selector(playFromSelection(_:)))
-    let change = item(target == nil ? "reader.action.highlight" : "reader.action.removeHighlight", #selector(highlightSelectionFromMenu(_:)))
+    let change = item(selection.existing == nil ? "reader.action.highlight" : "reader.action.removeHighlight",
+                      #selector(highlightSelectionFromMenu(_:)))
     let note = item("reader.action.addNote", #selector(addNoteForSelectionFromMenu(_:)))
     let more = NSMenuItem(title: L10n.string("reader.selection.more"), action: nil, keyEquivalent: "")
     let submenu = NSMenu()
@@ -107,31 +98,29 @@ func buildSelectionMenuItems(range: NSRange) -> [NSMenuItem] {
     return [play, more]
 }
 
-private func currentPayload(_ sender: NSMenuItem) -> PendingSelection? {
-    guard let payload = sender.representedObject as? PendingSelection,
-          payload.bookID == currentBookId, payload.chapter == selectedChapter else { return nil }
-    return payload
+private func currentSelection(_ sender: NSMenuItem) -> ReaderHighlightEditor.Selection? {
+    guard let selection = sender.representedObject as? ReaderHighlightEditor.Selection,
+          ReaderHighlightEditor.isCurrent(selection, bookID: currentBookId, chapterIndex: selectedChapter) else { return nil }
+    return selection
 }
 
 @objc private func playFromSelection(_ sender: NSMenuItem) {
-    guard let payload = currentPayload(sender), let storage = textView.textStorage else { return }
-    let range = payload.highlight.flatMap { ReaderSavedHighlights.range(for: $0, in: storage) } ?? payload.range
-    guard let source = chapter(at: selectedChapter),
-          let ratio = ReaderSavedHighlights.playbackRatio(selection: range, rendered: textView.string, source: source.text) else { return }
+    guard let selection = currentSelection(sender), let storage = textView.textStorage,
+          let source = chapter(at: selectedChapter),
+          let ratio = ReaderSavedHighlights.playbackRatio(selection: highlightEditor.playbackRange(for: selection, in: storage),
+              rendered: textView.string, source: source.text) else { return }
     onPlayFromHere?(source.zeroBasedEpubIndex, ratio)
 }
 
 @objc private func highlightSelectionFromMenu(_ sender: NSMenuItem) {
-    guard let payload = currentPayload(sender) else { return }
-    if let highlight = payload.highlight {
-        bookmarkStore.remove(id: highlight.id)
-        repaintSavedHighlights(chapterIndex: selectedChapter)
-    } else { addBookmark(range: payload.range, selectedText: payload.text, note: nil) }
+    guard let selection = currentSelection(sender) else { return }
+    highlightEditor.toggleHighlight(selection)
+    repaintSavedHighlights(chapterIndex: selection.chapterIndex)
 }
 
 @objc private func addNoteForSelectionFromMenu(_ sender: NSMenuItem) {
-    guard let payload = currentPayload(sender) else { return }
-    promptForNote(range: payload.range, selectedText: payload.text)
+    guard let selection = currentSelection(sender) else { return }
+    promptForNote(selection)
 }
 
 private func selectionLanguageMenuItem(range: NSRange) -> NSMenuItem? {
@@ -154,32 +143,21 @@ private func selectionLanguageMenuItem(range: NSRange) -> NSMenuItem? {
     }
 }
 
-    private func promptForNote(range: NSRange, selectedText: String) {
+    private func promptForNote(_ selection: ReaderHighlightEditor.Selection) {
         let alert = NSAlert()
         alert.messageText = L10n.string("reader.action.addNote")
-        alert.informativeText = selectedText
+        alert.informativeText = selection.text
         alert.addButton(withTitle: L10n.string("common.save"))
         alert.addButton(withTitle: L10n.string("common.cancel"))
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.placeholderString = L10n.string("reader.note.placeholder")
         alert.accessoryView = field
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        addBookmark(range: range, selectedText: selectedText, note: field.stringValue)
-    }
-
-    private func addBookmark(range: NSRange, selectedText: String, note: String?) {
-        guard let bookId = currentBookId else { return }
-        bookmarkStore.addBookmark(
-            bookId: bookId,
-            chapterIndex: selectedChapter,
-            chapterTitle: chapter(at: selectedChapter)?.name ?? "",
-            startChar: range.location,
-            endChar: range.location + range.length,
-            selectedText: selectedText,
-            note: note,
-            color: .yellow
-        )
-        repaintSavedHighlights(chapterIndex: selectedChapter)
+        // Stored against the chapter the text was selected in, even if the reader moved on.
+        highlightEditor.addNote(selection, note: field.stringValue)
+        if ReaderHighlightEditor.isCurrent(selection, bookID: currentBookId, chapterIndex: selectedChapter) {
+            repaintSavedHighlights(chapterIndex: selection.chapterIndex)
+        }
     }
 
     // MARK: - Footnotes
