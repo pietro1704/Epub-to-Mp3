@@ -5,7 +5,14 @@ require "open3"
 
 # A read-only snapshot, used in addition to the shared heavy-job lease.
 module NativeBuildPreflight
-  def self.check(host: RUBY_PLATFORM, runner: ->(*args) { Open3.capture3(*args) })
+  # Process names, matched exactly. A command line that merely mentions them
+  # (the caller's own shell, a grep, a log query) is not a Simulator process and
+  # once refused two builds while no Simulator process existed.
+  METAL_HOST = "SimMetalHost"
+  SIMULATOR_APP = "Simulator"
+
+  def self.check(host: RUBY_PLATFORM, runner: ->(*args) { Open3.capture3(*args) },
+                 metal_host: METAL_HOST, simulator_app: SIMULATOR_APP)
     return nil unless host.match?(/(?:x86_64|i386).*darwin/)
 
     output, _, status = runner.call("xcrun", "simctl", "list", "devices", "--json")
@@ -23,11 +30,11 @@ module NativeBuildPreflight
       return "Shut down all Simulators and wait for shutdown before native compilation."
     end
 
-    _, _, status = runner.call("pgrep", "-f", "SimMetalHost")
+    _, _, status = runner.call("pgrep", "-x", metal_host)
     return "Wait for SimMetalHost to exit before native compilation." if status.success?
     return "Cannot inspect SimMetalHost; native compilation blocked." unless status.exitstatus == 1
 
-    _, _, status = runner.call("pgrep", "-f", "/Simulator[.]app/Contents/MacOS/Simulator($| )")
+    _, _, status = runner.call("pgrep", "-x", simulator_app)
     return "Quit Simulator.app before native compilation." if status.success?
     return "Cannot inspect Simulator.app; native compilation blocked." unless status.exitstatus == 1
 

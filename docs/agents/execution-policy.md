@@ -75,6 +75,88 @@ free space or selecting a build volume with enough capacity. Keep compatible
 caches across worktrees. When cleanup is needed, `mise run clean:build` removes only superseded Mac DerivedData
 under the shared lease. Verify changes with `mise run build:storage:test`.
 
+One host lease, `/tmp/epub2mp3.heavy-job.lock`, serializes every heavy class for
+all worktrees and sessions: compiler and Simulator jobs, and on macOS the Rails
+web suite with its Chromium system tests (`mise run rails:web:test`) and the
+complete host suites (`scripts/run_ci_contracts.rb`, and
+`scripts/run_host_checks.rb` without `--suite`), which run as
+`native_job.rb heavy`. One selected host suite stays outside the lease. Every
+job keeps the lease's open file description in its own processes, so the lock
+lasts as long as the load does: if a supervisor is killed, the next job is
+refused until that orphaned load ends. The cost: a process that leaves the job's
+process group with that description (a browser, a daemon) keeps the lease after
+the job. Two things bound it. The Rails task starts its test runners through
+`scripts/without_native_lease.rb`, so they and the browsers they launch never
+hold the lease; there it follows the shell that runs the suite, not each test
+process. And a lease refusal and `mise run native:status` list the processes
+that keep the lease file open (PID and program name), so a leftover holder is
+named and can be stopped.
+
+While held, the file (mode 0600) names its holder: PID, phase, state, program
+name, mise task, start, checkout directory name, session and job process group,
+never arguments or absolute paths. `mise run native:status` prints that record,
+the processes that keep the file open and the current admission reading; it
+never takes the lock, and reports `held` as unknown when nothing names a holder
+and the processes cannot be listed. A reboot empties `/tmp` and the next job
+recreates the file. `--wait SECONDS` or `EPUB_NATIVE_WAIT_SECONDS` (whole
+seconds; any other value fails) queues for the lease and for admission; never
+poll it in a loop.
+
+The lease cannot see work started by other tools: a package manager building
+from source, another agent harness, an IDE build. So before a heavy job starts
+on macOS its lease owner reads the host. It refuses (exit 75) for signs of
+present stress and only warns about sizes that record earlier pressure. The
+thresholds and the readings behind each one are in the `admission` object of
+`config/mac-build-budget.json`. The readings were taken on this Intel i5-8259U
+(8 logical CPUs, 8 GiB) between 21:48 BRT on 2026-11-19 and 00:47 BRT on
+2026-11-20 (00:48 to 03:47 UTC on 2026-11-20):
+
+| Signal | Effect | Threshold | Measured basis |
+| --- | --- | --- | --- |
+| 1-minute load average | refuses | 75% of logical CPUs (6.00) | 2.42-4.96 without a native build; 6.11-14 with overlapping loads |
+| Kernel memory pressure | refuses | any level but normal | warning level was logged 20:36-20:50 BRT (23:36-23:50 UTC) on 2026-11-19, before the incident below; normal with swap at 1551, 1016 and 1193 MiB |
+| `pmset -g therm` | refuses | a limit below 100, or fewer CPUs available | `CPU_Speed_Limit` 100 without a build, 81 during the first serial build after the reboot |
+| Compiler process outside the lease | refuses | any of `foreign_compilers` | one serial build with the usual background work read a load of 4.24-7.12, overlapping the range without one, so only its process name identifies it |
+| Free space on the build volume | refuses a build | 20 GiB | the storage floor above |
+| Swap in use | warns | 1600 MiB | 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build, 1193 MiB on an idle host with normal memory pressure (00:32 BRT on 2026-11-20, 03:32 UTC) |
+| Compressor (`vm.compressor_bytes_used`) | warns | 25% of memory | 368-1807 MiB (4-22%); memory pressure was normal at both ends of that range |
+
+Swap and the compressor do not refuse because macOS keeps swap allocated after
+the pressure that filled it has ended: the size records what happened earlier,
+not what is happening now. Used as a limit of 1024 MiB, swap alone gave a
+refusal on an idle host. Both warning thresholds sit above every reading taken
+while the host worked. A job above one starts, prints one warning line, and its
+flight log lines carry the warning. No rule on rising swap was added: admission
+usually takes a single reading, and no growth rate was measured to set one (the
+only one seen is 315 to 1551 MiB in four minutes during a build). The flight
+log now collects that data. The compressor figure is the memory the compressor
+occupies, not the larger "stored in compressor" count of `vm_stat` (3978 MiB
+when this one read 466 MiB).
+
+A probe that fails, exceeds its deadline or answers nothing refuses the job;
+only the optional `sysctl` name may be missing. The 1-minute load average stays
+high for about a minute after the job that raised it ends, so a job that finds
+the host loaded waits before it gives up: `default_wait_seconds` (120, a
+judgment call) when no wait was given, the given wait otherwise, and `0`
+refuses at once. Only a load that stays high for that whole wait refuses the
+job, and the message says how to wait longer.
+
+A guarded step started from inside a build (an Xcode build phase, a compiler
+driver) is not refused for the compiler processes that descend from the builds
+it runs inside; every other compiler and the load, memory-pressure and thermal
+limits still refuse it. Children start at niceness 10 (a judgment call, not
+measured) with one compiler job. While the job runs, one line every 30 seconds
+(load, swap, compressor, memory pressure, thermal limits, warnings, top three
+processes by CPU, the holder) goes to `.reports/native-flight-recorder/flight.jsonl` in the main
+checkout, at most five files of 1 MiB, readable by their owner only and without
+arguments or absolute paths. The readings are taken off the supervisor's loop,
+so slow telemetry delays neither signal forwarding, the storage check nor the
+exit code.
+The first line of a job records boot time, the EFI `StartupPowerEvents` value
+and the newest panic report, the baseline a later incident is compared with.
+Admission, priority and the recorder reduce overlap and leave evidence. They do
+not make a job safe on their own and are not proven to prevent any kernel panic.
+
 Generic Intel Simulator execution remains quarantined after recurrent
 `SimMetalHost` / `IGGuC.cpp:2913` kernel panics. `native_job.rb simulator` refuses
 before launch, including inherited leases. The reviewed exception is the
@@ -90,9 +172,61 @@ Any new host kernel panic is a stop event: stop agent-started local/native and
 resource-intensive work, preserve the report and execution evidence, and avoid
 automatic retry, reboot or hardware/firmware changes. Continue only through
 externally hosted tools that start no process on the affected host; otherwise
-wait for the user to confirm stability. The separately reported ARM64/T8010
-`x86 CPU CATERR detected` panic has no established agent-process cause. Guards
-and monitoring establish neither a GPU-driver fix nor CATERR prevention.
+wait for the user to confirm stability. Guards and monitoring establish neither
+a GPU-driver fix nor CATERR prevention.
+
+Resuming after a stop event:
+
+1. Copy the report and every log into a persistent evidence directory first.
+   A reboot empties `/tmp` and each session's temporary scratch directory.
+2. Treat every background task of the earlier sessions as lost. Re-derive state
+   from files; a job counts as finished only with its recorded exit status.
+3. Wait for Pietro's own confirmation in the current conversation, for the
+   scope he names. Another session's or agent's relayed permission is not it.
+4. Then run one guarded load at a time through its official task. Read
+   `mise run native:status` first and keep the log, PID and exit status in a
+   persistent directory. Watch the exit status, not only success markers:
+   `xcodebuild: error:` ends a run without printing `** BUILD FAILED **`.
+5. Read `.reports/native-flight-recorder/flight.jsonl` after the run and stop
+   again on a refusal, a throttled reading or any new report.
+
+### Host incident of 2026-11-19 21:35 BRT (2026-11-20 00:35 UTC): x86 CPU CATERR
+
+Each time below is BRT (UTC-3) on 2026-11-19 followed by UTC; from 21:00 BRT on,
+the UTC date is 2026-11-20. Established from the Apple report, the unified log
+and session transcripts (retained in the local incident evidence directory, not
+in Git):
+
+- The Apple report is stamped 21:35:04 BRT (00:35:04 UTC). The T2's own clock in
+  it reads 21:34:29 BRT (00:34:29 UTC) for `x86 CPU CATERR detected`. There is
+  no macOS panic log; the report describes bridgeOS only and names no macOS
+  process.
+- The last persisted macOS activity is 21:33:34 BRT (00:33:34 UTC). No
+  thermal-pressure change was logged after 21:12:14 BRT (00:12:14 UTC) and no
+  memory-pressure event after 20:53 BRT (23:53 UTC); the kernel log of the last
+  seven minutes shows no storage or driver error.
+- No native build was running. The last guarded job, a full Mac test suite,
+  ended at 21:10:31 BRT (00:10:31 UTC); an iOS build started at 21:11:14 BRT
+  (00:11:14 UTC) exited with an error after 1.7 seconds and its watcher did not
+  notice. OS thermal pressure was Nominal from 21:12:14 BRT (00:12:14 UTC) on.
+  Its only Heavy reading after 20:30 BRT (23:30 UTC), at 21:00:06 BRT (00:00:06
+  UTC), fell while a complete host contract suite from another session
+  overlapped the Rust step of a guarded Mac test run.
+- The next boot, at 21:36:22 BRT (00:36:22 UTC), logged
+  `Previous shutdown cause: -63` and EFI `StartupPowerEvents 0x4f` (PWROK,
+  SYS_PWROK, THRMTRIP#, SYS_RESET#, general reset). No earlier boot is retained
+  for comparison, so the THRMTRIP# flag is not attributed.
+- The T2 report of 2026-11-18 20:03 BRT (23:03 UTC) was a forced power-off after
+  a stalled shutdown, not a CATERR.
+- A report with the same panic string was supplied on 2026-10-16. It is no
+  longer retained on this host; the two reports were not compared, so a
+  recurrence is unconfirmed. `ARM64/T8010` in such a report is the T2 chip that
+  writes it on an Intel Mac, not a second machine.
+
+Not established: any cause. Hardware or firmware (logic board, CPU, power
+delivery, battery), a thermal trip and a driver fault all remain open; the load
+of the campaign is not shown to be the cause, and no guard is shown to prevent
+another CATERR.
 
 ## Real-app acceptance
 

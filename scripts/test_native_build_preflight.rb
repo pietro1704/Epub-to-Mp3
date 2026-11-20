@@ -2,6 +2,9 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require "fileutils"
+require "rbconfig"
+require "timeout"
 require_relative "native_build_preflight"
 
 class NativeBuildPreflightTest < Minitest::Test
@@ -28,9 +31,63 @@ class NativeBuildPreflightTest < Minitest::Test
   def test_shutdown_and_absent_metal_allow_build
     result, calls = check(states: ["Shutdown"])
     assert_nil result
-    assert_equal ["pgrep", "-f", "SimMetalHost"], calls[-2]
-    assert_equal ["pgrep", "-f", "/Simulator[.]app/Contents/MacOS/Simulator($| )"], calls.last
+    assert_equal ["pgrep", "-x", "SimMetalHost"], calls[-2]
+    assert_equal ["pgrep", "-x", "Simulator"], calls.last
     assert_nil check.first
+  end
+
+  # Real pgrep against fixture names, so a Simulator on the host cannot change
+  # the result. The command line of every decoy, and of this guard itself,
+  # carries the name; only a process actually named like it may block.
+  def real_processes(metal_host:, simulator_app:)
+    shutdown = JSON.generate("devices" => { "runtime" => [{ "state" => "Shutdown" }] })
+    runner = ->(*args) { args.first == "xcrun" ? [shutdown, "", Status.new(0)] : Open3.capture3(*args) }
+    NativeBuildPreflight.check(host: "x86_64-darwin24", runner: runner, metal_host: metal_host, simulator_app: simulator_app)
+  end
+
+  def wait_until
+    Timeout.timeout(10) { sleep 0.02 until yield }
+  end
+
+  def test_a_command_line_that_only_mentions_the_process_name_does_not_block
+    name = "SMHfx#{Process.pid % 100_000}"
+    absent = "#{name}no"
+    decoy = Process.spawn(RbConfig.ruby, "-e", "sleep 30", "inspecting #{name} with grep")
+    wait_until { system("pgrep", "-f", name, out: File::NULL) }
+    assert system("pgrep", "-f", name, out: File::NULL), "the former command-line match sees the decoy"
+    assert_nil real_processes(metal_host: name, simulator_app: absent)
+    assert_nil real_processes(metal_host: absent, simulator_app: name)
+    guard = "require ARGV[0]; s = Struct.new(:exitstatus) { def success? = exitstatus == 0 }; " \
+            "r = ->(*a) { a.first == 'xcrun' ? ['{\"devices\":{}}', '', s.new(0)] : Open3.capture3(*a) }; " \
+            "print NativeBuildPreflight.check(host: 'x86_64-darwin24', runner: r, metal_host: ARGV[1], simulator_app: ARGV[2]).inspect"
+    output, error, status = Open3.capture3(RbConfig.ruby, "-e", guard, File.expand_path("native_build_preflight.rb", __dir__), name, absent)
+    assert status.success?, error
+    assert_equal "nil", output, "the guard's own command line carries the name"
+  ensure
+    if decoy
+      Process.kill("KILL", decoy) rescue Errno::ESRCH
+      Process.waitpid(decoy) rescue Errno::ECHILD
+    end
+  end
+
+  def test_a_process_named_exactly_like_the_simulator_host_or_app_blocks
+    name = "SMHfx#{Process.pid % 100_000}"
+    absent = "#{name}no"
+    Dir.mktmpdir("preflight-process-") do |directory|
+      executable = File.join(directory, name)
+      FileUtils.ln_s(File.exist?("/bin/sleep") ? "/bin/sleep" : "/usr/bin/sleep", executable)
+      process = Process.spawn(executable, "30")
+      begin
+        wait_until { system("pgrep", "-x", name, out: File::NULL) }
+        assert_match(/SimMetalHost to exit/, real_processes(metal_host: name, simulator_app: absent))
+        assert_match(/Quit Simulator.app/, real_processes(metal_host: absent, simulator_app: name))
+      ensure
+        Process.kill("KILL", process) rescue Errno::ESRCH
+        Process.waitpid(process) rescue Errno::ECHILD
+      end
+      wait_until { !system("pgrep", "-x", name, out: File::NULL) }
+      assert_nil real_processes(metal_host: name, simulator_app: absent)
+    end
   end
 
   def test_boot_and_incomplete_shutdown_block_before_process_query
@@ -50,9 +107,9 @@ class NativeBuildPreflightTest < Minitest::Test
     assert_match(/Cannot inspect Simulator.app/, check(app: 2).first)
   end
 
-  def test_simulator_process_expression_is_accepted_by_real_pgrep
+  def test_simulator_process_query_is_accepted_by_real_pgrep
     _, calls = check
-    # Exercise the production expression against the host's POSIX ERE engine.
+    # Exercise the production query with the host's pgrep.
     # This only queries processes; it cannot start a Simulator or native build.
     _, error, status = Open3.capture3(*calls.last)
     assert_includes [0, 1], status.exitstatus, error
