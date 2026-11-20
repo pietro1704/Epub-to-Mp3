@@ -18,7 +18,7 @@ module CiContracts
     test_ubuntu_package_mirror.rb test_rust_build_cache.rb
     test_runner_acquisition_retry.rb
     test_convert_entrypoint.rb test_version_source.rb test_espeak_runtime_assets.rb test_espeak_msvc_headers.rb
-    test_no_python_tooling.rb test_codeql_workflow.rb test_sync_hf_workflow.rb test_auto_release_workflow.rb test_mac_run_task.rb
+    test_no_python_tooling.rb test_codeql_workflow.rb test_sync_hf_workflow.rb test_auto_release_workflow.rb test_release_pr_workflow.rb test_next_release_version.rb test_mac_run_task.rb
     test_ios_device_mise_tasks.rb test_development_run_tasks.rb test_widget_embed_config.rb
     test_mobile_file_associations.rb test_ios_disk_guard.rb
     test_select_ios_simulator.rb test_seed_ios_development_book.rb test_select_android_target.rb
