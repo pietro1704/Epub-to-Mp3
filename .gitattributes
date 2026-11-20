@@ -1,3 +1,2 @@
 *.onnx filter=lfs diff=lfs merge=lfs -text
 pretrained_models/** filter=lfs diff=lfs merge=lfs -text
-voice_samples/** filter=lfs diff=lfs merge=lfs -text

@@ -3,7 +3,7 @@
 Choose the client first. Read [Architecture](Architecture.md), then inspect the
 current root `mise.toml`, relevant manifest and
 [execution policy](../../agents/execution-policy.md). Tool versions belong to
-those manifests, not a duplicated Python-first installation list.
+those manifests, not a duplicated installation list.
 
 - Apple: follow the [native guide](../../../ios/EpubToMp3/README.md) and
   [macOS validation](../../agents/macos-validation.md), reusing matching artifacts.

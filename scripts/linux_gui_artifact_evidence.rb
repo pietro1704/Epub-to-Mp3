@@ -19,7 +19,7 @@ module LinuxGuiArtifactEvidence
 
   GENERATED_PATHS = %w[flutter_app/lib/l10n/app_localizations.dart
                        flutter_app/lib/l10n/app_localizations_en.dart].freeze
-  PROVENANCE_PATHS = (GENERATED_PATHS + ['voice_samples/README.md']).freeze
+  PROVENANCE_PATHS = GENERATED_PATHS
   EVIDENCE = '.reports/linux-gui'
   PRODUCT = '.reports/linux-gui-product'
   BUNDLE = 'flutter_app/build/linux/x64/release/bundle'

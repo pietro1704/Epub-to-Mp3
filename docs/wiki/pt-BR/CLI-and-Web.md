@@ -19,8 +19,8 @@ pelo mesmo despacho de fontes; um PDF sem texto extraível falha antes de inicia
 o job. Veja o [contrato PDF](../../pdf-conversion.md). Use flags `--chapter` repetidas para vários IDs literais;
 `position:N` seleciona explicitamente uma posição baseada em zero.
 Consulte parser/help para batch,
-saída, verificação e preferências, sem copiar flags Python ou presumir suporte a
-todos os formatos desejados pelo produto.
+saída, verificação e preferências, sem presumir suporte a todos os formatos
+desejados pelo produto.
 
 Piper `pt_BR-faber-medium` é primário; seleção explícita por job prevalece sobre
 preferências salvas. Fallback Edge online exige consentimento explícito. Instalar
@@ -31,8 +31,7 @@ O cliente web normal é o cliente Rails com Rust/WASM embutido e Piper no
 navegador; a conversão roda no navegador. Siga o
 [README do web Rails](../../../ruby_app/rails_gateway/README.md) para a árvore de
 runtime gerada (`mise run rails:web:runtime-build`) e os testes
-(`mise run rails:web:test`). O antigo cliente React/Vite em `web/` foi removido
-no cutover para Rails.
+(`mise run rails:web:test`).
 Voz nativa do navegador serve para escuta; exportar MP3 exige Piper instalado.
 Inspecionar EPUB não comprova suporte a PDF ou outros formatos nativos.
 
@@ -42,4 +41,3 @@ prepara o banco de desenvolvimento e avisa quando o runtime do navegador não fo
 opcional (o que o compila) e aponta o app Rails para ele por `RUST_CONVERTER_URL`.
 `converter-server` e o cliente HTTP retido são adaptadores de compatibilidade;
 rotas/payloads pertencem ao código atual do servidor Rust e cliente escolhido.
-O servidor Python/FastAPI legado e o `hf_app.py` foram removidos.

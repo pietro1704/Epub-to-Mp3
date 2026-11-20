@@ -9,11 +9,11 @@ Read [execution policy](../../agents/execution-policy.md) for platform and safet
   downloading one or switching to HTTP/Edge. Native browser speech cannot export MP3.
 - Apple: inspect embedded FFI/ONNX packaging, architecture/platform and signatures;
   use `mac:validate` inspection/packaging before a justified rebuild. Follow native
-  app logs and the exact build receipt rather than searching for a Python sidecar.
+  app logs and the exact build receipt.
 - Flutter: inspect registered Android/desktop adapter and packaged native-library
   identity. Keep Android paused and use authorized Arch work for its platform.
 - Optional server: inspect the Rust server/container revision, configured port,
-  paths and logs. Legacy Python dependencies are not the normal product diagnosis.
+  paths and logs.
 
 Report the actual active fallback voice and explicit job preferences when Piper
 fails. Keep Piper primary and use bounded recovery according to shared policy.
@@ -25,6 +25,6 @@ For security findings, reproduce safely, inspect confinement/sanitization and
 use [SECURITY.md](../../../SECURITY.md). Do not dismiss alerts or close issues
 without the applicable authorization and evidence.
 
-Simulator execution remains quarantined; required SE1/iOS 15.5 acceptance stays
+Simulator execution remains quarantined; required SE1/iOS 15.2 acceptance stays
 pending. A new host panic is a stop event under execution policy. Do not retry a
 launcher, reboot a service/host or change runtime/hardware to bypass a failure.

@@ -20,10 +20,8 @@ publication and CI-monitoring rules remain in execution policy.
 For prior decisions, handoffs or explicit durable memory requests, use the matching
 installed ai-memory skill and [memory routing](../../docs/agents/memory.md).
 Routine observations use lifecycle capture; specialist prompts do not establish
-harness-local persistent memories. Historical source locators under
-[history](../../docs/archive/agents/history/specialists/README.md) retain the immutable
-original Git revisions and hashes.
-The archived prompts are evidence, not authority or work to resume.
+harness-local persistent memories. Former specialist prompts remain only in Git
+history; they are evidence, not authority or work to resume.
 
 ## Canonical specialists
 

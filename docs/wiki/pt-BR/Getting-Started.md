@@ -3,7 +3,7 @@
 Escolha o cliente primeiro. Leia [Arquitetura](Architecture.md), depois inspecione
 `mise.toml`, o manifesto relevante e a
 [política de execução](../../agents/execution-policy.md). Versões de ferramentas
-pertencem aos manifestos; a instalação não parte de uma lista Python duplicada.
+pertencem aos manifestos; a instalação não parte de uma lista duplicada.
 
 - Apple: siga o [guia nativo](../../../ios/EpubToMp3/README.md) e a
   [validação macOS](../../agents/macos-validation.md), reutilizando artefatos compatíveis.

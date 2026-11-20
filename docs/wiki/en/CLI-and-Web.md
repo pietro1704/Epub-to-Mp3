@@ -18,8 +18,8 @@ evidence. The CLI converts and inspects (`--show-structure`) EPUB and text-layer
 PDF through the shared source dispatch; a PDF without extractable text fails
 before any job starts. See the [PDF contract](../../pdf-conversion.md). Use repeated `--chapter` flags for multiple literal chapter
 IDs; `position:N` explicitly selects a zero-based position. Inspect current parser/help
-for batch, output, verification and preference options rather than carrying over
-Python flags or assuming all product-target formats work.
+for batch, output, verification and preference options rather than assuming all
+product-target formats work.
 
 Piper `pt_BR-faber-medium` is primary; explicit per-job selections override saved
 choices. Online Edge fallback requires explicit consent. Model installation is a
@@ -30,8 +30,7 @@ The normal web client is the Rails client with embedded Rust/WASM and browser
 Piper; conversion runs in the browser. Follow
 [the Rails web README](../../../ruby_app/rails_gateway/README.md) for the
 generated runtime tree (`mise run rails:web:runtime-build`) and tests
-(`mise run rails:web:test`). The former React/Vite client in `web/` was removed
-in the Rails cutover.
+(`mise run rails:web:test`).
 Browser native speech is listening-only; exporting MP3 requires installed Piper.
 EPUB inspection support does not prove PDF or other native-format capability.
 
@@ -41,4 +40,3 @@ prepares the development database and warns when the generated browser runtime i
 `converter-server` (which compiles it) and points the Rails app at it through `RUST_CONVERTER_URL`.
 `converter-server` and the retained HTTP client are compatibility adapters; actual
 routes/payloads belong to current Rust server and selected client sources.
-The legacy Python/FastAPI server and `hf_app.py` were removed.

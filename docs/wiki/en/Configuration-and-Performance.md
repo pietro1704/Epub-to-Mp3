@@ -12,8 +12,7 @@ Do not infer model availability from a static voice sample or legacy API list.
 
 Inspect `crates/converter-core/src/config.rs`, `paths.rs`, `tts_preferences.rs`,
 model/runtime modules and the actual client settings before naming environment
-variables or persistence paths. Legacy Python Edge concurrency overrides are not
-a universal current performance profile. Saved preferences, explicit job values
+variables or persistence paths. Saved preferences, explicit job values
 and deployment environment can have different precedence; test the affected seam.
 
 Cache is runtime-owned state: preserve usable books, models and artifacts. Avoid

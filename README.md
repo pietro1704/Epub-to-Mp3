@@ -132,8 +132,7 @@ mise run convert           # Build/package the native CLI, then print usage
 ```
 
 Select the build/run task for the intended platform in `mise.toml`; avoid setting
-up every toolchain for a single client. Native Apple and packaged Rust conversion
-do not require a Python runtime. Install a voice model explicitly through the
+up every toolchain for a single client. Install a voice model explicitly through the
 client or the CLI model command before requesting that voice. On this Mac, use
 the guarded tasks and keep Android work on Arch.
 The `convert` task invokes the build and packaging path even for usage output;

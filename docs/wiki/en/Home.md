@@ -26,6 +26,5 @@ installation action. Browser native speech is listening-only; MP3 export needs P
 - [Troubleshooting](Troubleshooting.md)
 - [Contributing and Security](Contributing-and-Security.md)
 
-Archived SwiftUI slice notes and old sidecar guides under `docs/archive/` are
-historical. Current behavior requires source inspection and evidence from the
-actual adapter. This wiki update is local; it does not publish or validate a service.
+Current behavior requires source inspection and evidence from the actual
+adapter. This wiki update is local; it does not publish or validate a service.
