@@ -48,8 +48,21 @@ class AutoReleaseWorkflowTest < Minitest::Test
     assert_includes run, '--target "$VALIDATED_SHA"'
     assert_includes run, "--generate-notes"
     assert_includes run, '--notes-start-tag "$LAST_TAG"'
-    refute_match(/release-desktop|gh workflow run|actions\/upload-artifact/, @text.sub(/^#.*$/, ""),
-                 "artifact builds stay a separate, manual release-desktop run")
+    refute_match(/actions\/upload-artifact/, @text, "artifacts are built by release-desktop, not here")
+  end
+
+  # Owner decision 2026-11-20: every new release builds its packages. The tag is
+  # created with GITHUB_TOKEN, which starts no workflow, so Release Desktop is
+  # dispatched explicitly, for exactly the new tag, after the release exists.
+  def test_a_new_release_starts_the_package_builds_for_its_tag
+    start = step("Start the release packages")
+    assert_equal "steps.bump.outputs.skip != 'true'", start.fetch("if")
+    assert_equal "${{ steps.bump.outputs.tag }}", start.fetch("env").fetch("VERSION_TAG")
+    assert_equal 'gh workflow run release-desktop.yml --repo "$GITHUB_REPOSITORY" --ref master -f tag="$VERSION_TAG"',
+                 start.fetch("run").strip
+    assert_operator @steps.index(step("Create release tag and GitHub release")), :<, @steps.index(start)
+    assert_equal "write", @workflow.fetch("permissions").fetch("actions")
+    assert_equal 1, @text.scan("gh workflow run").size, "nothing else is dispatched"
   end
 
   def test_a_manual_run_can_only_use_the_workflow_definition_of_master
@@ -80,10 +93,10 @@ class AutoReleaseWorkflowTest < Minitest::Test
     assert_equal "auto-release", concurrency.fetch("group")
   end
 
-  def test_permissions_allow_publishing_but_not_dispatching_workflows
+  def test_permissions_allow_publishing_and_starting_only_the_release_packages
     permissions = @workflow.fetch("permissions")
     assert_equal "write", permissions.fetch("contents")
-    refute permissions.key?("actions"), "no workflow dispatch is needed"
+    assert_equal({ "contents" => "write", "pull-requests" => "read", "actions" => "write" }, permissions)
   end
 
   def test_still_requires_one_committed_version_with_a_changelog_entry
