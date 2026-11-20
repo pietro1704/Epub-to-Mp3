@@ -145,8 +145,26 @@ class NativeFlightRecorderTest < Minitest::Test
     assert_operator seconds { flight.tick(60.0) }, :<, 10
     assert_equal 1, reads, "a probe that is still running is skipped, never queued"
     assert_operator seconds { flight.finish(143) }, :<, 10, "finish delayed the exit code"
-    assert_equal [["end", 143]], lines.map { |event| event.values_at("event", "exit_status") }
+    # Checked before any other work: a killed thread stays alive until joined.
     refute flight.instance_variable_get(:@worker).alive?, "no probe outlives the job"
+    assert_equal [["end", 143]], lines.map { |event| event.values_at("event", "exit_status") }
+  end
+
+  def test_finish_waits_for_a_killed_probe_to_unwind
+    reads = 0
+    # A probe interrupted mid-read still runs its cleanup, as a closing pipe does.
+    flight = recorder(sampler: lambda do
+      reads += 1
+      begin
+        sleep 30
+      ensure
+        sleep 0.05
+      end
+    end)
+    flight.start(0.0)
+    Timeout.timeout(20) { sleep 0.01 until reads == 1 }
+    flight.finish(0)
+    refute flight.instance_variable_get(:@worker).alive?, "finish returned while the killed probe was still unwinding"
   end
 
   def test_sampling_and_storage_failures_never_raise_into_the_supervisor

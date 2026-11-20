@@ -120,7 +120,8 @@ module NativeFlightRecorder
       return unless @next
 
       @next = nil
-      @worker&.kill unless @worker&.join(JOIN_SECONDS)
+      # Thread#kill only marks the probe; join it so none outlives the job.
+      @worker&.kill&.join(JOIN_SECONDS) unless @worker&.join(JOIN_SECONDS)
       write("end", "exit_status" => exit_status)
     end
 
