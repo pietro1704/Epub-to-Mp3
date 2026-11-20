@@ -15,8 +15,14 @@ on:
   workflow_run:
     workflows: ["Post-merge validation"]
     types: [completed]
-  # Manual run for the current latest master commit.
+  # Manual run for the current latest master commit; also started by a dispatched validation.
   workflow_dispatch:
+    inputs:
+      validation_run:
+        description: "Post-merge validation run that dispatched this one; wait for it to complete first"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -47,7 +53,15 @@ jobs:
           path: publication-policy
           persist-credentials: false
       - name: Snapshot trusted publication helper
-        run: cp publication-policy/scripts/validated_merge.mjs "$RUNNER_TEMP/validated_merge.mjs"
+        run: |
+          cp publication-policy/scripts/validated_merge.mjs "$RUNNER_TEMP/validated_merge.mjs"
+          cp publication-policy/scripts/wait_for_validation.mjs "$RUNNER_TEMP/wait_for_validation.mjs"
+      - name: Wait for the dispatching validation to complete
+        if: inputs.validation_run != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATION_RUN: ${{ inputs.validation_run }}
+        run: node "$RUNNER_TEMP/wait_for_validation.mjs" --repo "$GITHUB_REPOSITORY" --run "$VALIDATION_RUN"
       - name: Require validated current merge
         id: validated
         env:

@@ -9,8 +9,14 @@ on:
   workflow_run:
     workflows: ["Post-merge validation"]
     types: [completed]
-  # Manual trigger only if needed
+  # Manual trigger, and the start by a dispatched validation (see post-merge-validation.yml)
   workflow_dispatch:
+    inputs:
+      validation_run:
+        description: "Post-merge validation run that dispatched this one; wait for it to complete first"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -38,6 +44,12 @@ jobs:
         with:
           ref: master
           persist-credentials: false
+      - name: Wait for the dispatching validation to complete
+        if: inputs.validation_run != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATION_RUN: ${{ inputs.validation_run }}
+        run: node "scripts/wait_for_validation.mjs" --repo "$GITHUB_REPOSITORY" --run "$VALIDATION_RUN"
       - name: Require validated current merge
         id: validated
         env:

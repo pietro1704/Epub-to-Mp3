@@ -6,6 +6,10 @@ import { verifyMergeIdentity, assertValidationResults, inspectMergedSource, REQU
 import { SCOPED, ALWAYS } from './post_merge_scope.mjs';
 
 const repo = 'pietro1704/Epub-to-Mp3';
+// Follow-up workflows a merge-workflow-dispatched validation must start itself:
+// GitHub creates no workflow_run event when a run dispatched with GITHUB_TOKEN completes.
+const FOLLOW_UPS = { 'release-followup': ['validated', ['validated'], ['auto-release.yml', 'release-pr.yml']],
+  'publication-followup': ['publication', ['publication', 'validated'], ['sync-hf.yml']] };
 const sha = 'a'.repeat(40);
 function fixture() {
   return { repo, sha, master: sha, event: 'push', ref: 'refs/heads/master', comparison: { status: 'identical', ahead_by: 0 },
@@ -159,7 +163,7 @@ test('postmerge graph contains every runtime and aggregates all called workflows
   const events = post.on ?? post.true;
   assert.deepEqual(events.push.branches, ['master']);
   assert.equal(events.pull_request, undefined);
-  const required = Object.keys(post.jobs).filter(name => !['validated', 'publication'].includes(name)).sort();
+  const required = Object.keys(post.jobs).filter(name => !['validated', 'publication', ...Object.keys(FOLLOW_UPS)].includes(name)).sort();
   assert.deepEqual(required, [...REQUIRED_VALIDATIONS].sort());
   assert.deepEqual([...post.jobs.validated.needs].sort(), required);
   assert.equal(post.jobs.validated.if, 'always()');
@@ -231,4 +235,35 @@ test('the publication aggregate requires exactly the surfaces the Space needs, w
   }
   assert.throws(() => assertValidationResults({ ...subset, 'rails-image': { result: 'skipped' } }, PUBLICATION_VALIDATIONS), /rails-image/,
     'A selected publication surface may not be skipped');
+});
+
+test('a validation dispatched by the merge workflow starts its follow-up workflows, which wait for it', () => {
+  const post = workflow('post-merge-validation.yml');
+  const dispatched = "github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]' && github.ref == 'refs/heads/master'";
+  for (const [name, [gate, needs, files]] of Object.entries(FOLLOW_UPS)) {
+    const job = post.jobs[name];
+    assert.ok(job, name);
+    // Every follow-up waits for `validated`, the last aggregate, so the run completes right after it.
+    assert.deepEqual([job.needs].flat(), needs, name);
+    assert.match(job.if, new RegExp(`^always\\(\\) && needs\\.${gate}\\.result == 'success' && `), name);
+    assert.ok(job.if.endsWith(dispatched), name);
+    assert.deepEqual(job.permissions, { actions: 'write' }, name);
+    const step = job.steps.at(-1);
+    assert.equal(step.env.VALIDATION_RUN, '${{ github.run_id }}');
+    assert.equal(step.env.GH_TOKEN, '${{ github.token }}');
+    for (const file of files) {
+      assert.ok(step.run.includes(`gh workflow run ${file} --repo "$GITHUB_REPOSITORY" --ref master -f validation_run="$VALIDATION_RUN"`), file);
+      const called = workflow(file);
+      assert.equal((called.on ?? called.true).workflow_dispatch.inputs.validation_run.required, false, file);
+      const [gateJob] = Object.values(called.jobs).filter(candidate => candidate.steps?.some(s => s.id === 'validated'));
+      const index = gateJob.steps.findIndex(s => s.name === 'Wait for the dispatching validation to complete');
+      assert.ok(index >= 0 && index < gateJob.steps.findIndex(s => s.id === 'validated'), `${file} waits before its gate`);
+      const wait = gateJob.steps[index];
+      assert.equal(wait.if, "inputs.validation_run != ''", file);
+      assert.equal(wait.env.VALIDATION_RUN, '${{ inputs.validation_run }}', file);
+      assert.match(wait.run, /wait_for_validation\.mjs" --repo "\$GITHUB_REPOSITORY" --run "\$VALIDATION_RUN"$/, file);
+    }
+  }
+  // A push-event validation keeps relying on workflow_run, so nothing is started twice.
+  assert.ok(!JSON.stringify(post.jobs['release-followup'].if).includes("'push'"));
 });
