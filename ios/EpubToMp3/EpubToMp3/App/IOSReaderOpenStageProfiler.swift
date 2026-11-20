@@ -1,5 +1,4 @@
-#if os(iOS)
-import UIKit
+import Foundation
 
 /// Temporary, opt-in stage capture for real-app relaunch profiling. It keeps
 /// only stage names and monotonic timestamps, then emits one line at readiness.
@@ -52,5 +51,3 @@ final class IOSReaderOpenStageProfiler: @unchecked Sendable {
 
 
 }
-
-#endif

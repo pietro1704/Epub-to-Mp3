@@ -1,4 +1,3 @@
-#if os(iOS)
 import Foundation
 
 @MainActor
@@ -61,4 +60,3 @@ enum TocChapterPresentation {
     }
 
 }
-#endif

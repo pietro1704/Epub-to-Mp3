@@ -1,4 +1,3 @@
-#if os(iOS)
 import Foundation
 
 /// Keeps NotificationCenter tokens outside the view controller's MainActor
@@ -17,5 +16,3 @@ final class TocNotificationObserverBag {
         }
     }
 }
-
-#endif
