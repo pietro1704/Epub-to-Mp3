@@ -48,6 +48,7 @@ struct BookDownloadStorage: Sendable {
                 try await artifacts.clearDownloadedAudio(bookID: entry.book.bookID)
             }
         } else {
+            await downloads.quiesceLegacyMigration()
             try Task.checkCancellation()
             try await artifacts.clearDownloadedAudio(bookID: entry.book.bookID)
         }

@@ -140,22 +140,14 @@ enum AudiobookDownloadStorage {
         )
     }
 
-    /// Retained downloads override matching Rust files without hiding other converted chapters.
+    /// A converted chapter plays from its own file. Copies kept by the previous
+    /// layout only add the chapters the conversion does not have.
     static func restoredPlaybackSnapshot(jobId: String, conversionSnapshot: JobSnapshot?) -> JobSnapshot? {
         let local = localPlaybackSnapshot(jobId: jobId)
         guard let conversion = conversionSnapshot, conversion.jobId == jobId else { return local }
         var chapters = conversion.playableChapters
-        for retained in local?.playableChapters ?? [] {
-            if let offset = chapters.firstIndex(where: { $0.index == retained.index }) {
-                let source = chapters[offset]
-                chapters[offset] = .init(index: source.index, name: source.name, status: source.status,
-                    downloadUrl: retained.downloadUrl, chars: source.chars, charsProcessed: source.charsProcessed,
-                    progressRatio: source.progressRatio, durationSeconds: source.durationSeconds,
-                    startedAt: source.startedAt, completedAt: source.completedAt, textOffset: source.textOffset)
-            } else {
-                chapters.append(retained)
-            }
-        }
+        let converted = Set(chapters.map(\.index))
+        chapters += (local?.playableChapters ?? []).filter { !converted.contains($0.index) }
         guard !chapters.isEmpty else { return local }
         chapters.sort { $0.index < $1.index }
         return JobSnapshot(jobId: conversion.jobId, state: conversion.state,

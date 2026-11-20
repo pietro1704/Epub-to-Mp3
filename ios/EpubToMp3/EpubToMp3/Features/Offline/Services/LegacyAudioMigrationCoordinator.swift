@@ -1,13 +1,14 @@
 import Foundation
 
-/// Imports each library book's legacy `Audiobooks/<jobId>` audio into the
-/// durable `LocalAudioArtifactStore`, but only where the chapter mapping is
-/// proven. It never removes or rewrites a legacy file, key or manifest, and a
-/// job whose chapter index base is not declared stays untouched on disk.
+/// Moves each library book's legacy `Audiobooks/<jobId>` audio into the durable
+/// `LocalAudioArtifactStore`, but only where the chapter mapping is proven.
 ///
-/// This type is not wired to launch: the Download writer and the playback and
-/// TOC readers still use the legacy layout, so running it at launch would only
-/// duplicate audio. It is the tested seam the cutover builds on.
+/// For every chapter it copies and validates the audio into the store, and
+/// removes the legacy copy only after the store verifiably keeps the same
+/// bytes as a protected download (see `retireLegacyAudio`). A job whose chapter
+/// axis is not declared, a chapter the job's conversion does not contain, and
+/// any audio that fails a check stay untouched on disk and are examined again
+/// on a later run.
 struct LegacyAudioMigrationCoordinator {
     struct Book: Equatable, Sendable {
         let id: String
@@ -17,12 +18,23 @@ struct LegacyAudioMigrationCoordinator {
         let jobID: String?
     }
 
+    /// What a job's persisted conversion declares about its chapters.
+    struct ConvertedChapters: Equatable, Sendable {
+        /// The chapter index base (0 or 1) the conversion declares.
+        let indexBase: Int
+        /// The job's chapter files, by the job's own chapter index.
+        let files: [Int: URL]
+        /// Characters of chapter text before the audio, for chapters whose
+        /// audio starts inside the chapter.
+        var textOffsets: [Int: Int] = [:]
+    }
+
     enum JobOutcome: Equatable, Sendable {
-        /// Every legacy chapter is now in the store (copied or already there).
+        /// Every legacy chapter is in the store and its legacy copy is gone.
         case complete(imported: Int, alreadyPresent: Int)
-        /// Some chapters are not in the store yet; the legacy files remain.
+        /// Some chapters are still in the legacy layout.
         case partial(imported: Int, alreadyPresent: Int, deferred: Int)
-        /// There is no legacy audio to import for this book.
+        /// There is no legacy audio to move for this job.
         case noLegacyAudio
         /// The chapter index base is not proven, so nothing is guessed.
         case unprovenMapping
@@ -31,19 +43,21 @@ struct LegacyAudioMigrationCoordinator {
     }
 
     struct Report: Equatable, Sendable {
+        /// The job the library recorded for each book.
         var books: [String: JobOutcome] = [:]
+        /// Legacy copies of audio that already played from the store itself.
+        var storeCopies: [String: JobOutcome] = [:]
         var skippedByVersion: [String] = []
     }
 
-    /// Bumped when the import rules change so books are examined again.
+    /// Bumped when the rules change so finished jobs are examined again.
     static let version = 1
 
     let store: LocalAudioArtifactStore
     let legacyRoot: URL
     let defaults: UserDefaults
-    /// The chapter index base (0 or 1) that the job's persisted conversion
-    /// snapshot declares, or nil when it declares none.
-    let provenIndexBase: @Sendable (String) async -> Int?
+    /// The job's persisted conversion, or nil when none can be read.
+    let convertedChapters: @Sendable (String) async -> ConvertedChapters?
 
     private static func markerKey(bookID: String, jobID: String) -> String {
         "legacyAudioMigration.v\(version).\(bookID).\(jobID)"
@@ -56,21 +70,27 @@ struct LegacyAudioMigrationCoordinator {
         var report = Report()
         for book in books {
             try Task.checkCancellation()
-            guard let jobID = book.jobID, LegacyJobDirectory.isSafeComponent(jobID) else {
+            if let jobID = book.jobID, LegacyJobDirectory.isSafeComponent(jobID) {
+                if defaults.bool(forKey: Self.markerKey(bookID: book.id, jobID: jobID)) {
+                    report.skippedByVersion.append(book.id)
+                } else {
+                    report.books[book.id] = try await migrate(book, jobID: jobID, ownAudio: false, onProgress: onProgress)
+                }
+            } else {
                 report.books[book.id] = .noLegacyAudio
-                continue
             }
-            if defaults.bool(forKey: Self.markerKey(bookID: book.id, jobID: jobID)) {
-                report.skippedByVersion.append(book.id)
-                continue
-            }
-            report.books[book.id] = try await migrate(book, jobID: jobID, onProgress: onProgress)
+            // A Download of audio that played from the store was copied under this job id.
+            let storeJobID = "embedded-\(book.id)"
+            guard storeJobID != book.jobID, LegacyJobDirectory.isSafeComponent(storeJobID),
+                  !defaults.bool(forKey: Self.markerKey(bookID: book.id, jobID: storeJobID)) else { continue }
+            let outcome = try await migrate(book, jobID: storeJobID, ownAudio: true, onProgress: onProgress)
+            if outcome != .noLegacyAudio { report.storeCopies[book.id] = outcome }
         }
         return report
     }
 
     private func migrate(
-        _ book: Book, jobID: String,
+        _ book: Book, jobID: String, ownAudio: Bool,
         onProgress: @Sendable (String, LocalAudioArtifactStore.LegacyImportProgress) -> Void
     ) async throws -> JobOutcome {
         guard let manifestURL = LegacyJobDirectory.directory(for: jobID, under: legacyRoot, operation: #function)?
@@ -79,33 +99,49 @@ struct LegacyAudioMigrationCoordinator {
         guard let data = try? Data(contentsOf: manifestURL),
               let manifest = try? JSONDecoder().decode(AudiobookManifest.self, from: data),
               manifest.jobId == jobID, !manifest.chapters.isEmpty else { return .unreadable }
-        guard let base = await provenIndexBase(jobID), base == 0 || base == 1 else { return .unprovenMapping }
-        let mapping = Dictionary(uniqueKeysWithValues: manifest.chapters.compactMap { entry -> (Int, Int)? in
-            entry.index >= base ? (entry.index, entry.index - base) : nil
-        })
+        let mapping: [Int: Int]
+        let convertedFiles: [Int: URL]?
+        var textOffsets: [Int: Int] = [:]
+        if ownAudio {
+            // The store's own snapshots are on its zero-based axis by construction.
+            mapping = Dictionary(uniqueKeysWithValues: manifest.chapters.compactMap { entry -> (Int, Int)? in
+                entry.index >= 0 ? (entry.index, entry.index) : nil
+            })
+            convertedFiles = nil
+        } else {
+            guard let converted = await convertedChapters(jobID),
+                  converted.indexBase == 0 || converted.indexBase == 1 else { return .unprovenMapping }
+            // Only chapters the conversion itself contains are on a proven axis.
+            mapping = Dictionary(uniqueKeysWithValues: manifest.chapters.compactMap { entry -> (Int, Int)? in
+                entry.index >= converted.indexBase && converted.files[entry.index] != nil
+                    ? (entry.index, entry.index - converted.indexBase) : nil
+            })
+            convertedFiles = converted.files
+            textOffsets = converted.textOffsets
+        }
         let identity = LocalAudioArtifactStore.LegacyImportIdentity(
-            bookID: book.id, bookTitle: book.title, author: book.author, jobID: jobID, canonicalIndices: mapping)
-        let result: LocalAudioArtifactStore.LegacyImportReport
+            bookID: book.id, bookTitle: book.title, author: book.author, jobID: jobID,
+            canonicalIndices: mapping, textOffsets: textOffsets)
+        let imported: LocalAudioArtifactStore.LegacyImportReport
+        let retired: LocalAudioArtifactStore.LegacyRetirementReport
         do {
-            result = try await store.importLegacyAudio(from: legacyRoot, identity: identity) {
+            imported = try await store.importLegacyAudio(from: legacyRoot, identity: identity) {
                 onProgress(book.id, $0)
             }
+            retired = try await store.retireLegacyAudio(
+                from: legacyRoot, identity: identity, convertedFiles: convertedFiles)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             return .unreadable
         }
-        var imported = 0, present = 0, deferred = 0
-        for outcome in result.chapters.values {
-            switch outcome {
-            case .imported: imported += 1
-            case .alreadyPresent: present += 1
-            case .unmapped, .conflict, .invalidSource, .invalidAudio, .failed: deferred += 1
-            }
+        let copied = imported.chapters.values.filter { $0 == .imported }.count
+        let present = imported.chapters.values.filter { $0 == .alreadyPresent }.count
+        guard retired.remaining == 0 else {
+            return .partial(imported: copied, alreadyPresent: present, deferred: retired.remaining)
         }
-        guard deferred == 0 else { return .partial(imported: imported, alreadyPresent: present, deferred: deferred) }
-        // Only a fully imported job is recorded; anything else is examined again later.
+        // Only a job with nothing left in the legacy layout is recorded as done.
         defaults.set(true, forKey: Self.markerKey(bookID: book.id, jobID: jobID))
-        return .complete(imported: imported, alreadyPresent: present)
+        return .complete(imported: copied, alreadyPresent: present)
     }
 }

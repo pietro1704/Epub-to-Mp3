@@ -50,6 +50,7 @@ let production = [
     "Features/Offline/Services/LegacyAudioMigrationCoordinator.swift",
     "Features/Offline/Services/LocalAudioLegacyImport.swift",
     "Features/Offline/Services/LocalAudioDownloadRetention.swift",
+    "Features/Offline/Services/LocalAudioLegacyRetirement.swift",
     "Features/Offline/Services/RetainedAudioOwner.swift",
     "Features/Offline/Services/LocalAudioPlaybackRestoration.swift",
     "Shared/Configuration/LegacyPreferenceCleanup.swift",

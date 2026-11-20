@@ -20,6 +20,9 @@ extension LocalAudioArtifactStore {
         var state: ArtifactState
         var retention: Retention
         var playbackRetentionRequested: Bool? = nil
+        /// Characters of the chapter's text that come before this audio. Nil
+        /// means the audio covers the chapter from its start.
+        var textOffset: Int? = nil
         let relativePath: String
         var byteCount: Int64
         var retryCount: Int

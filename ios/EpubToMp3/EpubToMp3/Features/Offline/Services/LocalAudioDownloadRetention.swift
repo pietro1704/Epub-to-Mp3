@@ -8,6 +8,8 @@ extension LocalAudioArtifactStore {
         let author: String?
         let chapterIndex: Int
         let chapterTitle: String
+        /// Characters of the chapter's text before this audio; 0 for a whole chapter.
+        var textOffset = 0
     }
 
     /// Keeps `source` as the protected audio of one chapter and returns its size.
@@ -15,10 +17,13 @@ extension LocalAudioArtifactStore {
     /// The source is only read. Its copy is staged inside the store and published
     /// with an atomic replace, so an interrupted Download leaves either the
     /// previous file or the complete new one. A chapter that already plays from
-    /// its canonical file is protected in place without copying.
+    /// its canonical file is protected in place without copying, and audio that
+    /// starts later in the chapter never replaces kept audio that covers more of it.
     func retainDownload(from source: URL, request: DownloadRequest) throws -> Int64 {
         try Task.checkCancellation()
-        guard request.chapterIndex >= 0 else { throw LocalAudioImportFiles.Failure.invalidIdentity }
+        guard request.chapterIndex >= 0, request.textOffset >= 0 else {
+            throw LocalAudioImportFiles.Failure.invalidIdentity
+        }
         var manifest = try validatedManifest(bookID: request.bookID) ?? Manifest(
             schemaVersion: Self.schemaVersion, bookID: request.bookID,
             bookTitle: request.bookTitle, author: request.author, chapters: [], updatedAt: Date())
@@ -26,8 +31,15 @@ extension LocalAudioArtifactStore {
         let relativePath = files.relativePath(for: request.chapterIndex)
         let destination = files.bookDirectory(bookID: request.bookID).appendingPathComponent(relativePath)
         try LocalAudioImportFiles.checkPath(destination, under: files.root)
+        let existing = manifest.chapters.first { $0.index == request.chapterIndex }
+        let keepsFullerAudio = existing.map {
+            $0.state == .available && ($0.textOffset ?? 0) < request.textOffset
+                && files.hasAudioFile(bookID: request.bookID, artifact: $0)
+        } ?? false
+        let inPlace = keepsFullerAudio
+            || isCanonicalFile(source, bookID: request.bookID, chapterIndex: request.chapterIndex)
         let byteCount: Int64
-        if isCanonicalFile(source, bookID: request.bookID, chapterIndex: request.chapterIndex) {
+        if inPlace {
             byteCount = try files.fileSize(at: destination)
             guard byteCount > 0 else { throw StoreError.invalidAudioFile(destination) }
         } else {
@@ -51,7 +63,10 @@ extension LocalAudioArtifactStore {
         try files.applyDownloadedFilePolicy(to: destination)
         let now = Date()
         if let position = manifest.chapters.firstIndex(where: { $0.index == request.chapterIndex }) {
-            manifest.chapters[position].title = request.chapterTitle
+            if !inPlace {
+                manifest.chapters[position].title = request.chapterTitle
+                manifest.chapters[position].textOffset = request.textOffset > 0 ? request.textOffset : nil
+            }
             manifest.chapters[position].state = .available
             manifest.chapters[position].retention = .downloaded
             manifest.chapters[position].byteCount = byteCount
@@ -60,7 +75,8 @@ extension LocalAudioArtifactStore {
         } else {
             manifest.chapters.append(ChapterArtifact(
                 index: request.chapterIndex, title: request.chapterTitle, state: .available,
-                retention: .downloaded, relativePath: relativePath, byteCount: byteCount,
+                retention: .downloaded, textOffset: request.textOffset > 0 ? request.textOffset : nil,
+                relativePath: relativePath, byteCount: byteCount,
                 retryCount: 0, lastError: nil, updatedAt: now))
             manifest.chapters.sort { $0.index < $1.index }
         }

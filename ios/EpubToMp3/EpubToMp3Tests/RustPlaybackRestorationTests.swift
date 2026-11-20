@@ -27,7 +27,8 @@ final class RustPlaybackRestorationTests: XCTestCase {
             XCTAssertEqual(restored.playableChapters.map(\.index), [8, 9])
             XCTAssertEqual(restored.playableChapters.map(\.textOffset), [120, 0])
             XCTAssertEqual(restored.playableChapters[0].name, "Chapter eight suffix")
-            XCTAssertEqual(restored.playableChapters[0].downloadUrl, retained.absoluteString)
+            XCTAssertEqual(restored.playableChapters[0].downloadUrl, directory.appendingPathComponent("zero.mp3").path,
+                           "The converted chapter plays from its own file; the kept copy is not substituted")
             XCTAssertEqual(restored.playableChapters[1].downloadUrl, directory.appendingPathComponent("one.mp3").path)
             XCTAssertEqual(restored.chapterIndexBase, 0)
             XCTAssertEqual(restored.sourceChaptersTotal, 12)
@@ -74,7 +75,7 @@ final class RustPlaybackRestorationTests: XCTestCase {
         }
     }
 
-    func testPartialDownloadKeepsOtherConvertedChaptersAndPrefersRetainedFile() throws {
+    func testConvertedChaptersPlayFromTheirOwnFilesAndKeptCopiesOnlyFillGaps() throws {
         try withFixture { job, manager, directory in
             let retained = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: job)).appendingPathComponent("retained.mp3")
             try Data([1, 2, 3]).write(to: retained)
@@ -84,7 +85,8 @@ final class RustPlaybackRestorationTests: XCTestCase {
             let source = try XCTUnwrap(RustConversionCoordinator.persistedSnapshot(jobID: job, fileManager: manager))
             let merged = try XCTUnwrap(AudiobookDownloadStorage.restoredPlaybackSnapshot(jobId: job, conversionSnapshot: source))
             XCTAssertEqual(merged.playableChapters.map(\.index), [0, 1])
-            XCTAssertEqual(merged.playableChapters[0].downloadUrl, retained.absoluteString)
+            XCTAssertEqual(merged.playableChapters[0].downloadUrl, directory.appendingPathComponent("zero.mp3").path,
+                           "A kept copy must not replace the converted chapter it was copied from")
             XCTAssertEqual(merged.playableChapters[0].name, "Chapter zero")
             XCTAssertEqual(merged.playableChapters[0].chars, 100)
             XCTAssertEqual(merged.playableChapters[1].downloadUrl, directory.appendingPathComponent("one.mp3").path)

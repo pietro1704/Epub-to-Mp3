@@ -24,11 +24,22 @@ actor AudiobookDownloads {
 
     private let store: LocalAudioArtifactStore
     private let resolveOwner: OwnerResolver
+    private let stopLegacyMigration: @Sendable () async -> Void
 
     init(store: LocalAudioArtifactStore = .shared,
-         resolveOwner: @escaping OwnerResolver = { await RetainedAudioOwner.resolve($0) }) {
+         resolveOwner: @escaping OwnerResolver = { await RetainedAudioOwner.resolve($0) },
+         stopLegacyMigration: @escaping @Sendable () async -> Void = {
+             await LegacyAudioMigrationSession.shared.stop()
+         }) {
         self.store = store
         self.resolveOwner = resolveOwner
+        self.stopLegacyMigration = stopLegacyMigration
+    }
+
+    /// Every removal of kept audio calls this first: a migration still copying
+    /// legacy audio into the store could otherwise bring the removed audio back.
+    func quiesceLegacyMigration() async {
+        await stopLegacyMigration()
     }
 
     /// Stable identifier lets iOS reconnect to pending tasks after suspension
@@ -206,6 +217,7 @@ actor AudiobookDownloads {
                 }
             }
         }
+        await stopLegacyMigration()
         let retiring = writingTasks.values.map(\.task)
         for task in retiring { task.cancel() }
         // Do not use cancelAll: requests queued by an overlapping maintenance
@@ -228,6 +240,7 @@ actor AudiobookDownloads {
                 startDownload(snapshot: request.snapshot, chapters: request.chapters, baseURL: request.baseURL)
             }
         }
+        await stopLegacyMigration()
         let retiring = writingTasks.values.filter { $0.jobId == jobId }.map(\.task)
         for task in retiring { task.cancel() }
         cancel(jobId: jobId)
@@ -257,6 +270,7 @@ actor AudiobookDownloads {
 
     /// Ends the Download of one chapter in both layouts.
     func removeDownload(snapshot: JobSnapshot, chapterIndex: Int) async {
+        await stopLegacyMigration()
         if let owner = await resolveOwner(snapshot) {
             await release(owner: owner, snapshot: snapshot, chapterIndices: [chapterIndex])
         }
@@ -266,6 +280,7 @@ actor AudiobookDownloads {
 
     /// Cancels the active Download and ends every Download of the snapshot's book.
     func clearDownloads(snapshot: JobSnapshot) async {
+        await stopLegacyMigration()
         cancel(jobId: snapshot.jobId)
         let retiring = writingTasks.values.filter { $0.jobId == snapshot.jobId }.map(\.task)
         for task in retiring { await task.value }
@@ -355,7 +370,8 @@ actor AudiobookDownloads {
                 }
                 let request = LocalAudioArtifactStore.DownloadRequest(
                     bookID: owner.bookID, bookTitle: snapshot.bookTitle ?? snapshot.jobId,
-                    author: snapshot.bookAuthor, chapterIndex: storeIndex, chapterTitle: chapter.displayTitle)
+                    author: snapshot.bookAuthor, chapterIndex: storeIndex, chapterTitle: chapter.displayTitle,
+                    textOffset: max(0, chapter.textOffset ?? 0))
                 let bytes = try await keep(url, request: request, operationID: operationID)
                 try Task.checkCancellation()
                 guard activeTasks[snapshot.jobId] == operationID else { return }

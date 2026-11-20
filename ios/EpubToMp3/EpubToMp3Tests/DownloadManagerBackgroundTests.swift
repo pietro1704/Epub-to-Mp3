@@ -210,7 +210,8 @@ final class DownloadManagerBackgroundTests: XCTestCase {
                                  "downloadUrl": source.absoluteString]]
         ]))
         let artifacts = root.appendingPathComponent("artifacts")
-        let manager = AudiobookDownloads(store: LocalAudioArtifactStore(root: artifacts)) { _ in nil }
+        let manager = AudiobookDownloads(store: LocalAudioArtifactStore(root: artifacts),
+                                         resolveOwner: { _ in nil }, stopLegacyMigration: {})
         let progress = await manager.watchProgress(jobId: "unowned")
         await manager.enqueueAll(snapshot: snapshot, baseURL: nil)
         var terminal: DownloadProgress?

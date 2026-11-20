@@ -11,6 +11,9 @@ extension LocalAudioArtifactStore {
         let author: String?
         let jobID: String
         let canonicalIndices: [Int: Int]
+        /// Characters of chapter text before the audio, by legacy index, for
+        /// audio that starts inside its chapter. Absent means a whole chapter.
+        var textOffsets: [Int: Int] = [:]
     }
 
     enum LegacyImportOutcome: Equatable, Sendable {
@@ -172,9 +175,10 @@ extension LocalAudioArtifactStore {
             try files.fileManager.moveItem(at: staging, to: destination)
         }
         try files.applyDownloadedFilePolicy(to: destination)
+        let textOffset = identity.textOffsets[chapter.index].flatMap { $0 > 0 ? $0 : nil }
         manifest.chapters.append(ChapterArtifact(
             index: canonicalIndex, title: chapter.title, state: .available, retention: .downloaded,
-            relativePath: relativePath, byteCount: copied.byteCount, retryCount: 0,
+            textOffset: textOffset, relativePath: relativePath, byteCount: copied.byteCount, retryCount: 0,
             lastError: nil, updatedAt: chapter.downloadedAt))
         manifest.chapters.sort { $0.index < $1.index }
         manifest.updatedAt = Date()

@@ -16,6 +16,8 @@ enum LegacyAudiobookFixture {
     /// A Download manager whose kept audio goes to `store`, with each test job
     /// standing for its own book on the zero-based axis.
     static func downloads(store: LocalAudioArtifactStore) -> AudiobookDownloads {
-        AudiobookDownloads(store: store) { RetainedAudioOwner(bookID: $0.jobId, indexBase: 0) }
+        AudiobookDownloads(store: store,
+                           resolveOwner: { RetainedAudioOwner(bookID: $0.jobId, indexBase: 0) },
+                           stopLegacyMigration: {})
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Resolves local retained artifacts before compatibility download locations.
+/// Resolves the audio file a chapter plays from.
 enum PlaybackArtifactLocation {
     /// Resolve a remote API path or local cached path to an audio URL.
     /// Backend paths must remain network URLs — treating `/api/...` as a
@@ -19,12 +19,22 @@ enum PlaybackArtifactLocation {
         return backendBaseURL.flatMap { URL(string: path, relativeTo: $0)?.absoluteURL }
     }
 
+    /// The chapter's own local file plays when it is usable. A copy kept by the
+    /// previous `Audiobooks/<jobId>` layout stands in when the chapter is remote
+    /// or its own file is missing or cannot be prepared.
     static func resolve(forDownloadPath path: String?, jobId: String? = nil, chapterIndex: Int? = nil, backendBaseURL: URL?) -> URL? {
-        if let jobId, let chapterIndex,
-           let local = AudiobookDownloadStorage.localAudioURL(jobId: jobId, chapterIndex: chapterIndex) {
-            return prepared(local)
+        let own = Self.playbackURL(forDownloadPath: path, backendBaseURL: backendBaseURL)
+        if let own, own.isFileURL, FileManager.default.fileExists(atPath: own.path),
+           let ready = prepared(own) {
+            return ready
         }
-        return Self.playbackURL(forDownloadPath: path, backendBaseURL: backendBaseURL).flatMap(prepared)
+        if let jobId, let chapterIndex,
+           let kept = AudiobookDownloadStorage.localAudioURL(jobId: jobId, chapterIndex: chapterIndex),
+           let ready = prepared(kept) {
+            return ready
+        }
+        guard let own, !own.isFileURL else { return nil }
+        return own
     }
 
     private static func prepared(_ url: URL) -> URL? {

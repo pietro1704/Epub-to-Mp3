@@ -117,7 +117,8 @@ actor LocalAudioArtifactStore {
                 progressRatio: 1,
                 durationSeconds: nil,
                 startedAt: nil,
-                completedAt: artifact.updatedAt.timeIntervalSince1970
+                completedAt: artifact.updatedAt.timeIntervalSince1970,
+                textOffset: artifact.textOffset
             )
         }
         return JobSnapshot(

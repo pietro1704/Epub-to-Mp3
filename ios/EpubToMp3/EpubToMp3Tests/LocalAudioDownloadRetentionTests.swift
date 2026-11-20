@@ -18,8 +18,10 @@ final class LocalAudioDownloadRetentionTests: XCTestCase {
             return url
         }
 
-        func request(_ chapter: Int, title: String = "Chapter") -> LocalAudioArtifactStore.DownloadRequest {
-            .init(bookID: "book", bookTitle: "Book", author: "Author", chapterIndex: chapter, chapterTitle: title)
+        func request(_ chapter: Int, title: String = "Chapter", textOffset: Int = 0)
+            -> LocalAudioArtifactStore.DownloadRequest {
+            .init(bookID: "book", bookTitle: "Book", author: "Author", chapterIndex: chapter,
+                  chapterTitle: title, textOffset: textOffset)
         }
 
         func canonical(_ chapter: Int) -> URL {
@@ -107,6 +109,41 @@ final class LocalAudioDownloadRetentionTests: XCTestCase {
         let artifact = try LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 4)
         XCTAssertEqual(artifact?.retention, .downloaded)
         XCTAssertEqual(try fixture.chapterFiles(), ["chapter-4.mp3"])
+    }
+
+    func testAudioThatStartsInsideAChapterNeverReplacesKeptAudioThatCoversMoreOfIt() async throws {
+        let fixture = try fixture()
+        let whole = Data(repeating: 1, count: 50)
+        try LocalAudioArtifactFixture.seed(root: fixture.storeRoot, bookID: "book", chapters: [
+            .init(index: 0, title: "Whole", retention: .temporary, audio: whole)
+        ])
+        let suffix = try fixture.source("suffix.mp3", Data(repeating: 2, count: 20))
+        // The whole chapter stays and becomes the protected download.
+        let kept = try await fixture.store.retainDownload(
+            from: suffix, request: fixture.request(0, title: "Suffix", textOffset: 120))
+        XCTAssertEqual(kept, 50)
+        XCTAssertEqual(try Data(contentsOf: fixture.canonical(0)), whole)
+        var artifact = try XCTUnwrap(LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 0))
+        XCTAssertEqual(artifact.title, "Whole")
+        XCTAssertNil(artifact.textOffset)
+        XCTAssertEqual(artifact.retention, .downloaded)
+
+        // A chapter with no kept audio keeps the partial audio, marked as partial.
+        _ = try await fixture.store.retainDownload(
+            from: suffix, request: fixture.request(1, title: "Suffix", textOffset: 120))
+        artifact = try XCTUnwrap(LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 1))
+        XCTAssertEqual(artifact.textOffset, 120)
+        let snapshot = try await fixture.store.playableSnapshot(bookID: "book", engine: "piper", voice: "auto", language: nil)
+        XCTAssertEqual(snapshot?.playableChapters.map(\.textOffset), [nil, 120],
+                       "Partial audio must never be presented as a whole chapter")
+
+        // Audio that covers more of the chapter replaces the partial audio.
+        let fuller = try fixture.source("fuller.mp3", Data(repeating: 3, count: 40))
+        _ = try await fixture.store.retainDownload(from: fuller, request: fixture.request(1, title: "Whole one"))
+        artifact = try XCTUnwrap(LocalAudioArtifactFixture.artifact(root: fixture.storeRoot, bookID: "book", chapterIndex: 1))
+        XCTAssertNil(artifact.textOffset)
+        XCTAssertEqual(artifact.title, "Whole one")
+        XCTAssertEqual(try Data(contentsOf: fixture.canonical(1)), Data(repeating: 3, count: 40))
     }
 
     func testEmptyOrMissingSourceLeavesTheKeptChapterUntouched() async throws {
