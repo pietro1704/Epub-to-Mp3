@@ -101,6 +101,11 @@ class ReleasePrWorkflowTest < Minitest::Test
     assert_includes run, 'chore(release): v${VERSION}'
   end
 
+  def test_the_workflow_never_merges_a_pull_request_itself
+    # Only the trusted merge helper may merge; this workflow just opens the release pull request.
+    refute_match(/\bgh\s+pr\s+merge\b|\bpulls\.merge\s*\(|\/pulls\/[^\s]+\/merge\b|--auto/, @text)
+  end
+
   def test_publication_is_serialized
     assert_equal "release-pr", @workflow.fetch("concurrency").fetch("group")
     assert_equal false, @workflow.fetch("concurrency").fetch("cancel-in-progress")

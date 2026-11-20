@@ -23,3 +23,13 @@ toda tag publica todas as plataformas ou inclui Python. Assinatura, arquitetura,
 dependências e assets de modelo exigem evidência do artefato. Criar release/tag,
 publicar em loja/TestFlight e fazer deploy exigem autorização separada; atualizar
 esta documentação não executa essas ações.
+
+Fluxo de versão e tag: a versão do produto é commitada (`Cargo.toml`, `Cargo.lock`,
+`ruby_app/rails_gateway/VERSION`, `CHANGELOG.md`). Depois de um merge validado no
+master, `release-pr.yml` calcula a próxima versão pelos Conventional Commits desde a
+última tag e abre um pull request `chore(release): vX.Y.Z` (exige o segredo
+`RELEASE_PR_TOKEN` e nunca faz merge sozinho; o caminho confiável de merge ou uma
+pessoa o mescla). Mesclar esse pull request deixa `auto-release.yml` criar a tag e
+uma release do GitHub com notas geradas. Não compila artefatos: `release-desktop.yml`
+continua uma execução manual separada para uma tag publicada. Se essa cadeia pode
+publicar sem passo humano é decisão do dono.

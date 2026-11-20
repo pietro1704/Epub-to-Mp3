@@ -6,6 +6,10 @@ name: Release Pull Request
 # stays committed (Cargo.toml, Cargo.lock, ruby_app/rails_gateway/VERSION,
 # CHANGELOG.md), so this workflow never edits master directly.
 #
+# It never merges: the release pull request is merged like any other ready pull
+# request, by the trusted `Merge eligible pull requests` workflow after its
+# exact-head PR gate (or by a person).
+#
 # Needs the RELEASE_PR_TOKEN secret (a token allowed to push a branch and open a
 # pull request). A pull request opened with the default GITHUB_TOKEN does not
 # start the pull-request checks, so it could never satisfy the required ones.
@@ -162,5 +166,3 @@ jobs:
           gh pr create --base master --head "release/v${VERSION}" \
             --title "chore(release): v${VERSION}" \
             --body "Raises the product version from ${LAST_TAG:-the previous release} to ${VERSION} (Cargo.toml, Cargo.lock, ruby_app/rails_gateway/VERSION, CHANGELOG.md) from the Conventional Commits since the last tag. Merging it lets Auto Release tag v${VERSION} and publish the GitHub release. Opened by the Release Pull Request workflow."
-          gh pr merge "release/v${VERSION}" --auto --squash \
-            || echo "::notice::Auto-merge could not be enabled; merge the release pull request manually."
