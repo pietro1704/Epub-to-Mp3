@@ -83,22 +83,3 @@ enum StorageUsageScanner {
         }
     }
 }
-
-// MARK: - AudiobookCacheEviction
-
-/// Last-access bookkeeping for legacy audiobook folders.
-///
-/// Generated or downloaded audio is listener-owned and is never removed by an
-/// automatic age or size policy; removal happens only through an explicit
-/// user action. Playback still stamps a `last_access` sidecar (plain
-/// ISO-8601 string) inside the audiobook folder when it opens a book.
-enum AudiobookCacheEviction {
-    /// Touch the last-access timestamp for `jobId`.
-    /// Safe to call from any thread — no shared mutable state.
-    static func touchLastAccess(jobId: String) {
-        guard let url = AudiobookDownloadStorage.jobDirectory(for: jobId)?
-            .appendingPathComponent("last_access") else { return }
-        let iso = ISO8601DateFormatter().string(from: Date())
-        try? iso.write(to: url, atomically: true, encoding: .utf8)
-    }
-}

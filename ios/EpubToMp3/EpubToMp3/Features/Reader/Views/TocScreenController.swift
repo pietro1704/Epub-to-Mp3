@@ -223,29 +223,25 @@ final class TocScreenController: UITableViewController {
     }
 
     private func refreshDownloaded() {
-        // `Task.detached` does not inherit the enclosing `@MainActor`
-        // isolation, so `snapshot` (a MainActor-isolated property) must be
-        // captured into a plain local before crossing into the detached
-        // closure — referencing `self.snapshot` directly from inside it is
-        // both a capture-semantics error and an actor-isolation violation.
-        let jobID = snapshot.jobId
+        let snapshot = snapshot
         Task { [weak self] in
-            let downloaded: Set<Int>
-            let states: [Int: LocalAudioArtifactStore.ArtifactState]
-            downloaded = await Task.detached(priority: .utility) {
-                AudiobookDownloadStorage.locallyDownloadedIndices(for: jobID)
-            }.value
-            states = [:]
-            guard let self, self.snapshot.jobId == jobID else { return }
+            let downloaded = await AudiobookDownloads.shared.downloadedIndices(for: snapshot)
+            guard let self, self.snapshot.jobId == snapshot.jobId else { return }
             self.locallyDownloaded = downloaded
-            self.localArtifactStates = states
+            self.localArtifactStates = [:]
             self.configureMoreMenu()
             self.tableView.reloadData()
         }
     }
 
+    /// Kept audio also changes outside this screen's own Download requests:
+    /// a removal here, the Settings list, or the launch migration.
     private func observeLocalAudioArtifacts() {
-        return
+        notificationObservers.append(NotificationCenter.default.addObserver(
+            forName: LocalAudioArtifactStore.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshDownloaded() }
+        })
     }
 
     private func observeDownloadProgress() {

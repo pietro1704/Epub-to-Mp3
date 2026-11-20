@@ -95,6 +95,15 @@ actor RustConversionOutputStore {
         writer.waiters.forEach { $0.resume() }
     }
 
+    /// The book a job's output directory was created for: its ownership record
+    /// or, for jobs older than that record, the content hash of the recorded source.
+    func bookID(forJob jobID: String) async -> String? {
+        guard let directory = try? jobDirectory(jobID),
+              FileManager.default.fileExists(atPath: directory.path) else { return nil }
+        if let identity = ownership(at: directory) { return identity.bookID }
+        return await legacyBookID(at: directory)
+    }
+
     /// All Rust outputs are protected audio; temporary-cache cleanup never visits this root.
     nonisolated static func storageBytes(at root: URL = defaultRoot) -> Int64 {
         guard hasCanonicalRoot(root) else { return 0 }

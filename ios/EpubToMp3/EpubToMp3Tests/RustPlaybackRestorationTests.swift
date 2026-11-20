@@ -78,7 +78,7 @@ final class RustPlaybackRestorationTests: XCTestCase {
         try withFixture { job, manager, directory in
             let retained = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: job)).appendingPathComponent("retained.mp3")
             try Data([1, 2, 3]).write(to: retained)
-            try AudiobookDownloadStorage.saveManifest(.init(jobId: job, bookTitle: "Retained",
+            try LegacyAudiobookFixture.save(.init(jobId: job, bookTitle: "Retained",
                 chapters: [.init(index: 0, title: "Retained title", mp3FileName: "retained.mp3",
                                  mp3Bytes: 3, downloadedAt: Date())], totalBytes: 3, completedAt: nil))
             let source = try XCTUnwrap(RustConversionCoordinator.persistedSnapshot(jobID: job, fileManager: manager))
@@ -122,7 +122,7 @@ final class RustPlaybackRestorationTests: XCTestCase {
     private func retainChapterEight(job: String) throws -> URL {
         let retained = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: job)).appendingPathComponent("retained.mp3")
         try Data([7, 8, 9]).write(to: retained)
-        try AudiobookDownloadStorage.saveManifest(.init(jobId: job, bookTitle: "Retained",
+        try LegacyAudiobookFixture.save(.init(jobId: job, bookTitle: "Retained",
             chapters: [.init(index: 8, title: "Retained chapter", mp3FileName: "retained.mp3",
                              mp3Bytes: 3, downloadedAt: Date())], totalBytes: 3, completedAt: nil))
         return retained

@@ -137,40 +137,4 @@ final class DownloadManagerHelperTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.deletingLastPathComponent().path))
     }
-
-    func testPartialManifestMergeIsIdempotentAndIncomingEntryWins() {
-        let jobId = "merge-\(UUID().uuidString)"
-        let old = AudiobookManifest(
-            jobId: jobId, bookTitle: "Book", chapters: [
-                .init(index: 0, title: "zero", mp3FileName: "zero.mp3", mp3Bytes: 10, downloadedAt: Date(timeIntervalSince1970: 1)),
-                .init(index: 2, title: "old", mp3FileName: "old.mp3", mp3Bytes: 20, downloadedAt: Date(timeIntervalSince1970: 2))
-            ], totalBytes: 30, completedAt: nil
-        )
-        let incoming = AudiobookManifest(
-            jobId: jobId, bookTitle: "Book", chapters: [
-                .init(index: 1, title: "one", mp3FileName: "one.mp3", mp3Bytes: 11, downloadedAt: Date(timeIntervalSince1970: 3)),
-                .init(index: 2, title: "new", mp3FileName: "new.mp3", mp3Bytes: 21, downloadedAt: Date(timeIntervalSince1970: 4))
-            ], totalBytes: 32, completedAt: nil
-        )
-
-        let merged = AudiobookDownloadStorage.mergeManifests(old, incoming)
-        let repeated = AudiobookDownloadStorage.mergeManifests(merged, incoming)
-        XCTAssertEqual(merged.chapters.map(\.index), [0, 1, 2])
-        XCTAssertEqual(merged.chapters.first(where: { $0.index == 2 })?.mp3FileName, "new.mp3")
-        XCTAssertEqual(merged.totalBytes, 42)
-        XCTAssertEqual(repeated, merged)
-    }
-
-    func testManifestIsCompleteRequiresEveryExpectedChapterAndExistingFiles() throws {
-        let jobId = "complete-\(UUID().uuidString)"
-        defer { AudiobookDownloadStorage.deleteAudiobook(jobId: jobId) }
-        let folder = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: jobId))
-        let entries = [0, 1].map {
-            AudiobookManifest.ChapterEntry(index: $0, title: "ch\($0)", mp3FileName: "ch\($0).mp3", mp3Bytes: 128, downloadedAt: Date())
-        }
-        for entry in entries { try Data(repeating: 0xFF, count: 128).write(to: folder.appendingPathComponent(entry.mp3FileName)) }
-        let manifest = AudiobookManifest(jobId: jobId, bookTitle: "Book", chapters: entries, totalBytes: 256, completedAt: Date())
-        XCTAssertTrue(AudiobookDownloadStorage.isManifestComplete(manifest, expectedChapterIndices: [0, 1]))
-        XCTAssertFalse(AudiobookDownloadStorage.isManifestComplete(manifest, expectedChapterIndices: [0, 1, 2]))
-    }
 }

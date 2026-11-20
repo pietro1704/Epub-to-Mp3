@@ -161,21 +161,6 @@ final class LegacyJobPathSafetyTests: XCTestCase {
         }
     }
 
-    #if !APP_FOUNDATION_HOST_TESTS
-    func testTouchLastAccessDoesNotWriteThroughUnsafeJobIDs() throws {
-        for id in Self.attackIDs {
-            try resetFixture()
-            AudiobookCacheEviction.touchLastAccess(jobId: id)
-            for escaped in [parent.appendingPathComponent("last_access"),
-                            root.appendingPathComponent("last_access"),
-                            parent.appendingPathComponent("outside-dir/last_access")] {
-                XCTAssertFalse(FileManager.default.fileExists(atPath: escaped.path),
-                               "touchLastAccess(\(id.debugDescription)) wrote \(escaped.path)")
-            }
-        }
-    }
-    #endif
-
     // MARK: Valid ids keep working
 
     func testValidJobIDsDeleteExactlyTheirOwnFolder() throws {

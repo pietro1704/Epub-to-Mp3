@@ -99,15 +99,7 @@ extension LocalAudioArtifactStore {
     }
 
     private func importDestinationManifest(_ identity: LegacyImportIdentity) throws -> Manifest? {
-        let manifestURL = files.bookDirectory(bookID: identity.bookID).appendingPathComponent("manifest.json")
-        try LocalAudioImportFiles.checkPath(manifestURL, under: files.root)
-        guard let manifest = try files.loadManifest(bookID: identity.bookID) else { return nil }
-        guard manifest.bookID == identity.bookID, manifest.schemaVersion == Self.schemaVersion,
-              Set(manifest.chapters.map(\.index)).count == manifest.chapters.count,
-              manifest.chapters.allSatisfy({ $0.index >= 0 && $0.relativePath == files.relativePath(for: $0.index) }) else {
-            throw LocalAudioImportFiles.Failure.destinationConflict
-        }
-        return manifest
+        try validatedManifest(bookID: identity.bookID)
     }
 
     private func importLegacyChapter(

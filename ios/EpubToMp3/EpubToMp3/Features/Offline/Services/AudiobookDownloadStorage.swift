@@ -15,10 +15,15 @@ enum AudiobookDownloadStorage {
     nonisolated(unsafe) static var rootOverrideForTesting: URL?
 
     static func audiobooksRoot() -> URL {
-        if let override = rootOverrideForTesting {
-            try? FileManager.default.createDirectory(at: override, withIntermediateDirectories: true)
-            return override
-        }
+        let url = audiobooksRootLocation()
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// Where the root is, without creating it. Reads use this so that asking
+    /// about kept audio never leaves an empty folder behind.
+    static func audiobooksRootLocation() -> URL {
+        if let override = rootOverrideForTesting { return override }
         let base: URL
         #if os(macOS)
         // App-owned audio must stay inside the sandbox. Reading the user's
@@ -32,15 +37,13 @@ enum AudiobookDownloadStorage {
         #else
         base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         #endif
-        let url = base.appendingPathComponent(audiobooksFolderName, isDirectory: true)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
+        return base.appendingPathComponent(audiobooksFolderName, isDirectory: true)
     }
 
     /// The job's folder directly under the Audiobooks root, or nil when the id
     /// is not a safe single path component (see `LegacyJobDirectory`).
     static func jobDirectory(for jobId: String, operation: String = #function) -> URL? {
-        LegacyJobDirectory.directory(for: jobId, under: audiobooksRoot(), operation: operation)
+        LegacyJobDirectory.directory(for: jobId, under: audiobooksRootLocation(), operation: operation)
     }
 
     /// `chapters/` inside the job folder, refused when it is a symlink so
@@ -163,51 +166,6 @@ enum AudiobookDownloadStorage {
             chaptersCompleted: chapters.count, chapterProgress: chapters, outputs: conversion.outputs,
             logUrl: conversion.logUrl, error: conversion.error, lastActivityAt: conversion.lastActivityAt,
             chapterIndexBase: conversion.chapterIndexBase, sourceChaptersTotal: conversion.sourceChaptersTotal)
-    }
-
-    static func reusableDownloadedEntry(
-        chapterIndex: Int,
-        manifestEntry: AudiobookManifest.ChapterEntry?,
-        fileExists: Bool
-    ) -> AudiobookManifest.ChapterEntry? {
-        guard let manifestEntry,
-              manifestEntry.index == chapterIndex,
-              manifestEntry.mp3Bytes > 0,
-              fileExists else { return nil }
-        return manifestEntry
-    }
-
-    static func mergeManifests(_ old: AudiobookManifest?, _ incoming: AudiobookManifest) -> AudiobookManifest {
-        guard let old else { return incoming }
-        var byIndex = Dictionary(uniqueKeysWithValues: old.chapters.map { ($0.index, $0) })
-        for entry in incoming.chapters { byIndex[entry.index] = entry }
-        let chapters = byIndex.values.sorted { $0.index < $1.index }
-        return AudiobookManifest(jobId: incoming.jobId, bookTitle: incoming.bookTitle,
-                                 chapters: chapters,
-                                 totalBytes: chapters.reduce(0) { $0 + $1.mp3Bytes },
-                                 completedAt: incoming.completedAt ?? old.completedAt)
-    }
-
-    static func isManifestComplete(_ manifest: AudiobookManifest, expectedChapterIndices: [Int]) -> Bool {
-        let expected = Set(expectedChapterIndices)
-        guard Set(manifest.chapters.map(\.index)) == expected else { return false }
-        guard let folder = audiobookFolder(for: manifest.jobId) else { return false }
-        let fileManager = FileManager.default
-        return manifest.chapters.allSatisfy { entry in
-            let url = folder.appendingPathComponent(entry.mp3FileName)
-            guard fileManager.fileExists(atPath: url.path),
-                  let attributes = try? fileManager.attributesOfItem(atPath: url.path),
-                  let size = attributes[.size] as? Int64 else {
-                return false
-            }
-            return size > 0
-        }
-    }
-
-    static func saveManifest(_ manifest: AudiobookManifest) throws {
-        guard let url = manifestURL(for: manifest.jobId) else { throw CocoaError(.fileWriteInvalidFileName) }
-        let data = try JSONEncoder().encode(manifest)
-        try data.write(to: url, options: .atomic)
     }
 
     /// Remove exactly one job's folder. An unsafe id is a logged no-op, so a
