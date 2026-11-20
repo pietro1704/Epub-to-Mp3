@@ -102,6 +102,10 @@ jobs:
     name: android
     timeout-minutes: 25
     runs-on: ubuntu-24.04
+    env:
+      # Java, the Android SDK and Rust come from the project mise toolchain, like
+      # the validated Android build in faber-integration.yml.
+      MISE_ENABLE_TOOLS: ruby,ninja,flutter,java,android-sdk,rust
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -109,35 +113,35 @@ jobs:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
 
-      - name: Set up Java 21
-        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Set up Rust Android target
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: 1.99.1
-          targets: aarch64-linux-android
-
       - name: Set up native build tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         env:
-          MISE_ENABLE_TOOLS: ruby,ninja,flutter
+          MISE_ENABLE_TOOLS: ruby,ninja,flutter,java,android-sdk,rust
         with:
+          version: 2026.11.3
           experimental: true
 
       - name: Install native Android prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libclang-dev cmake pkg-config
-          sdkmanager --install "ndk;28.2.13676358"
-          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config
+
+      # The runner image no longer puts an Android SDK on PATH (v0.9.0 failed with
+      # "sdkmanager: command not found"); use the mise-managed SDK.
+      - name: Accept Android SDK licenses
+        run: |
+          set +o pipefail
+          yes | mise exec -- sdkmanager --licenses
+          result=${PIPESTATUS[1]}
+          exit "$result"
+
+      - name: Install project Android target dependencies
+        run: |
+          mise run android:embedded-deps
+          mise exec -- rustup target add aarch64-linux-android
 
       - name: Build APK (release)
         env:
-          MISE_ENABLE_TOOLS: ruby,ninja,flutter
           MISE_EXPERIMENTAL: "1"
         run: mise run flutter:build-apk
 
@@ -177,10 +181,24 @@ jobs:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: brew install xcodegen
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Install mise
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
-          toolchain: 1.99.1
+          version: 2026.11.3
+          cache: false
+          install: false
+
+      - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+
+      # The app embeds target/release/libconverter_ffi.dylib; v0.9.0 failed because
+      # nothing built it. Same step as the CodeQL Apple build.
+      - name: Build the embedded Rust library
+        env:
+          CARGO_BUILD_JOBS: '1'
+        run: mise run converter-ffi:build
 
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
@@ -251,11 +269,15 @@ jobs:
             os: ubuntu-22.04
             target: linux
           - label: windows-x64
-            os: windows-latest
+            os: windows-2025
             target: windows
     runs-on: ${{ matrix.os }}
     env:
       MISE_ENABLE_TOOLS: flutter
+      # Windows builds ort-sys against the provisioned runtime below (ignored on Linux,
+      # whose build resolves its runtime itself).
+      ORT_PREFER_DYNAMIC_LINK: '1'
+      ORT_SKIP_DOWNLOAD: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -275,6 +297,11 @@ jobs:
           MISE_ENABLE_TOOLS: flutter
         with:
           version: 2026.11.3
+
+      - name: Provision the pinned ONNX Runtime and libclang
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/provision_onnxruntime_windows.ps1 -Owned (Join-Path $env:RUNNER_TEMP 'release-windows')
 
       - name: Enable desktop platform
         working-directory: flutter_app
