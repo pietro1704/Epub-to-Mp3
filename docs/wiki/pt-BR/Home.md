@@ -26,6 +26,5 @@ exige ação explícita. Voz nativa do navegador serve para escuta; exportar MP3
 - [Troubleshooting](Troubleshooting.md)
 - [Contribuição e Segurança](Contributing-and-Security.md)
 
-Notas das antigas slices SwiftUI e guias de sidecar em `docs/archive/` são
-históricos. Comportamento atual exige inspeção do adaptador e evidência real.
+Comportamento atual exige inspeção do adaptador e evidência real.
 Esta revisão é local; não publica a wiki nem valida um serviço.

@@ -13,12 +13,12 @@ condicional; processos e rede nativos não formam uma API do navegador.
 | Flutter | `flutter_app/lib/main.dart`, `lib/services/conversion/embedded_converter.dart` | Canal nativo Android e FFI Linux/Windows registrados |
 | Servidor opcional | `crates/converter-server/src/main.rs` | Contrato HTTP hospedado de compatibilidade |
 
-Apple não exige Python ou sidecar HTTP para conversão embutida. A conversão do
+Apple converte no próprio processo, sem servidor HTTP. A conversão do
 navegador não deve selecionar silenciosamente o adaptador HTTP retido. Flutter
-registra conversores embutidos. A aplicação Python legada foi removida.
+registra conversores embutidos.
 
-Paths, schemas e persistência dependem do adaptador e da configuração; os antigos
-padrões Python removidos `.jobs/`/`.uploads/` não são paths universais das plataformas.
+Paths, schemas e persistência dependem do adaptador e da configuração; os paths de
+um adaptador não são paths universais das plataformas.
 Consulte [navegação do runtime](../../agents/runtime-navigation.md),
 [CONTEXT.md](../../../CONTEXT.md) e ADRs relevantes para detalhes.
 Código conectado não comprova migração concluída ou aceite em runtime.

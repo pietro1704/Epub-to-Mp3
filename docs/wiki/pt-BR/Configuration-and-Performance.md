@@ -12,8 +12,7 @@ Amostra estática ou catálogo legado não comprova disponibilidade de modelo.
 
 Inspecione `crates/converter-core/src/config.rs`, `paths.rs`, `tts_preferences.rs`,
 módulos de modelo/runtime e configurações do cliente antes de citar variáveis de
-ambiente ou paths persistentes. Overrides Python antigos de concorrência Edge não
-são perfil universal atual. Preferência salva, escolha do job e ambiente podem ter
+ambiente ou paths persistentes. Preferência salva, escolha do job e ambiente podem ter
 precedências distintas; teste a interface afetada.
 
 Cache é estado do runtime: preserve livros, modelos e artefatos utilizáveis.

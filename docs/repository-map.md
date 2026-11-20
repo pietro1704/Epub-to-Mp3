@@ -25,7 +25,6 @@ establish acceptance for that checkpoint or the later audit phases.
 | Browser client | [Rails web README](../ruby_app/rails_gateway/README.md) and [WASM boundary](wasm-capability-boundary.md) |
 | Embedded native packages | [FFI artifact contract](converter-ffi-artifacts.md) and [iOS integration](../ios/EpubToMp3/docs/converter-ffi-ios.md) |
 | Local user documentation | [Wiki source index](wiki/README.md), in English and Brazilian Portuguese |
-| Historical consolidation results | [Reconciled checkpoint](archive/root/RESUME_CONSOLIDATION.md) and [historical reports](archive/consolidation/historical-reports.md) |
 
 Guides describe their own scope and may retain dated examples. Read the canonical
 contract and actual task definition before executing an example. Generic
@@ -58,8 +57,7 @@ path has no direct production import.
 | --- | --- | --- |
 | `scripts/` (202) | Host tooling; mise tasks, CI, native packaging and verification invoke script entrypoints and executable regressions | Keep paths; audit affected tool behavior with its host suite |
 | `tools/` (14) | Native device tooling; `DeviceWorkflow/Package.swift` selects library, CLI and tests consumed by `scripts/device-workflow.sh` | Keep; host tests cannot replace device acceptance |
-| `tests/` (13), `benches/` (2), `benchmarks/` (1) | Shared audio/parity fixtures, Cargo benchmark and retained JSON reports; runtime tests and migration/performance comparisons consume them | Preserve fixture identity and dated evidence |
-| `voice_samples/` (1) | Tracked README describes optional fixture/preview audio; ignored recordings are outside the census | Preserve retained samples; no audio generation, playback or cleanup |
+| `tests/` (13), `benches/` (2) | Shared audio/parity fixtures and the Cargo benchmark; runtime tests and performance comparisons consume them | Preserve fixture identity |
 | `config/` (1), `.cargo/` (1) | Mac storage guard and Cargo configuration; native supervisor and workspace commands consume them | Preserve enforcement; inspect before build changes |
 | `.github/` (65), `.githooks/` (2) | CI, artifact production, protected delivery and local Git gates | Keep existing exact-head merge mechanism; workflow presence is not a passing check |
 | `.agents/` (23), `.claude/` (61), `.codex/` (1), `.hermes/` (3) | Harness routing, shared skills, hooks and specialist locators; Hermes paths alias `.agents/skills/` | Preserve aliases; configuration maintenance has its own routing |
@@ -133,9 +131,9 @@ Do not split them solely to satisfy a source-file threshold.
 | `CONTEXT.md`, `CODING_STANDARDS.md`, `CLAUDE.md`, `docs/agents/` | Current contracts and operational routing | Keep canonical paths; link rather than duplicate policy |
 | `docs/adr/` | Dated architectural decisions, with section-specific supersession | Keep; the 2026-10-02 reactive-state ADR retains accepted state design but supersedes its old Edge defaults |
 | `docs/wiki/`, client READMEs, Apple `docs/` | Local user/developer guidance | Keep; reconcile product facts with canonical source, in both wiki languages when affected |
-| [`docs/archive/`](archive/README.md) | Historical plans, research, bug notes, consolidation reports, former agent guides/specialists, dated reports and superseded root/Apple planning documents | Read-only history; status there never implies current runtime acceptance |
 
-Historical documents were relocated to `docs/archive/` by the repository cleanup. Existing
+Historical plans, research and reports were removed from the tree; they remain in
+Git history and never imply current runtime acceptance. Existing
 Apple/Rust/Flutter roots remain the target structure. No consequential structural
 decision has been justified by the inventory alone. Any later move proposal must
 name every exact old/new path, implicit packaging consumer, validation and rollback

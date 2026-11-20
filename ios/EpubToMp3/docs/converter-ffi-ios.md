@@ -65,8 +65,7 @@ after timeout. Do not reenter the same gate or wait for ABI return in a callback
 This is a foreign-context lifetime guarantee, not full worker cancellation.
 
 Host tests do not establish physical packaging, full conversion, model readiness,
-frontend routing or playback behavior. Remaining gates are recorded in
-`docs/archive/plans/2026-10-08-app-quality-performance.md`.
+frontend routing or playback behavior.
 
 ## Apple build destinations
 
