@@ -188,6 +188,7 @@ extension LocalAudioArtifactStore {
         guard try importDestinationManifest(identity) == manifest else {
             throw LocalAudioImportFiles.Failure.destinationConflict
         }
+        publishVisibleCopy(bookID: identity.bookID, chapterIndex: canonicalIndex)
         return .imported
     }
 }

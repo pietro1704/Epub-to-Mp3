@@ -43,7 +43,12 @@ struct StorageUsageSnapshot: Equatable, Sendable {
 
 enum StorageUsageScanner {
     static func current(rustOutputsRoot: URL = RustConversionOutputStore.defaultRoot) -> StorageUsageSnapshot {
-        let legacyOffline = directorySize(AudiobookDownloadStorage.audiobooksRoot())
+        // Visible copies are clones of store audio that is counted below.
+        let legacyRoot = AudiobookDownloadStorage.audiobooksRootLocation()
+        let legacyFolders = (try? FileManager.default.contentsOfDirectory(
+            at: legacyRoot, includingPropertiesForKeys: nil)) ?? []
+        let legacyOffline = legacyFolders.filter { !DownloadedAudioFilesMirror.isMirrorFolder($0) }
+            .reduce(Int64(0)) { $0 + directorySize($1) }
         let ttsRoot = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts", isDirectory: true)

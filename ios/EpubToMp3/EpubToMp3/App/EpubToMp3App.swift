@@ -285,6 +285,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
             setIdleTimerDisabled(true)
             guard !Self.isRunningUnderXCTest() else { return }
             Self.pruneLibraryOrphans(library: library, bookmarkStore: bookmarkStore)
+            // Once per launch, after the library is known; idempotent across launches.
+            LegacyAudioMigrationSession.shared.startIfNeeded(books: LegacyAudioMigrationSession.books(in: library))
         }
     }
 

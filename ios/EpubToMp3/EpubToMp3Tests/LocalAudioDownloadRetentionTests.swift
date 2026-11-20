@@ -146,6 +146,44 @@ final class LocalAudioDownloadRetentionTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fixture.canonical(1)), Data(repeating: 3, count: 40))
     }
 
+    func testDownloadsAreShownInTheListenersFilesAndLeaveWithTheDownload() async throws {
+        let fixture = try fixture()
+        let visibleRoot = fixture.root.appendingPathComponent("Documents/Audiobooks", isDirectory: true)
+        let store = LocalAudioArtifactStore(
+            root: fixture.storeRoot, visibleCopies: DownloadedAudioFilesMirror(root: visibleRoot))
+        func visible(_ folder: String) -> [String] {
+            ((try? FileManager.default.contentsOfDirectory(atPath: visibleRoot.appendingPathComponent(folder).path)) ?? [])
+                .filter { !$0.hasPrefix(".") }.sorted()
+        }
+        let converted = try fixture.source("converted.mp3", Data(repeating: 4, count: 24))
+        _ = try await store.retainDownload(from: converted, request: fixture.request(0, title: "Opening"))
+        _ = try await store.retainDownload(from: converted, request: fixture.request(1, title: "Second"))
+        XCTAssertEqual(visible("Book"), ["01 - Opening.mp3", "02 - Second.mp3"])
+        XCTAssertEqual(try Data(contentsOf: visibleRoot.appendingPathComponent("Book/02 - Second.mp3")),
+                       Data(repeating: 4, count: 24))
+
+        // Listened audio that becomes protected is shown too; temporary audio is not.
+        try LocalAudioArtifactFixture.seed(root: fixture.storeRoot, bookID: "book", chapters: [
+            .init(index: 2, title: "Heard", retention: .temporary, audio: Data(repeating: 5, count: 8))
+        ])
+        XCTAssertEqual(visible("Book"), ["01 - Opening.mp3", "02 - Second.mp3"])
+        try await store.promote(bookID: "book", chapterIndex: 2)
+        XCTAssertEqual(visible("Book"), ["01 - Opening.mp3", "02 - Second.mp3", "03 - Heard.mp3"])
+
+        // Deleting the visible copy does not end the Download, and a repeated
+        // promotion does not bring the copy back.
+        try FileManager.default.removeItem(at: visibleRoot.appendingPathComponent("Book/03 - Heard.mp3"))
+        try await store.promote(bookID: "book", chapterIndex: 2)
+        XCTAssertEqual(visible("Book"), ["01 - Opening.mp3", "02 - Second.mp3"])
+        let kept = try await store.downloadedChapterIndices(bookID: "book")
+        XCTAssertEqual(kept, [0, 1, 2])
+
+        try await store.releaseDownload(bookID: "book", chapterIndex: 0, playbackSource: converted)
+        XCTAssertEqual(visible("Book"), ["02 - Second.mp3"])
+        try await store.removeAllAudio(bookID: "book")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: visibleRoot.appendingPathComponent("Book").path))
+    }
+
     func testEmptyOrMissingSourceLeavesTheKeptChapterUntouched() async throws {
         let fixture = try fixture()
         let audio = Data(repeating: 9, count: 12)

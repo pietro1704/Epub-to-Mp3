@@ -6,7 +6,7 @@ import Foundation
 /// to a download changes its manifest retention only, which prevents a
 /// second copy of already-generated audio from consuming storage.
 actor LocalAudioArtifactStore {
-    static let shared = LocalAudioArtifactStore()
+    static let shared = LocalAudioArtifactStore(visibleCopies: .userVisible)
     nonisolated static let didChangeNotification = Notification.Name("LocalAudioArtifactStore.didChange")
 
     static let schemaVersion = 1
@@ -15,8 +15,33 @@ actor LocalAudioArtifactStore {
     private var root: URL { files.root }
     private var fileManager: FileManager { files.fileManager }
 
-    init(root: URL = LocalAudioArtifactStore.defaultRoot()) {
+    /// Where protected downloads are also shown to the listener, if anywhere.
+    private let visibleCopies: DownloadedAudioFilesMirror?
+
+    init(root: URL = LocalAudioArtifactStore.defaultRoot(), visibleCopies: DownloadedAudioFilesMirror? = nil) {
         files = LocalAudioArtifactFiles(root: root.standardizedFileURL, fileManager: .default)
+        self.visibleCopies = visibleCopies
+    }
+
+    /// Shows a protected chapter in the listener's files. The store is already
+    /// consistent when this runs, so a failure here never fails the Download.
+    func publishVisibleCopy(bookID: String, chapterIndex: Int) {
+        guard let visibleCopies, let manifest = try? files.loadManifest(bookID: bookID),
+              let artifact = manifest.chapters.first(where: { $0.index == chapterIndex }),
+              artifact.state == .available, artifact.retention == .downloaded,
+              files.hasAudioFile(bookID: bookID, artifact: artifact) else { return }
+        do {
+            try visibleCopies.publish(
+                files.bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath),
+                bookID: bookID, bookTitle: manifest.bookTitle,
+                chapterIndex: chapterIndex, chapterTitle: artifact.title)
+        } catch {
+            NSLog("Visible download copy failed: %@", error.localizedDescription)
+        }
+    }
+
+    func withdrawVisibleCopy(bookID: String, chapterIndex: Int) {
+        try? visibleCopies?.withdraw(bookID: bookID, chapterIndex: chapterIndex)
     }
 
     nonisolated static func defaultRoot() -> URL {
@@ -58,12 +83,15 @@ actor LocalAudioArtifactStore {
             throw StoreError.invalidAudioFile(url)
         }
         try files.applyDownloadedFilePolicy(to: url)
+        let wasDownloaded = try requiredArtifact(bookID: bookID, chapterIndex: chapterIndex).retention == .downloaded
         try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
             artifact.state = .available
             artifact.retention = .downloaded
             artifact.byteCount = size
             artifact.lastError = nil
         }
+        // A copy the listener deleted is not brought back by a repeated promotion.
+        if !wasDownloaded { publishVisibleCopy(bookID: bookID, chapterIndex: chapterIndex) }
     }
 
     /// Promotes already-created playable audio before a new conversion request
@@ -205,6 +233,7 @@ actor LocalAudioArtifactStore {
             entry.byteCount = 0
             entry.lastError = nil
         }
+        withdrawVisibleCopy(bookID: bookID, chapterIndex: chapterIndex)
     }
 
     func clearDownloadedAudio(bookID: String) throws {
@@ -221,12 +250,14 @@ actor LocalAudioArtifactStore {
         let directory = files.bookDirectory(bookID: bookID)
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
+        try? visibleCopies?.withdrawBook(bookID: bookID)
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
     func clearAllAudio() throws {
         guard fileManager.fileExists(atPath: root.path) else { return }
         try fileManager.removeItem(at: root)
+        try? visibleCopies?.withdrawAll()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 

@@ -84,6 +84,26 @@ final class LegacyAudioMigrationCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot?.playableChapters.map(\.textOffset), [120, nil])
     }
 
+    func testMigratedDownloadsStayVisibleUnderTheBookTitleInTheSameDocumentsFolder() async throws {
+        let (fixture, defaults) = try fixture()
+        try fixture.writeSource(chapters: [0, 1])
+        let job = try converted(fixture, base: 0, chapters: [0, 1])
+        // On the iPhone the legacy job folders and the visible copies share Documents/Audiobooks.
+        let store = LocalAudioArtifactStore(
+            root: fixture.storeRoot, visibleCopies: DownloadedAudioFilesMirror(root: fixture.legacyRoot))
+        let migration = LegacyAudioMigrationCoordinator(
+            store: store, legacyRoot: fixture.legacyRoot, defaults: defaults, convertedChapters: { _ in job })
+        let report = try await migration.run(books: [book()])
+        XCTAssertEqual(report.books["book"], .complete(imported: 2, alreadyPresent: 0))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.legacyRoot.path), ["Library title"],
+                       "The unreadable job folder gives way to a folder named after the book")
+        let visible = try FileManager.default.contentsOfDirectory(
+            atPath: fixture.legacyRoot.appendingPathComponent("Library title").path).filter { !$0.hasPrefix(".") }.sorted()
+        XCTAssertEqual(visible, ["01 - Chapter 0.mp3", "02 - Chapter 1.mp3"])
+        XCTAssertEqual(try Data(contentsOf: fixture.legacyRoot.appendingPathComponent("Library title/01 - Chapter 0.mp3")),
+                       LegacyAudioImportFixture.audio)
+    }
+
     func testASecondRunDoesNothing() async throws {
         let (fixture, defaults) = try fixture()
         try fixture.writeSource(chapters: [0, 1])

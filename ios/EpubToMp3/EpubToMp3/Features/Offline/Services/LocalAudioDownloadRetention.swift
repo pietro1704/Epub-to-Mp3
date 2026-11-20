@@ -83,6 +83,7 @@ extension LocalAudioArtifactStore {
         manifest.updatedAt = now
         // Once the file is published, record it before honoring cancellation.
         try files.save(manifest)
+        publishVisibleCopy(bookID: request.bookID, chapterIndex: request.chapterIndex)
         return byteCount
     }
 
@@ -115,6 +116,7 @@ extension LocalAudioArtifactStore {
         updated.chapters[position].updatedAt = Date()
         updated.updatedAt = Date()
         try files.save(updated)
+        withdrawVisibleCopy(bookID: bookID, chapterIndex: chapterIndex)
         try files.applyTemporaryFilePolicy(
             to: files.bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath))
     }
