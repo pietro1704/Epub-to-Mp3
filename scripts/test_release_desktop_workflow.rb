@@ -34,6 +34,15 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
            "Rust comes from the project mise toolchain, like the CodeQL Apple build"
   end
 
+  # The v0.9.0 re-run failed at "Install mise": the project's mise environment runs
+  # scripts/xcode_build_paths.rb, which needs the hosted Xcode 16.4 that macos-latest
+  # no longer has. The release uses the same macOS image as the CodeQL Apple build.
+  def test_apple_release_runs_on_the_validated_macos_image
+    codeql = workflow("codeql.yml").fetch("jobs").values.map { |job| job["runs-on"] }.grep(/\Amacos-/).uniq
+    assert_equal 1, codeql.size, "one CodeQL macOS image"
+    assert_equal codeql.first, @jobs.fetch("swiftui-apple").fetch("runs-on")
+  end
+
   # Failure 2: "sdkmanager: command not found" - the runner image no longer puts an
   # Android SDK on PATH; the project installs it through mise.
   def test_android_release_uses_the_mise_android_sdk
