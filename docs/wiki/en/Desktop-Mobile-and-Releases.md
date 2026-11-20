@@ -23,3 +23,13 @@ than assuming every tag publishes every platform or bundles Python. Signing,
 architecture, runtime dependencies and model assets require artifact evidence.
 Release/tag creation, store/TestFlight publishing and deployment need separate
 authorization; a documentation update triggers none of them.
+
+Version and tag flow: the product version is committed (`Cargo.toml`, `Cargo.lock`,
+`ruby_app/rails_gateway/VERSION`, `CHANGELOG.md`). After a validated merge to
+master, `release-pr.yml` plans the next version from the Conventional Commits since
+the last tag and opens a `chore(release): vX.Y.Z` pull request (it needs the
+`RELEASE_PR_TOKEN` secret and never merges anything itself; the normal trusted
+merge path or a person merges it). Merging that pull request lets `auto-release.yml`
+create the tag and a GitHub release with generated notes. It builds no artifacts:
+`release-desktop.yml` stays a separate manual run for a published tag. Whether this
+chain may publish without a human step is the owner's decision.

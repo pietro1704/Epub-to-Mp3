@@ -85,10 +85,22 @@ test('metadata errors and malformed responses block before returning a source', 
     return path.includes('/runs?') ? { ...response, total_count: 3 } : response;
   } }), /Incomplete run history/);
 });
-test('publisher boundaries preserve manual releases and serialize HF writes', () => {
+test('publisher boundaries keep releases behind the whole validation and serialize HF writes', () => {
   const workflow = name => readFileSync(new URL(`../.github/workflows/${name}.yml`, import.meta.url), 'utf8');
-  for (const name of ['auto-release', 'ios-testflight', 'rollback-hf']) {
+  for (const name of ['ios-testflight', 'rollback-hf']) {
     assert.match(workflow(name), /workflow_dispatch:/); assert.doesNotMatch(workflow(name), /^  workflow_run:|^  push:/m);
+  }
+  // Releases follow a validated master merge, but only after the WHOLE post-merge run succeeded; never on a push,
+  // a manual run only from master's definition, and they never dispatch another workflow or merge anything.
+  for (const name of ['auto-release', 'release-pr']) {
+    const text = workflow(name);
+    assert.match(text, /workflow_dispatch:/, name);
+    assert.match(text, /workflows: \["Post-merge validation"\]/, name);
+    assert.doesNotMatch(text, /^  push:/m, name);
+    assert.match(text, /github\.event\.workflow_run\.conclusion == 'success'/, name);
+    assert.match(text, /\(github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/master'\)/, name);
+    assert.match(text, /validated_merge\.mjs" --repo "\$GITHUB_REPOSITORY" --ref "\$SOURCE_REF" --latest\n/, name);
+    assert.doesNotMatch(text, /gh workflow run|release-desktop|gh pr merge/, name);
   }
   assert.match(workflow('sync-hf'), /workflows: \["Post-merge validation"\]/);
   for (const name of ['sync-hf', 'rollback-hf']) {
@@ -97,7 +109,7 @@ test('publisher boundaries preserve manual releases and serialize HF writes', ()
     assert.equal(workflow(name).match(/validated_merge\.mjs"? --repo [^\n]*--required-job "Publication surfaces validated"/g)?.length, 2, name);
     assert.match(workflow(name), /RUNNER_TEMP\/validated_merge\.mjs/);
   }
-  for (const name of ['auto-release', 'ios-testflight', 'release-desktop']) assert.doesNotMatch(workflow(name), /--required-job/, name);
+  for (const name of ['auto-release', 'release-pr', 'ios-testflight', 'release-desktop']) assert.doesNotMatch(workflow(name), /--required-job/, name);
   const release = workflow('release-desktop');
   assert.match(release, /needs: \[gate, docker, android, swiftui-apple, flutter-desktop\]/);
   assert.doesNotMatch(release, /push: true|softprops\/action-gh-release/);
@@ -160,38 +172,53 @@ test('mid-check reruns, moved tags and master advancement invalidate publication
   }
 });
 
-test('Auto Release tags the validated SHA explicitly and refuses unvalidated or conflicting identities', async () => {
+test('Auto Release publishes the validated SHA explicitly and refuses unvalidated or conflicting identities', async () => {
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const { spawnSync } = await import('node:child_process');
   const workflow = readFileSync(new URL('../.github/workflows/auto-release.yml', import.meta.url), 'utf8');
-  const block = workflow.match(/      - name: Create release tag\n[\s\S]*?        run: \|\n([\s\S]*?)(?=\n      - name:)/)?.[1];
+  const block = workflow.match(/      - name: Create release tag and GitHub release\n[\s\S]*?        run: \|\n([\s\S]*?)(?=\n      - name:)/)?.[1];
   assert.ok(block);
   const script = block.split('\n').map(line => line.replace(/^          /, '')).join('\n');
   assert.doesNotMatch(script, /\$\{\{/);
-  const directory = mkdtempSync(join(tmpdir(), 'validated-version-tag-'));
+  const directory = mkdtempSync(join(tmpdir(), 'validated-release-'));
   try {
     const bin = join(directory, 'bin'); mkdirSync(bin);
     const calls = join(directory, 'calls');
-    writeFileSync(join(bin, 'git'), `#!${process.execPath}\n` + `
+    const tool = body => `#!${process.execPath}\n` + `
       const fs = require('node:fs'); const args = process.argv.slice(2);
-      fs.appendFileSync(process.env.CALLS, JSON.stringify(args) + '\\n');
+      fs.appendFileSync(process.env.CALLS, JSON.stringify([require('node:path').basename(process.argv[1]), ...args]) + '\\n');
+      ${body}
+    `;
+    writeFileSync(join(bin, 'git'), tool(`
       if (args[0] === 'rev-parse') {
         if (!process.env.EXISTING_SHA) process.exit(1);
         process.stdout.write(process.env.EXISTING_SHA + '\\n');
-      }
-    `, { mode: 0o755 });
-    const invoke = (version, identity, existing = '') => spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', script], { encoding: 'utf8', env: { PATH: bin, CALLS: calls, VERSION_TAG: version, VALIDATED_SHA: identity, EXISTING_SHA: existing } });
+      }`), { mode: 0o755 });
+    writeFileSync(join(bin, 'gh'), tool(`
+      if (args[0] === 'release' && args[1] === 'view') process.exit(process.env.RELEASE_EXISTS ? 0 : 1);`), { mode: 0o755 });
+    const invoke = (version, identity, { existing = '', release = '', last = 'v1.2.2' } = {}) => spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', script], {
+      encoding: 'utf8',
+      env: { PATH: bin, CALLS: calls, VERSION_TAG: version, VALIDATED_SHA: identity, LAST_TAG: last, GH_TOKEN: 'token', EXISTING_SHA: existing, RELEASE_EXISTS: release }
+    });
+    const read = () => (existsSync(calls) ? readFileSync(calls, 'utf8') : '').trim().split('\n').filter(Boolean).map(JSON.parse);
     let result = invoke('v1.2.3', sha); assert.equal(result.status, 0, result.stderr);
-    const commands = readFileSync(calls, 'utf8').trim().split('\n').map(JSON.parse);
-    assert.deepEqual(commands.slice(-2), [['tag', '--', 'v1.2.3', sha], ['push', 'origin', 'refs/tags/v1.2.3']]);
-    const previous = readFileSync(calls, 'utf8');
+    assert.deepEqual(read().at(-1), ['gh', 'release', 'create', 'v1.2.3', '--target', sha, '--title', 'v1.2.3', '--generate-notes', '--latest', '--notes-start-tag', 'v1.2.2']);
+    assert.ok(read().every(command => !(command[0] === 'git' && ['tag', 'push'].includes(command[1]))), 'The release API creates the tag; no tag is pushed');
+    result = invoke('v1.2.3', sha, { last: '' }); assert.equal(result.status, 0, result.stderr);
+    assert.ok(!read().at(-1).includes('--notes-start-tag'), 'A first release has no previous tag');
+    let count = read().length;
     assert.notEqual(invoke('v1.2.3', 'invalid').status, 0);
     assert.notEqual(invoke('v1.2.3;exit 0', sha).status, 0);
-    assert.equal(readFileSync(calls, 'utf8'), previous, 'Invalid data must never invoke Git');
-    assert.notEqual(invoke('v1.2.3', sha, tip).status, 0, 'An existing tag on another SHA cannot be reused');
-    assert.ok(existsSync(calls));
+    assert.equal(read().length, count, 'Invalid data must never invoke Git or GitHub');
+    assert.notEqual(invoke('v1.2.3', sha, { existing: tip }).status, 0, 'An existing tag on another SHA cannot be reused');
+    assert.ok(read().slice(count).every(command => !(command[0] === 'gh' && command[2] === 'create')), 'A conflicting tag creates no release');
+    result = invoke('v1.2.3', sha, { existing: sha }); assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(read().at(-1).slice(0, 3), ['gh', 'release', 'create'], 'A tag on the validated SHA without a release still gets its release');
+    count = read().length;
+    result = invoke('v1.2.3', sha, { release: '1' }); assert.equal(result.status, 0, result.stderr);
+    assert.ok(read().slice(count).every(command => command[2] !== 'create'), 'An existing release is left alone');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
