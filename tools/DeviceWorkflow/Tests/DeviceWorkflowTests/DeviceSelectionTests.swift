@@ -110,6 +110,25 @@ final class DeviceSelectionTests: XCTestCase {
         }
     }
 
+    func testRetainedAudioAuditAdmitsOnlyTheIsolatedFixtureMethods() throws {
+        let filters = [
+            "EpubToMp3Tests/DownloadedAudioFilesMirrorTests/testRedownloadKeepsAFileTheListenerEditedAtTheOriginalPath",
+            "EpubToMp3Tests/LegacyAudioMigrationCoordinatorTests/testFailedVisibleCopyKeepsTheLegacyFileUntilMigrationCanRetry",
+            "EpubToMp3Tests/DownloadManagerBackgroundTests/testDownloadWithoutAKnownBookKeepsTheJobAndChapterIndices",
+        ]
+        let options = try Options(arguments: ["test"], root: root,
+                                  environment: ["IOS_TESTS": filters.joined(separator: ",")])
+        XCTAssertEqual(options.testFilters, filters)
+        XCTAssertEqual(options.expectedTestCount, 3)
+        for selector in filters {
+            let suite = selector.split(separator: "/").prefix(2).joined(separator: "/")
+            XCTAssertThrowsError(try Options(arguments: ["test"], root: root,
+                                             environment: ["IOS_TESTS": suite]))
+            XCTAssertThrowsError(try Options(arguments: ["test"], root: root,
+                                             environment: ["IOS_TESTS": "\(suite)/testUnaudited"]))
+        }
+    }
+
     func testMixedDistinctClassAndMethodsCountOnlySelectedTests() throws {
         let filters = ["EpubToMp3Tests/ReaderViewportTransitionTests",
                        "EpubToMp3Tests/ReaderProgressStoreTests/testSaveAndReadRoundTrip",

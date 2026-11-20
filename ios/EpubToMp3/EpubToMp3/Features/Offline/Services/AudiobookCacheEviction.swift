@@ -43,7 +43,12 @@ struct StorageUsageSnapshot: Equatable, Sendable {
 
 enum StorageUsageScanner {
     static func current(rustOutputsRoot: URL = RustConversionOutputStore.defaultRoot) -> StorageUsageSnapshot {
-        let legacyOffline = directorySize(AudiobookDownloadStorage.audiobooksRoot())
+        // Visible copies are clones of store audio that is counted below.
+        let legacyRoot = AudiobookDownloadStorage.audiobooksRootLocation()
+        let legacyFolders = (try? FileManager.default.contentsOfDirectory(
+            at: legacyRoot, includingPropertiesForKeys: nil)) ?? []
+        let legacyOffline = legacyFolders.filter { !DownloadedAudioFilesMirror.isMirrorFolder($0) }
+            .reduce(Int64(0)) { $0 + directorySize($1) }
         let ttsRoot = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts", isDirectory: true)
@@ -81,24 +86,5 @@ enum StorageUsageScanner {
                   values.isRegularFile == true else { return total }
             return total + Int64(values.fileSize ?? 0)
         }
-    }
-}
-
-// MARK: - AudiobookCacheEviction
-
-/// Last-access bookkeeping for legacy audiobook folders.
-///
-/// Generated or downloaded audio is listener-owned and is never removed by an
-/// automatic age or size policy; removal happens only through an explicit
-/// user action. Playback still stamps a `last_access` sidecar (plain
-/// ISO-8601 string) inside the audiobook folder when it opens a book.
-enum AudiobookCacheEviction {
-    /// Touch the last-access timestamp for `jobId`.
-    /// Safe to call from any thread — no shared mutable state.
-    static func touchLastAccess(jobId: String) {
-        guard let url = AudiobookDownloadStorage.jobDirectory(for: jobId)?
-            .appendingPathComponent("last_access") else { return }
-        let iso = ISO8601DateFormatter().string(from: Date())
-        try? iso.write(to: url, atomically: true, encoding: .utf8)
     }
 }

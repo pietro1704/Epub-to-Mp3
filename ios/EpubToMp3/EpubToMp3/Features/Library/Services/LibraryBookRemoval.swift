@@ -39,6 +39,8 @@ struct LibraryBookRemoval {
     func remove(bookID: String, legacyJobID: String?) async throws {
         let localAudio = localAudio
         let legacyDownloads = legacyDownloads
+        // A migration still copying this book's legacy audio must not outlive its removal.
+        await legacyDownloads.quiesceLegacyMigration()
         try await convertedAudio.removeAudio(bookID: bookID, legacyJobID: legacyJobID) {
             try await localAudio.removeAllAudio(bookID: bookID)
             if let legacyJobID {

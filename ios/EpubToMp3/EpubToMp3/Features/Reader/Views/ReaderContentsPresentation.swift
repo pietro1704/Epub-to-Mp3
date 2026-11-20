@@ -61,7 +61,7 @@ final class ReaderContentsPresentation {
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)
                 },
                 onRemoveDownload: { chapterIndex in
-                    AudiobookDownloadStorage.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
+                    Task { await AudiobookDownloads.shared.removeDownload(snapshot: snapshot, chapterIndex: chapterIndex) }
                 },
                 onDownloadAll: { [weak self] in
                     guard let self else { return }
@@ -71,7 +71,7 @@ final class ReaderContentsPresentation {
                     ? { Task { await AudiobookDownloads.shared.cancel(jobId: snapshot.jobId) } }
                     : nil,
                 onClearDownloads: {
-                    Task { await AudiobookDownloads.shared.clearDownloadedBook(jobId: snapshot.jobId) }
+                    Task { await AudiobookDownloads.shared.clearDownloads(snapshot: snapshot) }
                 },
                 onRetryFailed: nil,
                 onExport: nil

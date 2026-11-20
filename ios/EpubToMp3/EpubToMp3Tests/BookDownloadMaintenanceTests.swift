@@ -27,7 +27,8 @@ final class BookDownloadMaintenanceTests: XCTestCase {
         let source = root.appendingPathComponent("source.mp3")
         let bytes = Data(repeating: 23, count: 512)
         try bytes.write(to: source)
-        let manager = AudiobookDownloads()
+        let store = LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts"))
+        let manager = LegacyAudiobookFixture.downloads(store: store)
         let gate = BookDownloadGate()
         let maintenance = Task {
             try await manager.withBookStorageMaintenance(jobId: "selected") {
@@ -49,7 +50,8 @@ final class BookDownloadMaintenanceTests: XCTestCase {
         XCTAssertEqual(progress?.state, .queued)
         let otherFinished = await completed(manager, jobID: "other")
         XCTAssertTrue(otherFinished, "Another book's download must remain independent of the selected removal.")
-        XCTAssertNil(AudiobookDownloadStorage.localAudioURL(jobId: "selected", chapterIndex: 0))
+        let keptWhileMaintaining = try await store.downloadedChapterIndices(bookID: "selected")
+        XCTAssertEqual(keptWhileMaintaining, [])
         await gate.release()
         do { try await maintenance.value; XCTFail("Filesystem failure must propagate") }
         catch { XCTAssertEqual((error as NSError).code, CocoaError.fileWriteNoPermission.rawValue) }
@@ -57,7 +59,9 @@ final class BookDownloadMaintenanceTests: XCTestCase {
         XCTAssertTrue(selectedFinished, "Failed cleanup must release a newly requested download.")
         await manager.cancelAll()
         for id in ["selected", "other"] {
-            let url = try XCTUnwrap(AudiobookDownloadStorage.localAudioURL(jobId: id, chapterIndex: 0))
+            let kept = try await store.downloadedChapterIndices(bookID: id)
+            XCTAssertEqual(kept, [0])
+            let url = root.appendingPathComponent("artifacts/\(id)/chapters/chapter-0.mp3")
             XCTAssertEqual(try Data(contentsOf: url), bytes)
         }
     }

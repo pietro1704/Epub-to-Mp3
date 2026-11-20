@@ -26,6 +26,7 @@ enum LocalAudioArtifactFixture {
         /// Written to the canonical chapter file when present.
         var audio: Data?
         var playbackRetentionRequested: Bool?
+        var textOffset: Int?
         var retryCount = 0
         var lastError: String?
     }
@@ -59,7 +60,7 @@ enum LocalAudioArtifactFixture {
                 index: chapter.index, title: chapter.title, state: state,
                 retention: chapter.retention,
                 playbackRetentionRequested: chapter.playbackRetentionRequested,
-                relativePath: relativePath,
+                textOffset: chapter.textOffset, relativePath: relativePath,
                 byteCount: state == .available ? Int64(chapter.audio?.count ?? 0) : 0,
                 retryCount: chapter.retryCount, lastError: chapter.lastError, updatedAt: now)
         }

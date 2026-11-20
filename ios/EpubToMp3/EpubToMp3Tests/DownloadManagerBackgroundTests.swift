@@ -130,18 +130,20 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         XCTAssertNil(AudiobookChapterTransfer.contentRangeTotal(from: response))
     }
 
-    func testLocalFixtureDownloadsAllChaptersAndRoutesPlaybackOffline() async throws {
+    func testLocalFixtureKeepsAllChaptersInTheBookStoreAndRestoresThemOffline() async throws {
         let jobId = "download-fixture-\(UUID().uuidString)"
-        let sourceRoot = FileManager.default.temporaryDirectory
+        let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("download-source-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let previousRoot = AudiobookDownloadStorage.rootOverrideForTesting
+        AudiobookDownloadStorage.rootOverrideForTesting = root.appendingPathComponent("previous-layout")
         defer {
-            AudiobookDownloadStorage.deleteAudiobook(jobId: jobId)
-            try? FileManager.default.removeItem(at: sourceRoot)
+            AudiobookDownloadStorage.rootOverrideForTesting = previousRoot
+            try? FileManager.default.removeItem(at: root)
         }
 
-        let chapterOne = sourceRoot.appendingPathComponent("chapter-one.mp3")
-        let chapterFive = sourceRoot.appendingPathComponent("chapter-five.mp3")
+        let chapterOne = root.appendingPathComponent("chapter-one.mp3")
+        let chapterFive = root.appendingPathComponent("chapter-five.mp3")
         try Data(repeating: 0x11, count: 32).write(to: chapterOne)
         try Data(repeating: 0x22, count: 48).write(to: chapterFive)
 
@@ -157,7 +159,8 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         }
         """
         let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data(snapshotJSON.utf8))
-        let manager = AudiobookDownloads()
+        let store = LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts"))
+        let manager = LegacyAudiobookFixture.downloads(store: store)
         let progress = await manager.watchProgress(jobId: jobId)
 
         await manager.enqueueAll(snapshot: snapshot, baseURL: nil)
@@ -172,18 +175,180 @@ final class DownloadManagerBackgroundTests: XCTestCase {
 
         XCTAssertEqual(terminalProgress?.state, .completed)
         XCTAssertEqual(terminalProgress?.completedChapters, 2)
-        XCTAssertEqual(AudiobookDownloadStorage.locallyDownloadedIndices(for: jobId), [0, 4])
-        XCTAssertTrue(AudiobookDownloadStorage.isManifestComplete(
-            AudiobookDownloadStorage.loadManifest(for: jobId)!,
-            expectedChapterIndices: [0, 4]
-        ))
+        let kept = await manager.downloadedIndices(for: snapshot)
+        XCTAssertEqual(kept, [0, 4])
+        XCTAssertNil(AudiobookDownloadStorage.loadManifest(for: jobId),
+                     "A Download must not write the previous layout")
+        XCTAssertEqual(try Data(contentsOf: chapterFive), Data(repeating: 0x22, count: 48),
+                       "The converted source is only read")
 
-        let restored = try XCTUnwrap(AudiobookDownloadStorage.localPlaybackSnapshot(jobId: jobId))
-        XCTAssertEqual(restored.state, "finished")
+        let restoredSnapshot = try await store.playableSnapshot(
+            bookID: jobId, engine: "piper", voice: "auto", language: nil)
+        let restored = try XCTUnwrap(restoredSnapshot)
+        XCTAssertEqual(restored.bookTitle, "Offline fixture")
         XCTAssertEqual(restored.playableChapters.map(\.index), [0, 4])
-        XCTAssertTrue(restored.playableChapters.allSatisfy { $0.downloadUrl?.hasPrefix("file:") == true })
-
-        let localURL = try XCTUnwrap(AudiobookDownloadStorage.localAudioURL(jobId: jobId, chapterIndex: 4))
-        XCTAssertEqual((try? Data(contentsOf: localURL).isEmpty), false)
+        XCTAssertEqual(restored.playableChapters.map(\.name), ["Chapter One", "Chapter Five"])
+        let localURL = try XCTUnwrap(restored.playableChapters[1].downloadUrl.flatMap(URL.init(string:)))
+        XCTAssertEqual(try Data(contentsOf: localURL), Data(repeating: 0x22, count: 48))
     }
+
+    func testDownloadWithoutAKnownBookKeepsTheJobAndChapterIndices() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-unowned-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let previousRoot = AudiobookDownloadStorage.rootOverrideForTesting
+        AudiobookDownloadStorage.rootOverrideForTesting = root.appendingPathComponent("previous-layout")
+        defer {
+            AudiobookDownloadStorage.rootOverrideForTesting = previousRoot
+            try? FileManager.default.removeItem(at: root)
+        }
+        let first = root.appendingPathComponent("first.mp3")
+        let last = root.appendingPathComponent("last.mp3")
+        let firstBytes = Data(repeating: 0x33, count: 16)
+        let lastBytes = Data(repeating: 0x44, count: 18)
+        try firstBytes.write(to: first)
+        try lastBytes.write(to: last)
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: JSONSerialization.data(withJSONObject: [
+            "jobId": "unowned", "state": "finished", "bookTitle": "Unowned", "chapterIndexBase": 1,
+            "chapterProgress": [
+                ["index": 2, "name": "Chapter", "status": "completed", "downloadUrl": first.absoluteString],
+                ["index": 5, "name": "Chapter", "status": "completed",
+                 "downloadUrl": last.absoluteString, "textOffset": 27]
+            ]
+        ]))
+        let artifacts = root.appendingPathComponent("artifacts")
+        let manager = AudiobookDownloads(store: LocalAudioArtifactStore(root: artifacts),
+                                         resolveOwner: { _ in nil }, stopLegacyMigration: {})
+        let progress = await manager.watchProgress(jobId: "unowned")
+        await manager.enqueueAll(snapshot: snapshot, baseURL: nil)
+        var terminal: DownloadProgress?
+        for await update in progress where update.state == .completed || update.state == .failed {
+            terminal = update
+            break
+        }
+        XCTAssertEqual(terminal?.state, .completed)
+        XCTAssertEqual(terminal?.completedChapters, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.path))
+        let kept = await manager.downloadedIndices(for: snapshot)
+        XCTAssertEqual(kept, [2, 5])
+        let manifest = try XCTUnwrap(AudiobookDownloadStorage.loadManifest(for: "unowned"))
+        XCTAssertEqual(manifest.chapters.map(\.index), [2, 5])
+        XCTAssertNotNil(manifest.completedAt)
+        let restored = try XCTUnwrap(AudiobookDownloadStorage.localPlaybackSnapshot(jobId: "unowned"))
+        XCTAssertEqual(restored.playableChapters.map(\.index), [2, 5])
+        XCTAssertEqual(restored.chapterIndexBase, 1)
+        XCTAssertEqual(restored.playableChapters.last?.textOffset, 27)
+        let audioURLs = try restored.playableChapters.map {
+            try XCTUnwrap($0.downloadUrl.flatMap(URL.init(string:)))
+        }
+        XCTAssertEqual(try audioURLs.map { try Data(contentsOf: $0) }, [firstBytes, lastBytes])
+        XCTAssertEqual(try Data(contentsOf: first), firstBytes)
+        XCTAssertEqual(try Data(contentsOf: last), lastBytes)
+        await manager.removeDownload(snapshot: snapshot, chapterIndex: 2)
+        let remaining = await manager.downloadedIndices(for: snapshot)
+        XCTAssertEqual(remaining, [5])
+        XCTAssertEqual(AudiobookDownloadStorage.localPlaybackSnapshot(jobId: "unowned")?.state, "partial")
+        XCTAssertEqual(try Data(contentsOf: audioURLs[1]), lastBytes)
+    }
+
+    func testJobDownloadLeavesAMismatchedManifestAndItsAudioUntouched() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-job-conflict-\(UUID().uuidString)", isDirectory: true)
+        let previousRoot = AudiobookDownloadStorage.rootOverrideForTesting
+        AudiobookDownloadStorage.rootOverrideForTesting = root
+        defer {
+            AudiobookDownloadStorage.rootOverrideForTesting = previousRoot
+            try? FileManager.default.removeItem(at: root)
+        }
+        let folder = try XCTUnwrap(AudiobookDownloadStorage.audiobookFolder(for: "manual"))
+        let existing = folder.appendingPathComponent("chapter.mp3")
+        let bytes = Data([1, 2, 3])
+        try bytes.write(to: existing)
+        let manifestURL = try XCTUnwrap(AudiobookDownloadStorage.manifestURL(for: "manual"))
+        let otherJob = AudiobookManifest(jobId: "different", bookTitle: "Other", chapters: [],
+                                         totalBytes: 0, completedAt: nil)
+        let previousManifest = try JSONEncoder().encode(otherJob)
+        try previousManifest.write(to: manifestURL)
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: JSONSerialization.data(withJSONObject: [
+            "jobId": "manual", "state": "finished",
+            "chapterProgress": [["index": 1, "name": "One", "status": "completed",
+                                 "downloadUrl": existing.absoluteString]]
+        ]))
+        let manager = AudiobookDownloads(
+            store: LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts")),
+            resolveOwner: { _ in nil }, stopLegacyMigration: {})
+        let updates = await manager.watchProgress(jobId: "manual")
+        await manager.enqueueAll(snapshot: snapshot, baseURL: nil)
+        for await update in updates where update.state == .completed || update.state == .failed {
+            XCTAssertEqual(update.state, .failed)
+            break
+        }
+        XCTAssertEqual(try Data(contentsOf: manifestURL), previousManifest)
+        XCTAssertEqual(try Data(contentsOf: existing), bytes)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["chapter.mp3"])
+    }
+    func testRemovingDownloadsStopsTheMigrationAndNeverTakesTheOnlyAudio() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-removal-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let previousRoot = AudiobookDownloadStorage.rootOverrideForTesting
+        AudiobookDownloadStorage.rootOverrideForTesting = root.appendingPathComponent("previous-layout")
+        defer {
+            AudiobookDownloadStorage.rootOverrideForTesting = previousRoot
+            try? FileManager.default.removeItem(at: root)
+        }
+        let artifacts = root.appendingPathComponent("artifacts")
+        let audio = Data(repeating: 8, count: 32)
+        // Chapter 0 and 1 are kept copies of converted files, chapter 2 plays
+        // from the store itself, chapter 7 belongs to an earlier conversion.
+        let kept = try LocalAudioArtifactFixture.seed(root: artifacts, bookID: "book", chapters: [
+            .init(index: 0, title: "Zero", retention: .downloaded, audio: audio),
+            .init(index: 1, title: "One", retention: .downloaded, audio: audio),
+            .init(index: 2, title: "Two", retention: .downloaded, audio: audio),
+            .init(index: 7, title: "Seven", retention: .downloaded, audio: audio)
+        ])
+        var chapters: [[String: Any]] = []
+        for index in [0, 1] {
+            let converted = root.appendingPathComponent("converted-\(index).mp3")
+            try audio.write(to: converted)
+            chapters.append(["index": index, "name": "Chapter", "status": "completed", "downloadUrl": converted.path])
+        }
+        chapters.append(["index": 2, "name": "Chapter", "status": "completed",
+                         "downloadUrl": try XCTUnwrap(kept[2]).absoluteString])
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: JSONSerialization.data(withJSONObject: [
+            "jobId": "job", "state": "finished", "bookTitle": "Book", "chapterProgress": chapters
+        ]))
+        let stops = StopCounter()
+        let store = LocalAudioArtifactStore(root: artifacts)
+        let manager = AudiobookDownloads(
+            store: store, resolveOwner: { _ in RetainedAudioOwner(bookID: "book", indexBase: 0) },
+            stopLegacyMigration: { await stops.add() })
+
+        var badges = await manager.downloadedIndices(for: snapshot)
+        XCTAssertEqual(badges, [0, 1, 2, 7])
+        await manager.removeDownload(snapshot: snapshot, chapterIndex: 0)
+        var stopped = await stops.value
+        XCTAssertEqual(stopped, 1, "A removal stops the migration first")
+        var remaining = try await store.downloadedChapterIndices(bookID: "book")
+        XCTAssertEqual(remaining, [1, 2, 7])
+        // The chapter that plays from the store keeps its only audio.
+        await manager.removeDownload(snapshot: snapshot, chapterIndex: 2)
+        remaining = try await store.downloadedChapterIndices(bookID: "book")
+        XCTAssertEqual(remaining, [1, 2, 7])
+
+        await manager.clearDownloads(snapshot: snapshot)
+        stopped = await stops.value
+        XCTAssertEqual(stopped, 3)
+        remaining = try await store.downloadedChapterIndices(bookID: "book")
+        XCTAssertEqual(remaining, [2, 7], "Audio with no other source and audio of another conversion stay")
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(kept[2])), audio)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(kept[7])), audio)
+        badges = await manager.downloadedIndices(for: snapshot)
+        XCTAssertEqual(badges, [2, 7])
+    }
+}
+
+private actor StopCounter {
+    private(set) var value = 0
+    func add() { value += 1 }
 }

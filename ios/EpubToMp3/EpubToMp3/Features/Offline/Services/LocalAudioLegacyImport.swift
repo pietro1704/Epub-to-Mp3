@@ -11,6 +11,9 @@ extension LocalAudioArtifactStore {
         let author: String?
         let jobID: String
         let canonicalIndices: [Int: Int]
+        /// Characters of chapter text before the audio, by legacy index, for
+        /// audio that starts inside its chapter. Absent means a whole chapter.
+        var textOffsets: [Int: Int] = [:]
     }
 
     enum LegacyImportOutcome: Equatable, Sendable {
@@ -99,15 +102,7 @@ extension LocalAudioArtifactStore {
     }
 
     private func importDestinationManifest(_ identity: LegacyImportIdentity) throws -> Manifest? {
-        let manifestURL = files.bookDirectory(bookID: identity.bookID).appendingPathComponent("manifest.json")
-        try LocalAudioImportFiles.checkPath(manifestURL, under: files.root)
-        guard let manifest = try files.loadManifest(bookID: identity.bookID) else { return nil }
-        guard manifest.bookID == identity.bookID, manifest.schemaVersion == Self.schemaVersion,
-              Set(manifest.chapters.map(\.index)).count == manifest.chapters.count,
-              manifest.chapters.allSatisfy({ $0.index >= 0 && $0.relativePath == files.relativePath(for: $0.index) }) else {
-            throw LocalAudioImportFiles.Failure.destinationConflict
-        }
-        return manifest
+        try validatedManifest(bookID: identity.bookID)
     }
 
     private func importLegacyChapter(
@@ -121,7 +116,17 @@ extension LocalAudioArtifactStore {
         }
         let source = sourceDirectory.appendingPathComponent("chapters").appendingPathComponent(chapter.mp3FileName)
         try LocalAudioImportFiles.requireRegularFile(source, under: sourceRoot)
+        // Refuse what can never be imported before copying and decoding it, so
+        // a chapter that stays behind costs nothing on later launches.
+        guard try files.fileSize(at: source) == chapter.mp3Bytes else {
+            throw LocalAudioImportFiles.Failure.sourceChanged
+        }
+        if let existing = try importDestinationManifest(identity)?.chapters.first(where: { $0.index == canonicalIndex }),
+           existing.state != .available || existing.byteCount != chapter.mp3Bytes {
+            throw LocalAudioImportFiles.Failure.destinationConflict
+        }
         let directory = files.chaptersDirectory(bookID: identity.bookID)
+        removeStaleStaging(bookID: identity.bookID)
         try LocalAudioImportFiles.checkPath(directory, under: files.root)
         try files.createDirectoryIfNeeded(directory)
         let staging = directory.appendingPathComponent(".import-\(UUID().uuidString).mp3")
@@ -180,9 +185,10 @@ extension LocalAudioArtifactStore {
             try files.fileManager.moveItem(at: staging, to: destination)
         }
         try files.applyDownloadedFilePolicy(to: destination)
+        let textOffset = identity.textOffsets[chapter.index].flatMap { $0 > 0 ? $0 : nil }
         manifest.chapters.append(ChapterArtifact(
             index: canonicalIndex, title: chapter.title, state: .available, retention: .downloaded,
-            relativePath: relativePath, byteCount: copied.byteCount, retryCount: 0,
+            textOffset: textOffset, relativePath: relativePath, byteCount: copied.byteCount, retryCount: 0,
             lastError: nil, updatedAt: chapter.downloadedAt))
         manifest.chapters.sort { $0.index < $1.index }
         manifest.updatedAt = Date()

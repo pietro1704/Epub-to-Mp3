@@ -327,14 +327,14 @@ final class FullPlayerScreenController: UIViewController {
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)
                 },
                 onRemoveDownload: { chapterIndex in
-                    AudiobookDownloadStorage.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
+                    Task { await AudiobookDownloads.shared.removeDownload(snapshot: snapshot, chapterIndex: chapterIndex) }
                 },
                 onDownloadAll: { [weak self] in
                     guard let self else { return }
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: nil)
                 },
                 onCancelDownloads: { Task { await AudiobookDownloads.shared.cancel(jobId: snapshot.jobId) } },
-                onClearDownloads: { Task { await AudiobookDownloads.shared.clearDownloadedBook(jobId: snapshot.jobId) } },
+                onClearDownloads: { Task { await AudiobookDownloads.shared.clearDownloads(snapshot: snapshot) } },
                 onRetryFailed: nil,
                 onExport: nil
             )

@@ -4,14 +4,50 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Background-aware MP3 download manager.
+/// Runs the listener's Download requests: it keeps each requested chapter in
+/// `LocalAudioArtifactStore` under the book that owns the snapshot, reports
+/// progress per job and excludes its writers from storage maintenance.
 ///
-/// Actor isolation replaces the manual `NSLock` that previously guarded
-/// `progressContinuations` and `lastProgress`. All mutable state is now
-/// compile-time checked for data-race safety.
+/// When the reader-axis mapping is unknown, keep the download under its job
+/// using that job's own chapter indices.
 actor AudiobookDownloads {
+    typealias OwnerResolver = @Sendable (JobSnapshot) async -> RetainedAudioOwner?
 
     static let shared = AudiobookDownloads()
+
+    private let store: LocalAudioArtifactStore
+    private let resolveOwner: OwnerResolver
+    private let stopLegacyMigration: @Sendable () async -> Void
+
+    init(store: LocalAudioArtifactStore = .shared,
+         resolveOwner: @escaping OwnerResolver = { await RetainedAudioOwner.resolve($0) },
+         stopLegacyMigration: @escaping @Sendable () async -> Void = {
+             await LegacyAudioMigrationSession.shared.stop()
+         }) {
+        self.store = store
+        self.resolveOwner = resolveOwner
+        self.stopLegacyMigration = stopLegacyMigration
+    }
+
+    /// Every removal of kept audio calls this first: a migration still copying
+    /// legacy audio into the store could otherwise bring the removed audio back.
+    func quiesceLegacyMigration() async {
+        await stopLegacyMigration()
+    }
+
+    /// Stops the migration and every Download that writes to this book, and
+    /// waits for them, so a removal of the book's kept audio is not undone by a
+    /// chapter still being copied. A Download whose book is not known yet is
+    /// stopped too.
+    func quiesceWrites(bookID: String) async {
+        await stopLegacyMigration()
+        let stopping = writingTasks.filter { entry in
+            guard let book = writingBooks[entry.key] else { return true }
+            return book == bookID
+        }
+        for writer in stopping.values { cancel(jobId: writer.jobId) }
+        for writer in stopping.values { await writer.task.value }
+    }
 
     /// Stable identifier lets iOS reconnect to pending tasks after suspension
     /// or a system relaunch of the app.
@@ -43,6 +79,8 @@ actor AudiobookDownloads {
         let chapters: [JobSnapshot.Chapter]
         let baseURL: URL?
     }
+    /// The book each running Download writes to, once its owner is resolved.
+    private var writingBooks: [UUID: String] = [:]
     private var storageMaintenance: Set<UUID> = []
     private var bookStorageMaintenance: [UUID: String] = [:]
     private var deferredDownloads: [String: DeferredDownload] = [:]
@@ -127,6 +165,7 @@ actor AudiobookDownloads {
         let task = Task { [self] in
             defer {
                 writingTasks.removeValue(forKey: operationID)
+                writingBooks.removeValue(forKey: operationID)
                 if activeTasks[snapshot.jobId] == operationID {
                     activeTasks.removeValue(forKey: snapshot.jobId)
                 }
@@ -188,6 +227,7 @@ actor AudiobookDownloads {
                 }
             }
         }
+        await stopLegacyMigration()
         let retiring = writingTasks.values.map(\.task)
         for task in retiring { task.cancel() }
         // Do not use cancelAll: requests queued by an overlapping maintenance
@@ -210,6 +250,7 @@ actor AudiobookDownloads {
                 startDownload(snapshot: request.snapshot, chapters: request.chapters, baseURL: request.baseURL)
             }
         }
+        await stopLegacyMigration()
         let retiring = writingTasks.values.filter { $0.jobId == jobId }.map(\.task)
         for task in retiring { task.cancel() }
         cancel(jobId: jobId)
@@ -218,13 +259,64 @@ actor AudiobookDownloads {
         try await operation()
     }
 
-    /// Cancel the active task and delete the complete offline audiobook.
-    func clearDownloadedBook(jobId: String) {
-        cancel(jobId: jobId)
-        AudiobookDownloadStorage.deleteAudiobook(jobId: jobId)
+    /// Wait for the job's writers before deleting job-scoped audio.
+    func clearDownloadedBook(jobId: String) async {
+        try? await withBookStorageMaintenance(jobId: jobId) {
+            AudiobookDownloadStorage.deleteAudiobook(jobId: jobId)
+        }
     }
 
-    /// Sequential download loop with exponential backoff.
+    // MARK: Kept audio of one snapshot
+
+    /// Snapshot chapter indices whose audio is kept on this device: protected
+    /// chapters of the snapshot's book, plus audio still in the previous layout.
+    func downloadedIndices(for snapshot: JobSnapshot) async -> Set<Int> {
+        var indices = AudiobookDownloadStorage.locallyDownloadedIndices(for: snapshot.jobId)
+        if let owner = await resolveOwner(snapshot),
+           let kept = try? await store.downloadedChapterIndices(bookID: owner.bookID) {
+            indices.formUnion(kept.map(owner.snapshotIndex(forStoreIndex:)))
+        }
+        return indices
+    }
+
+    /// Ends the Download of one chapter in both layouts.
+    func removeDownload(snapshot: JobSnapshot, chapterIndex: Int) async {
+        try? await withBookStorageMaintenance(jobId: snapshot.jobId) {
+            if let owner = await self.resolveOwner(snapshot) {
+                await self.release(owner: owner, snapshot: snapshot, chapterIndices: [chapterIndex])
+            }
+            AudiobookDownloadStorage.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
+            NotificationCenter.default.post(name: LocalAudioArtifactStore.didChangeNotification, object: nil)
+        }
+    }
+
+    /// Cancels the active Download and ends the Downloads of the chapters this
+    /// snapshot plays. Kept audio of chapters the snapshot does not have is
+    /// another job's and is never touched from here.
+    func clearDownloads(snapshot: JobSnapshot) async {
+        try? await withBookStorageMaintenance(jobId: snapshot.jobId) {
+            if let owner = await self.resolveOwner(snapshot) {
+                await self.release(owner: owner, snapshot: snapshot,
+                                   chapterIndices: snapshot.playableChapters.map(\.index))
+            }
+            AudiobookDownloadStorage.deleteAudiobook(jobId: snapshot.jobId)
+            NotificationCenter.default.post(name: LocalAudioArtifactStore.didChangeNotification, object: nil)
+        }
+    }
+
+    private func release(owner: RetainedAudioOwner, snapshot: JobSnapshot, chapterIndices: [Int]) async {
+        for chapterIndex in chapterIndices {
+            guard let storeIndex = owner.storeIndex(forSnapshotIndex: chapterIndex),
+                  let chapter = snapshot.playableChapters.first(where: { $0.index == chapterIndex }) else { continue }
+            let source = chapter.downloadUrl.flatMap { AudiobookChapterTransfer.resolve(path: $0, base: nil) }
+            // Like the previous layout, a removal that fails leaves the chapter kept.
+            _ = try? await store.releaseDownload(
+                bookID: owner.bookID, chapterIndex: storeIndex, playbackSource: source,
+                sourceTextOffset: chapter.textOffset ?? 0)
+        }
+    }
+
+    /// Keeps the requested chapters one at a time.
     private func downloadSerially(
         snapshot: JobSnapshot,
         chapters: [JobSnapshot.Chapter],
@@ -233,9 +325,9 @@ actor AudiobookDownloads {
     ) async {
         let total = chapters.count
         var completed = 0
-        var entries: [AudiobookManifest.ChapterEntry] = []
         var totalBytes: Int64 = 0
-
+        let owner = await resolveOwner(snapshot)
+        if let owner { writingBooks[operationID] = owner.bookID }
         for chapter in chapters {
             guard activeTasks[snapshot.jobId] == operationID else { return }
             if Task.isCancelled {
@@ -251,28 +343,18 @@ actor AudiobookDownloads {
                 ))
                 return
             }
-            let previousEntry = AudiobookDownloadStorage.loadManifest(for: snapshot.jobId)?.chapters.first {
-                $0.index == chapter.index
-            }
-            let previousURL = AudiobookDownloadStorage.localAudioURL(
-                jobId: snapshot.jobId,
-                chapterIndex: chapter.index
-            )
-            if let existing = AudiobookDownloadStorage.reusableDownloadedEntry(
-                chapterIndex: chapter.index,
-                manifestEntry: previousEntry,
-                fileExists: previousURL != nil
-            ) {
-                entries.append(existing)
+            if let kept = AudiobookDownloadStorage.localAudioURL(jobId: snapshot.jobId, chapterIndex: chapter.index),
+               let size = try? kept.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                let bytes = Int64(size)
                 completed += 1
-                totalBytes += existing.mp3Bytes
+                totalBytes += bytes
                 emit(DownloadProgress(
                     jobId: snapshot.jobId,
                     chapterIndex: chapter.index,
                     totalChapters: total,
                     completedChapters: completed,
-                    bytesDownloaded: existing.mp3Bytes,
-                    bytesExpected: existing.mp3Bytes,
+                    bytesDownloaded: bytes,
+                    bytesExpected: bytes,
                     state: .downloading,
                     lastError: nil
                 ))
@@ -292,26 +374,12 @@ actor AudiobookDownloads {
                 lastError: nil
             ))
 
-            let safeName = AudiobookChapterTransfer.sanitizedFileName(chapter.name ?? "chapter_\(chapter.index)") + ".mp3"
-
             do {
-                // An unsafe job id has no folder; it fails this chapter like any write error.
-                guard let folder = AudiobookDownloadStorage.audiobookFolder(for: snapshot.jobId) else {
-                    throw CocoaError(.fileWriteInvalidFileName)
-                }
-                let dest = folder.appendingPathComponent(safeName)
-                let bytes = try await AudiobookChapterTransfer.downloadWithBackoff(url: url, to: dest)
+                let bytes = try await keep(url, snapshot: snapshot, chapter: chapter, owner: owner, operationID: operationID)
                 try Task.checkCancellation()
                 guard activeTasks[snapshot.jobId] == operationID else { return }
                 completed += 1
                 totalBytes += bytes
-                entries.append(AudiobookManifest.ChapterEntry(
-                    index: chapter.index,
-                    title: chapter.displayTitle,
-                    mp3FileName: safeName,
-                    mp3Bytes: bytes,
-                    downloadedAt: Date()
-                ))
                 emit(DownloadProgress(
                     jobId: snapshot.jobId,
                     chapterIndex: chapter.index,
@@ -351,21 +419,6 @@ actor AudiobookDownloads {
         }
 
         guard !Task.isCancelled, activeTasks[snapshot.jobId] == operationID else { return }
-        let incoming = AudiobookManifest(
-            jobId: snapshot.jobId,
-            bookTitle: snapshot.bookTitle ?? snapshot.jobId,
-            chapters: entries.sorted { $0.index < $1.index },
-            totalBytes: totalBytes,
-            completedAt: nil
-        )
-        let merged = AudiobookDownloadStorage.mergeManifests(AudiobookDownloadStorage.loadManifest(for: snapshot.jobId), incoming)
-        let expectedIndices = snapshot.playableChapters.map(\.index)
-        let complete = chapters.count == total && AudiobookDownloadStorage.isManifestComplete(merged, expectedChapterIndices: expectedIndices)
-        try? AudiobookDownloadStorage.saveManifest(AudiobookManifest(
-            jobId: merged.jobId, bookTitle: merged.bookTitle, chapters: merged.chapters,
-            totalBytes: merged.totalBytes, completedAt: complete ? Date() : nil
-        ))
-
         emit(DownloadProgress(
             jobId: snapshot.jobId,
             chapterIndex: chapters.last?.index ?? 0,
@@ -376,6 +429,28 @@ actor AudiobookDownloads {
             state: completed == total ? .completed : .failed,
             lastError: completed == total ? nil : "\(total - completed) chapter(s) failed"
         ))
+    }
+
+    private func keep(
+        _ url: URL, snapshot: JobSnapshot, chapter: JobSnapshot.Chapter, owner: RetainedAudioOwner?, operationID: UUID
+    ) async throws -> Int64 {
+        let source = url.isFileURL ? url : FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-\(operationID.uuidString)-\(chapter.index).mp3")
+        defer {
+            if !url.isFileURL {
+                try? FileManager.default.removeItem(at: source)
+                try? FileManager.default.removeItem(at: source.appendingPathExtension("partial"))
+            }
+        }
+        if !url.isFileURL { _ = try await AudiobookChapterTransfer.downloadWithBackoff(url: url, to: source) }
+        if let owner, let storeIndex = owner.storeIndex(forSnapshotIndex: chapter.index) {
+            let request = LocalAudioArtifactStore.DownloadRequest(
+                bookID: owner.bookID, bookTitle: snapshot.bookTitle ?? snapshot.jobId,
+                author: snapshot.bookAuthor, chapterIndex: storeIndex, chapterTitle: chapter.displayTitle,
+                textOffset: max(0, chapter.textOffset ?? 0))
+            return try await store.retainDownload(from: source, request: request)
+        }
+        return try await store.retainJobDownload(from: source, snapshot: snapshot, chapter: chapter)
     }
 
     nonisolated static func selectedChapters(

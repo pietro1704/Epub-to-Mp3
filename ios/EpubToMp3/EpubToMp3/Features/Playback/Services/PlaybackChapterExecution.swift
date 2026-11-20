@@ -85,8 +85,6 @@ final class PlaybackChapterExecution {
         // We defer activation to `actions.resume()` so silence on the user's side
         // never costs them their currently-playing audio.
         log.debug("[load] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
-        // Touch last-access so LRU eviction knows this audiobook was opened.
-        AudiobookCacheEviction.touchLastAccess(jobId: snapshot.jobId)
         // Embedded-runtime preservation: when the host already streamed
         // segments into the queue via `enqueueSegment` (the only way
         // audio reaches the player in embedded mode — chapters carry

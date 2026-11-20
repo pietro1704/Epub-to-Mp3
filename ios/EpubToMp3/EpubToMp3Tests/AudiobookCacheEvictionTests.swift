@@ -1,7 +1,6 @@
 // AudiobookCacheEvictionTests.swift
 //
-// Unit tests for the retained legacy audiobook-folder bookkeeping:
-//   - `AudiobookCacheEviction.touchLastAccess(jobId:)` sidecar writes
+// Unit tests for reading the previous audiobook-folder layout:
 //   - `AudiobookDownloadStorage.locallyDownloadedIndices(for:)` disk truth
 //
 // Every test runs on a temporary root installed through
@@ -43,7 +42,7 @@ final class AudiobookCacheEvictionTests: XCTestCase {
                 mp3FileName: entry.fileName, mp3Bytes: 128, downloadedAt: Date()
             ))
         }
-        try AudiobookDownloadStorage.saveManifest(AudiobookManifest(
+        try LegacyAudiobookFixture.save(AudiobookManifest(
             jobId: jobId, bookTitle: jobId, chapters: chapters,
             totalBytes: Int64(entries.count * 128), completedAt: Date()
         ))
@@ -65,28 +64,5 @@ final class AudiobookCacheEvictionTests: XCTestCase {
             AudiobookDownloadStorage.locallyDownloadedIndices(for: "test-missing-\(UUID().uuidString)"),
             []
         )
-    }
-
-    func testTouchLastAccessWritesSidecar() throws {
-        let jobId = "touchtest-\(UUID().uuidString.prefix(6))"
-        let folder = AudiobookDownloadStorage.audiobooksRoot()
-            .appendingPathComponent(jobId, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-
-        // ISO8601DateFormatter truncates to whole seconds, so `parsed` may be
-        // up to 1 second before `before`. Allow a 1-second window on the lower bound.
-        let before = Date().addingTimeInterval(-1)
-        AudiobookCacheEviction.touchLastAccess(jobId: jobId)
-        let after = Date()
-
-        let sidecar = folder.appendingPathComponent("last_access")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: sidecar.path),
-                      "touchLastAccess must create a last_access sidecar file")
-        let raw = try String(contentsOf: sidecar, encoding: .utf8)
-        let parsed = ISO8601DateFormatter().date(from: raw.trimmingCharacters(in: .whitespacesAndNewlines))
-        XCTAssertNotNil(parsed)
-        XCTAssertGreaterThanOrEqual(parsed!, before, "timestamp must be within 1s of call time")
-        XCTAssertLessThanOrEqual(parsed!, after.addingTimeInterval(1))
     }
 }

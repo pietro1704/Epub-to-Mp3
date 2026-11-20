@@ -152,11 +152,12 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             .appendingPathComponent("DownloadMaintenanceAdmission-\(UUID().uuidString)", isDirectory: true)
         let downloads = root.appendingPathComponent("downloads", isDirectory: true)
         let jobID = UUID().uuidString
-        let chapterURL = downloads.appendingPathComponent("\(jobID)/chapters/Fixture.mp3")
-        let manifestURL = downloads.appendingPathComponent("\(jobID)/manifest.json")
+        let artifacts = root.appendingPathComponent("artifacts", isDirectory: true)
+        let chapterURL = artifacts.appendingPathComponent("\(jobID)/chapters/chapter-0.mp3")
         let previousRoot = AudiobookDownloadStorage.rootOverrideForTesting
         AudiobookDownloadStorage.rootOverrideForTesting = downloads
-        let manager = AudiobookDownloads()
+        let artifactStore = LocalAudioArtifactStore(root: artifacts)
+        let manager = LegacyAudiobookFixture.downloads(store: artifactStore)
         let gate = DownloadMaintenanceGate()
         let bytes = Data(repeating: 0x4D, count: 4096)
         let server = try DelayedDownloadHTTPServer(bytes: bytes)
@@ -180,7 +181,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             }
         }
         let service = AudioStorageMaintenance(
-            artifactStore: LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts")),
+            artifactStore: artifactStore,
             legacyAudiobooksRoot: downloads, legacyTTSRoot: ttsRoot,
             downloadManager: manager, cancelDownloads: { await gate.wait() },
             notificationCenter: NotificationCenter(),
@@ -261,7 +262,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
         XCTAssertEqual(waiting?.state, .queued)
         XCTAssertFalse(server.hasReceivedRequest, "A new download must not start HTTP before deletion finishes")
         XCTAssertFalse(FileManager.default.fileExists(atPath: downloads.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: chapterURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.path))
         if scenario == .cancelJob { await manager.cancel(jobId: jobID) }
         if scenario == .cancelAll { await manager.cancelAll() }
         if scenario == .callerCancellation { cleanup.cancel() }
@@ -314,6 +315,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             XCTAssertFalse(server.hasReceivedRequest)
             XCTAssertFalse(CacheActivityRegistry.activeJobIds().contains(jobID))
             XCTAssertFalse(FileManager.default.fileExists(atPath: downloads.path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: chapterURL.path))
             return
         }
         let acceptedServer = replacementServer ?? server
@@ -331,9 +333,12 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
         let finished = await finishedIterator.next()
         XCTAssertEqual(finished?.state, .completed)
         XCTAssertEqual(try Data(contentsOf: chapterURL), acceptedBytes)
-        let manifest = try JSONDecoder().decode(AudiobookManifest.self, from: Data(contentsOf: manifestURL))
+        let manifest = try XCTUnwrap(LocalAudioArtifactFixture.manifest(root: artifacts, bookID: jobID))
         XCTAssertEqual(manifest.chapters.map(\.index), [0])
-        XCTAssertEqual(manifest.totalBytes, Int64(acceptedBytes.count))
+        XCTAssertEqual(manifest.chapters.map(\.byteCount), [Int64(acceptedBytes.count)])
+        XCTAssertEqual(manifest.chapters.map(\.retention), [.downloaded])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: downloads.appendingPathComponent(jobID).path),
+                       "A Download must not write the previous layout")
         if replacementServer != nil {
             XCTAssertFalse(server.hasReceivedRequest, "The replaced deferred request must never start")
             XCTAssertEqual(manifest.bookTitle, "Replacement")
@@ -354,12 +359,14 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             .appendingPathComponent("DownloadCleanupRace-\(UUID().uuidString)", isDirectory: true)
         let downloads = root.appendingPathComponent("downloads", isDirectory: true)
         let jobID = UUID().uuidString
-        let bookRoot = downloads.appendingPathComponent(jobID, isDirectory: true)
+        let artifacts = root.appendingPathComponent("artifacts", isDirectory: true)
+        let bookRoot = artifacts.appendingPathComponent(jobID, isDirectory: true)
         let manifestURL = bookRoot.appendingPathComponent("manifest.json")
-        let chapterURL = bookRoot.appendingPathComponent("chapters/Fixture.mp3")
+        let chapterURL = bookRoot.appendingPathComponent("chapters/chapter-0.mp3")
         let previousRoot = AudiobookDownloadStorage.rootOverrideForTesting
         AudiobookDownloadStorage.rootOverrideForTesting = downloads
-        let manager = AudiobookDownloads()
+        let artifactStore = LocalAudioArtifactStore(root: artifacts)
+        let manager = LegacyAudiobookFixture.downloads(store: artifactStore)
         let bytes = Data(repeating: 0x5A, count: 8192)
         let server = try DelayedDownloadHTTPServer(bytes: bytes)
         let progress = CleanupDownloadProgress()
@@ -404,7 +411,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
         XCTAssertTrue(CacheActivityRegistry.activeJobIds().contains(jobID))
         if clearWhileResponseIsPending {
             let service = AudioStorageMaintenance(
-                artifactStore: LocalAudioArtifactStore(root: root.appendingPathComponent("artifacts")),
+                artifactStore: artifactStore,
                 legacyAudiobooksRoot: downloads, legacyTTSRoot: root.appendingPathComponent("tts"),
                 downloadManager: manager, notificationCenter: NotificationCenter(),
                 rustOutputs: RustConversionOutputStore(root: root.appendingPathComponent("rust-outputs")))
@@ -436,6 +443,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             }
             try await cleanup.value
             XCTAssertFalse(FileManager.default.fileExists(atPath: downloads.path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.path))
         }
         server.releaseResponse()
         await fulfillment(of: [server.sent], timeout: 5)
@@ -453,6 +461,7 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: chapterURL.path))
             XCTAssertFalse(FileManager.default.fileExists(atPath: manifestURL.path))
             XCTAssertFalse(FileManager.default.fileExists(atPath: downloads.path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.path))
             XCTAssertEqual(terminal?.state, .cancelled,
                            "Cleanup must publish a terminal state, not leave observers downloading")
             XCTAssertFalse(states.contains(.completed))
@@ -483,15 +492,16 @@ final class DownloadManagerCleanupRaceTests: XCTestCase {
             let freshTerminal = await freshIterator.next()
             XCTAssertEqual(freshTerminal?.state, .completed)
             XCTAssertEqual(try Data(contentsOf: chapterURL), freshBytes)
-            let manifest = try JSONDecoder().decode(AudiobookManifest.self, from: Data(contentsOf: manifestURL))
+            let manifest = try XCTUnwrap(LocalAudioArtifactFixture.manifest(root: artifacts, bookID: jobID))
             XCTAssertEqual(manifest.chapters.map(\.index), [0])
-            XCTAssertEqual(manifest.totalBytes, Int64(freshBytes.count))
+            XCTAssertEqual(manifest.chapters.map(\.byteCount), [Int64(freshBytes.count)])
         } else {
             XCTAssertEqual(terminal?.state, .completed)
             XCTAssertEqual(try Data(contentsOf: chapterURL), bytes)
-            let manifest = try JSONDecoder().decode(AudiobookManifest.self, from: Data(contentsOf: manifestURL))
+            let manifest = try XCTUnwrap(LocalAudioArtifactFixture.manifest(root: artifacts, bookID: jobID))
             XCTAssertEqual(manifest.chapters.map(\.index), [0])
-            XCTAssertEqual(manifest.totalBytes, Int64(bytes.count))
+            XCTAssertEqual(manifest.chapters.map(\.byteCount), [Int64(bytes.count)])
+            XCTAssertEqual(manifest.chapters.map(\.retention), [.downloaded])
         }
     }
 }
