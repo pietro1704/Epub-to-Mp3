@@ -104,7 +104,7 @@ final class IOSRootContainerController: UIViewController {
         view.backgroundColor = .systemBackground
         IOSReaderPlaybackPreparation.hydrateCachedChapterTitles(player: player, owner: self)
         readerOpenStageProfiler?.recordStartupStage("root_chapter_titles_hydrated")
-        IOSReaderPlaybackPreparation.restoreLocalPlaybackControls(settings: settings, library: library, player: player, owner: self) { [weak self] in self?.refreshOverlayState() }
+        PlaybackRelaunchRestoration.restore(settings: settings, library: library, player: player, owner: self) { [weak self] in self?.refreshOverlayState() }
         readerOpenStageProfiler?.recordStartupStage("root_playback_controls_restored")
         let openingBookIDs = Set([
             UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
