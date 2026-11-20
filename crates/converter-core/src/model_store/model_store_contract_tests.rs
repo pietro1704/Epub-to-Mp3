@@ -240,8 +240,14 @@ fn pinned_faber_manifest_preserves_verified_voice_identity() {
     let manifest = ModelStore::catalog_manifest(model_id).unwrap();
     let descriptor = MODELS.iter().find(|model| model.id == model_id).unwrap();
     let expected = [
-        (63_201_294, "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7"),
-        (4_855, "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f"),
+        (
+            63_201_294,
+            "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7",
+        ),
+        (
+            4_855,
+            "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f",
+        ),
     ];
     assert_eq!(manifest.artifacts.len(), expected.len());
     for (index, (bytes, hash)) in expected.into_iter().enumerate() {
