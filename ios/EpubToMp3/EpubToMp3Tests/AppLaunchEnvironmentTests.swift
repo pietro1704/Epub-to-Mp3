@@ -1,7 +1,17 @@
 import XCTest
+#if os(macOS)
+import AppKit
+#endif
 @testable import EpubToMp3
 
 final class AppLaunchEnvironmentTests: XCTestCase {
+    #if os(macOS)
+    @MainActor
+    func testMacXCTestHostStartsWithoutADockIcon() {
+        XCTAssertEqual(NSApplication.shared.activationPolicy(), .accessory)
+    }
+    #endif
+
     @MainActor
     func testDetectsXCTestConfigurationFilePathEvenWhenEmpty() {
         XCTAssertTrue(EpubToMp3App.isRunningUnderXCTest(environment: [
