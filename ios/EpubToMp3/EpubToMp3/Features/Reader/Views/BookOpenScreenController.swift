@@ -339,7 +339,7 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
     private func recordFirstPDFPage(wasNormalized: Bool) { document.openJourney.recordFirstPDFPage(wasNormalized: wasNormalized) }
 
     private func isCurrentLoad(_ loadingID: UUID, bookID: String) -> Bool {
-        document.loadGenerationID == loadingID && document.book.id == bookID
+        document.isCurrentLoad(loadingID, bookID: bookID)
     }
 
     @objc private func retryLoadingBook() {

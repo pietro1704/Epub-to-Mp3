@@ -23,10 +23,7 @@ final class ReaderContentsPresentation {
         self.present = present
     }
 
-    private var tocRows: [ReaderTocRow] {
-        guard let fulltext = document.fulltext else { return [] }
-        return ReaderTocFlattener.rows(toc: fulltext.toc, chapters: fulltext.chapters)
-    }
+    private var tocRows: [ReaderTocRow] { document.tocRows }
 
     /// TOC is a floating modal sheet — never inline in the reader's own
     /// layout — so a book always opens directly into its content and the
