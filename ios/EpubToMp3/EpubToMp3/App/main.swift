@@ -3,7 +3,9 @@ import AppKit
 
 MainActor.assumeIsolated {
     if EpubToMp3App.isRunningUnderXCTest() {
-        NSApplication.shared.run()
+        let application = NSApplication.shared
+        application.setActivationPolicy(.accessory)
+        application.run()
     } else {
         EpubToMp3App.runApp()
     }
