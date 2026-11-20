@@ -35,6 +35,7 @@ export const SCOPED = Object.freeze({
   flutter: ['flutter'],
   linux: ['flutter'],
   'rails-image': [],
+  browser: [],
   snapshot: [],
   ffi: [],
   fallback: [],

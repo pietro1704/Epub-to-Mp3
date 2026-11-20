@@ -248,9 +248,11 @@ def test_reusable_jobs_cannot_share_the_callers_concurrency_group
   assert_equal groups.size, groups.uniq.size
   faber = YAML.load_file(File.expand_path('../.github/workflows/faber-integration.yml', __dir__))
   jobs = faber.fetch('jobs')
-  %w[ffi-jni android-package rails-browser-runtime].each do |job|
+  %w[ffi-jni android-package].each do |job|
     assert_equal "${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}", jobs.fetch(job).fetch('if')
   end
+  # Post-merge runs the browser conversion as its own job and passes browser_runtime: false.
+  assert_equal "${{ inputs.macos_only != true && inputs.browser_runtime != false && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}", jobs.fetch('rails-browser-runtime').fetch('if')
   refute jobs.fetch('macos-preferences').key?('if')
   group = faber.fetch('concurrency').fetch('group')
   assert_includes group, "github.event_name == 'workflow_dispatch'"

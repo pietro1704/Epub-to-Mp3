@@ -6,7 +6,10 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 const SHA = /^[a-f0-9]{40}$/;
 const requireThat = (value, message) => { if (!value) throw new Error(message); };
-export async function validatedMerge({ repo, ref, tag, latest = false, api }) {
+// requiredJob: publish when that aggregate job of the latest attempt succeeded, even if
+// unrelated validations of the same run failed. Without it the whole run must succeed.
+export async function validatedMerge({ repo, ref, tag, latest = false, requiredJob, api }) {
+  requireThat(requiredJob === undefined || (typeof requiredJob === 'string' && /^[\w .'-]{1,100}$/.test(requiredJob)), 'Invalid required job');
   requireThat(/^[\w.-]+\/[\w.-]+$/.test(repo ?? ''), 'Invalid repository');
   requireThat(typeof ref === 'string' && ref.length > 0 && !ref.startsWith('-'), 'Invalid source');
   const read = (path) => api(`/repos/${repo}${path}`);
@@ -44,8 +47,19 @@ export async function validatedMerge({ repo, ref, tag, latest = false, api }) {
   requireThat(candidates.length > 0, 'No trusted post-merge validation');
   const selected = candidates.reduce((a, b) => a.id > b.id ? a : b);
   const run = await read(`/actions/runs/${selected.id}`);
+  const accepted = candidate => requiredJob ? ['success', 'failure'].includes(candidate.conclusion) : candidate.conclusion === 'success';
   requireThat(trusted(run) && run.id === selected.id && run.run_attempt === selected.run_attempt
-    && run.status === 'completed' && run.conclusion === 'success', 'Latest validation is unsuccessful or stale');
+    && run.status === 'completed' && accepted(run), 'Latest validation is unsuccessful or stale');
+  // A wholly successful run needs no job lookup; it also covers runs from before the
+  // publication job existed. A rerun of only the failed jobs carries a succeeded job over.
+  if (requiredJob && run.conclusion !== 'success') {
+    const jobs = await pages(`/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`, 'jobs');
+    const named = jobs.filter(job => job?.name === requiredJob);
+    const job = named[0];
+    requireThat(named.length === 1 && job.run_id === run.id && job.head_sha === sha && Number.isSafeInteger(job.run_attempt)
+      && job.run_attempt >= 1 && job.run_attempt <= run.run_attempt && job.status === 'completed' && job.conclusion === 'success',
+      `Required validation job did not succeed: ${requiredJob}`);
+  }
   const prs = await pages(`/commits/${sha}/pulls`);
   requireThat(prs.some(pr => pr.merged_at && pr.state === 'closed' && pr.merge_commit_sha === sha
     && pr.base?.ref === 'master' && pr.base?.repo?.full_name === repo), 'Source is not a confirmed master merge');
@@ -57,7 +71,7 @@ export async function validatedMerge({ repo, ref, tag, latest = false, api }) {
   // Detect identity changes during the metadata checks, immediately before returning authorization.
   const currentRun = await read(`/actions/runs/${run.id}`);
   requireThat(trusted(currentRun) && currentRun.id === run.id && currentRun.run_attempt === run.run_attempt
-    && currentRun.status === 'completed' && currentRun.conclusion === 'success', 'Validation changed during publication checks');
+    && currentRun.status === 'completed' && accepted(currentRun), 'Validation changed during publication checks');
   if (tag) requireThat((await read(`/commits/${encodeURIComponent(tag)}`)).sha === sha, 'Tag changed during publication checks');
   if (latest) requireThat((await read('/git/ref/heads/master')).object?.sha === sha, 'Master advanced during publication checks');
   return { sha, master, run_id: run.id, run_attempt: run.run_attempt };
@@ -69,8 +83,9 @@ export function githubApi(path) {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const { values } = parseArgs({ options: { repo: { type: 'string' }, ref: { type: 'string' }, tag: { type: 'string' }, latest: { type: 'boolean', default: false } } });
-    const result = await validatedMerge({ ...values, api: githubApi });
+    const { values } = parseArgs({ options: { repo: { type: 'string' }, ref: { type: 'string' }, tag: { type: 'string' }, latest: { type: 'boolean', default: false }, 'required-job': { type: 'string' } } });
+    const { 'required-job': requiredJob, ...rest } = values;
+    const result = await validatedMerge({ ...rest, requiredJob, api: githubApi });
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `sha=${result.sha}\n`);
     console.log(JSON.stringify(result));
   } catch (error) { console.error(`Publication blocked: ${error.message}`); process.exitCode = 1; }

@@ -40,7 +40,7 @@ jobs:
           marker='The job was not acquired by Runner of type hosted even after multiple attempts'
           # These jobs fail only because a job they require failed.
           # Post-merge calls CI, which reports its gate as "ci / PR gate".
-          aggregators='["PR gate", "ci / PR gate", "Validated merged source"]'
+          aggregators='["PR gate", "ci / PR gate", "Validated merged source", "Publication surfaces validated"]'
 
           run="$(gh api "repos/$REPO/actions/runs/$RUN_ID")"
           if [[ "$(jq -r '.run_attempt' <<< "$run")" != 1 ]]; then

@@ -10,6 +10,10 @@ on:
       physical_fixture_apk:
         type: boolean
         default: false
+      browser_runtime:
+        description: Run the real-model Rails browser conversion (post-merge runs it as its own job)
+        type: boolean
+        default: true
       intel_prebuilt:
         description: Use the verified Intel macOS FFI artifact instead of compiling converter-ffi
         type: boolean
@@ -605,5 +609,5 @@ jobs:
           retention-days: 14
 
   rails-browser-runtime:
-    if: ${{ inputs.macos_only != true && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
+    if: ${{ inputs.macos_only != true && inputs.browser_runtime != false && !(github.event_name == 'workflow_dispatch' && inputs.intel_only == true) }}
     uses: ./.github/workflows/rails-real-model.yml

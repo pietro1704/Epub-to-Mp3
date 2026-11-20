@@ -133,7 +133,8 @@ class HfSnapshotWorkflowTest < Minitest::Test
     _out, err, status = Open3.capture3(env, 'bash', '-euo', 'pipefail', '-c', push.fetch('run'), chdir: @root, unsetenv_others: true)
     assert status.success?, err
     log = File.readlines(calls, chomp: true)
-    assert_match(%r{\Anode .*validated_merge\.mjs --repo owner/repo --ref #{'a' * 40}\z}, log.fetch(0))
+    # The rollback accepts any version sync-hf could have published (#1240).
+    assert_match(%r{\Anode .*validated_merge\.mjs --repo owner/repo --ref #{'a' * 40} --required-job Publication surfaces validated\z}, log.fetch(0))
     refute_includes log.fetch(0), '--latest', 'Publishing a chosen validated commit must not require it to be the latest'
     assert_equal "hf_push #{snapshot} https://huggingface.co/spaces/pi1704/epub-to-mp3 askpass-user=user askpass-secret=fixture-token prompt=0",
                  log.fetch(1)
