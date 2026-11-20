@@ -218,15 +218,19 @@ private func selectionLanguageMenuItem(range: NSRange) -> NSMenuItem? {
         guard let chapters = fulltext?.chapters, !chapters.isEmpty else { return }
         let order = Array(chapters.indices.dropFirst(selectedChapter))
             + Array(chapters.indices.prefix(selectedChapter + 1))
-        for chapterIndex in order {
-            let full = chapters[chapterIndex].text as NSString
-            let range = full.range(of: query, options: .caseInsensitive)
-            guard range.location != NSNotFound else { continue }
+        for chapterIndex in order where !chapters[chapterIndex].isImageOnly {
+            // The parser text only picks candidate chapters. The selection
+            // range must come from the rendered text the view shows, whose
+            // offsets differ from the parser text for HTML chapters.
             if chapterIndex != selectedChapter {
+                let parserText = chapters[chapterIndex].text as NSString
+                guard parserText.range(of: query, options: .caseInsensitive).location != NSNotFound else { continue }
                 persistReadingProgress()
                 selectedChapter = chapterIndex
                 showChapter(chapterIndex)
             }
+            let range = (textView.string as NSString).range(of: query, options: .caseInsensitive)
+            guard range.location != NSNotFound else { continue }
             textView.setSelectedRange(range)
             textView.scrollRangeToVisible(range)
             return

@@ -140,7 +140,9 @@ enum LocalFulltextCache {
 
     /// Records a successful reader open. The retained payload count is capped
     /// by `memoryCache`; these identifiers let the next process prewarm the
-    /// same two books from durable storage.
+    /// same two books from durable storage. Main-actor isolation serializes
+    /// its read-modify-write of the recent list.
+    @MainActor
     static func recordWarmOpen(bookId: String) {
         guard sanitizedBookID(bookId) != nil else { return }
         let existing = UserDefaults.standard.stringArray(forKey: recentBookIDsKey) ?? []
