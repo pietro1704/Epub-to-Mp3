@@ -83,10 +83,7 @@ final class ReaderBookLoadSession {
         document.pendingProjectionAnchor = nil
         document.presentedProjectionLoadingID = nil
         document.lastPreparedProjectionOrdinal = nil
-        let journeyID = LatencyObservationStore.shared.beginBookOpen(
-            documentKind: document.book.fileType == .pdf ? .selectableTextPDF : .epub
-        )
-        document.activeBookOpenJourneyID = journeyID
+        let journeyID = document.openJourney.begin(for: document.book)
         observeOpenStage("reader_open_requested")
 
         // Memory-ready text stays synchronous. A disk-prepared rendering is
@@ -164,7 +161,7 @@ final class ReaderBookLoadSession {
                     let url = try await openBook(loadingBookID)
                     guard !Task.isCancelled, isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                     if document.book.fileType == .pdf {
-                        document.pendingPDFPageJourneyID = journeyID
+                        document.openJourney.pendingPDFPageJourneyID = journeyID
                         send(.showPDF(url))
                         guard self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                         send(.hideLoading)

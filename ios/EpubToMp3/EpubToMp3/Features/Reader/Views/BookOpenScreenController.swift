@@ -176,6 +176,7 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
          sessionDefaults: UserDefaults = .standard,
          deferInitialReaderGestures: Bool = true) {
         self.document = ReaderBookDocument(book: initialBook)
+        document.openJourney.stageObserver = openStageObserver
         self.library = library
         self.settings = settings
         self.bookmarkStore = bookmarkStore
@@ -300,7 +301,7 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
         send: { [weak self] event in
             guard let self else { return }
             switch event {
-            case .cancelJourney: openObservation.cancelActiveBookOpenJourney()
+            case .cancelJourney: document.openJourney.cancelActiveBookOpenJourney()
             case .showLoading: loadingSession.showLoadingOverlay()
             case .hideLoading: loadingSession.hideLoadingOverlay()
             case .loadFixture: loadingSession.loadUITestFixture()
@@ -323,10 +324,9 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
         openStageObserver?(name, timestamp)
     }
 
-    private lazy var openObservation: ReaderOpenObservation = ReaderOpenObservation(document: document, stageObserver: openStageObserver)
     private lazy var loadingSession: ReaderLoadingSession = ReaderLoadingSession(
         document: document, composition: composition, settings: settings,
-        textPresentation: textPresentation, readingPosition: readingPosition, observation: openObservation,
+        textPresentation: textPresentation, readingPosition: readingPosition, observation: document.openJourney,
         deferInitialReaderGestures: deferInitialReaderGestures, stageObserver: openStageObserver,
         scheduleReaderSettingsUpdate: { [weak self] in self?.settingsPresentation.scheduleReaderSettingsUpdate() },
         onLoadStateChanged: { [weak self] in self?.onLoadStateChanged?($0) },
@@ -336,7 +336,7 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
     private var isDeferringReaderGestures: Bool { loadingSession.isDeferringReaderGestures }
     private func showLoadingError(_ message: String) { loadingSession.showLoadingError(message) }
     private func finishLoadingAfterStableTextLayout(_ id: UUID) { loadingSession.finishLoadingAfterStableTextLayout(id) }
-    private func recordFirstPDFPage(wasNormalized: Bool) { openObservation.recordFirstPDFPage(wasNormalized: wasNormalized) }
+    private func recordFirstPDFPage(wasNormalized: Bool) { document.openJourney.recordFirstPDFPage(wasNormalized: wasNormalized) }
 
     private func isCurrentLoad(_ loadingID: UUID, bookID: String) -> Bool {
         document.loadGenerationID == loadingID && document.book.id == bookID

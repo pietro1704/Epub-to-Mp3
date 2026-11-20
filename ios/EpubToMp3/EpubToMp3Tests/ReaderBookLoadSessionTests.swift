@@ -50,7 +50,7 @@ final class ReaderBookLoadSessionTests: XCTestCase {
 
         func cleanup() {
             session.cancel()
-            if let id = document.activeBookOpenJourneyID { _ = LatencyObservationStore.shared.cancel(id) }
+            if let id = document.openJourney.activeBookOpenJourneyID { _ = LatencyObservationStore.shared.cancel(id) }
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: directory)
         }
