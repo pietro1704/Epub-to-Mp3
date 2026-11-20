@@ -68,7 +68,8 @@ inside a project command; inspect the global selection with
 Every Mac compiler invocation, including bootstrap/interpreter compilation, uses
 `scripts/native_job.rb build` through its guarded project task with one compiler
 job. Mac and Arch use the free-space floor in `config/mac-build-budget.json`
-on the volume receiving build outputs (20 GiB by default). Check the
+on the volume receiving build outputs (5 GiB: the owner decided on 2026-11-20 that
+only a nearly full disk stops a build; 20 GiB refused builds on a healthy host). Check the
 destination with `mise run build:storage -- /path/to/output`. The supervisor
 rechecks available space every 10 seconds. A storage refusal requires restoring
 free space or selecting a build volume with enough capacity. Keep compatible
@@ -117,7 +118,7 @@ thresholds and the readings behind each one are in the `admission` object of
 | Kernel memory pressure | refuses | any level but normal | warning level was logged 20:36-20:50 BRT (23:36-23:50 UTC) on 2026-11-19, before the incident below; normal with swap at 1551, 1016 and 1193 MiB |
 | `pmset -g therm` | refuses | a limit below 100, or fewer CPUs available | `CPU_Speed_Limit` 100 without a build, 81 during the first serial build after the reboot |
 | Compiler process outside the lease | refuses | any of `foreign_compilers` | one serial build with the usual background work read a load of 4.24-7.12, overlapping the range without one, so only its process name identifies it |
-| Free space on the build volume | refuses a build | 20 GiB | the storage floor above |
+| Free space on the build volume | refuses a build | 5 GiB | the storage floor above (owner decision 2026-11-20) |
 | Swap in use | warns | 1600 MiB | 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build, 1193 MiB on an idle host with normal memory pressure (00:32 BRT on 2026-11-20, 03:32 UTC) |
 | Compressor (`vm.compressor_bytes_used`) | warns | 25% of memory | 368-1807 MiB (4-22%); memory pressure was normal at both ends of that range |
 
