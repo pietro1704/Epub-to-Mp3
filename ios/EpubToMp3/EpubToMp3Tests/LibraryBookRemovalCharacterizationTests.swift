@@ -88,6 +88,26 @@ final class LibraryBookRemovalCharacterizationTests: XCTestCase {
                       "Playback of the removed book is stopped through willRemoveAudio")
     }
 
+    /// Owner decision 2026-11-20: the Mac asks before removing, like iOS.
+    func testMacMenuRemovalAsksFirstAndCancelKeepsEverything() async throws {
+        let target = try await seed()
+        let library = try makeLibrary(entries: [(target, target.jobID)])
+        let bookmarks = BookmarkStore(defaults: defaults)
+        seedBookmarks(bookmarks, for: [target.bookID])
+        let confirmations = RemovalNotices()
+        let controller = makeController(library: library, bookmarks: bookmarks, answer: false,
+                                        confirmations: confirmations)
+        try chooseRemove(bookID: target.bookID, in: controller)
+        await waitUntil { !confirmations.bookIDs.isEmpty }
+        // Give a removal that should not happen time to run.
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(confirmations.bookIDs, [library.books.first?.resolvedTitle], "asked once, with the book's title")
+        XCTAssertEqual(library.books.map(\.id), [target.bookID])
+        XCTAssertEqual(bookmarks.bookmarks(for: target.bookID).count, 2)
+        assertPresent(target)
+    }
+
     func testMacMenuRemovalWithoutLegacyJobKeepsLegacyJobFolders() async throws {
         let target = try await seed()
         let library = try makeLibrary(entries: [(target, nil)])
@@ -193,9 +213,13 @@ final class LibraryBookRemovalCharacterizationTests: XCTestCase {
         }
     }
 
-    private func makeController(library: LibraryStore, bookmarks: BookmarkStore) -> MacLibraryViewController {
+    /// `confirmations` records each title the confirmation was asked for; the
+    /// listener's answer is `answer` (the real app shows an NSAlert sheet).
+    private func makeController(library: LibraryStore, bookmarks: BookmarkStore, answer: Bool = true,
+                                confirmations: RemovalNotices? = nil) -> MacLibraryViewController {
         let controller = MacLibraryViewController(library: library, bookmarkStore: bookmarks,
-            onOpenBook: { _ in }, onDownloadBook: { _ in }, onConvertBook: { _ in })
+            onOpenBook: { _ in }, onDownloadBook: { _ in }, onConvertBook: { _ in },
+            confirmRemoval: { title, _ in confirmations?.append(title); return answer })
         _ = controller.view
         return controller
     }

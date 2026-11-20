@@ -52,6 +52,14 @@ struct BookLanguageCorrections {
         NotificationCenter.default.post(name: Self.didChange, object: nil, userInfo: ["bookID": bookID])
     }
 
+    /// Forgets every correction of one book; other books keep theirs.
+    func remove(bookID: String) throws {
+        var decisions = try decisions()
+        guard decisions.removeValue(forKey: bookID) != nil else { return }
+        defaults.set(try JSONEncoder().encode(decisions), forKey: Self.key)
+        NotificationCenter.default.post(name: Self.didChange, object: nil, userInfo: ["bookID": bookID])
+    }
+
     func applying(to options: ConversionOptions, bookID: String) throws -> ConversionOptions {
         let decision = try decision(bookID: bookID)
         var captured = options

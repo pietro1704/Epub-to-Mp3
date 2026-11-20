@@ -10,8 +10,9 @@ import Foundation
 ///    playback of this book stops; then, inside that same maintenance window,
 ///    the book's local audio artifacts and the legacy `Audiobooks/<jobId>`
 ///    download.
-/// 2. Bookmarks and highlights, the prepared reader text, extracted fonts and
-///    the legacy job's reader text.
+/// 2. Bookmarks and highlights, the prepared reader text, extracted fonts,
+///    prepared reader chapters and rendered chapter archives, the book's
+///    pronunciations and language corrections, and the legacy job's reader text.
 /// 3. The library entity, which also evicts the saved reading position.
 ///
 /// `FulltextStore.evict(jobId:)` resolves its path through `fulltextURL(for:)`,
@@ -29,6 +30,10 @@ struct LibraryBookRemoval {
     var convertedAudio: RustConversionOutputStore = .shared
     var localAudio: LocalAudioArtifactStore = .shared
     var legacyDownloads: AudiobookDownloads = .shared
+    var preparedReader: PreparedReaderChapterStore = .shared
+    var preparedRenderings = PreparedChapterArchiveStore()
+    var pronunciations = BookPronunciationStore()
+    var languageCorrections = BookLanguageCorrections()
 
     /// `legacyJobID` is the entity's `lastJobId` as the caller read it.
     func remove(bookID: String, legacyJobID: String?) async throws {
@@ -43,6 +48,10 @@ struct LibraryBookRemoval {
         bookmarks.removeAll(for: bookID)
         LocalFulltextCache.evict(bookId: bookID)
         EpubFontManager.evictCachedFonts(bookID: bookID)
+        try? await preparedReader.removeAll(bookID: bookID)
+        try? await preparedRenderings.removeAll(bookID: bookID)
+        pronunciations.remove(bookID: bookID)
+        try? languageCorrections.remove(bookID: bookID)
         if let legacyJobID { FulltextStore.evict(jobId: legacyJobID) }
         library.remove(id: bookID)
     }

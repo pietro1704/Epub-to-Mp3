@@ -32,6 +32,9 @@ struct BookPronunciationStore {
         else { return BookPronunciationDictionary() }
         return dictionary
     }
+    func remove(bookID: String) {
+        defaults.removeObject(forKey: "bookPronunciation.v1.\(bookID)")
+    }
     func save(_ dictionary: BookPronunciationDictionary, bookID: String) throws {
         let validated = try BookPronunciationDictionary.parse(dictionary.editableText)
         defaults.set(try JSONEncoder().encode(validated), forKey: "bookPronunciation.v1.\(bookID)")

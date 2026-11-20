@@ -54,6 +54,45 @@ final class LibraryBookRemovalTests: XCTestCase {
         XCTAssertTrue(exists(fixture.legacyFolders[id("Other")]!))
     }
 
+    /// Owner decision 2026-11-20: removing a book also deletes what the app derived
+    /// or the listener set for that book only: prepared reader chapters and
+    /// rendered archives, pronunciations and language corrections.
+    func testAlsoRemovesPreparedChaptersPronunciationsAndLanguageFixesOfThatBookOnly() async throws {
+        let fixture = try await makeFixture(bookIDs: [id("Target"), id("Other")])
+        let signature = String(repeating: "a", count: 64)
+        for (store, directory) in [(fixture.renderings, fixture.renderingsDirectory),
+                                   (PreparedChapterArchiveStore(directory: fixture.readerDirectory), fixture.readerDirectory)] {
+            for bookID in [id("Target"), id("Other")] {
+                for chapter in [0, 7] { try await store.write(Data([9]), bookID: bookID, chapterIndex: chapter, signature: signature) }
+            }
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).count, 4)
+        }
+        let pronunciations = BookPronunciationStore(defaults: defaults)
+        let corrections = BookLanguageCorrections(defaults: defaults)
+        for bookID in [id("Target"), id("Other")] {
+            try pronunciations.save(try BookPronunciationDictionary.parse("Tolkien = Tólquien"), bookID: bookID)
+            try corrections.set("en", bookID: bookID)
+            try corrections.set("fr", bookID: bookID, passage: PassageLanguageCorrection(chapterIndex: 1, start: 0, end: 4, language: "fr"))
+        }
+
+        try await fixture.removal.remove(bookID: id("Target"), legacyJobID: "job-" + id("Target"))
+
+        for store in [fixture.renderings, PreparedChapterArchiveStore(directory: fixture.readerDirectory)] {
+            for chapter in [0, 7] {
+                let removed = await store.read(bookID: id("Target"), chapterIndex: chapter)
+                let kept = await store.read(bookID: id("Other"), chapterIndex: chapter)
+                XCTAssertNil(removed)
+                XCTAssertNotNil(kept)
+            }
+        }
+        XCTAssertEqual(pronunciations.load(bookID: id("Target")), BookPronunciationDictionary())
+        XCTAssertEqual(pronunciations.load(bookID: id("Other")).rules.count, 1)
+        XCTAssertEqual(try corrections.decision(bookID: id("Target")), BookLanguageDecision())
+        let other = try corrections.decision(bookID: id("Other"))
+        XCTAssertEqual(other.bookLanguage, "en")
+        XCTAssertEqual(other.passages.count, 1)
+    }
+
     func testLocalAudioFailureLeavesTheBookAndLaterStoresInPlace() async throws {
         let fixture = try await makeFixture(bookIDs: [id("Target")])
         let locked = fixture.localAudio[id("Target")]!.appendingPathComponent("locked", isDirectory: true)
@@ -112,6 +151,9 @@ final class LibraryBookRemovalTests: XCTestCase {
         let rustOutputs: [String: URL]
         let localAudio: [String: URL]
         let legacyFolders: [String: URL]
+        let renderings: PreparedChapterArchiveStore
+        let renderingsDirectory: URL
+        let readerDirectory: URL
     }
 
     private func makeFixture(bookIDs: [String]) async throws -> Fixture {
@@ -141,10 +183,18 @@ final class LibraryBookRemovalTests: XCTestCase {
             legacyFolders[bookID] = legacy
             bookmarks.addBookmark(bookId: bookID, chapterIndex: 0, chapterTitle: "One")
         }
+        let renderingsDirectory = root.appendingPathComponent("PreparedChapters", isDirectory: true)
+        let readerDirectory = root.appendingPathComponent("PreparedReaderChapters", isDirectory: true)
+        let renderings = PreparedChapterArchiveStore(directory: renderingsDirectory)
         let removal = LibraryBookRemoval(library: library, bookmarks: bookmarks, convertedAudio: convertedAudio,
-                                         localAudio: LocalAudioArtifactStore(root: localRoot))
+                                         localAudio: LocalAudioArtifactStore(root: localRoot),
+                                         preparedReader: PreparedReaderChapterStore(directory: readerDirectory),
+                                         preparedRenderings: renderings,
+                                         pronunciations: BookPronunciationStore(defaults: defaults),
+                                         languageCorrections: BookLanguageCorrections(defaults: defaults))
         return Fixture(removal: removal, library: library, bookmarks: bookmarks, convertedAudio: convertedAudio,
-                       rustOutputs: rustOutputs, localAudio: localAudio, legacyFolders: legacyFolders)
+                       rustOutputs: rustOutputs, localAudio: localAudio, legacyFolders: legacyFolders,
+                       renderings: renderings, renderingsDirectory: renderingsDirectory, readerDirectory: readerDirectory)
     }
 
     private func id(_ name: String) -> String { name + suffix }

@@ -60,6 +60,10 @@ actor PreparedReaderChapterStore {
         self.maximumSourceBytes = maximumSourceBytes
     }
 
+    func removeAll(bookID: String) async throws {
+        try await archives.removeAll(bookID: bookID)
+    }
+
     func write(bookID: String, chapterOrdinal: Int, fulltextURL: URL) async throws {
         let binding = try source(fulltextURL, collectBytes: true)
         let bytes = binding.bytes
