@@ -114,7 +114,10 @@ final class AudioPlayer: ObservableObject {
     @Published private(set) var isUsingSpeechFallback: Bool = false
 
     private let configuration: PlaybackServices.Configuration
-    private lazy var services: PlaybackServices = PlaybackServices(authority: self, configuration: configuration)
+    /// Concrete playback services. Internal so tests drive and inspect the real
+    /// seams (`services.queue`, `services.segments`, …); production callers use
+    /// the commands and publications of this type.
+    private(set) lazy var services: PlaybackServices = PlaybackServices(authority: self, configuration: configuration)
 
     init(
         resumeStore: ResumeStore = ResumeStore(),
@@ -445,38 +448,4 @@ final class AudioPlayer: ObservableObject {
 
     private var pendingAutoPlay: Bool = false
     private var pendingSegmentResumePosition: TimeInterval?
-
-    // MARK: - Test hooks
-    //
-    #if DEBUG
-    private lazy var testAccess: PlaybackTestAccess = PlaybackTestAccess(authority: self, services: services)
-    func testHook_setIsPlaying(_ value: Bool) { testAccess.setIsPlaying(value) }
-    func testHook_currentPlayerItem() -> AVPlayerItem? { testAccess.currentPlayerItem() }
-    func testHook_setSnapshot(_ snap: JobSnapshot) { testAccess.setSnapshot(snap) }
-    func testHook_setCurrentChapterIndex(_ idx: Int) { testAccess.setCurrentChapterIndex(idx) }
-    func testHook_setDurationSeconds(_ value: Double) { testAccess.setDurationSeconds(value) }
-    func testHook_playbackChapterCount() -> Int { testAccess.playbackChapterCount() }
-
-    func testHook_sentenceTimingMap(forChapterIndex idx: Int) -> [String: Int]? { testAccess.sentenceTimingMap(forChapterIndex: idx) }
-    func testHook_activeSegmentIdentity() -> SegmentBacklog.Identity? { testAccess.activeSegmentIdentity() }
-    func testHook_deferredSegmentCount() -> Int { testAccess.deferredSegmentCount() }
-    func testHook_retainedSegmentCount() -> Int { testAccess.retainedSegmentCount() }
-    func testHook_segmentURL(chapterIndex: Int, segmentIndex: Int) -> URL? { testAccess.segmentURL(chapterIndex: chapterIndex, segmentIndex: segmentIndex) }
-    func testHook_activateSegment(chapterIndex: Int, segmentIndex: Int) { testAccess.activateSegment(chapterIndex: chapterIndex, segmentIndex: segmentIndex) }
-    func testHook_segmentChapterIndex() -> Int { testAccess.segmentChapterIndex() }
-    func testHook_activeSegmentSentenceCount() -> Int { testAccess.activeSegmentSentenceCount() }
-    func testHook_activateSegmentChapter(_ chapterIndex: Int) { testAccess.activateSegmentChapter(chapterIndex) }
-    func testHook_bufferedSegmentChapterCount() -> Int { testAccess.bufferedSegmentChapterCount() }
-    func testHook_completeSegmentTiming(chapterIndex: Int) { testAccess.completeSegmentTiming(chapterIndex: chapterIndex) }
-    func testHook_registerOwnedSegmentItem(_ item: AVPlayerItem) { testAccess.registerOwnedSegmentItem(item) }
-    func testHook_isOwnedSegmentItem(_ item: AVPlayerItem) -> Bool { testAccess.isOwnedSegmentItem(item) }
-    func testHook_removeOwnedSegmentItem(_ item: AVPlayerItem) { testAccess.removeOwnedSegmentItem(item) }
-    func testHook_backlogCount() -> Int { testAccess.backlogCount() }
-    func testHook_segmentCapacityWaiterCount() -> Int { testAccess.segmentCapacityWaiterCount() }
-    func testHook_segmentTempDirectory() -> URL? { testAccess.segmentTempDirectory() }
-
-    func testHook_teardownPlayer() { testAccess.teardownPlayer() }
-    func testHook_finishCurrentSegment() -> Bool { testAccess.finishCurrentSegment() }
-    func testHook_simulateSegmentMode() { testAccess.simulateSegmentMode() }
-    #endif
 }

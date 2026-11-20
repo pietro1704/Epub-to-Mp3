@@ -50,7 +50,7 @@ final class AudioPlayerPendingPlayIntentTests: XCTestCase {
         player.resume()
         player.pause()
         player.updateSnapshot(event.snapshot(chapters: [event.playableChapter]))
-        XCTAssertNotNil(player.testHook_currentPlayerItem())
+        XCTAssertNotNil(player.services.queue.player?.currentItem)
         XCTAssertFalse(player.isPlaying, "Pause must revoke Play intent before the first audio arrives")
     }
 }
@@ -165,12 +165,12 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let data = try Data(contentsOf: f.root.appendingPathComponent("ch1.wav"))
         let accepted = await Task.detached { chunk(1, 0, data) }.value
         XCTAssertTrue(accepted, "Rust must keep building the canonical complete chapter")
-        XCTAssertNil(f.player.testHook_currentPlayerItem(), "A chapter ratio must never seek inside its first segment")
+        XCTAssertNil(f.player.services.queue.player?.currentItem, "A chapter ratio must never seek inside its first segment")
         try f.emit(1, jobID: "foreign-job")
         try f.emit(2)
-        XCTAssertNil(f.player.testHook_currentPlayerItem())
+        XCTAssertNil(f.player.services.queue.player?.currentItem)
         try f.emit(1)
-        try await f.wait { !f.player.isSeeking && (f.player.testHook_currentPlayerItem()?.currentTime().seconds ?? 0) >= 7.4 }
+        try await f.wait { !f.player.isSeeking && (f.player.services.queue.player?.currentItem?.currentTime().seconds ?? 0) >= 7.4 }
         XCTAssertEqual(f.player.positionSeconds, 7.5, accuracy: 0.5)
         XCTAssertTrue(f.player.isPlaying)
         XCTAssertFalse(f.presentation.showingFullPlayer)
@@ -190,7 +190,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         XCTAssertEqual(f.player.pendingNavigation?.chapterIndex, 1,
                        "Navigation before the first playable chapter must retain the page request")
         try f.emit(1)
-        try await f.wait { !f.player.isSeeking && (f.player.testHook_currentPlayerItem()?.currentTime().seconds ?? 0) >= 5.9 }
+        try await f.wait { !f.player.isSeeking && (f.player.services.queue.player?.currentItem?.currentTime().seconds ?? 0) >= 5.9 }
         XCTAssertFalse(f.player.isPlaying, "A late chapter must not undo Pause")
         XCTAssertEqual(f.player.positionSeconds, 6, accuracy: 0.1)
         try await f.complete()
@@ -206,7 +206,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let data = try Data(contentsOf: f.root.appendingPathComponent("ch1.wav"))
         let accepted = await Task.detached { chunk(1, 0, data) }.value
         XCTAssertTrue(accepted)
-        XCTAssertNotNil(f.player.testHook_currentPlayerItem())
+        XCTAssertNotNil(f.player.services.queue.player?.currentItem)
         XCTAssertNil(f.player.pendingNavigation)
         f.player.pause()
         try f.emit(1)
@@ -350,7 +350,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         XCTAssertFalse(f.player.isPlaying)
         XCTAssertEqual(f.player.currentChapterIndex, 1,
                        "A partial zero-based manifest must preserve the selected chapter during full-file handoff.")
-        let asset = try XCTUnwrap(f.player.testHook_currentPlayerItem()?.asset as? AVURLAsset)
+        let asset = try XCTUnwrap(f.player.services.queue.player?.currentItem?.asset as? AVURLAsset)
         XCTAssertEqual(asset.url.lastPathComponent, "ch2.wav")
     }
 
@@ -391,16 +391,16 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         XCTAssertEqual(f.calls, 1, "Repeated Play must not queue another conversion")
         try f.emit(1, jobID: "foreign-job")
         try f.emit(2)
-        XCTAssertNil(f.player.testHook_currentPlayerItem(), "An out-of-order later chapter cannot start playback")
+        XCTAssertNil(f.player.services.queue.player?.currentItem, "An out-of-order later chapter cannot start playback")
         try f.emit(1)
-        try await f.wait { (f.player.testHook_currentPlayerItem()?.currentTime().seconds ?? 0) > 0.1 }
-        let item = try XCTUnwrap(f.player.testHook_currentPlayerItem())
+        try await f.wait { (f.player.services.queue.player?.currentItem?.currentTime().seconds ?? 0) > 0.1 }
+        let item = try XCTUnwrap(f.player.services.queue.player?.currentItem)
         XCTAssertEqual((item.asset as? AVURLAsset)?.url, f.root.appendingPathComponent("ch1.wav"))
         XCTAssertTrue(f.player.isPlaying); XCTAssertFalse(f.finished)
         XCTAssertEqual(f.player.snapshot?.playableChapters.map(\.index), [1, 2])
         f.player.pause()
         try await f.complete()
-        XCTAssertTrue(f.player.testHook_currentPlayerItem() === item)
+        XCTAssertTrue(f.player.services.queue.player?.currentItem === item)
         XCTAssertFalse(f.player.isPlaying, "Finalization must not undo a user's pause")
         XCTAssertFalse(f.player.isConverting)
         XCTAssertFalse(f.presentation.showingFullPlayer, "Mini player Play must keep the reader visible")
@@ -410,7 +410,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         f.controller.startListeningFromMiniPlayer(); try await f.wait { f.calls == 1 }
         f.player.pause(); try f.emit(1)
-        XCTAssertNotNil(f.player.testHook_currentPlayerItem()); XCTAssertFalse(f.player.isPlaying)
+        XCTAssertNotNil(f.player.services.queue.player?.currentItem); XCTAssertFalse(f.player.isPlaying)
         try await f.complete(); XCTAssertFalse(f.player.isPlaying)
     }
 
@@ -418,7 +418,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         f.controller.startListeningFromMiniPlayer(); try await f.wait { f.calls == 1 }
         f.defaults.removeObject(forKey: ReaderSessionState.currentlyReadingBookIDKey)
-        try f.emit(1); XCTAssertNil(f.player.testHook_currentPlayerItem())
+        try f.emit(1); XCTAssertNil(f.player.services.queue.player?.currentItem)
         try await f.complete(); XCTAssertFalse(f.player.isPlaying)
     }
 
@@ -439,13 +439,13 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         f.controller.startListeningFromMiniPlayer(); try await f.wait { f.calls == 1 }
         try f.emit(1)
-        try await f.wait { (f.player.testHook_currentPlayerItem()?.currentTime().seconds ?? 0) > 0.1 }
-        let item = f.player.testHook_currentPlayerItem()
+        try await f.wait { (f.player.services.queue.player?.currentItem?.currentTime().seconds ?? 0) > 0.1 }
+        let item = f.player.services.queue.player?.currentItem
         f.defaults.removeObject(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         f.fail = true; f.release.finish()
         try await f.wait { f.player.snapshot?.state == "failed" }
         XCTAssertFalse(f.player.isConverting); XCTAssertTrue(f.player.isPlaying)
-        XCTAssertTrue(f.player.testHook_currentPlayerItem() === item)
+        XCTAssertTrue(f.player.services.queue.player?.currentItem === item)
     }
 
     func testTerminalManifestMissingPriorityDoesNotStartAnotherChapter() async throws {
@@ -454,7 +454,7 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         f.defaults.removeObject(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         f.omitPriority = true; f.release.finish()
         try await f.wait { f.player.snapshot?.state == "failed" }
-        XCTAssertFalse(f.player.isPlaying); XCTAssertNil(f.player.testHook_currentPlayerItem())
+        XCTAssertFalse(f.player.isPlaying); XCTAssertNil(f.player.services.queue.player?.currentItem)
         XCTAssertNil(f.library.books.first(where: { $0.id == f.book.id })?.lastJobId)
     }
 }

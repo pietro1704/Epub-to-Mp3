@@ -39,7 +39,7 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
     @MainActor
     func testPopulatedWhenSnapshotHasChapterProgress() {
         let player = AudioPlayer()
-        player.testHook_setSnapshot(snapshot(chapters: [(0, "completed", 100, "a.mp3")]))
+        player.playbackSnapshotChanged(snapshot(chapters: [(0, "completed", 100, "a.mp3")]))
         XCTAssertNotNil(player.cachedBookChapterProgress)
         XCTAssertEqual(player.cachedBookChapterProgress?.chapters.count, 1)
     }
@@ -47,17 +47,17 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
     @MainActor
     func testNilWhenChapterProgressEmpty() {
         let player = AudioPlayer()
-        player.testHook_setSnapshot(snapshot(chapters: []))
+        player.playbackSnapshotChanged(snapshot(chapters: []))
         XCTAssertNil(player.cachedBookChapterProgress)
     }
 
     @MainActor
     func testUpdatesWhenSnapshotIsReassigned() {
         let player = AudioPlayer()
-        player.testHook_setSnapshot(snapshot(chapters: [(0, "running", 100, "a.mp3")]))
+        player.playbackSnapshotChanged(snapshot(chapters: [(0, "running", 100, "a.mp3")]))
         XCTAssertEqual(player.cachedBookChapterProgress?.chapters.first?.state, .running)
 
-        player.testHook_setSnapshot(snapshot(chapters: [(0, "completed", 100, "a.mp3")]))
+        player.playbackSnapshotChanged(snapshot(chapters: [(0, "completed", 100, "a.mp3")]))
         XCTAssertEqual(player.cachedBookChapterProgress?.chapters.first?.state, .completed)
     }
 
@@ -67,7 +67,7 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
     @MainActor
     func testRepeatedReadsWithoutReassignmentReturnEqualValueWithoutRebuilding() {
         let player = AudioPlayer()
-        player.testHook_setSnapshot(snapshot(chapters: [(0, "completed", 100, "a.mp3")]))
+        player.playbackSnapshotChanged(snapshot(chapters: [(0, "completed", 100, "a.mp3")]))
         let first = player.cachedBookChapterProgress
         for _ in 0..<50 {
             XCTAssertEqual(player.cachedBookChapterProgress, first)

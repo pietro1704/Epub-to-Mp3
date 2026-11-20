@@ -77,7 +77,7 @@ final class AudioPlayerSessionOwnershipTests: XCTestCase {
             return
         }
         current.pause()
-        let item = try XCTUnwrap(current.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(current.services.queue.player?.currentItem)
 
         // Both players have activated the process-wide session, but only the
         // surviving player owns the next explicit playback request.
@@ -91,7 +91,7 @@ final class AudioPlayerSessionOwnershipTests: XCTestCase {
         let pausedTime = item.currentTime().seconds
         XCTAssertTrue(pausedTime.isFinite)
         current.resume()
-        XCTAssertTrue(current.testHook_currentPlayerItem() === item,
+        XCTAssertTrue(current.services.queue.player?.currentItem === item,
                       "Resuming must retain the current chapter's real media item.")
         _ = try await requireAdvancement(current, after: pausedTime,
                                         phase: "Current player resume after previous player deinit")
@@ -99,7 +99,7 @@ final class AudioPlayerSessionOwnershipTests: XCTestCase {
 
     @MainActor
     private func requireAdvancement(_ player: AudioPlayer, after baseline: Double, phase: String) async throws -> Bool {
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem)
         for _ in 0..<100 {
             if item.currentTime().seconds > baseline + 0.2 { return true }
             try await Task.sleep(nanoseconds: 50_000_000)

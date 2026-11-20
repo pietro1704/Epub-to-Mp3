@@ -57,7 +57,7 @@ final class NativeTransportFeedbackTests: XCTestCase {
 
     private func ready(_ player: AudioPlayer) async throws {
         for _ in 0..<100 {
-            if player.testHook_currentPlayerItem()?.status == .readyToPlay && !player.isSeeking { return }
+            if player.services.queue.player?.currentItem?.status == .readyToPlay && !player.isSeeking { return }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTFail("Local silent item did not become ready")
@@ -67,7 +67,7 @@ final class NativeTransportFeedbackTests: XCTestCase {
     private func seek(_ player: AudioPlayer, to seconds: Double) async throws {
         player.seek(to: seconds)
         try await ready(player)
-        XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, seconds, accuracy: 0.15)
+        XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, seconds, accuracy: 0.15)
         XCTAssertEqual(player.positionSeconds, seconds, accuracy: 0.15)
     }
 
@@ -77,7 +77,7 @@ final class NativeTransportFeedbackTests: XCTestCase {
             player.skipBackward(seconds: 15)
             try await Task.sleep(nanoseconds: 200_000_000)
             XCTAssertEqual(player.positionSeconds, 15, accuracy: 0.2)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 15, accuracy: 0.2)
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 15, accuracy: 0.2)
             player.skipForward(seconds: 15)
             try await Task.sleep(nanoseconds: 200_000_000)
             XCTAssertEqual(player.positionSeconds, 30, accuracy: 0.2)
@@ -120,12 +120,12 @@ final class NativeTransportFeedbackTests: XCTestCase {
             slider.sendActions(for: .touchUpInside)
             try await ready(player)
             XCTAssertEqual(player.positionSeconds, 23.75, accuracy: 0.15)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 23.75, accuracy: 0.15)
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 23.75, accuracy: 0.15)
             player.seek(to: 12)
             player.seek(to: 42.5)
             try await ready(player)
             XCTAssertEqual(player.positionSeconds, 42.5, accuracy: 0.15)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 42.5, accuracy: 0.15)
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 42.5, accuracy: 0.15)
             XCTAssertEqual(slider.value, 42.5, accuracy: 0.15)
             XCTAssertFalse(player.isPlaying, "A paused slider must not start audio")
         }

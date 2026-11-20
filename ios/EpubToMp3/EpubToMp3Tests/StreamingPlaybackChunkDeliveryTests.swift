@@ -95,7 +95,7 @@ final class StreamingPlaybackChunkDeliveryTests: XCTestCase {
         XCTAssertTrue(player.firstSegmentReady)
         if engine == "edge" { XCTAssertFalse(usedSystemVoice.get()); XCTAssertFalse(player.isUsingSpeechFallback) }
         XCTAssertTrue(player.isPlaying)
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem)
         for _ in 0..<30 where item.status == .unknown {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -178,7 +178,7 @@ final class StreamingPlaybackChunkDeliveryTests: XCTestCase {
         XCTAssertTrue(accepted, "A current Rust worker chunk must be accepted by the player bridge.")
         XCTAssertTrue(player.firstSegmentReady)
         XCTAssertTrue(player.isPlaying, "Listen intent must start audio when the first chunk arrives.")
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem)
         for _ in 0..<30 where item.status == .unknown {
             try await Task.sleep(nanoseconds: 100_000_000)
         }

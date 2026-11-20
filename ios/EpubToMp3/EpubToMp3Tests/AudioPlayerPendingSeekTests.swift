@@ -115,12 +115,12 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
         afterResume()
         let expectsChapterDuration = !streaming || providesStreamEstimates || streamCurrentComplete
         for _ in 0..<100 {
-            let mediaDuration = player.testHook_currentPlayerItem()?.duration.seconds ?? 0
+            let mediaDuration = player.services.queue.player?.currentItem?.duration.seconds ?? 0
             if player.positionSeconds > 0 && mediaDuration > 0
                 && (!expectsChapterDuration || player.durationSeconds > 0) { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        let initialItem = player.testHook_currentPlayerItem()
+        let initialItem = player.services.queue.player?.currentItem
         let initialError = initialItem?.error as NSError?
         XCTAssertGreaterThan(player.positionSeconds, 0,
             "The available chapter must actually advance. "
@@ -196,7 +196,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             try await self.waitForNavigation(player)
             XCTAssertEqual(player.currentChapterIndex, 1)
             XCTAssertEqual(player.positionSeconds, 15, accuracy: 0.1)
-            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 15, accuracy: 0.1)
+            XCTAssertEqual(try XCTUnwrap(player.services.queue.player?.currentItem).currentTime().seconds, 15, accuracy: 0.1)
             XCTAssertFalse(player.isPlaying)
             let completed = try XCTUnwrap(self.exportedJourneys().first { $0.id == requested.id })
             XCTAssertFalse(completed.records.contains { $0.transition == .cancelled })
@@ -232,7 +232,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
     @MainActor
     func beginPendingSeek(_ player: AudioPlayer) async throws -> UUID {
         let originalIDs = Set(try exportedJourneys().map(\.id))
-        if player.testHook_activeSegmentIdentity() != nil { player.nextChapter() }
+        if player.services.segments.activeIdentity != nil { player.nextChapter() }
         else { player.seek(to: player.durationSeconds) }
         try await Task.sleep(nanoseconds: 300_000_000)
         let seeks = try exportedJourneys().filter { !originalIDs.contains($0.id) && $0.kind == .seek }

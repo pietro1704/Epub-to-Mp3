@@ -153,7 +153,7 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         window.contentViewController = controller
         window.makeKeyAndOrderFront(nil)
         controller.view.layoutSubtreeIfNeeded()
-        let item = try XCTUnwrap(player.testHook_currentPlayerItem())
+        let item = try XCTUnwrap(player.services.queue.player?.currentItem)
         for _ in 0..<30 where item.status == .unknown { try await Task.sleep(nanoseconds: 100_000_000) }
         XCTAssertEqual(item.status, .readyToPlay)
         // Let startup reader restoration finish before driving transport.

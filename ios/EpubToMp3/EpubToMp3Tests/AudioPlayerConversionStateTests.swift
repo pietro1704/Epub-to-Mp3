@@ -66,7 +66,7 @@ final class AudioPlayerConversionStateTests: XCTestCase {
     func testLaterConversionDoesNotShowLoadingOverActivePlayback() {
         let player = AudioPlayer()
         player.isConverting = true
-        player.testHook_setIsPlaying(true)
+        player.playbackPlayingChanged(true)
 
         XCTAssertFalse(player.isLoading,
             "Ongoing conversion must not replace transport controls while audio is playing")

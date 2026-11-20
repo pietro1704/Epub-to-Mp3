@@ -153,7 +153,7 @@ extension AudioPlayerPendingSeekTests {
             let original = try XCTUnwrap(exportedJourneys().first { $0.streamPublication == accepted })
             XCTAssertEqual(original.kind, .progressivePlayback)
             XCTAssertTrue(original.records.contains { $0.transition == .audioAudible })
-            let url = try XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0))
+            let url = try XCTUnwrap(player.services.segments.files[.init(chapterIndex: 0, segmentIndex: 0)])
             let retainedBytes = try Data(contentsOf: url)
             player.enqueueRemoteSegment(data: retainedBytes, jobID: snapshot(false).jobId,
                 generation: player.remotePlaybackGeneration, chapterIndex: 0, segmentIndex: 0, publication: retry)
@@ -178,7 +178,7 @@ extension AudioPlayerPendingSeekTests {
         let target = try publication()
         let retry = try publication()
         try await withPlayingFixture(streaming: true, streamPublications: [0: predecessor, 1: target]) { player, snapshot in
-            let targetURL = try XCTUnwrap(player.testHook_segmentURL(chapterIndex: 1, segmentIndex: 0))
+            let targetURL = try XCTUnwrap(player.services.segments.files[.init(chapterIndex: 1, segmentIndex: 0)])
             player.enqueueRemoteSegment(data: try Data(contentsOf: targetURL), jobID: snapshot(false).jobId,
                 generation: player.remotePlaybackGeneration, chapterIndex: 1, segmentIndex: 0, publication: retry)
             let existing = Set(try exportedJourneys().map(\.id))
@@ -199,7 +199,7 @@ extension AudioPlayerPendingSeekTests {
         let stalePublication = try publication()
         try await withPlayingFixture(streaming: true, streamTargetReady: false) { player, snapshot in
             let oldGeneration = player.remotePlaybackGeneration
-            let oldURL = try XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0))
+            let oldURL = try XCTUnwrap(player.services.segments.files[.init(chapterIndex: 0, segmentIndex: 0)])
             let bytes = try Data(contentsOf: oldURL)
             let pendingID = try await beginPendingSeek(player)
             player.stop()
@@ -208,15 +208,15 @@ extension AudioPlayerPendingSeekTests {
             XCTAssertNotEqual(player.remotePlaybackGeneration, oldGeneration)
             player.enqueueRemoteSegment(data: bytes, jobID: snapshot(false).jobId, generation: oldGeneration,
                 chapterIndex: 1, segmentIndex: 0, publication: stalePublication)
-            XCTAssertEqual(player.testHook_retainedSegmentCount(), 0)
-            XCTAssertNil(player.testHook_currentPlayerItem())
+            XCTAssertEqual(player.services.segments.files.count, 0)
+            XCTAssertNil(player.services.queue.player?.currentItem)
             let cancelled = try XCTUnwrap(exportedJourneys().first { $0.id == pendingID })
             XCTAssertNil(cancelled.streamPublication)
             XCTAssertTrue(cancelled.records.contains { $0.transition == .cancelled })
             let currentGeneration = player.remotePlaybackGeneration
             player.enqueueRemoteSegment(data: bytes, jobID: snapshot(false).jobId, generation: currentGeneration,
                 chapterIndex: 0, segmentIndex: 0, publication: nil)
-            XCTAssertEqual(player.testHook_retainedSegmentCount(), 1,
+            XCTAssertEqual(player.services.segments.files.count, 1,
                            "A fresh binding must still accept audio without optional diagnostics.")
             player.updateSnapshot(snapshot(false))
             XCTAssertEqual(player.remotePlaybackGeneration, currentGeneration,
@@ -236,7 +236,7 @@ extension AudioPlayerPendingSeekTests {
                 if !player.isSeeking { break }
                 try await Task.sleep(nanoseconds: 50_000_000)
             }
-            let bytes = try Data(contentsOf: XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0)))
+            let bytes = try Data(contentsOf: XCTUnwrap(player.services.segments.files[.init(chapterIndex: 0, segmentIndex: 0)]))
             player.enqueueRemoteSegment(data: bytes, jobID: snapshot(false).jobId,
                 generation: player.remotePlaybackGeneration, chapterIndex: 1, segmentIndex: 0, publication: target)
             let cancelled = try XCTUnwrap(exportedJourneys().first { $0.id == pendingID })
@@ -253,20 +253,20 @@ extension AudioPlayerPendingSeekTests {
     func testFullFilePlayerRejectsRemoteSegmentsEvenWithItsCurrentGeneration() async throws {
         let stalePublication = try publication()
         try await withPlayingFixture(streaming: true, streamTargetReady: false) { player, snapshot in
-            let bytes = try Data(contentsOf: XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0)))
+            let bytes = try Data(contentsOf: XCTUnwrap(player.services.segments.files[.init(chapterIndex: 0, segmentIndex: 0)]))
             player.stop()
             XCTAssertTrue(player.beginRemoteStreaming(snapshot: snapshot(false),
                 backendBaseURL: try XCTUnwrap(URL(string: "https://stream-generation.invalid"))))
             let beforeSnapshot = player.remotePlaybackGeneration
-            XCTAssertNil(player.testHook_currentPlayerItem())
+            XCTAssertNil(player.services.queue.player?.currentItem)
             player.updateSnapshot(snapshot(true))
             XCTAssertNotEqual(player.remotePlaybackGeneration, beforeSnapshot)
-            let replacement = try XCTUnwrap(player.testHook_currentPlayerItem())
+            let replacement = try XCTUnwrap(player.services.queue.player?.currentItem)
             player.enqueueRemoteSegment(data: bytes, jobID: snapshot(true).jobId,
                 generation: player.remotePlaybackGeneration, chapterIndex: 0, segmentIndex: 0,
                 publication: stalePublication)
-            XCTAssertTrue(player.testHook_currentPlayerItem() === replacement)
-            XCTAssertEqual(player.testHook_retainedSegmentCount(), 0,
+            XCTAssertTrue(player.services.queue.player?.currentItem === replacement)
+            XCTAssertEqual(player.services.segments.files.count, 0,
                            "Reopening a remote screen must not append streamed bytes to a full-file player.")
         }
     }
@@ -276,13 +276,13 @@ extension AudioPlayerPendingSeekTests {
         let stalePublication = try publication()
         try await withPlayingFixture(streaming: true, streamTargetReady: false) { player, snapshot in
             let oldGeneration = player.remotePlaybackGeneration
-            let bytes = try Data(contentsOf: XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0)))
+            let bytes = try Data(contentsOf: XCTUnwrap(player.services.segments.files[.init(chapterIndex: 0, segmentIndex: 0)]))
             player.play(snapshot: snapshot(true), startingAt: 1)
-            let replacement = try XCTUnwrap(player.testHook_currentPlayerItem())
+            let replacement = try XCTUnwrap(player.services.queue.player?.currentItem)
             player.enqueueRemoteSegment(data: bytes, jobID: snapshot(true).jobId, generation: oldGeneration,
                 chapterIndex: 0, segmentIndex: 0, publication: stalePublication)
-            XCTAssertTrue(player.testHook_currentPlayerItem() === replacement)
-            XCTAssertEqual(player.testHook_retainedSegmentCount(), 0)
+            XCTAssertTrue(player.services.queue.player?.currentItem === replacement)
+            XCTAssertEqual(player.services.segments.files.count, 0)
             let existing = Set(try exportedJourneys().map(\.id))
             player.seek(to: 2)
             for _ in 0..<100 {

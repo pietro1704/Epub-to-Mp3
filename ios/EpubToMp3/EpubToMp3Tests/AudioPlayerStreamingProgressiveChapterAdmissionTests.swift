@@ -46,8 +46,8 @@ extension AudioPlayerStreamingTests {
         player.updateSnapshot(firstUpdate)
 
         XCTAssertTrue(player.isPlaying, "Listen intent must start as soon as a validated Rust chapter is queued.")
-        XCTAssertEqual(player.testHook_playbackChapterCount(), 1)
-        XCTAssertEqual((player.testHook_currentPlayerItem()?.asset as? AVURLAsset)?.url, firstURL)
+        XCTAssertEqual(player.services.chapters.chapters.count, 1)
+        XCTAssertEqual((player.services.queue.player?.currentItem?.asset as? AVURLAsset)?.url, firstURL)
 
         let second = JobSnapshot.Chapter(
             index: 1, name: "Second", status: "completed", downloadUrl: secondURL.path,
@@ -63,7 +63,7 @@ extension AudioPlayerStreamingTests {
         player.updateSnapshot(secondUpdate)
 
         XCTAssertTrue(player.isPlaying)
-        XCTAssertEqual(player.testHook_playbackChapterCount(), 2,
+        XCTAssertEqual(player.services.chapters.chapters.count, 2,
                        "Later validated chapters must append without resetting the active chapter.")
         XCTAssertTrue(player.isConverting, "The stream remains live until Rust reports a terminal snapshot.")
     }
@@ -106,7 +106,7 @@ extension AudioPlayerStreamingTests {
 
         player.play(snapshot: snapshot, restoreAutoplay: false)
 
-        XCTAssertNotNil(player.testHook_currentPlayerItem())
+        XCTAssertNotNil(player.services.queue.player?.currentItem)
         XCTAssertFalse(player.isPlaying, "Manual conversion prepares audio without autoplay.")
     }
 

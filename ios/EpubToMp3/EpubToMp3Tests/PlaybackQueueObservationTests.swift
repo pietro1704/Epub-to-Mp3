@@ -12,10 +12,10 @@ final class PlaybackQueueObservationTests: XCTestCase {
         var previous: [Int] = []
         let subscription = player.objectWillChange.sink { previous.append(player.currentChapterIndex) }
         defer { subscription.cancel() }
-        player.testHook_setCurrentChapterIndex(5)
+        player.services.queue.selectChapter(5)
         XCTAssertEqual(previous, [0])
         XCTAssertEqual(player.currentChapterIndex, 5)
-        player.testHook_setCurrentChapterIndex(5)
+        player.services.queue.selectChapter(5)
         XCTAssertEqual(previous, [0, 5], "Equal assignments preserve the published interface")
     }
 

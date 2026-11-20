@@ -17,11 +17,11 @@ extension AudioPlayerDivergenceTests {
             player.setSentenceTiming(["s\(i)": i * 1000], forChapterIndex: i)
         }
         XCTAssertNil(
-            player.testHook_sentenceTimingMap(forChapterIndex: 0),
+            player.services.reader.timingMap(for: 0),
             "Chapter 0 should have been evicted past the 8-entry cap"
         )
         XCTAssertEqual(
-            player.testHook_sentenceTimingMap(forChapterIndex: 9)?["s9"],
+            player.services.reader.timingMap(for: 9)?["s9"],
             9000,
             "Most recently inserted chapter must still resolve"
         )
@@ -33,7 +33,7 @@ extension AudioPlayerDivergenceTests {
         let player = makePlayer()
         player.setSentenceTiming(["a": 100], forChapterIndex: 3)
         player.setSentenceTiming([:], forChapterIndex: 3)
-        XCTAssertNil(player.testHook_sentenceTimingMap(forChapterIndex: 3))
+        XCTAssertNil(player.services.reader.timingMap(for: 3))
     }
 
     /// Re-injecting a chapter's map should refresh LRU position (so
@@ -50,11 +50,11 @@ extension AudioPlayerDivergenceTests {
         // Insert one more — chapter 1 (not 0) should be evicted.
         player.setSentenceTiming(["s8": 800], forChapterIndex: 8)
         XCTAssertNotNil(
-            player.testHook_sentenceTimingMap(forChapterIndex: 0),
+            player.services.reader.timingMap(for: 0),
             "Chapter 0 was re-touched and must survive eviction"
         )
         XCTAssertNil(
-            player.testHook_sentenceTimingMap(forChapterIndex: 1),
+            player.services.reader.timingMap(for: 1),
             "Chapter 1 was oldest after re-touch and should be evicted"
         )
     }

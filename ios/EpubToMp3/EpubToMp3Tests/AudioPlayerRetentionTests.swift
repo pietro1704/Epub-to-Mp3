@@ -162,12 +162,12 @@ final class AudioPlayerRetentionTests: XCTestCase {
             for _ in 0..<100 {
                 let retained = try LocalAudioArtifactFixture.artifact(
                     root: artifactRoot, bookID: bookID, chapterIndex: 1)
-                let renderedSeconds = player.testHook_currentPlayerItem()?.currentTime().seconds ?? 0
+                let renderedSeconds = player.services.queue.player?.currentItem?.currentTime().seconds ?? 0
                 if renderedSeconds > 0.25 && retained?.retention == .downloaded { break }
                 try await Task.sleep(nanoseconds: 25_000_000)
             }
             XCTAssertTrue(player.isPlaying)
-            let originalItem = try XCTUnwrap(player.testHook_currentPlayerItem())
+            let originalItem = try XCTUnwrap(player.services.queue.player?.currentItem)
             XCTAssertEqual((originalItem.asset as? AVURLAsset)?.url, urls[1])
             XCTAssertGreaterThan(originalItem.currentTime().seconds, 0.25)
             let initialRetained = try LocalAudioArtifactFixture.downloadedIndices(root: artifactRoot, bookID: bookID)
@@ -179,7 +179,7 @@ final class AudioPlayerRetentionTests: XCTestCase {
             player.updateSnapshot(updated)
             let beforeTick = originalItem.currentTime().seconds
             try await Task.sleep(nanoseconds: 750_000_000)
-            XCTAssertTrue(player.testHook_currentPlayerItem() === originalItem,
+            XCTAssertTrue(player.services.queue.player?.currentItem === originalItem,
                           "A newly published earlier chapter must not interrupt the current audio")
             XCTAssertTrue(player.isPlaying)
             XCTAssertGreaterThan(originalItem.currentTime().seconds, beforeTick)
@@ -191,7 +191,7 @@ final class AudioPlayerRetentionTests: XCTestCase {
             // The appended chapter becomes audible only after a real queue advance.
             player.nextChapter()
             for _ in 0..<100 {
-                let currentItem = player.testHook_currentPlayerItem()
+                let currentItem = player.services.queue.player?.currentItem
                 let currentURL = (currentItem?.asset as? AVURLAsset)?.url
                 let renderedSeconds = currentItem?.currentTime().seconds ?? 0
                 let retained = try LocalAudioArtifactFixture.artifact(
@@ -200,12 +200,12 @@ final class AudioPlayerRetentionTests: XCTestCase {
                 try await Task.sleep(nanoseconds: 25_000_000)
             }
             XCTAssertTrue(player.isPlaying)
-            XCTAssertEqual((player.testHook_currentPlayerItem()?.asset as? AVURLAsset)?.url, urls[0])
-            let finalItem = try XCTUnwrap(player.testHook_currentPlayerItem())
+            XCTAssertEqual((player.services.queue.player?.currentItem?.asset as? AVURLAsset)?.url, urls[0])
+            let finalItem = try XCTUnwrap(player.services.queue.player?.currentItem)
             let finalTime = finalItem.currentTime().seconds
             XCTAssertGreaterThan(finalTime, 0.25)
             try await Task.sleep(nanoseconds: 100_000_000)
-            XCTAssertTrue(player.testHook_currentPlayerItem() === finalItem)
+            XCTAssertTrue(player.services.queue.player?.currentItem === finalItem)
             XCTAssertGreaterThan(finalItem.currentTime().seconds, finalTime)
             let retainedAfterHearingBoth = try LocalAudioArtifactFixture.downloadedIndices(
                 root: artifactRoot, bookID: bookID)

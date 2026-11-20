@@ -93,7 +93,7 @@ extension AudioPlayerObservationPrivacyTests {
             if player.positionSeconds > 0 { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        let item = player.testHook_currentPlayerItem()
+        let item = player.services.queue.player?.currentItem
         let itemError = item?.error as NSError?
         var sessionState = ""
 #if os(iOS)

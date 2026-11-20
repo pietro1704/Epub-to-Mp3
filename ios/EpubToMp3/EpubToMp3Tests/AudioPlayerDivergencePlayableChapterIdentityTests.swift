@@ -29,8 +29,8 @@ extension AudioPlayerDivergenceTests {
             error: nil, lastActivityAt: nil
         )
         XCTAssertTrue(empty.playableChapters.isEmpty)
-        player.testHook_setSnapshot(empty)
-        player.testHook_simulateSegmentMode()
+        player.playbackSnapshotChanged(empty)
+        player.simulateSegmentMode()
         XCTAssertEqual(
             player.playTapDecision(readerChapterIndex: 0),
             .resume,
@@ -62,13 +62,13 @@ extension AudioPlayerDivergenceTests {
             ],
             outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
         )
-        player.testHook_setSnapshot(pending)
-        player.testHook_simulateSegmentMode()
+        player.playbackSnapshotChanged(pending)
+        player.simulateSegmentMode()
 
         player.updateSnapshot(snapshotWithChapters(1, jobID: "streaming-job"))
 
         XCTAssertEqual(
-            player.testHook_playbackChapterCount(), 0,
+            player.services.chapters.chapters.count, 0,
             "A completed chapter must not be appended while its segments already own the queue"
         )
     }
