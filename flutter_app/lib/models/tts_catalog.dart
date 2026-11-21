@@ -26,7 +26,16 @@ class TtsCatalog {
     if (entries is! List || providers is! List) {
       throw const FormatException('Invalid TTS model catalog');
     }
-    final models = entries.map((entry) {
+    final models = entries.where((entry) {
+      final identity = entry['identity'] as Map;
+      final engine = identity['provider'] as String;
+      final presentation = entry['presentation'];
+      final listedAsLow =
+          engine == 'piper' && presentation is Map &&
+          presentation['quality'] == 'low';
+      return !listedAsLow &&
+          !isLowQualityPiperModel(engine, identity['model_id'] as String?);
+    }).map((entry) {
       final identity = entry['identity'] as Map;
       final compatibility = entry['compatibility'] as Map;
       final distribution = entry['distribution'] as Map;
@@ -52,7 +61,8 @@ class TtsCatalog {
       List.unmodifiable(models),
       List.unmodifiable(providers.map((value) => Map<String, dynamic>.from(value as Map))),
       decoded['android_api'] as int? ?? (target is Map ? target['android_api'] as int? : null),
-      session == null
+      session == null ||
+              isLowQualityPiperModel(session.provider, session.modelId)
           ? null
           : TtsSelection(
               engine: session.provider,

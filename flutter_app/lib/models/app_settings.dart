@@ -139,7 +139,9 @@ class MirrorAppSettings with PlaybackSettings {
     final raw = _prefs.getString('ttsPreferences');
     if (raw != null) {
       try {
-        return TtsPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        return TtsPreferences.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        ).withSupportedPiperQuality();
       } catch (_) {
         /* Ignore invalid persisted data and preserve old explicit selection. */
       }

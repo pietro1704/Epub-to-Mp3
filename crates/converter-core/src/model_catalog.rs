@@ -97,36 +97,6 @@ pub fn revision_from_hashes<'a>(hashes: impl IntoIterator<Item = &'a str>) -> Op
     (!hashes.is_empty()).then(|| hashes.join(":"))
 }
 
-static PIPER_PT_BR_EDRESSON_LOW_ARTIFACTS: &[TtsArtifactDescriptor] = &[
-    TtsArtifactDescriptor {
-        name: "model.onnx",
-        url: "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/edresson/low/pt_BR-edresson-low.onnx?download=true",
-        sha256: "de4cecee38b30bb1a6378a337af605d59f0c377df702c6a6752870db8991cd84",
-        bytes: 63_104_526,
-    },
-    TtsArtifactDescriptor {
-        name: "model.onnx.json",
-        url: "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/edresson/low/pt_BR-edresson-low.onnx.json?download=true",
-        sha256: "f138992d2e777d1e3aa0bbb14c2d324307b0f342c1bcf20978765b3bea506c56",
-        bytes: 4_168,
-    },
-];
-
-static PIPER_EN_US_LESSAC_LOW_ARTIFACTS: &[TtsArtifactDescriptor] = &[
-    TtsArtifactDescriptor {
-        name: "model.onnx",
-        url: "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/en/en_US/lessac/low/en_US-lessac-low.onnx?download=true",
-        sha256: "f7d01dde371555732c4c314111ac79672b1a5ce2fc19266ab42178fd8df7f375",
-        bytes: 63_201_294,
-    },
-    TtsArtifactDescriptor {
-        name: "model.onnx.json",
-        url: "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/en/en_US/lessac/low/en_US-lessac-low.onnx.json?download=true",
-        sha256: "45754dfdebb3b8661c3fc564713772deec6e064feeb5b4e9594857dc7305193a",
-        bytes: 4_882,
-    },
-];
-
 static PIPER_FABER_ARTIFACTS: &[TtsArtifactDescriptor] = &[
     TtsArtifactDescriptor { name: "model.onnx", url: "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx?download=true", sha256: "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7", bytes: 63_201_294 },
     TtsArtifactDescriptor { name: "model.onnx.json", url: "https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json?download=true", sha256: "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f", bytes: 4_855 },
@@ -150,42 +120,6 @@ const BASE_MODELS: &[TtsModelDescriptor] = &[
         artifacts: PIPER_FABER_ARTIFACTS,
         runtime_available: true,
         metadata: &metadata::PIPER_FABER_METADATA,
-    },
-    TtsModelDescriptor {
-        id: "pt_BR-edresson-low",
-        engine: "piper",
-        languages: &["pt"],
-        platforms: &[
-            ModelPlatform::Android,
-            ModelPlatform::Ios,
-            ModelPlatform::Macos,
-            ModelPlatform::Linux,
-            ModelPlatform::Windows,
-        ],
-        minimum_android_api: Some(28),
-        default_rank: 1,
-        download_bytes: 63_108_694,
-        artifacts: PIPER_PT_BR_EDRESSON_LOW_ARTIFACTS,
-        runtime_available: false,
-        metadata: &metadata::PIPER_EDRESSON_METADATA,
-    },
-    TtsModelDescriptor {
-        id: "en_US-lessac-low",
-        engine: "piper",
-        languages: &["en"],
-        platforms: &[
-            ModelPlatform::Android,
-            ModelPlatform::Ios,
-            ModelPlatform::Macos,
-            ModelPlatform::Linux,
-            ModelPlatform::Windows,
-        ],
-        minimum_android_api: Some(28),
-        default_rank: 1,
-        download_bytes: 63_206_176,
-        artifacts: PIPER_EN_US_LESSAC_LOW_ARTIFACTS,
-        runtime_available: false,
-        metadata: &metadata::PIPER_LESSAC_METADATA,
     },
     TtsModelDescriptor {
         id: "piper-default",
