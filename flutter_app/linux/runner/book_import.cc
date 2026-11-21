@@ -64,10 +64,11 @@ void ChooseBooks(GtkWindow* window, FlMethodCall* call) {
   gtk_file_filter_add_pattern(filter, "*.epub");
   gtk_file_filter_add_pattern(filter, "*.pdf");
   gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
+  // Zero is the default connection mode on older GLib versions.
   g_signal_connect_data(dialog, "response", G_CALLBACK(FileChooserResponse),
                         g_object_ref(call),
                         [](gpointer data, GClosure*) { g_object_unref(data); },
-                        G_CONNECT_DEFAULT);
+                        static_cast<GConnectFlags>(0));
   gtk_widget_show(dialog);
 }
 

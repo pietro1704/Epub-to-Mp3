@@ -284,10 +284,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       MISE_ENABLE_TOOLS: flutter
-      # Windows builds ort-sys against the provisioned runtime below (ignored on Linux,
-      # whose build resolves its runtime itself).
-      ORT_PREFER_DYNAMIC_LINK: '1'
-      ORT_SKIP_DOWNLOAD: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -323,7 +319,10 @@ jobs:
       - name: Provision the pinned ONNX Runtime and libclang
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./release-helpers/scripts/provision_onnxruntime_windows.ps1 -Owned (Join-Path $env:RUNNER_TEMP 'release-windows')
+        run: |
+          ./release-helpers/scripts/provision_onnxruntime_windows.ps1 -Owned (Join-Path $env:RUNNER_TEMP 'release-windows')
+          "ORT_PREFER_DYNAMIC_LINK=1" >> $env:GITHUB_ENV
+          "ORT_SKIP_DOWNLOAD=1" >> $env:GITHUB_ENV
 
       - name: Enable desktop platform
         working-directory: flutter_app
@@ -339,7 +338,16 @@ jobs:
 
       - name: Verify Linux Rust runtime bundle
         if: runner.os == 'Linux'
-        run: test -s flutter_app/build/linux/x64/release/bundle/lib/libconverter_ffi.so
+        run: |
+          set -euo pipefail
+          library=flutter_app/build/linux/x64/release/bundle/lib/libconverter_ffi.so
+          test -s "$library"
+          linkage=$(LC_ALL=C ldd -r "$library" 2>&1)
+          printf '%s\n' "$linkage"
+          if grep -Eq 'not found|undefined symbol' <<<"$linkage"; then
+            echo "::error::The Linux converter library has unresolved dependencies."
+            exit 1
+          fi
 
       - name: Package Linux build
         if: runner.os == 'Linux'
