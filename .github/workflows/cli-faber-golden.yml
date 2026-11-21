@@ -51,7 +51,7 @@ jobs:
           sudo "$(mise which ruby)" scripts/normalize_ubuntu_package_mirror.rb
           apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
           sudo apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
-          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg unzip binutils
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg unzip binutils libpcaudio-dev libsonic-dev
       - name: Test real ELF dependency relocation and rejection boundaries
         run: |
           set -o pipefail
@@ -64,7 +64,8 @@ jobs:
           echo "ORT_LIB_LOCATION=$library_directory" >> "$GITHUB_ENV"
       - name: Resolve the native build cache primary key
         id: cli-cache-key
-        run: echo "cache-primary-key=cli-faber-ubuntu24-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}" >> "$GITHUB_OUTPUT"
+        # Restore only caches built with the host Sonic and PcAudio headers present.
+        run: echo "cache-primary-key=cli-faber-ubuntu24-host-audio-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}" >> "$GITHUB_OUTPUT"
       - name: Cache native build prerequisites
         id: cli-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -74,10 +75,27 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ steps.cli-cache-key.outputs.cache-primary-key }}
-          restore-keys: cli-faber-ubuntu24-
+          restore-keys: cli-faber-ubuntu24-host-audio-
       - name: Build the actual public CLI package
         id: cli-build
         run: mise run cli:package
+      - name: Audit the packaged CLI ELF dependencies with host audio libraries installed
+        run: |
+          set -euo pipefail
+          bin="$PWD/dist/epub-to-mp3-cli/bin"
+          elf_log=.reports/cli-faber/elf-dynamic.log
+          loader_log=.reports/cli-faber/elf-loader.log
+          LC_ALL=C readelf --dynamic "$bin/converter-cli" | tee "$elf_log"
+          env -u LD_PRELOAD -u LD_AUDIT LC_ALL=C LD_LIBRARY_PATH="$bin" \
+            ldd -r "$bin/converter-cli" | tee "$loader_log"
+          if grep -E 'lib(sonic|pcaudio)\.so' "$elf_log" "$loader_log"; then
+            echo "The packaged CLI links a host eSpeak audio library" >&2
+            exit 1
+          fi
+          if grep -E 'not found|undefined symbol' "$loader_log"; then
+            echo "The packaged CLI has unresolved ELF dependencies" >&2
+            exit 1
+          fi
       - name: Retain a successful native build before later runtime acceptance
         if: success() && steps.cli-build.outcome == 'success' && steps.cli-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
