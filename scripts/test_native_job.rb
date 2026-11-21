@@ -28,7 +28,7 @@ class NativeJobIntegrationTest < Minitest::Test
       printf 'fixture 41943040 0 %s 0%% /\n' "${FAKE_FREE_KIB:-31457280}"
     SH
     @env = { "PATH" => "#{@dir}:#{ENV.fetch('PATH')}", "FAKE_STATE" => @state,
-             "FAKE_FREE_KIB" => nil,
+             "FAKE_FREE_KIB" => nil, NativeJob::WAIT_ENV => nil,
              NativeJob::FD_ENV => nil, NativeJob::PATH_ENV => nil }
   end
 
