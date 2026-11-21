@@ -73,17 +73,17 @@ module HostLoad
   # Executable names sorted by CPU, with each process's parent. Arguments are
   # never read or recorded. The list always contains this process, so an empty
   # or foreign answer is rejected instead of trusted.
-  def self.processes(capture)
+  def self.processes(capture, current_pid)
     rows = capture.call(PS, "-A", "-r", "-o", "pcpu=", "-o", "pid=", "-o", "ppid=", "-o", "comm=").lines.filter_map do |line|
       cpu, pid, parent, command = line.strip.split(/\s+/, 4)
       [cpu, pid, parent, File.basename(command)] if command
     end
-    raise "Invalid process telemetry" unless rows.any? { |_, pid, _, _| pid == Process.pid.to_s }
+    raise "Invalid process telemetry" unless rows.any? { |_, pid, _, _| pid == current_pid }
 
     rows
   end
 
-  def self.sample(capture: method(:capture), compilers: limits.fetch("foreign_compilers"))
+  def self.sample(capture: method(:capture), compilers: limits.fetch("foreign_compilers"), current_pid: Process.pid)
     # Only an OPTIONAL name may be unknown to sysctl, which then exits non-zero.
     text = capture.call(SYSCTL, *REQUIRED) + capture.call(SYSCTL, *OPTIONAL, tolerate_failure: true)
     values = text.lines.filter_map do |line|
@@ -103,7 +103,8 @@ module HostLoad
     thermal = capture.call(PMSET, "-g", "therm")
     raise "Invalid thermal telemetry" if thermal.strip.empty?
     limit = ->(name) { thermal[/#{name}\s*=\s*(\d+)/, 1]&.to_i }
-    rows = processes(capture)
+    current_pid = current_pid.to_s
+    rows = processes(capture, current_pid)
     parents = rows.to_h { |_, pid, parent, _| [pid, parent] }
     names = rows.to_h { |_, pid, _, name| [pid, name] }
     lineage = lambda do |pid|
@@ -112,7 +113,7 @@ module HostLoad
       chain.compact
     end
     # Nearest first: every build this process runs inside.
-    enclosing = lineage.call(Process.pid.to_s).select { |pid| ENCLOSING_BUILDS.include?(names[pid]) || compilers.include?(names[pid]) }
+    enclosing = lineage.call(current_pid).select { |pid| ENCLOSING_BUILDS.include?(names[pid]) || compilers.include?(names[pid]) }
     running = rows.select { |_, _, _, name| compilers.include?(name) }
     own = running.select { |_, pid, _, _| enclosing.include?(pid) || !(lineage.call(pid) & enclosing).empty? }
     label = ->(list) { list.map { |_, pid, _, name| "#{name} #{pid}" } }
