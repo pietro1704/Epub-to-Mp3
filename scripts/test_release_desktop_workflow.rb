@@ -28,20 +28,82 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     steps.map { |step| step.fetch("run", "") }
   end
 
+  def test_build_jobs_start_from_trusted_history_and_isolate_release_caches
+    %w[docker android macos-native flutter-desktop].each do |name|
+      job = @jobs.fetch(name)
+      assert_equal "gate", job.fetch("needs")
+      checkout, select_source, = job.fetch("steps")
+      assert_match(/\Aactions\/checkout@[0-9a-f]{40}\z/, checkout.fetch("uses"))
+      assert_equal({
+        "ref" => "refs/heads/master", "fetch-depth" => 0, "persist-credentials" => false
+      }, checkout.fetch("with"))
+      assert_equal "bash scripts/checkout_validated_release_source.sh", select_source.fetch("run")
+      assert_equal "bash", select_source.fetch("shell")
+      assert_equal({ "VALIDATED_SHA" => "${{ needs.gate.outputs.sha }}" }, select_source.fetch("env"))
+
+      job.fetch("steps").each do |step|
+        action = step.fetch("uses", "").split("@").first
+        refute_match(/\A(?:actions\/cache|\.\/\.github\/actions\/rust-build-cache)/, action.to_s)
+        case action
+        when "jdx/mise-action"
+          assert_equal false, step.dig("with", "cache")
+        when "docker/setup-buildx-action"
+          assert_equal false, step.dig("with", "cache-binary")
+        when "docker/build-push-action"
+          refute (step.fetch("with").keys & %w[cache-from cache-to]).any?
+        end
+      end
+    end
+  end
+
+  def test_release_source_accepts_exact_historical_commit_and_rejects_off_history_objects
+    script = File.join(ROOT, "scripts/checkout_validated_release_source.sh")
+    Dir.mktmpdir("release-source-history-") do |directory|
+      git = ->(*args) do
+        output, error, status = Open3.capture3("git", *args, chdir: directory)
+        assert status.success?, "git #{args.join(' ')}: #{error}"
+        output.strip
+      end
+      git.call("init", "-q", "-b", "master")
+      git.call("config", "user.name", "Release fixture")
+      git.call("config", "user.email", "release-fixture@example.invalid")
+      git.call("commit", "--allow-empty", "-qm", "release")
+      release = git.call("rev-parse", "HEAD")
+      git.call("tag", "-am", "release", "v1.2.3")
+      tag_object = git.call("rev-parse", "v1.2.3")
+      git.call("switch", "-qc", "outside-master")
+      git.call("commit", "--allow-empty", "-qm", "outside")
+      outside = git.call("rev-parse", "HEAD")
+      git.call("switch", "-q", "master")
+      git.call("commit", "--allow-empty", "-qm", "advance master")
+      master = git.call("rev-parse", "HEAD")
+
+      [nil, "v1.2.3", "0" * 40, tag_object, outside].each do |invalid|
+        _, error, status = Open3.capture3({ "VALIDATED_SHA" => invalid }, "bash", script, chdir: directory)
+        refute status.success?, "unexpected acceptance of #{invalid.inspect}"
+        assert_includes error, "::error::"
+        assert_equal master, git.call("rev-parse", "HEAD")
+      end
+
+      _, error, status = Open3.capture3({ "VALIDATED_SHA" => release }, "bash", script, chdir: directory)
+      assert status.success?, error
+      assert_equal release, git.call("rev-parse", "HEAD")
+      assert_equal "", git.call("branch", "--show-current")
+      assert_equal master, git.call("rev-parse", "refs/heads/master")
+    end
+  end
+
   # Failure 1: "libconverter_ffi.dylib couldn't be opened" - Xcode embeds a library
   # nothing had built.
   def test_apple_release_builds_the_embedded_rust_library_before_xcode
     steps = @jobs.fetch("macos-native").fetch("steps")
     mise = index(steps) { |step| step.fetch("uses", "").start_with?("jdx/mise-action@") }
     install = index(steps) { |step| step["run"] == "mise install rust ruby" }
-    cache = index(steps) { |step| step["uses"] == "./.github/actions/rust-build-cache" }
     ffi = index(steps) { |step| step["run"] == "mise run converter-ffi:build" }
     app = index(steps) { |step| step["name"] == "Build macOS .app" }
     assert_operator mise, :<, install
-    assert_operator install, :<, cache
-    assert_operator cache, :<, ffi
+    assert_operator install, :<, ffi
     assert_operator ffi, :<, app
-    assert_equal "release-macos-ffi", steps[cache].dig("with", "namespace")
     refute steps[ffi].fetch("env", {}).key?("CARGO_BUILD_JOBS"),
            "the native guard owns the hosted compiler job limit"
     refute steps.any? { |step| step.fetch("uses", "").start_with?("dtolnay/rust-toolchain@") },

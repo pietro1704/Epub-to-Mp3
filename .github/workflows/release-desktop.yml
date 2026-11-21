@@ -52,6 +52,9 @@ jobs:
           SOURCE_REF: ${{ env.RELEASE_REF }}
           VERSION_TAG: ${{ env.RELEASE_TAG }}
         run: node scripts/validated_merge.mjs --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --tag "$VERSION_TAG"
+
+  # Build only commits present in the trusted master snapshot on each runner.
+  # Keep shared Actions caches out of release builds, including tool setup.
   # ── Docker image → ghcr.io ────────────────────────────────────────────────────
   docker:
     needs: gate
@@ -59,14 +62,22 @@ jobs:
     timeout-minutes: 35
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
+      - name: Checkout trusted source history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.gate.outputs.sha }}
+          ref: refs/heads/master
+          fetch-depth: 0
           persist-credentials: false
+      - name: Select the validated release commit
+        shell: bash
+        env:
+          VALIDATED_SHA: ${{ needs.gate.outputs.sha }}
+        run: bash scripts/checkout_validated_release_source.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          cache-binary: false
 
       - name: Docker metadata (tags + labels)
         id: meta
@@ -87,8 +98,6 @@ jobs:
           outputs: type=docker,dest=${{ runner.temp }}/release-image.tar
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-docker
@@ -107,11 +116,17 @@ jobs:
       # the validated Android build in faber-integration.yml.
       MISE_ENABLE_TOOLS: ruby,ninja,flutter,java,android-sdk,rust
     steps:
-      - name: Checkout
+      - name: Checkout trusted source history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.gate.outputs.sha }}
+          ref: refs/heads/master
+          fetch-depth: 0
           persist-credentials: false
+      - name: Select the validated release commit
+        shell: bash
+        env:
+          VALIDATED_SHA: ${{ needs.gate.outputs.sha }}
+        run: bash scripts/checkout_validated_release_source.sh
 
       - name: Set up native build tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
@@ -120,6 +135,7 @@ jobs:
         with:
           version: 2026.11.3
           experimental: true
+          cache: false
 
       - name: Install native Android prerequisites
         run: |
@@ -167,11 +183,17 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - name: Checkout
+      - name: Checkout trusted source history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.gate.outputs.sha }}
+          ref: refs/heads/master
+          fetch-depth: 0
           persist-credentials: false
+      - name: Select the validated release commit
+        shell: bash
+        env:
+          VALIDATED_SHA: ${{ needs.gate.outputs.sha }}
+        run: bash scripts/checkout_validated_release_source.sh
 
       - name: Install xcodegen
         env:
@@ -190,13 +212,6 @@ jobs:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install rust ruby
 
-      - name: Reuse compatible macOS Rust dependencies
-        if: ${{ hashFiles('.github/actions/rust-build-cache/action.yml') != '' }}
-        uses: ./.github/actions/rust-build-cache
-        with:
-          namespace: release-macos-ffi
-
-      # Cargo validates cache fingerprints, and the native guard limits job count.
       - name: Build the embedded Rust library
         run: mise run converter-ffi:build
 
@@ -273,11 +288,17 @@ jobs:
     env:
       MISE_ENABLE_TOOLS: ${{ matrix.tools }}
     steps:
-      - name: Checkout
+      - name: Checkout trusted source history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.gate.outputs.sha }}
+          ref: refs/heads/master
+          fetch-depth: 0
           persist-credentials: false
+      - name: Select the validated release commit
+        shell: bash
+        env:
+          VALIDATED_SHA: ${{ needs.gate.outputs.sha }}
+        run: bash scripts/checkout_validated_release_source.sh
 
       - name: Linux desktop deps
         if: runner.os == 'Linux'
@@ -302,6 +323,7 @@ jobs:
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.3
+          cache: false
 
       # The helper comes from master, not from the tag being built, so a tag that
       # predates it (v0.9.0) still gets the pinned runtime.
