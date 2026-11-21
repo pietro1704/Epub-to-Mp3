@@ -4,6 +4,7 @@
 # had drifted from the CI jobs that pass on master. These checks keep each release
 # job on the same native prerequisites as its validated CI counterpart.
 require "minitest/autorun"
+require "fileutils"
 require "open3"
 require "tmpdir"
 require "yaml"
@@ -116,14 +117,46 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     assert_equal false, steps[helpers].fetch("with").fetch("persist-credentials")
     assert_equal "runner.os == 'Windows'", steps[helpers].fetch("if")
     assert_operator provision, :<, index(steps) { |step| step["name"] == "Build" }
-    env = job.fetch("env")
-    assert_equal "1", env.fetch("ORT_SKIP_DOWNLOAD")
-    assert_equal "1", env.fetch("ORT_PREFER_DYNAMIC_LINK")
+    assert_includes steps[provision].fetch("run"), '"ORT_SKIP_DOWNLOAD=1" >> $env:GITHUB_ENV'
+    assert_includes steps[provision].fetch("run"), '"ORT_PREFER_DYNAMIC_LINK=1" >> $env:GITHUB_ENV'
+    refute job.fetch("env").key?("ORT_SKIP_DOWNLOAD"), "Linux needs to resolve ONNX Runtime"
+    refute job.fetch("env").key?("ORT_PREFER_DYNAMIC_LINK"), "Only Windows uses the provisioned DLL"
 
     ci = workflow("flutter-rust-faber.yml").fetch("jobs").fetch("windows-package-faber").fetch("steps")
     assert ci.any? { |step| step.fetch("run", "").include?("scripts/provision_onnxruntime_windows.ps1") },
            "the CI Windows package uses the same provisioning script"
     refute ci.any? { |step| step.fetch("run", "").include?("microsoft.ml.onnxruntime/1.24.4") },
            "the pinned ONNX Runtime is defined once, in the script"
+  end
+
+  def test_linux_release_rejects_unresolved_symbols_before_archiving
+    steps = @jobs.fetch("flutter-desktop").fetch("steps")
+    audit = index(steps) { |step| step["name"] == "Verify Linux Rust runtime bundle" }
+    archive = index(steps) { |step| step["name"] == "Package Linux build" }
+    assert_operator audit, :<, archive
+    assert_equal "runner.os == 'Linux'", steps[audit].fetch("if")
+    Dir.mktmpdir("release-linux-linkage") do |directory|
+      library = "flutter_app/build/linux/x64/release/bundle/lib/libconverter_ffi.so"
+      FileUtils.mkdir_p(File.join(directory, File.dirname(library)))
+      File.write(File.join(directory, library), "fixture")
+      ldd = File.join(directory, "ldd")
+      File.write(ldd, <<~SH)
+        #!/bin/bash
+        [[ "$#" == 2 && "$1" == -r && "$2" == #{library} ]] || exit 90
+        printf '%s\\n' "$FIXTURE_LINKAGE"
+      SH
+      File.chmod(0o700, ldd)
+      [
+        ["libc.so.6 => /lib/libc.so.6", true],
+        ["undefined symbol: OrtGetApiBase", false],
+        ["libonnxruntime.so.1 => not found", false],
+      ].each do |linkage, expected|
+        env = { "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "FIXTURE_LINKAGE" => linkage }
+        output, error, status = Open3.capture3(
+          env, "bash", "-c", steps[audit].fetch("run"), chdir: directory
+        )
+        assert_equal expected, status.success?, "#{output}\n#{error}"
+      end
+    end
   end
 end
