@@ -116,7 +116,7 @@ test('publisher boundaries keep releases behind the whole validation and seriali
   }
   for (const name of ['auto-release', 'release-pr', 'ios-testflight', 'release-desktop']) assert.doesNotMatch(workflow(name), /--required-job/, name);
   const release = workflow('release-desktop');
-  assert.match(release, /needs: \[gate, docker, android, swiftui-apple, flutter-desktop\]/);
+  assert.match(release, /needs: \[gate, docker, android, macos-native, flutter-desktop\]/);
   assert.doesNotMatch(release, /push: true|softprops\/action-gh-release/);
   assert.doesNotMatch(workflow('auto-release'), /checkout_ref="master"|rolling rebuild/);
 });

@@ -128,6 +128,14 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/mise" install aqua:yonaskolb/XcodeGen@2.46.0
 
+      - name: Install the project Rust iOS toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mise install rust ruby
+          mise exec -- rustup target add aarch64-apple-ios
+
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
         run: mise exec -- xcodegen generate
