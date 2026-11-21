@@ -2,6 +2,24 @@
 
 # Loaded by test_ci_runtime_scope.rb; preserve the existing suite selectors and fixture.
 class CiRuntimeScopeTest
+  def test_windows_faber_retains_only_the_verified_release_bundle_as_a_separate_artifact
+    workflow = YAML.load_file(File.expand_path('../.github/workflows/flutter-rust-faber.yml', __dir__))
+    steps = workflow.fetch('jobs').fetch('windows-package-faber').fetch('steps')
+    conversion = steps.find { |step| step['name'] == 'Convert exactly two chapters through the packaged Windows DLL' }
+    package = steps.find { |step| step['name'] == 'Retain the verified Windows package' }
+    logs = steps.find { |step| step.dig('with', 'name') == 'dart-rust-faber-windows' }
+    [conversion, package, logs].each { |step| refute_nil step }
+    assert_operator steps.index(conversion), :<, steps.index(package)
+    assert_equal 'success()', package.fetch('if')
+    assert_pinned_action 'actions/upload-artifact', package.fetch('uses')
+    assert_equal 'flutter-windows-x64-${{ github.sha }}', package.dig('with', 'name')
+    assert_equal 'flutter_app/build/windows/x64/runner/Release/', package.dig('with', 'path')
+    assert_equal 'error', package.dig('with', 'if-no-files-found')
+    assert_equal 7, package.dig('with', 'retention-days')
+    assert_equal 'always()', logs.fetch('if')
+    assert_equal '.reports/windows-faber', logs.dig('with', 'path')
+  end
+
   def test_codeql_builds_only_the_two_production_platform_graphs
     codeql = YAML.load_file(File.expand_path('../.github/workflows/codeql.yml', __dir__))
     swift = codeql.fetch('jobs').fetch('swift')
