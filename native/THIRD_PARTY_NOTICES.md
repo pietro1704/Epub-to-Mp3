@@ -12,6 +12,7 @@ not relicense the native source or data that it builds and distributes.
 | eSpeak NG native engine | `vendor/espeak-rs-sys/espeak-ng/src/` | Source headers, including [`speech.c`](vendor/espeak-rs-sys/espeak-ng/src/libespeak-ng/speech.c), grant GPL version 3 or any later version (`GPL-3.0-or-later`). Copyright holders include Jonathan Duddington and Reece H. Dunn. |
 | Phoneme, language and dictionary inputs | `vendor/espeak-rs-sys/espeak-ng/phsource/`, `dictsource/`, `espeak-ng-data/` | Preserve the upstream per-file notices with these inputs and their generated data. They are part of the bundled eSpeak NG source tree, not the Rust wrapper's MIT grant. |
 | Rust bindings | `vendor/espeak-rs/`, `vendor/espeak-rs-sys/src/` | The bindings' Cargo manifests declare MIT; [`espeak-rs/LICENSE`](vendor/espeak-rs/LICENSE) contains the retained MIT notice. |
+| Sonic fallback | `vendor/espeak-rs-sys/espeak-ng/src/sonic/` | Unmodified C source, header and [Apache 2.0 license](vendor/espeak-rs-sys/espeak-ng/src/sonic/LICENSE) from [Bill Cox's Sonic at `fbf75c3d6d846bad3bb3d456cbc5d07d9fd8c104`](https://github.com/waywardgeek/sonic/tree/fbf75c3d6d846bad3bb3d456cbc5d07d9fd8c104). |
 
 The complete [GNU GPL version 3 text](licenses/espeak-ng-GPL-3.0.txt) is retained
 here independently of platform installer sources. It was converted to plain
