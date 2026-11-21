@@ -4,7 +4,9 @@ import PDFKit
 
 /// Persists only the derived visual document under its source/schema identity.
 enum PdfNormalizedDocumentCache {
-    private static let cacheSchemaVersion = "3"
+    // Older derivatives could have been created from a selectable source when
+    // none of the sampled pages contained text.
+    private static let cacheSchemaVersion = "4"
 
     /// Scanned books can have hundreds of physical pages. Persist the visual
     /// derivative so a warm open loads the already upright logical pages

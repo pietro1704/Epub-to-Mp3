@@ -106,6 +106,60 @@ final class PDFReaderParityTests: XCTestCase {
         XCTAssertNil(press.view, "Closing/replacing the PDF must remove its app interaction from the old surface")
     }
 
+    func testTextTapOffersPlaybackAtTheTappedGlyphAndToolbarUsesTheVisiblePage() throws {
+        let source = try PdfFixture.createMultiPage(pages: [
+            (heading: "First", body: "Earlier narration."),
+            (heading: "Second", body: "The later selectable passage has a distinct playback offset.")
+        ])
+        defer { try? FileManager.default.removeItem(at: source) }
+        let host = UIViewController()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 568))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            host.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        let id = "text-pdf-playback-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defer { defaults.removePersistentDomain(forName: id) }
+        let settings = AppSettings(defaults: defaults)
+        settings.readerLayout = .paginated
+        let view = ReaderPDFView(frame: host.view.bounds)
+        host.view.addSubview(view)
+        let pdf = ReaderPDFPresentation(view: view, bookID: "fixture", defaults: defaults, settings: settings)
+        let document = try XCTUnwrap(PDFDocument(url: source))
+        pdf.load(document: document, metadata: try ConverterFFIAdapter().openBook(at: source).metadataJSON)
+        view.layoutIfNeeded()
+        pdf.goToChapter(1)
+        view.layoutIfNeeded()
+        let page = try XCTUnwrap(document.page(at: 1))
+        let text = try XCTUnwrap(page.string) as NSString
+        let range = text.range(of: "selectable")
+        guard range.location != NSNotFound else { return XCTFail("The fixture must contain selectable text") }
+        let glyph = page.characterBounds(at: range.location)
+        let point = view.convert(CGPoint(x: glyph.midX, y: glyph.midY), from: page)
+        let anchor = try XCTUnwrap(pdf.anchor(at: point))
+        XCTAssertEqual(anchor.chapterIndex, 1)
+        XCTAssertGreaterThan(anchor.ratio, 0)
+
+        var chromeToggles = 0
+        pdf.onToggleChrome = { chromeToggles += 1 }
+        let tap = try XCTUnwrap(view.onReaderTap)
+        tap(point)
+        let sheet = try XCTUnwrap(host.presentedViewController as? UIAlertController)
+        XCTAssertEqual(sheet.preferredStyle, .actionSheet)
+        XCTAssertTrue(sheet.actions.first { $0.title == L10n.string("reader.selection.playFromHere") }?.isEnabled == true)
+        XCTAssertEqual(chromeToggles, 0)
+
+        var toolbarAnchor: PDFReadingAudioMap.Anchor?
+        pdf.onPlayFrom = { toolbarAnchor = $0 }
+        pdf.playFromCurrentPosition()
+        XCTAssertEqual(toolbarAnchor?.chapterIndex, 1)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(toolbarAnchor?.ratio), anchor.ratio)
+    }
+
     func testPDFSuppressesSystemEditingMenuButKeepsAppPlayAction() throws {
         let view = ReaderPDFView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
         XCTAssertFalse(view.canBecomeFirstResponder)

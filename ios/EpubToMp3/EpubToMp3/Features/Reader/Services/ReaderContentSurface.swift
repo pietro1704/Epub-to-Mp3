@@ -186,7 +186,7 @@ final class ReaderContentSurface {
         pdfPreparationTask = Task { [weak self, weak pdfView] in
             let prepared = await Task.detached(priority: .userInitiated) {
                 let normalized = PdfReadingPageNormalizer.normalizedDocument(from: url)
-                let metadata = try? ConverterFFIAdapter().openBook(at: url).metadataJSON
+                let metadata = normalized == nil ? (try? ConverterFFIAdapter().openBook(at: url).metadataJSON) : nil
                 return (document: normalized ?? PDFDocument(url: url), metadata: metadata, normalized: normalized != nil)
             }.value
             guard let self,

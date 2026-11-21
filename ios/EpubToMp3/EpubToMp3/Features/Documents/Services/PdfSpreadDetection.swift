@@ -50,8 +50,9 @@ enum PdfSpreadDetection {
     }
 
     static func hasNoSelectableText(in document: PDFDocument) -> Bool {
-        let positions = [0, document.pageCount / 2, document.pageCount - 1]
-        for index in Set(positions) {
+        // An image cover and blank separator pages can occupy every sampled
+        // position in a PDF that otherwise contains selectable text.
+        for index in 0..<document.pageCount {
             let text = document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
             if let text, !text.isEmpty {
                 return false

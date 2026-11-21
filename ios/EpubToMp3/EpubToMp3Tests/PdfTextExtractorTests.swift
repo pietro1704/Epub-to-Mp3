@@ -91,6 +91,27 @@ final class PdfTextExtractorTests: XCTestCase {
         XCTAssertNil(PdfReadingPageNormalizer.normalizedDocument(from: document))
     }
 
+    func testSelectableTextBetweenBlankPagesPreventsScannedSpreadClassification() throws {
+        let url = try PdfFixture.createMultiPage(pages: [
+            (heading: "", body: ""),
+            (heading: "Selectable", body: "This text is outside the first, middle and last pages."),
+            (heading: "", body: ""),
+            (heading: "", body: ""),
+            (heading: "", body: "")
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let document = try XCTUnwrap(PDFDocument(url: url))
+
+        XCTAssertEqual(document.pageCount, 5)
+        for index in [0, 2, 4] {
+            XCTAssertTrue((document.page(at: index)?.string ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        XCTAssertTrue(document.page(at: 1)?.string?.contains("Selectable") == true)
+        XCTAssertFalse(PdfSpreadDetection.hasNoSelectableText(in: document))
+        XCTAssertNil(PdfReadingPageNormalizer.normalizedDocument(from: document))
+    }
+
     func testGroupsMultiPagePdfByHeadingFontSize() throws {
         // Each page has a 28pt bold heading + 12pt body. The
         // heading heuristic should produce one chapter per page.
