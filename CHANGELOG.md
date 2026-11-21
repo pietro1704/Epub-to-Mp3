@@ -1,15 +1,33 @@
 # Changelog
 
+## [0.10.4] — 2026-11-21
+
+### Bug Fixes
+
+- Open the reader at playback from the player cover (#1295) ([1741bc7](https://github.com/pietro1704/Epub-to-Mp3/commit/1741bc745ca9bf24d22bdd1b9b165cc3c0d3934f))
+- Isolate desktop release source and caches (#1293) ([65450d5](https://github.com/pietro1704/Epub-to-Mp3/commit/65450d5cfe11e6b99880c7e8da80066aaf16ddaf))
+
+### Chores
+
+- Bump version to 0.10.4 ([288accb](https://github.com/pietro1704/Epub-to-Mp3/commit/288accb1cefd336012a418e5cd6f04bbd1b3449c))
+
 ## [0.10.3] — 2026-11-21
 
 ### Bug Fixes
 
+- Finish Linux playback when a growing source closes (#1294) ([0242072](https://github.com/pietro1704/Epub-to-Mp3/commit/02420725be66899682f874c5697a092b945b92b1))
+- Keep the pinned Sonic fallback available offline (#1291) ([dc30766](https://github.com/pietro1704/Epub-to-Mp3/commit/dc30766eb37776a8fd2dbada2602bed1687ec9ad))
+- Tolerate slower Windows chapter synthesis (#1290) ([a5a64c9](https://github.com/pietro1704/Epub-to-Mp3/commit/a5a64c914b7a59d1bea81f1a6d6f0485f0f5f3d2))
 - Use native Apple build and signing workflows (#1288) ([83c10ea](https://github.com/pietro1704/Epub-to-Mp3/commit/83c10ea7ecefbd1d002f019d0ce2354f2d7302b2))
 - Start playback from selectable PDF text (#1287) ([649b4c8](https://github.com/pietro1704/Epub-to-Mp3/commit/649b4c852bbed0596b0425be571df894406338ff))
 
+### Changes
+
+- Share iOS chapter contents and Downloads (#1292) ([2841d91](https://github.com/pietro1704/Epub-to-Mp3/commit/2841d91bf1d77087a2e8cdea7d2b3287a9064916))
+
 ### Chores
 
-- Bump version to 0.10.3 ([ee24b9d](https://github.com/pietro1704/Epub-to-Mp3/commit/ee24b9dc18e03950beba9918f5c327a4f60ebbfd))
+- V0.10.3 (#1289) ([2de83a2](https://github.com/pietro1704/Epub-to-Mp3/commit/2de83a2dcf54cef2d6de6f89d3d2a476b2eebcc5))
 
 ## [0.10.2] — 2026-11-21
 
