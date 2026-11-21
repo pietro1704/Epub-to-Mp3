@@ -10,6 +10,10 @@ void initializeDesktopAudioBackend(TargetPlatform platform) {
     JustAudioMediaKit.ensureInitialized(
       linux: platform == TargetPlatform.linux,
       windows: platform == TargetPlatform.windows,
+      // A local chapter stream can wait for the next synthesized MP3 chunk.
+      networkTimeout: platform == TargetPlatform.windows
+          ? const Duration(seconds: 20)
+          : null,
     );
   }
 }

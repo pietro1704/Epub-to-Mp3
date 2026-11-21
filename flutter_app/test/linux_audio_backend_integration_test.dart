@@ -9,6 +9,20 @@ import 'package:flutter_app/services/playback/audio_player_service.dart';
 import 'package:flutter_app/services/playback/desktop_audio_backend.dart';
 import 'package:flutter_app/services/playback/growing_chapter_audio_source.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+
+class _ObservedGrowingSource extends GrowingChapterAudioSource {
+  _ObservedGrowingSource() : super('slow-chapter');
+
+  final firstRequest = Completer<void>();
+
+  @override
+  // ignore: experimental_member_use
+  Future<StreamAudioResponse> request([int? start, int? end]) {
+    if (!firstRequest.isCompleted) firstRequest.complete();
+    return super.request(start, end);
+  }
+}
 
 Future<void> eventually(
   bool Function() condition, {
@@ -59,6 +73,61 @@ Future<File> fixture(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'native decoder keeps reading when chapter synthesis pauses for ten seconds',
+    () async {
+      if (Platform.isWindows) {
+        initializeDesktopAudioBackend(TargetPlatform.windows);
+      } else {
+        // Exercise the same libmpv option on Linux, which otherwise uses 5 s.
+        JustAudioMediaKit.ensureInitialized(
+          networkTimeout: const Duration(seconds: 20),
+        );
+      }
+      final directory = await Directory.systemTemp.createTemp('epub-slow-');
+      final player = AudioPlayerService();
+      final source = _ObservedGrowingSource();
+      addTearDown(() async {
+        source.complete();
+        await player.dispose();
+        await directory.delete(recursive: true);
+      });
+      final frameFixture = await File(
+        '../tests/fixtures/audio/mono-24000-48k.mp3',
+      ).readAsBytes();
+      // 32 copies of a 312 ms CBR fixture with no metadata or duration header.
+      final chunk = await File('${directory.path}/chunk.mp3').writeAsBytes([
+        for (var copy = 0; copy < 32; copy++) ...frameFixture,
+      ]);
+      await source.append(0, chunk.path);
+      player.registerGrowingChapter(0, source);
+      await player.setQueue([
+        const ChapterProgress(
+          index: 0,
+          name: 'Slow chapter',
+          downloadUrl: 'growing:slow-chapter',
+        ),
+      ]);
+      await player.setSpeed(2);
+      final playback = player.play();
+      await source.firstRequest.future.timeout(const Duration(seconds: 10));
+      final deliveryDelay = Future<void>.delayed(const Duration(seconds: 10));
+      await eventually(() => player.isPlaying && player.positionSeconds > 0.2);
+      await deliveryDelay;
+      await source.append(1, chunk.path);
+      source.complete();
+      await eventually(
+        () => player.positionSeconds > 18,
+        failure: () => 'Stopped at ${player.positionSeconds}s (${player.phase})',
+      );
+      await player.pause();
+      await playback;
+    },
+    skip:
+        !(Platform.isLinux || Platform.isWindows) ||
+        !const bool.fromEnvironment('EPUB2MP3_NATIVE_DECODER'),
+  );
+
   test(
     'Linux decoder plays, pauses, resumes, completes and rejects a replacement',
     () async {
