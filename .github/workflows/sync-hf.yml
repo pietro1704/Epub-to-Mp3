@@ -53,12 +53,14 @@ jobs:
       - name: Require validated current merge
         id: validated
         env:
+          SKIP_SUPERSEDED: ${{ github.event_name == 'workflow_run' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: node scripts/validated_merge.mjs --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest --required-job "Publication surfaces validated"
 
   sync:
     needs: gate
+    if: needs.gate.outputs.sha != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

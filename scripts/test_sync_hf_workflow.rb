@@ -16,6 +16,8 @@ class SyncHfWorkflowTest < Minitest::Test
     assert_includes @workflow, "persist-credentials: false"
     refute_includes @workflow, '--exclude "python_app"'
     assert_includes @workflow, "needs: gate"
+    assert_includes @workflow, "if: needs.gate.outputs.sha != ''"
+    assert_includes @workflow, "SKIP_SUPERSEDED: ${{ github.event_name == 'workflow_run' }}"
     assert_includes @workflow, "ref: ${{ needs.gate.outputs.sha }}"
     assert_includes @workflow, 'workflows: ["Post-merge validation"]'
     assert_includes @workflow, "workflow_dispatch"
