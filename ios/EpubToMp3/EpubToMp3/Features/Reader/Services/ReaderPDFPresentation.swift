@@ -60,11 +60,13 @@ final class ReaderPDFPresentation {
     }
 
     func load(document: PDFDocument?, metadata: Data?) {
-        view.document = document
+        hasLoaded = false
+        audioMap = nil
         if let document, let metadata {
             audioMap = try? PDFReadingAudioMap(metadata: metadata,
                 pageTexts: (0..<document.pageCount).map { document.page(at: $0)?.string ?? "" })
         }
+        view.document = document
         if let document, let saved = defaults.data(forKey: progressKey).flatMap({ try? JSONDecoder().decode(SavedPosition.self, from: $0) }),
            let page = document.page(at: saved.page) {
             view.layoutIfNeeded()
@@ -139,11 +141,14 @@ final class ReaderPDFPresentation {
 
     var currentAnchor: PDFReadingAudioMap.Anchor? {
         guard let page = view.currentPage, let index = currentPage else { return nil }
-        let visible = view.convert(view.bounds, to: page)
-        let pageBounds = page.bounds(for: view.displayBox)
-        let point = CGPoint(x: pageBounds.minX + 1, y: min(pageBounds.maxY, visible.maxY))
-        let character = page.characterIndex(at: point)
-        return audioMap?.anchor(page: index, character: character == NSNotFound ? 0 : max(0, character))
+        let visible = view.convert(view.bounds, to: page).intersection(page.bounds(for: view.displayBox))
+        guard !visible.isEmpty, let audioMap else { return nil }
+        var character = 0
+        if let selection = page.selection(for: visible), selection.numberOfTextRanges(on: page) > 0 {
+            let location = selection.range(at: 0, on: page).location
+            if location != NSNotFound { character = location }
+        }
+        return audioMap.anchor(page: index, character: character)
     }
 
     func anchor(at point: CGPoint) -> PDFReadingAudioMap.Anchor? {
@@ -188,6 +193,15 @@ final class ReaderPDFPresentation {
     }
 
     private func tap(at point: CGPoint) {
+        if let page = view.page(for: point, nearest: false),
+           let annotation = page.annotation(at: view.convert(point, to: page)),
+           annotation.action != nil || annotation.type == PDFAnnotationSubtype.link.rawValue {
+            return // Let PDFKit handle document links.
+        }
+        if let anchor = anchor(at: point) {
+            presentPlaybackActions(at: point, anchor: anchor)
+            return
+        }
         switch ReaderTapAction.resolve(point: point, in: view.bounds, isPaginated: settings?.readerLayout == .paginated) {
         case .toggleChrome: onToggleChrome?()
         case .turnPage(let forward): turnPage(forward: forward)
@@ -201,8 +215,11 @@ final class ReaderPDFPresentation {
     }
 
     private func showActions(at point: CGPoint) {
+        presentPlaybackActions(at: point, anchor: anchor(at: point))
+    }
+
+    private func presentPlaybackActions(at point: CGPoint, anchor: PDFReadingAudioMap.Anchor?) {
         guard let controller = presenter(), controller.presentedViewController == nil else { return }
-        let anchor = anchor(at: point)
         let alert = UIAlertController(title: L10n.string("reader.selection.playFromHere"), message: nil, preferredStyle: .actionSheet)
         let play = UIAlertAction(title: L10n.string("reader.selection.playFromHere"), style: .default) { [weak self] _ in
             if let anchor { self?.onPlayFrom?(anchor) }

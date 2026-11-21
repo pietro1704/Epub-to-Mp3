@@ -74,12 +74,7 @@ final class PDFReaderParityUITests: XCTestCase {
         attach("manual-pdf-restored-page", app: app)
         let page = ((indicator.value as? String) ?? "").split(separator: " ").first.map(String.init) ?? ""
         activateListenTool(app)
-        let miniTransport = app.buttons["miniPlayer.playPause"]
-        XCTAssertTrue(wait(timeout: 90) {
-            let compatible = app.alerts.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Use Faber")).firstMatch
-            if compatible.exists { compatible.tap() }
-            return miniTransport.exists && miniTransport.label == "Pause"
-        }, "Play from here must produce playable audio for this book")
+        waitForAudibleTransport(app)
         let openPlayer = app.buttons["miniPlayer.open"]
         XCTAssertTrue((openPlayer.value as? String ?? "").contains("Page \(page)"),
                       "The audio chapter must match the visible PDF page")
@@ -103,6 +98,41 @@ final class PDFReaderParityUITests: XCTestCase {
         XCTAssertTrue(wait { transport.label == "Play" })
         app.buttons["fullPlayer.close"].tap()
 
+        let playFromText = tryTapVisiblePDFText(app, pdf: pdf)
+        XCTAssertTrue(playFromText.exists && playFromText.isEnabled, "Tapping selectable PDF text must offer Play from here")
+        playFromText.tap()
+        waitForAudibleTransport(app)
+        XCTAssertTrue((openPlayer.value as? String ?? "").contains("Page \(page)"),
+                      "The text action must start audio on the tapped PDF page")
+        openPlayer.tap()
+        XCTAssertTrue(transport.waitForExistence(timeout: 10))
+        let tappedStartTime = elapsed.label
+        XCTAssertTrue(wait { elapsed.label != tappedStartTime })
+        attach("manual-pdf-playing-from-tapped-text", app: app)
+        transport.tap()
+        XCTAssertTrue(wait { transport.label == "Play" })
+    }
+
+    private func tryTapVisiblePDFText(_ app: XCUIApplication, pdf: XCUIElement) -> XCUIElement {
+        let play = app.sheets.buttons["Play from here"].firstMatch
+        // Layout scales with the device and the restored PDF page. Keep all
+        // candidate points in the center column so blank areas cannot turn pages.
+        for dy in [0.30, 0.39, 0.48, 0.57, 0.66] {
+            for dx in [0.42, 0.50, 0.58] {
+                pdf.coordinate(withNormalizedOffset: CGVector(dx: CGFloat(dx), dy: CGFloat(dy))).tap()
+                if play.waitForExistence(timeout: 0.5) { return play }
+            }
+        }
+        return play
+    }
+
+    private func waitForAudibleTransport(_ app: XCUIApplication) {
+        let miniTransport = app.buttons["miniPlayer.playPause"]
+        XCTAssertTrue(wait(timeout: 90) {
+            let compatible = app.alerts.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Use Faber")).firstMatch
+            if compatible.exists { compatible.tap() }
+            return miniTransport.exists && miniTransport.label == "Pause"
+        }, "Play from here must produce playable audio for this book")
     }
 
     private func openManual(_ app: XCUIApplication) {
