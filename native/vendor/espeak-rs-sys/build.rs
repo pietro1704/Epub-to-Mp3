@@ -141,6 +141,8 @@ fn main() {
     let build_shared_libs = std::env::var("ESPEAK_BUILD_SHARED_LIBS")
         .map(|v| v == "1")
         .unwrap_or(build_shared_libs);
+    let static_linux =
+        !build_shared_libs && env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux");
     let profile = env::var("ESPEAK_LIB_PROFILE").unwrap_or("Release".to_string());
     let static_crt = env::var("ESPEAK_STATIC_CRT")
         .map(|v| v == "1")
@@ -220,6 +222,14 @@ fn main() {
         config.define("USE_LIBPCAUDIO", "OFF");
     }
 
+    if static_linux {
+        // Piper uses eSpeak for phonemes; the system speech provider runs separately.
+        // Keep host audio libraries out of the static archive's link interface.
+        config
+            .define("USE_LIBPCAUDIO", "OFF")
+            .define("ESPEAK_USE_BUNDLED_SONIC", "ON");
+    }
+
     if target == "aarch64-linux-android" {
         config
             .define("ANDROID_ABI", "arm64-v8a")
@@ -242,7 +252,8 @@ fn main() {
             },
         )
         .very_verbose(std::env::var("CMAKE_VERBOSE").is_ok()) // Not verbose by default
-        .always_configure(false);
+        // Apply the Linux linkage options even when restoring an older CMake cache.
+        .always_configure(static_linux);
 
     let bindings_dir = config.build();
 
