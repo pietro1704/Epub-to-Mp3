@@ -46,6 +46,10 @@ final class ReaderListeningSession {
         listeningJobID != nil && listeningBookID == bookID
     }
 
+    func ownsPlaybackJob(_ jobID: String, for bookID: String) -> Bool {
+        listeningJobID == jobID && listeningBookID == bookID
+    }
+
     func waitForCompletion() async { await task?.value }
 
     func observePlayback() {

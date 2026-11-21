@@ -171,6 +171,33 @@ final class ReaderLoadingRegressionUITests: XCTestCase {
         close.tap()
     }
 
+    func testExpandedPlayerCoverOpensReaderAtPartialChapterAudio() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+        let app = launchFixture(delayMilliseconds: 150, includesPlaybackFixture: true, extraArguments: [
+            "-uiTestPlaybackReaderLocation", "-uiTestFlickerProbe", "-uiTestPaginationProbe"
+        ])
+        defer { app.terminate() }
+
+        let miniPlayer = app.buttons["miniPlayer.open"].firstMatch
+        XCTAssertTrue(miniPlayer.waitForExistence(timeout: 10))
+        miniPlayer.tap()
+        let cover = app.buttons["fullPlayer.openReader"].firstMatch
+        XCTAssertTrue(cover.waitForExistence(timeout: 5))
+        XCTAssertTrue(cover.isEnabled && cover.isHittable)
+        cover.tap()
+
+        XCTAssertTrue(app.buttons["fullPlayer.close"].firstMatch.waitForNonExistence(timeout: 5))
+        let chapter = app.staticTexts["flicker.probe.chapter"].firstMatch
+        let harness = ReaderModesHarness(app: app)
+        let reachedPlayback = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            chapter.label == "1/4" && (harness.paginationMetrics?.page ?? 0) > 1
+        }, object: nil)
+        wait(for: [reachedPlayback], timeout: 10)
+        harness.assertNoClippedLines(scenario: "After opening the reader from partial chapter audio")
+        attach("cover-opens-at-playback-location", app: app)
+    }
+
     func testSpeedMenuShowsOnlyRequestedRatesAndKeepsSelection() throws {
         XCUIDevice.shared.orientation = .portrait
         let app = launchFixture(delayMilliseconds: 0, includesPlaybackFixture: true)
@@ -207,19 +234,23 @@ final class ReaderLoadingRegressionUITests: XCTestCase {
         XCTAssertTrue(miniRate.staticTexts["0.75x"].exists)
     }
 
-    private func launchFixture(delayMilliseconds: Int, includesPlaybackFixture: Bool = false) -> XCUIApplication {
+    private func launchFixture(delayMilliseconds: Int, includesPlaybackFixture: Bool = false,
+                               extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
             "-uiTestFixture",
-            "-uiTestResetReaderPosition",
             "-uiTestReaderLayout", "paginated",
             "-uiTestReaderShowPageNumbers",
             "-uiTestNoPageTurnOverlay",
             "-uiTestLoadingDelayMilliseconds", String(delayMilliseconds),
         ]
+        if !extraArguments.contains("-uiTestPlaybackReaderLocation") {
+            app.launchArguments.append("-uiTestResetReaderPosition")
+        }
         if includesPlaybackFixture {
             app.launchArguments.append("-uiTestPlaybackFixture")
         }
+        app.launchArguments += extraArguments
         app.launch()
         return app
     }

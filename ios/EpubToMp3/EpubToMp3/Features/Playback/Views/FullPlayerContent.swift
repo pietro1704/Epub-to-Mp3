@@ -19,6 +19,7 @@ struct FullPlayerControlActions {
     let skipForwardTapped: Selector
     let nextChapterTapped: Selector
     let tocTapped: Selector
+    var coverTapped: Selector? = nil
 }
 
 @MainActor
@@ -27,6 +28,7 @@ final class FullPlayerContent {
     let dragHandle = UIView()
     let coverContainer = UIView()
     let coverImageView = UIImageView()
+    let coverButton = UIButton(type: .custom)
     let titleLabel = UILabel()
     let authorLabel = UILabel()
     let chapterLabel = UILabel()
@@ -90,6 +92,19 @@ final class FullPlayerContent {
         coverImageView.image = UIImage(systemName: "headphones")
         coverImageView.tintColor = .tintColor
         coverContainer.addSubview(coverImageView)
+        if let coverTapped = actions.coverTapped {
+            coverButton.translatesAutoresizingMaskIntoConstraints = false
+            coverButton.accessibilityIdentifier = "fullPlayer.openReader"
+            coverButton.accessibilityLabel = L10n.string("player.openReaderAtPlayback")
+            coverButton.addTarget(actionTarget, action: coverTapped, for: .touchUpInside)
+            coverContainer.addSubview(coverButton)
+            NSLayoutConstraint.activate([
+                coverButton.leadingAnchor.constraint(equalTo: coverContainer.leadingAnchor),
+                coverButton.trailingAnchor.constraint(equalTo: coverContainer.trailingAnchor),
+                coverButton.topAnchor.constraint(equalTo: coverContainer.topAnchor),
+                coverButton.bottomAnchor.constraint(equalTo: coverContainer.bottomAnchor),
+            ])
+        }
         NSLayoutConstraint.activate([
             coverImageView.leadingAnchor.constraint(equalTo: coverContainer.leadingAnchor),
             coverImageView.trailingAnchor.constraint(equalTo: coverContainer.trailingAnchor),

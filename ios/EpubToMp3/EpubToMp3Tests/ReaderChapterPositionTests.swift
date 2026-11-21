@@ -13,6 +13,57 @@ final class ReaderChapterPositionTests: XCTestCase {
         try await verifyTOC(hasAudio: true)
     }
 
+    func testPlaybackLocationSurvivesHydrationAndLatestSelectionWins() async throws {
+        try await verifyPlaybackLocationAcrossHydration(supersedesPendingLocation: false)
+        try await verifyPlaybackLocationAcrossHydration(supersedesPendingLocation: true)
+    }
+
+    private func verifyPlaybackLocationAcrossHydration(supersedesPendingLocation: Bool) async throws {
+        let fixture = try PositionFixture(hasAudio: false)
+        defer { fixture.cleanUp() }
+        let prepared = try XCTUnwrap(LocalFulltextCache.read(bookId: fixture.id))
+        let hydrated = supersedesPendingLocation ? prepared : EbookFulltext(jobId: fixture.id, bookTitle: "Updated title",
+            bookAuthor: nil, chapters: prepared.chapters)
+        ReaderProgressStore.save(bookId: fixture.id, chapterIndex: 0, offsetFraction: 0)
+        try await fixture.store.write(bookID: fixture.id, chapterOrdinal: 0,
+            fulltextURL: try XCTUnwrap(LocalFulltextCache.storageURL(bookId: fixture.id)))
+        LocalFulltextCache.evictInMemoryPayload(bookId: fixture.id)
+
+        var sender: AsyncStream<EbookFulltext>.Continuation?
+        let catalog = AsyncStream<EbookFulltext> { sender = $0 }
+        let delivery = try XCTUnwrap(sender)
+        defer { delivery.finish() }
+        try await fixture.open(waitForCatalog: false, readFulltext: { _ in
+            await catalog.first { _ in true }
+        })
+        let reader = try XCTUnwrap(fixture.controller)
+        XCTAssertEqual(reader.currentReaderChapterIndex, 0)
+        func revealPlaybackChapter(_ oneBasedIndex: Int) throws {
+            let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data("""
+                {"jobId":"cover","state":"finished","chapterIndexBase":1,"chapterProgress":[
+                   {"index":\(oneBasedIndex),"status":"completed","downloadUrl":"file:///tmp/chapter.mp3","textOffset":2600}]}
+                """.utf8))
+            fixture.player.setSnapshot(snapshot)
+            fixture.player.services.observation.publishCurrentChapter()
+            reader.revealPlaybackLocation(try XCTUnwrap(ReaderPlaybackLocation(player: fixture.player)))
+        }
+        try revealPlaybackChapter(2)
+        XCTAssertEqual(reader.currentReaderChapterIndex, 0, "Wait for the target chapter's catalog")
+        if supersedesPendingLocation { try revealPlaybackChapter(1) }
+        delivery.yield(hydrated)
+        delivery.finish()
+        let expectedChapter = supersedesPendingLocation ? 0 : 1
+        for _ in 0..<250 {
+            await fixture.settle()
+            if reader.playbackChapterEstimates.count == prepared.chapters.count,
+               reader.currentReaderChapterIndex == expectedChapter, ((try? fixture.offset()) ?? 0) > 0 { break }
+        }
+        XCTAssertEqual(reader.playbackChapterEstimates.count, prepared.chapters.count, "Wait for full catalog hydration")
+        XCTAssertTrue(fixture.textView()?.text.hasPrefix("Chapter \(expectedChapter + 1).") == true)
+        XCTAssertEqual(reader.currentReaderChapterIndex, expectedChapter)
+        XCTAssertGreaterThan(try fixture.offset(), 0)
+    }
+
     private func verifyTOC(hasAudio: Bool) async throws {
         let fixture = try PositionFixture(hasAudio: hasAudio)
         defer { fixture.cleanUp() }
@@ -111,15 +162,18 @@ private final class PositionFixture {
         }
     }
 
-    func open() async throws {
-        let diskOpen = LocalFulltextCache.inMemoryPayload(bookId: id) == nil
+    func open(waitForCatalog: Bool = true,
+              readFulltext: @escaping @Sendable (String) async -> EbookFulltext? = { id in
+                  await Task.detached(priority: .userInitiated) { LocalFulltextCache.read(bookId: id) }.value
+              }) async throws {
+        let needsCatalog = waitForCatalog && LocalFulltextCache.inMemoryPayload(bookId: id) == nil
         let stages = PositionLoadStages()
         let reader = BookOpenScreenController(
             book: BookEntity(id: id, title: "Position regression", bookmark: Data(),
                              displayFilename: "position.epub", addedAt: Date()),
             library: LibraryStore(defaults: defaults, defaultsKey: "library"), settings: settings,
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), player: player,
-            preparedRenderer: renderer, preparedChapterStore: store,
+            preparedRenderer: renderer, preparedChapterStore: store, preparedFulltextReader: readFulltext,
             openStageObserver: { stage, _ in stages.record(stage) }, sessionDefaults: defaults,
             deferInitialReaderGestures: false)
         controller = reader
@@ -128,10 +182,10 @@ private final class PositionFixture {
         for _ in 0..<300 {
             await settle()
             if !reader.isLoadingBookContent, textView()?.text.isEmpty == false,
-               !diskOpen || stages.catalogRead { break }
+               !needsCatalog || stages.catalogRead { break }
         }
         XCTAssertFalse(reader.isLoadingBookContent, "textFrame=\(String(describing: textView()?.frame))")
-        XCTAssertTrue(!diskOpen || stages.catalogRead)
+        XCTAssertTrue(!needsCatalog || stages.catalogRead)
         await settle()
     }
 
@@ -174,7 +228,7 @@ private final class PositionFixture {
         return try XCTUnwrap(ancestor as? UIScrollView).contentOffset.y
     }
 
-    private func textView() -> UITextView? {
+    func textView() -> UITextView? {
         func find(_ view: UIView) -> UITextView? {
             if let text = view as? UITextView { return text }
             return view.subviews.lazy.compactMap { find($0) }.first
@@ -182,7 +236,7 @@ private final class PositionFixture {
         return controller.flatMap { find($0.view) }
     }
 
-    private func settle() async {
+    func settle() async {
         window.layoutIfNeeded()
         controller?.view.layoutIfNeeded()
         try? await Task.sleep(nanoseconds: 20_000_000)

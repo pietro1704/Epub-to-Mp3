@@ -16,6 +16,7 @@ final class ReaderPreparedPresentation {
         case completeLoading
         case finishLoading(UUID)
         case publishTitles(EbookFulltext)
+        case catalogReadyForNavigation
         case error(String)
     }
 
@@ -228,6 +229,7 @@ final class ReaderPreparedPresentation {
         document.activePreparedChapter = nil
         LocalFulltextCache.recordWarmOpen(bookId: document.book.id)
         send(.publishTitles(payload))
+        send(.catalogReadyForNavigation)
         if let journeyID = document.openJourney.activeBookOpenJourneyID {
             LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
         }
@@ -281,6 +283,7 @@ final class ReaderPreparedPresentation {
         send(.showChapter(document.selectedChapter, preparedRendering))
         prepareChapterProjection(ordinal: selectedChapter)
         send(.finishLoading(loadingID))
+        send(.catalogReadyForNavigation)
     }
 
     func prepareChapterProjection(ordinal: Int) {

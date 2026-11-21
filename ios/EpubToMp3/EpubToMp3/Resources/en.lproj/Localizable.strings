@@ -160,6 +160,7 @@
 "player.chapter" = "Chapter %d";
 "player.chapterOf" = "Chapter %1$d of %2$d";
 "player.chapters" = "Chapters";
+"player.openReaderAtPlayback" = "Open reader at playback position";
 
 /* Play-tap divergence dialog (reader on a different chapter than the audio) */
 "player.divergence.title" = "Continue from where?";

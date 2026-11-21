@@ -7,6 +7,60 @@ import MediaPlayer
 
 @MainActor
 final class PlayerViewConfigurationTests: XCTestCase {
+#if os(iOS)
+    func testCoverActionIsAccessibleAndDispatchesToItsTarget() {
+        let target = CoverActionTarget()
+        let controller = UIViewController()
+        let content = FullPlayerContent()
+        let action = #selector(CoverActionTarget.tapped)
+        content.install(in: controller.view, actionTarget: target,
+                        actions: .init(closeTapped: action, scrubBegan: action, scrubChanged: action, scrubEnded: action,
+                            previousChapterTapped: action, skipBackTapped: action, playPauseTapped: action,
+                            skipForwardTapped: action, nextChapterTapped: action, tocTapped: action, coverTapped: action),
+                        traits: controller.traitCollection)
+        XCTAssertTrue(content.coverButton.isDescendant(of: content.coverContainer))
+        XCTAssertEqual(content.coverButton.accessibilityIdentifier, "fullPlayer.openReader")
+        content.coverButton.sendActions(for: .touchUpInside)
+        XCTAssertEqual(target.taps, 1)
+    }
+
+    func testUnalignedPlaybackPositionAccountsForPartialChapterAudio() {
+        XCTAssertEqual(ReaderPlaybackLocation.estimatedOffset(
+            seconds: 30, duration: 60, textOffset: 20, sourceCount: 100, renderedCount: 200), 120)
+        XCTAssertEqual(ReaderPlaybackLocation.estimatedOffset(
+            seconds: .nan, duration: 0, textOffset: 20, sourceCount: 100, renderedCount: 200), 40)
+    }
+
+    func testCoverUsesReaderChapterForOneBasedFilesAndSegments() throws {
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data("""
+            {
+                "jobId": "legacy-cover-position",
+                "state": "finished",
+                "chapterIndexBase": 1,
+                "chapterProgress": [{
+                    "index": 4, "name": "Chapter Four", "status": "completed",
+                    "downloadUrl": "file:///tmp/legacy-cover-position.mp3"
+                }]
+            }
+            """.utf8))
+        let player = AudioPlayer()
+        player.setSnapshot(snapshot)
+        player.services.observation.publishCurrentChapter()
+        XCTAssertEqual(player.activeStreamingChapterIndex, 4)
+        XCTAssertEqual(ReaderPlaybackLocation(player: player)?.chapterIndex, 3)
+
+        player.playbackSegmentModeChanged(true)
+        player.services.observation.publishCurrentChapter()
+        XCTAssertEqual(player.activeStreamingChapterIndex, 0)
+        XCTAssertEqual(ReaderPlaybackLocation(player: player)?.chapterIndex, 0)
+    }
+
+    private final class CoverActionTarget: NSObject {
+        var taps = 0
+        @objc func tapped() { taps += 1 }
+    }
+#endif
+
     func testExpandedPlayerInstallsCompactSpacingVolumeAndBottomSafeArea() throws {
 #if os(iOS)
         let controller = UIViewController()

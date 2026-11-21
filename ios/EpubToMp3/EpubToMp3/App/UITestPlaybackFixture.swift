@@ -4,7 +4,11 @@ import Foundation
 @MainActor
 enum UITestPlaybackFixture {
     static func installIfRequested(library: LibraryStore, player: AudioPlayer) {
-        guard ProcessInfo.processInfo.arguments.contains("-uiTestPlaybackFixture") else { return }
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-uiTestPlaybackFixture") else { return }
+        let testReaderLocation = arguments.contains("-uiTestPlaybackReaderLocation")
+        let chapterIndex = testReaderLocation ? 1 : 0
+        let snapshotIndexBase: Int? = testReaderLocation ? 1 : nil
 
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-playback.wav")
         let sampleRate: UInt32 = 8_000
@@ -33,20 +37,25 @@ enum UITestPlaybackFixture {
         try? wav.write(to: url, options: .atomic)
 
         let chapter = JobSnapshot.Chapter(
-            index: 0, name: "UI Test Chapter", status: "completed",
+            index: chapterIndex + (snapshotIndexBase ?? 0), name: "UI Test Chapter", status: "completed",
             downloadUrl: url.absoluteString, chars: 100, charsProcessed: 100,
-            progressRatio: 1, durationSeconds: 0.5, startedAt: nil, completedAt: nil
+            progressRatio: 1, durationSeconds: 0.5, startedAt: nil, completedAt: nil,
+            textOffset: testReaderLocation ? 3_600 : nil
         )
+        let fixtureBookID = library.books.first?.id ?? "ui-test-book"
         let snapshot = JobSnapshot(
-            jobId: "ui-test-playback", state: "finished", bookTitle: "UI Test Book",
+            jobId: testReaderLocation ? "embedded-\(fixtureBookID)" : "ui-test-playback",
+            state: "finished", bookTitle: "UI Test Book",
             bookAuthor: nil, coverUrl: nil, coverMimeType: nil, engine: "fixture",
             voice: nil, language: "en", progressPercent: 100, chaptersTotal: 1,
             chaptersCompleted: 1, chapterProgress: [chapter], outputs: nil,
-            logUrl: nil, error: nil, lastActivityAt: nil
+            logUrl: nil, error: nil, lastActivityAt: nil, chapterIndexBase: snapshotIndexBase
         )
-        let fixtureBookID = library.books.first?.id ?? "ui-test-book"
-        PlaybackBindingStore.setCurrentlyPlaying(bookID: fixtureBookID, chapterIndex: 0)
-        player.play(snapshot: snapshot)
+        if testReaderLocation {
+            ReaderProgressStore.save(bookId: fixtureBookID, chapterIndex: 0, offsetFraction: 0, characterOffset: 0)
+        }
+        PlaybackBindingStore.setCurrentlyPlaying(bookID: fixtureBookID, chapterIndex: chapterIndex)
+        player.play(snapshot: snapshot, restoreAutoplay: !testReaderLocation)
     }
 
     private static func appendLittleEndian<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
