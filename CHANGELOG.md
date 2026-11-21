@@ -1,10 +1,27 @@
 # Changelog
 
+## [0.10.3] — 2026-11-21
+
+### Bug Fixes
+
+- Use native Apple build and signing workflows (#1288) ([83c10ea](https://github.com/pietro1704/Epub-to-Mp3/commit/83c10ea7ecefbd1d002f019d0ce2354f2d7302b2))
+- Start playback from selectable PDF text (#1287) ([649b4c8](https://github.com/pietro1704/Epub-to-Mp3/commit/649b4c852bbed0596b0425be571df894406338ff))
+
+### Chores
+
+- Bump version to 0.10.3 ([ee24b9d](https://github.com/pietro1704/Epub-to-Mp3/commit/ee24b9dc18e03950beba9918f5c327a4f60ebbfd))
+
 ## [0.10.2] — 2026-11-21
 
 ### Bug Fixes
 
+- Lower supervised disk floor to 15 GiB (#1286) ([456316d](https://github.com/pietro1704/Epub-to-Mp3/commit/456316d1618e5c83fca9ff276fdf3a5e884a59d1))
+- Package the pinned Linux ONNX Runtime (#1284) ([117b7ba](https://github.com/pietro1704/Epub-to-Mp3/commit/117b7ba7aff87b33aaef34032bef73bd6c8c14fa))
 - Keep slow Windows chapter streams open (#1282) ([c627120](https://github.com/pietro1704/Epub-to-Mp3/commit/c6271207d78ec1b085f577825eb034dd40c15ae4))
+
+### CI
+
+- Retain verified Flutter packages (#1285) ([2ac48c7](https://github.com/pietro1704/Epub-to-Mp3/commit/2ac48c7f011e2f1658d8c6739c406159b25fca9c))
 
 ### Changes
 
@@ -13,7 +30,7 @@
 
 ### Chores
 
-- Bump version to 0.10.2 ([6593c63](https://github.com/pietro1704/Epub-to-Mp3/commit/6593c638a5ace50d0dcd07b756831ac817e39f4f))
+- V0.10.2 (#1283) ([c1514c4](https://github.com/pietro1704/Epub-to-Mp3/commit/c1514c4c770e0689f7d5eca1824ccd86ae465703))
 
 ## [0.10.1] — 2026-11-21
 
