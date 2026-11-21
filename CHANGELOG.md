@@ -1,20 +1,38 @@
 # Changelog
 
+## [0.10.2] — 2026-11-21
+
+### Bug Fixes
+
+- Keep slow Windows chapter streams open (#1282) ([c627120](https://github.com/pietro1704/Epub-to-Mp3/commit/c6271207d78ec1b085f577825eb034dd40c15ae4))
+
+### Changes
+
+- Open externally imported books in the macOS reader (#1276) ([fff809a](https://github.com/pietro1704/Epub-to-Mp3/commit/fff809a1ed1e8becb7eb5c14fb3aed82c5ecf643))
+- Isolate host load fixture process IDs from the CI runner (#1277) ([a93bf46](https://github.com/pietro1704/Epub-to-Mp3/commit/a93bf4609928a6774180150bcd605afa40c13fb3))
+
+### Chores
+
+- Bump version to 0.10.2 ([6593c63](https://github.com/pietro1704/Epub-to-Mp3/commit/6593c638a5ace50d0dcd07b756831ac817e39f4f))
+
 ## [0.10.1] — 2026-11-21
 
 ### Bug Fixes
 
+- Keep desktop settings and player actions accurate (#1281) ([39840ee](https://github.com/pietro1704/Epub-to-Mp3/commit/39840ee52d57c6561ac24385a0709d5797bf5ade))
+- Carry seek intervals across audiobook chapters (#1280) ([c9cc42a](https://github.com/pietro1704/Epub-to-Mp3/commit/c9cc42a68b596874b2af6682159673c3580f652c))
 - Build and audit the Linux desktop runtime (#1275) ([cbb1e08](https://github.com/pietro1704/Epub-to-Mp3/commit/cbb1e08f21ea2efe49b5be84ba2e6ba5fd7dcbd6))
 - Remove Piper Low voices from app catalogs (#1273) ([b92a998](https://github.com/pietro1704/Epub-to-Mp3/commit/b92a998233dbf69fa2c1dcf74b547c03306b54b8))
 - Carry playback skips across chapter boundaries (#1272) ([627b033](https://github.com/pietro1704/Epub-to-Mp3/commit/627b033d34ffbe51449dd785990baac23f2e32d4))
 
 ### Changes
 
+- Synchronize native lease fixture read and write batches (#1278) ([14e581a](https://github.com/pietro1704/Epub-to-Mp3/commit/14e581a0cf3e36339e252d27a7a4f766ab966026))
 - Document coordination across existing agent terminals (#1274) ([29ab277](https://github.com/pietro1704/Epub-to-Mp3/commit/29ab277b1ed676d45774ae758680b4cc3c68a73b))
 
 ### Chores
 
-- Bump version to 0.10.1 ([30e5163](https://github.com/pietro1704/Epub-to-Mp3/commit/30e5163f105cbd108f110ed949f02f4706552c7a))
+- V0.10.1 (#1279) ([fef67c8](https://github.com/pietro1704/Epub-to-Mp3/commit/fef67c89a6268963d7094206cf9bd885264e9858))
 
 ## [0.10.0] — 2026-11-20
 
