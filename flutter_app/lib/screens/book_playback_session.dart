@@ -23,6 +23,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   final _platformVoiceSession = PlatformVoiceNoticeSession();
   final _playbackStartup = ReaderPlaybackStartup();
   RustPlaybackConversionService? _activeConversionService;
+  (int, Completer<bool>)? _chapterPreparation;
 
   void _showConversionError(Object error) {
     if (!mounted) return;
@@ -85,13 +86,17 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   Future<void> _startLocalConversion({
     required int playbackChapterIndex,
     ReaderListeningPosition? readerPosition,
+    bool prepareOnly = false,
   }) async {
+    if (!prepareOnly) _finishChapterPreparation(false);
     final existing = _localPlaybackConversion;
     if (existing != null && readerPosition == null) {
-      _playbackStartup.request(
-        _localConversionGeneration,
-        playbackChapterIndex,
-      );
+      if (!prepareOnly) {
+        _playbackStartup.request(
+          _localConversionGeneration,
+          playbackChapterIndex,
+        );
+      }
       _publishPlaybackWindow(playbackChapterIndex);
       return existing;
     }
@@ -109,7 +114,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       _playableChapters.clear();
       _resumeGuard = ResumeRestorationGuard();
     }
-    _playbackStartup.request(generation, playbackChapterIndex);
+    if (!prepareOnly) _playbackStartup.request(generation, playbackChapterIndex);
     final future =
         _runLocalPlaybackConversion(
           playbackChapterIndex: playbackChapterIndex,
@@ -169,21 +174,28 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
 
   void _setCoverOnPlayer(AudioPlayerInterface player) {
     player.currentBookId = widget.bookId;
-    player.sourceChapterIndices =
-        _fulltext?.chapters.map((chapter) => chapter.index).toList() ??
-        const [];
-    player.onRequestSourceChapter = (target) async {
-      if (!mounted || player.currentBookId != widget.bookId) return;
-      final queueIndex = _playableChapters
-          .where((chapter) => chapter.downloadUrl != null)
-          .toList()
-          .indexWhere((chapter) => chapter.index == target);
-      if (queueIndex >= 0) {
-        await player.seek(Duration.zero, index: queueIndex);
-      } else {
-        await player.pause();
-        if (mounted) await _startLocalConversion(playbackChapterIndex: target);
+    final source = _fulltext?.chapters ?? const [];
+    player.sourceChapterIndices = [
+      for (var index = 0; index < source.length; index++)
+        if (source[index].text.trim().isNotEmpty) index,
+    ];
+    player.onPrepareSourceChapter = (target) {
+      if (!mounted || player.currentBookId != widget.bookId) {
+        return Future.value(false);
       }
+      _finishChapterPreparation(false);
+      _playbackStartup.invalidate();
+      final ready = Completer<bool>();
+      _chapterPreparation = (target, ready);
+      unawaited(
+        _startLocalConversion(playbackChapterIndex: target, prepareOnly: true)
+            .whenComplete(() {
+              if (identical(_chapterPreparation?.$2, ready)) {
+                _finishChapterPreparation(false);
+              }
+            }),
+      );
+      return ready.future;
     };
     final library = ref.read(libraryStoreProvider);
     final idx = library.books.indexWhere((b) => b.id == widget.bookId);
@@ -198,16 +210,38 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     }
   }
 
+  void _chapterQueueUpdated() {
+    final target = _chapterPreparation?.$1;
+    if (target != null &&
+        _playableChapters.any(
+          (chapter) =>
+              chapter.index == target &&
+              chapter.status == 'completed' &&
+              chapter.downloadUrl != null,
+        )) {
+      _finishChapterPreparation(true);
+    }
+  }
+
+  void _finishChapterPreparation(bool ready) {
+    final preparation = _chapterPreparation;
+    _chapterPreparation = null;
+    preparation?.$2.complete(ready);
+  }
+
   void _startResumeListener(AudioPlayerInterface player) {
     _positionSub?.cancel();
     _positionSub = null;
     _chapterIndexSub?.cancel();
-    _chapterIndexSub = player.currentIndex.listen((playerIndex) {
-      if (playerIndex == null) return;
-      _publishPlaybackWindow(
-        _sourceChapterIndexForPlayerIndex(player, playerIndex),
-      );
-    });
+    _chapterIndexSub = player.currentIndex
+        .where((index) => index != null)
+        .map((index) => _sourceChapterIndexForPlayerIndex(player, index!))
+        .distinct()
+        .listen((chapter) {
+          // The decoder can report its old item while we append a new one.
+          // Keep the explicitly requested conversion inside the window.
+          if (_chapterPreparation == null) _publishPlaybackWindow(chapter);
+        });
     _positionSub = player.position.listen((_) {
       final index = player.currentIndexValue;
       if (index == null || player.durationSeconds <= 0) return;
@@ -289,6 +323,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   }
 
   void _cancelConversion() {
+    _finishChapterPreparation(false);
     _playbackStartup.invalidate();
     _platformVoiceSession.end();
     _stopNativeConversion();

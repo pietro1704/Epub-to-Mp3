@@ -29,7 +29,8 @@ abstract class AudioPlayerInterface {
   int seekForwardSeconds = 15;
   int seekBackwardSeconds = 15;
   List<int> sourceChapterIndices = const [];
-  Future<void> Function(int sourceChapter)? onRequestSourceChapter;
+  /// Adds the requested source chapter to the playback queue when available.
+  Future<bool> Function(int sourceChapter)? onPrepareSourceChapter;
   PlaybackPhase get phase => isLoading
       ? PlaybackPhase.loading
       : isPlaying

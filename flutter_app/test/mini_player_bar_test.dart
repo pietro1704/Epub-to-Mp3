@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_app/models/book_entity.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
@@ -75,6 +77,49 @@ void main() {
       expect(find.text('Author A'), findsNothing);
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
       expect(find.byKey(const ValueKey('seek.forward.15')), findsOneWidget);
+    });
+
+    testWidgets('finishing the initial conversion keeps a later pause', (
+      tester,
+    ) async {
+      final book = BookEntity(
+        id: 'book1',
+        title: 'Playing Book',
+        author: 'Author A',
+        filePath: '/tmp/book.epub',
+        displayFilename: 'book.epub',
+        addedAt: DateTime(2025, 1, 1),
+      );
+      final prefs = await _mockPrefs({'library.books.v1': '[${book.encode()}]'});
+      final player = FakeAudioPlayerService();
+      final conversion = Completer<void>();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPrefsProvider.overrideWithValue(prefs),
+            currentlyPlayingBookIdProvider.overrideWith((ref) => book.id),
+            globalAudioPlayerProvider.overrideWithValue(player),
+            playbackRequestProvider.overrideWith((ref) => () async {
+              await player.setQueue([
+                const ChapterProgress(index: 0, name: 'Opening Chapter'),
+              ]);
+              await player.play();
+              await conversion.future;
+            }),
+          ],
+          child: const MaterialApp(home: Scaffold(body: MiniPlayerBar())),
+        ),
+      );
+
+      await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+      await tester.pump();
+      expect(player.isPlaying, isTrue);
+      await player.pause();
+      await tester.pump();
+
+      conversion.complete();
+      await tester.pump();
+      expect(player.isPlaying, isFalse);
     });
 
     testWidgets('hidden when playing book not in library', (t) async {

@@ -108,6 +108,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
   @override
   void dispose() {
+    _finishChapterPreparation(false);
     _playbackStartup.invalidate();
     _localConversionGeneration++;
     _stopNativeConversion();

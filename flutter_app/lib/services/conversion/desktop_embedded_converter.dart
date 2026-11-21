@@ -410,7 +410,7 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
         raw,
         expectedChapterIndex: chapterIndex,
       );
-      source.complete();
+      source.complete(completedPath: result.path);
       return result;
     } catch (error) {
       source.fail(error);

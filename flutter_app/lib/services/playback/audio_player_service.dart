@@ -107,6 +107,8 @@ class AudioPlayerService extends AudioPlayerInterface
   Future<void> _segmentUpdates = Future<void>.value();
   int _segmentGeneration = 0;
   List<Uri> _chapterQueueURLs = const [];
+  Future<void> _chapterQueueUpdates = Future.value();
+  @override
   int _seekGeneration = 0;
   final Map<int, _GrowingChapterEntry> _growingChapters = {};
 
@@ -128,7 +130,16 @@ class AudioPlayerService extends AudioPlayerInterface
   }
 
   @override
-  Future<void> setQueue(List<ChapterProgress> chapters) async {
+  Future<void> setQueue(List<ChapterProgress> chapters) =>
+      _updateChapterQueue(() => _setChapterQueue(chapters));
+
+  Future<void> _updateChapterQueue(Future<void> Function() update) {
+    final pending = _chapterQueueUpdates.then((_) => update());
+    _chapterQueueUpdates = pending.catchError((Object _) {});
+    return pending;
+  }
+
+  Future<void> _setChapterQueue(List<ChapterProgress> chapters) async {
     _playbackState.beginRequest(_player.playerState);
     debugPrint('AudioPlayer setQueue chapters=${chapters.length}');
     final children = <AudioSource>[];
@@ -312,16 +323,8 @@ class AudioPlayerService extends AudioPlayerInterface
   Future<void> seek(Duration position, {int? index}) async {
     final generation = ++_seekGeneration;
     final targetIndex = index ?? _player.currentIndex;
-    if (targetIndex != null &&
-        targetIndex >= 0 &&
-        targetIndex < _playableMap.length) {
-      final chapter = _chapters[_playableMap[targetIndex]];
-      final growing = _growingChapters[chapter.index];
-      if (position > Duration.zero &&
-          growing != null &&
-          growing.matches(_chapterQueueURLs[targetIndex])) {
-        await growing.source.waitForSeek();
-      }
+    if (position > Duration.zero && targetIndex != null) {
+      await _waitForChapterSeek(targetIndex);
     }
     if (generation != _seekGeneration) return;
     final previous = _seekJourneyId;
@@ -334,9 +337,41 @@ class AudioPlayerService extends AudioPlayerInterface
         index >= 0 &&
         index < _chapterQueueURLs.length &&
         _player.currentIndex != index) {
-      await _player.seek(Duration.zero, index: index);
+      await _selectQueuedChapter(index);
+      if (position == Duration.zero || generation != _seekGeneration) return;
+      if (_player.processingState != ProcessingState.idle) {
+        await _readyChapterEvent(index);
+      }
     }
+    if (generation != _seekGeneration) return;
     await _player.seek(position);
+  }
+
+  @override
+  Future<void> _waitForChapterSeek(int playerIndex) async {
+    if (playerIndex < 0 || playerIndex >= _player.sequence.length) return;
+    final source = _player.sequence[playerIndex];
+    if (source is! GrowingChapterAudioSource) return;
+
+    final generation = _seekGeneration;
+    await source.waitForSeek();
+    final path = source.completedPath;
+    if (path == null) return;
+
+    // A desktop decoder that opened the live response may keep its original
+    // duration and seekability. Load the finished file for subsequent seeks.
+    await _updateChapterQueue(() async {
+      if (generation != _seekGeneration) return;
+      final sources = List<AudioSource>.of(_player.audioSources);
+      final index = sources.indexOf(source);
+      if (index < 0) return;
+      sources[index] = AudioSource.uri(Uri.file(path));
+      await _player.setAudioSources(
+        sources,
+        initialIndex: _player.currentIndex,
+        initialPosition: _player.position,
+      );
+    });
   }
 
   void _recordQueuedAudio() {
@@ -436,6 +471,7 @@ class AudioPlayerService extends AudioPlayerInterface
     _seekGeneration++;
     _segmentGeneration++;
     await _segmentUpdates;
+    await _chapterQueueUpdates;
     for (final entry in _growingChapters.values) {
       entry.source.fail(StateError('Audio player disposed'));
     }
