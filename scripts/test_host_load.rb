@@ -36,6 +36,7 @@ class HostLoadTest < Minitest::Test
   TEXT
   QUIET_PS = "  3.0   171     1 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer\n"
   COMPILERS = %w[cargo rustc xcodebuild swift-frontend swift-build clang].freeze
+  FIXTURE_READER_PID = 8000
   IDLE = { "load" => [3.79, 6.58, 8.49], "cpus" => 8, "memory_mib" => 8192, "swap_used_mib" => 331.25,
            "swap_total_mib" => 2048.0, "compressor_mib" => 782, "pressure" => 1, "cpu_speed_limit" => 100,
            "cpu_scheduler_limit" => 100, "cpu_available" => 8, "thermal_level" => 52, "top" => [], "compilers" => [],
@@ -44,7 +45,7 @@ class HostLoadTest < Minitest::Test
   # A real process list always contains the reader itself; fixtures get that row
   # appended unless they place this process somewhere on purpose.
   def own_row(processes)
-    processes.match?(/^\s*\S+\s+#{Process.pid}\s/) ? processes : "#{processes}  0.0 #{Process.pid} 1 /usr/bin/ruby\n"
+    processes.match?(/^\s*\S+\s+#{FIXTURE_READER_PID}\s/) ? processes : "#{processes}  0.0 #{FIXTURE_READER_PID} 1 /usr/bin/ruby\n"
   end
 
   def capture(sysctl, pmset, processes = QUIET_PS)
@@ -60,8 +61,9 @@ class HostLoadTest < Minitest::Test
     end
   end
 
-  def sample(sysctl = SYSCTL_DURING_BUILD, pmset = PMSET_DURING_BUILD, processes = QUIET_PS)
-    HostLoad.sample(capture: capture(sysctl, pmset, processes), compilers: COMPILERS)
+  def sample(sysctl = SYSCTL_DURING_BUILD, pmset = PMSET_DURING_BUILD, processes = QUIET_PS,
+             capture: self.capture(sysctl, pmset, processes))
+    HostLoad.sample(capture: capture, compilers: COMPILERS, current_pid: FIXTURE_READER_PID)
   end
 
   def limits
@@ -98,7 +100,7 @@ class HostLoadTest < Minitest::Test
     assert_in_delta 331.25, reading["swap_used_mib"]
     assert_nil reading["thermal_level"]
     assert_equal [nil, nil, nil], reading.values_at("cpu_speed_limit", "cpu_scheduler_limit", "cpu_available")
-    assert_equal ["3.0 171 WindowServer", "0.0 #{Process.pid} ruby"], reading["top"]
+    assert_equal ["3.0 171 WindowServer", "0.0 #{FIXTURE_READER_PID} ruby"], reading["top"]
     assert_empty reading["compilers"]
     assert_empty HostLoad.reasons(limits, reading), "no power notification since boot is not throttling"
   end
@@ -120,7 +122,7 @@ class HostLoadTest < Minitest::Test
   end
 
   def test_an_enclosing_build_excuses_only_its_own_compilers_never_load_memory_or_thermal_limits
-    own = Process.pid
+    own = FIXTURE_READER_PID
     inside = "  90.0 9001 9000 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend\n" \
              "   0.1 #{own} 9002 /usr/bin/ruby\n   0.1 9002 9000 /bin/bash\n" \
              "   0.2 9000 8999 /Applications/Xcode.app/Contents/SharedFrameworks/SwiftBuild.framework/SWBBuildService\n" \
@@ -150,7 +152,7 @@ class HostLoadTest < Minitest::Test
   end
 
   def test_an_enclosing_build_does_not_excuse_a_compiler_it_did_not_start
-    own = Process.pid
+    own = FIXTURE_READER_PID
     processes = "  90.0 9001 9000 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend\n" \
                 "  80.0 9003 9001 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang\n" \
                 "  70.0 7000 1 /usr/local/opt/rust/bin/cargo\n  60.0 7001 7000 /usr/local/opt/rust/bin/rustc\n" \
@@ -185,13 +187,13 @@ class HostLoadTest < Minitest::Test
                 PMSET_DURING_BUILD.sub("= 81", "= 100")).call(*argv)
       end
     end
-    assert_nil HostLoad.assess(sampler: -> { HostLoad.sample(capture: failing.call("/nothing"), compilers: COMPILERS) }).first
+    assert_nil HostLoad.assess(sampler: -> { sample(capture: failing.call("/nothing")) }).first
     [HostLoad::PS, HostLoad::PMSET, HostLoad::SYSCTL].each do |tool|
-      message = HostLoad.assess(sampler: -> { HostLoad.sample(capture: failing.call(tool), compilers: COMPILERS) }).first
+      message = HostLoad.assess(sampler: -> { sample(capture: failing.call(tool)) }).first
       assert_equal "Host load inspection failed (RuntimeError: #{File.basename(tool)} failed (exit 1)).", message
     end
     no_processes = ->(*argv, **) { argv.first == HostLoad::PS ? "" : capture(SYSCTL_DURING_BUILD, PMSET_DURING_BUILD).call(*argv) }
-    assert_match(/Invalid process telemetry/, assert_raises(RuntimeError) { HostLoad.sample(capture: no_processes, compilers: COMPILERS) }.message)
+    assert_match(/Invalid process telemetry/, assert_raises(RuntimeError) { sample(capture: no_processes) }.message)
     assert_match(/Invalid thermal telemetry/, assert_raises(RuntimeError) { sample(SYSCTL_DURING_BUILD, "\n") }.message)
     sample
     assert_equal [["sysctl", HostLoad::REQUIRED, {}], ["sysctl", HostLoad::OPTIONAL, { tolerate_failure: true }]], @probes.first(2),
@@ -202,7 +204,7 @@ class HostLoadTest < Minitest::Test
     without_optional = lambda do |*argv, **options|
       options[:tolerate_failure] ? "" : capture(required, PMSET_DURING_BUILD).call(*argv, **options)
     end
-    reading = HostLoad.sample(capture: without_optional, compilers: COMPILERS)
+    reading = sample(capture: without_optional)
     assert_equal [nil, [11.41, 7.35, 9.44]], reading.values_at("thermal_level", "load")
   end
 
