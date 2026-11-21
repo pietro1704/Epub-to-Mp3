@@ -119,5 +119,21 @@ void main() {
       expect(find.text('Save'), findsNothing);
       player.dispose();
     });
+
+    testWidgets('shows chapter actions when the first queue arrives', (t) async {
+      final prefs = await _mockPrefs();
+      final player = FakeAudioPlayerService();
+      addTearDown(player.dispose);
+      await t.pumpWidget(_wrap(prefs, player));
+      expect(find.text('Chapters'), findsNothing);
+      expect(find.text('Save'), findsNothing);
+
+      await player.setQueue([
+        const ChapterProgress(index: 0, name: 'First chapter'),
+      ]);
+      await t.pump();
+      expect(find.text('Chapters'), findsOneWidget);
+      expect(find.text('Save'), findsOneWidget);
+    });
   });
 }

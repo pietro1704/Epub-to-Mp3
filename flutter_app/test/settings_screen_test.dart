@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_app/models/tts_catalog.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +38,20 @@ Future<void> _pump(
 
 void main() {
   group('SettingsScreen M3', () {
+    const desktopHosts = {
+      TargetPlatform.linux: 'Linux',
+      TargetPlatform.windows: 'Windows',
+    };
+    testWidgets(
+      'labels the desktop host in About',
+      (t) async {
+        await _pump(t);
+        await t.scrollUntilVisible(find.text('Platform'), 250);
+        expect(find.text(desktopHosts[defaultTargetPlatform]!), findsOneWidget);
+      },
+      variant: TargetPlatformVariant(desktopHosts.keys.toSet()),
+    );
+
     testWidgets('saved Piper Low choices never return to the picker', (t) async {
       const preferences = TtsPreferences(
         primary: TtsSelection(engine: 'piper', modelId: 'pt_BR-edresson-low'),

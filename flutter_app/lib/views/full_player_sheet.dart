@@ -212,7 +212,16 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                 const SizedBox(height: 8),
                 PlayerTransportControls(player: widget.player),
                 const SizedBox(height: 8),
-                _secondaryRow(context),
+                StreamBuilder<bool>(
+                  stream: widget.player.currentIndex
+                      .map((_) => widget.player.chapters.isNotEmpty)
+                      .distinct(),
+                  initialData: widget.player.chapters.isNotEmpty,
+                  builder: (context, snapshot) => _secondaryRow(
+                    context,
+                    hasChapters: snapshot.data == true,
+                  ),
+                ),
                 const SizedBox(height: 8),
               ],
             ),
@@ -325,10 +334,9 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     );
   }
 
-  Widget _secondaryRow(BuildContext context) {
+  Widget _secondaryRow(BuildContext context, {required bool hasChapters}) {
     final t = AppLocalizations.of(context);
     final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-    final hasChapters = widget.player.chapters.isNotEmpty;
 
     return Wrap(
       alignment: WrapAlignment.center,
