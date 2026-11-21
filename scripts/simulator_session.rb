@@ -79,8 +79,7 @@ module SimulatorSession
       if @observe_resources
         SimulatorResources.validate(snapshot)
         return "Memory pressure is not normal" unless snapshot["pressure"] == 1
-        return "Free disk below 20 GiB" if snapshot["free_bytes"] < 20 * 1024**3
-        return nil
+        return SimulatorResources.disk_refusal(snapshot)
       end
       refusal = SimulatorResources.admission(snapshot, initial, stable_existing_swap: @stable_existing_swap,
                                              previous: @admission_previous || initial)

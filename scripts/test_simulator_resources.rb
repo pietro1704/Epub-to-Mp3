@@ -13,8 +13,22 @@ class SimulatorResourcesTest < Minitest::Test
   def test_admission_and_independent_failure_conditions
     assert_nil SimulatorResources.admission(sample, sample)
     { "pressure" => 2, "free_percent" => 39, "swap_mib" => 1025,
-      "swapouts" => 51, "cpu_idle" => 69, "free_bytes" => 19 * 1024**3 }.each do |key, value|
+      "swapouts" => 51, "cpu_idle" => 69 }.each do |key, value|
       refute_nil SimulatorResources.admission(sample.merge(key => value), sample), key
+    end
+  end
+
+  def test_disk_floor_is_inclusive_at_admission_and_enforced_during_monitoring
+    floor = 15 * 1024**3
+    at_floor = sample.merge("free_bytes" => floor)
+    below_floor = sample.merge("free_bytes" => floor - 1)
+    assert_nil SimulatorResources.admission(at_floor, sample)
+    assert_equal "Free disk below 15 GiB", SimulatorResources.admission(below_floor, sample)
+
+    [false, true].each do |observation_only|
+      monitor = SimulatorResources::Monitor.new(at_floor, observation_only: observation_only)
+      assert_nil monitor.check(at_floor, 0)
+      assert_equal "Free disk below 15 GiB", monitor.check(below_floor, 1)
     end
   end
 
