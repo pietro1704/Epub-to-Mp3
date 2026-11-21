@@ -50,6 +50,20 @@ final class MainReaderScreenController: UIViewController {
     /// Loading is a reader-content fact, not duplicated presentation state.
     var isLoadingBookContent: Bool { readerController?.isLoadingBookContent ?? false }
 
+    func presentPlaybackContents(bookID: String, onSelect: @escaping (Int) -> Void,
+                                 presentIn: @escaping (UIViewController) -> Void) -> Bool {
+        guard readerBookID == bookID, let readerController, !readerController.isLoadingBookContent else { return false }
+        readerController.contentsPresentation.presentTOC(onSelect: { [weak self] index in
+            guard let self, self.readerBookID == bookID else { return }
+            if self.player.snapshot?.playableChapters.contains(where: { $0.index == index && $0.downloadUrl != nil }) == true {
+                onSelect(index)
+            } else {
+                self.startListening(presentsFullPlayer: false, requestedChapter: index)
+            }
+        }, presentIn: presentIn)
+        return true
+    }
+
     private var currentBook: BookEntity? {
         guard let id = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               !id.isEmpty else { return nil }

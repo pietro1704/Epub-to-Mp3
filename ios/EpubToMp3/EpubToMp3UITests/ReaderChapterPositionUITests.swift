@@ -2,6 +2,41 @@ import XCTest
 
 @MainActor
 final class ReaderChapterPositionUITests: XCTestCase {
+    func testActualLOTRContentsOffersChapterDownloadAndReturnsToReader() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["-developmentSeedBook", "-uiTestResetActiveReader",
+            "-uiTestReaderLayout", "paginated", "-uiTestPaginationProbe", "-uiTestNoPageTurnOverlay",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        try openBook(app)
+
+        ReaderModesHarness(app: app).activateReaderTool(identifier: "reader.toc.toggle", title: "TOC")
+        let toc = app.tables["reader.toc"]
+        XCTAssertTrue(toc.waitForExistence(timeout: 5))
+        let download = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "reader.toc.download.")
+        ).firstMatch
+        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        XCTAssertTrue(download.isEnabled)
+        let contents = XCTAttachment(screenshot: app.screenshot())
+        contents.name = "LOTR-shared-reader-contents"
+        contents.lifetime = .keepAlways
+        add(contents)
+
+        let row = toc.cells.containing(NSPredicate(format: "label CONTAINS[c] %@", "long-expected")).firstMatch
+        for _ in 0..<5 where !row.isHittable { toc.swipeDown() }
+        XCTAssertTrue(row.exists && row.isHittable)
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5)).tap()
+        XCTAssertTrue(toc.waitForNonExistence(timeout: 5))
+        try waitForReader(app)
+        let harness = ReaderModesHarness(app: app)
+        XCTAssertEqual(harness.paginationMetrics?.page, 1)
+        harness.assertNoClippedLines(scenario: "After opening a chapter from the shared contents")
+    }
+
     func testExistingLOTRTOCPageDirectionsReaderReopenAndProcessRelaunch() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait

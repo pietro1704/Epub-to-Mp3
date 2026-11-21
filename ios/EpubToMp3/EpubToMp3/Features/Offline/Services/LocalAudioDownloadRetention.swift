@@ -19,7 +19,7 @@ extension LocalAudioArtifactStore {
     /// previous file or the complete new one. A chapter that already plays from
     /// its canonical file is protected in place without copying, and audio that
     /// starts later in the chapter never replaces kept audio that covers more of it.
-    func retainDownload(from source: URL, request: DownloadRequest) throws -> Int64 {
+    func retainDownload(from source: URL, request: DownloadRequest, requireVisibleCopy: Bool = false) throws -> Int64 {
         try Task.checkCancellation()
         guard request.chapterIndex >= 0, request.textOffset >= 0 else {
             throw LocalAudioImportFiles.Failure.invalidIdentity
@@ -88,7 +88,11 @@ extension LocalAudioArtifactStore {
         manifest.updatedAt = now
         // Once the file is published, record it before honoring cancellation.
         try files.save(manifest)
-        publishVisibleCopy(bookID: request.bookID, chapterIndex: request.chapterIndex)
+        if requireVisibleCopy {
+            try publishDownloadInFiles(bookID: request.bookID, chapterIndex: request.chapterIndex)
+        } else {
+            publishVisibleCopy(bookID: request.bookID, chapterIndex: request.chapterIndex)
+        }
         return byteCount
     }
 

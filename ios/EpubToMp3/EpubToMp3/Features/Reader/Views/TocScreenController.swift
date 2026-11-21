@@ -22,7 +22,10 @@ final class TocScreenController: UITableViewController {
     private let notificationObservers = TocNotificationObserverBag()
     private var hasScrolledToInitialFocus = false
     private var downloadProgressTask: Task<Void, Never>?
+    private var downloadRefreshTask: Task<Void, Never>?
     private var isVisible = false
+    private let sourceRows: [ReaderTocRow]?
+    private let downloadBookID: String?
 
     init(
         fulltext: EbookFulltext?,
@@ -36,7 +39,9 @@ final class TocScreenController: UITableViewController {
         onCancelDownloads: (() -> Void)?,
         onClearDownloads: (() -> Void)?,
         onRetryFailed: (() -> Void)? = nil,
-        onExport: (() -> Void)? = nil
+        onExport: (() -> Void)? = nil,
+        sourceRows: [ReaderTocRow]? = nil,
+        downloadBookID: String? = nil
     ) {
         self.fulltext = fulltext
         self.snapshot = snapshot
@@ -50,6 +55,8 @@ final class TocScreenController: UITableViewController {
         self.onClearDownloads = onClearDownloads
         self.onRetryFailed = onRetryFailed
         self.onExport = onExport
+        self.sourceRows = sourceRows
+        self.downloadBookID = downloadBookID
         super.init(style: .plain)
         title = L10n.string("player.chapters")
     }
@@ -61,6 +68,7 @@ final class TocScreenController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.accessibilityIdentifier = "reader.toc"
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: L10n.string("player.close"),
@@ -90,7 +98,10 @@ final class TocScreenController: UITableViewController {
         downloadProgressTask = nil
     }
 
-    deinit { downloadProgressTask?.cancel() }
+    deinit {
+        downloadProgressTask?.cancel()
+        downloadRefreshTask?.cancel()
+    }
 
     func update(
         fulltext: EbookFulltext?,
@@ -148,19 +159,30 @@ final class TocScreenController: UITableViewController {
         }
         TocAudioAvailabilityPresentation.configure(
             cell, row: row, isFocused: isFocused, tintColor: view.tintColor,
-            onDownload: onDownload, onRemoveDownload: removeAction
+            onDownload: row.zeroBasedIndex >= 0 ? onDownload : nil, onRemoveDownload: removeAction
         )
         return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard rows.indices.contains(indexPath.row) else { return }
+        guard rows.indices.contains(indexPath.row), rows[indexPath.row].zeroBasedIndex >= 0 else { return }
         onJump(rows[indexPath.row].zeroBasedIndex)
         dismiss(animated: true)
     }
 
     private var rows: [Row] {
+        if let sourceRows {
+            return sourceRows.map { row in
+                let index = row.chapterIndex ?? -1
+                return Row(title: row.title, zeroBasedIndex: index,
+                           charCount: nil, isCurrent: index >= 0 && isCurrent(zeroBasedIndex: index),
+                           audioReady: downloadBookID != nil && index >= 0,
+                           downloaded: locallyDownloaded.contains(index),
+                           artifactState: localArtifactStates[index], schedulerState: nil,
+                           level: row.level)
+            }
+        }
         let usesEmbeddedAudio = false
         let schedulerState: LocalAudioConversionScheduler.WorkState? = nil
         if let fulltext, !fulltext.chapters.isEmpty {
@@ -224,13 +246,21 @@ final class TocScreenController: UITableViewController {
 
     private func refreshDownloaded() {
         let snapshot = snapshot
-        Task { [weak self] in
-            let downloaded = await AudiobookDownloads.shared.downloadedIndices(for: snapshot)
-            guard let self, self.snapshot.jobId == snapshot.jobId else { return }
+        downloadRefreshTask?.cancel()
+        downloadRefreshTask = Task { [weak self] in
+            let downloaded: Set<Int>
+            if let bookID = self?.downloadBookID {
+                downloaded = (try? await LocalAudioArtifactStore.shared.downloadedChapterIndicesInFiles(bookID: bookID)) ?? []
+            } else {
+                downloaded = await AudiobookDownloads.shared.downloadedIndices(for: snapshot)
+            }
+            guard !Task.isCancelled, let self, self.snapshot.jobId == snapshot.jobId else { return }
             self.locallyDownloaded = downloaded
             self.localArtifactStates = [:]
             self.configureMoreMenu()
-            self.tableView.reloadData()
+            if let visibleRows = self.tableView.indexPathsForVisibleRows, !visibleRows.isEmpty {
+                self.tableView.reconfigureRows(at: visibleRows)
+            }
         }
     }
 

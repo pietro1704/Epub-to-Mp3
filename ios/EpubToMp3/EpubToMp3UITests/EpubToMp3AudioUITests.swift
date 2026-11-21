@@ -267,6 +267,11 @@ final class EpubToMp3AudioUITests: XCTestCase {
 
         let tocRows = app.tables["reader.toc"].cells
         XCTAssertTrue(tocRows.firstMatch.waitForExistence(timeout: 5), "TOC must expose chapter rows.")
+        let chapterDownload = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "reader.toc.download.")
+        ).firstMatch
+        XCTAssertTrue(chapterDownload.waitForExistence(timeout: 5))
+        XCTAssertTrue(chapterDownload.isEnabled, "A chapter can be downloaded before playback starts.")
         tocRows.firstMatch.tap()
 
         XCTAssertTrue(readerChrome.waitForExistence(timeout: 10), "TOC jump must return to the reader.")

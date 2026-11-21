@@ -43,6 +43,26 @@ final class LocalAudioDownloadRetentionTests: XCTestCase {
         return Fixture(root: root, storeRoot: storeRoot, store: LocalAudioArtifactStore(root: storeRoot))
     }
 
+    func testExplicitFilesCopyFailureSurfacesWithoutLosingTheKeptAudio() async throws {
+        let fixture = try fixture()
+        let bytes = Data(repeating: 7, count: 64)
+        let source = try fixture.source("source.mp3", bytes)
+        let blockedMirror = try fixture.source("files-root", Data([1]))
+        let store = LocalAudioArtifactStore(root: fixture.storeRoot,
+            visibleCopies: DownloadedAudioFilesMirror(root: blockedMirror))
+        do {
+            _ = try await store.retainDownload(from: source, request: fixture.request(3), requireVisibleCopy: true)
+            XCTFail("An explicit Files copy should report its failure")
+        } catch {
+            XCTAssertEqual(try Data(contentsOf: fixture.canonical(3)), bytes)
+            XCTAssertEqual(try Data(contentsOf: blockedMirror), Data([1]))
+            let kept = try await store.downloadedChapterIndices(bookID: "book")
+            let published = try await store.downloadedChapterIndicesInFiles(bookID: "book")
+            XCTAssertEqual(kept, [3])
+            XCTAssertTrue(published.isEmpty, "The chapter must still offer a Files download retry.")
+        }
+    }
+
     func testDownloadKeepsACopyUnderTheBookAndASecondRequestChangesNothing() async throws {
         let fixture = try fixture()
         let bytes = Data(repeating: 7, count: 64)
@@ -177,6 +197,8 @@ final class LocalAudioDownloadRetentionTests: XCTestCase {
         XCTAssertEqual(visible("Book"), ["01 - Opening.mp3", "02 - Second.mp3"])
         let kept = try await store.downloadedChapterIndices(bookID: "book")
         XCTAssertEqual(kept, [0, 1, 2])
+        let published = try await store.downloadedChapterIndicesInFiles(bookID: "book")
+        XCTAssertEqual(published, [0, 1])
 
         try await store.releaseDownload(bookID: "book", chapterIndex: 0, playbackSource: converted)
         XCTAssertEqual(visible("Book"), ["02 - Second.mp3"])

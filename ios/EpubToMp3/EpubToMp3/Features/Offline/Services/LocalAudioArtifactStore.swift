@@ -26,17 +26,44 @@ actor LocalAudioArtifactStore {
     /// Shows a protected chapter in the listener's files. The store is already
     /// consistent when this runs, so a failure here never fails the Download.
     func publishVisibleCopy(bookID: String, chapterIndex: Int) {
-        guard let visibleCopies, let manifest = try? files.loadManifest(bookID: bookID),
-              let artifact = manifest.chapters.first(where: { $0.index == chapterIndex }),
-              artifact.state == .available, artifact.retention == .downloaded,
-              files.hasAudioFile(bookID: bookID, artifact: artifact) else { return }
         do {
-            try visibleCopies.publish(
-                files.bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath),
-                bookID: bookID, bookTitle: manifest.bookTitle,
-                chapterIndex: chapterIndex, chapterTitle: artifact.title)
+            try publishDownloadInFiles(bookID: bookID, chapterIndex: chapterIndex)
         } catch {
             NSLog("Visible download copy failed: %@", error.localizedDescription)
+        }
+    }
+
+    func publishDownloadInFiles(bookID: String, chapterIndex: Int) throws {
+        guard let visibleCopies else { return }
+        guard let manifest = try validatedManifest(bookID: bookID),
+              let artifact = manifest.chapters.first(where: { $0.index == chapterIndex }),
+              artifact.state == .available, artifact.retention == .downloaded,
+              files.hasAudioFile(bookID: bookID, artifact: artifact) else { throw CocoaError(.fileNoSuchFile) }
+        try visibleCopies.publish(
+            files.bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath),
+            bookID: bookID, bookTitle: manifest.bookTitle,
+            chapterIndex: chapterIndex, chapterTitle: artifact.title)
+        // The manifest can change before its visible copy is ready.
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil, userInfo: ["bookID": bookID])
+    }
+
+    func downloadedChapterIndicesInFiles(bookID: String) throws -> Set<Int> {
+        guard let visibleCopies else { return [] }
+        return try downloadedChapterIndices(bookID: bookID)
+            .intersection(visibleCopies.publishedChapterIndices(bookID: bookID))
+    }
+
+    /// Clears owned Files copies only while their protected audio remains available.
+    func withdrawDownloadsFromFiles(bookID: String, chapterIndex: Int?) throws {
+        guard let visibleCopies else { return }
+        let published = try downloadedChapterIndicesInFiles(bookID: bookID)
+        let chapters = chapterIndex.map { published.intersection([$0]) } ?? published
+        guard !chapters.isEmpty else { return }
+        defer {
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil, userInfo: ["bookID": bookID])
+        }
+        for chapter in chapters.sorted() {
+            try visibleCopies.withdraw(bookID: bookID, chapterIndex: chapter)
         }
     }
 
