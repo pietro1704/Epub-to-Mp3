@@ -74,14 +74,14 @@ Future<File> fixture(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
-    'native decoder keeps reading when chapter synthesis pauses for ten seconds',
+    'native decoder keeps reading across a 21.5 second chapter synthesis gap',
     () async {
       if (Platform.isWindows) {
         initializeDesktopAudioBackend(TargetPlatform.windows);
       } else {
-        // Exercise the same libmpv option on Linux, which otherwise uses 5 s.
+        // Exercise the Windows network timeout on the host decoder.
         JustAudioMediaKit.ensureInitialized(
-          networkTimeout: const Duration(seconds: 20),
+          networkTimeout: const Duration(seconds: 60),
         );
       }
       final directory = await Directory.systemTemp.createTemp('epub-slow-');
@@ -111,9 +111,16 @@ void main() {
       await player.setSpeed(2);
       final playback = player.play();
       await source.firstRequest.future.timeout(const Duration(seconds: 10));
-      final deliveryDelay = Future<void>.delayed(const Duration(seconds: 10));
+      final deliveryDelay = Future<void>.delayed(
+        const Duration(milliseconds: 21500),
+      );
       await eventually(() => player.isPlaying && player.positionSeconds > 0.2);
       await deliveryDelay;
+      expect(source.isComplete, isFalse);
+      expect(
+        player.phase,
+        isNot(anyOf(PlaybackPhase.completed, PlaybackPhase.failed)),
+      );
       await source.append(1, chunk.path);
       source.complete();
       await eventually(
@@ -123,6 +130,7 @@ void main() {
       await player.pause();
       await playback;
     },
+    timeout: const Timeout(Duration(seconds: 60)),
     skip:
         !(Platform.isLinux || Platform.isWindows) ||
         !const bool.fromEnvironment('EPUB2MP3_NATIVE_DECODER'),

@@ -10,9 +10,10 @@ void initializeDesktopAudioBackend(TargetPlatform platform) {
     JustAudioMediaKit.ensureInitialized(
       linux: platform == TargetPlatform.linux,
       windows: platform == TargetPlatform.windows,
-      // A local chapter stream can wait for the next synthesized MP3 chunk.
+      // Leave time for Piper to publish a slow chunk. A closed stream still
+      // returns EOF immediately after its buffered audio is read.
       networkTimeout: platform == TargetPlatform.windows
-          ? const Duration(seconds: 20)
+          ? const Duration(seconds: 60)
           : null,
     );
   }
