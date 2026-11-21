@@ -377,8 +377,8 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
         return true
     }
 
-    private lazy var contentsPresentation: ReaderContentsPresentation = ReaderContentsPresentation(
-        document: document, composition: composition, settings: settings, player: player,
+    private(set) lazy var contentsPresentation: ReaderContentsPresentation = ReaderContentsPresentation(
+        document: document, composition: composition, library: library, settings: settings, player: player,
         readingPosition: readingPosition, textPresentation: textPresentation,
         present: { [weak self] in self?.present($0, animated: true) }
     )

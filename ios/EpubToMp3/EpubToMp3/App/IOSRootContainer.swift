@@ -287,6 +287,9 @@ final class IOSRootContainerController: UIViewController {
                 self?.readerController.startListeningFromMiniPlayer()
             }
         )
+        controller.onPresentReaderContents = { [weak self] bookID, select, present in
+            self?.readerController.presentPlaybackContents(bookID: bookID, onSelect: select, presentIn: present) ?? false
+        }
         fullPlayerController = controller
         embed(controller)
         controller.view.translatesAutoresizingMaskIntoConstraints = false

@@ -13,6 +13,7 @@ final class FullPlayerScreenController: UIViewController {
     private let playerPresentation: PlayerPresentation
     private let settings: AppSettings
     private let onStartListening: () -> Void
+    var onPresentReaderContents: ((String, @escaping (Int) -> Void, @escaping (UIViewController) -> Void) -> Bool)?
     private let content = FullPlayerContent()
     private lazy var overlayTransition = PlayerOverlayTransition(view: view, style: .sheet)
     private lazy var dismissInteraction = FullPlayerDismissInteraction(
@@ -305,23 +306,45 @@ final class FullPlayerScreenController: UIViewController {
 
     @objc
     private func tocTapped() {
+        Task { [weak self] in await self?.presentPlaybackContents() }
+    }
+
+    private func presentPlaybackContents() async {
         guard let snapshot = player.snapshot else { return }
-        let fulltext = currentBookID.flatMap { LocalFulltextCache.read(bookId: $0) }
+        let owner = await RetainedAudioOwner.resolve(snapshot)
+        guard player.snapshot?.jobId == snapshot.jobId, presentedViewController == nil,
+              viewIfLoaded?.window != nil else { return }
         let playableChapters = snapshot.playableChapters
         let playingEpubIndex = playableChapters.indices.contains(player.currentChapterIndex)
             ? playableChapters[player.currentChapterIndex].index
             : -1
+        let select: (Int) -> Void = { [weak self] index in
+            guard let self, self.player.snapshot?.jobId == snapshot.jobId,
+                  let playable = playableChapters.firstIndex(where: { $0.index == index }) else { return }
+            self.player.play(snapshot: snapshot, startingAt: playable)
+        }
+        if let owner, owner.indexBase == 0, let bookID = currentBookID, owner.bookID == bookID,
+           let book = library.books.first(where: { $0.id == bookID }) {
+            if onPresentReaderContents?(bookID, select, { [weak self] in self?.present($0, animated: true) }) == true {
+                return
+            }
+            if let fulltext = LocalFulltextCache.read(bookId: bookID) {
+                let rows = ReaderContentsPresentation.sourceRows(
+                    ReaderTocFlattener.rows(toc: fulltext.toc, chapters: fulltext.chapters), fulltext: fulltext)
+                let sheet = ReaderContentsPresentation.makeSheet(book: book, rows: rows, library: library,
+                    settings: settings, snapshot: snapshot, playingIndex: playingEpubIndex,
+                    readingIndex: nil, onSelect: select)
+                present(sheet, animated: true)
+                return
+            }
+        }
         let controller = UINavigationController(
             rootViewController: TocScreenController(
-                fulltext: fulltext,
+                fulltext: nil,
                 snapshot: snapshot,
                 currentChapterIndex: playingEpubIndex,
                 readingChapterIndex: nil,
-                onJump: { [weak self] epubIndex in
-                    guard let self,
-                          let playable = playableChapters.firstIndex(where: { $0.index == epubIndex }) else { return }
-                    self.player.play(snapshot: snapshot, startingAt: playable)
-                },
+                onJump: select,
                 onDownload: { [weak self] chapterIndex in
                     guard let self else { return }
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)

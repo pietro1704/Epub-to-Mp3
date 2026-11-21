@@ -12,6 +12,7 @@ enum TocAudioAvailabilityPresentation {
         let downloaded: Bool
         let artifactState: LocalAudioArtifactStore.ArtifactState?
         let schedulerState: LocalAudioConversionScheduler.WorkState?
+        var level: Int = 0
     }
 
     static func configure(_ cell: UITableViewCell, row: Row, isFocused: Bool, tintColor: UIColor,
@@ -32,7 +33,7 @@ enum TocAudioAvailabilityPresentation {
         ),
                   let status = TocChapterPresentation.schedulerStatusText(for: row.schedulerState) {
             secondary.append(status)
-        } else if !row.audioReady {
+        } else if !row.audioReady && row.zeroBasedIndex >= 0 {
             secondary.append(L10n.string("toc.textOnly"))
         }
         content.secondaryText = secondary.joined(separator: " · ")
@@ -41,13 +42,14 @@ enum TocAudioAvailabilityPresentation {
         content.textProperties.color = isFocused ? tintColor : .label
         content.secondaryTextProperties.color = isFocused ? tintColor : .secondaryLabel
         cell.contentConfiguration = content
+        cell.indentationLevel = row.level
         var background = UIBackgroundConfiguration.listPlainCell()
         background.backgroundColor = isFocused ? tintColor.withAlphaComponent(0.12) : .clear
         cell.backgroundConfiguration = background
         cell.accessoryType = row.isCurrent ? .checkmark : .none
         cell.accessoryView = makeAccessoryView(for: row, onDownload: onDownload, onRemoveDownload: onRemoveDownload)
         cell.accessibilityLabel = row.title
-        cell.accessibilityValue = row.downloaded
+        cell.accessibilityValue = row.zeroBasedIndex < 0 ? nil : row.downloaded
             ? L10n.string("toc.downloaded")
             : (TocChapterPresentation.artifactStatusText(for: row.artifactState)
                 ?? (TocChapterPresentation.usesSchedulerStatus(
@@ -57,7 +59,7 @@ enum TocAudioAvailabilityPresentation {
                 ?? (row.audioReady ? L10n.string("player.downloadChapter") : L10n.string("toc.textOnly")))
         cell.selectionStyle = .default
         cell.isUserInteractionEnabled = true
-        cell.accessibilityTraits = row.isCurrent ? [.button, .selected] : .button
+        cell.accessibilityTraits = row.zeroBasedIndex < 0 ? .header : (row.isCurrent ? [.button, .selected] : .button)
     }
 
     static func makeAccessoryView(for row: Row, onDownload: ((Int) -> Void)?, onRemoveDownload: ((Int, String) -> Void)?) -> UIView? {

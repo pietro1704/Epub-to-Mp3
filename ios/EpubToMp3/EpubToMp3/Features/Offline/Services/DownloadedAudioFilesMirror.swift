@@ -88,6 +88,19 @@ struct DownloadedAudioFilesMirror: Sendable {
         }
     }
 
+    func publishedChapterIndices(bookID: String) -> Set<Int> {
+        guard let folder = try? existingFolder(bookID: bookID),
+              let index = loadIndex(in: folder, bookID: bookID) else { return [] }
+        return Set(index.files.compactMap { entry in
+            guard let chapter = Int(entry.key), Self.isComponent(entry.value),
+                  let values = try? folder.appendingPathComponent(entry.value).resourceValues(
+                    forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+                  values.isRegularFile == true, values.isSymbolicLink != true,
+                  (values.fileSize ?? 0) > 0 else { return nil }
+            return chapter
+        })
+    }
+
     /// Removes the copy of one chapter, and the book folder once nothing is left in it.
     func withdraw(bookID: String, chapterIndex: Int) throws {
         guard let folder = try existingFolder(bookID: bookID),
