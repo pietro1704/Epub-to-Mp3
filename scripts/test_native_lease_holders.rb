@@ -303,21 +303,34 @@ class NativeLeaseHoldersTest < Minitest::Test
       NativeJob.publish(handle, long)
       reads = 0
       missing = 0
+      # Keep both threads active in each batch without depending on how many
+      # writes the scheduler allows before the reader finishes.
+      read_batch_started = Queue.new
+      write_batch_finished = Queue.new
       reader = Thread.new do
-        while reads < 3000
-          missing += 1 unless NativeJob.holder(ARGV[0])&.fetch("pid") == Process.pid
-          reads += 1
+        30.times do
+          read_batch_started << true
+          100.times do
+            missing += 1 unless NativeJob.holder(ARGV[0])&.fetch("pid") == Process.pid
+            reads += 1
+          end
+          write_batch_finished.pop
         end
       end
       turn = 0
-      NativeJob.publish(handle, (turn += 1).even? ? short : long) while reader.alive?
+      30.times do
+        read_batch_started.pop
+        10.times { NativeJob.publish(handle, (turn += 1).even? ? short : long) }
+        write_batch_finished << true
+      end
+      reader.value
       NativeJob.publish(handle, nil)
       print JSON.generate("reads" => reads, "rewrites" => turn, "missing" => missing, "left" => File.read(ARGV[0]))
     RUBY
     output, error, status = finished(RUBY, "-r", SCRIPT, "-e", rewriting, @lock)
     assert status.success?, error
     seen = JSON.parse(output)
-    assert_operator seen["rewrites"], :>, 100, "the record was not being rewritten while it was read"
+    assert_equal [3000, 300], seen.values_at("reads", "rewrites")
     assert_equal [0, ""], seen.values_at("missing", "left"),
                  "#{seen['missing']} of #{seen['reads']} reads found no holder during #{seen['rewrites']} rewrites"
   end
