@@ -17,6 +17,7 @@ analyzer:
     - android/**
     - windows/**
     - linux/**
+    - vendor/**
 
 linter:
   rules:
