@@ -5,6 +5,7 @@ import '../models/tts_catalog.dart';
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -292,7 +293,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   leading: Icon(Icons.info_outline, color: cs.onSurfaceVariant),
                   title: Text(t.platformLabel),
                   trailing: Text(
-                    t.platformAndroid,
+                    kIsWeb
+                        ? 'Web'
+                        : switch (defaultTargetPlatform) {
+                            TargetPlatform.android => t.platformAndroid,
+                            TargetPlatform.fuchsia => 'Fuchsia',
+                            TargetPlatform.iOS => 'iOS',
+                            TargetPlatform.linux => 'Linux',
+                            TargetPlatform.macOS => 'macOS',
+                            TargetPlatform.windows => 'Windows',
+                          },
                     style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                   ),
                 ),
