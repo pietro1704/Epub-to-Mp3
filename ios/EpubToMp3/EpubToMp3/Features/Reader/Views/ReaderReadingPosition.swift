@@ -14,13 +14,15 @@ final class ReaderReadingPosition {
     enum Event {
         case requestTextLayoutRefresh, updatePaginationProbe, updatePageIndicator
         case updateTextHeightForCurrentLayout
-        case prepareProjection(Int)
+        case prepareProjection(Int), showChapter(Int)
     }
     private let document: ReaderBookDocument
     private let composition: ReaderViewComposition
     private let facts: () -> Facts
     private let send: (Event) -> Void
     let playback: ReaderPlaybackPosition
+    private var pendingPlaybackLocation: ReaderPlaybackLocation?
+    private var scheduledInitialRestore: UUID?
 
     init(document: ReaderBookDocument, composition: ReaderViewComposition,
          facts: @escaping () -> Facts, send: @escaping (Event) -> Void) {
@@ -64,6 +66,44 @@ final class ReaderReadingPosition {
     /// viewport resize. Serializing input avoids splitting TextKit lines.
     private(set) var isViewportTransitioning = false
     func forgetViewportOffsets() { rememberedViewportOffsets.removeAll() }
+
+    func revealPlaybackLocation(_ location: ReaderPlaybackLocation) {
+        pendingPlaybackLocation = nil
+        if let pdf = composition.contentSurface.pdfPresentation {
+            pdf.revealPlaybackLocation(location)
+            return
+        }
+        let chapter: EbookFulltext.Chapter
+        if let chapters = document.fulltext?.chapters {
+            guard let index = chapters.firstIndex(where: { $0.zeroBasedEpubIndex == location.chapterIndex }) else { return }
+            scheduledInitialRestore = nil
+            chapter = chapters[index]
+            if document.selectedChapter != index {
+                persistReadingProgress()
+                document.selectedChapter = index
+                send(.showChapter(index))
+            }
+        } else if let prepared = document.activePreparedChapter?.chapter,
+                  prepared.zeroBasedEpubIndex == location.chapterIndex {
+            chapter = prepared
+        } else {
+            pendingPlaybackLocation = location
+            return
+        }
+        composition.view.layoutIfNeeded()
+        let offset = location.characterOffset(chapterText: chapter.text, renderedText: composition.textView.text)
+        restoreReadingAnchor(.init(offsetFraction: 0, characterOffset: offset))
+        send(.updatePageIndicator)
+        persistReadingProgress()
+    }
+
+    func cancelPendingPlaybackLocation() { pendingPlaybackLocation = nil }
+
+    func revealPendingPlaybackLocation() {
+        guard let location = pendingPlaybackLocation, document.fulltext != nil else { return }
+        pendingPlaybackLocation = nil
+        revealPlaybackLocation(location)
+    }
 
     func persistReadingProgress() {
         if let pdf = composition.contentSurface.pdfPresentation { pdf.persistPosition(); return }
@@ -291,8 +331,13 @@ final class ReaderReadingPosition {
         guard !document.hasRestoredInitialPosition else { return }
         document.hasRestoredInitialPosition = true
         guard let entry = ReaderProgressStore.read(bookId: document.book.id) else { return }
+        let generation = document.loadGenerationID
+        let restore = UUID()
+        scheduledInitialRestore = restore
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.scheduledInitialRestore == restore,
+                  self.document.loadGenerationID == generation else { return }
+            self.scheduledInitialRestore = nil
             self.restoreReadingAnchor(
                 ReadingAnchor(offsetFraction: CGFloat(entry.offsetFraction), characterOffset: entry.characterOffset)
             )

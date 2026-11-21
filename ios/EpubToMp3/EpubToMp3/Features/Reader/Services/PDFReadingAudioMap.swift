@@ -70,6 +70,19 @@ struct PDFReadingAudioMap: Sendable {
         return nil
     }
 
+    func displayLocation(chapter: Int, character: Int) -> (page: Int, character: Int)? {
+        // Estimated offsets may land on whitespace or punctuation, which the
+        // alignment skips. Continue from the next mapped glyph in the chapter.
+        var lastLocation: (page: Int, character: Int)?
+        for (index, page) in pages.sorted(by: { $0.key < $1.key }) where page.chapterIndex == chapter {
+            if let next = page.chapterOffsets.firstIndex(where: { $0 >= character }) {
+                return (index, page.displayOffsets[next])
+            }
+            if let last = page.displayOffsets.last { lastLocation = (index, last) }
+        }
+        return lastLocation
+    }
+
     private static func normalized(_ text: String) -> (text: NSString, offsets: [Int], scalarOffsets: [Int]) {
         var result = "", offsets: [Int] = [], scalarOffsets: [Int] = [], offset = 0, scalarOffset = 0
         for scalar in text.unicodeScalars {

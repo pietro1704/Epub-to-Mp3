@@ -86,6 +86,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         case .completeLoading: loadingSession.completeLoadingAfterStableTextLayoutIfNeeded()
         case let .finishLoading(id): finishLoadingAfterStableTextLayout(id)
         case let .publishTitles(payload): publishReaderChapterTitles(payload)
+        case .catalogReadyForNavigation: readingPosition.revealPendingPlaybackLocation()
         case let .error(message): showLoadingError(message)
         }
     }
@@ -124,6 +125,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             forReaderPosition: document.selectedChapter,
             in: document.fulltext?.chapters ?? []
         ) ?? document.activePreparedChapter?.chapter.zeroBasedEpubIndex ?? document.selectedChapter
+    }
+
+    func revealPlaybackLocation(_ location: ReaderPlaybackLocation) {
+        readingPosition.revealPlaybackLocation(location)
     }
 
     /// Source metadata lets streamed playback navigate before audio is ready.
@@ -230,6 +235,7 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
 
     func update(book incomingBook: BookEntity) {
         reimportRequestID = UUID()
+        readingPosition.cancelPendingPlaybackLocation()
         document.book = incomingBook
         document.hasRestoredInitialPosition = false
         loadBook()
@@ -281,6 +287,7 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
             case .requestTextLayoutRefresh: textPresentation.requestTextLayoutRefresh()
             case .updatePaginationProbe: updatePaginationProbe()
             case .updatePageIndicator: textPresentation.updatePageIndicator()
+            case let .showChapter(index): showChapter(index)
             case .updateTextHeightForCurrentLayout: textPresentation.updateTextHeightForCurrentLayout()
             case let .prepareProjection(ordinal): preparedPresentation.prepareChapterProjection(ordinal: ordinal)
             }

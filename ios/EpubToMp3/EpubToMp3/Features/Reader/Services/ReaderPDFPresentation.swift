@@ -250,6 +250,27 @@ final class ReaderPDFPresentation {
         publishPosition()
     }
 
+    func revealPlaybackLocation(_ location: ReaderPlaybackLocation) {
+        let index = location.chapterIndex
+        guard let map = audioMap, map.chapters.indices.contains(index) else { return }
+        let text = map.chapters[index].text
+        let offset = location.characterOffset(chapterText: text, renderedText: text)
+        guard let match = map.displayLocation(chapter: index, character: offset),
+              let page = view.document?.page(at: match.page) else {
+            goToChapter(index)
+            return
+        }
+        if !view.isUsingPageViewController,
+           let text = page.string, match.character < text.utf16.count,
+           let selection = page.selection(for: (text as NSString).rangeOfComposedCharacterSequence(at: match.character)) {
+            let bounds = selection.bounds(for: page)
+            view.go(to: PDFDestination(page: page, at: CGPoint(x: bounds.minX, y: bounds.maxY)))
+        } else {
+            view.go(to: page)
+        }
+        publishPosition()
+    }
+
     func promptSearch() {
         guard let controller = presenter(), controller.presentedViewController == nil else { return }
         let alert = UIAlertController(title: L10n.string("reader.search.placeholder"), message: nil, preferredStyle: .alert)

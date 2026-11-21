@@ -15,6 +15,7 @@ final class IOSRootContainerController: UIViewController {
     private let readerController: MainReaderScreenController
     private let miniPlayerController: MiniPlayerContainerController
     private var fullPlayerController: FullPlayerScreenController?
+    private var openReaderAtPlaybackTask: Task<Void, Never>?
 
     private var cancellables: Set<AnyCancellable> = []
     private var presentedErrorMessage: String?
@@ -290,6 +291,15 @@ final class IOSRootContainerController: UIViewController {
         controller.onPresentReaderContents = { [weak self] bookID, select, present in
             self?.readerController.presentPlaybackContents(bookID: bookID, onSelect: select, presentIn: present) ?? false
         }
+        controller.onOpenReaderAtPlayback = { [weak self] bookID in
+            guard let self else { return }
+            self.openReaderAtPlaybackTask?.cancel()
+            self.openReaderAtPlaybackTask = Task { [weak self] in
+                guard let self, await self.readerController.openAtPlayback(bookID: bookID) else { return }
+                self.playerPresentation.dismissFullPlayer()
+                self.refreshOverlayState()
+            }
+        }
         fullPlayerController = controller
         embed(controller)
         controller.view.translatesAutoresizingMaskIntoConstraints = false
@@ -432,6 +442,9 @@ final class IOSRootContainerController: UIViewController {
             }
             .store(in: &cancellables)
         playerPresentation.$showingFullPlayer
+            .handleEvents(receiveOutput: { [weak self] isPresented in
+                if !isPresented { self?.openReaderAtPlaybackTask?.cancel() }
+            })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshOverlayState() }
             .store(in: &cancellables)

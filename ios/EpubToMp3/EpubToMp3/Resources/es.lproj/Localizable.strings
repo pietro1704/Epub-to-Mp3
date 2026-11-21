@@ -157,6 +157,7 @@
 "player.chapter" = "Capítulo %d";
 "player.chapterOf" = "Capítulo %1$d de %2$d";
 "player.chapters" = "Capítulos";
+"player.openReaderAtPlayback" = "Abrir el lector en la posición de reproducción";
 
 /* Diálogo de divergencia al pulsar play (lector en un capítulo distinto al audio) */
 "player.divergence.title" = "¿Continuar desde dónde?";

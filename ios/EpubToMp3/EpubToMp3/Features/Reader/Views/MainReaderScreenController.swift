@@ -43,6 +43,7 @@ final class MainReaderScreenController: UIViewController {
     private var appearanceCancellable: AnyCancellable?
     private var readerController: BookOpenScreenController?
     private var readerBookID: String?
+    private var playbackLocationRequest: (bookID: String, location: ReaderPlaybackLocation, generation: UUID)?
     private var openingReaderBookID: String?
     private var needsRenderAfterReaderOpen = false
     private var readerTopToNavigation: NSLayoutConstraint!
@@ -62,6 +63,45 @@ final class MainReaderScreenController: UIViewController {
             }
         }, presentIn: presentIn)
         return true
+    }
+
+    func openAtPlayback(bookID: String) async -> Bool {
+        guard library.books.contains(where: { $0.id == bookID }),
+              sessionDefaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == bookID,
+              let location = ReaderPlaybackLocation(player: player) else { return false }
+        let generation = player.remotePlaybackGeneration
+        let snapshot = player.snapshot
+        let isSpeech = player.isUsingSpeechFallback
+        let readingBookID = currentBook?.id
+        if isSpeech {
+            guard player.isPlaybackForReaderBook(bookID) else { return false }
+        } else {
+            guard let snapshot else { return false }
+            if !listeningSession.ownsPlaybackJob(snapshot.jobId, for: bookID) {
+                guard await RetainedAudioOwner.resolve(snapshot)?.bookID == bookID else { return false }
+            }
+        }
+        guard !Task.isCancelled, playerPresentation.showingFullPlayer,
+              generation == player.remotePlaybackGeneration, snapshot?.jobId == player.snapshot?.jobId,
+              isSpeech == player.isUsingSpeechFallback, currentBook?.id == readingBookID,
+              sessionDefaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey) == bookID,
+              library.books.contains(where: { $0.id == bookID }) else { return false }
+        playbackLocationRequest = (bookID, location, generation)
+        ReaderSessionState.setCurrentlyReading(bookID: bookID, defaults: sessionDefaults)
+        render()
+        applyPlaybackLocationIfReady()
+        return true
+    }
+
+    private func applyPlaybackLocationIfReady() {
+        guard let request = playbackLocationRequest else { return }
+        guard currentBook?.id == request.bookID, request.generation == player.remotePlaybackGeneration else {
+            playbackLocationRequest = nil
+            return
+        }
+        guard readerBookID == request.bookID, let readerController, !readerController.isLoadingBookContent else { return }
+        playbackLocationRequest = nil
+        readerController.revealPlaybackLocation(request.location)
     }
 
     private var currentBook: BookEntity? {
@@ -258,6 +298,7 @@ final class MainReaderScreenController: UIViewController {
             guard let self else { return }
             self.emptyPresentation.listenButton.isHidden = self.currentBook == nil || isLoading
             self.onReaderLoadingChanged?(isLoading)
+            if !isLoading { self.applyPlaybackLocationIfReady() }
         }
         reader.onPlaybackChapterEstimates = { [weak self] estimates in
             self?.listeningSession.updateChapterEstimates(estimates, for: book.id)
@@ -291,10 +332,12 @@ final class MainReaderScreenController: UIViewController {
         readerController = reader
         readerBookID = book.id
         readerNavigation.readerNavigationItem.rightBarButtonItems = reader.navigationBarButtonItems
-        PlaybackBindingStore.setCurrentlyPlaying(
-            bookID: book.id,
-            chapterIndex: ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
-        )
+        if playbackLocationRequest?.bookID != book.id {
+            PlaybackBindingStore.setCurrentlyPlaying(
+                bookID: book.id,
+                chapterIndex: ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
+            )
+        }
 
         // Do not mutate the library while rendering. `library.update` emits
         // `objectWillChange`, which calls `render()` again; updating

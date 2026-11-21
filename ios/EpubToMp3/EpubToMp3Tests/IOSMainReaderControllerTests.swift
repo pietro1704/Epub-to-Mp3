@@ -5,6 +5,40 @@ import XCTest
 
 @MainActor
 final class IOSMainReaderControllerTests: XCTestCase {
+    func testCoverCannotReplaceTheReaderWithAnUnboundOrMissingBook() async throws {
+        let suite = "main-reader-cover-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let book = BookEntity(id: "existing", title: "Existing", bookmark: Data(),
+                              displayFilename: "existing.epub", addedAt: Date())
+        defaults.set(try JSONEncoder().encode([book]), forKey: "library")
+        ReaderSessionState.setCurrentlyReading(bookID: "previous-reader", defaults: defaults)
+        let player = AudioPlayer()
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data("""
+            {"jobId":"embedded-another-book","state":"finished","chapterIndexBase":0,"chapterProgress":[
+                {"index":0,"status":"completed","downloadUrl":"file:///tmp/cover.mp3"}]}
+            """.utf8))
+        player.setSnapshot(snapshot)
+        player.services.observation.publishCurrentChapter()
+        let presentation = PlayerPresentation(defaults: defaults)
+        presentation.showFullPlayer()
+        let reader = MainReaderScreenController(library: LibraryStore(defaults: defaults, defaultsKey: "library"),
+            settings: AppSettings(defaults: defaults), player: player,
+            playerPresentation: presentation,
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+            onBrowseLibrary: nil, sessionDefaults: defaults)
+
+        defaults.set("removed-book", forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let missingBookOpened = await reader.openAtPlayback(bookID: "removed-book")
+        let unboundBookOpened = await reader.openAtPlayback(bookID: book.id)
+        defaults.set(book.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let wrongOwnerOpened = await reader.openAtPlayback(bookID: book.id)
+        XCTAssertFalse(missingBookOpened)
+        XCTAssertFalse(unboundBookOpened)
+        XCTAssertFalse(wrongOwnerOpened)
+        XCTAssertEqual(defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey), "previous-reader")
+    }
+
     func testClosingReaderOverridesARegisteredFallbackBookID() throws {
         let suiteName = "main-reader-close-fallback-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

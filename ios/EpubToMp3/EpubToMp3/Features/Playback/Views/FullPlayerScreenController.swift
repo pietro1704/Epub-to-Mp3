@@ -14,6 +14,7 @@ final class FullPlayerScreenController: UIViewController {
     private let settings: AppSettings
     private let onStartListening: () -> Void
     var onPresentReaderContents: ((String, @escaping (Int) -> Void, @escaping (UIViewController) -> Void) -> Bool)?
+    var onOpenReaderAtPlayback: ((String) -> Void)?
     private let content = FullPlayerContent()
     private lazy var overlayTransition = PlayerOverlayTransition(view: view, style: .sheet)
     private lazy var dismissInteraction = FullPlayerDismissInteraction(
@@ -69,7 +70,8 @@ final class FullPlayerScreenController: UIViewController {
             playPauseTapped: #selector(playPauseTapped),
             skipForwardTapped: #selector(skipForwardTapped),
             nextChapterTapped: #selector(nextChapterTapped),
-            tocTapped: #selector(tocTapped)
+            tocTapped: #selector(tocTapped),
+            coverTapped: #selector(coverTapped)
         ), traits: traitCollection)
         bind()
         render()
@@ -117,6 +119,7 @@ final class FullPlayerScreenController: UIViewController {
         let currentBook = currentBookID.flatMap { id in
             library.books.first(where: { $0.id == id })
         }
+        content.coverButton.isEnabled = currentBook != nil && (player.snapshot != nil || player.isUsingSpeechFallback)
 
         content.titleLabel.text = currentBook?.resolvedTitle ?? (player.snapshot?.bookTitle ?? L10n.string("player.audiobookFallback"))
         content.authorLabel.text = currentBook?.author
@@ -249,7 +252,7 @@ final class FullPlayerScreenController: UIViewController {
         [
             content.slider, content.volumeView, content.airPlayContainer,
             content.previousChapterButton, content.skipBackButton, content.playPauseButton, content.skipForwardButton, content.nextChapterButton,
-            content.rateButton, content.tocButton, content.sleepButton,
+            content.rateButton, content.tocButton, content.sleepButton, content.coverButton,
         ]
     }
 
@@ -302,6 +305,12 @@ final class FullPlayerScreenController: UIViewController {
         isScrubbing = false
         player.seek(to: TimeInterval(content.slider.value))
         render()
+    }
+
+    @objc
+    private func coverTapped() {
+        guard content.coverButton.isEnabled, let bookID = currentBookID else { return }
+        onOpenReaderAtPlayback?(bookID)
     }
 
     @objc
