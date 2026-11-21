@@ -57,6 +57,11 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     }
 
 #if os(macOS)
+    convenience init(library: LibraryStore, sessionDefaults: UserDefaults, rootController: MacAppKitRootController) {
+        self.init(library: library, sessionDefaults: sessionDefaults)
+        self.rootController = rootController
+    }
+
     // AppKit uses the explicit main.swift bootstrap. Retain the delegate before
     // entering the application loop so it remains alive for the full session.
     private static var macOSDelegate: EpubToMp3App?
@@ -339,6 +344,9 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
                 // A superseded request still imports durably; only navigation
                 // depends on the reader and incoming request remaining current.
                 ReaderSessionState.setCurrentlyReading(bookID: book.id, defaults: sessionDefaults)
+#if os(macOS)
+                rootController?.showReader(bookID: book.id)
+#endif
             }
         }
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),

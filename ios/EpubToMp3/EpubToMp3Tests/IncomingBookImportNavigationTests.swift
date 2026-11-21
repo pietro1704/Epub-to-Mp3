@@ -1,3 +1,6 @@
+#if os(macOS)
+import AppKit
+#endif
 import XCTest
 @testable import EpubToMp3
 
@@ -203,6 +206,62 @@ final class IncomingBookImportNavigationTests: XCTestCase {
         XCTAssertTrue(fixture.reloadedLibrary().books.isEmpty)
     }
 
+#if os(macOS)
+    func testExternalEPUBAndPDFOpenTheNativeReaderThenReplaceIt() async throws {
+        let fixture = try Fixture(initialSelection: nil)
+        let native = fixture.makeMacApp()
+        defer { fixture.cleanUp() }
+        defer { native.restoreDefaults() }
+
+        let epub = try fixture.makeSource(body: "External EPUB \(UUID()).")
+        let epubTask = try XCTUnwrap(native.app.handleIncomingURL(epub))
+        await epubTask.value
+        let first = try XCTUnwrap(native.reader)
+        let epubID = try XCTUnwrap(fixture.selection)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey), epubID)
+        try fixture.assertDurableImport(from: epub)
+
+        let pdf = try fixture.makeSource(format: .pdf)
+        let pdfTask = try XCTUnwrap(native.app.handleIncomingURL(pdf))
+        await pdfTask.value
+        let second = try XCTUnwrap(native.reader)
+        let pdfID = try XCTUnwrap(fixture.selection)
+        XCTAssertFalse(first === second)
+        XCTAssertNotEqual(epubID, pdfID)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey), pdfID)
+        try fixture.assertDurableImport(from: pdf)
+        XCTAssertFalse(native.player.isPlaying)
+    }
+
+    func testExternalImportDoesNotReplaceTheNativeReaderAfterSelectionChanges() async throws {
+        let fixture = try Fixture(initialSelection: nil)
+        let native = fixture.makeMacApp()
+        defer { fixture.cleanUp() }
+        defer { native.restoreDefaults() }
+
+        let source = try fixture.makeSource(body: "Superseded external EPUB \(UUID()).")
+        let task = try XCTUnwrap(native.app.handleIncomingURL(source))
+        ReaderSessionState.setCurrentlyReading(bookID: "another-reader", defaults: fixture.defaults)
+        await task.value
+
+        XCTAssertNil(native.reader)
+        XCTAssertEqual(fixture.selection, "another-reader")
+        try fixture.assertDurableImport(from: source)
+    }
+
+    @MainActor
+    private struct MacFixture {
+        let app: EpubToMp3App
+        let root: MacAppKitRootController
+        let player: AudioPlayer
+        let restoreDefaults: () -> Void
+
+        var reader: MacReaderViewController? {
+            root.splitViewItems[1].viewController.children.compactMap { $0 as? MacReaderViewController }.first
+        }
+    }
+#endif
+
     private func verifySuccessfulImport(format: BookFileType, initialSelection: String?) async throws {
         let fixture = try Fixture(initialSelection: initialSelection)
         defer { fixture.cleanUp() }
@@ -261,6 +320,31 @@ final class IncomingBookImportNavigationTests: XCTestCase {
             app = EpubToMp3App(library: library, sessionDefaults: defaults)
             ReaderSessionState.setCurrentlyReading(bookID: initialSelection, defaults: defaults)
         }
+
+#if os(macOS)
+        func makeMacApp() -> MacFixture {
+            let standard = UserDefaults.standard
+            let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+                        AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+                        AudioPlayer.readerCurrentPageRatioDefaultsKey,
+                        AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+            let previous = keys.map { standard.object(forKey: $0) }
+            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+            let root = MacAppKitRootController(settings: AppSettings(defaults: defaults), library: library,
+                player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+                playerPresentation: PlayerPresentation(defaults: defaults))
+            _ = root.view
+            let app = EpubToMp3App(library: library, sessionDefaults: defaults, rootController: root)
+            return MacFixture(app: app, root: root, player: player, restoreDefaults: {
+                player.stop()
+                for book in self.library.books {
+                    ReaderProgressStore.evict(bookId: book.id)
+                    LocalFulltextCache.evict(bookId: book.id)
+                }
+                for (key, value) in zip(keys, previous) { standard.set(value, forKey: key) }
+            })
+        }
+#endif
 
         func makeSource(format: BookFileType = .epub, body: String = "Incoming book.") throws -> URL {
             let generated: URL
