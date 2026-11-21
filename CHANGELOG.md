@@ -1,9 +1,26 @@
 # Changelog
 
+## [0.10.1] — 2026-11-21
+
+### Bug Fixes
+
+- Build and audit the Linux desktop runtime (#1275) ([cbb1e08](https://github.com/pietro1704/Epub-to-Mp3/commit/cbb1e08f21ea2efe49b5be84ba2e6ba5fd7dcbd6))
+- Remove Piper Low voices from app catalogs (#1273) ([b92a998](https://github.com/pietro1704/Epub-to-Mp3/commit/b92a998233dbf69fa2c1dcf74b547c03306b54b8))
+- Carry playback skips across chapter boundaries (#1272) ([627b033](https://github.com/pietro1704/Epub-to-Mp3/commit/627b033d34ffbe51449dd785990baac23f2e32d4))
+
+### Changes
+
+- Document coordination across existing agent terminals (#1274) ([29ab277](https://github.com/pietro1704/Epub-to-Mp3/commit/29ab277b1ed676d45774ae758680b4cc3c68a73b))
+
+### Chores
+
+- Bump version to 0.10.1 ([30e5163](https://github.com/pietro1704/Epub-to-Mp3/commit/30e5163f105cbd108f110ed949f02f4706552c7a))
+
 ## [0.10.0] — 2026-11-20
 
 ### Bug Fixes
 
+- Restore Linux book import entry points (#1270) ([b74bb37](https://github.com/pietro1704/Epub-to-Mp3/commit/b74bb370b7ab6e6b39ae6ea3e6fc667dccbdbe85))
 - Keep the XCTest host out of the Dock (#1267) ([e974f7d](https://github.com/pietro1704/Epub-to-Mp3/commit/e974f7de965bfab08167fd0dc69f503116dc2b6c))
 - Match macOS app architecture to embedded FFI (#1266) ([5005b89](https://github.com/pietro1704/Epub-to-Mp3/commit/5005b898af1a1a8f2bf88b5bfeb63306653f1b1d))
 - Build the Apple package on the macOS image CI validates (#1264) ([1ccdb99](https://github.com/pietro1704/Epub-to-Mp3/commit/1ccdb99b7f9ac6fa75a4323bb32a21b07ef61d8a))
@@ -21,11 +38,12 @@
 
 ### Chores
 
-- Bump version to 0.10.0 ([5b4e93b](https://github.com/pietro1704/Epub-to-Mp3/commit/5b4e93ba2a8b415a6d26043a58dc7bbd08d0e3a6))
+- V0.10.0 (#1269) ([df83d45](https://github.com/pietro1704/Epub-to-Mp3/commit/df83d450a1da52a227373fc74e01e33bacd7f8dc))
 - Remove historical docs and unused root files (#1257) ([2d14d37](https://github.com/pietro1704/Epub-to-Mp3/commit/2d14d372797755026627e0aca1fb05b263487e00))
 
 ### Features
 
+- Select default Piper voices by book language (#1271) ([0283bbc](https://github.com/pietro1704/Epub-to-Mp3/commit/0283bbcfb59532ed629d2659c84f8b2de0e3b1ea))
 - Migrate verified audiobook downloads and keep Files access (#1268) ([78364ee](https://github.com/pietro1704/Epub-to-Mp3/commit/78364ee579157f26d0bba7372ed30e38b699f669))
 - Confirm Mac book removal and remove the book's derived data (#1265) ([13568bc](https://github.com/pietro1704/Epub-to-Mp3/commit/13568bcce959a6d28bae182eb6b45ef416d68f14))
 
