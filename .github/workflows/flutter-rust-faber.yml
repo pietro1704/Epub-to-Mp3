@@ -156,6 +156,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows Faber integration failed' }
           if (!(Test-Path ../.reports/windows-faber/evidence.json)) { throw 'Missing positive conversion evidence' }
           if (!(Select-String -LiteralPath ../.reports/windows-faber/runtime.log -SimpleMatch 'DART_FABER_NATIVE: model=pt_BR-faber-medium chapters=2' -Quiet)) { throw 'Missing real inference marker' }
+      - name: Retain the verified Windows package
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flutter-windows-x64-${{ github.sha }}
+          path: flutter_app/build/windows/x64/runner/Release/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain Windows metadata and logs only
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
