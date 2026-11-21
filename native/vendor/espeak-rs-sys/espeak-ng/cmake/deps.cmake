@@ -1,3 +1,4 @@
+option(ESPEAK_USE_BUNDLED_SONIC "Use the pinned bundled Sonic library" OFF)
 find_library(SONIC_LIB sonic)
 find_path(SONIC_INC "sonic.h")
 find_library(PCAUDIO_LIB pcaudio)
@@ -11,7 +12,7 @@ endif(PTHREAD_LIB)
 if (MBROLA_BIN)
   set(HAVE_MBROLA ON)
 endif(MBROLA_BIN)
-if (SONIC_LIB AND SONIC_INC)
+if (NOT ESPEAK_USE_BUNDLED_SONIC AND SONIC_LIB AND SONIC_INC)
   set(HAVE_LIBSONIC ON)
 else()
   # Keep the pinned fallback available without Git or network access.
