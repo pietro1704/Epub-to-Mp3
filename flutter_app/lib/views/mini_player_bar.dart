@@ -230,11 +230,7 @@ class MiniPlayerBar extends ConsumerWidget {
                       if (player.chapters.isEmpty) {
                         coordinator.beginInitialAudioRequest();
                         try {
-                          final request = ref.read(playbackRequestProvider);
-                          if (request != null) await request();
-                          if (player.chapters.isNotEmpty && !player.isPlaying) {
-                            await player.play();
-                          }
+                          await ref.read(playbackRequestProvider)?.call();
                         } finally {
                           coordinator.finishInitialAudioRequest();
                         }

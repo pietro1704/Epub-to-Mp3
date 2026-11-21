@@ -131,7 +131,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             index: saved.index,
             name: source?.name ?? saved.name,
             status: 'completed',
-            downloadUrl: 'file://$path',
+            downloadUrl: Uri.file(path).toString(),
             chars: source?.text.length,
             progressRatio: 1.0,
           ),
@@ -143,6 +143,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
       );
       if (_playableChapters.isNotEmpty) {
         await player.setQueue(List.of(_playableChapters));
+        if (!_isCurrentConversion(generation)) return;
+        _chapterQueueUpdated();
         _scheduleRequestedPlayback(player, generation);
       }
       // Persist a checkpoint even when the process resumes an existing job.
@@ -192,6 +194,8 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
                   source.fail(StateError('Reader conversion replaced'));
                   return;
                 }
+                // An on-demand seek needs the finished, seekable chapter.
+                if (_chapterPreparation?.$1 == chapter.index) return;
                 (player as StreamingChapterPlayer).registerGrowingChapter(
                   chapter.index,
                   source,
@@ -217,6 +221,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
                 }
                 _playableChapters.sort((a, b) => a.index.compareTo(b.index));
                 await player.setQueue(List.of(_playableChapters));
+                if (!_isCurrentConversion(generation)) return;
                 _scheduleRequestedPlayback(player, generation);
               }
             : null,
@@ -226,7 +231,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
             index: chapter.index,
             name: chapter.name,
             status: 'completed',
-            downloadUrl: 'file://$path',
+            downloadUrl: Uri.file(path).toString(),
             chars: chapter.text.length,
             progressRatio: 1.0,
           );
@@ -247,6 +252,7 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
           }
           await player.setQueue(List.of(_playableChapters));
           if (!_isCurrentConversion(generation)) return;
+          _chapterQueueUpdated();
           _scheduleRequestedPlayback(player, generation);
           _localJob = updated;
         },

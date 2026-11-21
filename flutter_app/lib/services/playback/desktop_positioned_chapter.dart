@@ -19,7 +19,7 @@ extension _DesktopPositionedChapter on DesktopEmbeddedConverter {
       final result = ConvertedChapterAudio.fromNativeResult(raw, expectedChapterIndex: chapterIndex);
       if (result.textOffset != textOffset) throw StateError('Rust returned another source text range');
       if (source != null && !delivered) throw StateError('Rust returned no playable source chunks');
-      source?.complete();
+      source?.complete(completedPath: result.path);
       return result;
     } catch (error) { source?.fail(error); rethrow; }
     finally { _streams.remove(outputPath); }

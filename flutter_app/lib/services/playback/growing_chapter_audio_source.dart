@@ -14,10 +14,12 @@ class GrowingChapterAudioSource extends StreamAudioSource {
   bool _closed = false;
   Object? _failure;
   int _length = 0;
+  String? _completedPath;
 
   bool get isComplete => _closed;
   Future<void> get finished => _finished.future;
   int get chunkCount => _chunks.length;
+  String? get completedPath => _completedPath;
 
   Future<void> append(int index, String path) async {
     if (_closed || index < _chunks.length) return;
@@ -30,8 +32,9 @@ class GrowingChapterAudioSource extends StreamAudioSource {
     _signal();
   }
 
-  void complete() {
+  void complete({String? completedPath}) {
     if (_closed) return;
+    _completedPath = completedPath;
     _closed = true;
     _finished.complete();
     _signal();
