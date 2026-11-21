@@ -55,7 +55,7 @@ Admission policies are explicit:
 | `--allow-stable-existing-swap` | 60 seconds | Normal pressure, reported free memory at least 50%, no swap allocation growth or new swapouts, CPU idle at least 70% | 600 seconds |
 | `--observe-resources` | 5 seconds | Normal pressure; CPU, memory percentage and existing swap are measured for the authorized observation | 180 seconds |
 
-All policies require at least 20 GiB free disk, valid identity and telemetry,
+All policies require at least 15 GiB free disk, valid identity and telemetry,
 and the exclusive native lease before boot. Reported free memory is the
 `memory_pressure -Q` metric, not literal unused RAM. Observation and
 stable-swap flags are mutually exclusive.

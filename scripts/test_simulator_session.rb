@@ -134,13 +134,21 @@ class SimulatorSessionTest < Minitest::Test
   end
 
   def test_explicit_observation_retains_cleanup_and_records_phase_and_limits
-    @sample.merge!('swap_mib' => 3000, 'cpu_idle' => 20, 'free_percent' => 30)
+    @sample.merge!('swap_mib' => 3000, 'cpu_idle' => 20, 'free_percent' => 30, 'free_bytes' => 15 * 1024**3)
     supervisor, report = run_session(observe_resources: true)
     assert supervisor.successful?
     assert_equal 'explicit_resource_observation', report['admission_policy']
     assert_equal 'verified_shutdown', report['cleanup']
     assert_equal 0, report['limits']['app_seconds']
     assert report['samples'].all? { |row| row.key?('phase') }
+  end
+
+  def test_explicit_observation_refuses_one_byte_below_disk_floor_before_boot
+    @sample["free_bytes"] = 15 * 1024**3 - 1
+    supervisor, report = run_session(observe_resources: true)
+    refute supervisor.successful?
+    assert_empty @backend.calls
+    assert_equal "SimulatorResources::Refusal: Free disk below 15 GiB", report["error"]
   end
 
   def test_default_refuses_existing_swap_but_explicit_mode_records_its_policy

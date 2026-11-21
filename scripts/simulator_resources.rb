@@ -5,6 +5,8 @@ require "open3"
 require "timeout"
 
 module SimulatorResources
+  MINIMUM_FREE_DISK_GIB = 15
+
   class Refusal < StandardError; end
 
   # Every inspection has a deadline; a broken telemetry command cannot hang cleanup.
@@ -80,6 +82,12 @@ module SimulatorResources
     raise Refusal, error.message
   end
 
+  def self.disk_refusal(sample)
+    return if sample.fetch("free_bytes") >= MINIMUM_FREE_DISK_GIB * 1024**3
+
+    "Free disk below #{MINIMUM_FREE_DISK_GIB} GiB"
+  end
+
   def self.admission(sample, initial, stable_existing_swap: false, previous: initial)
     validate(sample)
     validate(initial)
@@ -95,8 +103,7 @@ module SimulatorResources
     end
     return "Swapouts increased during baseline" if sample["swapouts"] != initial["swapouts"]
     return "CPU idle below 70%" if sample["cpu_idle"] < 70
-    return "Free disk below 20 GiB" if sample["free_bytes"] < 20 * 1024**3
-    nil
+    disk_refusal(sample)
   end
 
   class Monitor
@@ -110,7 +117,8 @@ module SimulatorResources
     def check(sample, now)
       SimulatorResources.validate(sample)
       return "Critical memory pressure" if sample["pressure"] == 4
-      return "Free disk below 20 GiB" if sample["free_bytes"] < 20 * 1024**3
+      disk_error = SimulatorResources.disk_refusal(sample)
+      return disk_error if disk_error
       conditions = {
         "Memory pressure warning" => [sample["pressure"] != 1, 10],
         "Reported free memory below 25%" => [sample["free_percent"] < 25, 10],
