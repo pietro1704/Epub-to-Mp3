@@ -119,8 +119,8 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     assert_operator provision, :<, index(steps) { |step| step["name"] == "Build" }
     assert_includes steps[provision].fetch("run"), '"ORT_SKIP_DOWNLOAD=1" >> $env:GITHUB_ENV'
     assert_includes steps[provision].fetch("run"), '"ORT_PREFER_DYNAMIC_LINK=1" >> $env:GITHUB_ENV'
-    refute job.fetch("env").key?("ORT_SKIP_DOWNLOAD"), "Linux needs to resolve ONNX Runtime"
-    refute job.fetch("env").key?("ORT_PREFER_DYNAMIC_LINK"), "Only Windows uses the provisioned DLL"
+    refute job.fetch("env").key?("ORT_SKIP_DOWNLOAD"), "Only platform-specific steps provision ONNX Runtime"
+    refute job.fetch("env").key?("ORT_PREFER_DYNAMIC_LINK"), "Only platform-specific steps select dynamic linkage"
 
     ci = workflow("flutter-rust-faber.yml").fetch("jobs").fetch("windows-package-faber").fetch("steps")
     assert ci.any? { |step| step.fetch("run", "").include?("scripts/provision_onnxruntime_windows.ps1") },
@@ -129,34 +129,89 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
            "the pinned ONNX Runtime is defined once, in the script"
   end
 
-  def test_linux_release_rejects_unresolved_symbols_before_archiving
+  def test_linux_release_provisions_and_verifies_onnx_runtime_before_archiving
     steps = @jobs.fetch("flutter-desktop").fetch("steps")
+    provision = index(steps) { |step| step["name"] == "Provision the pinned Linux ONNX Runtime" }
+    build = index(steps) { |step| step["name"] == "Build" }
     audit = index(steps) { |step| step["name"] == "Verify Linux Rust runtime bundle" }
     archive = index(steps) { |step| step["name"] == "Package Linux build" }
+    assert_operator provision, :<, build
+    assert_operator build, :<, audit
     assert_operator audit, :<, archive
+    assert_equal "runner.os == 'Linux'", steps[provision].fetch("if")
     assert_equal "runner.os == 'Linux'", steps[audit].fetch("if")
+    assert_equal "runner.os == 'Linux'", steps[archive].fetch("if")
+    provision_script = steps[provision].fetch("run")
+    assert_includes provision_script, "bash scripts/fetch_onnxruntime_linux.sh "
+    assert_includes provision_script, 'echo "ORT_LIB_LOCATION=$runtime"'
+    assert_includes provision_script, 'echo "ORT_SKIP_DOWNLOAD=1"'
+    assert_includes provision_script, 'echo "ORT_PREFER_DYNAMIC_LINK=1"'
+  end
+
+  def compile_fixture(*arguments)
+    text, status = Open3.capture2e("cc", "-shared", "-fPIC", *arguments)
+    assert status.success?, text
+  end
+
+  def test_linux_release_requires_the_pinned_and_locally_resolved_onnx_runtime
+    skip "requires a Linux ELF toolchain" unless RUBY_PLATFORM.include?("linux")
+
+    steps = @jobs.fetch("flutter-desktop").fetch("steps")
+    audit = steps.fetch(index(steps) { |step| step["name"] == "Verify Linux Rust runtime bundle" }).fetch("run")
     Dir.mktmpdir("release-linux-linkage") do |directory|
-      library = "flutter_app/build/linux/x64/release/bundle/lib/libconverter_ffi.so"
-      FileUtils.mkdir_p(File.join(directory, File.dirname(library)))
-      File.write(File.join(directory, library), "fixture")
-      ldd = File.join(directory, "ldd")
-      File.write(ldd, <<~SH)
-        #!/bin/bash
-        [[ "$#" == 2 && "$1" == -r && "$2" == #{library} ]] || exit 90
-        printf '%s\\n' "$FIXTURE_LINKAGE"
-      SH
-      File.chmod(0o700, ldd)
-      [
-        ["libc.so.6 => /lib/libc.so.6", true],
-        ["undefined symbol: OrtGetApiBase", false],
-        ["libonnxruntime.so.1 => not found", false],
-      ].each do |linkage, expected|
-        env = { "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "FIXTURE_LINKAGE" => linkage }
-        output, error, status = Open3.capture3(
-          env, "bash", "-c", steps[audit].fetch("run"), chdir: directory
-        )
-        assert_equal expected, status.success?, "#{output}\n#{error}"
-      end
+      root = File.realpath(directory)
+      bundle_lib = File.join(root, "flutter_app/build/linux/x64/release/bundle/lib")
+      runtime = File.join(root, "selected runtime")
+      FileUtils.mkdir_p([bundle_lib, runtime])
+      soname = "libonnxruntime.so.1"
+      runtime_lib = File.join(runtime, soname)
+      bundle_runtime = File.join(bundle_lib, soname)
+      converter = File.join(bundle_lib, "libconverter_ffi.so")
+      runtime_source = File.join(root, "runtime.c")
+      converter_source = File.join(root, "converter.c")
+      File.write(runtime_source, "int fixture_model(void) { return 42; }")
+      File.write(converter_source, "int fixture_model(void); int convert(void) { return fixture_model(); }")
+      compile_fixture(runtime_source, "-Wl,-soname,#{soname}", "-o", runtime_lib)
+      link_converter = ->(runpath) {
+        compile_fixture(converter_source, "-L#{runtime}", "-l:#{soname}", "-Wl,-rpath,#{runpath}", "-o", converter)
+      }
+      run_audit = -> {
+        Open3.capture3({ "ORT_LIB_LOCATION" => runtime, "LD_LIBRARY_PATH" => runtime, "LD_PRELOAD" => nil },
+                       "bash", "-c", audit, chdir: root)
+      }
+
+      link_converter.call("$ORIGIN")
+      _, _, status = run_audit.call
+      refute status.success?, "the bundle is missing the ONNX Runtime"
+
+      File.write(bundle_runtime, "different payload")
+      _, _, status = run_audit.call
+      refute status.success?, "the bundled and pinned ONNX Runtime bytes differ"
+
+      FileUtils.cp(runtime_lib, bundle_runtime)
+      output, error, status = run_audit.call
+      assert status.success?, "#{output}\n#{error}"
+      assert_includes output, "#{soname} => #{bundle_runtime} "
+
+      link_converter.call(runtime)
+      output, _, status = run_audit.call
+      refute status.success?, "the loader found the source runtime outside the bundle"
+      assert_includes output, "#{soname} => #{runtime_lib} "
+
+      File.write(converter_source, <<~C)
+        int fixture_model(void);
+        int fixture_missing(void);
+        int convert(void) { return fixture_model() + fixture_missing(); }
+      C
+      link_converter.call("$ORIGIN")
+      output, error, status = run_audit.call
+      refute status.success?, "the converter has an unresolved symbol"
+      assert_match(/undefined symbol: fixture_missing/, "#{output}\n#{error}")
+
+      File.write(converter_source, "int convert(void) { return 42; }")
+      compile_fixture(converter_source, "-o", converter)
+      _, _, status = run_audit.call
+      refute status.success?, "the converter lacks a dependency on the bundled SONAME"
     end
   end
 end

@@ -278,12 +278,14 @@ jobs:
           - label: linux-x64
             os: ubuntu-22.04
             target: linux
+            tools: flutter,rust
           - label: windows-x64
             os: windows-2025
             target: windows
+            tools: flutter
     runs-on: ${{ matrix.os }}
     env:
-      MISE_ENABLE_TOOLS: flutter
+      MISE_ENABLE_TOOLS: ${{ matrix.tools }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -295,12 +297,23 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+          sudo apt-get install -y clang libclang-dev cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev unzip binutils
 
-      - name: Setup Flutter
+      - name: Provision the pinned Linux ONNX Runtime
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          bash scripts/fetch_onnxruntime_linux.sh "$RUNNER_TEMP/release-linux-ort"
+          runtime="$RUNNER_TEMP/release-linux-ort/onnxruntime-linux-x64-1.24.4/lib"
+          test -f "$runtime/libonnxruntime.so.1"
+          {
+            echo "ORT_LIB_LOCATION=$runtime"
+            echo "ORT_PREFER_DYNAMIC_LINK=1"
+            echo "ORT_SKIP_DOWNLOAD=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup desktop toolchains
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
-        env:
-          MISE_ENABLE_TOOLS: flutter
         with:
           version: 2026.11.3
 
@@ -340,14 +353,19 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          library=flutter_app/build/linux/x64/release/bundle/lib/libconverter_ffi.so
+          bundle_lib=flutter_app/build/linux/x64/release/bundle/lib
+          library="$bundle_lib/libconverter_ffi.so"
+          onnxruntime="$bundle_lib/libonnxruntime.so.1"
           test -s "$library"
-          linkage=$(LC_ALL=C ldd -r "$library" 2>&1)
+          cmp "$ORT_LIB_LOCATION/libonnxruntime.so.1" "$onnxruntime"
+          LC_ALL=C readelf -d "$library" | grep -F 'Shared library: [libonnxruntime.so.1]'
+          linkage=$(env -u LD_LIBRARY_PATH -u LD_PRELOAD LC_ALL=C ldd -r "$library" 2>&1)
           printf '%s\n' "$linkage"
           if grep -Eq 'not found|undefined symbol' <<<"$linkage"; then
             echo "::error::The Linux converter library has unresolved dependencies."
             exit 1
           fi
+          grep -F "libonnxruntime.so.1 => $(realpath "$bundle_lib")/libonnxruntime.so.1 " <<<"$linkage"
 
       - name: Package Linux build
         if: runner.os == 'Linux'

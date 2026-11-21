@@ -398,13 +398,26 @@ end
       # The old pinned Flutter composite still expanded actions/cache@v5 before
       # any step ran, which violates the repository's full-SHA action policy.
       refute steps.any? { |step| step.fetch('uses', '').start_with?('subosito/flutter-action@') }
-      setup = steps.find { |step| step['name'] == 'Set up native build tools' || step['name'] == 'Setup Flutter' }
+      setup = steps.find { |step| step.fetch('uses', '').start_with?('jdx/mise-action@') }
+      refute_nil setup, 'the job installs the project toolchain through mise'
       assert_pinned_action 'jdx/mise-action', setup.fetch('uses')
-      assert_includes setup.fetch('env').fetch('MISE_ENABLE_TOOLS').split(','), 'flutter'
       refute_equal false, setup.fetch('with').fetch('install', true)
       build = steps.find { |step| %w[Build\ Android\ app Build\ APK\ (release) Build].include?(step['name']) }
-      scope = build.fetch('env', {}).fetch('MISE_ENABLE_TOOLS', job.fetch('env', {}).fetch('MISE_ENABLE_TOOLS', ''))
-      assert_includes scope.split(','), 'flutter'
+      job_scope = job.fetch('env', {}).fetch('MISE_ENABLE_TOOLS', '')
+      matrix_scopes = if job_scope == '${{ matrix.tools }}'
+                        matrix = job.fetch('strategy').fetch('matrix').fetch('include')
+                        by_target = matrix.to_h { |entry| [entry.fetch('target'), entry.fetch('tools').split(',')] }
+                        assert_equal %w[flutter rust], by_target.fetch('linux')
+                        assert_equal ['flutter'], by_target.fetch('windows')
+                        by_target.values
+                      else
+                        [job_scope.split(',')]
+                      end
+      [setup, build].each do |step|
+        override = step.fetch('env', {})['MISE_ENABLE_TOOLS']
+        scopes = override ? [override.split(',')] : matrix_scopes
+        scopes.each { |tools| assert_includes tools, 'flutter', step.fetch('name') }
+      end
       assert_operator steps.index(setup), :<, steps.index(build)
     end
   end
