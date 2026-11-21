@@ -56,7 +56,7 @@ and Simulator safeguards follow the execution policy.
   work: read [issue tracker](docs/agents/issue-tracker.md).
 - Memory routing: read [memory](docs/agents/memory.md); transport/configuration:
   read [collaboration operations](docs/agents/collaboration-operations.md).
-- Mac/Arch ownership or delegated work: read
+- Coordinating existing terminals, Mac/Arch ownership, or delegated work: read
   [Mac/Arch collaboration](docs/agents/mac-arch-collaboration.md).
 
 <!-- ai-memory:start -->
