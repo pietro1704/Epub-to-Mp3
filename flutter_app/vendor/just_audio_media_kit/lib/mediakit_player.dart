@@ -6,6 +6,7 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 import 'package:logging/logging.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:universal_platform/universal_platform.dart';
 import 'src/set_property.dart';
 
 /// An [AudioPlayerPlatform] which wraps `package:media_kit`'s [Player]
@@ -409,6 +410,20 @@ class MediaKitPlayer extends AudioPlayerPlatform {
   Media _convertAudioSourceIntoMediaKit(AudioSourceMessage audioSource) {
     switch (audioSource) {
       case final UriAudioSourceMessage uriSource:
+        if (UniversalPlatform.isLinux &&
+            uriSource is ProgressiveAudioSourceMessage) {
+          final uri = Uri.tryParse(uriSource.uri);
+          if (uri?.scheme == 'http' &&
+              uri?.host == '127.0.0.1' &&
+              uri?.path == '/id/${uriSource.id}') {
+            // just_audio's unbounded stream response has no body length.
+            // Close the connection so libmpv observes the end of the response.
+            return Media(uriSource.uri, httpHeaders: {
+              ...?uriSource.headers,
+              'Connection': 'close',
+            });
+          }
+        }
         return Media(uriSource.uri, httpHeaders: audioSource.headers);
 
       // removed because it doesn't seem to be actually working.

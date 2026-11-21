@@ -5,4 +5,6 @@ Source: [just_audio_media_kit 2.1.0](https://pub.dev/packages/just_audio_media_k
 The local patch adds an optional libmpv network timeout and applies it after
 player initialization, before the adapter returns the player to `just_audio`.
 Windows uses this setting to tolerate gaps in locally synthesized MP3 streams.
-Return to the hosted package when it exposes equivalent configuration.
+On Linux the adapter requests connection closure for just_audio's loopback
+stream route, so libmpv sees EOF when the source ends an unbounded response.
+Return to the hosted package when both behaviors are covered upstream.

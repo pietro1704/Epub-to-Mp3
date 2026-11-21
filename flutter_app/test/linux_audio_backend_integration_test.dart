@@ -71,6 +71,16 @@ Future<File> fixture(
       .writeAsBytes(bytes.buffer.asUint8List());
 }
 
+Future<File> growingMp3Fixture(Directory directory) async {
+  final frames = await File(
+    '../tests/fixtures/audio/mono-24000-48k.mp3',
+  ).readAsBytes();
+  // 32 copies of a 312 ms CBR fixture with no metadata or duration header.
+  return File('${directory.path}/chunk.mp3').writeAsBytes([
+    for (var copy = 0; copy < 32; copy++) ...frames,
+  ]);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
@@ -92,13 +102,7 @@ void main() {
         await player.dispose();
         await directory.delete(recursive: true);
       });
-      final frameFixture = await File(
-        '../tests/fixtures/audio/mono-24000-48k.mp3',
-      ).readAsBytes();
-      // 32 copies of a 312 ms CBR fixture with no metadata or duration header.
-      final chunk = await File('${directory.path}/chunk.mp3').writeAsBytes([
-        for (var copy = 0; copy < 32; copy++) ...frameFixture,
-      ]);
+      final chunk = await growingMp3Fixture(directory);
       await source.append(0, chunk.path);
       player.registerGrowingChapter(0, source);
       await player.setQueue([
@@ -133,6 +137,47 @@ void main() {
     timeout: const Timeout(Duration(seconds: 60)),
     skip:
         !(Platform.isLinux || Platform.isWindows) ||
+        !const bool.fromEnvironment('EPUB2MP3_NATIVE_DECODER'),
+  );
+
+  test(
+    'Linux decoder completes when a buffering chapter reaches EOF',
+    () async {
+      // Keep the network timeout well outside the completion assertion.
+      JustAudioMediaKit.ensureInitialized(
+        networkTimeout: const Duration(seconds: 30),
+      );
+      final directory = await Directory.systemTemp.createTemp('epub-eof-');
+      final player = AudioPlayerService();
+      final source = _ObservedGrowingSource();
+      addTearDown(() async {
+        source.complete();
+        await player.dispose();
+        await directory.delete(recursive: true);
+      });
+      await source.append(0, (await growingMp3Fixture(directory)).path);
+      player.registerGrowingChapter(0, source);
+      await player.setQueue([
+        const ChapterProgress(
+          index: 0,
+          name: 'Final chunk',
+          downloadUrl: 'growing:slow-chapter',
+        ),
+      ]);
+      await player.setSpeed(2);
+      final playback = player.play();
+      await eventually(() => player.isPlaying && player.positionSeconds > 0.2);
+      await eventually(() => player.phase == PlaybackPhase.buffering);
+
+      final completed = player.phases
+          .firstWhere((phase) => phase == PlaybackPhase.completed)
+          .timeout(const Duration(seconds: 3));
+      source.complete();
+      await completed;
+      await playback;
+    },
+    skip:
+        !Platform.isLinux ||
         !const bool.fromEnvironment('EPUB2MP3_NATIVE_DECODER'),
   );
 
