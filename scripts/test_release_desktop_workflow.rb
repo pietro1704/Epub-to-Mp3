@@ -31,16 +31,42 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
   # Failure 1: "libconverter_ffi.dylib couldn't be opened" - Xcode embeds a library
   # nothing had built.
   def test_apple_release_builds_the_embedded_rust_library_before_xcode
-    steps = @jobs.fetch("swiftui-apple").fetch("steps")
+    steps = @jobs.fetch("macos-native").fetch("steps")
     mise = index(steps) { |step| step.fetch("uses", "").start_with?("jdx/mise-action@") }
-    install = index(steps) { |step| step["run"] == "mise install" }
+    install = index(steps) { |step| step["run"] == "mise install rust ruby" }
+    cache = index(steps) { |step| step["uses"] == "./.github/actions/rust-build-cache" }
     ffi = index(steps) { |step| step["run"] == "mise run converter-ffi:build" }
     app = index(steps) { |step| step["name"] == "Build macOS .app" }
     assert_operator mise, :<, install
-    assert_operator install, :<, ffi
+    assert_operator install, :<, cache
+    assert_operator cache, :<, ffi
     assert_operator ffi, :<, app
+    assert_equal "release-macos-ffi", steps[cache].dig("with", "namespace")
+    refute steps[ffi].fetch("env", {}).key?("CARGO_BUILD_JOBS"),
+           "the native guard owns the hosted compiler job limit"
     refute steps.any? { |step| step.fetch("uses", "").start_with?("dtolnay/rust-toolchain@") },
            "Rust comes from the project mise toolchain, like the CodeQL Apple build"
+  end
+
+  def test_desktop_apple_job_only_builds_the_published_macos_package
+    job = @jobs.fetch("macos-native")
+    assert_equal "macOS native", job.fetch("name")
+    refute_match(/generic\/platform=iOS|\.xcarchive|\.ipa\b/, runs(job.fetch("steps")).join("\n"))
+    package = job.fetch("steps").find { |step| step.dig("with", "name") == "release-apple" }
+    refute_nil package
+    assert_equal "ios/EpubToMp3/EpubToMp3-macos-*.zip", package.dig("with", "path")
+  end
+
+  def test_signed_ios_release_provisions_the_rust_target_before_archiving_and_exporting
+    steps = workflow("ios-testflight.yml").fetch("jobs").fetch("archive-and-upload").fetch("steps")
+    provision = index(steps) { |step| step.fetch("run", "").include?("rustup target add aarch64-apple-ios") }
+    archive = index(steps) { |step| step["name"] == "Archive signed iOS app" }
+    export = index(steps) { |step| step.fetch("run", "").include?("xcodebuild -exportArchive") }
+    upload = index(steps) { |step| step.dig("with", "name") == "EpubToMp3-iOS-IPA" }
+    assert_includes steps[provision].fetch("run"), "mise install rust ruby"
+    assert_operator provision, :<, archive
+    assert_operator archive, :<, export
+    assert_operator export, :<, upload
   end
 
   # The v0.9.0 re-run failed at "Install mise": the project's mise environment runs
@@ -49,7 +75,7 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
   def test_apple_release_runs_on_the_validated_macos_image
     codeql = workflow("codeql.yml").fetch("jobs").values.map { |job| job["runs-on"] }.grep(/\Amacos-/).uniq
     assert_equal 1, codeql.size, "one CodeQL macOS image"
-    assert_equal codeql.first, @jobs.fetch("swiftui-apple").fetch("runs-on")
+    assert_equal codeql.first, @jobs.fetch("macos-native").fetch("runs-on")
   end
 
   def test_macos_build_targets_the_embedded_library_architecture
@@ -68,7 +94,7 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
   end
 
   def run_macos_build(architecture)
-    steps = @jobs.fetch("swiftui-apple").fetch("steps")
+    steps = @jobs.fetch("macos-native").fetch("steps")
     command = steps.find { |step| step["name"] == "Build macOS .app" }.fetch("run")
     Dir.mktmpdir("release-macos-build") do |directory|
       lipo = <<~'SH'
