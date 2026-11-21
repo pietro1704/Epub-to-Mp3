@@ -19,6 +19,12 @@ class ReleasePrWorkflowTest < Minitest::Test
     @steps.find { |candidate| candidate["name"] == name } || flunk("missing step #{name.inspect}")
   end
 
+  def test_superseded_event_cannot_start_release_preparation
+    assert_equal "${{ github.event_name == 'workflow_run' }}", step("Require validated current merge").fetch("env").fetch("SKIP_SUPERSEDED")
+    assert_equal "steps.validated.outputs.sha != ''", step("Checkout").fetch("if")
+    assert_equal "steps.validated.outputs.sha != ''", step("Plan the next version").fetch("if")
+  end
+
   def test_runs_after_post_merge_validation_like_auto_release
     assert_equal ["Post-merge validation"], @triggers.fetch("workflow_run").fetch("workflows")
     condition = @job.fetch("if")

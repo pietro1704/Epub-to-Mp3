@@ -18,6 +18,13 @@ class AutoReleaseWorkflowTest < Minitest::Test
     @steps.find { |candidate| candidate["name"] == name } || flunk("missing step #{name.inspect}")
   end
 
+  def test_superseded_event_cannot_start_release_preparation
+    assert_equal "${{ github.event_name == 'workflow_run' }}", step("Require validated current merge").fetch("env").fetch("SKIP_SUPERSEDED")
+    assert_equal "steps.validated.outputs.sha != ''", step("Checkout").fetch("if")
+    assert_equal "steps.validated.outputs.sha != ''", step("Validate shared app version").fetch("if")
+    assert_equal "steps.validated.outputs.sha != ''", step("Determine next version").fetch("if")
+  end
+
   def test_runs_after_post_merge_validation_and_stays_dispatchable
     assert_equal ["Post-merge validation"], @triggers.fetch("workflow_run").fetch("workflows")
     assert_equal ["completed"], @triggers.fetch("workflow_run").fetch("types")
@@ -56,7 +63,7 @@ class AutoReleaseWorkflowTest < Minitest::Test
   # dispatched explicitly, for exactly the new tag, after the release exists.
   def test_a_new_release_starts_the_package_builds_for_its_tag
     start = step("Start the release packages")
-    assert_equal "steps.bump.outputs.skip != 'true'", start.fetch("if")
+    assert_equal "steps.bump.outputs.skip == 'false'", start.fetch("if")
     assert_equal "${{ steps.bump.outputs.tag }}", start.fetch("env").fetch("VERSION_TAG")
     assert_equal 'gh workflow run release-desktop.yml --repo "$GITHUB_REPOSITORY" --ref master -f tag="$VERSION_TAG"',
                  start.fetch("run").strip
@@ -107,7 +114,7 @@ class AutoReleaseWorkflowTest < Minitest::Test
 
   def test_a_version_not_newer_than_the_last_tag_publishes_nothing
     release = step("Create release tag and GitHub release")
-    assert_equal "steps.bump.outputs.skip != 'true'", release.fetch("if")
+    assert_equal "steps.bump.outputs.skip == 'false'", release.fetch("if")
     bump = step("Determine next version").fetch("run")
     assert_includes bump, "skip=true"
     assert_includes bump, "is not newer than"

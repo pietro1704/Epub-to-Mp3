@@ -42,6 +42,20 @@ test('only successful exact merged revision is accepted; historical release stay
   assert.equal((await verify(f, { tag: 'v1.2.3' })).master, tip);
   await assert.rejects(verify(f, { latest: true }), /superseded/);
 });
+test('automatic gate skips a validated ancestor without granting a publication SHA', async () => {
+  const f = fixture();
+  f.master = tip;
+  f.comparison.status = 'ahead';
+  const options = { latest: true, skipSuperseded: true };
+  assert.deepEqual(await verify(f, options), { superseded: sha, master: tip });
+  f.comparison.status = 'diverged';
+  await assert.rejects(verify(f, options), /reachable/);
+  f.master = sha;
+  f.comparison.status = 'identical';
+  assert.equal((await verify(f, options)).sha, sha);
+  f.run.conclusion = 'failure';
+  await assert.rejects(verify(f, options), /unsuccessful/);
+});
 test('failed, cancelled, skipped and incomplete validation fail closed', async () => {
   for (const conclusion of ['failure', 'cancelled', 'skipped', 'neutral', null, 'timed_out', 'action_required']) {
     const f = fixture(); f.run.conclusion = conclusion; await assert.rejects(verify(f));

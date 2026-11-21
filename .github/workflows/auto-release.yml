@@ -67,10 +67,12 @@ jobs:
       - name: Require validated current merge
         id: validated
         env:
+          SKIP_SUPERSEDED: ${{ github.event_name == 'workflow_run' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest
       - name: Checkout
+        if: steps.validated.outputs.sha != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -78,6 +80,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate shared app version
+        if: steps.validated.outputs.sha != ''
         id: version
         run: |
           set -euo pipefail
@@ -112,6 +115,7 @@ jobs:
           RUBY
 
       - name: Determine next version
+        if: steps.validated.outputs.sha != ''
         id: bump
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -171,14 +175,14 @@ jobs:
           echo "Version: ${BASE_VERSION} -> ${NEW} (last tag: ${LAST_TAG:-none})"
 
       - name: Revalidate immediately before creating a release tag
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.bump.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_REF: ${{ steps.validated.outputs.sha }}
         run: node "$RUNNER_TEMP/validated_merge.mjs" --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --latest
 
       - name: Create release tag and GitHub release
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.bump.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION_TAG: ${{ steps.bump.outputs.tag }}
@@ -204,7 +208,7 @@ jobs:
       # release packages (Docker image, Android, macOS, Linux, Windows) are started
       # explicitly for exactly this tag. Release Desktop revalidates the tag itself.
       - name: Start the release packages
-        if: steps.bump.outputs.skip != 'true'
+        if: steps.bump.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION_TAG: ${{ steps.bump.outputs.tag }}

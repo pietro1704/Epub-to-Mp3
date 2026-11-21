@@ -8,7 +8,7 @@ const SHA = /^[a-f0-9]{40}$/;
 const requireThat = (value, message) => { if (!value) throw new Error(message); };
 // requiredJob: publish when that aggregate job of the latest attempt succeeded, even if
 // unrelated validations of the same run failed. Without it the whole run must succeed.
-export async function validatedMerge({ repo, ref, tag, latest = false, requiredJob, api }) {
+export async function validatedMerge({ repo, ref, tag, latest = false, skipSuperseded = false, requiredJob, api }) {
   requireThat(requiredJob === undefined || (typeof requiredJob === 'string' && /^[\w .'-]{1,100}$/.test(requiredJob)), 'Invalid required job');
   requireThat(/^[\w.-]+\/[\w.-]+$/.test(repo ?? ''), 'Invalid repository');
   requireThat(typeof ref === 'string' && ref.length > 0 && !ref.startsWith('-'), 'Invalid source');
@@ -67,6 +67,7 @@ export async function validatedMerge({ repo, ref, tag, latest = false, requiredJ
   requireThat(SHA.test(master ?? ''), 'Missing current master');
   const comparison = await read(`/compare/${sha}...${master}`);
   requireThat(comparison.behind_by === 0 && ['ahead', 'identical'].includes(comparison.status), 'Source is not reachable on current master');
+  if (latest && skipSuperseded && master !== sha && comparison.status === 'ahead') return { superseded: sha, master };
   requireThat(!latest || master === sha, 'Source is superseded on master');
   // Detect identity changes during the metadata checks, immediately before returning authorization.
   const currentRun = await read(`/actions/runs/${run.id}`);
@@ -85,8 +86,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     const { values } = parseArgs({ options: { repo: { type: 'string' }, ref: { type: 'string' }, tag: { type: 'string' }, latest: { type: 'boolean', default: false }, 'required-job': { type: 'string' } } });
     const { 'required-job': requiredJob, ...rest } = values;
-    const result = await validatedMerge({ ...rest, requiredJob, api: githubApi });
-    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `sha=${result.sha}\n`);
+    const result = await validatedMerge({ ...rest, requiredJob, skipSuperseded: process.env.SKIP_SUPERSEDED === 'true', api: githubApi });
+    if (result.sha && process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `sha=${result.sha}\n`);
     console.log(JSON.stringify(result));
   } catch (error) { console.error(`Publication blocked: ${error.message}`); process.exitCode = 1; }
 }
