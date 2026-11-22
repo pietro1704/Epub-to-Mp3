@@ -53,6 +53,12 @@ jobs:
           VERSION_TAG: ${{ env.RELEASE_TAG }}
         run: node scripts/validated_merge.mjs --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --tag "$VERSION_TAG"
 
+  native-notices:
+    needs: gate
+    uses: ./.github/workflows/release-native-notices.yml
+    with:
+      source_sha: ${{ needs.gate.outputs.sha }}
+
   # Build only commits present in the trusted master snapshot on each runner.
   # Keep shared Actions caches out of release builds, including tool setup.
   # ── Docker image → ghcr.io ────────────────────────────────────────────────────
@@ -107,7 +113,7 @@ jobs:
 
   # ── Android APK (Flutter) ─────────────────────────────────────────────────────
   android:
-    needs: gate
+    needs: [gate, native-notices]
     name: android
     timeout-minutes: 25
     runs-on: ubuntu-24.04
@@ -156,6 +162,11 @@ jobs:
           mise run android:embedded-deps
           mise exec -- rustup target add aarch64-linux-android
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-third-party-notices
+          path: flutter_app/android/app/src/main/assets/ThirdPartyNotices
+
       - name: Build APK (release)
         env:
           MISE_EXPERIMENTAL: "1"
@@ -163,7 +174,10 @@ jobs:
 
       - name: Rename APK
         run: |
-          cp flutter_app/build/app/outputs/flutter-apk/app-release.apk EpubToMp3_android.apk
+          apk=flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          path=assets/ThirdPartyNotices/SOURCE.md
+          unzip -p "$apk" "$path" | cmp - "flutter_app/android/app/src/main/$path"
+          cp "$apk" EpubToMp3_android.apk
 
       - name: Retain APK for publication after all builds succeed
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -178,7 +192,7 @@ jobs:
   # ios-testflight.yml, and converter-ffi-ios-prebuilt.yml owns validation archives.
   # ──────────────────────────────────────────────────────────────────────
   macos-native:
-    needs: gate
+    needs: [gate, native-notices]
     name: macOS native
     runs-on: macos-15
     timeout-minutes: 40
@@ -246,6 +260,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-third-party-notices
+          path: ios/EpubToMp3/build/Build/Products/Release/EpubToMp3.app/Contents/Resources/ThirdPartyNotices
+
       - name: Seal macOS .app
         working-directory: ios/EpubToMp3
         run: |
@@ -279,15 +298,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # ──────────────────────────────────────────────────────────────────────
-  # Flutter desktop builds (Linux + Windows)
-  #
   # Official non-Apple desktop client. Builds the Rust-backed Flutter client;
   # macOS/iOS are NOT supported by the Flutter app — the native Apple app
   # owns those platforms.
   # ──────────────────────────────────────────────────────────────────────
   flutter-desktop:
-    needs: gate
+    needs: [gate, native-notices]
     name: Flutter · ${{ matrix.label }}
     timeout-minutes: 30
     strategy:
@@ -298,10 +314,12 @@ jobs:
             os: ubuntu-22.04
             target: linux
             tools: flutter,rust
+            package_root: flutter_app/build/linux/x64/release/bundle
           - label: windows-x64
             os: windows-2025
             target: windows
             tools: flutter
+            package_root: flutter_app/build/windows/x64/runner/Release
     runs-on: ${{ matrix.os }}
     env:
       MISE_ENABLE_TOOLS: ${{ matrix.tools }}
@@ -392,6 +410,11 @@ jobs:
             exit 1
           fi
           grep -F "libonnxruntime.so.1 => $(realpath "$bundle_lib")/libonnxruntime.so.1 " <<<"$linkage"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-third-party-notices
+          path: ${{ matrix.package_root }}/ThirdPartyNotices
 
       - name: Package Linux build
         if: runner.os == 'Linux'

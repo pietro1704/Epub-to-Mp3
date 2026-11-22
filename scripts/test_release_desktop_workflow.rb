@@ -31,7 +31,8 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
   def test_build_jobs_start_from_trusted_history_and_isolate_release_caches
     %w[docker android macos-native flutter-desktop].each do |name|
       job = @jobs.fetch(name)
-      assert_equal "gate", job.fetch("needs")
+      dependencies = name == "docker" ? "gate" : %w[gate native-notices]
+      assert_equal dependencies, job.fetch("needs")
       checkout, select_source, = job.fetch("steps")
       assert_match(/\Aactions\/checkout@[0-9a-f]{40}\z/, checkout.fetch("uses"))
       assert_equal({
@@ -53,6 +54,63 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
           refute (step.fetch("with").keys & %w[cache-from cache-to]).any?
         end
       end
+    end
+  end
+
+  def test_validated_notices_reach_native_packages_before_signing_or_archiving
+    job = @jobs.fetch("native-notices")
+    assert_equal "gate", job.fetch("needs")
+    assert_equal "./.github/workflows/release-native-notices.yml", job.fetch("uses")
+    assert_equal "${{ needs.gate.outputs.sha }}", job.dig("with", "source_sha")
+    producer = workflow("release-native-notices.yml").dig("jobs", "stage", "steps")
+    assert_equal 0, producer.first.dig("with", "fetch-depth")
+    assert_equal "refs/heads/master", producer.first.dig("with", "ref")
+    assert_equal "native-third-party-notices", producer.last.dig("with", "name")
+    assert_equal "error", producer.last.dig("with", "if-no-files-found")
+
+    destinations = {
+      "android" => ["flutter_app/android/app/src/main/assets", "Build APK (release)"],
+      "macos-native" => ["ios/EpubToMp3/build/Build/Products/Release/EpubToMp3.app/Contents/Resources",
+        "Seal macOS .app"],
+      "flutter-desktop" => ["${{ matrix.package_root }}", "Package Linux build"]
+    }
+    destinations.each do |name, (destination, package_step)|
+      steps = @jobs.fetch(name).fetch("steps")
+      download = index(steps) { |step| step.dig("with", "name") == "native-third-party-notices" }
+      packaging = index(steps) { |step| step["name"] == package_step }
+      assert_equal "#{destination}/ThirdPartyNotices", steps[download].dig("with", "path")
+      assert_operator download, :<, packaging, name
+    end
+    desktop = @jobs.fetch("flutter-desktop")
+    assert_equal %w[flutter_app/build/linux/x64/release/bundle flutter_app/build/windows/x64/runner/Release],
+      desktop.dig("strategy", "matrix", "include").map { |entry| entry.fetch("package_root") }
+    steps = desktop.fetch("steps")
+    assert_operator index(steps) { |step| step.dig("with", "name") == "native-third-party-notices" }, :<,
+      index(steps) { |step| step["name"] == "Package Windows build" }
+  end
+
+  def test_android_publication_requires_the_staged_source_notice_in_the_signed_apk
+    command = @jobs.fetch("android").fetch("steps").find { |step| step["name"] == "Rename APK" }.fetch("run")
+    Dir.mktmpdir("release-android-notice") do |directory|
+      notice = "assets/ThirdPartyNotices/SOURCE.md"
+      packaged = File.join(directory, notice)
+      staged = File.join(directory, "flutter_app/android/app/src/main", notice)
+      apk = File.join(directory, "flutter_app/build/app/outputs/flutter-apk/app-release.apk")
+      [packaged, staged, apk].each { |file| FileUtils.mkdir_p(File.dirname(file)) }
+      File.write(packaged, "validated source\n")
+      _, error, status = Open3.capture3("zip", "-q", apk, notice, chdir: directory)
+      assert status.success?, error
+
+      File.write(staged, "different source\n")
+      _, _, status = Open3.capture3("bash", "-eo", "pipefail", "-c", command, chdir: directory)
+      refute status.success?
+      release = File.join(directory, "EpubToMp3_android.apk")
+      refute File.exist?(release)
+
+      FileUtils.cp(packaged, staged)
+      _, error, status = Open3.capture3("bash", "-eo", "pipefail", "-c", command, chdir: directory)
+      assert status.success?, error
+      assert_equal File.binread(apk), File.binread(release)
     end
   end
 
