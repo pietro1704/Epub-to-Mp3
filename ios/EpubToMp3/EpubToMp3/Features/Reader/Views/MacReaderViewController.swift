@@ -17,6 +17,7 @@ final class MacReaderViewController: NSViewController {
     private let onClose: () -> Void
     private let onListen: () -> Void
     private let onPlaySelection: (Int, Double) -> Void
+    private let onPlayPDF: (PDFReadingAudioMap.Anchor) -> Void
     private let onChromeChanged: (Bool) -> Void
     private var chromeHidden = false
     private lazy var composition: MacReaderViewComposition = MacReaderViewComposition(
@@ -53,6 +54,7 @@ final class MacReaderViewController: NSViewController {
         onClose: @escaping () -> Void,
         onListen: @escaping () -> Void = {},
         onPlaySelection: @escaping (Int, Double) -> Void = { _, _ in },
+        onPlayPDF: @escaping (PDFReadingAudioMap.Anchor) -> Void = { _ in },
         onChromeChanged: @escaping (Bool) -> Void = { _ in },
         preparedRenderer: PreparedChapterRenderer? = nil,
         preparedChapterStore: PreparedReaderChapterStore = .shared,
@@ -74,6 +76,7 @@ final class MacReaderViewController: NSViewController {
         self.onClose = onClose
         self.onListen = onListen
         self.onPlaySelection = onPlaySelection
+        self.onPlayPDF = onPlayPDF
         self.onChromeChanged = onChromeChanged
         self.preparedRenderer = preparedRenderer ?? .shared
         self.preparedChapterStore = preparedChapterStore
@@ -136,6 +139,7 @@ final class MacReaderViewController: NSViewController {
         observeOpenStage("reader_configure_started")
         configureReader()
         annotations.onPlayFromHere = { [weak self] chapter, ratio in self?.onPlaySelection(chapter, ratio) }
+        textPresentation.onPlayPDF = onPlayPDF
         composition.textView.onToggleChrome = { [weak self] in self?.toggleChrome() }
         observeOpenStage("reader_configure_completed")
         textPresentation.observeAppearance()
@@ -228,7 +232,19 @@ final class MacReaderViewController: NSViewController {
     @objc private func showFootnotes() { annotations.showFootnotes() }
 
     @objc private func closeReader() { onClose() }
-    @objc private func listenFromReader() { onListen() }
+    @objc private func listenFromReader() {
+        if textPresentation.playFromVisiblePDFPosition(presentUnavailable: presentUnavailablePDFPlayback) { return }
+        onListen()
+    }
+
+    private func presentUnavailablePDFPlayback() {
+        guard let window = view.window, window.attachedSheet == nil else { return }
+        let alert = NSAlert()
+        alert.messageText = L10n.string("reader.selection.playFromHere")
+        alert.informativeText = L10n.string("reader.pdf.audioUnavailable")
+        alert.addButton(withTitle: L10n.string("common.ok"))
+        alert.beginSheetModal(for: window)
+    }
     private func toggleChrome() {
         chromeHidden.toggle()
         composition.setChromeHidden(chromeHidden)
