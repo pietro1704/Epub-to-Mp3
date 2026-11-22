@@ -31,6 +31,8 @@ public static class ReaderTestDesktop
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+    [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid interfaceId, out IntPtr accessible);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint owner);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
@@ -41,6 +43,23 @@ public static class ReaderTestDesktop
         uint owner;
         GetWindowThreadProcessId(window, out owner);
         return owner;
+    }
+
+    public static IntPtr FindFlutterView(IntPtr window)
+    {
+        return FindWindowEx(window, IntPtr.Zero, "FLUTTERVIEW", null);
+    }
+
+    public static bool RequestClientAccessibility(IntPtr window)
+    {
+        const uint objIdClient = unchecked((uint)-4);
+        var accessibleId = new Guid("618736E0-3C3D-11CF-810C-00AA00389B71"); // IID_IAccessible
+        IntPtr accessible;
+        int result = AccessibleObjectFromWindow(window, objIdClient, ref accessibleId, out accessible);
+        if (accessible == IntPtr.Zero)
+            return false;
+        Marshal.Release(accessible);
+        return result == 0;
     }
 
     public static void Click(int x, int y, uint owner)
@@ -65,6 +84,7 @@ $fixtureHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $fixturePath).Hash
 $evidencePath = (New-Item -ItemType Directory -Force -Path $Evidence).FullName
 $application = $null
 $window = [IntPtr]::Zero
+$flutterView = [IntPtr]::Zero
 
 function Wait-ForReaderUi([string]$Description, [scriptblock]$Lookup) {
   $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -104,9 +124,37 @@ function Find-VisibleElement([System.Windows.Automation.AutomationElement]$Root,
   }
 }
 
-function Find-AppText([string]$Pattern) {
-  $root = [System.Windows.Automation.AutomationElement]::FromHandle($window)
-  Find-VisibleElement $root { param($item) $item.Name -match $Pattern }
+function Find-AppText([string]$Pattern, [switch]$IncludeTooltip) {
+  $root = [System.Windows.Automation.AutomationElement]::FromHandle($flutterView)
+  Find-VisibleElement $root {
+    param($item)
+    $item.Name -match $Pattern -or
+      ($IncludeTooltip -and $item.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
+        $item.HelpText -match $Pattern)
+  }
+}
+
+function Save-ReaderAccessibility([IntPtr]$Handle) {
+  $root = [System.Windows.Automation.AutomationElement]::FromHandle($Handle)
+  $elements = @($root; Get-ReaderElements $root)
+  $rows = @(
+    foreach ($element in $elements) {
+      try {
+        $item = $element.Current
+        $name = $item.Name -replace '\s+', ' '
+        $help = $item.HelpText -replace '\s+', ' '
+        "$($item.ControlType.ProgrammaticName) | class=$($item.ClassName) | id=$($item.AutomationId) | offscreen=$($item.IsOffscreen) | name=$name | help=$help"
+      } catch [System.Windows.Automation.ElementNotAvailableException] {
+        'Element disappeared during capture.'
+      }
+    }
+  )
+  $summary = "UIA handle=$Handle, descendants=$($elements.Count - 1)"
+  Write-Host $summary
+  $rows | Select-Object -First 20 | ForEach-Object {
+    Write-Host ('UIA ' + $_.Substring(0, [Math]::Min(220, $_.Length)))
+  }
+  @($summary) + $rows | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath 'visible-elements.txt')
 }
 
 function Click-ReaderElement([System.Windows.Automation.AutomationElement]$Element) {
@@ -162,7 +210,16 @@ try {
   [void][ReaderTestDesktop]::ShowWindow($window, 3)
   [void][ReaderTestDesktop]::SetForegroundWindow($window)
 
-  $addBook = Wait-ForReaderUi 'the Library Add a book control' { Find-AppText '^Add a book$' }
+  $flutterView = Wait-ForReaderUi 'the Flutter view window' {
+    $handle = [ReaderTestDesktop]::FindFlutterView($window)
+    if ($handle -ne [IntPtr]::Zero -and [ReaderTestDesktop]::Owner($handle) -eq $application.Id) { $handle }
+  }
+  # Flutter starts building its Windows semantics tree on a client accessibility request.
+  Wait-ForReaderUi 'the Flutter client accessibility provider' {
+    if ([ReaderTestDesktop]::RequestClientAccessibility($flutterView)) { $true }
+  } | Out-Null
+
+  $addBook = Wait-ForReaderUi 'the Library Add a book control' { Find-AppText '^Add a book$' -IncludeTooltip }
   Click-ReaderElement $addBook
 
   $dialog = Wait-ForReaderUi 'the native file picker' {
@@ -194,7 +251,7 @@ try {
   $chapterOne = (Wait-ForReaderUi 'the opening chapter passage' { Find-AppText 'a neblina cobria a colina' }).Current.Name
   Save-ReaderFrame 'chapter-1'
 
-  $contents = Wait-ForReaderUi 'the reader Table of contents control' { Find-AppText '^Table of contents$' }
+  $contents = Wait-ForReaderUi 'the reader Table of contents control' { Find-AppText '^Table of contents$' -IncludeTooltip }
   Click-ReaderElement $contents
   $secondEntry = Wait-ForReaderUi 'the second chapter in the table of contents' { Find-AppText '^O mapa antigo$' }
   Click-ReaderElement $secondEntry
@@ -216,13 +273,17 @@ try {
   if ($null -ne $application -and [ReaderTestDesktop]::Owner($foreground) -eq $application.Id) {
     try {
       Save-ReaderFrame 'failure' -Handle $foreground -Diagnostic
-      $root = [System.Windows.Automation.AutomationElement]::FromHandle($foreground)
-      Get-ReaderElements $root | ForEach-Object {
-        $item = $_.Current
-        "$($item.ControlType.ProgrammaticName) | $($item.AutomationId) | $($item.Name)"
-      } | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath 'visible-elements.txt')
     } catch {
-      Write-Warning "Could not retain the complete failure evidence: $_"
+      Write-Warning "Could not capture the failure frame: $_"
+    }
+    try {
+      $diagnosticWindow = $foreground
+      if ($foreground -eq $window -and $flutterView -ne [IntPtr]::Zero) {
+        $diagnosticWindow = $flutterView
+      }
+      Save-ReaderAccessibility $diagnosticWindow
+    } catch {
+      Write-Warning "Could not capture the accessibility tree: $_"
     }
   }
   throw
