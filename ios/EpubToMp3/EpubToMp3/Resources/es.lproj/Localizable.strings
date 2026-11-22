@@ -461,6 +461,7 @@
 "error.voiceLanguage" = "No hay ninguna voz compatible disponible para este idioma.";
 "error.unsupportedEngine" = "El motor de voz seleccionado no es compatible.";
 "error.conversionFailed" = "No se pudo convertir el libro en audio. Inténtalo de nuevo. Los detalles técnicos están en los registros.";
+"error.bookLanguageUncertain" = "No se pudo identificar con seguridad el idioma de este texto. Elige el idioma e inténtalo de nuevo.";
 "tts.recovery.title" = "Elegir un modelo compatible";
 "tts.recovery.message" = "El modelo actual no admite %@. Modelo sugerido: %@. El cambio solo se aplica a esta conversión.";
 "tts.recovery.use" = "Usar %@";

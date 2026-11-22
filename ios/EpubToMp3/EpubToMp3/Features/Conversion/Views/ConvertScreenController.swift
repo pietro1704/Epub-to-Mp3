@@ -438,7 +438,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
                let file = self.viewModel.selectedFile {
                 let requestID = self.viewModel.session.requestID
                 do {
-                    let bookID = try await Task.detached { try BookContentIdentity.hash(of: file) }.value
+                    let bookID = try await Task.detached { try ConvertViewModel.sourceIdentity(of: file) }.value
                     let recovered = await BookLanguagePicker.recover(failure, bookID: bookID, isCurrent: { [weak self] in
                         guard let self else { return false }
                         return self.navigationController?.topViewController === self

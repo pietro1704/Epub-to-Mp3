@@ -35,6 +35,34 @@ final class AppErrorReporterTests: XCTestCase {
         XCTAssertTrue(diagnostic.contains("private runtime diagnostic"))
     }
 
+    /// The iPhone 16e conversion.log of 2026-11-22 for "Hamlet - William Shakespeare.epub":
+    /// the book declares `pt`, the detector confirmed nothing. The screen used to show only the
+    /// generic failure because this structured error was not mapped.
+    func testInconclusiveBookLanguageGetsItsOwnMessageAndKeepsTheTechnicalReason() throws {
+        let book = "unsupported input: Book language remains inconclusive after expanded sampling "
+            + "[[book_language_uncertain_v1]]{\"declared\":\"pt\",\"confirmed\":null,\"languages\":[\"pt\"],"
+            + "\"samples_examined\":32,\"inconclusive_samples\":1,\"detector\":\"whatlang-0.18/book-consensus-v1\"}"
+            + "[[/book_language_uncertain_v1]]"
+        let passage = "unsupported input: Passage language remains inconclusive "
+            + "[[book_language_uncertain_v1]]{\"chapter_index\":0,\"end\":265,\"start\":95}[[/book_language_uncertain_v1]]"
+        for reason in [book, passage] {
+            let error = EmbeddedConverterError.conversionFailed(reason)
+            XCTAssertNotNil(BookLanguageUncertain.decode(error))
+            XCTAssertEqual(error.errorDescription, L10n.string("error.bookLanguageUncertain"))
+            XCTAssertNotEqual(error.errorDescription, L10n.string("error.conversionFailed"))
+            let pipe = Pipe()
+            _ = AppErrorReporter.message(error, context: "Manual conversion", destination: pipe.fileHandleForWriting)
+            try pipe.fileHandleForWriting.close()
+            let diagnostic = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            XCTAssertTrue(diagnostic.contains("book_language_uncertain_v1"), "the technical reason stays in the log")
+        }
+        // L10n returns the key itself for a missing entry, which would make the checks above pass.
+        XCTAssertNotEqual(L10n.string("error.bookLanguageUncertain"), "error.bookLanguageUncertain")
+        // Other unsupported input keeps the generic message.
+        XCTAssertEqual(EmbeddedConverterError.conversionFailed("unsupported input: empty book").errorDescription,
+                       L10n.string("error.conversionFailed"))
+    }
+
     func testMismatchEnvelopePreservesLanguageAndModelWithoutParsingEnglish() throws {
         let payload = "[[tts_language_mismatch_v1]]{\"language\":\"en-US\",\"model_id\":\"pt_BR-faber-medium\"}[[/tts_language_mismatch_v1]]"
         let error = EmbeddedConverterError.conversionFailed("wrapped system speech error: " + payload)

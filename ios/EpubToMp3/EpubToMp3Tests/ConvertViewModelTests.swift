@@ -2,6 +2,51 @@ import XCTest
 @testable import EpubToMp3
 
 final class ConvertViewModelTests: XCTestCase {
+    // MARK: - Source identity for language recovery
+    //
+    // The security scope taken for the conversion ends when ConvertViewModel.submit returns.
+    // The language recovery then hashes the picked file; a file picked in place (Files, iCloud,
+    // asCopy: false) is unreadable without its own scope, so the hash failed and the recovery
+    // picker never appeared.
+
+    private struct ScopeTrace {
+        var events: [String] = []
+    }
+
+    func testSourceIdentityHashesInsideItsOwnSecurityScope() throws {
+        let file = URL(fileURLWithPath: "/tmp/picked.epub")
+        var trace = ScopeTrace()
+        let identity = try ConvertViewModel.sourceIdentity(
+            of: file,
+            startScope: { _ in trace.events.append("start"); return true },
+            stopScope: { _ in trace.events.append("stop") },
+            hash: { _ in trace.events.append("hash"); return "identity" })
+        XCTAssertEqual(identity, "identity")
+        XCTAssertEqual(trace.events, ["start", "hash", "stop"])
+    }
+
+    func testSourceIdentityClosesTheScopeWhenHashingFails() {
+        let file = URL(fileURLWithPath: "/tmp/picked.epub")
+        var trace = ScopeTrace()
+        XCTAssertThrowsError(try ConvertViewModel.sourceIdentity(
+            of: file,
+            startScope: { _ in trace.events.append("start"); return true },
+            stopScope: { _ in trace.events.append("stop") },
+            hash: { _ in trace.events.append("hash"); throw CocoaError(.fileReadNoPermission) }))
+        XCTAssertEqual(trace.events, ["start", "hash", "stop"])
+    }
+
+    func testSourceIdentityNeverClosesAScopeItDidNotOpen() throws {
+        let file = URL(fileURLWithPath: "/tmp/inside-the-app.epub")
+        var trace = ScopeTrace()
+        _ = try ConvertViewModel.sourceIdentity(
+            of: file,
+            startScope: { _ in trace.events.append("start"); return false },
+            stopScope: { _ in trace.events.append("stop") },
+            hash: { _ in trace.events.append("hash"); return "identity" })
+        XCTAssertEqual(trace.events, ["start", "hash"], "a file the app already owns has no scope to stop")
+    }
+
 #if os(macOS)
     private final class PartialCopyFailureFileManager: FileManager, @unchecked Sendable {
         override func copyItem(at source: URL, to destination: URL) throws {

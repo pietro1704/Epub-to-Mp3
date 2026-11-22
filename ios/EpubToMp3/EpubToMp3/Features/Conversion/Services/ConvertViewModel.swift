@@ -94,6 +94,20 @@ final class ConvertViewModel {
         }
     }
 
+    /// Content identity of a picked file, read inside its own security scope. The scope taken
+    /// for the conversion ends when `submit` returns, and a file picked in place (Files, iCloud)
+    /// cannot be read without one, so the language recovery must not hash outside it.
+    nonisolated static func sourceIdentity(
+        of file: URL,
+        startScope: (URL) -> Bool = { $0.startAccessingSecurityScopedResource() },
+        stopScope: (URL) -> Void = { $0.stopAccessingSecurityScopedResource() },
+        hash: (URL) throws -> String = { try BookContentIdentity.hash(of: $0) }
+    ) throws -> String {
+        let started = startScope(file)
+        defer { if started { stopScope(file) } }
+        return try hash(file)
+    }
+
 #if os(macOS)
     /// Copies a selected document into an app-owned inbox with a balanced
     /// security-scoped access lifetime.

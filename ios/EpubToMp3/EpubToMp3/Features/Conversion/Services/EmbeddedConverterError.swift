@@ -27,6 +27,7 @@ extension EmbeddedConverterError {
             if TtsLanguageMismatch.decode(self) != nil || reason.contains("Model does not support this language") {
                 return L10n.string("error.modelLanguage")
             }
+            if BookLanguageUncertain.decode(self) != nil { return L10n.string("error.bookLanguageUncertain") }
             if reason.contains("Language is unavailable") { return L10n.string("error.voiceLanguage") }
             if reason.contains("Unsupported TTS engine") { return L10n.string("error.unsupportedEngine") }
             if reason == L10n.string("convert.error.invalidChapterRange") { return reason }
