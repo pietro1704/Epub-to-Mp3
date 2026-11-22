@@ -194,9 +194,7 @@ impl ConversionSession {
             )
             .map_err(error)?;
         if let Some(id) = &resolved.model_id {
-            let model = converter_core::model_catalog::MODELS
-                .iter()
-                .find(|model| model.id == id)
+            let model = converter_core::model_catalog::model_by_id(id)
                 .ok_or_else(|| error("Audio receipt has an unknown model"))?;
             if resolved.model_revision.is_none()
                 || receipt.identity.artifacts.len() != model.artifacts.len()

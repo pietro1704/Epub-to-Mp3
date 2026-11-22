@@ -69,3 +69,19 @@ export function browserArtifacts(model) {
       : artifact.name === "model.onnx.json" ? `${model.id}.onnx.json` : artifact.name,
   }))
 }
+
+export function browserDownloadSelections(catalog, includeLow = false) {
+  const models = catalog.models.filter(model => includeLow || !model.manual_only)
+  return browserSelections({ ...catalog, models })
+}
+
+export async function installedManualBrowserSelections(catalog, isInstalled) {
+  const models = catalog.models.filter(model => model.manual_only)
+  const selections = browserSelections({ ...catalog, models })
+  const installed = await Promise.all(selections.map(async selection => {
+    const model = models.find(model => model.id === selection.model_id)
+    try { return await isInstalled(model) ? selection : null }
+    catch { return null }
+  }))
+  return installed.filter(Boolean)
+}

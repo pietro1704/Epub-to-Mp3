@@ -97,7 +97,7 @@ export function installModel(modelId) {
     return Promise.reject(new Error("Another model installation is active."))
   }
   const install = async () => {
-    const catalog = await loadTtsCatalog()
+    const catalog = await loadTtsCatalog(true)
     if (!browserSelections(catalog).some(selection => selection.model_id === modelId)) {
       throw new Error("No compatible browser runtime for the selected model.")
     }

@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { browserArtifacts, browserSelections } from "../app/javascript/runtime/tts_catalog.js"
-import { TTS_PREFERENCES_KEY, edge, effectiveTtsPreferences, faber, loadTtsPreferences, saveTtsPreferences, system } from "../app/javascript/runtime/tts_preferences.js"
+import { browserArtifacts, browserDownloadSelections, browserSelections, installedManualBrowserSelections } from "../app/javascript/runtime/tts_catalog.js"
+import { TTS_PREFERENCES_KEY, availableTtsPreferences, edge, effectiveTtsPreferences, faber, loadTtsPreferences, saveTtsPreferences, system } from "../app/javascript/runtime/tts_preferences.js"
 import { installModel, pendingModelInstallation } from "../app/javascript/runtime/model_installation.js"
 import { FABER_ARTIFACTS, ModelIntegrity } from "../app/javascript/runtime/model_integrity.js"
 import { TtsPreparationError, createConversionRuntime, createPiperPreparation, createSynthesis } from "../app/javascript/runtime/conversion_runtime.js"
@@ -33,6 +33,60 @@ test("descriptor-driven selection admits compatible models and keeps runtime and
   assert.deepEqual(browserSelections(catalog([ model("a", { runtime_available: false }) ])), [])
   assert.deepEqual(browserSelections(catalog([ model("a", { artifacts: [] }) ])), [])
   assert.deepEqual(browserSelections(catalog([ model("a") ], [ provider({ targets: [ "apple" ] }) ])), [])
+})
+
+test("manual Piper selection requires a captured revision and checks its installed artifacts", async () => {
+  const low = model("pt_BR-edresson-low", { manual_only: true })
+  const all = catalog([ ...catalog().models, low ])
+  const installed = []
+  const { prepare } = createPiperPreparation({
+    loadCatalog: async (manual) => manual ? all : catalog(),
+    verifyModel: async (entry) => { installed.push(entry.id) },
+  })
+  const choice = browserSelections(all).find((entry) => entry.model_id === low.id)
+  await assert.rejects(prepare({ engine: "piper", model_id: low.id }), /compatible browser/)
+  await assert.rejects(prepare({ ...choice, session: { ...choice.session, model_revision: "obsolete" } }), /revision/)
+  assert.deepEqual(installed, [])
+  await prepare(choice)
+  assert.deepEqual(installed, [ low.id ])
+})
+
+test("download filter is opt-in and expanding it never selects an uninstalled or corrupt Low voice", async () => {
+  const edresson = model("pt_BR-edresson-low", { manual_only: true })
+  const lessac = model("en_US-lessac-low", { manual_only: true })
+  const all = catalog([ catalog().models[0], edresson, lessac ])
+  assert.deepEqual(browserDownloadSelections(all).map(choice => choice.model_id), [ faber.model_id ])
+  assert.deepEqual(browserDownloadSelections(all, true).map(choice => choice.model_id), [ faber.model_id, edresson.id, lessac.id ])
+  assert.deepEqual(await installedManualBrowserSelections(all, async () => false), [])
+  const checked = []
+  const installed = await installedManualBrowserSelections(all, async candidate => {
+    checked.push(candidate.id)
+    if (candidate.id === lessac.id) throw new Error("storage error")
+    return candidate.id === edresson.id
+  })
+  assert.deepEqual(checked, [ edresson.id, lessac.id ])
+  assert.deepEqual(installed.map(choice => choice.model_id), [ edresson.id ])
+  assert.equal(installed[0].session.model_revision, edresson.revision)
+  assert.deepEqual(browserDownloadSelections(all).map(choice => choice.model_id), [ faber.model_id ])
+})
+
+test("explicit Low primaries survive a saved policy while Low reserves are discarded", () => {
+  const low = browserSelections(catalog([ model("pt_BR-edresson-low", { manual_only: true }) ]))[0]
+  const saved = { primary: low, secondary: system, allow_online_fallback: false }
+  const fallback = { primary: faber, secondary: low, allow_online_fallback: false }
+  const storage = memoryStorage()
+  saveTtsPreferences(storage, saved)
+  assert.deepEqual(loadTtsPreferences(storage), saved)
+  assert.deepEqual(effectiveTtsPreferences(loadTtsPreferences(storage), null), saved)
+  assert.deepEqual(availableTtsPreferences(saved, null), saved)
+  assert.deepEqual(availableTtsPreferences(saved, [ low ]), saved)
+  assert.deepEqual(availableTtsPreferences(saved, []).primary, faber)
+  const stale = { ...low, session: { ...low.session, model_revision: "obsolete" } }
+  assert.deepEqual(availableTtsPreferences(saved, [ stale ]).primary, faber)
+  saveTtsPreferences(storage, fallback)
+  assert.equal(loadTtsPreferences(storage).secondary, null)
+  assert.equal(effectiveTtsPreferences(fallback, null).secondary, null)
+  assert.equal(effectiveTtsPreferences(fallback, faber, true).secondary, null)
 })
 
 test("preferences default offline, keep explicit old choices and survive a broken store", () => {

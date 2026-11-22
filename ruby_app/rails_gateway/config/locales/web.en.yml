@@ -47,6 +47,9 @@ en:
       none: None
       inherit: Use preferences
       reserve: Allow secondary for this conversion
+      downloads: Model downloads
+      downloadModel: Model to download
+      showLowQuality: Show low-quality models
       install: Install selected model
       installed: Selected model installed
       installing: Installing…

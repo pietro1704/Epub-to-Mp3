@@ -15,6 +15,32 @@ export const TTS_PREFERENCES_KEY = "ebook-tts.preferences.v1"
 export const faber = Object.freeze({ engine: "piper", model_id: "pt_BR-faber-medium", voice: null })
 export const system = Object.freeze({ engine: "system", model_id: null, voice: null })
 export const edge = Object.freeze({ engine: "edge", model_id: null, voice: null })
+export function isLowPiperSelection(selection) {
+  const modelId = selection?.model_id ?? selection?.session?.model_id
+  const stem = typeof modelId === "string" ? modelId.trim().toLowerCase().split(".")[0] : ""
+  return selection?.engine === "piper" && /(?:^|[-_])low$/.test(stem)
+}
+
+export function availableTtsPreferences(preferences, installedManual) {
+  const selection = preferences.primary
+  if (!isLowPiperSelection(selection)) return preferences
+  const revision = selection.session?.model_revision
+  if (revision && (installedManual === null || installedManual.some(choice =>
+    choice.model_id === selection.model_id && choice.session.model_revision === revision
+  ))) return preferences
+  return {
+    ...preferences,
+    primary: faber,
+    secondary: preferences.secondary?.model_id === faber.model_id ? null : preferences.secondary,
+  }
+}
+
+function withoutLowFallback(preferences) {
+  return isLowPiperSelection(preferences.secondary)
+    ? { ...preferences, secondary: null, allow_online_fallback: false }
+    : preferences
+}
+
 
 /**
  * @param {Pick<Storage, "getItem"> | undefined} storage
@@ -25,7 +51,7 @@ export function loadTtsPreferences(storage) {
     const stored = storage?.getItem(TTS_PREFERENCES_KEY)
     if (stored) {
       const value = JSON.parse(stored)
-      if ([ "piper", "edge", "system" ].includes(value?.primary?.engine)) return value
+      if ([ "piper", "edge", "system" ].includes(value?.primary?.engine)) return withoutLowFallback(value)
     }
   } catch { /* An inaccessible or malformed store uses fresh defaults. */ }
   return { policy_version: 2, primary: { ...faber }, secondary: { ...system }, allow_online_fallback: false }
@@ -48,6 +74,7 @@ export function saveTtsPreferences(storage, value) {
  * @returns {TtsPreferences}
  */
 export function effectiveTtsPreferences(saved, override, useSecondary = false) {
+  saved = withoutLowFallback(saved)
   const secondary = useSecondary && saved.secondary && override && !(
     override.engine === saved.secondary.engine &&
     (override.model_id ?? null) === (saved.secondary.model_id ?? null) &&

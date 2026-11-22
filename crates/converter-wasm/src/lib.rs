@@ -14,6 +14,11 @@ pub fn tts_catalog_json_v2() -> String {
 }
 
 #[wasm_bindgen]
+pub fn tts_manual_catalog_json_v2() -> String {
+    converter_core::tts_session::manual_catalog_json()
+}
+
+#[wasm_bindgen]
 pub fn tts_request_cache_material_v2(
     source: &str,
     language: &str,

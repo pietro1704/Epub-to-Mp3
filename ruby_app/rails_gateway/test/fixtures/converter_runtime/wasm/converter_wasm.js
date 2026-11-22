@@ -75,3 +75,32 @@ export function tts_catalog_json_v2() {
     ],
   })
 }
+
+// Provides only catalog data. The browser still fetches, hashes and publishes
+// both fixture artifacts through the application installer and real OPFS.
+export function tts_manual_catalog_json_v2() {
+  const catalog = JSON.parse(tts_catalog_json_v2())
+  const artifacts = [
+    {
+      name: "model.onnx",
+      url: new URL("low-model.data", import.meta.url).href,
+      sha256: "38f57715044c22f586404642ff4a6abfbb53adbafc0ffb5a58a734b3c26b0809",
+      bytes: 30,
+    },
+    {
+      name: "model.onnx.json",
+      url: new URL("low-model.json", import.meta.url).href,
+      sha256: "717e0e2be4f8617fd7b4da8c5b13158bb461e7da03b76628e59b60af41d28046",
+      bytes: 42,
+    },
+  ]
+  catalog.models.push({
+    id: "pt_BR-fixture-low",
+    engine: "piper",
+    revision: artifacts.map(artifact => artifact.sha256).join(":"),
+    artifacts,
+    runtime_available: true,
+    manual_only: true,
+  })
+  return JSON.stringify(catalog)
+}

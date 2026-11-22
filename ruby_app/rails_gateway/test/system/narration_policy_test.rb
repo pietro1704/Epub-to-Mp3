@@ -27,14 +27,17 @@ class NarrationPolicyTest < ApplicationSystemTestCase
     assert_empty page.evaluate_script("performance.getEntriesByType('resource').filter(e => e.name.includes('huggingface.co'))")
   end
 
-  test "starting another conversion restores the saved voice and the model install target" do
+  test "starting another conversion restores the saved voice independently of the download target" do
     skip "needs the Rust model catalog" unless RuntimeFixture.built_runtime?
     visit root_path
     assert_runtime_ready
     assert_select "Primary voice", selected: "Faber medium"
+    find("summary", text: "Model downloads").click
+    assert_unchecked_field "Show low-quality models"
+    assert_select "Model to download", selected: "Faber medium"
     uncheck "Use preferences"
     select "pt_BR-cadu-medium", from: "Voice for this conversion"
-    assert_selector "#narration-policy[data-model-install-model-value='pt_BR-cadu-medium']"
+    assert_select "Model to download", selected: "Faber medium"
     click_button "Use sample book"
     assert_selector ".book-queue__item[data-status=ready]"
     fill_in "Which chapters do you want? (optional)", with: "1"
@@ -44,7 +47,78 @@ class NarrationPolicyTest < ApplicationSystemTestCase
     assert_checked_field "Use preferences"
     assert_no_select "Voice for this conversion"
     assert_select "Primary voice", selected: "Faber medium"
-    assert_selector "#narration-policy[data-model-install-model-value='pt_BR-faber-medium']"
+    assert_select "Model to download", selected: "Faber medium"
+  end
+
+  test "showing Low downloads does not add an uninstalled Low narration voice" do
+    skip "needs the Rust model catalog" unless RuntimeFixture.built_runtime?
+    visit root_path
+    assert_runtime_ready
+    supports_manual = page.evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      import("runtime/converter_runtime")
+        .then(({ loadTtsCatalog }) => loadTtsCatalog(true))
+        .then(catalog => done(catalog.models.some(model => model.manual_only)), () => done(false))
+    JS
+    skip "needs the manual Rust model catalog" unless supports_manual
+    find("summary", text: "Model downloads").click
+    assert_no_selector "[data-model-install-target=model] option[value=pt_BR-edresson-low]", visible: :all
+    check "Show low-quality models"
+    assert_selector "[data-model-install-target=model] option[value=pt_BR-edresson-low]", visible: :all
+    select "pt_BR-edresson-low", from: "Model to download"
+    assert_select "Primary voice", selected: "Faber medium"
+    assert_no_selector "[data-narration-policy-target] option[value=pt_BR-edresson-low]", visible: :all
+    uncheck "Show low-quality models"
+    assert_no_selector "[data-model-install-target=model] option[value=pt_BR-edresson-low]", visible: :all
+    assert_empty page.evaluate_script("performance.getEntriesByType('resource').filter(e => e.name.includes('huggingface.co'))")
+  end
+
+  test "a locally installed Low voice remains an explicit primary after closing the filter and reloading" do
+    skip "exercises local browser installation with the test catalog and fixture artifacts" if RuntimeFixture.built_runtime?
+    model_id = "pt_BR-fixture-low"
+    download_option = "[data-model-install-target=model] option[value='#{model_id}']"
+    primary_option = "[data-narration-policy-target=primary] option[value='#{model_id}']"
+    secondary_option = "[data-narration-policy-target=secondary] option[value='#{model_id}']"
+
+    visit root_path
+    assert_runtime_ready
+    find("summary", text: "Model downloads").click
+    assert_unchecked_field "Show low-quality models"
+    assert_no_selector download_option, visible: :all
+    assert_no_selector primary_option, visible: :all
+    check "Show low-quality models"
+    select model_id, from: "Model to download"
+    assert_select "Primary voice", selected: "Faber medium"
+    assert_no_selector primary_option, visible: :all
+    assert_empty page.evaluate_script("performance.getEntriesByType('resource').filter(entry => /low-model\.(data|json)$/.test(entry.name))")
+
+    click_button "Install selected model"
+    assert_text "Selected model installed"
+    assert_selector primary_option, visible: :all
+    assert_select "Primary voice", selected: "Faber medium"
+    assert_no_selector secondary_option, visible: :all
+    select model_id, from: "Primary voice"
+
+    revision = page.evaluate_script("JSON.parse(localStorage.getItem('ebook-tts.preferences.v1')).primary.session.model_revision")
+    artifact_directory = Rails.root.join("test/fixtures/converter_runtime/wasm")
+    assert_equal %w[low-model.data low-model.json].map { |file| Digest::SHA256.file(artifact_directory.join(file)).hexdigest }.join(":"), revision
+    resources = page.evaluate_script("performance.getEntriesByType('resource').map(entry => entry.name)")
+    assert_equal %w[low-model.data low-model.json], resources.grep(/low-model\.(data|json)$/).map { |url| File.basename(url) }.sort
+    assert_empty resources.grep(/huggingface\.co/)
+
+    uncheck "Show low-quality models"
+    assert_no_selector download_option, visible: :all
+    assert_select "Primary voice", selected: model_id
+    assert_no_selector secondary_option, visible: :all
+
+    visit root_path
+    assert_runtime_ready
+    assert_select "Primary voice", selected: model_id
+    assert_no_selector secondary_option, visible: :all
+    find("summary", text: "Model downloads").click
+    assert_unchecked_field "Show low-quality models"
+    assert_no_selector download_option, visible: :all
+    assert_empty page.evaluate_script("performance.getEntriesByType('resource').filter(entry => /low-model\.(data|json)$/.test(entry.name))")
   end
 
   test "blocked browser storage reports how to open the Space directly without downloading" do
@@ -57,6 +131,7 @@ class NarrationPolicyTest < ApplicationSystemTestCase
     visit root_path
     assert_runtime_ready
     within("#narration-policy") do
+      find("summary", text: "Model downloads").click
       assert_text "Browser model storage is unavailable."
       click_button "Install selected model"
       assert_text "open the Space directly in its own tab"

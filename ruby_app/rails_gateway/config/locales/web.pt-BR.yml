@@ -47,6 +47,9 @@ pt-BR:
       none: Nenhuma
       inherit: Usar preferências
       reserve: Permitir secundário nesta conversão
+      downloads: Downloads de modelos
+      downloadModel: Modelo para baixar
+      showLowQuality: Mostrar qualidade baixa
       install: Instalar modelo selecionado
       installed: Modelo selecionado instalado
       installing: Instalando…
