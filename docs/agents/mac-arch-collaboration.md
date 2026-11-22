@@ -16,8 +16,8 @@ when changed interpretation/authorization requires it.
 These rules come from the November 2026 three-terminal campaign (two Mac panes
 and one Arch pane in Herdr). Keep them unless Pietro changes them.
 
-1. **One coordinator, one board.** The session that receives a round-wide
-   request coordinates unless Pietro names another. The board is the
+1. **One coordinator, one board.** `epub-coord` coordinates (see
+   [Roles and models](#roles-and-models)) unless Pietro names another. The board is the
    "Concurrent queues" section at the top of the local `TODO_APP.md`: one short
    entry per lane with its owner, task IDs, worktree, dependencies and the next
    step. At the start of every turn each pane reads only its own queue and
@@ -62,6 +62,34 @@ and one Arch pane in Herdr). Keep them unless Pietro changes them.
    outcomes and blockers to Pietro, sending each scope or authorization
    question once with the affected lanes identified.
 
+### Roles and models
+
+Pietro set these roles on 2026-11-22. He talks only to `epub-coord`.
+
+| Herdr name | Where | Role | Model and effort |
+| --- | --- | --- | --- |
+| `epub-coord` | Mac, left pane of the epub tab | Plans, prioritizes the board, writes task cards, dispatches, reviews results and PRs, merges and reports. Runs no native build, Simulator or device job and holds no lease unless Pietro asks. Sole channel to Arch. | Opus, high |
+| `epub-apple` | Mac, right pane | Sole owner of the Apple window, the build lease, Swift/iOS/macOS code, SE1 and the 16e. | Sonnet, high (medium for routine) |
+| `epub-android` | Arch pane in ai-jail | Flutter Linux/Android, adb, Windows through CI, Android signing. | Sonnet, high (medium for routine) |
+
+A task card states ID, goal, scope, files and worktree, acceptance, verification,
+out-of-scope items and where to record evidence. Send executors only work: Mac via
+`herdr agent prompt epub-apple ...`, Arch via the [Arch channel limits](#arch-channel-limits).
+Use Fable high only for a large audit, an architecture decision or a bug that
+failed twice (switch with `/model`, then switch back). Search and reading
+subagents use low effort.
+
+Relaunch commands:
+
+```sh
+# epub-coord (Mac)
+cd ios/EpubToMp3 && ai-memory run --yolo claude --model opus --effort high
+# epub-apple (Mac)
+cd ios/EpubToMp3 && ai-memory run --yolo claude --model sonnet --effort high
+# epub-android (Arch)
+~/Developer/epubtomp3-overnight-20261121/resume-claude-arch.sh
+```
+
 ### Native window handback receipt
 
 The releasing owner writes a receipt in its evidence directory and sends one
@@ -99,11 +127,12 @@ report.
 
 | Surface | Editing and verification owner | Required evidence |
 | --- | --- | --- |
-| Native Swift/UIKit/AppKit, Apple FFI packaging | Mac | Native macOS and required SE1/iOS15.2 checks through the reviewed Intel supervisor |
-| Flutter Linux | Arch | Focused Flutter tests and actual Linux app behavior for affected UI/runtime paths |
-| Flutter Android | Arch | Focused Flutter/Android tests and affected behavior on the physical Samsung |
-| Flutter Windows | Arch or GitHub CI (never this Mac) | Focused Flutter tests and the CI Windows package build for affected UI/runtime paths |
-| Shared Rust and FFI contracts | One named editing owner per task | Owning Rust regression and affected client-platform verification |
+| Native Swift/UIKit/AppKit, Apple FFI packaging | `epub-apple` (Mac) | Native macOS and required SE1/iOS15.2 checks through the reviewed Intel supervisor |
+| Flutter Linux | `epub-android` (Arch) | Focused Flutter tests and actual Linux app behavior for affected UI/runtime paths |
+| Flutter Android | `epub-android` (Arch) | Focused Flutter/Android tests and affected behavior on the physical Samsung |
+| Flutter Windows | `epub-android` through GitHub CI (never this Mac) | Focused Flutter tests and the CI Windows package build for affected UI/runtime paths |
+| Shared Rust and FFI contracts | One named editing owner per task, assigned by `epub-coord` | Owning Rust regression and affected client-platform verification |
+| Board, task cards, PR review and merge | `epub-coord` (Mac) | Board entry and receipt for each card; verified merge |
 
 The other agent may review or test shared Rust but does not edit the same files
 concurrently. Assign owned paths before changing them. Preserve books, models,
