@@ -331,7 +331,7 @@ final class MainReaderScreenController: UIViewController {
         view.bringSubviewToFront(readerNavigation.readerNavigationBar)
         readerController = reader
         readerBookID = book.id
-        readerNavigation.readerNavigationItem.rightBarButtonItems = reader.navigationBarButtonItems
+        reader.installNavigationBarButtonItems(in: readerNavigation.readerNavigationItem)
         if playbackLocationRequest?.bookID != book.id {
             PlaybackBindingStore.setCurrentlyPlaying(
                 bookID: book.id,
@@ -406,6 +406,7 @@ final class MainReaderScreenController: UIViewController {
 
     private func removeReaderControllerIfNeeded() {
         guard let readerController else { return }
+        readerController.installNavigationBarButtonItems(in: nil)
         readerController.willMove(toParent: nil)
         readerController.view.removeFromSuperview()
         readerController.removeFromParent()

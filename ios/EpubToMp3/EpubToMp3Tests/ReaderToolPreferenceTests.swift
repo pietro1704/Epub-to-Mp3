@@ -30,13 +30,40 @@ final class ReaderToolBarTests: XCTestCase {
         XCTAssertEqual(initial.count, 2)
         XCTAssertEqual(initial[0].accessibilityIdentifier, "reader.more")
         XCTAssertEqual(initial[1].title, "Aa")
-        XCTAssertEqual(initial[0].menu?.children.count, ReaderTool.allCases.count)
+        XCTAssertEqual(initial[0].menu?.children.count, ReaderTool.allCases.count - 1)
         toolbar.choose(.search)
         XCTAssertTrue(toolbar.items[0] === initial[0])
         XCTAssertTrue(toolbar.items[1] === initial[1])
         XCTAssertEqual(toolbar.items[1].accessibilityIdentifier, "reader.search")
         XCTAssertEqual(performed, [.search])
         XCTAssertEqual(ReaderToolPreference(defaults: defaults).recent, .search)
+    }
+
+    func testRecentFootnotesIsRemovedFromInstalledNavigationAndRestoredWithoutChangingPreference() throws {
+        let suite = "NativeRecentFootnotes.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preference = ReaderToolPreference(defaults: defaults)
+        preference.recent = .footnotes
+        var performed: [ReaderTool] = []
+        let toolbar = ReaderToolBar(defaults: defaults) { performed.append($0) }
+        let navigation = UINavigationItem()
+        toolbar.install(in: navigation)
+        let more = try XCTUnwrap(navigation.rightBarButtonItems?.first)
+        XCTAssertEqual(navigation.rightBarButtonItems?.count, 1)
+        toolbar.choose(.footnotes)
+        XCTAssertTrue(performed.isEmpty)
+        XCTAssertEqual(preference.recent, .footnotes)
+
+        toolbar.hasFootnotes = true
+        let recent = try XCTUnwrap(navigation.rightBarButtonItems?.last)
+        XCTAssertEqual(recent.accessibilityIdentifier, ReaderTool.footnotes.accessibilityIdentifier)
+        XCTAssertTrue(navigation.rightBarButtonItems?.first === more)
+        toolbar.hasFootnotes = false
+        XCTAssertEqual(navigation.rightBarButtonItems?.count, 1)
+        toolbar.hasFootnotes = true
+        XCTAssertTrue(navigation.rightBarButtonItems?.last === recent)
+        XCTAssertEqual(preference.recent, .footnotes)
     }
 }
 #endif

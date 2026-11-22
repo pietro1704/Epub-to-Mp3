@@ -15,7 +15,13 @@ enum DevelopmentSeedBook {
 #if DEBUG && os(iOS)
         if let index = arguments.firstIndex(of: "-uiTestTextPDFSeed") {
             guard arguments.indices.contains(index + 1) else { return false }
-            return installTextPDFFixture(arguments[index + 1], into: store, fileManager: fileManager)
+            return installUITestFixture(arguments[index + 1], filename: "EpubToMp3UITestTextFixture.pdf",
+                signature: Array("%PDF-".utf8), into: store, fileManager: fileManager)
+        }
+        if let index = arguments.firstIndex(of: "-uiTestEPUBSeed") {
+            guard arguments.indices.contains(index + 1) else { return false }
+            return installUITestFixture(arguments[index + 1], filename: "EpubToMp3UITestFixture.epub",
+                signature: [0x50, 0x4b, 0x03, 0x04], into: store, fileManager: fileManager)
         }
 #endif
         guard arguments.contains("-developmentSeedBook") else { return false }
@@ -42,18 +48,19 @@ enum DevelopmentSeedBook {
     }
 
 #if DEBUG && os(iOS)
-    private static func installTextPDFFixture(_ encoded: String, into store: LibraryStore, fileManager: FileManager) -> Bool {
+    private static func installUITestFixture(_ encoded: String, filename: String, signature: [UInt8],
+                                             into store: LibraryStore, fileManager: FileManager) -> Bool {
         guard encoded.utf8.count <= 32 * 1024, let data = Data(base64Encoded: encoded),
-              data.starts(with: "%PDF-".utf8) else { return false }
+              data.starts(with: signature) else { return false }
         let directory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let url = directory.appendingPathComponent("EpubToMp3UITestTextFixture.pdf")
+        let url = directory.appendingPathComponent(filename)
         defer { try? fileManager.removeItem(at: directory) }
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: false)
             try data.write(to: url)
             return importSeed(url, into: store)
         } catch {
-            print("Failed to stage the text PDF fixture: \(error)")
+            print("Failed to stage the UI test fixture: \(error)")
             return false
         }
     }

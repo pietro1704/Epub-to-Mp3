@@ -167,22 +167,18 @@ private func selectionLanguageMenuItem(range: NSRange) -> NSMenuItem? {
     /// reference (see the iOS `ReaderFootnotesSheet` doc comment for
     /// why that's fragile).
     func showFootnotes() {
+        guard let footnotes = chapter(at: selectedChapter)?.footnotes, !footnotes.isEmpty else { return }
         let alert = NSAlert()
         alert.messageText = L10n.string("reader.footnotes.title")
-        let footnotes = chapter(at: selectedChapter)?.footnotes ?? []
-        if footnotes.isEmpty {
-            alert.informativeText = L10n.string("reader.footnotes.empty")
-        } else {
-            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 380, height: 220))
-            let textView = NSTextView(frame: scrollView.bounds)
-            textView.isEditable = false
-            textView.string = footnotes.enumerated()
-                .map { "\($1.number ?? String($0 + 1)). \($1.text)" }
-                .joined(separator: "\n\n")
-            scrollView.documentView = textView
-            scrollView.hasVerticalScroller = true
-            alert.accessoryView = scrollView
-        }
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 380, height: 220))
+        let textView = NSTextView(frame: scrollView.bounds)
+        textView.isEditable = false
+        textView.string = footnotes.enumerated()
+            .map { "\($1.number ?? String($0 + 1)). \($1.text)" }
+            .joined(separator: "\n\n")
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        alert.accessoryView = scrollView
         alert.addButton(withTitle: L10n.string("common.ok"))
         alert.runModal()
     }

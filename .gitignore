@@ -210,5 +210,6 @@ target/
 /TODO_APP.md
 /handoff.md
 
-# Authored native reader acceptance fixture; no personal book content.
+# Authored native reader acceptance fixtures; no personal book content.
 !ios/EpubToMp3/EpubToMp3UITests/Fixtures/ReaderLiveLinks.epub
+!ios/EpubToMp3/EpubToMp3UITests/Fixtures/FootnotesAvailability.epub

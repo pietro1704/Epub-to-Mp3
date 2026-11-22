@@ -149,7 +149,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             (max(0, $0.index - 1), $0.name ?? L10n.string("player.chapter", $0.index))
         }
     }
-
 var onListenRequested: (() -> Void)?
 private lazy var toolBar = ReaderToolBar(defaults: sessionDefaults) { [weak self] tool in
     guard let self else { return }
@@ -166,8 +165,7 @@ private lazy var toolBar = ReaderToolBar(defaults: sessionDefaults) { [weak self
 }
 
 /// Stable native bar items let the direct-access tool update without replacing the host bar.
-var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
-
+func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.install(in: item) }
     private static let reimportTypes: [UTType] = SupportedImportTypes.all
 
     init(book initialBook: BookEntity, library: LibraryStore, settings: AppSettings, bookmarkStore: BookmarkStore,
@@ -256,6 +254,7 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
         renderer: preparedRenderer, preparedPresentation: preparedPresentation,
         readingPosition: readingPosition, annotations: annotations, diagnostics: diagnostics,
         stageObserver: openStageObserver,
+        onFootnotesAvailabilityChanged: { [weak self] in self?.toolBar.hasFootnotes = $0 },
         applyColors: { [weak self] in self?.settingsPresentation.applyReaderColors() },
         showError: { [weak self] in self?.showLoadingError($0) },
         completeLoading: { [weak self] in self?.loadingSession.completeLoadingAfterStableTextLayoutIfNeeded() }
@@ -322,10 +321,10 @@ var navigationBarButtonItems: [UIBarButtonItem] { toolBar.items }
 
     private func loadBook() {
         guard isViewLoaded else { return }
+        toolBar.hasFootnotes = false
         loadingSession.cancelFixture()
         bookLoadSession.loadBook()
     }
-
     private func observeOpenStage(_ name: String) {
         let timestamp = DispatchTime.now().uptimeNanoseconds
         openStageObserver?(name, timestamp)

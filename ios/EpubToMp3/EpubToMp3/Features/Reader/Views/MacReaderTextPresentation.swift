@@ -161,6 +161,7 @@ final class MacReaderTextPresentation {
             clipView.scroll(to: NSPoint(x: 0, y: scrollToEnd ? end : 0))
             contentScrollView.reflectScrolledClipView(clipView)
         }
+        composition.setFootnotesAvailable(chapter.footnotes?.isEmpty == false)
         ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: 0)
         if let bookID = currentBookId { prepareChapterProjection(bookID, index) }
     }

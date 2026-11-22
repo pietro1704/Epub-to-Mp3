@@ -20,19 +20,23 @@ final class ReaderAccessibilityContractTests: XCTestCase {
         let more = try XCTUnwrap(descendants(harness.controller.view).compactMap { $0 as? NSButton }
             .first { $0.accessibilityIdentifier() == "reader.more" })
         let tools = try XCTUnwrap(more.menu).items.compactMap { $0.representedObject as? String }
-        XCTAssertEqual(Set(tools), Set(ReaderTool.allCases.map(\.rawValue)))
+        XCTAssertEqual(Set(tools), Set(ReaderTool.allCases.filter { $0 != .footnotes }.map(\.rawValue)))
 #else
         XCTAssertEqual(harness.composition.textView.accessibilityIdentifier, "reader.content")
         let reader = BookOpenScreenController(book: harness.book,
             library: LibraryStore(defaults: harness.defaults), settings: harness.settings,
             bookmarkStore: harness.bookmarks, player: harness.player, sessionDefaults: harness.defaults)
-        let identifiers = Set(reader.navigationBarButtonItems.compactMap(\.accessibilityIdentifier))
+        let item = UINavigationItem()
+        reader.installNavigationBarButtonItems(in: item)
+        let items = try XCTUnwrap(item.rightBarButtonItems)
+        let identifiers = Set(items.compactMap(\.accessibilityIdentifier))
         for identifier in ["reader.more", "reader.settings.toggle"] {
             XCTAssertTrue(identifiers.contains(identifier))
         }
-        XCTAssertEqual(reader.navigationBarButtonItems.count, 2)
-        let menu = try XCTUnwrap(reader.navigationBarButtonItems.first?.menu)
-        XCTAssertEqual(menu.children.count, ReaderTool.allCases.count)
+        XCTAssertEqual(items.count, 2)
+        let menu = try XCTUnwrap(items.first?.menu)
+        let tools = menu.children.compactMap { ($0 as? UIAction)?.identifier.rawValue }
+        XCTAssertEqual(Set(tools), Set(ReaderTool.allCases.filter { $0 != .footnotes }.map(\.accessibilityIdentifier)))
         XCTAssertFalse(reader.isViewLoaded, "Reading action metadata must not open a source or start playback")
 #endif
     }

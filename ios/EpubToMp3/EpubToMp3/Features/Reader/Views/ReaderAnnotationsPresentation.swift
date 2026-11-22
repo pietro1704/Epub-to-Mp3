@@ -184,16 +184,8 @@ private func chooseSelectionLanguage(_ scope: PassageLanguageCorrection, bookID:
     // MARK: - Footnotes
 
     func showFootnotes() {
-        guard let footnotes = document.fulltext?.chapters[safe: document.selectedChapter]?.footnotes, !footnotes.isEmpty else {
-            let alert = UIAlertController(
-                title: L10n.string("reader.footnotes.title"),
-                message: L10n.string("reader.footnotes.empty"),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-            present(alert)
-            return
-        }
+        guard let footnotes = document.chapter(at: document.selectedChapter)?.footnotes,
+              !footnotes.isEmpty else { return }
         let sheet = ReaderFootnotesSheet(footnotes: footnotes)
         present(UINavigationController(rootViewController: sheet))
     }

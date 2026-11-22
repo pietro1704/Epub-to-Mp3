@@ -66,7 +66,8 @@ final class IOSReaderActiveChapterTests: XCTestCase {
                   html: nil, css: nil, charCount: nil, segments: nil),
             .init(index: 7, name: "Active", text: String(repeating: "The complete saved chapter remains readable.\n", count: repetitions),
                   html: "<html><body><p>" + String(repeating: "The complete saved chapter remains readable.<br/>", count: repetitions)
-                    + "</p></body></html>", css: nil, charCount: nil, segments: nil),
+                    + "</p></body></html>", css: nil, charCount: nil, segments: nil,
+                  footnotes: [.init(number: "1", text: "An authored note.")]),
         ])
         let source = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
         let encoder = PropertyListEncoder()
@@ -93,8 +94,12 @@ final class IOSReaderActiveChapterTests: XCTestCase {
         let catalogGate = AsyncStream<Void> { releaseCatalog = $0 }
         let catalogRequested = expectation(description: "Catalog hydration starts after the prepared chapter is visible")
         let controlsReady = expectation(description: "Reader controls become usable after opening gesture deferral ends")
+        let active = payload.chapters[1]
+        let updatedChapter = EbookFulltext.Chapter(index: active.index, name: active.name, text: active.text,
+            html: active.html, css: active.css, charCount: active.charCount, segments: active.segments, footnotes: [])
         let hydratedPayload = mismatchedCatalog
-            ? EbookFulltext(jobId: id, bookTitle: "Changed title", bookAuthor: "Author", chapters: payload.chapters)
+            ? EbookFulltext(jobId: id, bookTitle: "Changed title", bookAuthor: "Author",
+                            chapters: [payload.chapters[0], updatedChapter])
             : payload
         let reader: @Sendable (String) async -> EbookFulltext? = { _ in
             catalogRequested.fulfill()
@@ -131,8 +136,19 @@ final class IOSReaderActiveChapterTests: XCTestCase {
                 stageNames.append(name)
                 if name == "controls_usable" { controlsReady.fulfill() }
             },
-            deferInitialReaderGestures: !launchRestore
+            sessionDefaults: defaults, deferInitialReaderGestures: !launchRestore
         )
+        let navigation = UINavigationItem()
+        ReaderToolPreference(defaults: defaults).recent = .footnotes
+        controller.installNavigationBarButtonItems(in: navigation)
+        let more = try XCTUnwrap(navigation.rightBarButtonItems?.first)
+        func footnotesActionExists() -> Bool {
+            more.menu?.children.contains {
+                ($0 as? UIAction)?.identifier.rawValue == ReaderTool.footnotes.accessibilityIdentifier
+            } == true
+        }
+        XCTAssertFalse(footnotesActionExists())
+        XCTAssertEqual(navigation.rightBarButtonItems?.count, 1)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 568))
         window.windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         window.rootViewController = controller
@@ -141,6 +157,8 @@ final class IOSReaderActiveChapterTests: XCTestCase {
 
         await fulfillment(of: [catalogRequested], timeout: 3)
         await fulfillment(of: [controlsReady], timeout: 3)
+        XCTAssertTrue(footnotesActionExists(), "The visible projection already owns its footnotes")
+        XCTAssertEqual(navigation.rightBarButtonItems?.last?.accessibilityIdentifier, ReaderTool.footnotes.accessibilityIdentifier)
         let textView = try XCTUnwrap(findTextView(controller.view))
         XCTAssertEqual(textView.attributedText.string, activeText,
                        "The validated active chapter must appear while the complete catalog is still suspended")
@@ -213,9 +231,13 @@ final class IOSReaderActiveChapterTests: XCTestCase {
                        "The projected chapter must commit the saved position against its final viewport")
         if mismatchedCatalog {
             releaseCatalog.yield(())
-            for _ in 0..<100 where textView.attributedText.string != activeText {
-                await Task.yield()
+            for _ in 0..<200 {
+                if !footnotesActionExists() { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
             }
+            XCTAssertFalse(footnotesActionExists(), "The replacement chapter has no notes")
+            XCTAssertEqual(navigation.rightBarButtonItems?.count, 1)
+            XCTAssertEqual(ReaderToolPreference(defaults: defaults).recent, .footnotes)
             XCTAssertEqual(textView.attributedText.string, activeText)
             XCTAssertEqual(ReaderProgressStore.read(bookId: id)?.chapterIndex, 1)
         }

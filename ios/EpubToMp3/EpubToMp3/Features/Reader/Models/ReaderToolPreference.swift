@@ -2,6 +2,8 @@ import Foundation
 
 enum ReaderTool: String, CaseIterable {
     case appearance, contents, search, footnotes, listen
+    func isAvailable(hasFootnotes: Bool) -> Bool { self != .footnotes || hasFootnotes }
+
     var title: String {
         switch self {
         case .appearance: return L10n.string("reader.settings")
