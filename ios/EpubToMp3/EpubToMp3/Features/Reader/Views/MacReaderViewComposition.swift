@@ -190,5 +190,30 @@ final class MacReaderViewComposition {
         // Visibility never participates in the content constraints or text layout.
         for chrome in [toolbar, chapterTitleLabel, statusLabel, chromeBackground] { chrome.isHidden = hidden }
     }
+
+    func protectPDFOpeningPosition(_ pdf: PDFView) {
+        view.layoutSubtreeIfNeeded()
+        guard pdf.document != nil else { return }
+        pdf.layoutDocumentView()
+        guard let documentView = pdf.documentView, let scroll = documentView.enclosingScrollView,
+              scroll.isDescendant(of: pdf) else { return }
+        let chrome = chromeBackground.convert(chromeBackground.bounds, to: scroll)
+        let coveredHeight = scroll.bounds.intersection(chrome).height
+        var insets = scroll.contentInsets
+        guard coveredHeight > insets.top else { return }
+
+        // Give the first page clearance at the leading scroll boundary. Keep the inset
+        // fixed when chrome visibility changes so PDFKit preserves the exact reading offset.
+        scroll.automaticallyAdjustsContentInsets = false
+        insets.top = coveredHeight
+        scroll.contentInsets = insets
+        let clip = scroll.contentView
+        var bounds = clip.bounds
+        bounds.origin.y = clip.isFlipped
+            ? documentView.frame.minY - insets.top
+            : documentView.frame.maxY - bounds.height + insets.top
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(clip)
+    }
 }
 #endif
