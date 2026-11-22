@@ -71,6 +71,29 @@ public static class ReaderTestDesktop
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr info);
 
+    private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder text, int capacity);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, System.Text.StringBuilder text, int capacity);
+
+    // Top-level windows of one process, so a dialog is found even when it is not the foreground window.
+    public static string[] ProcessWindows(uint owner)
+    {
+        var rows = new List<string>();
+        EnumWindows(delegate (IntPtr handle, IntPtr parameter)
+        {
+            if (Owner(handle) != owner)
+                return true;
+            var cls = new System.Text.StringBuilder(256);
+            var title = new System.Text.StringBuilder(256);
+            GetClassName(handle, cls, cls.Capacity);
+            GetWindowText(handle, title, title.Capacity);
+            rows.Add(handle.ToInt64() + "|" + (IsWindowVisible(handle) ? "visible" : "hidden") + "|" + cls + "|" + title);
+            return true;
+        }, IntPtr.Zero);
+        return rows.ToArray();
+    }
+
     public static uint Owner(IntPtr window)
     {
         uint owner;
@@ -313,6 +336,15 @@ try {
     $handle = [ReaderTestDesktop]::GetForegroundWindow()
     if ($handle -ne $window -and [ReaderTestDesktop]::Owner($handle) -eq $application.Id) {
       [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+    } else {
+      # The picker can be visible without being foreground; look at every top-level window of the app.
+      foreach ($row in [ReaderTestDesktop]::ProcessWindows($application.Id)) {
+        $parts = $row.Split('|', 4)
+        if ($parts[1] -eq 'visible' -and $parts[2] -eq '#32770') {
+          [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr][long]$parts[0])
+          break
+        }
+      }
     }
   }
   $filename = Wait-ForReaderUi 'the native file name field' {
@@ -359,6 +391,14 @@ try {
   if ($env:GITHUB_ACTIONS -eq 'true') {
     $message = $_.Exception.Message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
     Write-Host "::error title=Windows reader journey::$message"
+  }
+  if ($null -ne $application) {
+    try {
+      [ReaderTestDesktop]::ProcessWindows($application.Id) |
+        Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath 'process-windows.txt')
+    } catch {
+      Write-Warning "Could not list the application windows: $_"
+    }
   }
   $foreground = [ReaderTestDesktop]::GetForegroundWindow()
   if ($null -ne $application -and [ReaderTestDesktop]::Owner($foreground) -eq $application.Id) {
