@@ -176,6 +176,7 @@ $evidencePath = (New-Item -ItemType Directory -Force -Path $Evidence).FullName
 $application = $null
 $window = [IntPtr]::Zero
 $flutterView = [IntPtr]::Zero
+$dialog = $null
 
 function Wait-ForReaderUi([string]$Description, [scriptblock]$Lookup) {
   $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -261,7 +262,13 @@ function Write-AccessibilityEvidence([string]$Api, [IntPtr]$Handle, [string[]]$R
   $Rows | Select-Object -First 20 | ForEach-Object {
     Write-Host ("$Api " + $_.Substring(0, [Math]::Min(220, $_.Length)))
   }
-  @($summary) + $Rows | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath "visible-elements-$Api.txt")
+  @($summary) + $Rows | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath "visible-elements-$Api-$Handle.txt")
+  if ($env:GITHUB_ACTIONS -eq 'true') {
+    # Annotations stay readable without downloading logs or artifacts.
+    $digest = (@($summary) + ($Rows | Select-Object -First 25 | ForEach-Object { $_.Substring(0, [Math]::Min(160, $_.Length)) })) -join "`n"
+    $digest = $digest.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+    Write-Host "::notice title=$Api tree $Handle::$digest"
+  }
 }
 
 function Click-FlutterElement([ReaderTestDesktop+FlutterElement]$Element) {
@@ -348,10 +355,13 @@ try {
     }
   }
   $filename = Wait-ForReaderUi 'the native file name field' {
+    # The Windows common dialog names this edit differently across versions; accept any visible
+    # editable text field, which is the file name box when the dialog first opens.
     Find-VisibleElement $dialog {
       param($item)
       $item.ControlType -eq [System.Windows.Automation.ControlType]::Edit -and
-        ($item.AutomationId -eq '1001' -or $item.Name -match '^File name:?$')
+        ($item.AutomationId -in @('1001', '1148') -or $item.Name -match '(?i)^(File name|Nome do arquivo):?$' -or
+         $item.ClassName -eq 'Edit')
     }
   }
   $value = $filename.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
@@ -398,6 +408,13 @@ try {
         Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath 'process-windows.txt')
     } catch {
       Write-Warning "Could not list the application windows: $_"
+    }
+  }
+  if ($null -ne $dialog) {
+    try {
+      Save-ReaderAccessibility ([IntPtr]$dialog.Current.NativeWindowHandle)
+    } catch {
+      Write-Warning "Could not capture the native dialog tree: $_"
     }
   }
   $foreground = [ReaderTestDesktop]::GetForegroundWindow()
