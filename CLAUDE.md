@@ -57,7 +57,11 @@ and Simulator safeguards follow the execution policy.
 - Memory routing: read [memory](docs/agents/memory.md); transport/configuration:
   read [collaboration operations](docs/agents/collaboration-operations.md).
 - Coordinating existing terminals, Mac/Arch ownership, or delegated work: read
-  [Mac/Arch collaboration](docs/agents/mac-arch-collaboration.md).
+  [Mac/Arch collaboration](docs/agents/mac-arch-collaboration.md). Work your own
+  board queue, message other panes only for a lease, a required action or a
+  decision, and never sit idle while lease-free work remains.
+- Unclear feature behavior: ask Pietro how it should work; continue the
+  unambiguous work meanwhile.
 
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)

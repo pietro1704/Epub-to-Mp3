@@ -13,42 +13,85 @@ when changed interpretation/authorization requires it.
 
 ## Coordinate a round across existing terminals
 
-1. **Name a coordinator.** The session that receives a round-wide request
-   coordinates unless Pietro names another. Reuse the current terminals and
-   their assignments. Record the coordinator and each lane's owner, task ID,
-   branch/worktree, relevant paths, dependencies, and acceptance in the existing
-   campaign plan. For the cleanup campaign, use section 7. The coordinator
-   maintains the current snapshot. Owners send updates at acknowledgement,
-   resource handoff, blockage, and completion.
-2. **Assign independent work.** For the three-terminal cleanup campaign, Batch 1
-   owns iOS, Batch 2 owns macOS, and Arch owns Linux/Wine and authorized Android
-   checks. Isolate each change in its own branch and worktree. When two lanes
-   need the same files, the owners agree on an order before editing. Name one
+These rules come from the November 2026 three-terminal campaign (two Mac panes
+and one Arch pane in Herdr). Keep them unless Pietro changes them.
+
+1. **One coordinator, one board.** The session that receives a round-wide
+   request coordinates unless Pietro names another. The board is the
+   "Concurrent queues" section at the top of the local `TODO_APP.md`: one short
+   entry per lane with its owner, task IDs, worktree, dependencies and the next
+   step. At the start of every turn each pane reads only its own queue and
+   works it. Record routine progress on the board or in a receipt, not in
+   messages.
+2. **Message only when another pane must act.** Contact another pane only for a
+   lease transfer, a dependency that requires its action, or a decision from
+   Pietro. Before sending through Herdr, discover the live panes and inspect the
+   recipient; queue in a busy agent's UI rather than interrupting it, and
+   preserve running jobs, approvals and pending user input. Use the
+   [mailbox](#sending-and-receiving) when a pane is unavailable, reconciling the
+   board and any outstanding envelope before switching channels. Delivery alone
+   does not prove acknowledgement or completion. Send each such message once
+   and verify it was queued. Do not broadcast startup, routine progress or
+   acknowledgements: a stream of messages interrupted the receiving agents. The coordinator alone owns the
+   Arch channel (pane and mailbox), so no request reaches Arch twice.
+3. **Assign independent work.** Give each lane disjoint files in its own branch
+   and worktree; agree an order before two lanes edit the same file, and name one
    editing owner for shared Rust. Queue dependent work behind its prerequisite
    and record the revision it must verify.
-3. **Route once and verify delivery.** When using Herdr, discover the live panes
-   on the local and named remote machines, and inspect the intended recipient
-   before sending. Queue follow-ups in a busy agent's UI and verify the queued
-   entry. Preserve running jobs, approvals, and pending user input. Ask the
-   owner to acknowledge the task ID and scope. Terminal delivery and agent
-   activity alone are insufficient to establish acknowledgement or completion.
-   Use the [Mac–Arch mailbox](#sending-and-receiving) when a live pane is
-   unavailable or an asynchronous cross-machine request is needed. Reconcile the
-   task board and any outstanding envelope before switching channels.
-4. **Queue native work.** Coordinate the next Mac job in the plan and give the
-   current run time to finish. Use the existing native guard and its bounded
-   queue. Before a supervised SE1 launch, obtain the prior owner's release and
-   evidence of `verified_shutdown`, then follow host admission and launch rules
-   in the [execution policy](execution-policy.md#native-safety) and
-   [Simulator safety](../simulator-safety.md). Retain logs and notify Pietro and
-   peers of a host incident before any further native load, following the stop
-   conditions in the execution policy.
-5. **Consolidate observed results.** Owners return task ID, status, tested SHA
-   and dirty state, platform, checks, evidence paths or URLs, and prerequisites
-   still open. Record PRs and exact revisions when relevant. The coordinator
-   verifies available evidence and reports outcomes and blockers to Pietro.
-   Requests that need a scope or authorization decision go to Pietro once with
-   the affected lanes identified.
+4. **Never idle.** While waiting for the native lease, a device or a decision,
+   do lease-free work in your own queue: Git and PR work, rebases, composition
+   previews of stacked candidates, host fixtures, offline diagnosis and
+   independent reviews by subagents in isolated worktrees. Native compilation,
+   Simulator and device work stay serial under the guard.
+5. **Queue native work.** One owner holds the exclusive Apple window at a time
+   and queues through the guard (`EPUB_NATIVE_WAIT_SECONDS`, one queued
+   attempt). Before a supervised SE1 launch, obtain the prior owner's handback
+   receipt, then follow host admission and launch rules in the
+   [execution policy](execution-policy.md#native-safety) and
+   [Simulator safety](../simulator-safety.md). Retain logs and notify Pietro
+   and peers of a host incident before any further native load.
+6. **Relayed decisions.** A decision Pietro gave in another session is
+   "relayed" until he confirms it in the acting session. Confirm before anything
+   hard to reverse or user-visible depends on it. When a feature's expected
+   behavior is not fully clear, ask Pietro how it should work and continue the
+   unambiguous work meanwhile.
+7. **Consolidate observed results.** Owners record task ID, status, tested SHA
+   and dirty state, platform, checks, evidence paths or URLs, and open
+   prerequisites. The coordinator verifies available evidence and reports
+   outcomes and blockers to Pietro, sending each scope or authorization
+   question once with the affected lanes identified.
+
+### Native window handback receipt
+
+The releasing owner writes a receipt in its evidence directory and sends one
+message naming the next owner. The receipt records: lease free; all simulators
+Shutdown; no Simulator, SimMetalHost, xcodebuild or app process left; host boot
+session and panic inventory unchanged; the last `verified_shutdown` time;
+installed builds and devices left as they were; the receipt path. The receiver
+answers once that it took the window.
+
+### Arch channel limits
+
+- The jailed Arch agent may appear as `unknown` in Herdr, so `herdr agent
+  prompt` returns `agent_not_found`. Read the pane, confirm its composer is
+  idle, then use `herdr --machine arch pane send-text` followed by `send-keys
+  enter`, and read the pane again to confirm submission.
+- The jailed Arch shell cannot reach Herdr. Arch replies through the
+  [mailbox](#sending-and-receiving) or a status file in a directory the jail
+  can read, which the coordinator copies back.
+- Arch has 8 GiB of RAM. Run one heavy Arch step at a time and cap build
+  workers: `systemd-oomd` killed the Arch agent on 2026-11-22 when RAM and swap
+  exceeded 90%.
+
+### Unattended rounds
+
+When Pietro is away, give each pane a bounded kickoff: queue order, forbidden
+actions (publication, signing, device data, history cleanup) and the evidence
+location. Panes do not wait for answers: they record each question for Pietro
+on the board, mark the blocked item paused and switch to another front. Ready
+PRs with passing gates merge through the normal workflow. On Pietro's return,
+the coordinator reconciles the board, merged PRs and pending questions in one
+report.
 
 ## Ownership
 

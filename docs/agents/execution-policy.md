@@ -191,6 +191,22 @@ Resuming after a stop event:
 5. Read `.reports/native-flight-recorder/flight.jsonl` after the run and stop
    again on a refusal, a throttled reading or any new report.
 
+Operational pitfalls observed in the November 2026 campaign:
+
+- Run supervisors and host tools with the managed Ruby from mise. macOS system
+  Ruby 2.6 lacks `filter_map` and fails before boot.
+- Keep queue variables such as `EPUB_NATIVE_WAIT_SECONDS` on the outer guard
+  only; fixtures that inherit them time out.
+- After a second identical guard or supervisor refusal, diagnose the guard
+  instead of queueing the same attempt again.
+- Report disk from `df` or `diskutil`. Finder counts purgeable space. A
+  supervised SE1 run consumed about 3 GiB, so start a few GiB above the floor.
+- When storage blocks native work, the agent may prune only reproducible
+  caches under the lease and must verify retained artifact hashes before and
+  after.
+- Request the 16e unlock only after the device preflight passes. The device
+  unified log requires root (exit 77); record it as unobservable.
+
 ### Host incident of 2026-11-19 21:35 BRT (2026-11-20 00:35 UTC): x86 CPU CATERR
 
 Each time below is BRT (UTC-3) on 2026-11-19 followed by UTC; from 21:00 BRT on,
@@ -331,6 +347,12 @@ require task-specific authorization. `--auto` alone is not proof of deferred,
 validated merging. Administrative bypass requires explicit approval for that PR.
 Release, website/Hugging Face publication and issue closure retain their own
 authorization boundaries.
+The merge workflow merges any ready PR whose gate passed, even with auto-merge
+off; to hold work, keep it on a pushed branch without a PR. The PR gate builds
+the macOS app only, so a change to `#if os(iOS)` code needs a guarded local iOS
+`build-for-testing` before its PR. After a rebase, earlier test results carry
+over without a rerun only when `git patch-id --stable` or the tested subtree
+bytes are unchanged; record that identity with the evidence.
 
 Continue available work while GitHub CI and merges run. Inspect relevant PR
 state and CI in one bounded pass in response to a new message from Pietro, then
