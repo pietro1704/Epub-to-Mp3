@@ -27,9 +27,9 @@ establish acceptance for that checkpoint or the later audit phases.
 | Local user documentation | [Wiki source index](wiki/README.md), in English and Brazilian Portuguese |
 
 Guides describe their own scope and may retain dated examples. Read the canonical
-contract and actual task definition before executing an example. Generic
-Simulator execution remains quarantined except the supervised SE1/iOS 15.2 route
-in the execution policy; Android work remains paused. The map
+contract and actual task definition before executing an example. Simulator
+execution has no host guard since 2026-11-22; the supervised SE1/iOS 15.2 route
+in the execution policy is the bounded, report-producing path; Android work remains paused. The map
 does not authorize dependency compilation, installs, cleanup or publication.
 
 ## Tracked product families

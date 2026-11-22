@@ -33,12 +33,12 @@ module NativeJobHostFixture
   # The compressor at 57% of memory and swap beyond every reading are added to that host.
   OLD_SWAP = IDLE.merge("load" => [3.32, 3.77, 3.77], "swap_used_mib" => 1192.75, "compressor_mib" => 368).freeze
   HEAVY_HISTORY = OLD_SWAP.merge("swap_used_mib" => 6144.0, "compressor_mib" => 4669).freeze
-  LIMITS = { "max_load_percent_of_cpus" => 75, "warn_swap_used_mib" => 1600, "warn_compressor_percent_of_memory" => 25,
-             "recheck_seconds" => 1, "default_wait_seconds" => 0, "child_niceness" => 10,
+  LIMITS = { "warn_load_percent_of_cpus" => 75, "warn_swap_used_mib" => 1600, "warn_compressor_percent_of_memory" => 25,
+             "child_niceness" => 10,
              "foreign_compilers" => %w[cargo rustc] }.freeze
   FLIGHT = { "interval_seconds" => 1, "max_file_bytes" => 65_536, "generations" => 1 }.freeze
   FLIGHT_DIR_ENV = "EPUB_NATIVE_FLIGHT_DIR"
-  # FIXTURE_FAST_SAMPLES readings answer at once (admission); later ones take
+  # FIXTURE_FAST_SAMPLES readings answer at once (the start-up note); later ones take
   # FIXTURE_SAMPLE_DELAY seconds, like telemetry on a loaded host.
   STUBS = <<~'RUBY'
     NativeJob.define_singleton_method(:host_services?) { |_path, **| true }
@@ -71,11 +71,9 @@ module NativeJobHostFixture
     @samples = File.join(@dir, "samples.json")
     @flight = File.join(@dir, "flight")
     @children = []
-    # The compiler preflight and storage floor read fixture commands, as in test_native_job.rb.
-    write_command("xcrun", %(#!/bin/bash\nprintf '{"devices":{"test":[{"state":"%s"}]}}\\n' "${FAKE_STATE:-Shutdown}"\n))
-    write_command("pgrep", "#!/bin/bash\nexit 1\n")
+    # The storage reading uses a fixture command, as in test_native_job.rb.
     write_command("df", "#!/bin/bash\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\nfixture 41943040 0 31457280 0%% /\\n'\n")
-    @env = { "PATH" => "#{@dir}:#{ENV.fetch('PATH')}", "FAKE_STATE" => nil,
+    @env = { "PATH" => "#{@dir}:#{ENV.fetch('PATH')}",
              "FIXTURE_LIMITS" => JSON.generate(LIMITS), "FIXTURE_FLIGHT" => JSON.generate(FLIGHT), "FIXTURE_SAMPLES" => @samples,
              "FIXTURE_LEASE_RETRY" => nil, "FIXTURE_NICE" => nil, "FIXTURE_SAMPLE_DELAY" => nil, "FIXTURE_FAST_SAMPLES" => nil,
              FLIGHT_DIR_ENV => @flight, NativeJob::FD_ENV => nil, NativeJob::PATH_ENV => nil, NativeJob::WAIT_ENV => nil,

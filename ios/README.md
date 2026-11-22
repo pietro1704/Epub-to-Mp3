@@ -17,12 +17,12 @@ Before building or opening an app, read
 [macOS validation](../docs/agents/macos-validation.md). Prefer inspection or
 packaging against a matching existing artifact when that answers the task.
 All Mac compilation uses guarded project tasks; preserve books, model files,
-application data and evidence. Simulator execution is quarantined, including
-existing artifacts and alternate launchers.
+application data and evidence. Simulator execution is no longer quarantined
+(host guards removed 2026-11-22); it still needs its own task authorization.
 
 For reader/pagination/chrome/player changes, read
 [EpubToMp3/AGENTS.md](EpubToMp3/AGENTS.md) and use the native-reader-regression
-skill. Required iPhone SE1/iOS 15.5 acceptance remains pending while quarantined;
+skill. Required iPhone SE1/iOS 15.5 acceptance remains pending until it is run under its own authorization;
 a physical device or newer runtime does not replace it. Source checks and host
 fixtures do not establish native rendering, playback or conversion success.
 

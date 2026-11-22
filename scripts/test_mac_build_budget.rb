@@ -10,18 +10,17 @@ require_relative "mac_build_budget"
 require_relative "native_job"
 
 class MacBuildBudgetTest < Minitest::Test
-  def test_read_only_check_retains_budget_refusal_status
+  def test_read_only_check_reports_low_space_and_always_exits_zero
     with_stub(:check, nil) { assert_equal 0, MacBuildBudget.main(["check"]) }
     with_stub(:check, "Fixture: destination full") do
-      _, error = capture_io { assert_equal 75, MacBuildBudget.main(["check"]) }
-      assert_match(/Fixture: destination full/, error)
+      _, error = capture_io { assert_equal 0, MacBuildBudget.main(["check"]) }
+      assert_match(/advisory, not a refusal: Fixture: destination full/, error)
     end
   end
 
   def setup
     @dir = File.realpath(Dir.mktmpdir("mac-build-budget-"))
-    @limits = { "version" => 1, "minimum_free_gib" => 20,
-                "check_interval_seconds" => 1 }
+    @limits = { "version" => 1, "warn_free_gib" => 20 }
   end
 
   def test_compatibility_wrapper_only_checks_and_preserves_cache_bytes_on_success_and_refusal
@@ -64,12 +63,13 @@ class MacBuildBudgetTest < Minitest::Test
     FileUtils.remove_entry(@dir)
   end
 
-  # Owner decision 2026-11-20: free space is the only storage limit, and only a
-  # nearly full disk stops a build. 20 GiB refused builds with 20 GiB free.
-  def test_shipped_floor_only_protects_a_nearly_full_disk
+  # Owner decision 2026-11-22: free space is only reported; no floor stops a build.
+  def test_shipped_threshold_only_words_a_note_for_a_nearly_full_disk
     shipped = JSON.parse(File.read(File.expand_path("../config/mac-build-budget.json", __dir__)))
-    assert_equal 5, shipped.fetch("minimum_free_gib")
-    floor = shipped.fetch("minimum_free_gib") * MacBuildBudget::GIB
+    assert_equal 5, shipped.fetch("warn_free_gib")
+    refute_includes shipped.keys, "minimum_free_gib"
+    refute_includes shipped.keys, "check_interval_seconds"
+    floor = shipped.fetch("warn_free_gib") * MacBuildBudget::GIB
     assert_nil MacBuildBudget.evaluate(shipped, free_bytes: 6 * MacBuildBudget::GIB, destination: @dir)
     assert_match(/Free disk below 5 GiB/, MacBuildBudget.evaluate(shipped, free_bytes: floor - 1, destination: @dir))
   end
@@ -99,7 +99,7 @@ class MacBuildBudgetTest < Minitest::Test
     refute File.exist?(File.join(parent, "future"))
   end
 
-  def test_invalid_output_or_unreadable_space_fails_closed
+  def test_invalid_output_or_unreadable_space_is_a_note_never_a_silent_pass
     invalid = File.join(@dir, "invalid")
     File.symlink("missing", invalid)
     assert_match(/inspection failed/, MacBuildBudget.check(File.join(invalid, "child"), host: "darwin"))
@@ -186,7 +186,6 @@ class MacBuildBudgetTest < Minitest::Test
     # Nested drivers validate the production lock path, isolated in this fixture.
     launcher = File.join(scripts, "native_job.rb")
     File.write(launcher, File.read(launcher).sub(NativeJob::LOCK_PATH, File.join(@dir, "lease")))
-    File.write(File.join(scripts, "native_build_preflight.rb"), "module NativeBuildPreflight; def self.check; nil; end; end\n")
     File.write(File.join(@dir, "config/mac-build-budget.json"), JSON.generate(@limits))
     @free = File.join(@dir, "free-kib")
     @marker = File.join(@dir, "child")
@@ -200,7 +199,6 @@ class MacBuildBudgetTest < Minitest::Test
       printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
       available=$(cat "$BUDGET_FREE_STATE")
       if [ "$2" = "${BUDGET_LOW_VOLUME:-}" ]; then available=1; fi
-      if [ "$2" = "${BUDGET_DRIVER_OUTPUT:-}" ] && [ -f "$BUDGET_DRIVER_STARTED" ]; then available=1; fi
       printf 'fixture 999999999 0 %s 0%% /\n' "$available"
     SH
     File.chmod(0o755, df)
@@ -217,14 +215,13 @@ class MacBuildBudgetTest < Minitest::Test
                 "build", "--", RbConfig.ruby, "-e"]
   end
 
-  def test_low_disk_blocks_before_child_and_ignores_environment_bypass
+  def test_low_disk_is_a_note_and_the_child_still_runs_to_the_end
     fixture
     File.write(@free, "0")
-    _, error, status = Open3.capture3(@env.merge("DISK_GUARD_THRESHOLD_GB" => "0", "EPUB_SKIP_BUDGET" => "1"),
-                                     *@command, "File.write(ARGV.fetch(0), 'ran')", @marker)
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Free disk below/, error)
-    refute File.exist?(@marker)
+    _, error, status = Open3.capture3(@env, *@command, "File.write(ARGV.fetch(0), 'ran')", @marker)
+    assert status.success?, error
+    assert_match(/advisory, not a refusal: Free disk below/, error)
+    assert_equal "ran", File.read(@marker)
   end
 
   def test_every_destination_is_checked_without_enumerating_caches_or_worktrees
@@ -240,18 +237,19 @@ class MacBuildBudgetTest < Minitest::Test
     File.unlink(@marker)
     _, error, status = Open3.capture3(@env.merge("BUDGET_LOW_VOLUME" => second), *command,
                                       "File.write(ARGV.fetch(0), 'ran')", @marker)
-    assert_equal 75, status.exitstatus, error
+    assert status.success?, error
+    assert_includes error, "advisory, not a refusal: Free disk below"
     assert_includes error, File.join(second, "new")
-    refute File.exist?(@marker)
+    assert_equal "ran", File.read(@marker)
   end
 
-  def test_invalid_configuration_blocks_before_child
+  def test_invalid_configuration_is_a_note_and_the_child_still_runs
     fixture
     File.write(File.join(@dir, "config/mac-build-budget.json"), "{}")
     _, error, status = Open3.capture3(@env, *@command, "File.write(ARGV.fetch(0), 'ran')", @marker)
-    assert_equal 75, status.exitstatus, error
+    assert status.success?, error
     assert_match(/inspection failed/, error)
-    refute File.exist?(@marker)
+    assert_equal "ran", File.read(@marker)
   end
 
   def test_budget_allows_child_and_limits_compiler_jobs
@@ -262,20 +260,19 @@ class MacBuildBudgetTest < Minitest::Test
     assert_equal "1,1", File.read(@marker)
   end
 
-  def test_monitor_terminates_its_child_when_disk_floor_is_crossed
+  def test_nothing_stops_a_running_child_when_the_disk_floor_is_crossed
     fixture
     target = File.join(@dir, "target")
     command = @command.dup.insert(4, "--build-dir", target)
-    program = 'File.write(ARGV.fetch(0), Process.pid.to_s); File.write(ARGV.fetch(1), "0"); sleep 30'
-    _, error, status = Timeout.timeout(8) { Open3.capture3(@env, *command, program, @marker, @free) }
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Free disk below/, error)
-    assert_equal [target, target], File.readlines(@trace, chomp: true)
-    pid = Integer(File.read(@marker))
-    assert_raises(Errno::ESRCH) { Process.kill(0, pid) }
+    program = 'File.write(ARGV.fetch(1), "0"); sleep 1; File.write(ARGV.fetch(0), "finished")'
+    _, error, status = Timeout.timeout(20) { Open3.capture3(@env, *command, program, @marker, @free) }
+    assert status.success?, error
+    refute_match(/Free disk below/, error)
+    assert_equal "finished", File.read(@marker)
+    assert_equal [target], File.readlines(@trace, chomp: true), "storage is read once, at the start"
   end
 
-  def test_nested_driver_monitors_its_additional_destination
+  def test_nested_driver_reports_its_additional_destination_without_blocking
     fixture
     target = File.join(@dir, "target")
     driver = File.join(@dir, "driver.rb")
@@ -283,40 +280,23 @@ class MacBuildBudgetTest < Minitest::Test
       require_relative 'scripts/native_job'
       NativeJob.build_entrypoint(__FILE__, ARGV, build_dir: ENV.fetch('BUDGET_DRIVER_OUTPUT'))
       File.write(ENV.fetch('BUDGET_DRIVER_STARTED'), Process.pid.to_s)
-      sleep 3
     RUBY
-    env = @env.merge("BUDGET_DRIVER_OUTPUT" => target, "BUDGET_DRIVER_STARTED" => @marker)
+    env = @env.merge("BUDGET_DRIVER_OUTPUT" => target, "BUDGET_DRIVER_STARTED" => @marker, "BUDGET_LOW_VOLUME" => target)
     _, error, status = Open3.capture3(env, *@command.take(6), RbConfig.ruby, driver)
-    assert_equal 75, status.exitstatus, error
+    assert status.success?, error
     assert_includes error, target
-    assert_raises(Errno::ESRCH) { Process.kill(0, Integer(File.read(@marker))) }
+    assert File.exist?(@marker), "the driver went on after the note"
   end
 
-  def test_explicit_parallel_compiler_request_is_refused_before_launch
-    skip "Mac compiler policy" unless RUBY_PLATFORM.include?("darwin")
+  def test_explicit_parallel_compiler_request_is_not_refused
     fixture
     compiler = File.join(@dir, "bin", "xcodebuild")
     File.write(compiler, "#!/bin/sh\nprintf ran > \"$BUDGET_MARKER\"\n")
     File.chmod(0o755, compiler)
     _, error, status = Open3.capture3(@env.merge("BUDGET_MARKER" => @marker),
                                      *@command.take(6), compiler, "-jobs", "4", "build")
-    assert_equal 75, status.exitstatus, error
-    assert_match(/exactly one job/, error)
-    refute File.exist?(@marker)
-    require_relative "native_job"
-    # Exercise the local one-job contract even when this suite runs on a hosted runner.
-    NativeJob.singleton_class.alias_method(:hosted_build_jobs_for_test, :build_jobs)
-    NativeJob.define_singleton_method(:build_jobs) { |*| 1 }
-    begin
-      %w[-j2 -j8 --jobs=2 --jobs=8 --jobs=-1].each do |option|
-        assert_match(/exactly one job/, NativeJob.parallelism_error(["cargo", "build", option]))
-      end
-      assert_match(/exactly one job/, NativeJob.parallelism_error(["cmake", "--build", ".", "--parallel", "2"]))
-      assert_nil NativeJob.parallelism_error(["cargo", "build", "--jobs", "1"])
-      assert_nil NativeJob.parallelism_error(["xcodebuild", "-showdestinations", "-json", "-jobs", "1"])
-    ensure
-      NativeJob.singleton_class.alias_method(:build_jobs, :hosted_build_jobs_for_test)
-    end
+    assert status.success?, error
+    assert_equal "ran", File.read(@marker)
   end
 
   def test_device_and_variant_build_caches_are_preserved_by_cleanup
@@ -378,7 +358,7 @@ class MacBuildBudgetTest < Minitest::Test
     end
   end
 
-  def test_actual_ios_build_task_uses_storage_guard_with_fake_compilers
+  def test_actual_ios_build_task_runs_through_the_lease_with_fake_compilers
     fixture
     body = task_body("ios:build")
     FileUtils.mkdir_p(File.join(@dir, "ios/EpubToMp3"))
@@ -409,7 +389,7 @@ class MacBuildBudgetTest < Minitest::Test
     end
     File.write(@free, "0")
     _, error, status = Open3.capture3(environment, "/bin/bash", "-euo", "pipefail", "-c", body, chdir: @dir)
-    refute status.success?, error
-    refute File.exist?(@marker)
+    assert status.success?, "low space is a note, not a refusal: #{error}"
+    assert File.file?(@marker)
   end
 end

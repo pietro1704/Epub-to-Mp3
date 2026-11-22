@@ -12,7 +12,8 @@ remote-server requirement from retained compatibility files. Linux Flutter and
 Android/Samsung work belongs on Arch; Android remains paused until resumed.
 Windows packaging requires the matching toolchain.
 
-All Mac compilation uses guarded tasks. Simulator execution remains quarantined;
+All Mac compilation uses guarded tasks. Simulator execution has no host guard
+since 2026-11-22;
 required SE1/iOS 15.2 reader acceptance stays pending and cannot be replaced by a
 physical device or another runtime. A native build, unit test or source registration
 does not establish visible reader, conversion or audio acceptance.

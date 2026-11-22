@@ -11,8 +11,8 @@ Use one coherent feature branch/PR, preserve unrelated work, add meaningful
 regression coverage and validate proportionally at the owning runtime. Relevant
 errors, cancellation and book/chapter identity matter more than a mandatory count
 of test tiers or specialists. Documentation-only changes need content/link checks.
-Host scripts are Ruby; web tests start with at most two workers; native guards,
-platform ownership and Simulator quarantine remain in force.
+Host scripts are Ruby; web tests start with at most two workers; the native build lease
+and platform ownership remain in force (host guards removed 2026-11-22).
 
 Commit/push and PR writes follow standing scoped delivery authorization after
 checks. All ready PRs to `master` retain automatic-merge authorization through

@@ -33,8 +33,8 @@ For macOS packaging/build/GUI work, use the
 A focused `-only-testing` selection can still compile its entire test target;
 choose packaging or an incremental app build when that is the actual seam.
 For native reader changes, use the reader instructions and skill. Their required
-SE1/iOS 15.2 acceptance uses the explicitly authorized, reviewed supervisor in
-the execution policy; retain it as pending until the actual journey passes.
+SE1/iOS 15.2 acceptance uses the explicitly authorized supervisor route in
+the execution policy (no host guard blocks it since 2026-11-22); retain it as pending until the actual journey passes.
 
 Use the active model configuration rather than pinning model names/prices in
 workflow prose. Discover skills by their actual descriptions; a focused fix

@@ -112,14 +112,17 @@ class NativeFlightRecorderTest < Minitest::Test
     ENV["PATH"] = path if path
   end
 
-  def test_a_reading_carries_the_warnings_it_earns
-    limits = { "warn_swap_used_mib" => 1600, "warn_compressor_percent_of_memory" => 25 }
-    quiet = { "swap_used_mib" => 1192.75, "compressor_mib" => 368, "memory_mib" => 8192 }
+  def test_a_reading_carries_the_notes_it_earns
+    limits = { "warn_load_percent_of_cpus" => 75, "warn_swap_used_mib" => 1600, "warn_compressor_percent_of_memory" => 25 }
+    quiet = { "load" => [2.0, 2.0, 2.0], "cpus" => 8, "pressure" => 1, "swap_used_mib" => 1192.75, "compressor_mib" => 368,
+              "memory_mib" => 8192, "compilers" => [], "own_compilers" => [] }
     assert_equal quiet.merge("warnings" => []), NativeFlightRecorder.reading(sampler: -> { quiet }, policy: -> { limits })
     grown = quiet.merge("swap_used_mib" => 1700.0)
     assert_equal ["swap in use 1700 MiB is above 1600 MiB"],
                  NativeFlightRecorder.reading(sampler: -> { grown }, policy: -> { limits }).fetch("warnings")
-    assert_equal %w[max_load_percent_of_cpus warn_swap_used_mib], HostLoad.limits.keys.first(2), "the real policy names the warning thresholds"
+    loaded = quiet.merge("load" => [7.12, 4.0, 3.0])
+    assert_match(/load average 7\.12/, NativeFlightRecorder.reading(sampler: -> { loaded }, policy: -> { limits }).fetch("warnings").join)
+    assert_equal %w[warn_load_percent_of_cpus warn_swap_used_mib], HostLoad.limits.keys.first(2), "the real policy names the advisory thresholds"
   end
 
   def test_rotation_bounds_storage_to_the_configured_generations

@@ -31,11 +31,9 @@ jobs:
         run: |
           mise exec -- ruby scripts/test_mac_build_budget.rb
           mise exec -- ruby scripts/test_native_job.rb
-          mise exec -- ruby scripts/test_native_build_preflight.rb
           mise exec -- ruby scripts/test_native_entrypoint_safety.rb
           mise exec -- ruby scripts/test_native_faber_entrypoints.rb
           mise exec -- ruby scripts/test_native_task_wiring.rb
-          mise exec -- ruby scripts/test_native_codex_tool_guard.rb
           mise exec -- ruby scripts/test_native_simulator_session.rb
           mise exec -- ruby scripts/test_device_workflow_entrypoint.rb
       - name: Type-check inherited-lease adapter without launching it

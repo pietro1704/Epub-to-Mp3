@@ -22,5 +22,5 @@ Browser storage/capabilities and native runtime dependencies need actual checks.
 
 An available task is not evidence that setup, conversion or a release works.
 Record the exact revision, artifact and observed result. Simulator execution
-remains quarantined. Package,
+has no host guard since 2026-11-22. Package,
 compile, launch and visible-app acceptance are separate stages.

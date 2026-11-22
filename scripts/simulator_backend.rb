@@ -2,7 +2,6 @@
 
 require "digest"
 require_relative "simulator_resources"
-require_relative "mac_build_budget"
 
 class SimulatorBackend
   attr_reader :app_pid
@@ -49,7 +48,6 @@ class SimulatorBackend
     if @app_fingerprint && app_fingerprint != @app_fingerprint
       raise SimulatorResources::Refusal, "Application changed after inspection"
     end
-    capture(RbConfig.ruby, File.join(__dir__, "mac_build_budget.rb"), "check", seconds: 8)
     nil
   end
 
@@ -63,8 +61,6 @@ class SimulatorBackend
       raise SimulatorResources::Refusal, "First-generation iPhone SE required"
     end
     raise SimulatorResources::Refusal, "Simulator or SimMetalHost already running" unless simulator_processes.empty?
-    heavy = processes.select { |_, path| %w[xcodebuild cargo rustc swift-frontend converter-cli].include?(File.basename(path)) }
-    raise SimulatorResources::Refusal, "Other native workload is running" unless heavy.empty?
     nil
   end
 

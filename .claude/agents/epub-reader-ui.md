@@ -29,7 +29,7 @@ and dark modes. Verify the rendered screen and affected controls, including
 relevant Dynamic Type/accessibility states.
 
 Choose a focused XCTest regression at the actual reader seam and the requested
-visible journey under the native safety policy. Simulator remains quarantined;
-required SE1/iOS 15.5 acceptance stays blocked until the canonical safety and
-acceptance conditions are met. Report screenshots/logs, source/build identity,
+visible journey under the native safety policy. Simulator has no host guard since 2026-11-22;
+required SE1/iOS 15.5 acceptance stays pending until it is run and
+observed. Report screenshots/logs, source/build identity,
 observed page/anchor behavior and any unexercised runtime.

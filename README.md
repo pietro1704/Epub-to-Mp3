@@ -97,8 +97,8 @@ mise run flutter:build-apk          # Android (release)
 ```
 
 Apple development runs on the Mac; Android/Linux development runs on Arch.
-Simulator execution on this Mac is quarantined after host panics. An environment
-flag does not authorize bypassing that gate. Read the current execution rules in
+Host guards and the Simulator quarantine on this Mac were removed on 2026-11-22
+(the host had earlier panics). Read the current execution rules in
 `CLAUDE.md` before launching targets. Before changing Flutter transport or claiming
 runtime parity, read `CONTEXT.md` and inspect `mise run migration:product-boundary-audit`.
 

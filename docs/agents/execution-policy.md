@@ -36,7 +36,7 @@ verified local artifacts or find compatible binaries from trusted publishers.
 Verify source, platform and architecture. Pietro does not supply these binaries;
 do not ask him whether one exists or request confirmation to compile when no
 suitable artifact is available. Build through the guarded project tasks within
-the authorized scope, preserving resource guards and immutable model artifacts.
+the authorized scope, preserving immutable model artifacts.
 Final application targets such as EpubToMp3 may also be built within that scope.
 A narrow validation request ends after its visible app journey
 and focused checks; expand only for a concrete failure or unresolved acceptance
@@ -65,131 +65,63 @@ inside a project command; inspect the global selection with
 
 ## Native safety
 
-Every Mac compiler invocation, including bootstrap/interpreter compilation, uses
-`scripts/native_job.rb build` through its guarded project task with one compiler
-job. Mac and Arch use the free-space floor in `config/mac-build-budget.json`
-on the volume receiving build outputs (5 GiB: the owner decided on 2026-11-20 that
-only a nearly full disk stops a build; 20 GiB refused builds on a healthy host). Check the
-destination with `mise run build:storage -- /path/to/output`. The supervisor
-rechecks available space every 10 seconds. A storage refusal requires restoring
-free space or selecting a build volume with enough capacity. Keep compatible
-caches across worktrees. When cleanup is needed, `mise run clean:build` removes only superseded Mac DerivedData
-under the shared lease. Verify changes with `mise run build:storage:test`.
+Pietro ordered on 2026-11-22 ("remova todos os guards. pode deixar isso
+definitivo") that every native host guard on this Mac (Intel i5-8259U, 8 GiB) be
+removed, permanently. Host load, memory pressure, thermal limits, foreign
+compilers, swap, the compressor, free-space floors and Simulator/SimMetalHost
+state no longer refuse, delay or stop any native job, and the former Intel
+Simulator quarantine no longer exists. They remain readings: they are written to
+the job's log and to the flight recorder as notes ("advisory, not a refusal"),
+and never change an exit status.
 
-One host lease, `/tmp/epub2mp3.heavy-job.lock`, serializes every heavy class for
-all worktrees and sessions: compiler and Simulator jobs, and on macOS the Rails
-web suite with its Chromium system tests (`mise run rails:web:test`) and the
-complete host suites (`scripts/run_ci_contracts.rb`, and
-`scripts/run_host_checks.rb` without `--suite`), which run as
-`native_job.rb heavy`. One selected host suite stays outside the lease. Every
-job keeps the lease's open file description in its own processes, so the lock
-lasts as long as the load does: if a supervisor is killed, the next job is
-refused until that orphaned load ends. The cost: a process that leaves the job's
-process group with that description (a browser, a daemon) keeps the lease after
-the job. Two things bound it. The Rails task starts its test runners through
-`scripts/without_native_lease.rb`, so they and the browsers they launch never
-hold the lease; there it follows the shell that runs the suite, not each test
-process. And a lease refusal and `mise run native:status` list the processes
-that keep the lease file open (PID and program name), so a leftover holder is
-named and can be stopped.
+What remains is correctness, not host protection:
 
-While held, the file (mode 0600) names its holder: PID, phase, state, program
-name, mise task, start, checkout directory name, session and job process group,
-never arguments or absolute paths. `mise run native:status` prints that record,
-the processes that keep the file open and the current admission reading; it
-never takes the lock, and reports `held` as unknown when nothing names a holder
-and the processes cannot be listed. A reboot empties `/tmp` and the next job
-recreates the file. `--wait SECONDS` or `EPUB_NATIVE_WAIT_SECONDS` (whole
-seconds; any other value fails) queues for the lease and for admission; never
-poll it in a loop.
+- Every Mac compiler invocation still goes through `scripts/native_job.rb build`
+  (or the task wrapper that calls it) with one compiler job by default
+  (`CARGO_BUILD_JOBS` and `CMAKE_BUILD_PARALLEL_LEVEL` are set to 1 off GitHub-hosted
+  runners). The default is not enforced: an explicit `-j`/`--jobs` flag is not
+  refused.
+- One host lease, `/tmp/epub2mp3.heavy-job.lock`, serializes jobs that write the
+  same DerivedData, Cargo target, `.build` and ONNX Runtime trees for all
+  worktrees and sessions: compiler, Simulator and heavy host-suite jobs. It stays
+  because two writers in one output tree corrupt or lock each other (Xcode's build
+  database, CMake trees, packaging output), not to protect the host. A busy lease
+  is the only refusal left (exit 75); `--wait SECONDS` or
+  `EPUB_NATIVE_WAIT_SECONDS` (whole seconds; any other value fails) queues for it,
+  and never poll it in a loop. Every job keeps the lease's open file description,
+  so the lock lasts as long as the load does. `mise run native:status` prints the
+  holder record (PID, phase, state, program, task, start, checkout, session, job
+  process group; never arguments or paths), the processes that keep the file open
+  and one host reading with its notes; it never takes the lock. A reboot empties
+  `/tmp` and the next job recreates the file.
+- `config/mac-build-budget.json` holds the advisory thresholds and the readings
+  behind them (`advisory`), and `warn_free_gib` (5). `mise run build:storage --
+  /path/to/output` prints the free-space note for a destination. `mise run
+  clean:build` still removes only superseded Mac DerivedData and still refuses
+  while a job holds the lease or a compiler runs, because deleting a cache under a
+  running build corrupts it. Keep compatible caches across worktrees. Verify with
+  `mise run build:storage:test`.
+- Children start at niceness 10 (a judgment call, not measured). While a job
+  runs, one line every 30 seconds (load, swap, compressor, memory pressure,
+  thermal limits, notes, top three processes by CPU, the holder) goes to
+  `.reports/native-flight-recorder/flight.jsonl` in the main checkout, at most
+  five files of 1 MiB, readable by their owner only and without arguments or
+  absolute paths. The first line of a job records boot time, the EFI
+  `StartupPowerEvents` value and the newest panic report, the baseline a later
+  incident is compared with.
+- Simulator work runs through `native_job.rb simulator` or the
+  `ios:simulator:supervised` session in [Simulator safety](../simulator-safety.md).
+  The session keeps its own bounds (identity checks, heartbeat, stage and session
+  deadlines, verified shutdown) and records resource readings as notes.
 
-The lease cannot see work started by other tools: a package manager building
-from source, another agent harness, an IDE build. So before a heavy job starts
-on macOS its lease owner reads the host. It refuses (exit 75) for signs of
-present stress and only warns about sizes that record earlier pressure. The
-thresholds and the readings behind each one are in the `admission` object of
-`config/mac-build-budget.json`. The readings were taken on this Intel i5-8259U
-(8 logical CPUs, 8 GiB) between 21:48 BRT on 2026-11-19 and 00:47 BRT on
-2026-11-20 (00:48 to 03:47 UTC on 2026-11-20):
-
-| Signal | Effect | Threshold | Measured basis |
-| --- | --- | --- | --- |
-| 1-minute load average | refuses | 75% of logical CPUs (6.00) | 2.42-4.96 without a native build; 6.11-14 with overlapping loads |
-| Kernel memory pressure | refuses | any level but normal | warning level was logged 20:36-20:50 BRT (23:36-23:50 UTC) on 2026-11-19, before the incident below; normal with swap at 1551, 1016 and 1193 MiB |
-| `pmset -g therm` | refuses | a limit below 100, or fewer CPUs available | `CPU_Speed_Limit` 100 without a build, 81 during the first serial build after the reboot |
-| Compiler process outside the lease | refuses | any of `foreign_compilers` | one serial build with the usual background work read a load of 4.24-7.12, overlapping the range without one, so only its process name identifies it |
-| Free space on the build volume | refuses a build | 5 GiB | the storage floor above (owner decision 2026-11-20) |
-| Swap in use | warns | 1600 MiB | 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build, 1193 MiB on an idle host with normal memory pressure (00:32 BRT on 2026-11-20, 03:32 UTC) |
-| Compressor (`vm.compressor_bytes_used`) | warns | 25% of memory | 368-1807 MiB (4-22%); memory pressure was normal at both ends of that range |
-
-Swap and the compressor do not refuse because macOS keeps swap allocated after
-the pressure that filled it has ended: the size records what happened earlier,
-not what is happening now. Used as a limit of 1024 MiB, swap alone gave a
-refusal on an idle host. Both warning thresholds sit above every reading taken
-while the host worked. A job above one starts, prints one warning line, and its
-flight log lines carry the warning. No rule on rising swap was added: admission
-usually takes a single reading, and no growth rate was measured to set one (the
-only one seen is 315 to 1551 MiB in four minutes during a build). The flight
-log now collects that data. The compressor figure is the memory the compressor
-occupies, not the larger "stored in compressor" count of `vm_stat` (3978 MiB
-when this one read 466 MiB).
-
-A probe that fails, exceeds its deadline or answers nothing refuses the job;
-only the optional `sysctl` name may be missing. The 1-minute load average stays
-high for about a minute after the job that raised it ends, so a job that finds
-the host loaded waits before it gives up: `default_wait_seconds` (120, a
-judgment call) when no wait was given, the given wait otherwise, and `0`
-refuses at once. Only a load that stays high for that whole wait refuses the
-job, and the message says how to wait longer.
-
-A guarded step started from inside a build (an Xcode build phase, a compiler
-driver) is not refused for the compiler processes that descend from the builds
-it runs inside; every other compiler and the load, memory-pressure and thermal
-limits still refuse it. Children start at niceness 10 (a judgment call, not
-measured) with one compiler job. While the job runs, one line every 30 seconds
-(load, swap, compressor, memory pressure, thermal limits, warnings, top three
-processes by CPU, the holder) goes to `.reports/native-flight-recorder/flight.jsonl` in the main
-checkout, at most five files of 1 MiB, readable by their owner only and without
-arguments or absolute paths. The readings are taken off the supervisor's loop,
-so slow telemetry delays neither signal forwarding, the storage check nor the
-exit code.
-The first line of a job records boot time, the EFI `StartupPowerEvents` value
-and the newest panic report, the baseline a later incident is compared with.
-Admission, priority and the recorder reduce overlap and leave evidence. They do
-not make a job safe on their own and are not proven to prevent any kernel panic.
-
-Generic Intel Simulator execution remains quarantined after recurrent
-`SimMetalHost` / `IGGuC.cpp:2913` kernel panics. `native_job.rb simulator` refuses
-before launch, including inherited leases. The reviewed exception is the
-task-authorized `ios:simulator:supervised` route for SE1/iOS 15.2 on Xcode 26.3;
-follow [Simulator safety](../simulator-safety.md) for explicit invocation,
-resource admission, deadlines and verified shutdown. Direct boot and alternate
-launchers remain outside this exception. Compiling for Simulator does not
-authorize booting it. A physical device or another runtime cannot replace the
-required SE1/iOS 15.2 acceptance. The native build guard verifies all devices
-are shut down and Simulator/SimMetalHost have exited before compiling.
-
-Any new host kernel panic is a stop event: stop agent-started local/native and
-resource-intensive work, preserve the report and execution evidence, and avoid
-automatic retry, reboot or hardware/firmware changes. Continue only through
-externally hosted tools that start no process on the affected host; otherwise
-wait for the user to confirm stability. Guards and monitoring establish neither
-a GPU-driver fix nor CATERR prevention.
-
-Resuming after a stop event:
-
-1. Copy the report and every log into a persistent evidence directory first.
-   A reboot empties `/tmp` and each session's temporary scratch directory.
-2. Treat every background task of the earlier sessions as lost. Re-derive state
-   from files; a job counts as finished only with its recorded exit status.
-3. Wait for Pietro's own confirmation in the current conversation, for the
-   scope he names. Another session's or agent's relayed permission is not it.
-4. Then run one guarded load at a time through its official task. Read
-   `mise run native:status` first and keep the log, PID and exit status in a
-   persistent directory. Watch the exit status, not only success markers:
-   `xcodebuild: error:` ends a run without printing `** BUILD FAILED **`.
-5. Read `.reports/native-flight-recorder/flight.jsonl` after the run and stop
-   again on a refusal, a throttled reading or any new report.
+The host had an x86 CPU CATERR on 2026-11-19 (history below) and recurrent
+`SimMetalHost` / `IGGuC.cpp:2913` kernel panics before that. The removed guards
+were never proven to prevent either, and removing them is not proven to cause
+more. Neutrally: that risk is now accepted by Pietro. After any new host kernel
+panic, report it, preserve the Apple report and execution evidence (copy them out
+of `/tmp` first) and say which jobs ran before it. Stopping other work is
+recommended, not enforced; the flight log and `mise run native:status` give the
+state.
 
 Operational pitfalls observed in the November 2026 campaign:
 
@@ -197,13 +129,12 @@ Operational pitfalls observed in the November 2026 campaign:
   Ruby 2.6 lacks `filter_map` and fails before boot.
 - Keep queue variables such as `EPUB_NATIVE_WAIT_SECONDS` on the outer guard
   only; fixtures that inherit them time out.
-- After a second identical guard or supervisor refusal, diagnose the guard
-  instead of queueing the same attempt again.
+- After a second identical lease refusal, diagnose the holder with
+  `mise run native:status` instead of queueing the same attempt again.
 - Report disk from `df` or `diskutil`. Finder counts purgeable space. A
-  supervised SE1 run consumed about 3 GiB, so start a few GiB above the floor.
-- When storage blocks native work, the agent may prune only reproducible
-  caches under the lease and must verify retained artifact hashes before and
-  after.
+  supervised SE1 run consumed about 3 GiB.
+- When storage is low, the agent may prune only reproducible caches under the
+  lease and must verify retained artifact hashes before and after.
 - Request the 16e unlock only after the device preflight passes. The device
   unified log requires root (exit 77); record it as unobservable.
 

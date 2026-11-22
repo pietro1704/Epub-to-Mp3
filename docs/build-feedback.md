@@ -1,9 +1,9 @@
 # Incremental build feedback
 
-The Apple CLI development workflow retains the existing compiler settings and
-resource guards. Debug uses incremental Swift compilation, `-Onone` and one
-compiler job. Release optimization, toolchain routing and Simulator quarantine
-are unchanged.
+The Apple CLI development workflow retains the existing compiler settings. Debug
+uses incremental Swift compilation, `-Onone` and one compiler job. Release
+optimization and toolchain routing are unchanged; host resource guards and the
+Simulator quarantine were removed on 2026-11-22.
 
 ## Avoiding repeated packaging work
 

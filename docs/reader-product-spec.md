@@ -210,8 +210,8 @@ annotations, and progress restoration.
   start latency.
 
 These are target acceptance criteria, not a claim that the listed journeys or
-formats passed. Required SE1/iOS 15.5 validation remains blocked while Simulator
-execution is quarantined; another runtime cannot substitute for it.
+formats passed. Required SE1/iOS 15.5 validation remains pending until it is run and
+observed; another runtime cannot substitute for it.
 
 Acceptance means a user can import a non-DRM book, read it offline, resume at
 the correct location, annotate it, start on-device conversion, hear completed

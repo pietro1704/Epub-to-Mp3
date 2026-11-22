@@ -12,7 +12,7 @@ module CiContracts
     test_mac_validate.rb
     test_android_jni_exports.rb
     test_device_workflow_entrypoint.rb test_native_faber_entrypoints.rb
-    test_native_codex_tool_guard.rb test_native_simulator_session.rb
+    test_native_simulator_session.rb
     test_hf_snapshot_workflow.rb test_hf_snapshot.rb test_hf_container_inputs.rb test_rust_migration_gate.rb
     test_download_converter_ffi_macos.rb
     test_ubuntu_package_mirror.rb test_rust_build_cache.rb

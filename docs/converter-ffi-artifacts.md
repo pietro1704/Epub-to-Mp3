@@ -35,4 +35,4 @@ Mapping does not establish that every target is built, supported by current
 packaging or equipped with SDKs/linkers. Toolchain/target installation requires
 explicit scope. Verify architecture, SDK platform, exported ABI, dependent runtime
 and signing at packaging seams. Simulator compilation does not authorize its
-execution; quarantine and pending SE1/iOS 15.5 acceptance remain in force.
+execution; pending SE1/iOS 15.5 acceptance remains in force.

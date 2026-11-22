@@ -42,14 +42,15 @@ and one Arch pane in Herdr). Keep them unless Pietro changes them.
    do lease-free work in your own queue: Git and PR work, rebases, composition
    previews of stacked candidates, host fixtures, offline diagnosis and
    independent reviews by subagents in isolated worktrees. Native compilation,
-   Simulator and device work stay serial under the guard.
+   Simulator and device work stay serial under the build lease.
 5. **Queue native work.** One owner holds the exclusive Apple window at a time
-   and queues through the guard (`EPUB_NATIVE_WAIT_SECONDS`, one queued
+   and queues for the build lease (`EPUB_NATIVE_WAIT_SECONDS`, one queued
    attempt). Before a supervised SE1 launch, obtain the prior owner's handback
-   receipt, then follow host admission and launch rules in the
+   receipt, then follow the launch rules in the
    [execution policy](execution-policy.md#native-safety) and
    [Simulator safety](../simulator-safety.md). Retain logs and notify Pietro
-   and peers of a host incident before any further native load.
+   and peers of a host incident (Pietro removed the host guards on 2026-11-22,
+   so nothing stops the next job; report it and let him decide).
 6. **Relayed decisions.** A decision Pietro gave in another session is
    "relayed" until he confirms it in the acting session. Confirm before anything
    hard to reverse or user-visible depends on it. When a feature's expected
@@ -64,7 +65,8 @@ and one Arch pane in Herdr). Keep them unless Pietro changes them.
 ### Native window handback receipt
 
 The releasing owner writes a receipt in its evidence directory and sends one
-message naming the next owner. The receipt records: lease free; all simulators
+message naming the next owner. The receipt is a handover record, not a gate;
+it records: lease free; all simulators
 Shutdown; no Simulator, SimMetalHost, xcodebuild or app process left; host boot
 session and panic inventory unchanged; the last `verified_shutdown` time;
 installed builds and devices left as they were; the receipt path. The receiver
@@ -218,7 +220,7 @@ no automatic polling service or CI monitoring is installed.
 The setup permissions, versions, branch states, message IDs and evidence below
 are preserved as the October 15 record. The protocol above remains the current
 reference; any new task uses [execution policy](execution-policy.md) for platform/safety authorization,
-including the Android pause and the reviewed exception to Intel Simulator quarantine.
+including the Android pause.
 
 | ID | Owner | Acceptance | Status |
 | --- | --- | --- | --- |

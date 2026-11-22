@@ -21,7 +21,7 @@ class NativeTaskWiringTest < Minitest::Test
     @events = File.join(@dir, "events")
     @target_dir = File.join(@dir, "custom-target")
     FileUtils.mkdir_p([@bin, File.join(@dir, "scripts"), File.join(@dir, "ios/EpubToMp3"), File.join(@target_dir, "debug")])
-    %w[native_job.rb native_build_preflight.rb native_build_command.rb mac_build_budget.rb].each do |file|
+    %w[native_job.rb native_build_command.rb mac_build_budget.rb].each do |file|
       FileUtils.cp(File.join(__dir__, file), File.join(@dir, "scripts", file))
     end
     FileUtils.mkdir_p(File.join(@dir, "config"))
@@ -115,7 +115,6 @@ class NativeTaskWiringTest < Minitest::Test
         *) exit 98 ;;
       esac
     SH
-    shim("pgrep", 'exit 1')
     # Task fixtures own their capacity as well as compiler/tool shims.
     # The low-capacity case still exercises this same production guard.
     shim("df", <<~'SH')
@@ -191,22 +190,11 @@ class NativeTaskWiringTest < Minitest::Test
     lock&.close
   end
 
-  def test_guarded_rust_compiler_tasks_refuse_before_cargo_on_intel
-    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-    COMPILER_TASKS.each do |task|
-      _, error, status = run_task(task, "FIXTURE_SIM_STATE" => "Booted")
-      assert_equal 75, status.exitstatus, "#{task}: #{error}"
-      assert_match(/Shut down all Simulators/, error, task)
-      assert_empty events, "#{task} reached task body or cargo"
-      assert_unlocked
-    end
-  end
-
-  def test_guarded_rust_compiler_tasks_execute_cargo_under_the_lease
+  def test_guarded_rust_compiler_tasks_execute_cargo_under_the_lease_even_beside_a_booted_simulator
     COMPILER_TASKS.each do |task|
       _, error, status = run_task(
         task,
-        "FIXTURE_SIM_STATE" => "Shutdown",
+        "FIXTURE_SIM_STATE" => "Booted",
         "FIXTURE_CARGO_STATUS" => "23"
       )
       assert_equal 23, status.exitstatus, "#{task}: #{error}"
@@ -216,17 +204,8 @@ class NativeTaskWiringTest < Minitest::Test
     end
   end
 
-  def test_dev_backend_refuses_before_cargo_on_intel
-    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-    _, error, status = run_dev_backend("FIXTURE_SIM_STATE" => "Booted")
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Shut down all Simulators/, error)
-    assert_empty events
-    assert_unlocked
-  end
-
   def test_dev_backend_build_failure_never_starts_server
-    _, error, status = run_dev_backend("FIXTURE_SIM_STATE" => "Shutdown", "FIXTURE_CARGO_STATUS" => "23")
+    _, error, status = run_dev_backend("FIXTURE_SIM_STATE" => "Booted", "FIXTURE_CARGO_STATUS" => "23")
     assert_equal 23, status.exitstatus, error
     assert_equal ["cargo"], events.map { |event| event.split.first }
     assert_unlocked
@@ -280,12 +259,14 @@ class NativeTaskWiringTest < Minitest::Test
     end
   end
 
-  def test_ios_run_simulator_mode_reaches_guard_without_launching_simulator
-    skip "Intel macOS quarantine only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+  def test_ios_run_simulator_mode_reaches_the_simulator_task_body_without_a_quarantine
     _, error, status = run_task("ios:run", "IOS_TARGET" => "simulator")
-    assert_equal 75, status.exitstatus, error
-    assert_match(/quarantined/, error)
-    assert_equal ["route ios:build", "route ios:simulator:run"], events
+    refute_match(/quarantined/, error)
+    assert_equal 2, status.exitstatus, "the fixture has no simulator app, so the body stops by itself: #{error}"
+    assert_match(/no existing iphonesimulator EpubToMp3\.app found/, error)
+    # The body's own error text holds an unescaped `mise run ios:build` in backticks, which the shell runs
+    # (a separate defect, unrelated to host guards), so only the leading routes are asserted.
+    assert_equal ["route ios:build", "route ios:simulator:run"], events.first(2)
     assert_unlocked
   end
 
@@ -295,12 +276,11 @@ class NativeTaskWiringTest < Minitest::Test
     assert_equal ["route ios:build"], events
   end
 
-  def test_ios_test_without_device_reaches_simulator_guard
-    skip "Intel macOS quarantine only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+  def test_ios_test_without_device_runs_the_simulator_route
     _, error, status = run_task("ios:test")
-    assert_equal 75, status.exitstatus, error
-    assert_match(/quarantined/, error)
-    assert_equal ["devicectl", "route ios:simulator:test"], events
+    refute_match(/quarantined/, error)
+    assert status.success?, error
+    assert_equal ["devicectl", "route ios:simulator:test", "generate", "build-for-testing", "boot", "bootstatus", "test-without-building"], events
     assert_unlocked
   end
 
@@ -310,31 +290,17 @@ class NativeTaskWiringTest < Minitest::Test
     assert_equal ["devicectl", "route ios:device:test"], events
   end
 
-  def test_blocked_preflight_never_invokes_compiler_or_task_body
-    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-    %w[ios:build ios:simulator:test].each do |task|
-      _, error, status = run_task(task, "FIXTURE_SIM_STATE" => "Booted")
-      assert_equal 75, status.exitstatus, error
-      assert_empty events - ["generate"]
+  def test_a_booted_simulator_never_stops_a_build_task
+    _, error, status = run_task("ios:build", "FIXTURE_SIM_STATE" => "Booted")
+    assert status.success?, error
+    assert_equal ["generate", "build"], events
+    assert_unlocked
+    FileUtils.rm_f(@events)
+    ["mac:build", "ios:device:build", "converter-ffi:ios-packaging:test"].each do |task|
+      _, error, = run_task(task, "FIXTURE_SIM_STATE" => "Booted", "HEAVY_JOB_GUARD_DISABLE" => "1")
+      refute_match(/Shut down all Simulators|quarantined|Wait for SimMetalHost|Quit Simulator/, error, task)
+      assert_unlocked
     end
-  end
-
-  def test_mac_build_preflight_precedes_generation_and_ignores_legacy_override
-    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-    _, error, status = run_task("mac:build", "FIXTURE_SIM_STATE" => "Booted", "HEAVY_JOB_GUARD_DISABLE" => "1")
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Shut down all Simulators/, error)
-    assert_empty events
-    assert_unlocked
-  end
-
-  def test_ios_device_build_preflight_precedes_generation_and_device_resolution
-    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-    _, error, status = run_task("ios:device:build", "FIXTURE_SIM_STATE" => "Booted")
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Shut down all Simulators/, error)
-    assert_empty events
-    assert_unlocked
   end
 
   def test_ios_device_project_generation_uses_real_project_and_preserves_nested_artifact
@@ -370,15 +336,6 @@ class NativeTaskWiringTest < Minitest::Test
     assert_equal "preserved legacy nested artifact", File.binread(nested)
   end
 
-  def test_ios_packaging_preflight_precedes_clang_entrypoint
-    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-    _, error, status = run_task("converter-ffi:ios-packaging:test", "FIXTURE_SIM_STATE" => "Booted")
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Shut down all Simulators/, error)
-    assert_empty events
-    assert_unlocked
-  end
-
   def test_ios_build_failure_stops_before_success_tail
     output, error, status = run_task("ios:build", "FIXTURE_BUILD_STATUS" => "17")
     assert_equal 65, status.exitstatus, error
@@ -386,21 +343,11 @@ class NativeTaskWiringTest < Minitest::Test
     assert_match(/BUILD FAILED/, output)
   end
 
-  def quarantined?(status, error)
-    return false unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-    assert_equal 75, status.exitstatus, error
-    assert_match(/quarantined/, error)
-    assert_empty events
-    true
-  end
-
-  def test_all_simulator_launch_entrypoints_refuse_before_their_task_bodies_on_intel
-    skip "Intel macOS quarantine only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+  def test_simulator_launch_entrypoints_run_under_the_lease_on_every_host
     %w[ios:simulator:run ios:simulator:resume ios:simulator:smoke:test].each do |task|
-      _, error, status = run_task(task)
-      assert_equal 75, status.exitstatus, "#{task}: #{error}"
-      assert_match(/quarantined/, error, task)
-      assert_empty events, "#{task} reached its task body"
+      FileUtils.rm_f(@events)
+      _, error, = run_task(task)
+      refute_match(/quarantined|physical-device verification/, error, task)
       assert_unlocked
     end
   end
@@ -439,12 +386,12 @@ class NativeTaskWiringTest < Minitest::Test
     assert_unlocked
   end
 
-  def test_low_fixture_capacity_refuses_before_compiler_launch
+  def test_low_fixture_capacity_is_a_note_and_the_compiler_still_runs
     skip "Mac storage policy only" unless RUBY_PLATFORM.include?("darwin")
     _, error, status = run_task("rust:health", "FIXTURE_FREE_KIB" => "1")
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Free disk below/, error)
-    assert_empty events
+    assert status.success?, error
+    assert_match(/advisory, not a refusal: Free disk below/, error)
+    assert events.any? { |event| event.start_with?("cargo ") }
     assert_unlocked
   end
 

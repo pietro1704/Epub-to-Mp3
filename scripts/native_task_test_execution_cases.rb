@@ -84,35 +84,30 @@ class NativeTaskWiringTest
 
   def test_test_build_failure_never_boots_or_runs_tests
     _, error, status = run_task("ios:simulator:test", "FIXTURE_BUILD_STATUS" => "17")
-    return if quarantined?(status, error)
     assert_equal 17, status.exitstatus, error
     assert_equal ["generate", "build-for-testing"], events
   end
 
   def test_success_builds_before_boot_and_runs_without_building
     _, error, status = run_task("ios:simulator:test")
-    return if quarantined?(status, error)
     assert status.success?, error
     assert_equal ["generate", "build-for-testing", "boot", "bootstatus", "test-without-building"], events
   end
 
   def test_skip_build_only_boots_and_executes_existing_tests
     _, error, status = run_task("ios:simulator:test", "IOS_SKIP_BUILD" => "1")
-    return if quarantined?(status, error)
     assert status.success?, error
     assert_equal ["generate", "boot", "bootstatus", "test-without-building"], events
   end
 
   def test_failed_boot_status_never_runs_test_process
     _, error, status = run_task("ios:simulator:test", "FIXTURE_BOOT_STATUS" => "21")
-    return if quarantined?(status, error)
     assert_equal 21, status.exitstatus, error
     assert_equal ["generate", "build-for-testing", "boot", "bootstatus"], events
   end
 
   def test_test_failure_preserves_status
     _, error, status = run_task("ios:simulator:test", "FIXTURE_TEST_STATUS" => "19")
-    return if quarantined?(status, error)
     assert_equal 19, status.exitstatus, error
     assert_equal ["generate", "build-for-testing", "boot", "bootstatus", "test-without-building"], events
   end

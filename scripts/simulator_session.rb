@@ -6,21 +6,22 @@ require_relative "native_job"
 
 # The detached watchdog owns the lease, telemetry, subprocesses and cleanup.
 # The foreground process supplies heartbeats; its death is never a success.
+# Resource telemetry is advisory: readings and telemetry failures become notes
+# in the report and never refuse, delay or stop a session. The bounds that
+# remain (heartbeat, stage and session deadlines, identity, cleanup) protect
+# the session itself, not the host.
 module SimulatorSession
   class Supervisor
     def initialize(backend:, sampler:, report:, heartbeat:, lease_path: NativeJob::LOCK_PATH,
-                   baseline_seconds: 60, interval: 5, session_seconds: 600, boot_seconds: 120,
-                   journey_seconds: 15, stable_existing_swap: false, observe_resources: false,
+                   interval: 5, session_seconds: 600, boot_seconds: 120,
+                   journey_seconds: 15,
                    clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
       @backend, @sampler, @report, @heartbeat = backend, sampler, report, heartbeat
-      @lease_path, @baseline_seconds, @interval = lease_path, baseline_seconds, interval
+      @lease_path, @interval = lease_path, interval
       @session_seconds, @boot_seconds, @journey_seconds, @clock = session_seconds, boot_seconds, journey_seconds, clock
       @evidence = { "started_at" => Time.now.utc.iso8601, "samples" => [], "events" => [] }
-      @stable_existing_swap = stable_existing_swap
-      @observe_resources = observe_resources
-      @evidence["admission_policy"] = stable_existing_swap ? "explicit_stable_existing_swap" : "strict_1gib_swap"
-      @evidence["admission_policy"] = "explicit_resource_observation" if observe_resources
-      @evidence["limits"] = { "baseline_seconds" => baseline_seconds, "session_seconds" => session_seconds,
+      @evidence["resource_policy"] = "advisory_notes_only"
+      @evidence["limits"] = { "session_seconds" => session_seconds,
                               "boot_seconds" => boot_seconds, "app_seconds" => journey_seconds }
       @last_heartbeat = @clock.call
     end
@@ -49,42 +50,36 @@ module SimulatorSession
       raise SimulatorResources::Refusal, "Foreground exited"
     end
 
+    # Notes appear once each, in the report and on stderr.
+    def note(messages)
+      messages.each do |message|
+        notes = (@evidence["advisories"] ||= [])
+        next if notes.include?(message)
+
+        notes << message
+        warn "simulator session: advisory, not a refusal: #{message}"
+      end
+    end
+
+    # Heartbeat and app liveness still end a session; telemetry never does.
     def sample
       check_heartbeat
       @backend.check_app if @backend.respond_to?(:check_app)
-      snapshot = @sampler.call
+      snapshot = telemetry
       check_heartbeat
-      @last_snapshot = snapshot
-      SimulatorResources.validate(snapshot)
-      @evidence["samples"] << snapshot.merge("elapsed_seconds" => @clock.call - @started, "phase" => @phase)
-      persist
       snapshot
     end
 
-    def baseline
-      deadline = @clock.call + @baseline_seconds
-      initial = nil
-      loop do
-        sampled_at = @clock.call
-        snapshot = sample
-        initial ||= snapshot
-        refusal = admission(snapshot, initial)
-        raise SimulatorResources::Refusal, refusal if refusal
-        return snapshot if @clock.call >= deadline
-        sleep [@interval - (@clock.call - sampled_at), 0].max
-      end
-    end
-
-    def admission(snapshot, initial)
-      if @observe_resources
-        SimulatorResources.validate(snapshot)
-        return "Memory pressure is not normal" unless snapshot["pressure"] == 1
-        return SimulatorResources.disk_refusal(snapshot)
-      end
-      refusal = SimulatorResources.admission(snapshot, initial, stable_existing_swap: @stable_existing_swap,
-                                             previous: @admission_previous || initial)
-      @admission_previous = snapshot
-      refusal
+    def telemetry
+      snapshot = @sampler.call
+      SimulatorResources.validate(snapshot)
+      @evidence["samples"] << snapshot.merge("elapsed_seconds" => @clock.call - @started, "phase" => @phase)
+      note(SimulatorResources.notes(snapshot))
+      persist
+      snapshot
+    rescue StandardError => error
+      note(["Resource telemetry unavailable: #{error.message}"])
+      nil
     end
 
     def watch
@@ -93,8 +88,7 @@ module SimulatorSession
       now = @clock.call
       raise SimulatorResources::Refusal, "Session deadline exceeded" if now >= @deadline
       return if now < @next_sample
-      refusal = @monitor.check(sample, @clock.call)
-      raise SimulatorResources::Refusal, refusal if refusal
+      sample
       raise SimulatorResources::Refusal, "Session deadline exceeded" if @clock.call >= @deadline
       @next_sample = now + @interval
     end
@@ -102,10 +96,6 @@ module SimulatorSession
     def command(stage, timeout:)
       @backend.prepare(stage) if @backend.respond_to?(:prepare)
       watch
-      if stage == :boot
-        refusal = admission(@last_snapshot, @admission_initial)
-        raise SimulatorResources::Refusal, refusal if refusal
-      end
       check_heartbeat
       record(stage.to_s)
       @cleanup_needed = true if stage == :boot
@@ -132,13 +122,9 @@ module SimulatorSession
       @started = @clock.call
       @evidence["identity"] = @backend.inspect_identity
       @backend.recheck
-      record("baseline")
-      initial = baseline
+      record("resources")
+      sample
       @backend.recheck_idle
-      refusal = admission(sample, initial)
-      raise SimulatorResources::Refusal, refusal if refusal
-      @admission_initial = initial
-      @monitor = SimulatorResources::Monitor.new(initial, observation_only: @observe_resources)
       @deadline = @clock.call + @session_seconds
       @next_sample = @clock.call
       command(:boot, timeout: @boot_seconds)
@@ -177,7 +163,6 @@ module SimulatorSession
         @evidence["final_resources"] = @sampler.call if @started
       rescue StandardError => error
         @evidence["final_resource_error"] = error.message
-        @evidence["result"] = "final_telemetry_failed" if %w[launch_smoke_passed test_command_completed].include?(@evidence["result"])
       end
       @evidence["finished_at"] = Time.now.utc.iso8601
       begin

@@ -5,8 +5,15 @@ require "open3"
 require "rbconfig"
 require "timeout"
 
+# Readings and invalid-input errors for a supervised Simulator session. Resource
+# readings are information only: they become notes in the report and never
+# refuse, delay or stop a session (Pietro removed the host guards on 2026-11-22).
 module SimulatorResources
-  MINIMUM_FREE_DISK_GIB = 15
+  # Reference sizes for the notes; the readings behind the old admission limits.
+  NOTE_FREE_DISK_GIB = 15
+  NOTE_FREE_PERCENT = 40
+  NOTE_SWAP_MIB = 1024
+  NOTE_CPU_IDLE_PERCENT = 70
 
   class Refusal < StandardError; end
 
@@ -84,57 +91,14 @@ module SimulatorResources
     raise Refusal, error.message
   end
 
-  def self.disk_refusal(sample)
-    return if sample.fetch("free_bytes") >= MINIMUM_FREE_DISK_GIB * 1024**3
-
-    "Free disk below #{MINIMUM_FREE_DISK_GIB} GiB"
-  end
-
-  def self.admission(sample, initial, stable_existing_swap: false, previous: initial)
-    validate(sample)
-    validate(initial)
-    return "Memory pressure is not normal" unless sample["pressure"] == 1
-    minimum_free = stable_existing_swap ? 50 : 40
-    return "Reported free memory below #{minimum_free}%" if sample["free_percent"] < minimum_free
-    return "Swap exceeds 1 GiB" if !stable_existing_swap && sample["swap_mib"] > 1024
-    if stable_existing_swap
-      validate(previous)
-      if sample["swap_mib"] > initial["swap_mib"] || sample["swap_mib"] > previous["swap_mib"]
-        return "Swap allocation grew during baseline"
-      end
-    end
-    return "Swapouts increased during baseline" if sample["swapouts"] != initial["swapouts"]
-    return "CPU idle below 70%" if sample["cpu_idle"] < 70
-    disk_refusal(sample)
-  end
-
-  class Monitor
-    def initialize(initial, observation_only: false)
-      SimulatorResources.validate(initial)
-      @initial = initial
-      @since = {}
-      @observation_only = observation_only
-    end
-
-    def check(sample, now)
-      SimulatorResources.validate(sample)
-      return "Critical memory pressure" if sample["pressure"] == 4
-      disk_error = SimulatorResources.disk_refusal(sample)
-      return disk_error if disk_error
-      conditions = {
-        "Memory pressure warning" => [sample["pressure"] != 1, 10],
-        "Reported free memory below 25%" => [sample["free_percent"] < 25, 10],
-        "Swap grew by 256 MiB" => [sample["swap_mib"] - @initial["swap_mib"] >= 256, 10],
-        "CPU idle below 10%" => [sample["cpu_idle"] < 10, 30]
-      }
-      conditions.select! { |reason, _| reason == "Memory pressure warning" } if @observation_only
-      conditions.each do |reason, (active, duration)|
-        @since.delete(reason) unless active
-        next unless active
-        @since[reason] ||= now
-        return reason if now - @since[reason] >= duration
-      end
-      nil
-    end
+  # Sentences for readings outside the reference sizes; empty for a calm host.
+  def self.notes(sample)
+    found = []
+    found << "Memory pressure is #{{ 2 => 'warning', 4 => 'critical' }.fetch(sample['pressure'])}" unless sample["pressure"] == 1
+    found << "Reported free memory #{sample['free_percent'].round}% is below #{NOTE_FREE_PERCENT}%" if sample["free_percent"] < NOTE_FREE_PERCENT
+    found << "Swap #{sample['swap_mib'].round} MiB exceeds #{NOTE_SWAP_MIB} MiB" if sample["swap_mib"] > NOTE_SWAP_MIB
+    found << "CPU idle #{sample['cpu_idle'].round}% is below #{NOTE_CPU_IDLE_PERCENT}%" if sample["cpu_idle"] < NOTE_CPU_IDLE_PERCENT
+    found << "Free disk below #{NOTE_FREE_DISK_GIB} GiB" if sample["free_bytes"] < NOTE_FREE_DISK_GIB * 1024**3
+    found
   end
 end
