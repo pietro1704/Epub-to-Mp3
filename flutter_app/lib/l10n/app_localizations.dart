@@ -532,6 +532,12 @@ abstract class AppLocalizations {
   /// **'Conversion failed'**
   String get conversionFailed;
 
+  /// No description provided for @bookLanguageUncertain.
+  ///
+  /// In en, this message translates to:
+  /// **'The book\'s language could not be detected. Choose its language in Convert and try again.'**
+  String get bookLanguageUncertain;
+
   /// No description provided for @downloading.
   ///
   /// In en, this message translates to:

@@ -29,8 +29,9 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     if (!mounted) return;
     final detail = error.toString();
     final l10n = AppLocalizations.of(context)!;
-    final message =
-        detail.contains('NO_MODEL') ||
+    final message = isBookLanguageUncertain(error)
+        ? '${l10n.conversionFailed}: ${l10n.bookLanguageUncertain}'
+        : detail.contains('NO_MODEL') ||
             detail.contains('ENGINE_UNAVAILABLE') ||
             detail.contains('No TTS engine')
         ? '${l10n.conversionFailed}: ${l10n.settingsTitle}'

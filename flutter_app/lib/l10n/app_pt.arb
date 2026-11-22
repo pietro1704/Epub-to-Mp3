@@ -87,6 +87,7 @@
   "removeFromLibrary": "Remover da biblioteca",
 
   "conversionFailed": "Falha na conversão",
+  "bookLanguageUncertain": "Não foi possível detectar o idioma do livro. Escolha o idioma em Converter e tente novamente.",
   "downloading": "Baixando…",
   "downloadComplete": "Download concluído",
   "chaptersConverted": "{n} de {total} capítulos",

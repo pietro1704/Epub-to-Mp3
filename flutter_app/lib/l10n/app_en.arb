@@ -91,6 +91,7 @@
   "removeFromLibrary": "Remove from library",
 
   "conversionFailed": "Conversion failed",
+  "bookLanguageUncertain": "The book's language could not be detected. Choose its language in Convert and try again.",
   "downloading": "Downloading…",
   "downloadComplete": "Download complete",
   "chaptersConverted": "{n} of {total} chapters",
