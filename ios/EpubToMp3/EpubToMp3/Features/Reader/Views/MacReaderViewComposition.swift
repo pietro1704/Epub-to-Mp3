@@ -184,6 +184,8 @@ final class MacReaderViewComposition {
         }
     }
 
+    func setFootnotesAvailable(_ available: Bool) { toolBar?.hasFootnotes = available }
+
     func setChromeHidden(_ hidden: Bool) {
         // Visibility never participates in the content constraints or text layout.
         for chrome in [toolbar, chapterTitleLabel, statusLabel, chromeBackground] { chrome.isHidden = hidden }

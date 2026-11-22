@@ -428,6 +428,10 @@ targets:
       iOS: "15.0"
     sources:
       - path: EpubToMp3UITests
+        excludes:
+          - Fixtures/FootnotesAvailability.epub
+      - path: EpubToMp3UITests/Fixtures/FootnotesAvailability.epub
+        buildPhase: resources
     dependencies:
       - target: EpubToMp3
     settings:

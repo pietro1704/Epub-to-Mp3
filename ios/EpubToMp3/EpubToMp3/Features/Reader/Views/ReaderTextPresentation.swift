@@ -14,6 +14,7 @@ final class ReaderTextPresentation {
     private let readingPosition: ReaderReadingPosition
     private let annotations: ReaderAnnotationsPresentation
     private let diagnostics: ReaderDiagnosticsPresentation
+    private let onFootnotesAvailabilityChanged: (Bool) -> Void
     private let applyColors: () -> Void
     private let showError: (String) -> Void
     private let completeLoading: () -> Void
@@ -49,6 +50,7 @@ final class ReaderTextPresentation {
          player: AudioPlayer, renderer: PreparedChapterRenderer, preparedPresentation: ReaderPreparedPresentation,
          readingPosition: ReaderReadingPosition, annotations: ReaderAnnotationsPresentation,
          diagnostics: ReaderDiagnosticsPresentation, stageObserver: (@Sendable (String, UInt64) -> Void)?,
+         onFootnotesAvailabilityChanged: @escaping (Bool) -> Void = { _ in },
          applyColors: @escaping () -> Void, showError: @escaping (String) -> Void,
          completeLoading: @escaping () -> Void) {
         self.document = document
@@ -60,6 +62,7 @@ final class ReaderTextPresentation {
         self.readingPosition = readingPosition
         self.annotations = annotations
         self.diagnostics = diagnostics
+        self.onFootnotesAvailabilityChanged = onFootnotesAvailabilityChanged
         self.applyColors = applyColors
         self.showError = showError
         self.completeLoading = completeLoading
@@ -232,6 +235,7 @@ final class ReaderTextPresentation {
         lastRenderedGeometry = (settings.readerMargin, settings.readerLayout, settings.readerShowPageNumbers)
         updatePageIndicator()
         diagnostics.updateFlickerProbe()
+        onFootnotesAvailabilityChanged(chapter.footnotes?.isEmpty == false)
     }
 
     /// Chapter rendering and page transitions can temporarily rebuild or

@@ -32,7 +32,8 @@ final class MacReaderActiveChapterTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey,
-                    AudioPlayer.readerCurrentPageRatioDefaultsKey, AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+                    AudioPlayer.readerCurrentPageRatioDefaultsKey, AudioPlayer.readerCurrentSentenceIdDefaultsKey,
+                    "reader.recentTool.v1"]
         let prior = keys.map { UserDefaults.standard.object(forKey: $0) }
         let book = BookEntity(id: id, title: "Active chapter", bookmark: Data([1]),
                               displayFilename: "active.epub", addedAt: Date())
@@ -41,7 +42,8 @@ final class MacReaderActiveChapterTests: XCTestCase {
         var payload = EbookFulltext(jobId: id, bookTitle: "Active chapter", bookAuthor: "Author", chapters: [
             .init(index: 3, name: "Previous", text: String(repeating: "Previous chapter.\n", count: 120),
                   html: nil, css: nil, charCount: nil, segments: nil),
-            .init(index: 7, name: "Active", text: active, html: nil, css: nil, charCount: nil, segments: nil)
+            .init(index: 7, name: "Active", text: active, html: nil, css: nil, charCount: nil, segments: nil,
+                  footnotes: [.init(number: "1", text: "An authored note.")])
         ])
         let source = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
         let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
@@ -71,6 +73,8 @@ final class MacReaderActiveChapterTests: XCTestCase {
         UserDefaults.standard.set(id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let known = Set(LatencyObservationStore.shared.snapshot().map(\.id))
         let settings = AppSettings(defaults: defaults)
+        let toolPreference = ReaderToolPreference()
+        toolPreference.recent = .footnotes
         let controller = MacReaderViewController(library: LibraryStore(defaults: defaults, defaultsKey: "library"),
             settings: settings, player: player,
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
@@ -91,6 +95,18 @@ final class MacReaderActiveChapterTests: XCTestCase {
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         let text = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? MacReaderTextView }.first)
         let scroll = try XCTUnwrap(text.enclosingScrollView)
+        let more = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
+            .first { $0.accessibilityIdentifier() == "reader.more" })
+        func footnotesMenuItem() -> NSMenuItem? {
+            more.menu?.items.first { $0.representedObject as? String == ReaderTool.footnotes.rawValue }
+        }
+        func footnotesShortcutIsVisible() -> Bool {
+            descendants(controller.view).contains {
+                $0.accessibilityIdentifier() == ReaderTool.footnotes.accessibilityIdentifier && !$0.isHidden
+            }
+        }
+        XCTAssertNil(footnotesMenuItem())
+        XCTAssertFalse(footnotesShortcutIsVisible())
         func observed(_ transition: LatencyObservation.Transition) -> Bool {
             LatencyObservationStore.shared.snapshot().contains {
                 !known.contains($0.id) && $0.records.contains { $0.transition == transition }
@@ -117,6 +133,8 @@ final class MacReaderActiveChapterTests: XCTestCase {
             XCTAssertTrue(observed(.controlsUsable),
                            "A source-bound complete chapter index and active chapter make audio controls usable during body hydration")
             XCTAssertEqual(text.string, active)
+            XCTAssertNotNil(footnotesMenuItem(), "The prepared chapter already owns its footnotes")
+            XCTAssertTrue(footnotesShortcutIsVisible())
             XCTAssertEqual(UserDefaults.standard.integer(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey), 6)
             let distance = text.frame.height - scroll.contentView.bounds.height
             XCTAssertEqual(scroll.contentView.bounds.origin.y, distance * 0.6, accuracy: 2)
@@ -154,6 +172,10 @@ final class MacReaderActiveChapterTests: XCTestCase {
         }
         XCTAssertTrue(observed(.controlsUsable))
         XCTAssertEqual(text.string, expected.chapters[1].text)
+        if invalidateProjection || mismatchWithQueuedRestore {
+            XCTAssertNil(footnotesMenuItem(), "The replacement chapter has no footnotes")
+            XCTAssertFalse(footnotesShortcutIsVisible())
+        }
         if !invalidateProjection && !mismatchWithQueuedRestore {
             for _ in 0..<200 {
                 if controller.numberOfRows(in: NSTableView()) == expected.chapters.count { break }
@@ -162,11 +184,25 @@ final class MacReaderActiveChapterTests: XCTestCase {
             XCTAssertEqual(controller.numberOfRows(in: NSTableView()), expected.chapters.count,
                            "Chapter navigation waits until the complete catalog hydrates")
             XCTAssertEqual(scroll.contentView.bounds.origin.y, before, accuracy: 2)
+            let previouslyAvailable = try XCTUnwrap(footnotesMenuItem())
+            XCTAssertEqual(previouslyAvailable.accessibilityIdentifier(), ReaderTool.footnotes.accessibilityIdentifier)
+            XCTAssertTrue(footnotesShortcutIsVisible())
             XCTAssertEqual(text.onPageTap?(false), true)
             // Move explicitly to the previous chapter only after the complete catalog exists.
             scroll.contentView.scroll(to: .zero)
             XCTAssertEqual(text.onPageTap?(false), true)
             XCTAssertEqual(text.string, expected.chapters[0].text)
+            XCTAssertNil(footnotesMenuItem())
+            XCTAssertFalse(footnotesShortcutIsVisible())
+            XCTAssertEqual(toolPreference.recent, .footnotes)
+            // A menu retained across a chapter change must not present stale notes.
+            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(previouslyAvailable.action),
+                                           to: previouslyAvailable.target, from: previouslyAvailable))
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, text.frame.height - scroll.contentView.bounds.height)))
+            XCTAssertEqual(text.onPageTap?(true), true)
+            XCTAssertEqual(text.string, expected.chapters[1].text)
+            XCTAssertNotNil(footnotesMenuItem())
+            XCTAssertTrue(footnotesShortcutIsVisible())
         }
         XCTAssertEqual(try Data(contentsOf: source), sourceBytes)
     }

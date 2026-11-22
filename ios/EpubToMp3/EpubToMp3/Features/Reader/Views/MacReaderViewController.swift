@@ -184,7 +184,9 @@ final class MacReaderViewController: NSViewController {
     }
     private func applyLoadEvent(_ event: MacReaderBookLoad.Event) {
         switch event {
-        case .resetTextSurface: contentScrollView.documentView = textView
+        case .resetTextSurface:
+            composition.setFootnotesAvailable(false)
+            contentScrollView.documentView = textView
         case .empty:
             bookTitleLabel.stringValue = L10n.string("library.empty.title")
             chapterTitleLabel.stringValue = ""
@@ -211,6 +213,7 @@ final class MacReaderViewController: NSViewController {
         case let .chapterCount(count): statusLabel.stringValue = L10n.string("reader.chapterCount", count)
         case let .selectRow(row): chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         case let .failure(error):
+            composition.setFootnotesAvailable(false)
             statusLabel.stringValue = error.localizedDescription
             textView.string = ""
             showLoadingError(error)
