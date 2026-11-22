@@ -71,8 +71,8 @@ test("the reader records one reader-open journey per open and cancels a supersed
   const latency = new LatencyObservationStore(() => now)
   let failNext = false
   const reader = new ReaderSession({
-    inspect: async () => { now += 25; if (failNext) throw new Error("broken"); return { bookTitle: "T", chapters: [] } },
-    render: async () => ({ pages: [] }), preferences: {}, savePreferences: () => {}, latency,
+    inspect: async () => { now += 25; if (failNext) throw new Error("broken"); return { bookTitle: "T", chapters: [{ index: "1" }] } },
+    render: async () => ({ pages: [{ start: 0, end: 1 }], searchMatches: [] }), preferences: {}, savePreferences: () => {}, latency,
   })
   const book = { id: "b", file: { name: "b.epub" } }
   await reader.open(book)
