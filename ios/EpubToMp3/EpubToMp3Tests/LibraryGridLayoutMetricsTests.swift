@@ -126,7 +126,7 @@ final class IOSLibraryCollectionLayoutTests: XCTestCase {
         controller.apply(model: LibraryGridModel(books: books), animated: false)
         let snapshotApplied = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             collection.numberOfSections == 1 && collection.numberOfItems(inSection: 0) == books.count
-        })
+        }, object: nil)
         wait(for: [snapshotApplied], timeout: 2)
 
         func frames() throws -> [CGRect] {
