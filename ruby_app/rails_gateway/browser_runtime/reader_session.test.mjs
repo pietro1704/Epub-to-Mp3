@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { LatencyObservationStore } from "../app/javascript/runtime/latency_observation.js"
 import { ReaderSession } from "../app/javascript/runtime/reader_session.js"
 import { DEFAULT_READER_PREFS, READER_PREFS_KEY, readerPreferences, loadReaderPreferences, saveReaderPreferences } from "../app/javascript/runtime/reader_preferences.js"
 
@@ -130,4 +131,136 @@ test("preferences preserve the React storage contract and tolerate invalid or bl
   assert.equal(invalid.fontScale, 1.05)
   assert.equal(invalid.widthRem, 68)
   assert.equal(invalid.lineHeight, 1.45)
+})
+
+const transitions = (latency) => latency.snapshot().map(({ records }) => records.map(({ transition }) => transition))
+const requested = [ "open_requested" ]
+const cancelled = [ ...requested, "cancelled" ]
+const ready = [ ...requested, "readable_content", "controls_usable" ]
+
+test("reader-open readiness waits for the rendered page and controls", async () => {
+  let now = 0
+  const latency = new LatencyObservationStore(() => now)
+  const pending = deferred()
+  const rendering = deferred()
+  const session = make({
+    latency,
+    inspect: async () => { now = 25; return document },
+    render: () => { rendering.resolve(); return pending.promise },
+  })
+  const opening = session.open(book())
+  await rendering.promise
+  assert.equal(session.state.phase, "loading")
+  assert.deepEqual(transitions(latency), [ requested ])
+  assert.equal(latency.snapshot()[0].terminal, false)
+  let readyWasPublished = false
+  session.subscribe((state) => {
+    if (state.phase === "ready") {
+      now = 85
+      readyWasPublished = true
+    }
+  })
+  now = 80
+  pending.resolve(layout)
+  await opening
+  assert.equal(readyWasPublished, true)
+  assert.deepEqual(transitions(latency), [ ready ])
+  assert.deepEqual(latency.snapshot()[0].records.map(({ elapsedMs }) => elapsedMs), [0, 85, 85])
+  assert.equal(latency.snapshot()[0].terminal, true)
+  await session.search("Second")
+  assert.deepEqual(transitions(latency), [ ready ])
+})
+
+test("reader-open cancels failed rendering and measures a successful retry separately", async () => {
+  let now = 0
+  const latency = new LatencyObservationStore(() => now)
+  const pending = deferred()
+  const session = make({ latency, render: () => pending.promise })
+  const opening = session.open(book())
+  now = 30
+  pending.reject(new Error("Rendering unavailable"))
+  await opening
+  assert.equal(session.state.phase, "error")
+  assert.equal(session.state.error, "Rendering unavailable")
+  assert.deepEqual(transitions(latency), [ cancelled ])
+  assert.equal(latency.snapshot()[0].terminal, true)
+
+  session.inspect = () => assert.fail("Retried rendering should reuse the inspected document")
+  session.render = async () => { now = 60; return layout }
+  await session.retry()
+  assert.equal(session.state.phase, "ready")
+  assert.deepEqual(transitions(latency), [ cancelled, ready ])
+  assert.deepEqual(latency.snapshot()[1].records.map(({ elapsedMs }) => elapsedMs), [0, 30, 30])
+
+  session.render = async () => { throw new Error("Search unavailable") }
+  await session.search("Second")
+  assert.equal(session.state.phase, "error")
+  session.render = async () => layout
+  await session.retry()
+  assert.equal(session.state.phase, "ready")
+  assert.deepEqual(transitions(latency), [ cancelled, ready ])
+})
+
+test("reader-open cancels empty documents and empty render results", async () => {
+  const latency = new LatencyObservationStore(() => 0)
+  const session = make({
+    latency,
+    inspect: async () => ({ ...document, chapters: [] }),
+    render: () => assert.fail("An empty document should not render a chapter"),
+  })
+  await session.open(book())
+  assert.equal(session.state.phase, "empty")
+  session.inspect = async () => document
+  session.render = async () => ({ ...layout, pages: [] })
+  await session.open(book())
+  assert.equal(session.state.phase, "empty")
+  assert.deepEqual(transitions(latency), [ cancelled, cancelled ])
+  assert.ok(latency.snapshot().every(({ terminal }) => terminal))
+})
+
+test("reader-open cancels on close and gives only the replacement book credit for stale rendering", async () => {
+  const latency = new LatencyObservationStore(() => 0)
+  const pending = [ deferred(), deferred(), deferred() ]
+  const session = make({ latency, render: () => pending.shift().promise })
+
+  const closedRender = pending[0]
+  const closed = session.open(book("closed"))
+  await Promise.resolve()
+  session.close()
+  assert.deepEqual(transitions(latency), [ cancelled ])
+  closedRender.resolve(layout)
+  await closed
+  assert.equal(session.state.phase, "idle")
+
+  const [ oldRender, replacementRender ] = pending
+  const old = session.open(book("old"))
+  await Promise.resolve()
+  const replacement = session.open(book("replacement"))
+  await Promise.resolve()
+  assert.deepEqual(transitions(latency), [ cancelled, cancelled, requested ])
+  oldRender.reject(new Error("Obsolete error"))
+  await old
+  assert.equal(session.state.phase, "loading")
+  replacementRender.resolve(layout)
+  await replacement
+  assert.equal(session.state.bookId, "replacement")
+  assert.deepEqual(transitions(latency), [ cancelled, cancelled, ready ])
+})
+
+test("reader-open follows the latest rendering of the same book", async () => {
+  const latency = new LatencyObservationStore(() => 0)
+  const initial = deferred(), updated = deferred()
+  const renders = [ initial, updated ]
+  const session = make({ latency, render: () => renders.shift().promise })
+  const opening = session.open(book())
+  await Promise.resolve()
+  const searching = session.search("Second")
+  initial.resolve(layout)
+  await opening
+  assert.deepEqual(transitions(latency), [ requested ])
+  updated.resolve(layout)
+  await searching
+  assert.equal(session.state.phase, "ready")
+  assert.equal(session.state.pageIndex, 1)
+  assert.deepEqual(transitions(latency), [ ready ])
 })

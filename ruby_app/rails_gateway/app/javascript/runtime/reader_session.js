@@ -9,6 +9,7 @@ export class ReaderSession {
     /** Optional LatencyObservationStore; reader-open journeys are recorded as in React (P-44). */
     this.latency = latency
     this.journey = ""
+    this.retryOpening = false
     this.render = render
     this.savePreferences = savePreferences
     this.listeners = new Set()
@@ -34,8 +35,7 @@ export class ReaderSession {
 
   async open(book) {
     const revision = ++this.revision
-    this.cancelJourney()
-    this.journey = this.latency?.begin("reader_open", "open_requested") ?? ""
+    this.startJourney()
     this.book = book
     this.document = null
     this.playback = null
@@ -51,12 +51,6 @@ export class ReaderSession {
       const document = await this.inspect(book.file)
       if (revision !== this.revision) return
       this.document = document
-      if (this.journey) {
-        this.latency.record(this.journey, "readable_content")
-        this.latency.record(this.journey, "controls_usable")
-        this.latency.finish(this.journey)
-        this.journey = ""
-      }
       Object.assign(this.state, {
         title: document.bookTitle || this.state.title,
         author: document.bookAuthor || this.state.author,
@@ -66,9 +60,14 @@ export class ReaderSession {
       await this.refresh()
     } catch (error) {
       if (revision !== this.revision) return
-      this.cancelJourney()
       this.fail(error)
     }
+  }
+
+  startJourney() {
+    this.cancelJourney()
+    this.retryOpening = false
+    this.journey = this.latency?.begin("reader_open", "open_requested") ?? ""
   }
 
   cancelJourney() {
@@ -87,7 +86,11 @@ export class ReaderSession {
     this.notify()
   }
 
-  retry() { return this.document ? this.refresh() : this.book && this.open(this.book) }
+  retry() {
+    if (!this.document) return this.book && this.open(this.book)
+    if (this.state.phase === "error" && this.retryOpening) this.startJourney()
+    return this.refresh()
+  }
   setModal(modal) { this.state.modal = modal; this.notify() }
 
   async selectChapter(index, fragment = "") {
@@ -157,6 +160,7 @@ export class ReaderSession {
     if (!chapter) {
       this.state.phase = this.document ? "empty" : this.book ? "loading" : "idle"
       this.state.result = null
+      if (this.state.phase === "empty") this.cancelJourney()
       this.notify()
       return
     }
@@ -184,13 +188,23 @@ export class ReaderSession {
       if (audio && result.audioMatch) this.state.pageIndex = result.audioMatch.pageIndex
       const target = result.anchors?.find((anchor) => anchor.id === fragment)
       if (target) this.state.pageIndex = target.pageIndex
+      if (this.state.phase === "empty") this.cancelJourney()
       this.notify()
+      // The subscriber applies the page and control state synchronously.
+      if (revision === this.revision && this.journey) {
+        this.latency.record(this.journey, "readable_content")
+        this.latency.record(this.journey, "controls_usable")
+        this.latency.finish(this.journey)
+        this.journey = ""
+      }
     } catch (error) {
       if (revision === this.revision) this.fail(error)
     }
   }
 
   fail(error) {
+    this.retryOpening = Boolean(this.journey)
+    this.cancelJourney()
     this.state.phase = "error"
     this.state.error = String(error?.message ?? error)
     this.state.result = null
