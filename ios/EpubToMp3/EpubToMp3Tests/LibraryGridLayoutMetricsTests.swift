@@ -100,6 +100,70 @@ final class LibraryGridLayoutMetricsTests: XCTestCase {
 #if os(iOS)
 @MainActor
 final class IOSLibraryCollectionLayoutTests: XCTestCase {
+    func testRequestedColumnsUpdateRowsAndReturnWhenWidthAllows() throws {
+        let controller = LibraryGridController(metrics: LibraryGridLayoutMetrics(requestedColumns: 2))
+        let host = UIViewController()
+        host.addChild(controller)
+        host.setOverrideTraitCollection(
+            UITraitCollection(preferredContentSizeCategory: .large), forChild: controller
+        )
+        host.view.addSubview(controller.view)
+        controller.didMove(toParent: host)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        let collection = try XCTUnwrap(controller.collectionView)
+        collection.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let books = (0..<3).map { index in
+            BookEntity(id: "columns-\(index)", title: "Book \(index)", author: "Author",
+                       bookmark: Data(), displayFilename: "grid.epub", addedAt: .distantPast)
+        }
+        controller.apply(model: LibraryGridModel(books: books), animated: false)
+        let snapshotApplied = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            collection.numberOfSections == 1 && collection.numberOfItems(inSection: 0) == books.count
+        })
+        wait(for: [snapshotApplied], timeout: 2)
+
+        func frames() throws -> [CGRect] {
+            collection.layoutIfNeeded()
+            return try books.indices.map { index in
+                try XCTUnwrap(collection.collectionViewLayout.layoutAttributesForItem(
+                    at: IndexPath(item: index, section: 0)
+                )).frame
+            }
+        }
+
+        let twoColumns = try frames()
+        XCTAssertEqual(twoColumns[0].minY, twoColumns[1].minY, accuracy: 0.5)
+        XCTAssertGreaterThan(twoColumns[1].minX, twoColumns[0].maxX)
+        XCTAssertGreaterThan(twoColumns[2].minY, twoColumns[0].maxY)
+
+        controller.setRequestedColumns(1)
+        let oneColumn = try frames()
+        XCTAssertEqual(oneColumn[0].minX, oneColumn[1].minX, accuracy: 0.5)
+        XCTAssertGreaterThan(oneColumn[1].minY, oneColumn[0].maxY)
+        XCTAssertGreaterThan(oneColumn[0].width, twoColumns[0].width)
+
+        controller.setRequestedColumns(2)
+        XCTAssertEqual(try frames(), twoColumns)
+
+        controller.setRequestedColumns(3)
+        XCTAssertEqual(try frames(), twoColumns)
+
+        collection.frame.size.width = 460
+        let threeColumns = try frames()
+        XCTAssertEqual(threeColumns[0].minY, threeColumns[1].minY, accuracy: 0.5)
+        XCTAssertEqual(threeColumns[1].minY, threeColumns[2].minY, accuracy: 0.5)
+        XCTAssertGreaterThan(threeColumns[1].minX, threeColumns[0].maxX)
+        XCTAssertGreaterThan(threeColumns[2].minX, threeColumns[1].maxX)
+        XCTAssertLessThan(threeColumns[2].maxX, collection.bounds.width)
+    }
+
     func testActualLibraryCollectionHasTwoItemsPerRowAcrossResize() async throws {
         let controller = LibraryGridController(metrics: LibraryGridLayoutMetrics())
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
