@@ -14,7 +14,12 @@ struct PDFReadingAudioMap: Sendable {
         }
     }
     struct Metadata: Decodable { let chapters: [Chapter] }
-    struct Anchor: Equatable { let chapterIndex: Int; let ratio: Double }
+    struct Anchor: Equatable {
+        let chapterIndex: Int
+        let sourceScalarOffset: Int
+        fileprivate let chapterLength: Int
+        var ratio: Double { Double(sourceScalarOffset) / Double(chapterLength) }
+    }
     struct Page: Sendable {
         let chapterIndex: Int
         let displayOffsets: [Int]
@@ -55,8 +60,8 @@ struct PDFReadingAudioMap: Sendable {
         guard let mapped = pages[page], mapped.chapterLength > 0,
               !mapped.displayOffsets.isEmpty else { return nil }
         let index = mapped.displayOffsets.firstIndex(where: { $0 >= max(0, character) }) ?? mapped.displayOffsets.count - 1
-        return Anchor(chapterIndex: mapped.chapterIndex,
-                      ratio: Double(mapped.speechOffsets[index]) / Double(mapped.chapterLength))
+        return Anchor(chapterIndex: mapped.chapterIndex, sourceScalarOffset: mapped.speechOffsets[index],
+                      chapterLength: mapped.chapterLength)
     }
 
     func displayRange(chapter: Int, range: NSRange) -> (page: Int, range: NSRange)? {

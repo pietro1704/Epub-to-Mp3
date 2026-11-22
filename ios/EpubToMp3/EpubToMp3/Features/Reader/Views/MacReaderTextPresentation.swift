@@ -17,7 +17,7 @@ final class MacReaderTextPresentation {
     private let closeReader: () -> Void
     private let observeOpenStage: (String) -> Void
     private var settingsCancellables: Set<AnyCancellable> = []
-    private var pdfView: PDFView?
+    var onPlayPDF: ((PDFReadingAudioMap.Anchor) -> Void)?
     private var textView: MacReaderTextView { composition.textView }
     private var comicPageImageView: NSImageView { composition.comicPageImageView }
     private var contentScrollView: NSScrollView { composition.contentScrollView }
@@ -326,10 +326,16 @@ final class MacReaderTextPresentation {
         }
     }
 
+    func playFromVisiblePDFPosition(presentUnavailable: () -> Void) -> Bool {
+        guard let pdf = contentScrollView.documentView as? MacReaderPDFView else { return false }
+        if !pdf.playFromVisiblePosition() { presentUnavailable() }
+        return true
+    }
+
     func showPDF(_ url: URL) async -> Bool? {
         let generation = loadGeneration
         let bookID = currentBookId
-        let view = PDFView(frame: contentScrollView.contentView.bounds)
+        let view = MacReaderPDFView(frame: contentScrollView.contentView.bounds)
         // PDFKit owns page scrolling; its outer surface fills the reader viewport.
         view.autoresizingMask = [.width, .height]
         view.autoScales = true
@@ -337,16 +343,20 @@ final class MacReaderTextPresentation {
         view.displayDirection = .vertical
         view.displaysPageBreaks = true
         view.pageShadowsEnabled = true
-        pdfView = view
+        view.onPlayFrom = { [weak self, weak view] anchor in
+            guard let self, let view, self.contentScrollView.documentView === view,
+                  self.loadGeneration == generation, self.currentBookId == bookID else { return }
+            self.onPlayPDF?(anchor)
+        }
         statusLabel.stringValue = L10n.string("reader.pdf")
         chapterTitleLabel.stringValue = ""
         contentScrollView.documentView = view
-        let normalized = await Task.detached(priority: .userInitiated) {
-            PdfReadingPageNormalizer.normalizedDocument(from: url)
-        }.value
-        guard pdfView === view, loadGeneration == generation, currentBookId == bookID, !Task.isCancelled else { return nil }
-        view.document = normalized ?? PDFDocument(url: url)
-        return normalized != nil
+        let prepared = await Task.detached(priority: .userInitiated) { MacReaderPDFView.prepare(url) }.value
+        guard contentScrollView.documentView === view, loadGeneration == generation,
+              currentBookId == bookID, !Task.isCancelled else { return nil }
+        view.audioMap = prepared.audioMap
+        view.document = prepared.document
+        return prepared.wasNormalized
     }
 }
 #endif

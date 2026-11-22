@@ -29,6 +29,7 @@ final class ReaderListeningControlTests: XCTestCase {
         let count = capture.requests.count
         control.updatePlaybackWindow(currentChapter: 4)
         control.startFromPage(ratio: 0.9)
+        control.startFromPage(sourceScalarOffset: 12)
         control.enableListening()
         control.sendPlaybackFeedback(chapter: 4, remaining: 0, rate: 1)
         XCTAssertFalse(control.prioritize(chapterIndex: 4))
@@ -67,6 +68,35 @@ final class ReaderListeningControlTests: XCTestCase {
         let count = capture.requests.count
         control.startFromPage(ratio: .nan)
         XCTAssertEqual(capture.requests.count, count)
+    }
+
+    func testExactPositionWithoutEPUBChapterMapStaysWithRequestedChapter() {
+        let capture = ListeningWireCapture()
+        let handle = Unmanaged.passUnretained(capture).toOpaque()
+        let control = ConverterPlaybackControl(rawHandle: handle, free: { _ in }, cancel: { _ in },
+            prioritize: { _, _ in true }, setWindow: { _, _, _ in }, windowContains: { _, _ in true },
+            listeningPosition: { raw, json in
+                guard let raw, let json,
+                      let request = try? JSONDecoder().decode([String: Int].self, from: Data(String(cString: json).utf8))
+                else { return false }
+                Unmanaged<ListeningWireCapture>.fromOpaque(UnsafeMutableRawPointer(mutating: raw))
+                    .takeUnretainedValue().requests.append(request)
+                return true
+            })
+
+        control.updatePlaybackWindow(currentChapter: 1)
+        control.startFromPage(sourceScalarOffset: 46)
+        XCTAssertEqual(capture.requests.last?["version"] as? Int, 2)
+        XCTAssertEqual(capture.requests.last?["chapter_index"] as? Int, 1)
+        XCTAssertEqual(capture.requests.last?["text_offset"] as? Int, 46)
+
+        control.updatePlaybackWindow(currentChapter: 1, chaptersAhead: 2)
+        XCTAssertEqual(capture.requests.last?["text_offset"] as? Int, 46)
+        control.updatePlaybackWindow(currentChapter: 2)
+        XCTAssertEqual(capture.requests.last?["chapter_index"] as? Int, 2)
+        XCTAssertEqual(capture.requests.last?["text_offset"] as? Int, 0)
+        control.updatePlaybackWindow(currentChapter: 1)
+        XCTAssertEqual(capture.requests.last?["text_offset"] as? Int, 0)
     }
 
     func testCatalogAndCapturedSelectionKeepIndependentRuntimeAndModelRevision() throws {

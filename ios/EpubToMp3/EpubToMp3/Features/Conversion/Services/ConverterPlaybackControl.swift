@@ -7,7 +7,12 @@ final class ConverterPlaybackControl: @unchecked Sendable {
     private var readerChapterMap: ReaderConversionChapterMap?
     private var requestedWindow: (chapter: Int, ahead: Int)?
     private var requestedPriority: Int?
-    private var requestedTextRatio: Double = 0
+    private enum RequestedTextPosition {
+        case ratio(Double)
+        case sourceScalarOffset(Int)
+    }
+
+    private var requestedTextPosition: RequestedTextPosition = .ratio(0)
     private var listeningEnabled = false
     private let listeningPosition: ConverterJobControlJSON?
     private let playbackFeedback: ConverterJobControlJSON?
@@ -64,11 +69,11 @@ final class ConverterPlaybackControl: @unchecked Sendable {
     func updatePlaybackWindow(currentChapter: Int, chaptersAhead: Int = 1) {
         cancellationLock.lock(); defer { cancellationLock.unlock() }
         guard !cancellationRequested else { return }
-        if let chapter = requestedWindow?.chapter, chapter != currentChapter { requestedTextRatio = 0 }
+        if let chapter = requestedWindow?.chapter, chapter != currentChapter { requestedTextPosition = .ratio(0) }
         requestedWindow = (currentChapter, chaptersAhead)
         guard let position = corePosition(currentChapter) else { return }
         setPlaybackWindow(rawHandle, position, chaptersAhead)
-        sendListeningPosition(position, ratio: requestedTextRatio)
+        sendListeningPosition(position)
     }
     func contains(chapterIndex: Int) -> Bool {
         cancellationLock.lock(); defer { cancellationLock.unlock() }
@@ -83,7 +88,7 @@ final class ConverterPlaybackControl: @unchecked Sendable {
         readerChapterMap = map
         if let window = requestedWindow, let position = corePosition(window.chapter) {
             setPlaybackWindow(rawHandle, position, window.ahead)
-            sendListeningPosition(position, ratio: requestedTextRatio)
+            sendListeningPosition(position)
         }
         if let priority = requestedPriority, let position = corePosition(priority) {
             _ = prioritizeChapter(rawHandle, position)
@@ -97,19 +102,34 @@ final class ConverterPlaybackControl: @unchecked Sendable {
 
     func startFromPage(ratio: Double) {
         guard ratio.isFinite, (0...1).contains(ratio) else { return }
+        startListening(at: .ratio(ratio))
+    }
+
+    func startFromPage(sourceScalarOffset: Int) {
+        guard sourceScalarOffset >= 0 else { return }
+        startListening(at: .sourceScalarOffset(sourceScalarOffset))
+    }
+
+    private func startListening(at textPosition: RequestedTextPosition) {
         cancellationLock.lock(); defer { cancellationLock.unlock() }
         guard !cancellationRequested else { return }
         listeningEnabled = true
-        requestedTextRatio = ratio
+        requestedTextPosition = textPosition
         if let chapter = requestedWindow?.chapter, let position = corePosition(chapter) {
-            sendListeningPosition(position, ratio: ratio)
+            sendListeningPosition(position)
         }
     }
 
-    private func sendListeningPosition(_ position: Int, ratio: Double) {
+    private func sendListeningPosition(_ position: Int) {
         guard listeningEnabled, let listeningPosition else { return }
-        let chars = readerChapterMap?.coreTextChars[position] ?? 0
-        let offset = min(max(chars - 1, 0), Int((Double(chars) * ratio).rounded(.down)))
+        let offset: Int
+        switch requestedTextPosition {
+        case .ratio(let ratio):
+            let chars = readerChapterMap?.coreTextChars[position] ?? 0
+            offset = min(max(chars - 1, 0), Int((Double(chars) * ratio).rounded(.down)))
+        case .sourceScalarOffset(let sourceScalarOffset):
+            offset = sourceScalarOffset
+        }
         guard let json = try? JSONSerialization.data(withJSONObject: ["version": 2, "chapter_index": position, "text_offset": offset]) else { return }
         if String(decoding: json, as: UTF8.self).withCString({ listeningPosition(rawHandle, $0) }) {
             currentListeningGeneration = listeningGeneration?(rawHandle) ?? 0
@@ -120,7 +140,7 @@ final class ConverterPlaybackControl: @unchecked Sendable {
         cancellationLock.lock(); defer { cancellationLock.unlock() }
         guard !cancellationRequested else { return }
         listeningEnabled = true
-        if let chapter = requestedWindow?.chapter, let position = corePosition(chapter) { sendListeningPosition(position, ratio: requestedTextRatio) }
+        if let chapter = requestedWindow?.chapter, let position = corePosition(chapter) { sendListeningPosition(position) }
     }
 
     func sendPlaybackFeedback(chapter: Int, remaining: Double, rate: Double) {

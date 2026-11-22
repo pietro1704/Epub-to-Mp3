@@ -292,6 +292,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 guard let self else { return }
                 self.playbackSession.start(owner: self, chapterOverride: chapter, pageRatioOverride: ratio)
             },
+            onPlayPDF: { [weak self] anchor in
+                guard let self,
+                      UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID
+                else { return }
+                self.playbackSession.start(owner: self, pdfAnchor: anchor)
+            },
             onChromeChanged: { [weak self] hidden in
                 self?.readerChromeHidden = hidden
                 self?.refreshPlayerBar()

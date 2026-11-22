@@ -47,7 +47,11 @@ final class MacReaderPDFViewportTests: XCTestCase {
         }
         harness.controller.view.layoutSubtreeIfNeeded()
         _ = await harness.text.showPDF(first)
-        let old = try XCTUnwrap(harness.composition.contentScrollView.documentView as? PDFView)
+        let old = try XCTUnwrap(harness.composition.contentScrollView.documentView as? MacReaderPDFView)
+        old.layoutDocumentView()
+        let play = try playMenuItem(in: old, page: 0, text: "Lorem")
+        var played: [PDFReadingAudioMap.Anchor] = []
+        harness.text.onPlayPDF = { played.append($0) }
         harness.document.currentBookId = "replacement-book"
         harness.document.loadGeneration = UUID()
         _ = await harness.text.showPDF(second)
@@ -57,6 +61,8 @@ final class MacReaderPDFViewportTests: XCTestCase {
         XCTAssertNil(old.superview)
         XCTAssertTrue(current.document?.page(at: 0)?.string?.contains("Second book") == true)
         assertFillsViewport(current, in: scroll)
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(play.action), to: play.target, from: play))
+        XCTAssertTrue(played.isEmpty, "An action from the replaced PDF must not start audio for the new reader")
     }
 
     func testCancelledOpenDoesNotInstallDocument() async throws {
@@ -74,15 +80,91 @@ final class MacReaderPDFViewportTests: XCTestCase {
     }
 
     func testImportedPDFOpensInVisibleReaderWindow() async throws {
+        let source = try PdfFixture.createSinglePage(title: "PDF opening acceptance",
+                                                     bodyText: "This passage must be visible in the reader.")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let original = try Data(contentsOf: source)
+        try await withImportedPDF(source) { _, pdf, window, player in
+            XCTAssertEqual(pdf.document?.pageCount, 1)
+            XCTAssertGreaterThan(pdf.visibleRect.width, 100)
+            XCTAssertGreaterThan(pdf.visibleRect.height, 100)
+            XCTAssertFalse(pdf.visiblePages.isEmpty)
+            XCTAssertTrue(pdf.document?.page(at: 0)?.string?.contains("This passage must be visible") == true)
+            XCTAssertFalse(player.isPlaying)
+            XCTAssertEqual(try Data(contentsOf: source), original)
+            XCTAssertTrue(window.isVisible)
+        }
+    }
+
+    func testTextPDFStartsFromClickedTextAndVisiblePageThroughNativeReaderActions() async throws {
+        let source = try PdfFixture.createMultiPage(pages: [
+            (heading: "First page", body: "Earlier text must not start when listening on another page."),
+            (heading: "Second page", body: "The later passage is a selectable source of narration.")
+        ])
+        defer { try? FileManager.default.removeItem(at: source) }
+        var played: [PDFReadingAudioMap.Anchor] = []
+        var genericListenRequests = 0
+        try await withImportedPDF(source, onListen: { genericListenRequests += 1 },
+            onPlayPDF: { played.append($0) }) { controller, pdf, _, _ in
+            let second = try XCTUnwrap(pdf.document?.page(at: 1))
+            pdf.go(to: second)
+            pdf.layoutDocumentView()
+            XCTAssertTrue(pdf.currentPage === second)
+
+            let contextPlay = try playMenuItem(in: pdf, page: 1, text: "selectable", characterOffset: 4)
+            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(contextPlay.action), to: contextPlay.target, from: contextPlay))
+            let clicked = try XCTUnwrap(played.last)
+            XCTAssertEqual(clicked.chapterIndex, 1)
+            let chapterText = try XCTUnwrap(pdf.audioMap?.chapters[1].text)
+            let word = try XCTUnwrap(chapterText.range(of: "selectable"))
+            XCTAssertEqual(clicked.sourceScalarOffset, chapterText[..<word.lowerBound].unicodeScalars.count)
+
+            let more = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
+                .first { $0.accessibilityIdentifier() == "reader.more" })
+            let listen = try XCTUnwrap(more.menu?.items.first { $0.representedObject as? String == ReaderTool.listen.rawValue })
+            XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(listen.action), to: listen.target, from: listen))
+            XCTAssertEqual(played.count, 2)
+            XCTAssertEqual(played.last?.chapterIndex, 1)
+            XCTAssertEqual(genericListenRequests, 0, "PDF playback must use its own visible location")
+        }
+    }
+
+    func testPDFWithoutSelectableTextDoesNotRequestPlayback() async throws {
+        let source = try PdfFixture.createSinglePage(title: "", bodyText: "")
+        defer { try? FileManager.default.removeItem(at: source) }
+        try await withImportedPDF(source, onPlayPDF: { _ in XCTFail("Unmapped content cannot start audio") }) { _, pdf, _, _ in
+            XCTAssertFalse(pdf.playFromVisiblePosition())
+            XCTAssertNil(pdf.playbackMenu(at: NSPoint(x: pdf.bounds.midX, y: pdf.bounds.midY)))
+        }
+    }
+
+    private func playMenuItem(in pdf: MacReaderPDFView, page index: Int, text: String,
+                              characterOffset: Int = 0) throws -> NSMenuItem {
+        let page = try XCTUnwrap(pdf.document?.page(at: index))
+        let pageText = try XCTUnwrap(page.string) as NSString
+        let range = pageText.range(of: text)
+        XCTAssertNotEqual(range.location, NSNotFound)
+        guard range.location != NSNotFound else { throw CocoaError(.fileReadCorruptFile) }
+        let bounds = page.characterBounds(at: range.location + characterOffset)
+        let point = pdf.convert(NSPoint(x: bounds.midX, y: bounds.midY), from: page)
+        return try XCTUnwrap(pdf.playbackMenu(at: point)?.items.first)
+    }
+
+    private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+
+    private func withImportedPDF(
+        _ source: URL,
+        onListen: @escaping () -> Void = {},
+        onPlayPDF: @escaping (PDFReadingAudioMap.Anchor) -> Void = { _ in },
+        body: (MacReaderViewController, MacReaderPDFView, NSWindow, AudioPlayer) throws -> Void
+    ) async throws {
         let activationPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.regular)
         defer { NSApp.setActivationPolicy(activationPolicy) }
         let id = "pdf-opening-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
-        let source = try PdfFixture.createSinglePage(title: "PDF opening acceptance",
-                                                   bodyText: "This passage must be visible in the reader.")
-        let original = try Data(contentsOf: source)
+        let sourcePageCount = try XCTUnwrap(PDFDocument(url: source)).pageCount
         let library = LibraryStore(defaults: defaults, importDirectory: root)
         let book = try library.importBook(from: source)
         let keys = [ReaderSessionState.currentlyReadingBookIDKey,
@@ -97,13 +179,13 @@ final class MacReaderPDFViewportTests: XCTestCase {
             ReaderProgressStore.evict(bookId: book.id)
             LocalFulltextCache.evict(bookId: book.id)
             defaults.removePersistentDomain(forName: id)
-            try? FileManager.default.removeItem(at: source)
             try? FileManager.default.removeItem(at: root)
         }
         UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let controller = MacReaderViewController(library: library,
             settings: AppSettings(defaults: defaults), player: player,
-            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {})
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
+            onListen: onListen, onPlayPDF: onPlayPDF)
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 800, height: 700),
                               styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -111,24 +193,17 @@ final class MacReaderPDFViewportTests: XCTestCase {
         defer { window.orderOut(nil); window.contentViewController = nil; window.close() }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-        var surface: PDFView?
+        var surface: MacReaderPDFView?
         for _ in 0..<200 {
             controller.view.layoutSubtreeIfNeeded()
-            surface = descendants(controller.view).compactMap { $0 as? PDFView }.first
-            if surface?.document?.pageCount == 1 { break }
+            surface = descendants(controller.view).compactMap { $0 as? MacReaderPDFView }.first
+            if surface?.document?.pageCount == sourcePageCount { break }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         let pdf = try XCTUnwrap(surface)
-        XCTAssertEqual(pdf.document?.pageCount, 1)
+        XCTAssertEqual(pdf.document?.pageCount, sourcePageCount)
         pdf.layoutDocumentView()
-        XCTAssertGreaterThan(pdf.visibleRect.width, 100)
-        XCTAssertGreaterThan(pdf.visibleRect.height, 100)
-        XCTAssertFalse(pdf.visiblePages.isEmpty)
-        XCTAssertTrue(pdf.document?.page(at: 0)?.string?.contains("This passage must be visible") == true)
-        XCTAssertFalse(player.isPlaying)
-        XCTAssertEqual(try Data(contentsOf: source), original)
-        XCTAssertTrue(window.isVisible)
+        try body(controller, pdf, window, player)
     }
 
     private func assertFillsViewport(_ pdf: PDFView, in scroll: NSScrollView,

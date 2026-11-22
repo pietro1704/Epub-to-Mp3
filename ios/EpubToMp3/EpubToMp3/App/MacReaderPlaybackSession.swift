@@ -26,14 +26,15 @@ final class MacReaderPlaybackSession {
 
     // The double optional distinguishes "use the current page" from an explicit nil page.
     func start(owner: AnyObject, optionsOverride: ConversionOptions? = nil,
-               chapterOverride: Int? = nil, pageRatioOverride: Double?? = nil) {
+               chapterOverride: Int? = nil, pageRatioOverride: Double?? = nil,
+               pdfAnchor: PDFReadingAudioMap.Anchor? = nil) {
         playerPresentation.dismissFullPlayer()
         let defaults = UserDefaults.standard
         guard let bookID = defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               let book = library.books.first(where: { $0.id == bookID }),
               // Comics are read visually; there is no text to narrate (matches iOS reader listening).
               book.fileType.supportsAudioConversion else { return }
-        let chapterIndex = chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
+        let chapterIndex = pdfAnchor?.chapterIndex ?? chapterOverride ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
         let chapterStart = Int32(exactly: chapterIndex) ?? 0
         let pageRatio = pageRatioOverride ?? (defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double)
         cancel(stopPlayer: false)
@@ -63,7 +64,11 @@ final class MacReaderPlaybackSession {
                     currentChapter: Int(chapterStart),
                     chaptersAhead: 1
                 )
-                if let pageRatio { playbackControl.startFromPage(ratio: pageRatio) }
+                if let pdfAnchor {
+                    playbackControl.startFromPage(sourceScalarOffset: pdfAnchor.sourceScalarOffset)
+                } else if let pageRatio {
+                    playbackControl.startFromPage(ratio: pageRatio)
+                }
                 localPlaybackControl = playbackControl
                 let pending = JobSnapshot(
                     jobId: jobID,
@@ -174,7 +179,7 @@ final class MacReaderPlaybackSession {
                     })
                     if recovered {
                         self.start(owner: owner, optionsOverride: conversionOptions,
-                                   chapterOverride: Int(chapterStart), pageRatioOverride: .some(pageRatio))
+                                   chapterOverride: Int(chapterStart), pageRatioOverride: .some(pageRatio), pdfAnchor: pdfAnchor)
                     }
                     return
                 }
@@ -184,7 +189,9 @@ final class MacReaderPlaybackSession {
                             && defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID
                     })
                     if let choice {
-                        self.start(owner: owner, optionsOverride: conversionOptions.recovering(with: choice.candidate, language: choice.language))
+                        self.start(owner: owner,
+                                   optionsOverride: conversionOptions.recovering(with: choice.candidate, language: choice.language),
+                                   pdfAnchor: pdfAnchor)
                     }
                     return
                 }
