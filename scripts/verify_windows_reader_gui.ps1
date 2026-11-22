@@ -91,7 +91,10 @@ public static class ReaderTestDesktop
         var elements = new List<FlutterElement>();
         // Flutter handles OBJID_CLIENT on its own HWND even when UIA exposes only the pane.
         if (AccessibleObjectFromWindow(window, objIdClient, ref accessibleId, out root) == 0 && root != null)
-            ReadAccessibleNode(root, 0, 0, elements);
+        {
+            try { ReadAccessibleNode(root, 0, 0, elements); }
+            catch (COMException) { /* Flutter can replace a node mid-read; keep what was read. */ }
+        }
         return elements.ToArray();
     }
 
@@ -115,11 +118,15 @@ public static class ReaderTestDesktop
         int children = accessible.accChildCount;
         for (int index = 1; index <= children && elements.Count < 1024; index++)
         {
-            IAccessible child = accessible.get_accChild(index) as IAccessible;
-            if (child != null)
-                ReadAccessibleNode(child, 0, depth + 1, elements);
-            else
-                ReadAccessibleNode(accessible, index, depth + 1, elements);
+            try
+            {
+                IAccessible child = accessible.get_accChild(index) as IAccessible;
+                if (child != null)
+                    ReadAccessibleNode(child, 0, depth + 1, elements);
+                else
+                    ReadAccessibleNode(accessible, index, depth + 1, elements);
+            }
+            catch (COMException) { /* Skip a node that disappeared or reports E_FAIL. */ }
         }
     }
 
@@ -164,8 +171,8 @@ function Wait-ForReaderUi([string]$Description, [scriptblock]$Lookup) {
     } catch [System.Windows.Automation.ElementNotAvailableException] {
       # A native dialog element can disappear during a refresh.
     } catch [System.Runtime.InteropServices.COMException] {
-      # A replaced MSAA node can report E_INVALIDARG, CO_E_OBJNOTCONNECTED or RPC_E_DISCONNECTED.
-      if ($_.Exception.GetBaseException().HResult -notin @(0x80070057, 0x800401FD, 0x80010108)) { throw }
+      # A replaced MSAA node can report E_INVALIDARG, E_FAIL, CO_E_OBJNOTCONNECTED or RPC_E_DISCONNECTED.
+      if ($_.Exception.GetBaseException().HResult -notin @(0x80070057, 0x800401FD, 0x80010108, 0x80004005)) { throw }
     }
     Start-Sleep -Milliseconds 250
   }
