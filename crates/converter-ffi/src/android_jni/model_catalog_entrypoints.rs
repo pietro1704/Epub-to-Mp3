@@ -216,3 +216,171 @@ pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_n
         },
     )
 }
+
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsManualCatalogV3(
+    mut env: JNIEnv<'_>,
+    _object: JObject<'_>,
+    language: JString<'_>,
+    android_api: jint,
+    architecture: JString<'_>,
+    os_version: JString<'_>,
+    model_root: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsManualCatalogV3",
+        std::ptr::null_mut(),
+        || {
+            android_explicit_catalog_json(
+                &mut env,
+                android_api,
+                [language, architecture, os_version, model_root],
+                None,
+            )
+        },
+    )
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogProbeModelV3(
+    mut env: JNIEnv<'_>,
+    _object: JObject<'_>,
+    language: JString<'_>,
+    android_api: jint,
+    architecture: JString<'_>,
+    os_version: JString<'_>,
+    model_root: JString<'_>,
+    espeak_data_directory: JString<'_>,
+    model_id: JString<'_>,
+) -> jstring {
+    super::panic_boundary::jni_guard(
+        env.get_raw(),
+        "Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsCatalogProbeModelV3",
+        std::ptr::null_mut(),
+        || {
+            android_explicit_catalog_json(
+                &mut env,
+                android_api,
+                [language, architecture, os_version, model_root],
+                Some([espeak_data_directory, model_id]),
+            )
+        },
+    )
+}
+
+fn android_explicit_catalog_json(
+    env: &mut JNIEnv<'_>,
+    android_api: jint,
+    target: [JString<'_>; 4],
+    probe: Option<[JString<'_>; 2]>,
+) -> jstring {
+    clear_last_error();
+    let mut read = |value| {
+        CString::new(read_string(env, value)?)
+            .map_err(|_| "Catalog arguments must not contain NUL bytes".to_owned())
+    };
+    let catalog = (|| {
+        let [language, architecture, os_version, model_root] = target;
+        let target = [
+            read(language)?,
+            read(architecture)?,
+            read(os_version)?,
+            read(model_root)?,
+        ];
+        let probe = probe
+            .map(|[directory, model_id]| Ok::<_, String>([read(directory)?, read(model_id)?]))
+            .transpose()?;
+        Ok::<_, String>(explicit_android_catalog(
+            android_api,
+            target.each_ref().map(CString::as_c_str),
+            probe
+                .as_ref()
+                .map(|probe| probe.each_ref().map(CString::as_c_str)),
+        ))
+    })();
+    let result = match catalog {
+        Ok(value) if value.is_null() => return std::ptr::null_mut(),
+        Ok(value) => unsafe { CString::from_raw(value) },
+        Err(error) => return fail(error),
+    };
+    match env.new_string(result.to_string_lossy()) {
+        Ok(value) => value.into_raw(),
+        Err(error) => fail(error.to_string()),
+    }
+}
+
+fn explicit_android_catalog(
+    android_api: jint,
+    [language, architecture, os_version, model_root]: [&CStr; 4],
+    probe: Option<[&CStr; 2]>,
+) -> *mut c_char {
+    let android_api = android_api.max(0) as u32;
+    unsafe {
+        if let Some([directory, model_id]) = probe {
+            converter_tts_catalog_probe_model_json_v3(
+                language.as_ptr(),
+                c"android".as_ptr(),
+                android_api,
+                architecture.as_ptr(),
+                os_version.as_ptr(),
+                model_root.as_ptr(),
+                directory.as_ptr(),
+                model_id.as_ptr(),
+            )
+        } else {
+            converter_tts_catalog_manual_json_v3(
+                language.as_ptr(),
+                c"android".as_ptr(),
+                android_api,
+                architecture.as_ptr(),
+                os_version.as_ptr(),
+                model_root.as_ptr(),
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+mod explicit_model_catalog_jni_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_android_catalog_preserves_target_and_probes_only_the_requested_id() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = CString::new(root.path().to_str().unwrap()).unwrap();
+        let target = [c"en-US", c"arm64-v8a", c"15", root_path.as_c_str()];
+        let decode = |pointer: *mut c_char| {
+            assert!(!pointer.is_null());
+            let json = unsafe { CString::from_raw(pointer) };
+            serde_json::from_slice::<serde_json::Value>(json.as_bytes()).unwrap()
+        };
+        let manual = decode(explicit_android_catalog(35, target, None));
+        assert_eq!(manual["target"]["platform"], "android");
+        assert_eq!(manual["target"]["android_api"], 35);
+        assert_eq!(manual["target"]["language"], "en-US");
+        assert_eq!(manual["target"]["architecture"], "arm64-v8a");
+        assert_eq!(manual["target"]["os_version"], "15");
+        assert_eq!(
+            manual["default_selection"]["model_id"],
+            "pt_BR-faber-medium"
+        );
+
+        let probe = decode(explicit_android_catalog(
+            35,
+            target,
+            Some([c"/no-phonemizer-needed", c"en_US-lessac-low"]),
+        ));
+        let entries = probe["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+        assert_eq!(entry["identity"]["model_id"], "en_US-lessac-low");
+        assert_eq!(entry["presentation"]["quality"], "low");
+        assert_eq!(entry["compatibility"]["compatible"], true);
+        assert_eq!(entry["installation"]["state"], "missing");
+        assert_eq!(entry["readiness"]["state"], "not_inspected");
+        assert_eq!(entry["selection"]["selectable"], false);
+        assert!(manual["entries"].as_array().unwrap().contains(entry));
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+}

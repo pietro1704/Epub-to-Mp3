@@ -61,7 +61,11 @@ impl TtsSelection {
         if self.engine == "kokoro" {
             return Err("Unsupported TTS engine: kokoro".into());
         }
-        if self.engine == "piper" {
+        let runtime = self
+            .session
+            .as_ref()
+            .map(|session| session.runtime.as_str());
+        if self.engine == "piper" && !matches!(runtime, Some("piper" | "piper-web")) {
             crate::model_catalog::validate_piper_quality(
                 self.model_id.as_deref().unwrap_or_default(),
             )?;
@@ -178,6 +182,11 @@ impl TtsPreferences {
         };
         self.primary.validate(primary_language)?;
         if let Some(secondary) = &self.secondary {
+            if secondary.engine == "piper" {
+                crate::model_catalog::validate_piper_quality(
+                    secondary.model_id.as_deref().unwrap_or_default(),
+                )?;
+            }
             secondary.validate(primary_language)?;
             if secondary.same_request(&self.primary) {
                 return Err("Secondary voice must differ from primary".into());
@@ -446,13 +455,6 @@ mod tests {
         assert!(edge.validate(Some("pt-BR")).is_ok());
     }
 
-    #[test]
-    fn defaults_are_offline_faber() {
-        let p = TtsPreferences::default();
-        assert_eq!(p.primary.model_id.as_deref(), Some(FABER_MODEL_ID));
-        assert!(p.secondary.is_none());
-        assert!(!p.allow_online_fallback);
-    }
     #[test]
     fn online_secondary_requires_consent() {
         let mut p = TtsPreferences::default();

@@ -66,9 +66,7 @@ impl ModelInstallOperation {
         cancellation: Arc<AtomicBool>,
         mode: BeginMode,
     ) -> Result<Option<Self>, ModelStoreError> {
-        let descriptor = crate::model_catalog::MODELS
-            .iter()
-            .find(|model| model.id == model_id)
+        let descriptor = crate::model_catalog::model_by_id(model_id)
             .ok_or_else(|| ModelStoreError::UnknownModel(model_id.to_owned()))?;
         let manifest = ModelStore::catalog_manifest(model_id)?;
         Self::begin(

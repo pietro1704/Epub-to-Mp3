@@ -8,10 +8,13 @@ pub(super) fn command_models(raw: &[String]) -> Result<i32, String> {
     match raw.get(1).map(String::as_str).unwrap_or("list") {
         "catalog" => println!("{}", converter_core::tts_session::catalog_json()),
         "list" => {
-            for model in converter_core::model_catalog::MODELS
-                .iter()
-                .filter(|m| !m.artifacts.is_empty())
-            {
+            let include_low = raw.iter().any(|value| value == "--include-low");
+            for model in converter_core::model_catalog::manual_models().filter(|model| {
+                !model.artifacts.is_empty()
+                    && (include_low
+                        || model.metadata.presentation.quality
+                            != converter_core::model_catalog::QualityTier::Low)
+            }) {
                 println!(
                     "{}\t{} bytes\t{}",
                     model.id,
@@ -54,7 +57,12 @@ pub(super) fn command_models(raw: &[String]) -> Result<i32, String> {
                 fs::remove_dir_all(path).map_err(|e| e.to_string())?;
             }
         }
-        _ => return Err("Usage: models list | install MODEL_ID | remove MODEL_ID --yes".into()),
+        _ => {
+            return Err(
+                "Usage: models list [--include-low] | install MODEL_ID | remove MODEL_ID --yes"
+                    .into(),
+            )
+        }
     }
     Ok(0)
 }

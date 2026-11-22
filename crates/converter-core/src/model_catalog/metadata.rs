@@ -83,11 +83,29 @@ static FABER_VOICES: &[VoiceDescriptor] = &[VoiceDescriptor {
     voice_id: None,
     name: "Faber",
 }];
+static EDRESSON_VOICES: &[VoiceDescriptor] = &[VoiceDescriptor {
+    voice_id: None,
+    name: "Edresson",
+}];
+static LESSAC_VOICES: &[VoiceDescriptor] = &[VoiceDescriptor {
+    voice_id: None,
+    name: "Lessac",
+}];
 
 static PIPER_FABER_LANGUAGES: &[ExactLanguageDescriptor] = &[ExactLanguageDescriptor {
     tag: "pt-BR",
     frontend: Some("espeak-ng:pt-br"),
     validation: LanguageValidation::RuntimeValidated,
+}];
+static PIPER_EDRESSON_LANGUAGES: &[ExactLanguageDescriptor] = &[ExactLanguageDescriptor {
+    tag: "pt-BR",
+    frontend: Some("espeak-ng:pt-br"),
+    validation: LanguageValidation::ArtifactDeclared,
+}];
+static PIPER_LESSAC_LANGUAGES: &[ExactLanguageDescriptor] = &[ExactLanguageDescriptor {
+    tag: "en-US",
+    frontend: Some("espeak-ng:en-us"),
+    validation: LanguageValidation::ArtifactDeclared,
 }];
 pub(super) static PIPER_FABER_METADATA: ModelMetadata = ModelMetadata {
     presentation: ModelPresentationDescriptor {
@@ -107,6 +125,28 @@ pub(super) static PIPER_FABER_METADATA: ModelMetadata = ModelMetadata {
         requires_acceptance: false,
         validation: LicenceValidation::Partial,
     },
+};
+
+pub(super) static PIPER_EDRESSON_METADATA: ModelMetadata = ModelMetadata {
+    presentation: ModelPresentationDescriptor {
+        model_name: "Edresson",
+        family_name: "Piper",
+        quality: QualityTier::Low,
+        voice_choices: EDRESSON_VOICES,
+    },
+    exact_languages: PIPER_EDRESSON_LANGUAGES,
+    licence: UNKNOWN_LICENCE,
+};
+
+pub(super) static PIPER_LESSAC_METADATA: ModelMetadata = ModelMetadata {
+    presentation: ModelPresentationDescriptor {
+        model_name: "Lessac",
+        family_name: "Piper",
+        quality: QualityTier::Low,
+        voice_choices: LESSAC_VOICES,
+    },
+    exact_languages: PIPER_LESSAC_LANGUAGES,
+    licence: UNKNOWN_LICENCE,
 };
 
 pub(super) static PIPER_DEFAULT_METADATA: ModelMetadata = ModelMetadata {

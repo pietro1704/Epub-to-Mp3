@@ -36,7 +36,7 @@ pub unsafe extern "C" fn converter_tts_catalog_json_v3(
                 architecture,
                 os_version,
                 model_root,
-                None,
+                CatalogAccess::Automatic,
             )
         },
     )
@@ -69,10 +69,89 @@ pub unsafe extern "C" fn converter_tts_catalog_probe_json_v3(
                 architecture,
                 os_version,
                 model_root,
-                Some(&directory),
+                CatalogAccess::Probe {
+                    directory,
+                    model_id: None,
+                },
             )
         },
     )
+}
+
+/// Returns the install browser snapshot, including explicit-only Piper voices.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_catalog_manual_json_v3(
+    language: *const c_char,
+    platform: *const c_char,
+    android_api: u32,
+    architecture: *const c_char,
+    os_version: *const c_char,
+    model_root: *const c_char,
+) -> *mut c_char {
+    ffi_guard(
+        "converter_tts_catalog_manual_json_v3",
+        std::ptr::null_mut(),
+        || {
+            speech_model_catalog_json(
+                language,
+                platform,
+                android_api,
+                architecture,
+                os_version,
+                model_root,
+                CatalogAccess::Manual,
+            )
+        },
+    )
+}
+
+/// Inspects and loads only the explicitly requested installed model.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_catalog_probe_model_json_v3(
+    language: *const c_char,
+    platform: *const c_char,
+    android_api: u32,
+    architecture: *const c_char,
+    os_version: *const c_char,
+    model_root: *const c_char,
+    espeak_data_directory: *const c_char,
+    model_id: *const c_char,
+) -> *mut c_char {
+    ffi_guard(
+        "converter_tts_catalog_probe_model_json_v3",
+        std::ptr::null_mut(),
+        || {
+            let directory = match c_string(espeak_data_directory, "eSpeak data directory") {
+                Ok(value) => value,
+                Err(error) => return fail(error),
+            };
+            let model_id = match c_string(model_id, "requested model ID") {
+                Ok(value) => value,
+                Err(error) => return fail(error),
+            };
+            speech_model_catalog_json(
+                language,
+                platform,
+                android_api,
+                architecture,
+                os_version,
+                model_root,
+                CatalogAccess::Probe {
+                    directory,
+                    model_id: Some(model_id),
+                },
+            )
+        },
+    )
+}
+
+enum CatalogAccess {
+    Automatic,
+    Manual,
+    Probe {
+        directory: String,
+        model_id: Option<String>,
+    },
 }
 
 unsafe fn speech_model_catalog_json(
@@ -82,7 +161,7 @@ unsafe fn speech_model_catalog_json(
     architecture: *const c_char,
     os_version: *const c_char,
     model_root: *const c_char,
-    probe_directory: Option<&str>,
+    access: CatalogAccess,
 ) -> *mut c_char {
     clear_last_error();
     let language = match c_string(language, "language") {
@@ -113,14 +192,13 @@ unsafe fn speech_model_catalog_json(
         architecture,
         os_version,
     };
-    let probe_directory = probe_directory.map(str::to_owned);
-    let result = if probe_directory.is_some() {
+    let result = if matches!(access, CatalogAccess::Probe { .. }) {
         // Swift actor executors have small stacks. Keep the complete runtime
         // loading frame on the same stack budget as conversion and audition.
         std::thread::Builder::new()
             .name("converter-ffi-catalog-probe".into())
             .stack_size(8 * 1024 * 1024)
-            .spawn(move || speech_model_snapshot_json(query, model_root, probe_directory))
+            .spawn(move || speech_model_snapshot_json(query, model_root, access))
             .map_err(|error| format!("Failed to start catalog probe: {error}"))
             .and_then(|thread| {
                 thread
@@ -129,7 +207,7 @@ unsafe fn speech_model_catalog_json(
             })
             .and_then(|result| result)
     } else {
-        speech_model_snapshot_json(query, model_root, None)
+        speech_model_snapshot_json(query, model_root, access)
     };
     match result {
         Ok(value) => CString::new(value).map_or_else(
@@ -145,19 +223,38 @@ unsafe fn speech_model_catalog_json(
 fn speech_model_snapshot_json(
     query: converter_core::speech_model_library::CatalogQuery,
     model_root: String,
-    probe_directory: Option<String>,
+    access: CatalogAccess,
 ) -> Result<String, String> {
     let library = converter_core::speech_model_library::SpeechModelLibrary;
-    let result = if model_root.is_empty() && probe_directory.is_none() {
-        library.snapshot(query)
-    } else {
-        let store = converter_core::model_store::ModelStore::new(Path::new(&model_root));
-        if let Some(directory) = probe_directory.as_deref() {
-            library.snapshot_with_runtime_probe(query, &store, |identity| {
-                probe_embedded_model(identity, store.root(), directory)
-            })
-        } else {
-            library.snapshot_with_inspection(query, &store, &[])
+    let result = match access {
+        CatalogAccess::Automatic if model_root.is_empty() => library.snapshot(query),
+        CatalogAccess::Manual if model_root.is_empty() => library.manual_snapshot(query),
+        access => {
+            let store = converter_core::model_store::ModelStore::new(Path::new(&model_root));
+            match access {
+                CatalogAccess::Automatic => library.snapshot_with_inspection(query, &store, &[]),
+                CatalogAccess::Manual => library.manual_snapshot_with_inspection(query, &store),
+                CatalogAccess::Probe {
+                    directory,
+                    model_id: Some(model_id),
+                } => {
+                    if model_root.is_empty() {
+                        return Err("An explicit model probe requires the model root".into());
+                    }
+                    library.snapshot_for_model_with_runtime_probe(
+                        query,
+                        &store,
+                        &model_id,
+                        |identity| probe_embedded_model(identity, store.root(), &directory, true),
+                    )
+                }
+                CatalogAccess::Probe {
+                    directory,
+                    model_id: None,
+                } => library.snapshot_with_runtime_probe(query, &store, |identity| {
+                    probe_embedded_model(identity, store.root(), &directory, false)
+                }),
+            }
         }
     };
     let snapshot = result.map_err(|error| error.to_string())?;
@@ -168,6 +265,7 @@ fn probe_embedded_model(
     identity: &converter_core::speech_model_library::ModelIdentity,
     root: &Path,
     espeak_directory: &str,
+    explicit: bool,
 ) -> converter_core::speech_model_library::RuntimeReadinessOutcome {
     use converter_core::speech_model_library::{ReadinessFailure, RuntimeReadinessOutcome};
     #[cfg(feature = "piper-runtime")]
@@ -177,13 +275,32 @@ fn probe_embedded_model(
             super::piper_runtime_boundary::configure_piper_data_directory(Path::new(
                 espeak_directory,
             ))?;
-            converter_core::piper::PreparedPiperModel::prepare(
-                &root,
-                &identity.model_id,
-                Path::new("model.onnx"),
-                Path::new("model.onnx.json"),
-                Arc::new(super::piper_runtime_boundary::EmbeddedPiperRuntime),
-            )
+            let runtime = Arc::new(super::piper_runtime_boundary::EmbeddedPiperRuntime);
+            let is_low = converter_core::model_catalog::model_by_id(&identity.model_id)
+                .is_some_and(|model| {
+                    model.metadata.presentation.quality
+                        == converter_core::model_catalog::QualityTier::Low
+                });
+            if explicit && is_low {
+                let revision = identity
+                    .model_revision
+                    .as_deref()
+                    .ok_or("Piper model revision is missing")?;
+                converter_core::piper::PreparedPiperModel::prepare_explicit_low(
+                    &root,
+                    &identity.model_id,
+                    revision,
+                    runtime,
+                )
+            } else {
+                converter_core::piper::PreparedPiperModel::prepare(
+                    &root,
+                    &identity.model_id,
+                    Path::new("model.onnx"),
+                    Path::new("model.onnx.json"),
+                    runtime,
+                )
+            }
             .map_err(|error| error.to_string())
         })();
         return match prepared {
@@ -195,7 +312,7 @@ fn probe_embedded_model(
             },
         };
     }
-    let _ = (identity, root, espeak_directory);
+    let _ = (identity, root, espeak_directory, explicit);
     RuntimeReadinessOutcome::Unavailable {
         failure: ReadinessFailure::RuntimeUnavailable,
     }

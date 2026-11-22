@@ -19,7 +19,8 @@ impl TtsProvider for PiperProvider {
     ) -> Result<Box<dyn TtsSession>, TtsFailure> {
         let captured = self.0.selection(selection, language)?;
         let context = &self.0.context;
-        if selection.model_revision.is_some() {
+        let allows_low_quality = selection.explicit_low_piper_model().is_some();
+        if selection.model_revision.is_some() && !allows_low_quality {
             if let Some(model_id) = &selection.model_id {
                 let manifest = crate::model_store::ModelStore::catalog_manifest(model_id).map_err(
                     |error| TtsFailure::new(FailureKind::Unavailable, error.to_string()),
@@ -52,7 +53,7 @@ impl TtsProvider for PiperProvider {
         })?;
         let model_usage = crate::model_store::model_usage::ModelUsageLease::acquire(namespace)
             .map_err(|error| TtsFailure::new(FailureKind::Unavailable, error.to_string()))?;
-        crate::piper::validate_model_file_quality(&paths.0, &paths.1)
+        crate::piper::validate_selected_model_files(&paths.0, &paths.1, allows_low_quality)
             .map_err(|error| TtsFailure::new(FailureKind::InvalidSelection, error.to_string()))?;
         let artifact_versions = (
             file_version(&paths.0).map_err(failure_from_worker)?,
@@ -66,6 +67,17 @@ impl TtsProvider for PiperProvider {
                     TtsFailure::new(FailureKind::Unavailable, error.to_string())
                 })?,
             );
+        }
+        if allows_low_quality
+            && crate::model_catalog::revision_from_hashes([
+                artifacts["model"].as_str(),
+                artifacts["config"].as_str(),
+            ]) != selection.model_revision
+        {
+            return Err(TtsFailure::new(
+                FailureKind::Unavailable,
+                "Installed model does not match its catalog artifacts",
+            ));
         }
         let runtime = crate::piper::registered_runtime();
         if selection.model_revision.is_some()
@@ -83,6 +95,7 @@ impl TtsProvider for PiperProvider {
             _model_usage: model_usage,
             runtime,
             artifact_versions,
+            allows_low_quality,
             paths,
         }))
     }
@@ -92,6 +105,7 @@ struct PiperSession {
     _model_usage: crate::model_store::model_usage::ModelUsageLease,
     runtime: Option<Arc<dyn crate::piper::PiperRuntime>>,
     artifact_versions: (String, String),
+    allows_low_quality: bool,
     paths: (std::path::PathBuf, std::path::PathBuf),
 }
 impl TtsSession for PiperSession {
@@ -147,8 +161,14 @@ impl PiperSession {
         let cancel = shared
             .cancel
             .with_timeout(std::time::Duration::from_secs(timeout_seconds));
-        let result =
-            crate::piper::synthesize_with_runtime(&config, segment, &wav, &cancel, runtime);
+        let result = crate::piper::synthesize_selected_model(
+            &config,
+            segment,
+            &wav,
+            &cancel,
+            runtime,
+            self.allows_low_quality,
+        );
         if shared.cancel.is_cancelled() {
             return Err(WorkerError::Cancelled);
         }

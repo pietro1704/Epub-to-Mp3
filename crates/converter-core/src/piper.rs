@@ -152,9 +152,10 @@ pub trait PiperRuntime: Send + Sync {
 mod piper_model_preparation;
 mod piper_quality_policy;
 pub(crate) use crate::model_catalog::validate_piper_quality as validate_model_quality;
-pub(crate) use piper_quality_policy::validate_model_file_quality;
+pub(crate) use piper_quality_policy::{validate_model_file_quality, validate_selected_model_files};
 mod piper_runtime_registry;
 mod piper_wav_validation;
+pub(crate) use piper_model_preparation::synthesize_selected_model;
 pub use piper_model_preparation::{synthesize, synthesize_with_runtime, PreparedPiperModel};
 pub use piper_runtime_registry::{
     piper_runtime_init, piper_runtime_shutdown, piper_runtime_status, piper_synthesize,

@@ -18,6 +18,20 @@ pub fn runtime_for(provider: &str) -> Option<&'static str> {
     }
 }
 impl SessionSelection {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn explicit_low_piper_model(
+        &self,
+    ) -> Option<&'static crate::model_catalog::TtsModelDescriptor> {
+        let id = self.model_id.as_deref()?;
+        let model = crate::model_catalog::model_by_id(id)?;
+        (self.provider == "piper"
+            && self.runtime == "piper"
+            && model.engine == self.provider
+            && model.metadata.presentation.quality == crate::model_catalog::QualityTier::Low
+            && self.model_revision.is_some()
+            && self.model_revision == crate::model_catalog::model_revision(model))
+        .then_some(model)
+    }
     pub fn from_legacy(selection: &TtsSelection) -> Result<Self, TtsFailure> {
         if let Some(session) = &selection.session {
             selection
@@ -47,12 +61,6 @@ impl SessionSelection {
         language: &str,
     ) -> Result<(), TtsFailure> {
         let invalid = |message: &str| TtsFailure::new(FailureKind::InvalidSelection, message);
-        if self.provider == "piper" {
-            crate::model_catalog::validate_piper_quality(
-                self.model_id.as_deref().unwrap_or_default(),
-            )
-            .map_err(|message| TtsFailure::new(FailureKind::InvalidSelection, message))?;
-        }
         if self.version != CONTRACT_VERSION
             || self.provider != descriptor.provider
             || self.runtime != descriptor.runtime
@@ -95,10 +103,18 @@ impl SessionSelection {
             }
         }
         if let Some(id) = &self.model_id {
-            let model = crate::model_catalog::MODELS
-                .iter()
-                .find(|model| model.id == id && model.engine == self.provider)
+            let model = crate::model_catalog::model_by_id(id)
+                .filter(|model| model.engine == self.provider)
                 .ok_or_else(|| invalid("Unknown model/provider selection"))?;
+            if model.engine == "piper"
+                && crate::model_catalog::validate_piper_quality(id).is_err()
+                && (!matches!(self.runtime.as_str(), "piper" | "piper-web")
+                    || self.model_revision.is_none())
+            {
+                return Err(invalid(
+                    "Piper low quality models require an explicit catalog revision",
+                ));
+            }
             let code = language
                 .split(['-', '_'])
                 .next()
@@ -184,10 +200,26 @@ pub fn builtin_descriptors() -> Vec<ProviderDescriptor> {
 }
 
 pub fn catalog_json() -> String {
-    let models: Vec<_> = crate::model_catalog::MODELS
-        .iter()
+    catalog_json_for(crate::model_catalog::MODELS.iter(), false)
+}
+
+/// Returns model choices for an explicitly opened installation browser.
+pub fn manual_catalog_json() -> String {
+    catalog_json_for(crate::model_catalog::manual_models(), true)
+}
+
+fn catalog_json_for(
+    models: impl Iterator<Item = &'static crate::model_catalog::TtsModelDescriptor>,
+    manual: bool,
+) -> String {
+    let models: Vec<_> = models
         .map(|model| {
             let mut descriptor = serde_json::to_value(model).expect("model descriptor");
+            if manual {
+                descriptor["manual_only"] = serde_json::json!(
+                    model.metadata.presentation.quality == crate::model_catalog::QualityTier::Low
+                );
+            }
             descriptor["runtime"] = serde_json::json!(runtime_for(model.engine));
             descriptor["revision"] =
                 serde_json::json!(crate::model_catalog::model_revision(model).unwrap_or_default());

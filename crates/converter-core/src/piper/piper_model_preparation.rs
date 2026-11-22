@@ -11,6 +11,7 @@ pub struct PreparedPiperModel {
     model: PathBuf,
     config: PathBuf,
     runtime: Arc<dyn PiperRuntime>,
+    explicit_low_revision: Option<String>,
     _model_usage: crate::model_store::model_usage::ModelUsageLease,
 }
 
@@ -22,7 +23,48 @@ impl PreparedPiperModel {
         config_path: &Path,
         runtime: Arc<dyn PiperRuntime>,
     ) -> Result<Self, PiperError> {
-        super::validate_model_quality(model_id).map_err(PiperError::Synthesis)?;
+        Self::prepare_with_revision(root, model_id, model_path, config_path, runtime, None)
+    }
+
+    /// Load an explicitly requested catalog model using its verified artifacts.
+    pub fn prepare_explicit_low(
+        root: &Path,
+        model_id: &str,
+        revision: &str,
+        runtime: Arc<dyn PiperRuntime>,
+    ) -> Result<Self, PiperError> {
+        let descriptor = crate::model_catalog::model_by_id(model_id)
+            .filter(|model| {
+                model.engine == "piper"
+                    && model.metadata.presentation.quality == crate::model_catalog::QualityTier::Low
+            })
+            .ok_or_else(|| PiperError::Synthesis("Unknown Piper catalog model".into()))?;
+        if crate::model_catalog::model_revision(descriptor).as_deref() != Some(revision) {
+            return Err(PiperError::Synthesis(
+                "Piper catalog revision does not match".into(),
+            ));
+        }
+        Self::prepare_with_revision(
+            root,
+            model_id,
+            Path::new("model.onnx"),
+            Path::new("model.onnx.json"),
+            runtime,
+            Some(revision),
+        )
+    }
+
+    fn prepare_with_revision(
+        root: &Path,
+        model_id: &str,
+        model_path: &Path,
+        config_path: &Path,
+        runtime: Arc<dyn PiperRuntime>,
+        explicit_low_revision: Option<&str>,
+    ) -> Result<Self, PiperError> {
+        if explicit_low_revision.is_none() {
+            super::validate_model_quality(model_id).map_err(PiperError::Synthesis)?;
+        }
         use std::path::Component;
         let relative = |path: &Path| {
             !path.as_os_str().is_empty()
@@ -68,13 +110,16 @@ impl PreparedPiperModel {
                 "Piper model/config escapes installed namespace".into(),
             ));
         }
-        validate_model_files(&model, &config)?;
+        if explicit_low_revision.is_none() {
+            validate_model_files(&model, &config, false)?;
+        }
         if !runtime.supports_explicit_model_paths() {
             return Err(PiperError::RuntimeUnavailable(
                 "runtime does not support per-request model paths".into(),
             ));
         }
         let prepared = Self {
+            explicit_low_revision: explicit_low_revision.map(str::to_owned),
             _model_usage: model_usage,
             model,
             config,
@@ -88,8 +133,31 @@ impl PreparedPiperModel {
     }
 
     fn initialize(&self) -> Result<(), PiperError> {
-        validate_model_files(&self.model, &self.config)?;
-        self.runtime.init(&self.model, &self.config)?;
+        let allows_low = self.explicit_low_revision.is_some();
+        validate_model_files(&self.model, &self.config, allows_low)?;
+        if let Some(revision) = &self.explicit_low_revision {
+            let model_hash = crate::cache::sha256_file(&self.model)
+                .map_err(|error| PiperError::Io(error.to_string()))?;
+            let config_hash = crate::cache::sha256_file(&self.config)
+                .map_err(|error| PiperError::Io(error.to_string()))?;
+            if crate::model_catalog::revision_from_hashes([
+                model_hash.as_str(),
+                config_hash.as_str(),
+            ])
+            .as_ref()
+                != Some(revision)
+            {
+                return Err(PiperError::Synthesis(
+                    "Installed model does not match its catalog artifacts".into(),
+                ));
+            }
+        }
+        super::piper_runtime_registry::initialize_runtime(
+            &self.runtime,
+            &self.model,
+            &self.config,
+            allows_low,
+        )?;
         let status = self.runtime.status();
         if !status.runtime_loaded
             || !status.abi_compatible
@@ -139,7 +207,11 @@ impl PreparedPiperModel {
     }
 }
 
-fn validate_model_files(model: &Path, config: &Path) -> Result<(), PiperError> {
+fn validate_model_files(
+    model: &Path,
+    config: &Path,
+    allows_low_quality: bool,
+) -> Result<(), PiperError> {
     if !model.is_file() {
         return Err(PiperError::MissingModel(model.to_owned()));
     }
@@ -150,7 +222,7 @@ fn validate_model_files(model: &Path, config: &Path) -> Result<(), PiperError> {
         .map_err(|error| PiperError::Io(format!("model is unreadable: {error}")))?;
     fs::File::open(config)
         .map_err(|error| PiperError::Io(format!("model config is unreadable: {error}")))?;
-    super::validate_model_file_quality(model, config)
+    super::validate_selected_model_files(model, config, allows_low_quality)
 }
 
 /// Synthesize WAV audio, encoding MP3 when the destination has an MP3 extension.
@@ -183,16 +255,35 @@ pub fn synthesize_with_runtime(
     cancel: &CancellationToken,
     runtime: Arc<dyn PiperRuntime>,
 ) -> Result<PathBuf, PiperError> {
+    synthesize_selected_model(config, text, output, cancel, runtime, false)
+}
+
+pub(crate) fn synthesize_selected_model(
+    config: &PiperConfig,
+    text: &str,
+    output: &Path,
+    cancel: &CancellationToken,
+    runtime: Arc<dyn PiperRuntime>,
+    allows_low_quality: bool,
+) -> Result<PathBuf, PiperError> {
     if cancel.is_cancelled() {
         return Err(PiperError::Cancelled);
     }
-    let model = select_model(config, None)?;
+    if !allows_low_quality {
+        select_model(config, None)?;
+    }
+    let model = config.model_for_language(None);
     if text.trim().is_empty() {
         return Err(PiperError::EmptyOutput);
     }
     let _transaction = super::piper_runtime_registry::cancellable_transaction(cancel)?;
-    validate_model_files(&model, &config.config)?;
-    runtime.init(&model, &config.config)?;
+    validate_model_files(model, &config.config, allows_low_quality)?;
+    super::piper_runtime_registry::initialize_runtime(
+        &runtime,
+        model,
+        &config.config,
+        allows_low_quality,
+    )?;
     if cancel.is_cancelled() {
         return Err(PiperError::Cancelled);
     }

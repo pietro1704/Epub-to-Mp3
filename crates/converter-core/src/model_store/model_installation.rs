@@ -23,9 +23,7 @@ impl ModelStore {
     }
 
     pub fn catalog_manifest(model_id: &str) -> Result<ModelManifest, ModelStoreError> {
-        let model = crate::model_catalog::MODELS
-            .iter()
-            .find(|model| model.id == model_id)
+        let model = crate::model_catalog::model_by_id(model_id)
             .ok_or_else(|| ModelStoreError::UnknownModel(model_id.to_owned()))?;
         Ok(ModelManifest {
             model_id: model.id.to_owned(),

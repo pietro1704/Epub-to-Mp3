@@ -116,11 +116,19 @@ impl ConversionWorker {
                     }));
                 }
                 // Validate before cache/recovery can bypass provider preparation.
-                crate::piper::validate_model_file_quality(&model, &config)
+                let allows_low_quality = session.explicit_low_piper_model().is_some();
+                crate::piper::validate_selected_model_files(&model, &config, allows_low_quality)
                     .map_err(WorkerError::Piper)?;
-                identities.push(cache::sha256_file(model)?);
-
-                identities.push(cache::sha256_file(config)?);
+                let hashes = [cache::sha256_file(model)?, cache::sha256_file(config)?];
+                if allows_low_quality
+                    && crate::model_catalog::revision_from_hashes(hashes.iter().map(String::as_str))
+                        != session.model_revision
+                {
+                    return Err(WorkerError::InvalidSelection(
+                        "Installed model does not match its catalog artifacts".into(),
+                    ));
+                }
+                identities.extend(hashes);
             }
         }
         let pronunciation_key = if self.pronunciation.rules.is_empty() {
