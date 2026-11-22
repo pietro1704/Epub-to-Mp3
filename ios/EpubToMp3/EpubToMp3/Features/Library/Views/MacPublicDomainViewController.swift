@@ -31,6 +31,7 @@ final class MacPublicDomainViewController: NSViewController, NSTableViewDataSour
         preferredContentSize = view.frame.size
         searchField.placeholderString = L10n.string("discovery.search")
         searchField.setAccessibilityIdentifier("discovery.search")
+        searchField.setAccessibilityLabel(L10n.string("discovery.search"))
         searchField.sendsWholeSearchString = true
         searchField.target = self
         searchField.action = #selector(search)
@@ -59,6 +60,7 @@ final class MacPublicDomainViewController: NSViewController, NSTableViewDataSour
         scroll.hasVerticalScroller = true
         scroll.documentView = table
         table.headerView = nil
+        table.setAccessibilityLabel(L10n.string("discovery.title"))
         table.rowHeight = 62
         table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("edition"))

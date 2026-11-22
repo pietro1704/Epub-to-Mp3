@@ -218,6 +218,61 @@ final class PublicDomainCatalogTests: XCTestCase {
     }
 
     @MainActor
+    // MARK: - Untrusted catalog and file size
+
+    func testSearchResponseAboveTheCapIsRejectedBeforeDecodingEvenIfItIsValidJSON() async throws {
+        let padded = Data(repeating: 0x20, count: 64) + Data(#"{"results":[],"next":null}"#.utf8)
+        let capped = PublicDomainCatalog(searchData: { request in
+            (padded, try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)))
+        }, maximumSearchBytes: 32)
+        do {
+            _ = try await capped.search(query: "dom", language: .all, page: 2)
+            XCTFail("A search response above the cap must not be decoded")
+        } catch is CancellationError {
+            XCTFail("An oversized response is a failure, not a cancellation")
+        } catch {}
+        // The same response is accepted under the default cap, so the cap is what rejected it.
+        let normal = PublicDomainCatalog(searchData: { request in
+            (padded, try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)))
+        })
+        let page = try await normal.search(query: "dom", language: .all, page: 2)
+        XCTAssertTrue(page.editions.isEmpty)
+    }
+
+    func testDownloadedFileAboveTheCapIsRejectedAndNothingIsStaged() async throws {
+        let fixture = try EpubFixture.create()
+        let manager = FileManager.default
+        defer { try? manager.removeItem(at: fixture) }
+        let size = try XCTUnwrap(manager.attributesOfItem(atPath: fixture.path)[.size] as? NSNumber).intValue
+        func catalog(maximumDownloadBytes: Int) -> PublicDomainCatalog {
+            PublicDomainCatalog(downloadFile: { request, _ in
+                let file = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try manager.copyItem(at: fixture, to: file)
+                return (file, try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)))
+            }, maximumDownloadBytes: maximumDownloadBytes)
+        }
+        do {
+            _ = try await catalog(maximumDownloadBytes: size - 1).download(testEdition())
+            XCTFail("A file above the cap must be rejected")
+        } catch {}
+        let accepted = try await catalog(maximumDownloadBytes: size).download(testEdition())
+        defer { try? manager.removeItem(at: accepted.deletingLastPathComponent()) }
+        XCTAssertEqual(accepted.pathExtension, "epub")
+    }
+
+    func testHTTP200WithAnHTMLBodyIsNotImportedAsABook() async throws {
+        let manager = FileManager.default
+        let catalog = PublicDomainCatalog(downloadFile: { request, _ in
+            let file = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try Data("<html><body>Service unavailable</body></html>".utf8).write(to: file)
+            return (file, try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)))
+        })
+        do {
+            _ = try await catalog.download(testEdition())
+            XCTFail("An HTML page is not an EPUB")
+        } catch {}
+    }
+
     func testEPUBDownloadUsesTheLibraryIdentityAndKeepsOneBookOnRetry() async throws {
         let fixture = try EpubFixture.create()
         let manager = FileManager.default

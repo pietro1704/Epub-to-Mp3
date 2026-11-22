@@ -156,12 +156,24 @@ struct PublicDomainCatalog {
         }
     }
 
+    /// A catalog is third-party data: a search page is a few hundred KB and the largest curated
+    /// edition is under 10 MB, so these caps are generous and only stop abuse. The download cap
+    /// is checked once the file has arrived: it bounds what stays on disk, not the transfer itself.
+    static let defaultMaximumSearchBytes = 4 * 1024 * 1024
+    static let defaultMaximumDownloadBytes = 200 * 1024 * 1024
+
     private let searchData: (URLRequest) async throws -> (Data, URLResponse)
     private let downloadFile: (DownloadLocation, Provider) async throws -> (URL, URLResponse)
+    private let maximumSearchBytes: Int
+    private let maximumDownloadBytes: Int
 
     init(session: URLSession = .shared,
          searchData: ((URLRequest) async throws -> (Data, URLResponse))? = nil,
-         downloadFile: ((URLRequest, Provider) async throws -> (URL, URLResponse))? = nil) {
+         downloadFile: ((URLRequest, Provider) async throws -> (URL, URLResponse))? = nil,
+         maximumSearchBytes: Int = PublicDomainCatalog.defaultMaximumSearchBytes,
+         maximumDownloadBytes: Int = PublicDomainCatalog.defaultMaximumDownloadBytes) {
+        self.maximumSearchBytes = maximumSearchBytes
+        self.maximumDownloadBytes = maximumDownloadBytes
         self.searchData = searchData ?? { try await session.data(for: $0) }
         self.downloadFile = { location, provider in
             let request = URLRequest(url: location.url, timeoutInterval: 30)
@@ -200,7 +212,8 @@ struct PublicDomainCatalog {
             let (data, response) = try await searchData(request)
             try Task.checkCancellation()
             guard Self.success(response), let url = response.url,
-                  url.scheme == "https", url.host == Self.searchEndpoint.host else { throw Failure.response }
+                  url.scheme == "https", url.host == Self.searchEndpoint.host,
+                  data.count <= maximumSearchBytes else { throw Failure.response }
             let result = try Self.decode(data)
             return Page(editions: localEditions + result.editions, hasMore: result.hasMore, gutenbergUnavailable: false)
         } catch {
@@ -264,7 +277,8 @@ struct PublicDomainCatalog {
                 guard Self.success(response), let url = response.url, location.acceptsDestination(url) else {
                     throw Failure.response
                 }
-                return try Self.stage(temporaryFile, edition: edition, format: location.format)
+                return try Self.stage(temporaryFile, edition: edition, format: location.format,
+                                      maximumBytes: maximumDownloadBytes)
             } catch {
                 try Task.checkCancellation()
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw CancellationError() }
@@ -273,7 +287,9 @@ struct PublicDomainCatalog {
         throw Failure.file
     }
 
-    private static func stage(_ file: URL, edition: Edition, format: Format) throws -> URL {
+    private static func stage(_ file: URL, edition: Edition, format: Format, maximumBytes: Int) throws -> URL {
+        let size = (try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? Int.max
+        guard size <= maximumBytes else { throw Failure.file }
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
         guard try handle.read(upToCount: format.signature.count) == format.signature else { throw Failure.file }
