@@ -1,15 +1,35 @@
 # Changelog
 
+## [0.10.5] — 2026-11-22
+
+### Bug Fixes
+
+- Collect SE1 CPU telemetry from Mach counters (#1301) ([40e3d27](https://github.com/pietro1704/Epub-to-Mp3/commit/40e3d27f756630b8be9e97a19f050631bbc49baf))
+
+### Chores
+
+- Bump version to 0.10.5 ([23166aa](https://github.com/pietro1704/Epub-to-Mp3/commit/23166aadf9a6718061bfb21b03781b69b5d95aac))
+
 ## [0.10.4] — 2026-11-21
 
 ### Bug Fixes
 
+- Make static Linux eSpeak linkage self-contained (#1297) ([bacdeb7](https://github.com/pietro1704/Epub-to-Mp3/commit/bacdeb7ba840969be80b790b72be58e26f8f219f))
 - Open the reader at playback from the player cover (#1295) ([1741bc7](https://github.com/pietro1704/Epub-to-Mp3/commit/1741bc745ca9bf24d22bdd1b9b165cc3c0d3934f))
 - Isolate desktop release source and caches (#1293) ([65450d5](https://github.com/pietro1704/Epub-to-Mp3/commit/65450d5cfe11e6b99880c7e8da80066aaf16ddaf))
 
+### Changes
+
+- Skip automatic publication for superseded validated merges (#1300) ([f82f655](https://github.com/pietro1704/Epub-to-Mp3/commit/f82f6551a60b68d92294aee6d629c6f428f964d5))
+- Isolate native lease tests from the outer admission wait (#1299) ([115ff51](https://github.com/pietro1704/Epub-to-Mp3/commit/115ff51a5ad61e5d0cc5498653a262667c8036ec))
+
 ### Chores
 
-- Bump version to 0.10.4 ([288accb](https://github.com/pietro1704/Epub-to-Mp3/commit/288accb1cefd336012a418e5cd6f04bbd1b3449c))
+- V0.10.4 (#1296) ([b2aaa91](https://github.com/pietro1704/Epub-to-Mp3/commit/b2aaa91ad73ec70158f76bd9ea6f94e23a8e2cd6))
+
+### Tests
+
+- Audit CLI packaging with host audio libraries installed (#1298) ([7f518a1](https://github.com/pietro1704/Epub-to-Mp3/commit/7f518a1af66edd9608280995de3bf608a3c21afb))
 
 ## [0.10.3] — 2026-11-21
 
