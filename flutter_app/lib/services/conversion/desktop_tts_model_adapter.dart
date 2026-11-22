@@ -18,6 +18,26 @@ typedef _CatalogNative = ffi.Pointer<Utf8> Function(
 typedef _CatalogDart = ffi.Pointer<Utf8> Function(
   ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int,
   ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _ProbeModelNative = ffi.Pointer<Utf8> Function(
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+  ffi.Uint32,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+);
+typedef _ProbeModelDart = ffi.Pointer<Utf8> Function(
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+  int,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<Utf8>,
+);
 typedef _InstallNative =
     ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 typedef _InstallDart =
@@ -85,6 +105,14 @@ final class DesktopTtsModelAdapter {
 
   final ffi.DynamicLibrary _library;
   late final _CatalogDart _catalog;
+  late final _CatalogDart _manualCatalog = _library
+      .lookupFunction<_CatalogNative, _CatalogDart>(
+        'converter_tts_catalog_manual_json_v3',
+      );
+  late final _ProbeModelDart _probeModel = _library
+      .lookupFunction<_ProbeModelNative, _ProbeModelDart>(
+        'converter_tts_catalog_probe_model_json_v3',
+      );
   late final _InstallDart _install;
   late final _RemoveDart _remove;
   late final _MetadataDart _metadata;
@@ -98,14 +126,43 @@ final class DesktopTtsModelAdapter {
         return _readOwned(result);
       });
 
-  String modelsJson() => using((arena) => _readOwned(_catalog(
-    Platform.localeName.toNativeUtf8(allocator: arena),
-    Platform.operatingSystem.toNativeUtf8(allocator: arena),
-    0,
-    ffi.Abi.current().toString().toNativeUtf8(allocator: arena),
-    Platform.operatingSystemVersion.toNativeUtf8(allocator: arena),
-    ''.toNativeUtf8(allocator: arena),
-  )));
+  String modelsJson() => _readCatalog(_catalog, '');
+
+  String manualModelsJson({required String root}) =>
+      _readCatalog(_manualCatalog, root);
+
+  String _readCatalog(_CatalogDart catalog, String root) => using(
+    (arena) => _readOwned(
+      catalog(
+        Platform.localeName.toNativeUtf8(allocator: arena),
+        Platform.operatingSystem.toNativeUtf8(allocator: arena),
+        0,
+        ffi.Abi.current().toString().toNativeUtf8(allocator: arena),
+        Platform.operatingSystemVersion.toNativeUtf8(allocator: arena),
+        root.toNativeUtf8(allocator: arena),
+      ),
+    ),
+  );
+
+  String probeModel({
+    required String modelId,
+    required String root,
+    required String espeakDataDirectory,
+    String? language,
+  }) => using(
+    (arena) => _readOwned(
+      _probeModel(
+        (language ?? Platform.localeName).toNativeUtf8(allocator: arena),
+        Platform.operatingSystem.toNativeUtf8(allocator: arena),
+        0,
+        ffi.Abi.current().toString().toNativeUtf8(allocator: arena),
+        Platform.operatingSystemVersion.toNativeUtf8(allocator: arena),
+        root.toNativeUtf8(allocator: arena),
+        espeakDataDirectory.toNativeUtf8(allocator: arena),
+        modelId.toNativeUtf8(allocator: arena),
+      ),
+    ),
+  );
 
   String installedReadyEngine({
     required String language,

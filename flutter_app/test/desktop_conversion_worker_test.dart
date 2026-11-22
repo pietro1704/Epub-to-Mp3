@@ -99,6 +99,18 @@ char* converter_session_convert_streaming_job_options_json_v1(void* session,
  return strdup(result);
 }
 char* converter_tts_catalog_json_v3(const char* language, const char* platform, unsigned api, const char* architecture, const char* os, const char* root) { return strdup("{\"schema_version\":3,\"entries\":[],\"providers\":[]}"); }
+char* converter_tts_catalog_manual_json_v3(const char* language, const char* platform, unsigned api, const char* architecture, const char* os, const char* root) {
+ if (!*language || !*platform || api != 0 || !*architecture || !*os || !*root) return NULL;
+ if (!wait_for_ui_heartbeat(root)) return NULL;
+ return strdup("{\"manual\":\"pt_BR-faber-low\"}");
+}
+char* converter_tts_catalog_probe_model_json_v3(const char* language, const char* platform, unsigned api, const char* architecture, const char* os, const char* root, const char* espeak, const char* model) {
+ if (!*language || !*platform || api != 0 || !*architecture || !*os || !*root) return NULL;
+ if (strcmp(model, "pt_BR-faber-low") != 0) return NULL;
+ if (*espeak && (strlen(espeak) < 5 || strcmp(espeak + strlen(espeak) - 5, "/data") != 0)) return NULL;
+ if (!wait_for_ui_heartbeat(root)) return NULL;
+ return strdup("{\"probed\":\"pt_BR-faber-low\"}");
+}
 char* converter_tts_model_install_catalog_manifest(const char* model, const char* root) {
  if (strcmp(model, "pt_BR-faber-medium") != 0 || !root || !*root) return NULL;
  if (!wait_for_ui_heartbeat(root)) return NULL;
@@ -365,6 +377,30 @@ void main() {
       expect(book.chapters.single.text, 'Metadata text');
     },
   );
+
+  test('manual model catalog and probe keep the UI responsive', () async {
+    final converter = DesktopEmbeddedConverter(libraryPath: library);
+    expect(
+      await converter.ttsModels(),
+      '{"schema_version":3,"entries":[],"providers":[]}',
+    );
+    final catalogRoot = '${directory.path}/manual-catalog-handshake';
+    final catalog = await _whileNativeBlocked(
+      catalogRoot,
+      () => converter.ttsManualModels(root: catalogRoot),
+    );
+    expect(catalog, '{"manual":"pt_BR-faber-low"}');
+
+    final probeRoot = '${directory.path}/manual-probe-handshake';
+    final result = await _whileNativeBlocked(
+      probeRoot,
+      () => converter.probeTtsModel(
+        modelId: 'pt_BR-faber-low',
+        root: probeRoot,
+      ),
+    );
+    expect(result, '{"probed":"pt_BR-faber-low"}');
+  });
 
   test(
     'native model installation keeps the UI event loop responsive',

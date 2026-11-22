@@ -19,6 +19,26 @@ final ttsCatalogProvider = FutureProvider.autoDispose<TtsCatalog>(
   retry: (_, _) => null,
 );
 
+final showLowQualityModelsProvider = StateProvider<bool>((ref) => false);
+
+final ttsModelRootProvider = FutureProvider.autoDispose<String>((ref) async {
+  final directory = await getApplicationSupportDirectory();
+  return '${directory.path}/tts-models';
+});
+
+final manualLowCatalogProvider = FutureProvider.autoDispose<TtsCatalog?>(
+  (ref) async {
+    if (!ref.watch(showLowQualityModelsProvider)) return null;
+    final converter = ref.watch(embeddedConverterProvider);
+    if (converter is! ManualTtsModelCatalog) return null;
+    final root = await ref.watch(ttsModelRootProvider.future);
+    return TtsCatalog.decodeManual(
+      await (converter as ManualTtsModelCatalog).ttsManualModels(root: root),
+    );
+  },
+  retry: (_, _) => null,
+);
+
 /// Reload persisted local history when entering Jobs, including after a
 /// conversion finishes while the IndexedStack keeps the tab mounted.
 final localConversionJobStoreProvider = Provider<LocalConversionJobStore>((

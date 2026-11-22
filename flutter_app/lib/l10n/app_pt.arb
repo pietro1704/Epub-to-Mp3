@@ -169,5 +169,7 @@
   "removeAudioMessage": "O livro, a posição de leitura e as anotações serão mantidos.",
   "originalTypography": "Tipografia original do livro",
   "seekForwardInterval": "Avançar",
-  "seekBackwardInterval": "Retroceder"
+  "seekBackwardInterval": "Retroceder",
+  "ttsShowLowQuality": "Mostrar qualidade baixa",
+  "ttsManualModelUnavailable": "Não foi possível preparar este modelo de narração."
 }

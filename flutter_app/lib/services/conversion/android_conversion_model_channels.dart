@@ -1,6 +1,7 @@
 part of 'android_converter_channel.dart';
 
-mixin _AndroidConversionModelChannels implements EmbeddedConverter {
+mixin _AndroidConversionModelChannels
+    implements EmbeddedConverter, ManualTtsModelCatalog {
   MethodChannel get _channel;
 
   @override
@@ -8,6 +9,34 @@ mixin _AndroidConversionModelChannels implements EmbeddedConverter {
     final value = await _channel.invokeMethod<String>('ttsModels');
     if (value == null || value.isEmpty) {
       throw EmbeddedConverterUnavailable('empty TTS model catalog');
+    }
+    return value;
+  }
+
+  @override
+  Future<String> ttsManualModels({required String root}) async {
+    final value = await _channel.invokeMethod<String>('ttsManualModels', {
+      'root': root,
+    });
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable('empty manual TTS model catalog');
+    }
+    return value;
+  }
+
+  @override
+  Future<String> probeTtsModel({
+    required String modelId,
+    required String root,
+    String? language,
+  }) async {
+    final value = await _channel.invokeMethod<String>('ttsProbeModel', {
+      'modelId': modelId,
+      'root': root,
+      'language': ?language,
+    });
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable('empty TTS model probe result');
     }
     return value;
   }

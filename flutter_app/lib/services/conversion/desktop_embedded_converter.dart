@@ -28,6 +28,7 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
         CancellableEmbeddedConverter,
         StreamingChapterConverter,
         ListeningScheduleFactory,
+        ManualTtsModelCatalog,
         PositionedChapterConverter {
   DesktopEmbeddedConverter({ffi.DynamicLibrary? library, String? libraryPath})
     : _libraryPath = libraryPath ?? _resolveLibraryPath(),
@@ -83,6 +84,29 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
 
   @override
   Future<String> ttsModels() async => _models.modelsJson();
+
+  @override
+  Future<String> ttsManualModels({required String root}) async {
+    _requireWorkerLibrary();
+    final libraryPath = _libraryPath;
+    return _enqueueWorker(
+      () => runDesktopManualModelCatalogWorker(libraryPath, root),
+    );
+  }
+
+  @override
+  Future<String> probeTtsModel({
+    required String modelId,
+    required String root,
+    String? language,
+  }) async {
+    _requireWorkerLibrary();
+    final libraryPath = _libraryPath;
+    return _enqueueWorker(
+      () => runDesktopModelProbeWorker(libraryPath, modelId, root, language),
+    );
+  }
+
   @override
   Future<String> installTtsModelFromCatalog({
     required String modelId,

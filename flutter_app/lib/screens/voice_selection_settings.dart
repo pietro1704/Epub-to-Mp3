@@ -1,18 +1,79 @@
 part of 'settings_screen.dart';
 
-class VoiceSelectionSettings extends ConsumerWidget {
+class VoiceSelectionSettings extends ConsumerStatefulWidget {
   const VoiceSelectionSettings({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<VoiceSelectionSettings> createState() =>
+      _VoiceSelectionSettingsState();
+}
+
+class _VoiceSelectionSettingsState
+    extends ConsumerState<VoiceSelectionSettings> {
+  int _primaryRequest = 0;
+  int _primaryFieldRevision = 0;
+
+  bool _isCurrentManualRequest(int request) =>
+      mounted &&
+      request == _primaryRequest &&
+      ref.read(showLowQualityModelsProvider);
+
+  Future<void> _selectManualPrimary(
+    TtsSessionSelection identity,
+    TtsCatalog catalog,
+    TtsPreferences recommended,
+  ) async {
+    final request = ++_primaryRequest;
+    // Restore the committed value while the selected voice is being verified.
+    setState(() => _primaryFieldRevision++);
+    try {
+      final root = await ref.read(ttsModelRootProvider.future);
+      if (!_isCurrentManualRequest(request)) return;
+      final converter = ref.read(embeddedConverterProvider);
+      if (converter is! ManualTtsModelCatalog) {
+        throw StateError('Manual TTS model probing is unavailable');
+      }
+      final probeJson = await (converter as ManualTtsModelCatalog)
+          .probeTtsModel(
+            modelId: identity.modelId!,
+            root: root,
+            language: catalog.manualModelLanguage(identity),
+          );
+      if (!_isCurrentManualRequest(request)) return;
+      final selection = TtsCatalog.decodeManual(probeJson)
+          .confirmedManualModel(identity);
+      final preferences =
+          ref.read(settingsProvider).configuredTtsPreferences ?? recommended;
+      await ref
+          .read(settingsProvider.notifier)
+          .setTtsPreferences(preferences.withPrimary(selection));
+    } catch (_) {
+      if (!mounted || !_isCurrentManualRequest(request)) return;
+      final t = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(t.ttsManualModelUnavailable)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
     final catalog = ref.watch(ttsCatalogProvider).asData?.value;
-    final recommended = catalog?.recommendedPreferences ??
-        const TtsPreferences.appDefaults();
+    final recommended =
+        catalog?.recommendedPreferences ?? const TtsPreferences.appDefaults();
     final preferences = settings.configuredTtsPreferences ?? recommended;
+    final primaryKey = jsonEncode(preferences.primary.toJson());
     final catalogSelections = catalog?.selections() ?? const <TtsSelection>[];
+    final showLow = ref.watch(showLowQualityModelsProvider);
+    ref.listen(showLowQualityModelsProvider, (_, enabled) {
+      if (!enabled) _primaryRequest++;
+    });
+    final manualCatalog = showLow
+        ? ref.watch(manualLowCatalogProvider).asData?.value
+        : null;
+    final installedLowModels = manualCatalog?.installedLowModels() ?? const [];
     Map<String, TtsSelection> uniqueOptions(Iterable<TtsSelection> candidates) {
       final result = <String, TtsSelection>{};
       for (final selection in candidates) {
@@ -28,6 +89,13 @@ class VoiceSelectionSettings extends ConsumerWidget {
     final primaryOptions = uniqueOptions([
       preferences.primary,
       ...catalogSelections,
+      for (final identity in installedLowModels)
+        TtsSelection(
+          engine: identity.provider,
+          modelId: identity.modelId,
+          session: identity,
+          manualModel: true,
+        ),
       TtsSelection.faber,
       recommended.primary,
       TtsSelection.edge,
@@ -68,23 +136,41 @@ class VoiceSelectionSettings extends ConsumerWidget {
             children: [
               DropdownButtonFormField<String>(
                 isExpanded: true,
-                key: ValueKey(
-                  'primary-${jsonEncode(preferences.primary.toJson())}',
-                ),
-                initialValue: jsonEncode(preferences.primary.toJson()),
+                key: ValueKey('primary-$_primaryFieldRevision-$primaryKey'),
+                initialValue: primaryKey,
                 decoration: InputDecoration(labelText: t.ttsPrimaryNarration),
                 items: primaryOptions.entries
                     .map(
                       (entry) => DropdownMenuItem(
                         value: entry.key,
+                        enabled:
+                            !entry.value.manualModel ||
+                            (showLow && entry.key != primaryKey),
                         child: Text(selectionLabel(entry.value)),
                       ),
                     )
                     .toList(),
-                onChanged: (key) {
+                onChanged: (key) async {
                   final selected = primaryOptions[key];
                   if (selected == null) return;
-                  notifier.setTtsPreferences(preferences.withPrimary(selected));
+                  if (selected.manualModel) {
+                    if (manualCatalog != null &&
+                        ref.read(showLowQualityModelsProvider) &&
+                        key != primaryKey) {
+                      await _selectManualPrimary(
+                        selected.session!,
+                        manualCatalog,
+                        recommended,
+                      );
+                    } else {
+                      setState(() => _primaryFieldRevision++);
+                    }
+                    return;
+                  }
+                  _primaryRequest++;
+                  await notifier.setTtsPreferences(
+                    preferences.withPrimary(selected),
+                  );
                 },
               ),
               DropdownButtonFormField<String>(
@@ -145,8 +231,10 @@ class VoiceSelectionSettings extends ConsumerWidget {
         ),
         TextButton(
           key: const ValueKey('tts-use-recommended-defaults'),
-          onPressed: () =>
-              notifier.setTtsPreferences(recommended),
+          onPressed: () {
+            _primaryRequest++;
+            notifier.setTtsPreferences(recommended);
+          },
           child: Text(t.ttsUseRecommendedDefaults),
         ),
       ],

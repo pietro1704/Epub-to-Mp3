@@ -133,6 +133,22 @@ class MainActivity : AudioServiceActivity() {
     external fun nativeJobLog(jobId: String): String?
     external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
     external fun nativeTtsCatalogV3(): String?
+    external fun nativeTtsManualCatalogV3(
+        language: String,
+        androidApi: Int,
+        architecture: String,
+        osVersion: String,
+        modelRoot: String,
+    ): String?
+    external fun nativeTtsCatalogProbeModelV3(
+        language: String,
+        androidApi: Int,
+        architecture: String,
+        osVersion: String,
+        modelRoot: String,
+        espeakDataDirectory: String,
+        modelId: String,
+    ): String?
     external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?
     external fun nativeTtsInstalledReadyEngine(language: String, platform: String, androidApi: Int, installedModelIdsJson: String, readyModelIdsJson: String): String?
     external fun nativeTtsModelInstall(modelId: String, url: String, sha256: String, root: String): String?

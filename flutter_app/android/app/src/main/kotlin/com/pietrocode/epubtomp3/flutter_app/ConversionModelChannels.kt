@@ -1,9 +1,11 @@
 package com.pietrocode.epubtomp3.flutter_app
 
 
+import android.os.Build
 import android.util.Log
 
 import io.flutter.plugin.common.MethodChannel
+import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -28,6 +30,43 @@ internal class ConversionModelChannels(
                                 if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
                                 else result.success(org.json.JSONObject(value).put("android_api", android.os.Build.VERSION.SDK_INT).toString())
                             }
+                        }
+                    }
+                }
+                "ttsManualModels" -> {
+                    val root = call.argument<String>("root")
+                    if (root.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "root is required", null)
+                    } else {
+                        runManualModelRequest(result) {
+                            nativeTtsManualCatalogV3(
+                                Locale.getDefault().toLanguageTag(),
+                                Build.VERSION.SDK_INT,
+                                System.getProperty("os.arch").orEmpty(),
+                                Build.VERSION.RELEASE,
+                                root,
+                            )
+                        }
+                    }
+                }
+                "ttsProbeModel" -> {
+                    val modelId = call.argument<String>("modelId")
+                    val root = call.argument<String>("root")
+                    val language = call.argument<String>("language") ?: Locale.getDefault().toLanguageTag()
+                    if (modelId.isNullOrBlank() || root.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "modelId and root are required", null)
+                    } else {
+                        runManualModelRequest(result) {
+                            val espeakParent = NativeTtsOptions.preparePackagedEspeakData(applicationContext)
+                            nativeTtsCatalogProbeModelV3(
+                                language,
+                                Build.VERSION.SDK_INT,
+                                System.getProperty("os.arch").orEmpty(),
+                                Build.VERSION.RELEASE,
+                                root,
+                                espeakParent.absolutePath,
+                                modelId,
+                            )
                         }
                     }
                 }
@@ -180,6 +219,26 @@ internal class ConversionModelChannels(
         }
         return true
     }
+
+    private fun runManualModelRequest(result: MethodChannel.Result, request: () -> String?) {
+        if (!MainActivity.converterLibraryAvailable()) {
+            result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+            return
+        }
+        runNative(result) {
+            val value = try {
+                request()
+            } catch (error: UnsatisfiedLinkError) {
+                throw IllegalStateException("The embedded converter lacks version 3 manual TTS model support", error)
+            }
+            val error = if (value == null) activity.nativeLastError() else null
+            activity.runOnUiThread {
+                if (value == null) result.error(EMBEDDED_UNAVAILABLE, error, null)
+                else result.success(value)
+            }
+        }
+    }
+
     private fun runNative(result: MethodChannel.Result, action: () -> Unit) {
         try {
             converterExecutor.execute {

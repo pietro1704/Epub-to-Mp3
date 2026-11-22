@@ -41,6 +41,74 @@ void main() {
     expect(catalog.defaultSelection, isNull);
   });
 
+  test('manual Piper models require a ready probe for the requested revision', () {
+    const id = 'en_US-lessac-low';
+    const revision = 'catalog-revision';
+    final listed = _entry(id, 'piper', 'piper', revision);
+    final ready = {
+      ...listed,
+      'installation': {'state': 'installed', 'verified_revision': revision},
+      'readiness': {'state': 'ready'},
+      'selection': {'selectable': true},
+    };
+    String snapshot(Map<String, Object?> entry) => jsonEncode({
+      'schema_version': 3,
+      'providers': [
+        {
+          'provider': 'piper',
+          'runtime': 'piper',
+          'targets': ['linux'],
+          'capabilities': {'audio_bytes': true},
+        },
+      ],
+      'entries': [entry],
+    });
+
+    final automatic = TtsCatalog.decode(snapshot(ready));
+    expect(automatic.manualModels(target: 'Linux'), isEmpty);
+    expect(automatic.selections(target: 'Linux'), isEmpty);
+    final catalog = TtsCatalog.decodeManual(snapshot(listed));
+    final identity = catalog.manualModels(target: 'Linux').single;
+    expect(identity.modelRevision, revision);
+    expect(catalog.selections(target: 'Linux'), isEmpty);
+    expect(catalog.recommendedPreferences.primary, TtsSelection.automaticPiper);
+    expect(catalog.recommendedPreferences.secondary, TtsSelection.system);
+    expect(() => catalog.confirmedManualModel(identity, target: 'Linux'), throwsStateError);
+    for (final unexpected in [
+      {...ready, 'installation': {'state': 'installed', 'verified_revision': 'stale'}},
+      {...ready, 'readiness': {'state': 'unavailable'}},
+      {...ready, 'identity': _entry(id, 'piper', 'piper', 'replaced')['identity']},
+      {...ready, 'identity': _entry('unrelated-low', 'piper', 'piper', revision)['identity']},
+    ]) {
+      final probe = TtsCatalog.decodeManual(snapshot(unexpected));
+      expect(() => probe.confirmedManualModel(identity, target: 'Linux'), throwsStateError);
+    }
+
+    final probe = TtsCatalog.decodeManual(snapshot(ready));
+    final selected = probe.confirmedManualModel(identity, target: 'Linux');
+    final preferences = const TtsPreferences.appDefaults().withPrimary(selected);
+    final restored = TtsPreferences.fromJson(preferences.toJson()).withSupportedPiperQuality();
+    expect(restored.primary.modelId, id);
+    expect(restored.primary.hasManualPiperIdentity, isTrue);
+    expect(restored.secondary?.toJson(), TtsSelection.system.toJson());
+    final options = jsonDecode(restored.optionsJson()) as Map;
+    final primary = options['tts_preferences']['primary'] as Map;
+    expect(options['contract_version'], 2);
+    expect(primary['session']['model_id'], id);
+    expect(primary['session']['model_revision'], revision);
+    expect(primary.containsKey('manual_model'), isFalse);
+    expect(
+      TtsPreferences(primary: selected, secondary: selected)
+          .withSupportedPiperQuality().secondary,
+      isNull,
+    );
+    final legacyLow = TtsSelection(engine: 'piper', modelId: id, session: identity);
+    expect(
+      TtsPreferences(primary: legacyLow).withSupportedPiperQuality().primary,
+      TtsSelection.automaticPiper,
+    );
+  });
+
   test('catalog configuration adds distinct models on one runtime and survives capture', () {
     final catalog = TtsCatalog.decode(jsonEncode({'schema_version':3, 'providers': [
       {'provider':'provider', 'runtime':'runtime', 'targets':['linux','macos','android','ios','windows'], 'capabilities':{'audio_bytes':true}},
