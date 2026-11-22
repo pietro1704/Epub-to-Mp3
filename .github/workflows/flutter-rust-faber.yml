@@ -157,6 +157,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows Faber integration failed' }
           if (!(Test-Path ../.reports/windows-faber/evidence.json)) { throw 'Missing positive conversion evidence' }
           if (!(Select-String -LiteralPath ../.reports/windows-faber/runtime.log -SimpleMatch 'DART_FABER_NATIVE: model=pt_BR-faber-medium chapters=2' -Quiet)) { throw 'Missing real inference marker' }
+      - name: Exercise the packaged Windows reader on the native desktop
+        timeout-minutes: 6
+        run: |
+          powershell.exe -NoProfile -NonInteractive -STA -File scripts/verify_windows_reader_gui.ps1 `
+            -Package 'flutter_app/build/windows/x64/runner/Release' `
+            -Fixture 'tests/fixtures/epubs/cli_faber_public_chapters.epub' `
+            -Evidence '.reports/windows-faber/reader-gui'
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows reader GUI journey failed' }
+
       - name: Retain the verified Windows package
         if: success()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -165,7 +174,7 @@ jobs:
           path: flutter_app/build/windows/x64/runner/Release/
           if-no-files-found: error
           retention-days: 7
-      - name: Retain Windows metadata and logs only
+      - name: Retain Windows runtime and reader evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

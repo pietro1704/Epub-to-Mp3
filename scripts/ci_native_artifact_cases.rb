@@ -4,12 +4,22 @@
 class CiRuntimeScopeTest
   def test_windows_faber_retains_only_the_verified_release_bundle_as_a_separate_artifact
     workflow = YAML.load_file(File.expand_path('../.github/workflows/flutter-rust-faber.yml', __dir__))
-    steps = workflow.fetch('jobs').fetch('windows-package-faber').fetch('steps')
+    job = workflow.fetch('jobs').fetch('windows-package-faber')
+    assert_equal 'windows-2025', job.fetch('runs-on')
+    steps = job.fetch('steps')
     conversion = steps.find { |step| step['name'] == 'Convert exactly two chapters through the packaged Windows DLL' }
     package = steps.find { |step| step['name'] == 'Retain the verified Windows package' }
     logs = steps.find { |step| step.dig('with', 'name') == 'dart-rust-faber-windows' }
-    [conversion, package, logs].each { |step| refute_nil step }
-    assert_operator steps.index(conversion), :<, steps.index(package)
+    gui = steps.find { |step| step['name'] == 'Exercise the packaged Windows reader on the native desktop' }
+    [conversion, gui, package, logs].each { |step| refute_nil step }
+    assert_operator steps.index(conversion), :<, steps.index(gui)
+    assert_operator steps.index(gui), :<, steps.index(package)
+    refute gui.key?('continue-on-error')
+    run = gui.fetch('run')
+    assert_includes run, '-STA -File scripts/verify_windows_reader_gui.ps1'
+    assert_includes run, "-Package 'flutter_app/build/windows/x64/runner/Release'"
+    assert_includes run, "-Fixture 'tests/fixtures/epubs/cli_faber_public_chapters.epub'"
+    assert_includes run, "-Evidence '.reports/windows-faber/reader-gui'"
     assert_equal 'success()', package.fetch('if')
     assert_pinned_action 'actions/upload-artifact', package.fetch('uses')
     assert_equal 'flutter-windows-x64-${{ github.sha }}', package.dig('with', 'name')
