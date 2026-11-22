@@ -60,12 +60,13 @@ and the exclusive native lease before boot. Reported free memory is the
 `memory_pressure -Q` metric, not literal unused RAM. Observation and
 stable-swap flags are mutually exclusive.
 
-Sampling targets a five-second cadence. A full snapshot has a 12-second deadline,
-including an eight-second limit for `top`; under load that cadence is not
-guaranteed. Critical OS memory pressure or low disk aborts immediately. Warning
-pressure sustained for ten seconds also aborts. Default/stable policies additionally
-abort after ten seconds below 25% reported free memory or 256 MiB swap growth,
-or thirty seconds below 10% CPU idle. Observation records these numeric load
+Sampling targets a five-second cadence. A full snapshot has a 12-second deadline.
+The CPU sampler reads Mach CPU counters over a one-second interval in a subprocess
+with an eight-second deadline. Critical OS memory pressure or low disk aborts
+immediately. Warning pressure sustained for ten seconds also aborts.
+Default/stable policies additionally abort after ten seconds below 25% reported
+free memory or 256 MiB swap growth, or thirty seconds below 10% CPU idle.
+Observation records these numeric load
 changes instead of treating them as established thresholds. Missing telemetry,
 foreground cancellation/death or lost heartbeats still aborts. Boot is limited
 to 120 seconds; the launch observation lasts 15 seconds.
