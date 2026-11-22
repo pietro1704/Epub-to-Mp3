@@ -14,21 +14,12 @@ class NativeJobIntegrationTest < Minitest::Test
     @dir = Dir.mktmpdir("native-job-")
     @lock = File.join(@dir, "lease")
     @marker = File.join(@dir, "child")
-    @state = File.join(@dir, "state")
-    File.write(@state, "Shutdown")
-    write_command("xcrun", <<~'SH')
-      #!/bin/bash
-      [[ "$FAKE_SIM_FAILURE" == 1 ]] && exit 23
-      printf '{"devices":{"test":[{"state":"%s"}]}}\n' "$(cat "$FAKE_STATE")"
-    SH
-    write_command("pgrep", "#!/bin/bash\nexit \"${FAKE_METAL_STATUS:-1}\"\n")
     write_command("df", <<~'SH')
       #!/bin/bash
       printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
       printf 'fixture 41943040 0 %s 0%% /\n' "${FAKE_FREE_KIB:-31457280}"
     SH
-    @env = { "PATH" => "#{@dir}:#{ENV.fetch('PATH')}", "FAKE_STATE" => @state,
-             "FAKE_FREE_KIB" => nil, NativeJob::WAIT_ENV => nil,
+    @env = { "PATH" => "#{@dir}:#{ENV.fetch('PATH')}", "FAKE_FREE_KIB" => nil, NativeJob::WAIT_ENV => nil,
              NativeJob::FD_ENV => nil, NativeJob::PATH_ENV => nil }
   end
 
@@ -68,29 +59,15 @@ class NativeJobIntegrationTest < Minitest::Test
     File.open(@lock, "a+") { |f| assert f.flock(File::LOCK_EX | File::LOCK_NB), "lease remained held" }
   end
 
-  def intel_mac?
-    RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-  end
-
-  def test_intel_simulator_quarantine_refuses_launch_before_any_child
-    skip "Intel macOS quarantine only" unless intel_mac?
-    _, error, status = run_job("simulator", env: {
-      "IOS_SKIP_BUILD" => "1", "EPUB2MP3_ALLOW_INTEL_SIMULATOR" => "1"
-    })
-    assert_equal 75, status.exitstatus, error
-    assert_match(/quarantined/, error)
-    assert_match(/physical-device verification/, error)
-    refute File.exist?(@marker)
-    refute File.exist?(@lock), "quarantine must reject before even acquiring a lease"
-  end
-
-  def test_intel_simulator_quarantine_cannot_be_bypassed_by_valid_inherited_lease
-    skip "Intel macOS quarantine only" unless intel_mac?
-    nested = command("simulator")
-    _, error, status = run_job("build", *nested)
-    assert_equal 75, status.exitstatus, error
-    assert_match(/quarantined/, error)
-    refute File.exist?(@marker)
+  def test_simulator_phase_runs_under_the_lease_on_every_host_without_a_quarantine
+    _, error, status = run_job("simulator", env: { "IOS_SKIP_BUILD" => "1" })
+    assert status.success?, error
+    assert_equal "ran", File.read(@marker)
+    assert_unlocked
+    File.delete(@marker)
+    _, error, status = run_job("build", *command("simulator"))
+    assert status.success?, "a simulator job nested in a build inherits the lease: #{error}"
+    assert_equal "ran", File.read(@marker)
     assert_unlocked
   end
 
@@ -127,29 +104,18 @@ class NativeJobIntegrationTest < Minitest::Test
     assert_equal "#{expected},#{expected}", File.read(@marker)
   end
 
-  def test_explicit_parallel_cargo_is_allowed_only_within_the_hosted_allowance
-    skip "Mac compiler policy" unless RUBY_PLATFORM.include?("darwin")
-    check = lambda do |env, *command|
-      stub = "processors = Integer(ENV.fetch('FAKE_CPUS', '3')); Etc.define_singleton_method(:nprocessors) { processors }; " \
-             "NativeJob.define_singleton_method(:account_home) { ENV.fetch('FAKE_HOME') }; "
-      output, error, status = Open3.capture3(@env.merge("FAKE_HOME" => "/Users/runner").merge(env), RUBY, "-r", SCRIPT, "-e",
-        "#{stub}print NativeJob.parallelism_error(ARGV).to_s", *command)
-      assert status.success?, error
-      output
+  def test_explicit_parallel_flags_are_never_refused
+    write_command("cargo", "#!/bin/bash\necho \"$@\" > \"$FAKE_MARKER\"\n")
+    write_command("xcodebuild", "#!/bin/bash\necho \"$@\" > \"$FAKE_MARKER\"\n")
+    [["cargo", "build", "--jobs", "3"], ["cargo", "build", "-j2"], ["xcodebuild", "build", "-jobs", "3"],
+     ["xcodebuild", "build", "-parallelizeTargets"]].each do |compiler|
+      File.delete(@marker) if File.exist?(@marker)
+      _, error, status = run_job("build", *compiler, env: { "FAKE_MARKER" => @marker })
+      assert status.success?, "#{compiler.join(' ')}: #{error}"
+      assert_equal compiler.drop(1).join(" "), File.read(@marker).strip
+      assert_unlocked
     end
-    assert_match(/exactly one job/, check.call(LOCAL, "cargo", "build", "--jobs", "3"))
-    assert_match(/exactly one job/, check.call(LOCAL, "cargo", "build", "-j2"))
-    assert_match(/exactly one job/, check.call(LOCAL, "cmake", "--build", ".", "--parallel", "3"))
-    assert_empty check.call(LOCAL, "cargo", "build", "--jobs", "1")
-    assert_empty check.call(HOSTED, "cargo", "build", "--jobs", "3")
-    assert_empty check.call(HOSTED, "cargo", "build", "--jobs=2")
-    assert_empty check.call(HOSTED, "cmake", "--build", ".", "--parallel", "3")
-    assert_match(/exactly one job/, check.call(HOSTED.merge("FAKE_HOME" => "/Users/pips"), "cargo", "build", "--jobs", "3"))
-    assert_match(/exactly one job/, check.call(HOSTED.merge("CARGO_BUILD_JOBS" => "1"), "cargo", "build", "--jobs", "3"))
-    assert_match(/exactly one job/, check.call(HOSTED, "cargo", "build", "--jobs", "4"))
-    assert_match(/exactly one job/, check.call(HOSTED, "cargo", "build", "--jobs=-1"))
-    assert_match(/exactly one job/, check.call(HOSTED, "xcodebuild", "build", "-jobs", "3"))
-    assert_match(/disabled on this Mac/, check.call(HOSTED, "xcodebuild", "build", "-parallelizeTargets"))
+    refute_respond_to NativeJob, :parallelism_error
   end
 
   def test_success_failure_and_child_signal_preserve_exit_status_and_release
@@ -163,52 +129,30 @@ class NativeJobIntegrationTest < Minitest::Test
     assert_unlocked
   end
 
-  def test_build_checks_real_fake_commands_before_child
-    skip "Intel macOS preflight only" unless intel_mac?
-    ["Booted", "Booting", "Shutting Down"].each do |state|
-      File.write(@state, state)
-      _, error, status = run_job("build")
-      assert_equal 75, status.exitstatus, error
-      refute File.exist?(@marker)
-      assert_unlocked
-    end
-    File.write(@state, "Shutdown")
-    [{ "FAKE_SIM_FAILURE" => "1" }, { "FAKE_METAL_STATUS" => "0" }, { "FAKE_METAL_STATUS" => "2" }].each do |env|
-      _, error, status = run_job("build", env: env)
-      assert_equal 75, status.exitstatus, error
-      refute File.exist?(@marker)
-    end
-    _, error, status = run_job("build")
-    assert status.success?, error
-    assert File.exist?(@marker)
-  end
-
-  def test_build_and_simulator_contend_for_same_lease_and_recheck_state
+  def test_build_and_simulator_contend_for_the_same_lease
     File.open(@lock, "a+") do |holder|
       holder.flock(File::LOCK_EX)
       %w[build simulator].each do |phase|
         _, error, status = run_job(phase)
         assert_equal 75, status.exitstatus, error
-        assert_match(phase == "simulator" && intel_mac? ? /quarantined/ : /active/, error)
+        assert_match(/active/, error)
         refute File.exist?(@marker)
       end
-      File.write(@state, "Booted")
-    end
-    if intel_mac?
-      _, error, status = run_job("build")
-      assert_equal 75, status.exitstatus, error
-      refute File.exist?(@marker)
     end
     assert_unlocked
   end
 
-  def test_storage_refusal_never_starts_child_and_releases_lease
-    skip "Build storage policy applies on macOS and Arch" unless RUBY_PLATFORM.include?("darwin") || File.file?("/etc/arch-release")
+  def test_low_storage_is_only_an_advisory_and_the_child_runs_to_the_end
+    skip "Build storage readings apply on macOS and Arch" unless RUBY_PLATFORM.include?("darwin") || File.file?("/etc/arch-release")
     _, error, status = run_job("build", env: { "FAKE_FREE_KIB" => "1" })
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Free disk below/, error)
-    refute File.exist?(@marker)
+    assert status.success?, error
+    assert_match(/advisory, not a refusal: Free disk below/, error)
+    assert_equal "ran", File.read(@marker)
     assert_unlocked
+    # A reading taken during the run never stops it either.
+    _, error, status = run_job("build", RUBY, "-e", "sleep 1; File.write(ARGV[0], 'finished')", @marker, env: { "FAKE_FREE_KIB" => "1" })
+    assert status.success?, error
+    assert_equal "finished", File.read(@marker)
   end
 
   def test_nested_ruby_shell_ruby_inherits_real_lease_without_deadlock

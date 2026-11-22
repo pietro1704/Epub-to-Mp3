@@ -6,17 +6,17 @@ require "open3"
 require "rbconfig"
 
 # Run real entry-point scripts with a fake booted device and compiler markers.
-# No native compiler, Simulator service or app is executed.
+# A booted Simulator is only information: the entry points go on to their
+# compiler. No native compiler, Simulator service or app is executed.
 class NativeEntrypointSafetyTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
 
-  def test_booted_simulator_blocks_before_every_bootstrap_compiler
-    skip "Intel macOS policy" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+  def test_booted_simulator_never_blocks_a_bootstrap_compiler
     %w[verify_tts_preferences.rb verify_portable_tts.rb device-workflow.sh].each do |entry|
       Dir.mktmpdir("native-entry-safety-") do |directory|
         scripts = File.join(directory, "scripts")
         FileUtils.mkdir_p(scripts)
-        %W[#{entry} native_job.rb native_build_preflight.rb mac_build_budget.rb].each do |name|
+        %W[#{entry} native_job.rb mac_build_budget.rb].each do |name|
           content = File.read(File.join(ROOT, "scripts", name)).gsub("/tmp/epub2mp3.heavy-job.lock", File.join(directory, "lease"))
           File.write(File.join(scripts, name), content)
         end
@@ -48,8 +48,8 @@ class NativeEntrypointSafetyTest < Minitest::Test
                         "FIXTURE_RUBY" => RbConfig.ruby, "EPUB_NATIVE_LEASE_FD" => nil, "EPUB_NATIVE_LEASE_PATH" => nil }
         command = entry.end_with?(".rb") ? [RbConfig.ruby, File.join(scripts, entry)] : ["bash", File.join(scripts, entry), "host-tests"]
         output, error, status = Open3.capture3(environment, *command, chdir: directory)
-        assert_equal 75, status.exitstatus, "#{entry}: #{output}#{error}"
-        refute File.exist?(marker), "#{entry} started a compiler before preflight"
+        refute_match(/Shut down all Simulators|quarantined/, "#{output}#{error}", entry)
+        assert File.exist?(marker), "#{entry} never reached its compiler: #{output}#{error}"
       end
     end
   end

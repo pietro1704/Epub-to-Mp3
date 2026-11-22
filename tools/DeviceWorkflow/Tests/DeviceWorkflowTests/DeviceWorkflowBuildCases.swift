@@ -38,7 +38,6 @@ extension DeviceWorkflowTests {
         XCTAssertFalse(executed.contains("install"))
         XCTAssertFalse(executed.contains("transfer"))
         XCTAssertEqual(work.report["appCleanupVerified"] as? Bool, true)
-        XCTAssertTrue(executed.firstIndex(of: "nativeBuildPreflight")! < executed.firstIndex(of: "build")!)
         XCTAssertEqual(Array(executed.suffix(4)), ["appCleanupInspection", "appCleanupRevalidation", "appCleanupTermination", "appCleanupVerification"])
     }
 

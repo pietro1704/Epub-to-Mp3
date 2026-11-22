@@ -19,8 +19,9 @@ Read this file, [`../../CONTEXT.md`](../../CONTEXT.md), and relevant files in
 ## Reader changes
 
 Follow [execution policy](../../docs/agents/execution-policy.md) for current
-native safety and acceptance. Authorized Simulator work uses only the reviewed
-supervisor described there; this reader contract does not authorize a boot.
+native safety and acceptance. Authorized Simulator work uses the supervisor route
+described there (no host guard blocks it since 2026-11-22); this reader contract
+does not authorize a boot.
 
 Reader acceptance requires the native macOS app and iPhone SE (1st generation)
 Simulator on iOS 15.2 with Xcode 26.3 (`/Applications/Xcode-26.3.0.app`). A physical

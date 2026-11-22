@@ -94,9 +94,9 @@ Do not delete the shared `target/`: a cold release `converter-ffi` build takes
 about 11 minutes and every worktree shares it. `mise run clean:build` removes
 only superseded Xcode DerivedData and keeps `target/`.
 
-## Host admission, lease status and the flight recorder
+## Lease status, host readings and the flight recorder
 
-Read the host once before a guarded build or test:
+Read the lease and the host once before a guarded build or test:
 
 ```sh
 mise run native:status
@@ -104,14 +104,12 @@ mise run native:status
 
 It prints the lease holder, every process that keeps the lease file open (a
 browser or daemon left behind by an earlier job shows here), the current
-readings, `refusal` (`null` when another heavy job would be admitted),
-`warnings` (swap in use or the compressor above their thresholds; these never
-refuse a job, because macOS keeps swap allocated after pressure ends) and the
-flight recorder path. A job that finds the host loaded waits up to 120 seconds
-for it to settle after the previous job, then exits 75 and names every exceeded
-limit. Let one job queue longer for the lease and for admission instead of
-
-polling (whole seconds; any other value fails; `0` refuses at once):
+readings, `notes` (load, memory pressure, thermal limits, a foreign compiler,
+swap or the compressor above their thresholds; they are information only, since
+Pietro removed the host guards on 2026-11-22, and never refuse or delay a job)
+and the flight recorder path. A job starts at once unless the build lease is held.
+Let one job queue for the lease instead of polling (whole seconds; any other
+value fails; the default `0` refuses at once when the lease is busy):
 
 ```sh
 EPUB_NATIVE_WAIT_SECONDS=900 mise run mac:test:local -- -only-testing:ID
@@ -141,15 +139,11 @@ targets) with the usual background work, taken between 22:10 and 22:37 BRT on
 | 5 min 39 s after it was stopped | 3.79 | 331 MiB | 100 |
 | Second run (resumed, 4 min 38 s in total), 2 min 45 s in | 4.24 | 1016 MiB | 100 |
 
-A guarded step that Xcode starts from a build phase is not refused for the
-compiler processes that descend from that build, but any other compiler and the
-load, memory and thermal limits still apply and can refuse it while Xcode
-compiles. Prepare Rust artifacts through
+A guarded step that Xcode starts from a build phase belongs to that build; a
+compiler outside it is only listed as a note. Prepare Rust artifacts through
 their guarded task before a manual Xcode build so the two do not compile at
-once. The build preflight matches the
-`SimMetalHost` and `Simulator` process names exactly; a command line that only
-mentions them does not block a build. None of this is evidence about kernel or
-driver stability.
+once. Booted Simulators and `SimMetalHost` no longer matter to a build. None of
+this is evidence about kernel or driver stability.
 
 ## Retained Intel FFI packages
 

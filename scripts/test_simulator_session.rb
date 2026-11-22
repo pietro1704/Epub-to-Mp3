@@ -51,7 +51,7 @@ class SimulatorSessionTest < Minitest::Test
     # Timeout cases select their short deadline explicitly.
     supervisor = SimulatorSession::Supervisor.new(backend: @backend, sampler: -> { @sample },
       report: @report, heartbeat: @reader, lease_path: File.join(@dir, "lock"),
-      baseline_seconds: 0, interval: 0.01, journey_seconds: 0, session_seconds: 1, boot_seconds: 1, **options)
+      interval: 0.01, journey_seconds: 0, session_seconds: 1, boot_seconds: 1, **options)
     supervisor.run
     [supervisor, JSON.parse(File.read(@report))]
   end
@@ -66,7 +66,7 @@ class SimulatorSessionTest < Minitest::Test
 
   def test_selected_test_runs_under_watchdog_and_requires_cleanup
     @backend.define_singleton_method(:test_session?) { true }
-    supervisor, report = run_session(observe_resources: true)
+    supervisor, report = run_session
     assert supervisor.successful?
     assert_equal [:boot, :ready, :ui, :install, :launch, :test, :cleanup], @backend.calls
     assert_equal 'test_command_completed', report['result']
@@ -76,18 +76,22 @@ class SimulatorSessionTest < Minitest::Test
   def test_selected_test_failure_preserves_failure_and_cleans_up
     @backend.define_singleton_method(:test_session?) { true }
     @backend.define_singleton_method(:poll) { @calls.last == :test ? 65 : 0 }
-    supervisor, report = run_session(observe_resources: true)
+    supervisor, report = run_session
     refute supervisor.successful?
     assert_match(/test failed \(65\)/, report['error'])
     assert_equal :cleanup, @backend.calls.last
   end
 
-  def test_admission_failure_never_boots_or_shuts_down_unowned_device
-    @sample["cpu_idle"] = 10
+  def test_a_busy_host_is_only_noted_and_the_session_runs_to_verified_cleanup
+    @sample.merge!("cpu_idle" => 10, "swap_mib" => 3000, "free_percent" => 30, "pressure" => 2, "free_bytes" => 15 * 1024**3 - 1)
     supervisor, report = run_session
-    refute supervisor.successful?
-    assert_empty @backend.calls
-    assert_match(/CPU/, report["error"])
+    assert supervisor.successful?
+    assert_equal [:boot, :ready, :ui, :install, :launch, :cleanup], @backend.calls
+    assert_equal "verified_shutdown", report["cleanup"]
+    assert_equal "advisory_notes_only", report["resource_policy"]
+    assert_equal ["Memory pressure is warning", "Reported free memory 30% is below 40%", "Swap 3000 MiB exceeds 1024 MiB",
+                  "CPU idle 10% is below 70%", "Free disk below 15 GiB"], report["advisories"]
+    refute report.key?("admission_policy")
   end
 
   def test_identity_failure_never_boots
@@ -133,44 +137,6 @@ class SimulatorSessionTest < Minitest::Test
     assert_equal "cleanup_failed", report["result"]
   end
 
-  def test_explicit_observation_retains_cleanup_and_records_phase_and_limits
-    @sample.merge!('swap_mib' => 3000, 'cpu_idle' => 20, 'free_percent' => 30, 'free_bytes' => 15 * 1024**3)
-    supervisor, report = run_session(observe_resources: true)
-    assert supervisor.successful?
-    assert_equal 'explicit_resource_observation', report['admission_policy']
-    assert_equal 'verified_shutdown', report['cleanup']
-    assert_equal 0, report['limits']['app_seconds']
-    assert report['samples'].all? { |row| row.key?('phase') }
-  end
-
-  def test_explicit_observation_refuses_one_byte_below_disk_floor_before_boot
-    @sample["free_bytes"] = 15 * 1024**3 - 1
-    supervisor, report = run_session(observe_resources: true)
-    refute supervisor.successful?
-    assert_empty @backend.calls
-    assert_equal "SimulatorResources::Refusal: Free disk below 15 GiB", report["error"]
-  end
-
-  def test_default_refuses_existing_swap_but_explicit_mode_records_its_policy
-    @sample["swap_mib"] = 2300
-    _, report = run_session
-    assert_empty @backend.calls
-    assert_match(/1 GiB/, report["error"])
-    assert_equal "strict_1gib_swap", report["admission_policy"]
-    File.delete(@report)
-    supervisor, report = run_session(stable_existing_swap: true)
-    assert supervisor.successful?
-    assert_equal "explicit_stable_existing_swap", report["admission_policy"]
-  end
-
-  def test_swap_regrowth_at_final_preboot_sample_blocks_even_below_initial_swap
-    values = [2300, 2100, 2200]
-    sampler = -> { @sample.merge("swap_mib" => values.shift || 2200) }
-    _, report = run_session(stable_existing_swap: true, sampler: sampler)
-    assert_empty @backend.calls
-    assert_match(/grew/, report["error"])
-  end
-
   def test_prepare_refusal_prevents_install_and_cleans_up
     @backend.define_singleton_method(:prepare) do |stage|
       raise SimulatorResources::Refusal, "changed app" if stage == :install
@@ -180,17 +146,29 @@ class SimulatorSessionTest < Minitest::Test
     assert_match(/changed app/, report["error"])
   end
 
-  def test_critical_pressure_after_boot_stops_and_cleans_up
+  def test_critical_pressure_after_boot_is_noted_and_never_stops_the_session
     @backend.pending = true
     calls = 0
     sampler = lambda do
       calls += 1
       calls <= 3 ? @sample : @sample.merge("pressure" => 4)
     end
-    _, report = run_session(sampler: sampler)
-    assert_match(/Critical/, report["error"])
+    _, report = run_session(sampler: sampler, boot_seconds: 0.3)
+    assert_match(/boot deadline exceeded/, report["error"], "only the stage deadline ended it")
+    assert_includes report["advisories"], "Memory pressure is critical"
     assert_equal [:boot, :cleanup], @backend.calls
   end
+
+  def test_unreadable_telemetry_is_a_note_and_never_a_refusal
+    sampler = -> { raise SimulatorResources::Refusal, "Missing CPU idle telemetry" }
+    supervisor, report = run_session(sampler: sampler)
+    assert supervisor.successful?, report["error"]
+    assert_equal [:boot, :ready, :ui, :install, :launch, :cleanup], @backend.calls
+    assert_equal ["Resource telemetry unavailable: Missing CPU idle telemetry"], report["advisories"]
+    assert_equal "launch_smoke_passed", report["result"]
+    assert report["final_resource_error"]
+  end
+
 def test_lease_conflict_never_inspects_or_boots
   File.open(File.join(@dir, "lock"), "w") do |lock|
     lock.flock(File::LOCK_EX)
@@ -206,7 +184,7 @@ def test_parent_death_during_boot_is_detected_by_detached_watchdog
   @backend.pending = true
   parent = fork do
     SimulatorSession.launch(backend: @backend, sampler: -> { @sample }, report: @report,
-      lease_path: File.join(@dir, "lock"), baseline_seconds: 0, interval: 0.01,
+      lease_path: File.join(@dir, "lock"), interval: 0.01,
       session_seconds: 5, boot_seconds: 4, journey_seconds: 0)
     exit! 0
   end
@@ -262,22 +240,11 @@ def test_deadline_is_checked_before_accepting_completed_command
   assert_raises(SimulatorResources::Refusal) { supervisor.command(:install, timeout: 1) }
 end
 
-def test_warning_in_last_preboot_sample_refuses_without_boot
-  calls = 0
-  sampler = lambda do
-    calls += 1
-    calls == 3 ? @sample.merge("pressure" => 2) : @sample
-  end
-  _, report = run_session(sampler: sampler)
-  assert_empty @backend.calls
-  assert_match(/not normal/, report["error"])
-end
-
 def test_cancellation_received_during_sampling_refuses_before_boot
   calls = 0
   sampler = lambda do
     calls += 1
-    @writer.write("!") if calls == 3
+    @writer.write("!") if calls == 1
     @sample
   end
   _, report = run_session(sampler: sampler)

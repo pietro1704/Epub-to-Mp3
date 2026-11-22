@@ -29,9 +29,10 @@ and never require a paid provider.
 
 ## Build storage
 
-For Mac and Arch app builds, use free space on the build output volume as the
-only storage limit. Reuse compatible caches of any size. The Mac Intel compiler
-and Simulator safeguards follow the execution policy.
+For Mac and Arch app builds, free space on the build output volume is only
+reported, never a limit that stops a build. Reuse compatible caches of any size.
+Pietro removed all native host guards on 2026-11-22; the execution policy lists
+what remains (the shared build lease).
 
 ## Navigation
 

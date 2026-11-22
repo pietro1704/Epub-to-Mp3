@@ -25,6 +25,7 @@ For security findings, reproduce safely, inspect confinement/sanitization and
 use [SECURITY.md](../../../SECURITY.md). Do not dismiss alerts or close issues
 without the applicable authorization and evidence.
 
-Simulator execution remains quarantined; required SE1/iOS 15.2 acceptance stays
-pending. A new host panic is a stop event under execution policy. Do not retry a
-launcher, reboot a service/host or change runtime/hardware to bypass a failure.
+Simulator execution has no host guard since 2026-11-22; required SE1/iOS 15.2
+acceptance stays pending. After a new host panic, report it and preserve the
+evidence per the execution policy. Do not reboot a service/host or change
+runtime/hardware to bypass a failure.

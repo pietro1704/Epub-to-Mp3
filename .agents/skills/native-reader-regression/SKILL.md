@@ -45,9 +45,9 @@ Use native XCTest/UI automation and the pagination probe. Assert all of these:
 Add the narrowest permanent native test that is red on the reported behavior.
 Read `docs/agents/execution-policy.md` before selecting any execution path and
 use the affected runtime's guarded tasks. Required SE1/iOS 15.2 acceptance uses
-only the reviewed, explicitly task-authorized supervisor on Xcode 26.3 defined
-in the execution policy. Another device does not replace that acceptance;
-generic Intel Simulator launchers remain quarantined.
+the task-authorized supervisor on Xcode 26.3 defined in the execution policy
+(it produces the report; generic Simulator launchers are no longer quarantined
+since 2026-11-22). Another device does not replace that acceptance.
 For scoped macOS verification, follow `docs/agents/macos-validation.md`.
 
 ## Hand off visible evidence

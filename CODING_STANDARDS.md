@@ -78,9 +78,9 @@ native performance evidence.
 ## Environment and resumption
 
 Use the exact native destinations required by the task and native reader contract.
-Apply [execution policy](docs/agents/execution-policy.md), including Simulator
-quarantine, its reviewed supervisor exception and guarded single-job Mac
-compilation. A physical device does not replace required SE1/iOS 15.2
+Apply [execution policy](docs/agents/execution-policy.md), including the shared
+build lease and default single-job Mac compilation (host guards and the
+Simulator quarantine were removed on 2026-11-22). A physical device does not replace required SE1/iOS 15.2
 verification. A reviewer must preserve blocked
 acceptance rather than accepting an alternate runtime as equivalent.
 

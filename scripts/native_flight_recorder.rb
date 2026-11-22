@@ -41,10 +41,10 @@ module NativeFlightRecorder
   end
 
   # One host reading with the warnings it earns, so a line says by itself when
-  # swap or the compressor went above the thresholds that never refuse a job.
+  # a reading went above an advisory threshold; none of them refuses a job.
   def self.reading(sampler: HostLoad.method(:sample), policy: HostLoad.method(:limits))
     sample = sampler.call
-    sample.merge("warnings" => HostLoad.warnings(policy.call, sample))
+    sample.merge("warnings" => HostLoad.notes(policy.call, sample))
   end
 
   # Bounded storage: the current file plus `generations` rotated ones.

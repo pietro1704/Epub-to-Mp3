@@ -26,10 +26,10 @@ before starting a dependency rebuild.
 entitlements and platform-specific embedding. `xcode:generate` regenerates and
 opens that project; do not create a replacement scaffold or edit generated
 `.xcodeproj` structure as the source of truth. All Mac compilation uses guarded
-tasks with one compiler job and the shared storage budget. Build output paths
+tasks with one compiler job and a free-space note. Build output paths
 and receipts come from the selected task, not a fixed `.build/Release` guess.
 
-Simulator execution is quarantined. For reader/pagination/chrome/player work,
+Simulator execution is no longer quarantined (host guards removed 2026-11-22). For reader/pagination/chrome/player work,
 follow [AGENTS.md](AGENTS.md), `CONTEXT.md`, relevant ADRs and the native reader
 skill. Required SE1/iOS 15.5 acceptance stays pending; source wiring or compilation
 alone is not evidence that reader, conversion or playback acceptance passed.

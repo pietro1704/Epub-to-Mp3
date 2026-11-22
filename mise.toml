@@ -79,7 +79,7 @@ set -eu
 # $0 is the prefix that runs one tool; its words are split on purpose.
 suite='$0 ruby bin/rails test:all && $0 node --import ./browser_runtime/importmap_resolver.mjs --test --test-concurrency=2 "browser_runtime/*.test.mjs"'
 # Rails system tests drive Chromium: on macOS they are one heavy job under the
-# shared host lease and admission. The shell that runs the suite keeps the
+# shared host lease. The shell that runs the suite keeps the
 # lease; the test runners start without it, so a browser left behind by a
 # cancelled run cannot hold it. Other hosts run the suite as before.
 if [ "$(uname -s)" = Darwin ]; then
@@ -113,11 +113,11 @@ description = "List converter-ffi native target mappings and exact output paths"
 run = "mise exec -- ruby scripts/build_converter_ffi.rb --list"
 
 [tasks."native:build:preflight"]
-description = "Check native host safety and Mac or Arch free disk space before compilation"
-run = "ruby scripts/native_build_preflight.rb && ruby scripts/mac_build_budget.rb check"
+description = "Report Mac or Arch free disk space for native compilation; advisory, never blocks"
+run = "ruby scripts/mac_build_budget.rb check"
 
 [tasks."native:status"]
-description = "Show who holds the heavy-job lease and whether the host would admit another heavy job; read-only"
+description = "Show who holds the heavy-job lease and the current host readings with their advisory notes; read-only"
 run = "mise exec -- ruby scripts/native_job.rb status"
 
 [tasks."models:catalog:test"]
@@ -136,21 +136,13 @@ run = "ruby scripts/run_host_checks.rb --suite scripts/test_tts_book_benchmark.r
 description = "Verify ignore rules and index-only cleanup through real Git in temporary repositories"
 run = "ruby scripts/test_git_hygiene.rb"
 
-[tasks."ios:simulator:resources"]
-description = "Read-only 60-second Simulator resource admission report; never boots a device"
-run = "ruby scripts/simulator_preflight.rb"
-
 [tasks."ios:simulator:supervised"]
-description = "Explicitly acknowledged, bounded Intel iOS 15.2 SE launch with resource admission and cleanup"
+description = "Bounded Intel iOS 15.2 SE launch with resource notes, deadlines and verified cleanup"
 run = "ruby scripts/simulator_safe_run.rb"
 
 [tasks."ios:simulator:safety:test"]
 description = "Verify Simulator resource refusal, deadlines, ownership and watchdog cleanup without booting"
 run = "ruby scripts/run_host_checks.rb --suite scripts/test_simulator_resources.rb --suite scripts/test_simulator_session.rb --suite scripts/test_simulator_backend.rb --suite scripts/test_simulator_cli.rb --suite scripts/test_onnxruntime_simulator_jobs.rb --suite scripts/test_simulator_test_backend.rb"
-
-[tasks."native:build:preflight:test"]
-description = "Host regressions for native build crash-prevention preflight; no Simulator or build"
-run = "ruby scripts/test_native_build_preflight.rb"
 
 [tasks."converter-ffi:build"]
 description = "Build the shared converter-ffi Rust library for the host"
@@ -438,7 +430,7 @@ description = "Verify master requires only the trusted PR gate; explicit --apply
 run = "node scripts/pr_gate_policy.mjs"
 
 [tasks."build:storage:test"]
-description = "Verify free-space admission, monitoring and safe cleanup without compiling"
+description = "Verify the advisory free-space note and safe cleanup without compiling"
 run = "ruby scripts/test_mac_build_budget.rb"
 
 [tasks."clean:build"]
@@ -568,9 +560,8 @@ fi
 xcodegen generate
 # Slice 18 preflight: widget must be embedded in the app bundle.
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
-# NativeJob holds the shared lease and checks for active Simulators,
-# SimMetalHost and Simulator.app before any project generation or compilation.
-# These checks limit exposure but cannot establish hardware stability.
+# NativeJob holds the shared lease before any project generation or
+# compilation. Simulator and host state are not checked (guards removed 2026-11-22).
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
@@ -905,7 +896,7 @@ esac
 """
 
 [tasks."ios:simulator:smoke:build"]
-description = "Build only bundled-FFI and library-search smoke tests with Simulator stopped; no Python"
+description = "Build only bundled-FFI and library-search smoke tests; no Python"
 run = "mise exec -- ruby scripts/native_job.rb --build-dir \"${IOS_DERIVED_DATA_PATH:-$APPLE_DERIVED_DATA_PATH}\" build -- xcrun swift scripts/ios_simulator_smoke.swift build"
 
 [tasks."ios:simulator:smoke:test"]

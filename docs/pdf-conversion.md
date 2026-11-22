@@ -84,4 +84,4 @@ chapters and playback. Native reader PDF viewport tests remain separate.
 
 Executed results, artifact identity and visible/audible acceptance must be reported
 for the actual source revision. Source inspection and a green Rust suite alone do
-not establish native-app acceptance. Simulator quarantine remains in force.
+not establish native-app acceptance. Simulator acceptance is a separate stage.

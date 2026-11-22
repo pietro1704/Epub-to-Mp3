@@ -2,7 +2,6 @@
 require "minitest/autorun"
 require_relative "simulator_cpu_idle"
 require_relative "simulator_resources"
-require_relative "simulator_preflight"
 require "tmpdir"
 
 class SimulatorResourcesTest < Minitest::Test
@@ -11,74 +10,29 @@ class SimulatorResourcesTest < Minitest::Test
       "compressed_bytes" => 1024, "cpu_idle" => 90, "free_bytes" => 30 * 1024**3 }
   end
 
-  def test_admission_and_independent_failure_conditions
-    assert_nil SimulatorResources.admission(sample, sample)
-    { "pressure" => 2, "free_percent" => 39, "swap_mib" => 1025,
-      "swapouts" => 51, "cpu_idle" => 69 }.each do |key, value|
-      refute_nil SimulatorResources.admission(sample.merge(key => value), sample), key
+  def test_every_former_admission_reading_is_only_a_note
+    assert_empty SimulatorResources.notes(sample)
+    [["pressure", 2, /warning/], ["free_percent", 39, /free memory 39%/], ["swap_mib", 1025, /Swap 1025 MiB/],
+     ["cpu_idle", 69, /CPU idle 69%/], ["free_bytes", 15 * 1024**3 - 1, /Free disk below 15 GiB/]].each do |key, value, expected|
+      notes = SimulatorResources.notes(sample.merge(key => value))
+      assert_equal 1, notes.length, key
+      assert_match(expected, notes.first, key)
     end
+    assert_match(/critical/, SimulatorResources.notes(sample.merge("pressure" => 4)).first)
+    at_floor = sample.merge("free_bytes" => 15 * 1024**3)
+    assert_empty SimulatorResources.notes(at_floor), "the disk reference size is inclusive"
   end
 
-  def test_disk_floor_is_inclusive_at_admission_and_enforced_during_monitoring
-    floor = 15 * 1024**3
-    at_floor = sample.merge("free_bytes" => floor)
-    below_floor = sample.merge("free_bytes" => floor - 1)
-    assert_nil SimulatorResources.admission(at_floor, sample)
-    assert_equal "Free disk below 15 GiB", SimulatorResources.admission(below_floor, sample)
-
-    [false, true].each do |observation_only|
-      monitor = SimulatorResources::Monitor.new(at_floor, observation_only: observation_only)
-      assert_nil monitor.check(at_floor, 0)
-      assert_equal "Free disk below 15 GiB", monitor.check(below_floor, 1)
-    end
+  def test_the_admission_api_is_gone
+    %i[admission disk_refusal].each { |name| refute_respond_to SimulatorResources, name }
+    refute SimulatorResources.const_defined?(:Monitor, false)
+    refute Object.const_defined?(:SimulatorPreflight)
   end
 
-  def test_missing_nan_and_out_of_range_telemetry_fail_closed
+  def test_missing_nan_and_out_of_range_telemetry_is_rejected_as_a_reading
     [sample.reject { |key, _| key == "swapouts" }, sample.merge("cpu_idle" => Float::NAN),
      sample.merge("pressure" => 0), sample.merge("free_percent" => 101)].each do |invalid|
       assert_raises(SimulatorResources::Refusal) { SimulatorResources.validate(invalid) }
-    end
-  end
-
-  def test_existing_swap_exception_is_explicit_and_requires_more_free_memory
-    historical = sample.merge("swap_mib" => 2300)
-    assert_match(/1 GiB/, SimulatorResources.admission(historical, historical))
-    assert_nil SimulatorResources.admission(historical, historical, stable_existing_swap: true)
-    assert_match(/50%/, SimulatorResources.admission(historical.merge("free_percent" => 49), historical,
-                                                    stable_existing_swap: true))
-  end
-
-  def test_existing_swap_exception_rejects_regrowth_after_an_earlier_decrease
-    initial = sample.merge("swap_mib" => 2300)
-    previous = sample.merge("swap_mib" => 2100)
-    assert_match(/grew/, SimulatorResources.admission(sample.merge("swap_mib" => 2200), initial,
-                                                     previous: previous, stable_existing_swap: true))
-  end
-
-  def test_existing_swap_exception_still_rejects_any_new_swapouts
-    historical = sample.merge("swap_mib" => 2300)
-    assert_match(/Swapouts/, SimulatorResources.admission(historical.merge("swapouts" => 51), historical,
-                                                         stable_existing_swap: true))
-  end
-
-  def test_runtime_durations_and_recovery_reset
-    monitor = SimulatorResources::Monitor.new(sample)
-    low = sample.merge("cpu_idle" => 5)
-    assert_nil monitor.check(low, 0)
-    assert_nil monitor.check(low, 29)
-    assert_nil monitor.check(sample, 30)
-    assert_nil monitor.check(low, 31)
-    assert_match(/CPU/, monitor.check(low, 61))
-    assert_match(/Critical/, monitor.check(sample.merge("pressure" => 4), 62))
-    assert_match(/disk/, monitor.check(sample.merge("free_bytes" => 0), 63))
-  end
-
-  def test_each_memory_threshold_is_sustained_for_ten_seconds
-    [{ "pressure" => 2 }, { "free_percent" => 24 }, { "swap_mib" => 456 }].each do |change|
-      monitor = SimulatorResources::Monitor.new(sample)
-      assert_nil monitor.check(sample.merge(change), 0)
-      assert_nil monitor.check(sample.merge(change), 9)
-      refute_nil monitor.check(sample.merge(change), 10)
     end
   end
 
@@ -86,15 +40,6 @@ class SimulatorResourcesTest < Minitest::Test
     assert_raises(SimulatorResources::Refusal) do
       SimulatorResources.capture(RbConfig.ruby, "-e", "sleep 30", seconds: 0.05)
     end
-  end
-
-  def test_observation_records_numeric_load_but_preserves_os_and_disk_aborts
-    monitor = SimulatorResources::Monitor.new(sample, observation_only: true)
-    assert_nil monitor.check(sample.merge('cpu_idle' => 0, 'free_percent' => 10, 'swap_mib' => 3000), 0)
-    assert_match(/Critical/, monitor.check(sample.merge('pressure' => 4), 1))
-    assert_match(/disk/, monitor.check(sample.merge('free_bytes' => 0), 2))
-    assert_nil monitor.check(sample.merge('pressure' => 2), 3)
-    assert_match(/warning/, monitor.check(sample.merge('pressure' => 2), 13))
   end
 
 def test_timeout_includes_descendant_held_output_after_leader_exit
@@ -133,17 +78,5 @@ end
   def test_cpu_idle_rejects_invalid_or_stalled_counters
     assert_raises(ArgumentError) { SimulatorCPUIdle.percentage([1, 2, 3], [1, 2, 3, 4]) }
     assert_raises(ArgumentError) { SimulatorCPUIdle.percentage([1, 2, 3, 4], [1, 2, 3, 4]) }
-  end
-
-  def test_preflight_records_refusal_and_does_not_overwrite_evidence
-    Dir.mktmpdir do |dir|
-      report = File.join(dir, "report.json")
-      result = SimulatorPreflight.run(report: report, seconds: 0, sampler: -> { sample.merge("swap_mib" => 2000) }, lock: File.join(dir, "lock"))
-      refute result["admitted"]
-      assert_match(/Swap/, JSON.parse(File.read(report))["refusal"])
-      previous = File.read(report)
-      SimulatorPreflight.run(report: report, seconds: 0, sampler: -> { sample }, lock: File.join(dir, "lock"))
-      assert_equal previous, File.read(report)
-    end
   end
 end

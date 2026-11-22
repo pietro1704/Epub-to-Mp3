@@ -55,4 +55,4 @@ The opt-in Mac fixture uses `STARTUP_DIAGNOSTICS_ARGUMENT=-measureStartup` and
 plan. It opens the real window setup with an isolated library/defaults, verifies
 foreground ownership and retains a screenshot. Without those settings, the GUI
 fixture skips and normal diagnostics stay disabled. iPhone runtime acceptance and
-the broader combined-app journey remain separate work; Simulator is quarantined.
+the broader combined-app journey remain separate work.

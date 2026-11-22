@@ -41,10 +41,14 @@ class SimulatorBackendTest < Minitest::Test
     end
   end
 
-  def test_existing_ui_or_compiler_refuses_before_boot
-    ["/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app/Contents/MacOS/Simulator", "/usr/bin/xcodebuild"].each do |path|
+  # A running Simulator UI would make the verified cleanup impossible, so it stays an
+  # ownership precondition; a compiler or any other workload is not this session's concern.
+  def test_existing_simulator_ui_blocks_ownership_but_other_native_workloads_do_not
+    @backend.running = [[123, "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app/Contents/MacOS/Simulator"]]
+    assert_raises(SimulatorResources::Refusal) { @backend.recheck }
+    %w[/usr/bin/xcodebuild /usr/bin/cargo /usr/bin/rustc /usr/bin/swift-frontend].each do |path|
       @backend.running = [[123, path]]
-      assert_raises(SimulatorResources::Refusal) { @backend.recheck }
+      assert_nil @backend.recheck, path
     end
   end
 

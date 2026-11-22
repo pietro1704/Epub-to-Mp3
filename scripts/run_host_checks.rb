@@ -7,8 +7,8 @@ require_relative "run_steps"
 
 module HostChecks
   SUITES = %w[test_onnxruntime_simulator_jobs.rb test_simulator_test_backend.rb test_simulator_cli.rb test_simulator_backend.rb test_simulator_resources.rb test_simulator_session.rb
-              test_mise_task_bodies.rb test_release_desktop_workflow.rb test_verify_android_release_signature.rb test_stage_native_notices.rb test_hook_task_routing.rb test_run_steps.rb test_scoped_git_index.rb test_native_build_preflight.rb test_mac_build_budget.rb test_xcode_build_paths.rb
-              test_native_job.rb test_native_job_admission.rb test_native_lease_holders.rb test_host_load.rb test_native_flight_recorder.rb
+              test_mise_task_bodies.rb test_release_desktop_workflow.rb test_verify_android_release_signature.rb test_stage_native_notices.rb test_hook_task_routing.rb test_run_steps.rb test_scoped_git_index.rb test_mac_build_budget.rb test_xcode_build_paths.rb
+              test_native_job.rb test_native_job_host_notes.rb test_native_lease_holders.rb test_host_load.rb test_native_flight_recorder.rb
               test_native_task_wiring.rb test_heavy_task_wiring.rb test_native_entrypoint_safety.rb test_update_instruction.rb
               test_git_hygiene.rb test_run_host_checks.rb test_xcresult_job.rb test_linux_app_launcher.rb check_app_icons.rb
               test_agent_collaboration.mjs test_install_agent_collaboration.mjs

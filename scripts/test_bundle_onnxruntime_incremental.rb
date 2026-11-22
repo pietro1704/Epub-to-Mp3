@@ -19,7 +19,7 @@ class OnnxIncrementalPackagingTest < Minitest::Test
     @fixture = File.join(@temporary, 'checkout')
     scripts = File.join(@fixture, 'scripts')
     FileUtils.mkdir_p([scripts, File.join(@fixture, 'target/onnxruntime-macos-prebuilt')])
-    %w[prepare_onnxruntime_macos.rb fetch_onnxruntime_macos.rb native_job.rb native_build_preflight.rb mac_build_budget.rb].each do |name|
+    %w[prepare_onnxruntime_macos.rb fetch_onnxruntime_macos.rb native_job.rb mac_build_budget.rb].each do |name|
       FileUtils.cp(File.join(ROOT, 'scripts', name), scripts)
     end
     @script = File.join(scripts, 'bundle_onnxruntime_apple.sh')

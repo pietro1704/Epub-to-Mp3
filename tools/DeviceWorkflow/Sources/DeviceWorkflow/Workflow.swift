@@ -183,7 +183,6 @@ public final class Workflow {
         if !options.skipBuild {
             let buildStart = ProcessInfo.processInfo.systemUptime
             report["status"] = "building"
-            try command(["mise", "exec", "--", "ruby", root.appendingPathComponent("scripts/native_build_preflight.rb").path], "nativeBuildPreflight")
             try command(["bash", root.appendingPathComponent("scripts/ios_disk_guard.sh").path], "diskGuard")
             try command(["xcodegen", "generate", "--spec", project.appendingPathComponent("project.yml").path, "--project", project.path], "projectGeneration")
             try command(["bash", root.appendingPathComponent("scripts/verify_converter_ffi_ios.sh").path], "rustArtifactVerification")

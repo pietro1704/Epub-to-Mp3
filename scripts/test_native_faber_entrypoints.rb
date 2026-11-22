@@ -9,7 +9,7 @@ require 'json'
 require 'timeout'
 require 'uri'
 
-# Real drivers/supervisor, isolated preflight and real child processes; no native
+# Real drivers/supervisor, isolated storage notes and real child processes; no native
 # compiler, download, Apple service, app or device is started by these fixtures.
 class NativeFaberEntrypointsTest < Minitest::Test
   ROOT = File.expand_path('..', __dir__)
@@ -36,33 +36,22 @@ class NativeFaberEntrypointsTest < Minitest::Test
       content = content.gsub('/tmp/epub2mp3.heavy-job.lock', @lock)
       File.write(File.join(@scripts, name), content)
     end
-    File.write(File.join(@scripts, 'native_build_preflight.rb'), <<~RUBY)
-      module NativeBuildPreflight
-        def self.check
-          'Fixture: Simulator is booted' if ENV['FIXTURE_BLOCKED'] == '1'
-        end
-      end
-    RUBY
     # Keep this driver fixture independent of host caches and disk capacity;
     # the real storage policy has its own fixture suite.
     File.write(File.join(@scripts, 'mac_build_budget.rb'), <<~'RUBY')
       module MacBuildBudget
         ROOT = File.expand_path('..', __dir__)
-        def self.check(*destinations)
-          return 'Fixture: build storage budget exceeded' if ENV['FIXTURE_STORAGE_BLOCKED'] == '1'
+        def self.advise(*destinations)
+          note = 'Fixture: build storage budget exceeded' if ENV['FIXTURE_STORAGE_BLOCKED'] == '1'
           blocked = ENV['FIXTURE_FULL_VOLUME']
-          'Fixture: destination volume is full' if destinations.any? { |path| File.expand_path(path) == blocked }
-        end
-
-        def self.interval
-          10
+          note ||= 'Fixture: destination volume is full' if destinations.any? { |path| File.expand_path(path) == blocked }
+          warn "native_job: advisory, not a refusal: #{note}" if note
+          note
         end
       end
       if $PROGRAM_NAME == __FILE__
         abort 'Expected check and a destination' unless ARGV.shift == 'check' && ARGV.size == 1
-        error = MacBuildBudget.check(*ARGV)
-        warn error if error
-        exit(error ? 75 : 0)
+        MacBuildBudget.advise(*ARGV)
       end
     RUBY
     File.write(File.join(@scripts, 'prepare_onnxruntime_macos.rb'), <<~RUBY)
@@ -88,7 +77,7 @@ class NativeFaberEntrypointsTest < Minitest::Test
     FileUtils.chmod(0o755, File.join(@bin, 'mise'))
     @environment = {
       'PATH' => "#{@bin}:#{ENV.fetch('PATH')}", 'FIXTURE_LOCK' => @lock,
-      'FIXTURE_EVENTS' => @events, 'FIXTURE_BLOCKED' => '0', 'FIXTURE_STORAGE_BLOCKED' => '0',
+      'FIXTURE_EVENTS' => @events, 'FIXTURE_STORAGE_BLOCKED' => '0',
       'EPUB_NATIVE_LEASE_FD' => nil, 'EPUB_NATIVE_LEASE_PATH' => nil
     }
   end
@@ -105,14 +94,6 @@ class NativeFaberEntrypointsTest < Minitest::Test
     Open3.capture3(@environment.merge(environment), *command, chdir: @directory)
   end
 
-  def test_blocked_preflight_precedes_every_preparation_or_compiler
-    DRIVERS.each_key do |driver|
-      output, error, status = invoke(driver, { 'FIXTURE_BLOCKED' => '1' })
-      assert_equal 75, status.exitstatus, "#{driver}: #{output}#{error}"
-      refute File.exist?(@events), "#{driver} started preparation or a compiler"
-    end
-  end
-
   def test_forged_inherited_descriptor_never_bypasses_entrypoints
     DRIVERS.each_key do |driver|
       output, error, status = invoke(driver, { 'EPUB_NATIVE_LEASE_FD' => '999999',
@@ -122,16 +103,21 @@ class NativeFaberEntrypointsTest < Minitest::Test
     end
   end
 
-  def test_storage_refusal_precedes_every_preparation_or_compiler
+  def test_low_storage_is_a_note_and_every_driver_still_starts_its_work
     DRIVERS.each_key do |driver|
+      File.unlink(@events) if File.exist?(@events)
       output, error, status = invoke(driver, { 'FIXTURE_STORAGE_BLOCKED' => '1' })
-      assert_equal 75, status.exitstatus, "#{driver}: #{output}#{error}"
-      assert_includes error, 'Fixture: build storage budget exceeded'
-      refute File.exist?(@events), "#{driver} started preparation or a compiler after storage refusal"
+      assert_includes error, 'advisory, not a refusal: Fixture: build storage budget exceeded', "#{driver}: #{output}#{error}"
+      # Only the Flutter desktop driver can run to its child in this fixture checkout;
+      # the others end at a tool or helper the fixture does not provide, never at the note.
+      next unless driver == 'build_flutter_desktop.rb'
+
+      assert File.exist?(@events), "#{driver} was stopped by a storage note: #{output}#{error}"
+      assert_equal 23, status.exitstatus, "#{driver}: #{output}#{error}"
     end
   end
 
-  def test_drivers_refuse_each_full_output_volume
+  def test_drivers_note_each_full_output_volume_and_keep_going
     {
       'build_converter_ffi_android.rb' => %w[target/piper-android target/espeak-data],
       'build_flutter_android.rb' => %w[flutter_app/build],
@@ -139,24 +125,23 @@ class NativeFaberEntrypointsTest < Minitest::Test
     }.each do |driver, destinations|
       destinations.each do |destination|
         volume = File.join(@directory, destination)
+        File.unlink(@events) if File.exist?(@events)
         _, error, status = invoke(driver, { 'FIXTURE_FULL_VOLUME' => volume })
-        assert_equal 75, status.exitstatus, "#{driver}: #{error}"
-        assert_includes error, 'destination volume is full'
-        refute File.exist?(@events), "#{driver} started work on the full volume"
+        assert_includes error, 'destination volume is full', "#{driver}: #{error}"
+        refute_equal 75, status.exitstatus, "#{driver}: #{error}"
       end
     end
   end
 
-  def test_flutter_tasks_refuse_a_full_output_volume_before_tools_or_device_selection
+  def test_flutter_tasks_note_a_full_output_volume_and_keep_going
     %w[flutter:run flutter:run-desktop flutter:test native-tts:android:test].each do |name|
       metadata, error, status = Open3.capture3('mise', 'tasks', 'info', name, '--json', chdir: ROOT)
       assert status.success?, error
       body = JSON.parse(metadata).fetch('run').join("\n")
       environment = @environment.merge('FIXTURE_FULL_VOLUME' => File.join(@directory, 'flutter_app/build'))
       _, error, status = Open3.capture3(environment, '/bin/bash', '-euo', 'pipefail', '-c', body, chdir: @directory)
-      assert_equal 75, status.exitstatus, "#{name}: #{error}"
-      assert_includes error, 'destination volume is full'
-      refute File.exist?(@events), "#{name} started before the storage check"
+      assert_includes error, 'destination volume is full', "#{name}: #{error}" unless name == 'native-tts:android:test'
+      refute_equal 75, status.exitstatus, "#{name}: #{error}"
     end
   end
 
@@ -174,10 +159,10 @@ class NativeFaberEntrypointsTest < Minitest::Test
     output, error, status = Open3.capture3(@environment, *command, chdir: @directory)
     assert_equal 29, status.exitstatus, "#{output}#{error}"
     assert_equal ['literal space', '$not-expanded', '--model=pt_BR-faber-medium'].inspect, output.strip
-    output, error, status = Open3.capture3(@environment.merge('FIXTURE_BLOCKED' => '1'),
+    output, error, status = Open3.capture3(@environment.merge('FIXTURE_STORAGE_BLOCKED' => '1'),
                                          *command, chdir: @directory)
-    assert_equal 75, status.exitstatus, "#{output}#{error}"
-    assert_empty output
+    assert_equal 29, status.exitstatus, "a storage note never stops the child: #{output}#{error}"
+    assert_includes error, 'advisory, not a refusal'
   end
 
   def test_clean_desktop_build_preserves_child_failure_and_real_lease
@@ -237,16 +222,17 @@ class NativeFaberEntrypointsTest < Minitest::Test
     assert_equal %w[flutter build apk --debug --target-platform android-arm64], events.last
   end
 
-  def test_actual_native_task_bodies_refuse_before_preparation
+  def test_actual_native_task_bodies_still_enter_the_supervisor_and_only_note_low_storage
     %w[converter-ffi:build converter-ffi:build:local native-tts:rust:test converter-ffi:ios-device native-tts:android:test onnxruntime:host].each do |name|
       metadata, error, status = Open3.capture3('mise', 'tasks', 'info', name, '--json', chdir: ROOT)
       assert status.success?, error
       body = JSON.parse(metadata).fetch('run').join("\n")
-      output, error, status = Open3.capture3(@environment.merge('FIXTURE_BLOCKED' => '1'),
-                                           '/bin/bash', '-euo', 'pipefail', '-c', body, chdir: @directory)
-      expected = name == 'onnxruntime:host' && !RUBY_PLATFORM.include?('darwin') ? 0 : 75
-      assert_equal expected, status.exitstatus, "#{name}: #{output}#{error}"
-      refute File.exist?(@events), "#{name} started preparation or a compiler"
+      File.unlink(@events) if File.exist?(@events)
+      output, error, = Open3.capture3(@environment.merge('FIXTURE_STORAGE_BLOCKED' => '1'),
+                                      '/bin/bash', '-euo', 'pipefail', '-c', body, chdir: @directory)
+      next if name == 'onnxruntime:host' && !RUBY_PLATFORM.include?('darwin')
+
+      assert_includes error, 'advisory, not a refusal: Fixture: build storage budget exceeded', "#{name}: #{output}#{error}"
     end
   end
 

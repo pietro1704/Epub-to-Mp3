@@ -5,6 +5,10 @@ require "open3"
 require "fileutils"
 
 # Build storage only: books, models, app data, tools and evidence are excluded.
+# Free space is advisory: a low reading is reported, never a reason to refuse or
+# stop a build (Pietro removed the storage floors on 2026-11-22). Only explicit
+# cache cleanup keeps its own safety checks, because deleting a cache under a
+# running build corrupts it.
 module MacBuildBudget
   ROOT = File.expand_path("..", __dir__)
   POLICY = File.join(ROOT, "config/mac-build-budget.json")
@@ -20,9 +24,7 @@ module MacBuildBudget
   def self.policy
     value = JSON.parse(File.read(POLICY))
     raise "Invalid build budget version" unless value["version"] == 1
-    %w[minimum_free_gib check_interval_seconds].each do |key|
-      raise "Invalid build budget #{key}" unless value[key].is_a?(Integer) && value[key].positive?
-    end
+    raise "Invalid build budget warn_free_gib" unless value["warn_free_gib"].is_a?(Integer) && value["warn_free_gib"].positive?
     value
   end
 
@@ -73,10 +75,11 @@ module MacBuildBudget
   end
 
   def self.evaluate(limits, free_bytes:, destination:, **)
-    floor = limits.fetch("minimum_free_gib")
-    "Free disk below #{floor} GiB at #{destination}; build blocked." if free_bytes < floor * GIB
+    floor = limits.fetch("warn_free_gib")
+    "Free disk below #{floor} GiB at #{destination}." if free_bytes < floor * GIB
   end
 
+  # The first low-space note, or nil. Unreadable storage is a note too.
   def self.check(*destinations, host: RUBY_PLATFORM)
     return unless build_host?(host)
     limits = policy
@@ -86,11 +89,14 @@ module MacBuildBudget
     end
     nil
   rescue StandardError => error
-    "Build storage inspection failed (#{error.class}: #{error.message}); build blocked."
+    "Build storage inspection failed (#{error.class}: #{error.message})."
   end
 
-  def self.interval(host: RUBY_PLATFORM)
-    build_host?(host) ? policy.fetch("check_interval_seconds") : 10
+  # Reports the note without ever blocking the build.
+  def self.advise(*destinations, host: RUBY_PLATFORM)
+    note = check(*destinations, host: host)
+    warn "native_job: advisory, not a refusal: #{note}" if note
+    note
   end
 
   def self.prune(lock: LOCK)
@@ -112,21 +118,19 @@ module MacBuildBudget
     command, *destinations = arguments
     case command
     when "check"
-      error = check(*destinations)
-      warn error if error
-      return error ? 75 : 0
+      advise(*destinations)
     when "status"
       raise "Build storage status requires macOS or Arch Linux" unless build_host?
       limits = policy
       destinations = [ROOT] if destinations.empty?
       snapshots = destinations.map { |path| metrics(path) }
       details = snapshots.one? ? snapshots.first : { destinations: snapshots }
-      blocked = snapshots.lazy.map { |snapshot| evaluate(limits, **snapshot) }.find(&:itself)
-      puts JSON.pretty_generate({ policy: limits, **details, blocked: blocked })
+      low = snapshots.lazy.map { |snapshot| evaluate(limits, **snapshot) }.find(&:itself)
+      puts JSON.pretty_generate({ policy: limits, **details, low_space_note: low })
     when "prune", "prune-if-low"
       raise "Cleanup requires macOS" unless RUBY_PLATFORM.include?("darwin")
       raise "Cleanup does not accept a destination" unless destinations.empty?
-      prune if command == "prune" || metrics.fetch(:free_bytes) < policy.fetch("minimum_free_gib") * GIB
+      prune if command == "prune" || metrics.fetch(:free_bytes) < policy.fetch("warn_free_gib") * GIB
     else raise "Usage: mac_build_budget.rb check|status [DIRECTORY ...] | prune|prune-if-low"
     end
     0

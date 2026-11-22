@@ -136,8 +136,6 @@ module MacValidate
                          'reason' => compatible ? 'Verified build receipt' : 'Build identity unknown or changed; no build or launch performed')
     when 'gui'
       raise 'Build identity unknown or changed; use explicit incremental build before GUI validation' unless compatible
-      preflight = NativeBuildPreflight.check
-      raise "GUI launch refused: #{preflight}" if preflight
       capture('codesign', '--verify', '--deep', '--strict', app)
       run!('open', app)
     when 'build'

@@ -6,16 +6,19 @@ require "json"
 require "rbconfig"
 require "etc"
 require "time"
-require_relative "native_build_preflight"
 require_relative "mac_build_budget"
 
-# One lease spans inspection and execution. Descendants receive the actual open
-# file description, never an environment-only permission to skip coordination.
+# One lease serializes jobs that write shared build output (DerivedData, Cargo
+# targets, ONNX Runtime trees). Descendants receive the actual open file
+# description, never an environment-only permission to skip coordination.
+# Host load, memory, thermal, storage and Simulator state are advisory only:
+# Pietro removed every host guard on 2026-11-22, so they are logged and never
+# refuse, delay or stop a job.
 module NativeJob
   # One absolute path for every worktree and session. /tmp is emptied at reboot;
   # the next job recreates the file, and no holder can survive a reboot.
   LOCK_PATH = "/tmp/epub2mp3.heavy-job.lock"
-  # Host admission, priority and flight recording belong to the one real host
+  # Host notes, priority and flight recording belong to the one real host
   # lease. A fixture lease (an explicit --lock-path, or this script copied with
   # LOCK_PATH rewritten) exercises only the lease protocol, so host load never
   # leaks into host tests and those copies need no further files. This value is
@@ -25,14 +28,15 @@ module NativeJob
   FD_ENV = "EPUB_NATIVE_LEASE_FD"
   PATH_ENV = "EPUB_NATIVE_LEASE_PATH"
   BUILD_DIRS_ENV = "EPUB_NATIVE_BUILD_DIRECTORIES"
-  # Queue instead of polling: seconds to wait for the lease and for admission.
+  # Queue instead of polling: seconds to wait for the lease.
   WAIT_ENV = "EPUB_NATIVE_WAIT_SECONDS"
   LEASE_RETRY_SECONDS = 5
   PHASES = %w[build simulator heavy].freeze
   SESSION_KEYS = { "claude" => "CLAUDE_CODE_SESSION_ID", "herdr" => "HERDR_PANE_ID", "agent" => "AI_AGENT" }.freeze
-  # GitHub-hosted runners are disposable VMs without this Mac's kernel-panic
-  # history; the owner approved parallel Cargo/CMake there (2026-11-19). Every
-  # other host, including this Mac, keeps exactly one compiler job.
+  # GitHub-hosted runners are disposable VMs; the owner approved parallel
+  # Cargo/CMake there (2026-11-19). Every other host, including this Mac,
+  # defaults to one compiler job. This is a default only: an explicit -j flag
+  # is never refused.
   # Environment variables alone can be copied into a local shell, so the hosted
   # runner's account home is also required. A lower CARGO_BUILD_JOBS set by the
   # caller (for example a workflow that pins 1) is honored.
@@ -64,7 +68,7 @@ module NativeJob
     host.include?("darwin") && !hosted_runner? && File.expand_path(path) == HOST_LEASE
   end
 
-  # Admission, priority and the flight recorder, loaded on demand so a fixture
+  # Host notes, priority and the flight recorder, loaded on demand so a fixture
   # copy of this script stays self-contained.
   def self.host_services
     require_relative "native_host_services"
@@ -85,7 +89,7 @@ module NativeJob
 
   # Ruby build drivers call this before preparation or compiler work. The first
   # invocation becomes a supervised child; that child validates its real inherited
-  # lease and rechecks host state without opening a second independent lock.
+  # lease without opening a second independent lock.
   def self.build_entrypoint(file, arguments = [], build_dir: nil)
     command = [RbConfig.ruby, File.expand_path(file), *arguments]
     unless ENV[FD_ENV] || ENV[PATH_ENV]
@@ -99,11 +103,7 @@ module NativeJob
     unless (destinations - monitored).empty?
       exit run(phase: "build", command: command, build_dir: destinations)
     end
-    error = NativeBuildPreflight.check || MacBuildBudget.check(*destinations)
-    if error
-      warn error
-      exit 75
-    end
+    MacBuildBudget.advise(*destinations)
     nil
   rescue StandardError => error
     warn "native_job: #{error.message}"
@@ -286,27 +286,6 @@ module NativeJob
     nil
   end
 
-  def self.parallelism_error(command)
-    return nil unless RUBY_PLATFORM.include?("darwin")
-    compiler = command.index { |part| %w[cargo xcodebuild swift cmake].include?(File.basename(part)) }
-    return nil unless compiler
-    arguments = command.drop(compiler + 1)
-    arguments.each_with_index do |part, index|
-      return "Parallel native targets are disabled on this Mac" if part == "-parallelizeTargets"
-      flag = %w[-jobs --jobs -j].include?(part)
-      flag ||= File.basename(command[compiler]) == "cmake" && part == "--parallel"
-      compact = part.match(/\A-j(-?\d+)\z/) || part.match(/\A--(?:jobs|parallel)=(.+)\z/)
-      next unless flag || compact
-      number = flag ? arguments[index + 1] : compact[1]
-      next if number == "1"
-      # Only Cargo and CMake use the hosted-runner allowance; Xcode and Swift stay serial.
-      hosted = %w[cargo cmake].include?(File.basename(command[compiler])) && build_jobs > 1
-      allowed = hosted && number.to_s.match?(/\A[1-9]\d*\z/) && Integer(number, 10) <= build_jobs
-      return "Mac compilation requires exactly one job" unless allowed
-    end
-    nil
-  end
-
   def self.option_path(arguments, name)
     arguments.each_with_index do |part, index|
       return arguments.fetch(index + 1) if part == name
@@ -344,41 +323,22 @@ module NativeJob
   end
 
   def self.run(phase:, command:, path: LOCK_PATH, build_dir: nil, wait: nil, expose_lease: true)
-    # Recurrent IGGuC.cpp:2913 panics occurred inside SimMetalHost on this
-    # Intel host. A lease cannot make the GPU driver safe. Keep Simulator
-    # execution quarantined; neither inherited leases nor environment flags
-    # authorize another attempt. Use physical-device verification instead.
-    if phase == "simulator" && RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
-      warn "Intel Simulator execution is quarantined after recurrent IGGuC/SimMetalHost kernel panics. Use physical-device verification; do not retry or boot Simulator."
-      return 75
-    end
-    if phase == "build" && (error = parallelism_error(command))
-      warn error
-      return 75
-    end
     path = File.expand_path(path)
     explicit = wait_seconds(wait)
     deadline = monotonic + (explicit || 0)
     handle, inherited = acquire(path, deadline)
     if phase == "build"
       destinations = build_directories(command, build_dir, inherited: inherited)
-      error = NativeBuildPreflight.check || MacBuildBudget.check(*destinations)
-      if error
-        warn error
-        return 75
-      end
+      MacBuildBudget.advise(*destinations)
     end
     record = holder_record(phase, command)
-    # A nested driver runs inside its owner's admission, priority and record.
+    # A nested driver runs inside its owner's priority and record.
     published = !inherited
     publish(handle, record) if published
     services = published && host_services?(path)
     if services
       host_services
-      if (error = admit(handle, record, explicit, deadline))
-        warn error
-        return 75
-      end
+      advise
       flight = recorder(record)
     end
     argv = services ? prioritized(command) : command
@@ -397,19 +357,8 @@ module NativeJob
     flight&.start(monotonic)
     status = nil
     cancelled_at = nil
-    storage_error = nil
-    storage_interval = MacBuildBudget.interval
-    next_storage_check = Process.clock_gettime(Process::CLOCK_MONOTONIC) + storage_interval
     until status
       now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      if phase == "build" && now >= next_storage_check && !storage_error
-        storage_error = MacBuildBudget.check(*destinations)
-        if storage_error
-          warn storage_error
-          signal ||= "TERM"
-        end
-        next_storage_check = now + storage_interval
-      end
       flight&.tick(now)
       if signal && !cancelled_at
         Process.kill(signal, -pid) rescue Errno::ESRCH
@@ -427,7 +376,7 @@ module NativeJob
       # before killing descendants that ignored it.
       stop_group(pid)
     end
-    code = storage_error ? 75 : (signal ? 128 + Signal.list.fetch(signal) : (status.exitstatus || 128 + status.termsig))
+    code = signal ? 128 + Signal.list.fetch(signal) : (status.exitstatus || 128 + status.termsig)
     flight&.finish(code)
     code
   rescue StandardError => error
@@ -444,8 +393,7 @@ module NativeJob
     handle&.close unless inherited
   end
 
-  # Who holds the lease and whether a new heavy job would be admitted now.
-  # Read-only: it never takes the lock. On the host lease it also lists every
+  # Who holds the lease and the current host readings. Read-only: it never takes the lock. On the host lease it also lists every
   # process that keeps the lease file open, with or without a holder record.
   def self.status(path)
     path = File.expand_path(path)
@@ -454,7 +402,7 @@ module NativeJob
     if host_services?(path)
       host_services
       report["lease"].update(lease_usage(path, record))
-      report["admission"] = admission_report
+      report["host"] = host_report
       report["flight_recorder"] = File.join(NativeFlightRecorder.directory, NativeFlightRecorder::FILE)
     end
     puts JSON.pretty_generate(report)

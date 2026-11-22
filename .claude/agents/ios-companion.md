@@ -41,7 +41,7 @@ before/after evidence; investigate SwiftUI recomputation only in a SwiftUI host.
 For Xcode/signing/packaging or toolchain diagnosis, read [macOS validation](../../docs/agents/macos-validation.md).
 Discover current tools/destinations without setup changes. Compilation uses the
 canonical guarded tasks; verify embedded Rust architecture/platform/ABI and
-signatures with actual platform tools. Simulator execution remains quarantined;
+signatures with actual platform tools. Simulator execution has no host guard since 2026-11-22;
 booting or deleting devices/runtimes is not a diagnostic shortcut. Keep required
 SE1/iOS 15.5 acceptance pending when unavailable. Report build, packaging, XCTest
 execution and visible-app observations separately, with identity and evidence.

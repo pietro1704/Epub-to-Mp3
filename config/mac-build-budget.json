@@ -1,24 +1,17 @@
 {
   "version": 1,
-  "minimum_free_gib": 5,
-  "check_interval_seconds": 10,
-  "admission": {
-    "max_load_percent_of_cpus": 75,
+  "warn_free_gib": 5,
+  "advisory": {
+    "warn_load_percent_of_cpus": 75,
     "warn_swap_used_mib": 1600,
     "warn_compressor_percent_of_memory": 25,
-    "recheck_seconds": 30,
-    "default_wait_seconds": 120,
     "child_niceness": 10,
     "foreign_compilers": ["cargo", "rustc", "xcodebuild", "swift-frontend", "swift-build", "clang"],
     "rationale": {
-      "readings": "Taken on the Intel i5-8259U build host (8 logical CPUs, 8 GiB) between 21:48 BRT on 2026-11-19 and 00:47 BRT on 2026-11-20 (00:48 to 03:47 UTC on 2026-11-20). A job is refused for signs of present stress; sizes that record earlier pressure only warn.",
-      "max_load_percent_of_cpus": "Refuses. 6.00 on 8 CPUs: the 1-minute load average read 2.42-4.96 without a native build and 6.11-14 with overlapping loads. A job waits default_wait_seconds first, so only a load that stays high refuses it.",
-      "memory_pressure": "Refuses unless kern.memorystatus_vm_pressure_level is normal; no threshold to set. The warning level was logged 20:36-20:50 BRT on 2026-11-19. The level was normal with swap at 1551 MiB during one build, at 1016 MiB during another and at 1193 MiB on an idle host.",
-      "thermal": "Refuses when pmset -g therm reports CPU_Speed_Limit or CPU_Scheduler_Limit below 100, or fewer CPUs available; no threshold to set. CPU_Speed_Limit read 100 without a build and 81 during the first serial build after the reboot.",
-      "foreign_compilers": "Refuses. One serial build read a load of 4.24-7.12, inside the range measured without one, so only the process name identifies a compiler started outside the lease.",
-      "warn_swap_used_mib": "Warns only. macOS keeps swap allocated after the pressure that filled it has ended, so the value records history: it read 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build, and 1193 MiB on an idle host with normal memory pressure (00:32 BRT on 2026-11-20), where a limit of 1024 MiB gave a refusal with nothing running. 1600 is above every reading.",
-      "warn_compressor_percent_of_memory": "Warns only, for the same reason. vm.compressor_bytes_used read 368-1807 MiB (4-22% of 8 GiB), and memory pressure was normal at both ends of that range. 25 is above every reading. The larger 'stored in compressor' figure of vm_stat (3978 MiB when this one read 466 MiB) is a different quantity and is not read.",
-      "default_wait_seconds": "Judgment call. The 1-minute load average needs about a minute to fall after a job ends; no settle time was measured.",
+      "scope": "Every value here only produces a note in the log and the flight recorder. Nothing refuses, delays or stops a job: Pietro removed all native host guards on 2026-11-22. Readings were taken on the Intel i5-8259U build host (8 logical CPUs, 8 GiB) between 21:48 BRT on 2026-11-19 and 00:47 BRT on 2026-11-20.",
+      "warn_load_percent_of_cpus": "6.00 on 8 CPUs: the 1-minute load average read 2.42-4.96 without a native build and 6.11-14 with overlapping loads.",
+      "warn_swap_used_mib": "macOS keeps swap allocated after the pressure that filled it has ended, so the value records history: it read 190-696 MiB without a native build, 1016-1551 MiB during one serial iOS build, and 1193 MiB on an idle host with normal memory pressure. 1600 is above every reading.",
+      "warn_compressor_percent_of_memory": "vm.compressor_bytes_used read 368-1807 MiB (4-22% of 8 GiB), and memory pressure was normal at both ends of that range. 25 is above every reading.",
       "child_niceness": "Judgment call. Its effect was not measured."
     }
   },

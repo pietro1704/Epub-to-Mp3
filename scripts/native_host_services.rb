@@ -3,7 +3,7 @@
 require_relative "host_load"
 require_relative "native_flight_recorder"
 
-# The host-wide half of the native supervisor: admission, priority, the flight
+# The host-wide half of the native supervisor: advisory notes, priority, the flight
 # recorder and the list of processes that keep the lease file open. NativeJob
 # loads it only for the real host lease, so a fixture copy of native_job.rb
 # needs none of these files.
@@ -11,33 +11,12 @@ module NativeJob
   NICE = "/usr/bin/nice"
   LSOF = "/usr/sbin/lsof"
 
-  # Holds the lease while waiting, so one job queues and the others are refused.
-  # The load average takes about a minute to settle after a job, so without an
-  # explicit wait a job still waits for the bounded default before it refuses:
-  # consecutive guarded tasks then run, sustained overload is still refused.
-  def self.admit(handle, record, explicit, deadline)
-    limits = HostLoad.limits
-    patience = explicit || limits.fetch("default_wait_seconds")
-    deadline = monotonic + patience unless explicit
-    started = monotonic
-    loop do
-      error, notes = HostLoad.assess
-      unless error
-        warn "native_job: warning, not a refusal: #{notes.join('; ')}. The flight log records it." unless notes.empty?
-        return nil
-      end
-
-      remaining = deadline - monotonic
-      waited = (monotonic - started).round
-      unless remaining.positive?
-        return "Heavy job refused. #{error}#{" Still so after waiting #{waited} s." if waited.positive?} #{HostLoad.advice(limits)}"
-      end
-
-      pause = [remaining, limits.fetch("recheck_seconds")].min
-      publish(handle, record.merge("state" => "waiting for admission"))
-      warn "native_job: not started yet. #{error} Rechecking in #{pause.ceil} s, waiting up to #{patience} s in all#{' (the default)' unless explicit}."
-      sleep pause
-    end
+  # One reading when the job starts, reported as information. Nothing here
+  # refuses, delays or stops a job; the flight log keeps the readings.
+  def self.advise
+    notes = HostLoad.assess
+    warn "native_job: advisory, not a refusal: #{notes.join('; ')}. The flight log records it." unless notes.empty?
+    notes
   end
 
   # Every process that has the lease file open, whoever started it: what really
@@ -67,7 +46,7 @@ module NativeJob
     end
   end
 
-  # For a refusal: the processes to look at, or why they could not be listed.
+  # For a busy lease: the processes to look at, or why they could not be listed.
   def self.lease_users(path)
     holders = lease_holders(path)
     return nil if holders.empty?
@@ -87,13 +66,11 @@ module NativeJob
     { "held" => (true if record), "open_in" => nil, "open_in_error" => "#{error.class}: #{error.message}" }
   end
 
-  # For status: the thresholds, one reading, whether it refuses a new job and
-  # what it only warns about.
-  def self.admission_report
+  # For status: the thresholds, one reading and the notes it earns.
+  def self.host_report
     limits = HostLoad.limits
     sample = HostLoad.sample
-    { "limits" => limits, "sample" => sample, "refusal" => HostLoad.refusal(limits, sample),
-      "warnings" => HostLoad.warnings(limits, sample) }
+    { "limits" => limits, "sample" => sample, "notes" => HostLoad.notes(limits, sample) }
   end
 
   def self.resolvable?(program)

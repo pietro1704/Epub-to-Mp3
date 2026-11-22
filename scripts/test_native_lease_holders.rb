@@ -19,7 +19,7 @@ class NativeLeaseHoldersTest < Minitest::Test
     JSON.parse(output)
   end
 
-  def test_admitted_job_publishes_its_holder_while_running_and_clears_it
+  def test_a_running_job_publishes_its_holder_while_running_and_clears_it
     reader = "File.write(ARGV[0], JSON.generate('record' => JSON.parse(File.read(ENV.fetch('EPUB_NATIVE_LEASE_PATH'))), 'pid' => Process.pid))"
     _, error, status = job(child: [RUBY, "-rjson", "-e", reader, @marker], env: { "MISE_TASK_NAME" => "mac:test:local" })
     assert status.success?, error
@@ -64,15 +64,14 @@ class NativeLeaseHoldersTest < Minitest::Test
     end
   end
 
-  def test_status_shows_the_holder_and_the_admission_verdict_without_locking
+  def test_status_shows_the_holder_and_the_host_notes_without_locking
     never_locks = "#{STUBS}\nFile.class_eval { def flock(*) = raise('status must not take the lock') }"
     report = status_report(stubs: never_locks)
     assert_equal({ "path" => @lock, "held" => false, "holder" => nil, "open_in" => [] }, report["lease"])
-    assert_nil report.dig("admission", "refusal")
-    assert_equal [], report.dig("admission", "warnings")
+    assert_equal [], report.dig("host", "notes")
+    refute report.key?("admission"), "there is no admission verdict any more"
     samples(HEAVY_HISTORY)
-    admission = status_report.fetch("admission")
-    assert_equal [nil, 2], [admission["refusal"], admission["warnings"].length], "status tells a refusal from a warning"
+    assert_equal 2, status_report.dig("host", "notes").length
     samples(IDLE)
     assert_equal File.join(@flight, "flight.jsonl"), report["flight_recorder"]
     refute File.exist?(@lock), "status never creates the lease"
@@ -84,8 +83,8 @@ class NativeLeaseHoldersTest < Minitest::Test
       assert_equal [true, pid, child, "running"],
                    [report.dig("lease", "held"), *report.dig("lease", "holder").values_at("pid", "child", "state")]
       assert_includes report.dig("lease", "open_in"), "#{child} #{LISTED}"
-      assert_match(/load average 7\.12/, report.dig("admission", "refusal"))
-      assert_equal LOADED["load"], report.dig("admission", "sample", "load")
+      assert_match(/load average 7\.12/, report.dig("host", "notes").join(" "))
+      assert_equal LOADED["load"], report.dig("host", "sample", "load")
     end
   end
 
@@ -150,9 +149,9 @@ class NativeLeaseHoldersTest < Minitest::Test
     File.delete(@marker)
     samples(LOADED)
     _, error, status = finished(RUBY, runner, @marker)
-    assert_equal 75, status.exitstatus, error
-    assert_match(/Heavy job refused/, error)
-    refute File.exist?(@marker)
+    assert_equal 23, status.exitstatus, "a loaded host never refuses the suite: #{error}"
+    assert_match(/advisory, not a refusal/, error)
+    assert File.exist?(@marker)
   end
 
   def test_a_suite_started_through_a_shell_inside_the_heavy_job_is_not_refused

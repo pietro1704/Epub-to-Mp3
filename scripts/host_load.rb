@@ -3,14 +3,12 @@
 require "json"
 require "open3"
 
-# Read-only host telemetry and the admission rule for one more heavy job.
-# Thresholds and the readings behind them live under "admission" in
-# config/mac-build-budget.json. A job is refused for signs of present stress:
-# load, kernel memory pressure, thermal limits, a compiler outside the lease.
-# Swap in use and the compressor's size only warn: macOS keeps swap allocated
-# after the pressure that filled it has ended, so they describe what happened
-# earlier, not what is happening now. Admission reduces overlap with load this
-# repository does not control. It is not a kernel-panic or CATERR prevention.
+# Read-only host telemetry, reported as information. Thresholds and the readings
+# behind them live under "advisory" in config/mac-build-budget.json. Nothing
+# here refuses, delays or stops a job: load, kernel memory pressure, thermal
+# limits, a compiler outside the lease, swap and the compressor's size become
+# notes in the log and the flight recorder (Pietro removed the host guards on
+# 2026-11-22). Unreadable telemetry is also only a note.
 module HostLoad
   POLICY = File.expand_path("../config/mac-build-budget.json", __dir__)
   MIB = 1024.0 * 1024
@@ -22,18 +20,17 @@ module HostLoad
   # Absent outside Intel XCPM hosts; recorded when present, never a limit (its scale is undocumented).
   OPTIONAL = %w[machdep.xcpm.cpu_thermal_level].freeze
   PRESSURE = { 1 => "normal", 2 => "warning", 4 => "critical" }.freeze
-  # A guarded step started from inside a build (an Xcode build phase, a compiler
-  # driver) is part of that build, so the compilers that descend from the builds
-  # it runs inside are not a reason to refuse it. Any other compiler on the host
-  # still is, and load, memory and thermal limits always apply.
+  # A step started from inside a build (an Xcode build phase, a compiler driver)
+  # is part of that build, so the compilers that descend from the builds it runs
+  # inside are not reported as foreign.
   ENCLOSING_BUILDS = %w[xcodebuild SWBBuildService XCBBuildService Xcode].freeze
-  LIMITS = %w[max_load_percent_of_cpus warn_swap_used_mib warn_compressor_percent_of_memory
-              recheck_seconds default_wait_seconds child_niceness].freeze
+  LIMITS = %w[warn_load_percent_of_cpus warn_swap_used_mib warn_compressor_percent_of_memory
+              child_niceness].freeze
 
   # Every probe has a deadline and a fixed locale: stuck telemetry must not hang
   # a supervisor, and a comma decimal separator must not change the reading. A
   # probe that fails is an error, never an empty reading: an empty process list
-  # would admit a job beside a running compiler.
+  # would hide a running compiler.
   def self.capture(*argv, seconds: 4, tolerate_failure: false)
     Open3.popen3({ "LC_ALL" => "C", "LANG" => "C" }, *argv, pgroup: true) do |input, stdout, stderr, waiter|
       input.close
@@ -56,12 +53,11 @@ module HostLoad
   end
 
   def self.limits(path = POLICY)
-    value = JSON.parse(File.read(path))["admission"]
-    raise "Missing admission limits in #{File.basename(path)}" unless value.is_a?(Hash)
-    LIMITS.each { |key| raise "Invalid admission #{key}" unless value[key].is_a?(Integer) && !value[key].negative? }
-    raise "Invalid admission recheck_seconds" unless value["recheck_seconds"].positive?
+    value = JSON.parse(File.read(path))["advisory"]
+    raise "Missing advisory limits in #{File.basename(path)}" unless value.is_a?(Hash)
+    LIMITS.each { |key| raise "Invalid advisory #{key}" unless value[key].is_a?(Integer) && !value[key].negative? }
     names = value["foreign_compilers"]
-    raise "Invalid admission foreign_compilers" unless names.is_a?(Array) && names.all? { |name| name.is_a?(String) && !name.empty? }
+    raise "Invalid advisory foreign_compilers" unless names.is_a?(Array) && names.all? { |name| name.is_a?(String) && !name.empty? }
     # The "rationale" texts beside the thresholds are for people.
     value.slice(*LIMITS, "foreign_compilers")
   end
@@ -132,15 +128,17 @@ module HostLoad
       "enclosing_build" => ("#{names[enclosing.first]} #{enclosing.first}" unless enclosing.empty?) }
   end
 
-  # Every reason a new heavy job must not start now; empty when admitted.
-  def self.reasons(limits, sample)
+  # Readings worth a look, as sentences. None of them refuses a job. Swap in use
+  # and the compressor's size record earlier pressure: swap read 1193 MiB on an
+  # idle host whose memory pressure was normal.
+  def self.notes(limits, sample)
     found = []
     cpus = sample.fetch("cpus")
-    ceiling = limits.fetch("max_load_percent_of_cpus") * cpus / 100.0
+    ceiling = limits.fetch("warn_load_percent_of_cpus") * cpus / 100.0
     current = sample.fetch("load").first
     if current > ceiling
       found << format("1-minute load average %.2f exceeds %.2f (%d%% of %d CPUs)",
-                      current, ceiling, limits.fetch("max_load_percent_of_cpus"), cpus)
+                      current, ceiling, limits.fetch("warn_load_percent_of_cpus"), cpus)
     end
     pressure = sample.fetch("pressure")
     found << "memory pressure is #{PRESSURE.fetch(pressure)}" unless pressure == 1
@@ -150,19 +148,11 @@ module HostLoad
     end
     available = sample["cpu_available"]
     found << "only #{available} of #{cpus} CPUs available (thermal throttling)" if available && available < cpus
-    # The lease owner has started nothing yet, so these belong to work this
-    # lease does not coordinate: a package-manager source build, an IDE, another
-    # tool. Only the compilers of the build this step runs inside are its own.
+    # Compilers this lease does not coordinate: a package-manager source build,
+    # an IDE, another tool. Only the compilers of the build this step runs
+    # inside are its own.
     foreign = Array(sample["compilers"]) - Array(sample["own_compilers"])
     found << "a compiler is already running (#{foreign.first(4).join(', ')})" unless foreign.empty?
-    found
-  end
-
-  # Readings worth a look that never refuse a job: sizes that record earlier
-  # pressure. Swap in use was read at 1193 MiB on an idle host whose memory
-  # pressure was normal.
-  def self.warnings(limits, sample)
-    found = []
     swap = sample.fetch("swap_used_mib")
     if swap > limits.fetch("warn_swap_used_mib")
       found << format("swap in use %.0f MiB is above %d MiB", swap, limits.fetch("warn_swap_used_mib"))
@@ -175,28 +165,11 @@ module HostLoad
     found
   end
 
-  # Why a heavy job may not start now, as one sentence; nil when it may.
-  def self.refusal(limits, sample)
-    found = reasons(limits, sample)
-    "The host is already loaded: #{found.join('; ')}." unless found.empty?
-  end
-
-  # What to do about a refusal. The load average outlasts the job that raised
-  # it, so the next job waits before it gives up.
-  def self.advice(limits)
-    "The load average settles about a minute after another job, so a wait is expected: the default is " \
-      "#{limits.fetch('default_wait_seconds')} s, and --wait SECONDS or EPUB_NATIVE_WAIT_SECONDS sets another " \
-      "(0 refuses at once). Inspect with `ruby scripts/native_job.rb status`."
-  end
-
-  # One reading judged once: the refusal (nil when the job may start) and the
-  # warnings. Unreadable telemetry blocks the job, like every other native
-  # guard here.
+  # One reading judged once. Unreadable telemetry is a note, never a refusal.
   def self.assess(sampler: method(:sample), policy: method(:limits))
     limits = policy.call
-    reading = sampler.call
-    [refusal(limits, reading), warnings(limits, reading)]
+    notes(limits, sampler.call)
   rescue StandardError => error
-    ["Host load inspection failed (#{error.class}: #{error.message}).", []]
+    ["host load inspection failed (#{error.class}: #{error.message})"]
   end
 end
