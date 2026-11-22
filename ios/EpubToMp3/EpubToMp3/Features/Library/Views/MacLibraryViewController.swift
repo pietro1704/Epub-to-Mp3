@@ -98,7 +98,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         let add = toolbarAddButton
         add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
         add.target = self
-        add.action = #selector(addTapped)
+        add.action = #selector(addTapped(_:))
         add.bezelStyle = .texturedRounded
         add.setAccessibilityLabel(L10n.string("library.addBook"))
         add.setAccessibilityIdentifier("library.add")
@@ -155,7 +155,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         addButton.title = L10n.string("library.addBook")
         addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
         addButton.target = self
-        addButton.action = #selector(addTapped)
+        addButton.action = #selector(addTapped(_:))
         addButton.isHidden = true
         addButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyLabel)
@@ -231,7 +231,27 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     }
 
     @objc
-    private func addTapped() {
+    private func addTapped(_ sender: NSButton) {
+        let menu = NSMenu()
+        let files = NSMenuItem(title: L10n.string("discovery.chooseFiles"), action: #selector(chooseFiles), keyEquivalent: "")
+        let discovery = NSMenuItem(title: L10n.string("discovery.title"), action: #selector(showPublicDomainDiscovery),
+                                   keyEquivalent: "")
+        for item in [files, discovery] {
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY), in: sender)
+    }
+
+    @objc private func showPublicDomainDiscovery() {
+        let discovery = PublicDomainDiscovery { [library] in try await library.importBookAsync(from: $0) }
+        let controller = MacPublicDomainViewController(discovery: discovery) { [weak self] book in
+            self?.open(book)
+        }
+        presentAsSheet(controller)
+    }
+
+    @objc private func chooseFiles() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseFiles = true
@@ -257,7 +277,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     }
 
     func importBooks() {
-        addTapped()
+        chooseFiles()
     }
 
     func focusSearch() {

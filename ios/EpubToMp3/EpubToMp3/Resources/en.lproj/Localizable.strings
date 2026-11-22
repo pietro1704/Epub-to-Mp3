@@ -290,7 +290,7 @@
 "convert.error.unsupportedBookType" = "This book has no text to convert to audio.";
 
 /* === LibraryView === */
-"library.addBookHint" = "Choose one or more EPUB or PDF books.";
+"library.addBookHint" = "Choose local files or find public-domain books.";
 "library.bookList" = "Book library";
 "library.tags" = "Tags";
 "player.openFullPlayer" = "Open full player";
@@ -590,3 +590,35 @@
 "models.missing.message" = "No downloaded model can read this book’s language (%@). Download one on the Models screen.";
 "models.missing.open" = "Open Models";
 "models.systemVoice" = "System voice";
+
+/* Free book discovery */
+"discovery.chooseFiles" = "Choose Files…";
+"discovery.title" = "Find Free Books";
+"discovery.search" = "Title or author";
+"discovery.searchAction" = "Search";
+"discovery.language" = "Language";
+"discovery.language.all" = "All languages";
+"discovery.language.pt" = "Portuguese";
+"discovery.language.en" = "English";
+"discovery.gutenbergRights" = "Project Gutenberg · Public domain in the U.S. Check the edition’s rights where you live.";
+"discovery.brazilCatalog" = "Brazil · Browse MEC Livros (opens browser)";
+"discovery.more" = "More results";
+"discovery.download" = "Download and Import";
+"discovery.source" = "View edition source";
+"discovery.close" = "Close";
+"discovery.searching" = "Searching book catalogs…";
+"discovery.noResults" = "No compatible editions on this page.";
+"discovery.searchFailed" = "Search unavailable. Try again.";
+"discovery.downloading" = "Downloading edition…";
+"discovery.importing" = "Importing into your library…";
+"discovery.imported" = "Ready in your library.";
+"discovery.downloadFailed" = "Download failed. Select the edition to try again.";
+"discovery.importFailed" = "Import failed. Select the edition to try again.";
+"discovery.cancelled" = "Cancelled.";
+"discovery.gutenbergUnavailable" = "Project Gutenberg search is unavailable. Showing verified editions that match your search.";
+"discovery.provider.gutenberg" = "Project Gutenberg";
+"discovery.provider.brasiliana" = "Biblioteca Brasiliana Guita e José Mindlin (USP)";
+"discovery.provider.camara" = "Edições Câmara";
+"discovery.rights.gutenberg" = "Public domain in the US";
+"discovery.rights.brasiliana" = "Public domain according to BBM/USP";
+"discovery.rights.camara" = "Free publisher download · PDF edition rights reserved";
