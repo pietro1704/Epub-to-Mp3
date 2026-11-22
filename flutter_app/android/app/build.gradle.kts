@@ -50,7 +50,10 @@ android {
             }
         }
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            // Release Desktop signs the unsigned APK separately with the pinned key.
+            if (providers.environmentVariable("EPUBTOPMP3_ANDROID_OFFICIAL_RELEASE").orNull != "1") {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

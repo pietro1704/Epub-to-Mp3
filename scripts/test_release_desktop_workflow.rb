@@ -90,12 +90,16 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
   end
 
   def test_android_publication_requires_the_staged_source_notice_in_the_signed_apk
-    command = @jobs.fetch("android").fetch("steps").find { |step| step["name"] == "Rename APK" }.fetch("run")
+    steps = @jobs.fetch("android").fetch("steps")
+    audit = index(steps) { |step| step["name"] == "Verify signed APK native notices" }
+    assert_operator index(steps) { |step| step["name"] == "Sign and verify the official Android APK" }, :<, audit
+    assert_operator audit, :<, index(steps) { |step| step.dig("with", "name") == "release-android" }
+    command = steps[audit].fetch("run")
     Dir.mktmpdir("release-android-notice") do |directory|
       notice = "assets/ThirdPartyNotices/SOURCE.md"
       packaged = File.join(directory, notice)
       staged = File.join(directory, "flutter_app/android/app/src/main", notice)
-      apk = File.join(directory, "flutter_app/build/app/outputs/flutter-apk/app-release.apk")
+      apk = File.join(directory, "EpubToMp3_android.apk")
       [packaged, staged, apk].each { |file| FileUtils.mkdir_p(File.dirname(file)) }
       File.write(packaged, "validated source\n")
       _, error, status = Open3.capture3("zip", "-q", apk, notice, chdir: directory)
@@ -104,14 +108,35 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
       File.write(staged, "different source\n")
       _, _, status = Open3.capture3("bash", "-eo", "pipefail", "-c", command, chdir: directory)
       refute status.success?
-      release = File.join(directory, "EpubToMp3_android.apk")
-      refute File.exist?(release)
-
       FileUtils.cp(packaged, staged)
       _, error, status = Open3.capture3("bash", "-eo", "pipefail", "-c", command, chdir: directory)
       assert status.success?, error
-      assert_equal File.binread(apk), File.binread(release)
     end
+  end
+
+  def test_official_android_signing_is_required_before_build_and_publication
+    steps = @jobs.fetch("android").fetch("steps")
+    reference = index(steps) { |step| step["name"] == "Require official Android signing inputs" }
+    build = index(steps) { |step| step["name"] == "Build APK (release)" }
+    sign = index(steps) { |step| step["name"] == "Sign and verify the official Android APK" }
+    assert_operator reference, :<, build
+    assert_operator build, :<, sign
+    assert_equal "1", steps[build].dig("env", "EPUBTOPMP3_ANDROID_OFFICIAL_RELEASE")
+    refute_includes steps[build].fetch("env").to_s, "secrets."
+    assert_equal 4, steps[sign].fetch("env").size
+    assert_includes steps[sign].fetch("run"), "--ks-pass env:APK_STORE_PASSWORD --key-pass env:APK_KEY_PASSWORD"
+    assert_includes steps[sign].fetch("run"), "mise exec -- ruby scripts/verify_android_release_signature.rb"
+
+    publisher = @jobs.fetch("publish")
+    assert_includes publisher.fetch("needs"), "android"
+    publish_steps = publisher.fetch("steps")
+    download = index(publish_steps) { |step| step.fetch("uses", "").start_with?("actions/download-artifact@") }
+    verify = index(publish_steps) { |step| step.fetch("run", "").include?("verify_android_release_signature.rb release-assets/EpubToMp3_android.apk") }
+    publish = index(publish_steps) { |step| step.fetch("run", "").include?("gh release upload") }
+    assert_operator download, :<, verify
+    assert_operator verify, :<, publish
+    assert_includes publish_steps[publish].fetch("run"), "release-assets/EpubToMp3_android.apk"
+    refute_includes publish_steps[publish].fetch("run"), "release-assets/*.apk"
   end
 
   def test_release_source_accepts_exact_historical_commit_and_rejects_off_history_objects
