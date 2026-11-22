@@ -15,6 +15,8 @@ Voice options:
   --engine {edge,piper,system}  --fallback-engine {none,edge,piper,system}
   --allow-online-fallback | --no-online-fallback
   --voice VOICE  --model MODEL
+  --fallback-voice VOICE        requires --fallback-engine
+  --fallback-model MODEL        requires --fallback-engine and a model for that engine
 
 Chapter selection (CHAPTER is a chapter index such as 3 or 1.2, or position:N, zero-based):
   --chapter CHAPTER             repeatable
