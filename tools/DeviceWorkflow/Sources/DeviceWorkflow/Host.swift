@@ -151,20 +151,9 @@ public enum HostProcess {
         } catch { return "" }
     }
 
-    public static func resourceCheck() throws {
-        var memory: UInt64 = 0
-        var size = MemoryLayout<UInt64>.size
-        guard sysctlbyname("hw.memsize", &memory, &size, nil, 0) == 0 else {
-            throw WorkflowError("Cannot read native host resource capacity.")
-        }
-        #if arch(x86_64)
-        if memory <= 8 * 1024 * 1024 * 1024 {
-            var loads = [Double](repeating: 0, count: 3)
-            guard getloadavg(&loads, 3) == 3 else { throw WorkflowError("Cannot read host load.") }
-            guard loads[0] <= 6 else { throw WorkflowError("Host load exceeds 6; explicitly retry after the heavy job ends.") }
-        }
-        #endif
-    }
+    /// Host load and memory are advisory since Pietro removed all native host
+    /// guards on 2026-11-22; physical-device work never refuses on them.
+    public static func resourceCheck() throws {}
 }
 
 public final class FileLease {
