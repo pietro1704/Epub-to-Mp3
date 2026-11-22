@@ -1,7 +1,6 @@
-<fieldset id="narration-policy" data-controller="narration-policy model-install"
+<fieldset id="narration-policy" data-controller="narration-policy"
           data-narration-policy-strings-value="<%= t("form.ttsPreferences").to_json %>"
-          data-model-install-strings-value="<%= t("form.ttsPreferences").slice(:installing, :installed).merge(storageBlocked: t("narration.storageBlocked")).to_json %>"
-          data-action="change->narration-policy#change reset@document->narration-policy#onFormReset">
+          data-action="change->narration-policy#change reset@document->narration-policy#onFormReset model-install:installed->narration-policy#refreshInstalledManual">
   <legend><%= t("narration.legend") %></legend>
   <p><%= t("form.ttsPreferences.capability") %></p>
   <label><%= t("form.ttsPreferences.primary") %> <select disabled data-narration-policy-target="primary"></select></label>
@@ -11,7 +10,14 @@
     <label><%= t("form.ttsPreferences.manualVoice") %> <select data-narration-policy-target="manual"></select></label>
     <label><input type="checkbox" data-narration-policy-target="reserve"><%= t("form.ttsPreferences.reserve") %></label>
   </div>
-  <button type="button" disabled data-model-install-target="button" data-action="model-install#install"><%= t("form.ttsPreferences.install") %></button>
-  <output data-model-install-target="status"></output>
+  <details data-controller="model-install"
+           data-model-install-strings-value="<%= t("form.ttsPreferences").slice(:installing, :installed).merge(storageBlocked: t("narration.storageBlocked")).to_json %>"
+           data-action="reset@document->model-install#onFormReset">
+    <summary><%= t("form.ttsPreferences.downloads") %></summary>
+    <label><input type="checkbox" data-model-install-target="includeLow" data-action="model-install#refreshModels"><%= t("form.ttsPreferences.showLowQuality") %></label>
+    <label><%= t("form.ttsPreferences.downloadModel") %> <select disabled data-model-install-target="model" data-action="model-install#check"></select></label>
+    <button type="button" disabled data-model-install-target="button" data-action="model-install#install"><%= t("form.ttsPreferences.install") %></button>
+    <output data-model-install-target="status"></output>
+  </details>
   <p role="alert" hidden data-narration-policy-target="error"></p>
 </fieldset>

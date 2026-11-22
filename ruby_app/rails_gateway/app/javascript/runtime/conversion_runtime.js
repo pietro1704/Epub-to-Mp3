@@ -48,14 +48,14 @@ export class TtsPreparationError extends Error {
 /**
  * Checks a Piper selection against the catalog and the installed files, and
  * remembers the identity a receipt for that model must carry.
- * @param {{loadCatalog: () => Promise<TtsCatalog>, verifyModel: (model: TtsCatalogModel) => Promise<void>, pendingInstallation?: (modelId: string) => Promise<void> | undefined}} io
+ * @param {{loadCatalog: (manual?: boolean) => Promise<TtsCatalog>, verifyModel: (model: TtsCatalogModel) => Promise<void>, pendingInstallation?: (modelId: string) => Promise<void> | undefined}} io
  */
 export function createPiperPreparation({ loadCatalog, verifyModel, pendingInstallation = () => undefined }) {
   /** @type {Map<string, {selection: TtsSessionSelection, runtimeRevision: string, artifacts: Record<string, string>}>} */
   const prepared = new Map()
   /** @param {TtsSelection} selection */
   const prepare = async (selection) => {
-    const catalog = await loadCatalog()
+    const catalog = await loadCatalog(Boolean(selection.session))
     const model = catalog.models.find((candidate) => candidate.id === selection.model_id && candidate.engine === selection.engine)
     const available = browserSelections(catalog).find((candidate) =>
       candidate.model_id === selection.model_id && candidate.engine === selection.engine)
@@ -149,7 +149,7 @@ export function createSynthesis({ prepare, prepared, piper, additionalAdapters =
 }
 
 /**
- * @param {{loadBindings: () => Promise<any>, loadCatalog: () => Promise<TtsCatalog>, synthesis: Synthesizer}} io
+ * @param {{loadBindings: () => Promise<any>, loadCatalog: (manual?: boolean) => Promise<TtsCatalog>, synthesis: Synthesizer}} io
  * @returns {ConversionRuntime}
  */
 export function createConversionRuntime({ loadBindings, loadCatalog, synthesis }) {
@@ -170,7 +170,7 @@ export function createConversionRuntime({ loadBindings, loadCatalog, synthesis }
       }
     },
     validateSelection: async (selection) => {
-      const available = browserSelections(await loadCatalog()).find((candidate) =>
+      const available = browserSelections(await loadCatalog(Boolean(selection.session))).find((candidate) =>
         candidate.engine === selection.engine &&
         candidate.model_id === selection.model_id &&
         (!selection.session || candidate.session?.runtime === selection.session.runtime))

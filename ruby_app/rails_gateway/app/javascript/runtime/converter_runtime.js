@@ -15,6 +15,7 @@
  * @property {string} engine
  * @property {string} revision
  * @property {TtsArtifact[]} artifacts
+ * @property {boolean} [manual_only]
  * @property {boolean} runtime_available
  */
 /**
@@ -29,8 +30,8 @@ const BINDINGS_PATH = "wasm/converter_wasm.js"
 
 /** @type {Promise<any> | undefined} */
 let bindings
-/** @type {Promise<TtsCatalog> | undefined} */
-let catalog
+/** @type {Map<boolean, Promise<TtsCatalog>>} */
+const catalogs = new Map()
 
 /**
  * Absolute base URL of the runtime tree, announced by the server.
@@ -55,21 +56,25 @@ export function loadConverterRuntime() {
   return bindings
 }
 
-/** The version 2 TTS catalog owned by Rust. */
-export function loadTtsCatalog() {
-  catalog ??= (async () => {
+/** @param {boolean} [manual] Include models requiring explicit selection. */
+export function loadTtsCatalog(manual = false) {
+  const existing = catalogs.get(manual)
+  if (existing) return existing
+  const catalog = (async () => {
     const runtime = await loadConverterRuntime()
     if (typeof runtime.tts_catalog_json_v2 !== "function")
       throw new Error("The embedded converter does not support the version 2 TTS catalog.")
-    const json = runtime.tts_catalog_json_v2()
+    const json = manual && typeof runtime.tts_manual_catalog_json_v2 === "function"
+      ? runtime.tts_manual_catalog_json_v2() : runtime.tts_catalog_json_v2()
     if (typeof json !== "string") throw new Error("Invalid TTS catalog")
     const decoded = /** @type {TtsCatalog} */ (JSON.parse(json))
     if (decoded.version !== 2 || !Array.isArray(decoded.models) || !Array.isArray(decoded.providers))
       throw new Error("Unsupported TTS catalog version")
     return decoded
   })().catch((error) => {
-    catalog = undefined
+    catalogs.delete(manual)
     throw error
   })
+  catalogs.set(manual, catalog)
   return catalog
 }
