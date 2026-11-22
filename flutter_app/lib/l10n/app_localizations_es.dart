@@ -126,6 +126,20 @@ class AppLocalizationsEs extends AppLocalizations {
   String get addBook => 'Agregar libro';
 
   @override
+  String get importBookFile => 'Importar archivo EPUB o PDF';
+
+  @override
+  String get searchPublicBooks => 'Buscar libros clásicos';
+
+  @override
+  String get publicBookDownloadFailed =>
+      'No se pudo descargar o importar este libro. Inténtalo de nuevo.';
+
+  @override
+  String get publicBookSourceOpenFailed =>
+      'No se pudo abrir la página de la editorial.';
+
+  @override
   String get removeBookTitle => 'Eliminar libro';
 
   @override

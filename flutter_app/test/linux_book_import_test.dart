@@ -114,24 +114,33 @@ void main() {
   );
 
   testWidgets(
-    'both Linux Add buttons open the native chooser, including cancel',
+    'both Linux Add buttons open the native chooser through file import',
     (tester) async {
       final path = fixture('Picker Book.epub');
       final (store, _) = await showLibrary(tester);
+      final importFile = find.widgetWithText(
+        ListTile,
+        'Import an EPUB or PDF file',
+      );
+      final chooserCalls = calls.where((call) => call.method == 'chooseBooks');
+
       await tester.tap(find.widgetWithIcon(IconButton, Icons.add));
       await tester.pumpAndSettle();
+      expect(chooserCalls, isEmpty);
+      await tester.tap(importFile);
+      await tester.pumpAndSettle();
+      expect(importFile, findsNothing);
       expect(store.books, isEmpty);
-      expect(calls.where((call) => call.method == 'chooseBooks'), hasLength(1));
+      expect(chooserCalls, hasLength(1));
 
       picked = [path];
-      await expectImport(
-        tester,
-        store,
-        1,
-        () => tester.tap(find.byType(FilledButton)),
-      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Add a book'));
+      await tester.pumpAndSettle();
+      expect(chooserCalls, hasLength(1));
+      await expectImport(tester, store, 1, () => tester.tap(importFile));
+      expect(importFile, findsNothing);
       expect(store.books.single.filePath, path);
-      expect(calls.where((call) => call.method == 'chooseBooks'), hasLength(2));
+      expect(chooserCalls, hasLength(2));
     },
     variant: linux,
   );

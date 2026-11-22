@@ -1,11 +1,16 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:path_provider/path_provider.dart';
 
+import '../features/library/public_book_catalog.dart';
+import '../features/library/public_book_discovery_sheet.dart';
+import '../features/library/public_book_download.dart';
 import '../l10n/app_localizations.dart';
 import '../models/book_entity.dart';
 import '../services/conversion/epub_metadata_reader.dart';
@@ -55,6 +60,49 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   void dispose() {
     _linuxImport?.dispose();
     super.dispose();
+  }
+
+  Future<void> _showAddBook() async {
+    final book = await showModalBottomSheet<BookEntity>(
+      context: context,
+      isScrollControlled: true,
+      enableDrag: false,
+      isDismissible: false,
+      constraints: const BoxConstraints(maxWidth: 640),
+      builder: (sheetContext) => PublicBookDiscoverySheet(
+        onPickFile: () {
+          Navigator.pop(sheetContext);
+          if (mounted) _pickAndImport();
+        },
+        onDownload: _downloadPublicBook,
+      ),
+    );
+    if (mounted && book != null) _openInReader(ref, book);
+  }
+
+  Future<BookEntity> _downloadPublicBook(PublicBook book) async {
+    final store = ref.read(libraryStoreProvider);
+    final support = await getApplicationSupportDirectory();
+    final download = await PublicBookDownload().download(
+      uri: book.downloadUri,
+      format: book.format,
+      directory: Directory.fromUri(support.uri.resolve('library-books/')),
+    );
+    try {
+      final id = await LibraryStore.contentHash(download.path);
+      final existing = store.books.where((book) => book.id == id).firstOrNull;
+      if (existing != null && await File(existing.filePath).exists()) {
+        if (existing.filePath != download.path) await download.delete();
+        return existing;
+      }
+      return await store.importBook(
+        download.path,
+        displayFilename: '${book.title}.${book.format.name}',
+      );
+    } on Exception {
+      if (await download.exists()) await download.delete();
+      rethrow;
+    }
   }
 
   Future<void> _pickAndImport() async {
@@ -261,12 +309,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: t.addBook,
-            onPressed: _pickAndImport,
+            onPressed: _showAddBook,
           ),
         ],
       ),
       body: store.books.isEmpty
-          ? _EmptyLibrary(onAdd: _pickAndImport)
+          ? _EmptyLibrary(onAdd: _showAddBook)
           : Column(
               children: [
                 LibraryFilterControls(
