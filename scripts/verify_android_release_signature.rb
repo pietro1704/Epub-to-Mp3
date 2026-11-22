@@ -3,8 +3,8 @@
 
 require 'open3'
 
-# Signing certificate of the official v0.10.5 APK installed on the Galaxy A8.
-OFFICIAL_CERTIFICATE_SHA256 = '5dc8d7437e5b64ae2939851e2994a7e9ac80d5ed3558104ccb751cf92e100faf'
+# Signing certificate of the official Android release key created on 2026-11-22 (replaces the v0.10.5 key, whose keystore could not be recovered).
+OFFICIAL_CERTIFICATE_SHA256 = '35cb05834223999543d0b2695e42437681e7fb2d7df64b74de42ca8201f50e56'
 
 def verify_release_signature(apk, platform, sdk_options)
   stdout, stderr, status = Open3.capture3('apksigner', 'verify', '--verbose', '--print-certs', *sdk_options, apk)

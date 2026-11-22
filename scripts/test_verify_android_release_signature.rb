@@ -9,7 +9,7 @@ require 'rbconfig'
 require 'tmpdir'
 
 class VerifyAndroidReleaseSignatureTest < Minitest::Test
-  OFFICIAL_FINGERPRINT = '5dc8d7437e5b64ae2939851e2994a7e9ac80d5ed3558104ccb751cf92e100faf'
+  OFFICIAL_FINGERPRINT = '35cb05834223999543d0b2695e42437681e7fb2d7df64b74de42ca8201f50e56'
   SIGNER_LINE = "Signer #1 certificate SHA-256 digest: #{OFFICIAL_FINGERPRINT}"
   VERIFIED_OUTPUT = "Verifies\nNumber of signers: 1\n#{SIGNER_LINE}\n"
 
@@ -61,7 +61,7 @@ class VerifyAndroidReleaseSignatureTest < Minitest::Test
   end
 
   def test_rejects_a_different_fingerprint_on_each_platform_range
-    wrong = OFFICIAL_FINGERPRINT.sub(/f\z/, '0')
+    wrong = OFFICIAL_FINGERPRINT.sub(/.\z/) { |digit| digit == '0' ? '1' : '0' }
     {
       'TEST_APKSIGNER_OUTPUT' => 'supported Android API levels',
       'TEST_APKSIGNER_API_28_OUTPUT' => 'Android API 28'
@@ -76,7 +76,7 @@ class VerifyAndroidReleaseSignatureTest < Minitest::Test
   end
 
   def test_rejects_missing_or_malformed_fingerprints
-    ['', "#{SIGNER_LINE}0", SIGNER_LINE.sub(/f\z/, '')].each do |line|
+    ['', "#{SIGNER_LINE}0", SIGNER_LINE.sub(/.\z/, '')].each do |line|
       _output, error, status = invoke(@apk, 'TEST_APKSIGNER_OUTPUT' => "Verifies\nNumber of signers: 1\n#{line}\n")
 
       refute status.success?
