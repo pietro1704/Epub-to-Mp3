@@ -265,7 +265,7 @@ function Write-AccessibilityEvidence([string]$Api, [IntPtr]$Handle, [string[]]$R
   @($summary) + $Rows | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath "visible-elements-$Api-$Handle.txt")
   if ($env:GITHUB_ACTIONS -eq 'true') {
     # Annotations stay readable without downloading logs or artifacts.
-    $digest = (@($summary) + ($Rows | Select-Object -First 25 | ForEach-Object { $_.Substring(0, [Math]::Min(160, $_.Length)) })) -join "`n"
+    $digest = (@($summary) + ($Rows | Select-Object -First 70 | ForEach-Object { $_.Substring(0, [Math]::Min(160, $_.Length)) })) -join "`n"
     $digest = $digest.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
     Write-Host "::notice title=$Api tree $Handle::$digest"
   }
@@ -354,26 +354,42 @@ try {
       }
     }
   }
-  $filename = Wait-ForReaderUi 'the native file name field' {
-    # The Windows common dialog names this edit differently across versions; accept any visible
-    # editable text field, which is the file name box when the dialog first opens.
-    Find-VisibleElement $dialog {
-      param($item)
-      $item.ControlType -eq [System.Windows.Automation.ControlType]::Edit -and
-        ($item.AutomationId -in @('1001', '1148') -or $item.Name -match '(?i)^(File name|Nome do arquivo):?$' -or
-         $item.ClassName -eq 'Edit')
+  # The Windows 11 common dialog exposes no stable file name edit through UIA, but it opens with the
+  # file name box focused. Prefer the UIA field when present, otherwise type into the focused box.
+  $filename = $null
+  $clock = [Diagnostics.Stopwatch]::StartNew()
+  while ($null -eq $filename -and $clock.Elapsed.TotalSeconds -lt 5) {
+    try {
+      $filename = Find-VisibleElement $dialog {
+        param($item)
+        $item.ControlType -eq [System.Windows.Automation.ControlType]::Edit -and
+          ($item.AutomationId -in @('1001', '1148') -or $item.Name -match '(?i)^(File name|Nome do arquivo):?$')
+      }
+    } catch [System.Runtime.InteropServices.COMException] {
+      # The dialog is still building its tree.
     }
+    if ($null -eq $filename) { Start-Sleep -Milliseconds 250 }
   }
-  $value = $filename.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-  $value.SetValue($fixturePath)
-
-  $open = Wait-ForReaderUi 'the native Open button' {
-    Find-VisibleElement $dialog {
-      param($item)
-      $item.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $item.AutomationId -eq '1'
+  if ($null -ne $filename) {
+    $value = $filename.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    $value.SetValue($fixturePath)
+    $open = Wait-ForReaderUi 'the native Open button' {
+      Find-VisibleElement $dialog {
+        param($item)
+        $item.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $item.AutomationId -eq '1'
+      }
     }
+    Click-ReaderElement $open
+  } else {
+    Write-Host 'The native file name field is not exposed through UIA; typing into the focused box.'
+    Add-Type -AssemblyName System.Windows.Forms
+    [void][ReaderTestDesktop]::SetForegroundWindow([IntPtr]$dialog.Current.NativeWindowHandle)
+    Start-Sleep -Milliseconds 750
+    $escaped = [regex]::Replace($fixturePath, '[+^%~(){}\[\]]', '{$0}')
+    [System.Windows.Forms.SendKeys]::SendWait($escaped)
+    Start-Sleep -Milliseconds 500
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
   }
-  Click-ReaderElement $open
 
   $book = Wait-ForReaderUi 'the imported EPUB in Library' { Find-AppText '^Amostra p.blica do CLI(?:\s|$)' }
   Click-FlutterElement $book
