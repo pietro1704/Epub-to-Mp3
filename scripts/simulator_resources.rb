@@ -2,6 +2,7 @@
 
 require "json"
 require "open3"
+require "rbconfig"
 require "timeout"
 
 module SimulatorResources
@@ -58,8 +59,9 @@ module SimulatorResources
     swapouts = number(vm, /Swapouts:\s*(\d+)/, "swapouts")
     page_size = number(vm, /page size of (\d+) bytes/, "page size")
     compressed = number(vm, /Pages occupied by compressor:\s*(\d+)/, "compression") * page_size
-    cpu = capture.call("/usr/bin/top", "-l", "2", "-s", "1", "-n", "0", seconds: 8)
-    idle = number(cpu.lines.grep(/CPU usage:/).last.to_s, /([\d.]+)% idle/, "CPU idle")
+    cpu_sampler = File.expand_path("simulator_cpu_idle.rb", __dir__)
+    idle = Float(capture.call(RbConfig.ruby, cpu_sampler, seconds: 8).strip, exception: false)
+    raise Refusal, "Missing CPU idle telemetry" unless idle
     disk = capture.call("/bin/df", "-Pk", root).lines.last.to_s.split
     raise Refusal, "Invalid free disk telemetry" unless disk[3]&.match?(/\A\d+\z/)
     result = { "pressure" => Integer(pressure), "free_percent" => free,

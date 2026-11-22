@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 require "minitest/autorun"
+require_relative "simulator_cpu_idle"
 require_relative "simulator_resources"
 require_relative "simulator_preflight"
 require "tmpdir"
@@ -104,18 +105,34 @@ def test_timeout_includes_descendant_held_output_after_leader_exit
   assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 2
 end
 
-def test_parser_uses_interval_cpu_and_rejects_missing_fields
-
+  def test_parser_uses_bounded_cpu_sampler_and_rejects_missing_fields
     outputs = ["1", "System-wide memory free percentage: 55%", "total = 10M used = 2.5M free = 7.5M",
                "page size of 4096 bytes\nSwapouts: 12.\nPages occupied by compressor: 100.",
-               "CPU usage: 0% idle\nCPU usage: 88.4% idle\n", "header\ndisk 400 100 300 0% /\n"]
-    snapshot = SimulatorResources.snapshot(root: "/", capture: ->(*) { outputs.shift })
+               "88.4\n", "header\ndisk 400 100 300 0% /\n"]
+    commands = []
+    capture = lambda do |*argv, **options|
+      commands << [argv, options]
+      outputs.shift
+    end
+    snapshot = SimulatorResources.snapshot(root: "/", capture: capture)
     assert_equal 88.4, snapshot["cpu_idle"]
+    helper = File.expand_path("simulator_cpu_idle.rb", __dir__)
+    assert_equal [[RbConfig.ruby, helper], { seconds: 8 }], commands.fetch(4)
     assert_equal 2.5, snapshot["swap_mib"]
     assert_equal 300 * 1024, snapshot["free_bytes"]
     assert_raises(SimulatorResources::Refusal) do
       SimulatorResources.snapshot(root: "/", capture: ->(*) { "missing" })
     end
+  end
+
+  def test_cpu_idle_uses_the_interval_and_handles_counter_wrap
+    assert_equal 70.0, SimulatorCPUIdle.percentage([10, 10, 10, 10], [20, 20, 80, 20])
+    assert_in_delta(1000.0 / 12, SimulatorCPUIdle.percentage([0, 0, 0xfffffffa, 0], [1, 1, 4, 0]))
+  end
+
+  def test_cpu_idle_rejects_invalid_or_stalled_counters
+    assert_raises(ArgumentError) { SimulatorCPUIdle.percentage([1, 2, 3], [1, 2, 3, 4]) }
+    assert_raises(ArgumentError) { SimulatorCPUIdle.percentage([1, 2, 3, 4], [1, 2, 3, 4]) }
   end
 
   def test_preflight_records_refusal_and_does_not_overwrite_evidence
