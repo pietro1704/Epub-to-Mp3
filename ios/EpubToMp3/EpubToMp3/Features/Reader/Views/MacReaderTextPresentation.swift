@@ -357,6 +357,7 @@ final class MacReaderTextPresentation {
               currentBookId == bookID, !Task.isCancelled else { return nil }
         view.audioMap = prepared.audioMap
         view.document = prepared.document
+        composition.protectPDFOpeningPosition(view)
         return prepared.wasNormalized
     }
 }
