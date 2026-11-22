@@ -249,6 +249,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get conversionFailed => 'Falha na conversão';
 
   @override
+  String get bookLanguageUncertain =>
+      'Não foi possível detectar o idioma do livro. Escolha o idioma em Converter e tente novamente.';
+
+  @override
   String get downloading => 'Baixando…';
 
   @override

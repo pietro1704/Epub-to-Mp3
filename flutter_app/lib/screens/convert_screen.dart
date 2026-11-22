@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../services/conversion/book_language_uncertain.dart';
 import '../services/conversion/manual_conversion_output.dart';
 import '../services/playback/platform_voice_notice.dart';
 import '../services/conversion/embedded_converter.dart';
@@ -355,8 +356,11 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
       setState(() {
-        _error = e.toString();
+        _error = isBookLanguageUncertain(e)
+            ? '${l10n.conversionFailed}: ${l10n.bookLanguageUncertain}'
+            : e.toString();
         _submitting = false;
       });
     } finally {
