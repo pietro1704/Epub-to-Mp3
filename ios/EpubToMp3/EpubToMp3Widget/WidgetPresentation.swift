@@ -1,4 +1,20 @@
 import SwiftUI
+import WidgetKit
+
+extension View {
+    @ViewBuilder
+    func homeWidgetBackground() -> some View {
+        if #available(iOS 17.0, macOS 14.0, *) {
+            containerBackground(.fill.tertiary, for: .widget)
+        } else {
+#if os(iOS)
+            background(Color(uiColor: .secondarySystemBackground))
+#elseif os(macOS)
+            background(Color(nsColor: .windowBackgroundColor))
+#endif
+        }
+    }
+}
 
 func formatWidgetTime(_ seconds: Double) -> String {
     let total = max(0, Int(seconds.rounded()))
@@ -14,13 +30,13 @@ func formatWidgetTime(_ seconds: Double) -> String {
 
 #if canImport(UIKit)
 import UIKit
-typealias PlatformImage = UIImage
+private typealias WidgetCoverImage = UIImage
 extension Image {
     init(platformImage img: UIImage) { self.init(uiImage: img) }
 }
 #elseif canImport(AppKit)
 import AppKit
-typealias PlatformImage = NSImage
+private typealias WidgetCoverImage = NSImage
 extension Image {
     init(platformImage img: NSImage) { self.init(nsImage: img) }
 }
@@ -45,7 +61,7 @@ enum WidgetDeepLinks {
 
 @ViewBuilder
 func coverImage(from data: Data?, size: CGFloat = 28) -> some View {
-    if let data, let img = PlatformImage(data: data) {
+    if let data, let img = WidgetCoverImage(data: data) {
         Image(platformImage: img)
             .resizable()
             .scaledToFit()
@@ -63,5 +79,14 @@ func coverImage(from data: Data?, size: CGFloat = 28) -> some View {
                     .font(.system(size: size, weight: .light))
                     .foregroundStyle(.white.opacity(0.25))
             }
+    }
+}
+
+/// The cover takes its parent's bounds. The artwork and its inset cannot grow
+/// the card or displace an adjacent text column.
+func boundedWidgetCover(from data: Data?, inset: CGFloat, placeholderSize: CGFloat = 28) -> some View {
+    Color.clear.overlay {
+        coverImage(from: data, size: placeholderSize)
+            .padding(inset)
     }
 }

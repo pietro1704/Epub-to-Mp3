@@ -8,14 +8,13 @@ import SwiftUI
 /// string. If a user had the old widget on their home screen, this ensures
 /// it keeps working after the update. Identical to `NowPlayingWidget` in
 /// behaviour — the only difference is the `kind` identifier.
-@available(iOS 17.0, *)
 struct EpubToMp3Widget: Widget {
     let kind = "EpubToMp3Widget"
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: NowPlayingProvider()) { entry in
             NowPlayingEntryView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .homeWidgetBackground()
                 .widgetURL(WidgetDeepLinks.player(bookId: entry.bookId))
         }
         .configurationDisplayName("widget.nowPlaying")

@@ -1,8 +1,28 @@
 import ImageIO
 import XCTest
 @testable import EpubToMp3
+#if os(iOS)
+import SwiftUI
+import UIKit
+#endif
 
 final class WidgetSnapshotTests: XCTestCase {
+#if os(iOS)
+    @MainActor
+    func testWidgetCoverFitsCardAndMediumColumnWithoutAddingInsetToTheirSize() {
+        let cover = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 48)).image { context in
+            context.cgContext.setFillColor(UIColor.red.cgColor)
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 24, height: 48))
+        }.pngData()
+        for size in [CGSize(width: 141, height: 141), CGSize(width: 151, height: 141)] {
+            for coverData in [cover, nil] {
+                let host = UIHostingController(rootView: boundedWidgetCover(from: coverData, inset: 8))
+                XCTAssertEqual(host.sizeThatFits(in: size), size)
+            }
+        }
+    }
+#endif
+
     private func withDefaults(_ body: (UserDefaults) throws -> Void) throws {
         let name = "WidgetSnapshotTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

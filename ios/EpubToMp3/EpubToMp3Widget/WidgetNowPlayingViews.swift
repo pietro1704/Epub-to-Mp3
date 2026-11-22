@@ -5,36 +5,34 @@ import AppIntents
 // MARK: Now Playing — Small
 
 private struct NowPlayingSmallView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let entry: NowPlayingEntry
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .bottomLeading) {
-                coverImage(from: entry.coverData)
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .padding(8)
-                    .clipped()
-
+        boundedWidgetCover(from: entry.coverData, inset: 8)
+            .overlay {
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.8)],
                     startPoint: .center,
                     endPoint: .bottom
                 )
-
+            }
+            .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 2) {
                     if entry.title.isEmpty {
                         Text(L10n.string("widget.noAudiobookPlaying"))
                             .font(.caption2)
                             .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(2)
                     } else {
-                        HStack(spacing: 4) {
-                            Image(systemName: entry.isPlaying ? "waveform" : "pause.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white.opacity(0.7))
-                            Text(L10n.string("widget.nowPlaying"))
-                                .font(.system(size: 9, weight: .medium))
-                                .textCase(.uppercase)
-                                .foregroundStyle(.white.opacity(0.7))
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Label(
+                                L10n.string(entry.isPlaying ? "widget.nowPlaying" : "widget.paused"),
+                                systemImage: entry.isPlaying ? "waveform" : "pause.fill"
+                            )
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(1)
                         }
 
                         Text(entry.title)
@@ -43,7 +41,9 @@ private struct NowPlayingSmallView: View {
                             .foregroundStyle(.white)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
-                        if let chapter = entry.chapterName, !chapter.isEmpty {
+                            .layoutPriority(1)
+                        if !dynamicTypeSize.isAccessibilitySize,
+                           let chapter = entry.chapterName, !chapter.isEmpty {
                             Text(
                                 entry.totalChapters.flatMap { total in
                                     entry.chapterIndex.map { "\(chapter) · \(L10n.string("player.chapterOf", $0 + 1, total))" }
@@ -53,32 +53,30 @@ private struct NowPlayingSmallView: View {
                                 .foregroundStyle(.white.opacity(0.75))
                                 .lineLimit(1)
                         }
-                        Text(L10n.string("widget.remainingTimes", formatWidgetTime(entry.chapterRemainingSeconds), formatWidgetTime(entry.bookRemainingSeconds)))
-                            .font(.system(size: 9, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.7))
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Text(L10n.string("widget.remainingTimes", formatWidgetTime(entry.chapterRemainingSeconds), formatWidgetTime(entry.bookRemainingSeconds)))
+                                .font(.system(size: 9, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
                     }
                 }
                 .padding(10)
             }
-        }
     }
 }
 
 // MARK: Now Playing — Medium
 
-@available(iOS 17.0, *)
 private struct NowPlayingMediumView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let entry: NowPlayingEntry
 
     var body: some View {
         HStack(spacing: 0) {
-            GeometryReader { geo in
-                coverImage(from: entry.coverData)
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .padding(8)
-                    .clipped()
-            }
-            .frame(maxWidth: .infinity)
+            boundedWidgetCover(from: entry.coverData, inset: 8)
+                .frame(maxWidth: .infinity)
 
             VStack(alignment: .leading, spacing: 4) {
                 Label(
@@ -89,50 +87,26 @@ private struct NowPlayingMediumView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-                Spacer(minLength: 0)
-
                 if entry.title.isEmpty {
                     Text(L10n.string("widget.openBookToListen"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
                 } else {
                     Text(entry.title)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
+                        .layoutPriority(1)
 
-                    if let author = entry.author {
-                        Text(author)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    if dynamicTypeSize <= .large {
+                        metadata
                     }
 
-                    if let chapterName = entry.chapterName, !chapterName.isEmpty {
-                        Text(chapterName)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                            .padding(.top, 1)
-                    } else if let idx = entry.chapterIndex {
-                        Text(L10n.string("player.chapter", idx + 1))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .padding(.top, 1)
-                    }
-                }
-
-                Text(L10n.string("widget.remainingTimes", formatWidgetTime(entry.chapterRemainingSeconds), formatWidgetTime(entry.bookRemainingSeconds)))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-
-                Spacer(minLength: 0)
-
-                // Progress bar + playback controls
-                if !entry.title.isEmpty {
-                    // Progress bar
+                    Spacer(minLength: 0)
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Capsule()
@@ -145,39 +119,69 @@ private struct NowPlayingMediumView: View {
                     }
                     .frame(height: 3)
 
-                    HStack(spacing: 16) {
-                        Button(intent: TogglePlayPauseIntent()) {
-                            Image(systemName: entry.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.title3)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(intent: SkipForward30Intent()) {
-                            Image(systemName: "goforward.30")
-                                .font(.title3)
-                        }
-                        .buttonStyle(.plain)
+                    if #available(iOS 17.0, macOS 14.0, *) {
+                        playbackControls
                     }
-                    .foregroundStyle(.primary)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private var metadata: some View {
+        if let author = entry.author {
+            Text(author)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+
+        if let chapter = entry.chapterName.flatMap({ $0.isEmpty ? nil : $0 })
+            ?? entry.chapterIndex.map({ L10n.string("player.chapter", $0 + 1) }) {
+            Text(chapter)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+
+        Text(L10n.string("widget.remainingTimes", formatWidgetTime(entry.chapterRemainingSeconds), formatWidgetTime(entry.bookRemainingSeconds)))
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
+    @available(iOS 17.0, macOS 14.0, *)
+    private var playbackControls: some View {
+        HStack(spacing: 16) {
+            Button(intent: TogglePlayPauseIntent()) {
+                Image(systemName: entry.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+
+            Button(intent: SkipForward30Intent()) {
+                Image(systemName: "goforward.30")
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(.primary)
     }
 }
 
 // MARK: Now Playing — Widget
 
-@available(iOS 17.0, *)
 struct NowPlayingWidget: Widget {
     let kind = "NowPlayingWidget"
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: NowPlayingProvider()) { entry in
             NowPlayingEntryView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .homeWidgetBackground()
                 .widgetURL(WidgetDeepLinks.player(bookId: entry.bookId))
         }
         .configurationDisplayName("widget.nowPlaying")
@@ -187,7 +191,6 @@ struct NowPlayingWidget: Widget {
     }
 }
 
-@available(iOS 17.0, *)
 struct NowPlayingEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: NowPlayingEntry

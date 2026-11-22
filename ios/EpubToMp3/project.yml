@@ -380,6 +380,8 @@ targets:
       - path: EpubToMp3Tests/ConverterFFIAdapterTests.swift
       # Exercise the extension's actual provider materialization in native XCTest.
       - path: EpubToMp3ShareExtension/ShareViewController.swift
+      - path: EpubToMp3Widget/WidgetPresentation.swift
+        destinationFilters: [iOS]
     dependencies:
       - target: EpubToMp3
     settings:
@@ -498,9 +500,8 @@ targets:
   EpubToMp3Widget:
     type: app-extension
     # WidgetKit runs on iOS 14+. Keep the extension at the app's iOS 15
-    # floor; individual widgets are gated with @available for their real
-    # API minimums (iOS 16 lock-screen, 16.2 Live Activities, 17 home
-    # widgets using `.containerBackground`).
+    # floor. Lock-screen widgets, Live Activities, and interactive home
+    # widget controls use their own availability checks.
     supportedDestinations: [iOS]
     deploymentTarget:
       iOS: "15.0"

@@ -4,11 +4,9 @@ import SwiftUI
 @main
 struct EpubToMp3WidgetBundle: WidgetBundle {
     var body: some Widget {
-        if #available(iOS 17.0, *) {
-            EpubToMp3Widget()               // legacy kind — keeps existing home-screen widgets alive
-            NowPlayingWidget()
-            LibraryWidget()
-        }
+        EpubToMp3Widget()                   // Keep existing home-screen widgets alive.
+        NowPlayingWidget()
+        LibraryWidget()
         if #available(iOS 16.1, *) {
             NowPlayingLockScreenWidget()    // iOS 16+ lock-screen (.accessoryCircular/Rectangular/Inline)
         }

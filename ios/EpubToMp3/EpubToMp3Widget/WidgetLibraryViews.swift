@@ -1,6 +1,5 @@
 import WidgetKit
 import SwiftUI
-import AppIntents
 
 // MARK: Library — Book Cell
 
@@ -10,10 +9,7 @@ private struct LibraryBookCell: View {
     var body: some View {
         Link(destination: WidgetDeepLinks.open(bookId: book.id)) {
             VStack(spacing: 4) {
-                coverImage(from: book.coverData, size: 20)
-                    .frame(maxWidth: .infinity)
-                    .padding(4)
-                    .aspectRatio(0.7, contentMode: .fill)
+                boundedWidgetCover(from: book.coverData, inset: 4, placeholderSize: 20)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
                 Text(book.title)
@@ -21,7 +17,9 @@ private struct LibraryBookCell: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.8)
+                    .layoutPriority(1)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -50,6 +48,8 @@ private struct LibraryMediumView: View {
                 Label(L10n.string("nav.library"), systemImage: "books.vertical")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .layoutPriority(1)
 
                 HStack(spacing: 12) {
                     ForEach(entry.books.prefix(3)) { book in
@@ -57,7 +57,7 @@ private struct LibraryMediumView: View {
                     }
                 }
             }
-            .padding(14)
+            .padding(10)
         }
     }
 }
@@ -97,6 +97,8 @@ private struct LibraryLargeView: View {
                 Label(L10n.string("nav.library"), systemImage: "books.vertical")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .layoutPriority(1)
 
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     HStack(spacing: 12) {
@@ -112,29 +114,27 @@ private struct LibraryLargeView: View {
                         }
                     }
                 }
-
-                Spacer(minLength: 0)
             }
-            .padding(16)
+            .padding(10)
         }
     }
 }
 
 // MARK: Library — Widget
 
-@available(iOS 17.0, *)
 struct LibraryWidget: Widget {
     let kind = "LibraryWidget"
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: LibraryProvider()) { entry in
             LibraryEntryView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .homeWidgetBackground()
                 .widgetURL(URL(string: "epubtomp3://library")!)
         }
         .configurationDisplayName("nav.library")
         .description("widget.libraryDescription")
         .supportedFamilies([.systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 
