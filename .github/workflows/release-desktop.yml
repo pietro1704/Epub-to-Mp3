@@ -231,6 +231,8 @@ jobs:
               exit 1
               ;;
           esac
+          # macOS bundle metadata uses the numeric core of the validated release tag.
+          release_version="${RELEASE_TAG#v}"
           xcodebuild \
             -project EpubToMp3.xcodeproj \
             -scheme EpubToMp3 \
@@ -238,10 +240,19 @@ jobs:
             -configuration Release \
             -derivedDataPath build \
             ARCHS="$ffi_arch" \
+            MARKETING_VERSION="${release_version%%[-+]*}" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Seal macOS .app
+        working-directory: ios/EpubToMp3
+        run: |
+          APP_PATH="build/Build/Products/Release/EpubToMp3.app"
+          # Seal the outer bundle after embedding. Verify the existing nested signatures.
+          codesign --force --sign - --timestamp=none "$APP_PATH"
+          codesign --verify --deep --strict --all-architectures "$APP_PATH"
 
       - name: Package macOS .app into .zip
         working-directory: ios/EpubToMp3
@@ -249,6 +260,13 @@ jobs:
           APP_PATH="build/Build/Products/Release/EpubToMp3.app"
           if [[ ! -d "$APP_PATH" ]]; then
             echo "::error::App bundle missing at $APP_PATH"
+            exit 1
+          fi
+          release_version="${RELEASE_TAG#v}"
+          expected_bundle_version="${release_version%%[-+]*}"
+          bundle_version="$(plutil -extract CFBundleShortVersionString raw -o - "$APP_PATH/Contents/Info.plist")"
+          if [[ "$bundle_version" != "$expected_bundle_version" ]]; then
+            echo "::error::Expected macOS app version $expected_bundle_version, got $bundle_version" >&2
             exit 1
           fi
           ditto -c -k --keepParent "$APP_PATH" "EpubToMp3-macos-${RELEASE_TAG}.zip"

@@ -119,6 +119,65 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     assert_equal "ios/EpubToMp3/EpubToMp3-macos-*.zip", package.dig("with", "path")
   end
 
+  def test_macos_release_seals_and_verifies_the_bundle_before_zipping
+    steps = @jobs.fetch("macos-native").fetch("steps")
+    build = index(steps) { |step| step["name"] == "Build macOS .app" }
+    seal = index(steps) { |step| step["name"] == "Seal macOS .app" }
+    package = index(steps) { |step| step["name"] == "Package macOS .app into .zip" }
+    assert_operator build, :<, seal
+    assert_operator seal, :<, package
+    skip "requires macOS codesign and ditto" unless RUBY_PLATFORM.include?("darwin")
+
+    Dir.mktmpdir("release-macos-signature") do |directory|
+      app = File.join(directory, "build/Build/Products/Release/EpubToMp3.app")
+      executable = File.join(app, "Contents/MacOS/EpubToMp3")
+      nested = File.join(app, "Contents/Helpers/fixture")
+      [executable, nested].each do |path|
+        FileUtils.mkdir_p(File.dirname(path))
+        FileUtils.cp("/usr/bin/true", path)
+      end
+      File.write(File.join(app, "Contents/Info.plist"), <<~XML)
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0"><dict>
+        <key>CFBundleIdentifier</key><string>com.example.release-fixture</string>
+        <key>CFBundleExecutable</key><string>EpubToMp3</string>
+        <key>CFBundlePackageType</key><string>APPL</string>
+        <key>CFBundleShortVersionString</key><string>1.2.3</string>
+        </dict></plist>
+      XML
+      _, error, status = Open3.capture3("/usr/bin/codesign", "--force", "--sign", "-", nested)
+      assert status.success?, error
+      signed_nested = File.binread(nested)
+      _, _, status = Open3.capture3("/usr/bin/codesign", "--verify", "--deep", "--strict", app)
+      refute status.success?, "the fixture must reproduce the unsealed bundle"
+
+      _, error, status = run_macos_release_step(steps[seal], directory)
+      assert status.success?, error
+      assert_equal signed_nested, File.binread(nested)
+      assert File.file?(File.join(app, "Contents/_CodeSignature/CodeResources"))
+      _, error, status = run_macos_release_step(steps[package], directory)
+      assert status.success?, error
+      archive = File.join(directory, "EpubToMp3-macos-v1.2.3.zip")
+      extracted = File.join(directory, "extracted")
+      _, error, status = Open3.capture3("/usr/bin/ditto", "-x", "-k", archive, extracted)
+      assert status.success?, error
+      _, error, status = Open3.capture3("/usr/bin/codesign", "--verify", "--deep", "--strict",
+        File.join(extracted, "EpubToMp3.app"))
+      assert status.success?, error
+
+      _, error, status = Open3.capture3("/usr/bin/codesign", "--remove-signature", nested)
+      assert status.success?, error
+      _, error, status = run_macos_release_step(steps[seal], directory)
+      refute status.success?, "an invalid nested signature must block packaging"
+      assert_includes error, "fixture"
+    end
+  end
+
+  def run_macos_release_step(step, directory)
+    Open3.capture3({ "RELEASE_TAG" => "v1.2.3" }, "/bin/bash", "-eo", "pipefail",
+      "-c", step.fetch("run"), chdir: directory)
+  end
+
   def test_signed_ios_release_provisions_the_rust_target_before_archiving_and_exporting
     steps = workflow("ios-testflight.yml").fetch("jobs").fetch("archive-and-upload").fetch("steps")
     provision = index(steps) { |step| step.fetch("run", "").include?("rustup target add aarch64-apple-ios") }
@@ -145,6 +204,7 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
       output, error, status = run_macos_build(architecture)
       assert status.success?, error
       assert_includes output.lines.map(&:chomp), "ARCHS=#{architecture}"
+      assert_includes output.lines.map(&:chomp), "MARKETING_VERSION=1.2.3"
     end
   end
 
@@ -155,7 +215,15 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
     assert_includes error, "Expected one macOS converter-ffi architecture"
   end
 
-  def run_macos_build(architecture)
+  def test_macos_build_uses_numeric_core_of_suffixed_tags
+    %w[v1.2.3-rc.1 v1.2.3+build.1].each do |release_tag|
+      output, error, status = run_macos_build("arm64", release_tag: release_tag)
+      assert status.success?, error
+      assert_includes output.lines.map(&:chomp), "MARKETING_VERSION=1.2.3", release_tag
+    end
+  end
+
+  def run_macos_build(architecture, release_tag: "v1.2.3")
     steps = @jobs.fetch("macos-native").fetch("steps")
     command = steps.find { |step| step["name"] == "Build macOS .app" }.fetch("run")
     Dir.mktmpdir("release-macos-build") do |directory|
@@ -168,8 +236,54 @@ class ReleaseDesktopWorkflowTest < Minitest::Test
       File.write(File.join(directory, "xcodebuild"), "#!/bin/bash\nprintf '%s\\n' \"$@\"\n")
       %w[lipo xcodebuild].each { |tool| File.chmod(0o700, File.join(directory, tool)) }
       Open3.capture3(
-        { "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "FIXTURE_ARCHITECTURE" => architecture },
+        { "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "FIXTURE_ARCHITECTURE" => architecture,
+          "RELEASE_TAG" => release_tag },
         "bash", "-eo", "pipefail", "-c", command
+      )
+    end
+  end
+
+  def test_macos_package_checks_the_app_version_before_creating_the_zip
+    output, error, status = run_macos_package("1.2.3")
+    assert status.success?, error
+    assert_includes output, "EpubToMp3-macos-v1.2.3.zip"
+
+    output, error, status = run_macos_package("0.3.0")
+    refute status.success?
+    assert_empty output, "ditto must not run for a mismatched bundle"
+    assert_includes error, "Expected macOS app version 1.2.3, got 0.3.0"
+  end
+
+  def test_macos_package_keeps_suffixed_tags_in_zip_names
+    %w[v1.2.3-rc.1 v1.2.3+build.1].each do |release_tag|
+      output, error, status = run_macos_package("1.2.3", release_tag: release_tag)
+      assert status.success?, error
+      assert_includes output.lines.map(&:chomp), "EpubToMp3-macos-#{release_tag}.zip"
+
+      output, error, status = run_macos_package(release_tag.delete_prefix("v"), release_tag: release_tag)
+      refute status.success?
+      assert_empty output, "ditto must not run if the bundle version contains a suffix"
+      assert_includes error, "Expected macOS app version 1.2.3"
+    end
+  end
+
+  def run_macos_package(bundle_version, release_tag: "v1.2.3")
+    steps = @jobs.fetch("macos-native").fetch("steps")
+    command = steps.find { |step| step["name"] == "Package macOS .app into .zip" }.fetch("run")
+    Dir.mktmpdir("release-macos-package") do |directory|
+      app = "build/Build/Products/Release/EpubToMp3.app"
+      FileUtils.mkdir_p(File.join(directory, app, "Contents"))
+      File.write(File.join(directory, "plutil"), <<~'SH')
+        #!/bin/bash
+        [[ "$*" == "-extract CFBundleShortVersionString raw -o - build/Build/Products/Release/EpubToMp3.app/Contents/Info.plist" ]] || exit 90
+        printf '%s\n' "$FIXTURE_BUNDLE_VERSION"
+      SH
+      File.write(File.join(directory, "ditto"), "#!/bin/bash\nprintf '%s\\n' \"$@\"\n")
+      %w[plutil ditto].each { |tool| File.chmod(0o700, File.join(directory, tool)) }
+      Open3.capture3(
+        { "PATH" => "#{directory}:#{ENV.fetch('PATH')}", "RELEASE_TAG" => release_tag,
+          "FIXTURE_BUNDLE_VERSION" => bundle_version },
+        "bash", "-eo", "pipefail", "-c", command, chdir: directory
       )
     end
   end
