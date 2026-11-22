@@ -116,7 +116,13 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
             .boxesFor(TextRange(start: restore, end: restore + 1))
             .firstOrNull;
         if (box != null) {
-          _scroll.jumpTo(box.top.clamp(0, _scroll.position.maxScrollExtent));
+          final target = _paginated
+              ? _pages.lastWhere(
+                  (pageStart) => pageStart <= box.center.dy,
+                  orElse: () => box.top,
+                )
+              : box.top;
+          _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
         }
       }
       final utf16 = _geometry?.sourceOffsetAt(_offset);

@@ -6,6 +6,7 @@ import '../models/ebook_fulltext.dart';
 /// Search result with chapter context and match highlight info.
 class _SearchResult {
   final int chapterIndex;
+  final int sourceUtf16Offset;
   final String chapterTitle;
   final String snippet;
   final int matchStart;
@@ -13,6 +14,7 @@ class _SearchResult {
 
   const _SearchResult({
     required this.chapterIndex,
+    required this.sourceUtf16Offset,
     required this.chapterTitle,
     required this.snippet,
     required this.matchStart,
@@ -37,7 +39,9 @@ class ReaderSearchOverlay extends StatefulWidget {
   final List<FulltextChapter> chapters;
   final void Function(int chapterIndex) onJumpToChapter;
   final VoidCallback onClose;
-  final void Function(int chapter, int sourceUtf16Offset)? onJumpToPosition;
+
+  /// Navigates by chapter list position and Unicode scalar offset in its text.
+  final void Function(int chapter, int sourceScalarOffset)? onJumpToPosition;
 
   @override
   State<ReaderSearchOverlay> createState() => _ReaderSearchOverlayState();
@@ -91,7 +95,7 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
     final lowered = query.toLowerCase();
     final found = <_SearchResult>[];
 
-    for (final ch in widget.chapters) {
+    for (final (chapterIndex, ch) in widget.chapters.indexed) {
       final text = ch.text;
       final lower = text.toLowerCase();
       var searchStart = 0;
@@ -116,7 +120,8 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
 
         found.add(
           _SearchResult(
-            chapterIndex: ch.index,
+            chapterIndex: chapterIndex,
+            sourceUtf16Offset: idx,
             chapterTitle: ch.displayTitle,
             snippet: snippet,
             matchStart: matchInSnippet,
@@ -239,7 +244,7 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
                                         widget.onJumpToPosition!(
                                           r.chapterIndex,
                                           source
-                                              .substring(0, r.matchStart)
+                                              .substring(0, r.sourceUtf16Offset)
                                               .runes
                                               .length,
                                         );

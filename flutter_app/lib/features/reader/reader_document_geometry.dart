@@ -70,7 +70,7 @@ class ReaderDocumentGeometry {
     return ReaderDocumentGeometry(content.size.height, fragments, paragraphs);
   }
 
-  /// Boundaries are only used by explicit page turns, never a chrome toggle.
+  /// Boundaries for page turns and source anchor restoration.
   List<double> pageOffsets(double viewport) {
     if (viewport <= 0) return const [0];
     final offsets = <double>[0];

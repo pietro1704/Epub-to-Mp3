@@ -67,6 +67,72 @@ void main() {
     },
   );
 
+  testWidgets('a final-line anchor restores the measured last page', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
+    final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+    const target = 'MARCOZULU';
+    final paragraphs = [
+      ...List.generate(30, (i) => 'Paragraph $i with ação 🐧.'),
+      target,
+    ];
+    final text = paragraphs.join('\n');
+    final html = paragraphs.map((paragraph) => '<p>$paragraph</p>').join();
+    final anchor = text.substring(0, text.indexOf(target)).runes.length;
+
+    var reachedEnd = false;
+    Future<void> open(int offset) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: 600,
+                height: 400,
+                child: RichReaderSurface(
+                  key: ValueKey(offset),
+                  chapter: FulltextChapter(index: 0, text: text, html: html),
+                  settings: settings,
+                  background: Colors.white,
+                  foreground: Colors.black,
+                  bodyStyle: const TextStyle(fontSize: 20, height: 1.6),
+                  headingStyle: const TextStyle(fontSize: 24),
+                  initialSourceOffset: offset,
+                  onNextChapter: () {
+                    reachedEnd = true;
+                    return false;
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    double scrollOffset() => tester
+        .widget<SingleChildScrollView>(
+          find.byKey(const ValueKey('rich-reader-viewport')),
+        )
+        .controller!
+        .offset;
+
+    await open(0);
+    for (var page = 0; page < paragraphs.length && !reachedEnd; page++) {
+      await tester.tapAt(const Offset(650, 180));
+      await tester.pumpAndSettle();
+    }
+    expect(reachedEnd, isTrue);
+    final lastPageOffset = scrollOffset();
+    expect(lastPageOffset, greaterThan(0));
+
+    await open(anchor);
+    expect(scrollOffset(), lastPageOffset);
+  });
+
   test(
     'original typography respects persisted explicit choices and reset',
     () async {

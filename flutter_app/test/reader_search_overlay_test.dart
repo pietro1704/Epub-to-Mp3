@@ -102,6 +102,63 @@ void main() {
       expect(find.text('Chapter 1'), findsOneWidget);
     });
 
+    testWidgets('position jump uses chapter list position', (tester) async {
+      int? destination;
+      await tester.pumpWidget(
+        _wrap(
+          ReaderSearchOverlay(
+            chapters: const [
+              FulltextChapter(index: 1, name: 'Opening', text: 'MARCOZULU'),
+              FulltextChapter(index: 2, name: 'Ending', text: 'Final words'),
+            ],
+            onJumpToChapter: (_) {},
+            onJumpToPosition: (chapter, _) => destination = chapter,
+            onClose: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'marcozulu');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Opening'));
+      await tester.pumpAndSettle();
+
+      expect(destination, 0);
+    });
+
+    testWidgets('position jump uses full chapter Unicode scalar offset', (
+      tester,
+    ) async {
+      int? destination;
+      await tester.pumpWidget(
+        _wrap(
+          ReaderSearchOverlay(
+            chapters: [
+              FulltextChapter(
+                index: 0,
+                name: 'Opening',
+                text: '${'a😀 ' * 20}MARCOZULU',
+              ),
+            ],
+            onJumpToChapter: (_) {},
+            onJumpToPosition: (_, offset) => destination = offset,
+            onClose: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'marcozulu');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Opening'));
+      await tester.pumpAndSettle();
+
+      expect(destination, 60);
+    });
+
     testWidgets('caps at 100 results', (tester) async {
       // Build a chapter with >100 occurrences of "x"
       final manyMatches = List.generate(110, (_) => 'x word').join(' ');
