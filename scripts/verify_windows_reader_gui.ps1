@@ -299,6 +299,8 @@ try {
   }
   $addBook = Wait-ForReaderUi 'the Library Add a book control' { Find-AppText '^Add a book$' }
   Click-FlutterElement $addBook
+  $importFile = Wait-ForReaderUi 'the local EPUB or PDF import control' { Find-AppText '^Import an EPUB or PDF file$' }
+  Click-FlutterElement $importFile
 
   $dialog = Wait-ForReaderUi 'the native file picker' {
     $handle = [ReaderTestDesktop]::GetForegroundWindow()
@@ -347,6 +349,10 @@ try {
   } | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath 'reader-journey.json')
   Write-Host 'WINDOWS_READER_GUI: native picker, Library, reader and second chapter passed.'
 } catch {
+  if ($env:GITHUB_ACTIONS -eq 'true') {
+    $message = $_.Exception.Message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+    Write-Host "::error title=Windows reader journey::$message"
+  }
   $foreground = [ReaderTestDesktop]::GetForegroundWindow()
   if ($null -ne $application -and [ReaderTestDesktop]::Owner($foreground) -eq $application.Id) {
     try {

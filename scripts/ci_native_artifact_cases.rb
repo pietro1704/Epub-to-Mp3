@@ -2,6 +2,19 @@
 
 # Loaded by test_ci_runtime_scope.rb; preserve the existing suite selectors and fixture.
 class CiRuntimeScopeTest
+  def test_windows_reader_chooses_local_import_before_waiting_for_the_native_picker
+    script_lines = File.readlines(File.expand_path('verify_windows_reader_gui.ps1', __dir__))
+    journey = [
+      /Click-FlutterElement \$addBook/,
+      /\$importFile = Wait-ForReaderUi .*Find-AppText '\^Import an EPUB or PDF file\$'/,
+      /Click-FlutterElement \$importFile/,
+      /\$dialog = Wait-ForReaderUi 'the native file picker'/
+    ]
+    positions = journey.map { |step| script_lines.index { |line| step.match?(line) } }
+    journey.zip(positions).each { |step, position| refute_nil position, "Missing journey step #{step.inspect}" }
+    assert positions.each_cons(2).all? { |before, after| before < after }, 'Wait for the native picker after choosing local import'
+  end
+
   def test_windows_faber_retains_only_the_verified_release_bundle_as_a_separate_artifact
     workflow = YAML.load_file(File.expand_path('../.github/workflows/flutter-rust-faber.yml', __dir__))
     job = workflow.fetch('jobs').fetch('windows-package-faber')
