@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "open3"
 require "yaml"
 
 # Regression checks for the automatic release tag and GitHub release.
@@ -56,6 +57,16 @@ class AutoReleaseWorkflowTest < Minitest::Test
     assert_includes run, "--generate-notes"
     assert_includes run, '--notes-start-tag "$LAST_TAG"'
     refute_match(/actions\/upload-artifact/, @text, "artifacts are built by release-desktop, not here")
+  end
+
+  def test_missing_official_android_signing_reference_blocks_release_creation
+    gate = step("Require the official Android signing reference")
+    assert_equal "steps.bump.outputs.skip == 'false'", gate.fetch("if")
+    assert_operator @steps.index(gate), :<, @steps.index(step("Create release tag and GitHub release"))
+    _, error, status = Open3.capture3({ "ANDROID_SIGNING_AVAILABLE" => "false" }, "bash", "-c", gate.fetch("run"))
+    refute status.success?, error
+    _, error, status = Open3.capture3({ "ANDROID_SIGNING_AVAILABLE" => "true" }, "bash", "-c", gate.fetch("run"))
+    assert status.success?, error
   end
 
   # Owner decision 2026-11-20: every new release builds its packages. The tag is

@@ -134,6 +134,19 @@ jobs:
           VALIDATED_SHA: ${{ needs.gate.outputs.sha }}
         run: bash scripts/checkout_validated_release_source.sh
 
+      - name: Require official Android signing inputs
+        env:
+          ANDROID_SIGNING_AVAILABLE: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 != '' && secrets.ANDROID_RELEASE_STORE_PASSWORD != '' && secrets.ANDROID_RELEASE_KEY_ALIAS != '' && secrets.ANDROID_RELEASE_KEY_PASSWORD != '' }}
+        run: |
+          if [[ "$ANDROID_SIGNING_AVAILABLE" != true ]]; then
+            echo '::error::Official Android signing reference is unavailable.'
+            exit 1
+          fi
+          if [[ ! -f scripts/verify_android_release_signature.rb ]]; then
+            echo '::error::The validated source predates official Android signing.'
+            exit 1
+          fi
+
       - name: Set up native build tools
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         env:
@@ -170,14 +183,33 @@ jobs:
       - name: Build APK (release)
         env:
           MISE_EXPERIMENTAL: "1"
+          EPUBTOPMP3_ANDROID_OFFICIAL_RELEASE: "1"
         run: mise run flutter:build-apk
 
-      - name: Rename APK
+      - name: Sign and verify the official Android APK
+        env:
+          APK_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          APK_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          APK_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          APK_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
-          apk=flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          set -euo pipefail
+          umask 077
+          signing_dir="$(mktemp -d "$RUNNER_TEMP/android-signing.XXXXXX")"
+          trap 'rm -rf -- "$signing_dir"' EXIT
+          printf '%s' "$APK_KEYSTORE_BASE64" | base64 --decode > "$signing_dir/keystore"
+          unset APK_KEYSTORE_BASE64
+          mise exec -- apksigner sign --ks "$signing_dir/keystore" --ks-key-alias "$APK_KEY_ALIAS" \
+            --ks-pass env:APK_STORE_PASSWORD --key-pass env:APK_KEY_PASSWORD --v4-signing-enabled false \
+            --out "$signing_dir/EpubToMp3_android.apk" flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          unset APK_STORE_PASSWORD APK_KEY_PASSWORD APK_KEY_ALIAS
+          mise exec -- ruby scripts/verify_android_release_signature.rb "$signing_dir/EpubToMp3_android.apk"
+          mv "$signing_dir/EpubToMp3_android.apk" EpubToMp3_android.apk
+
+      - name: Verify signed APK native notices
+        run: |
           path=assets/ThirdPartyNotices/SOURCE.md
-          unzip -p "$apk" "$path" | cmp - "flutter_app/android/app/src/main/$path"
-          cp "$apk" EpubToMp3_android.apk
+          unzip -p EpubToMp3_android.apk "$path" | cmp - "flutter_app/android/app/src/main/$path"
 
       - name: Retain APK for publication after all builds succeed
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -467,6 +499,18 @@ jobs:
           SOURCE_REF: ${{ needs.gate.outputs.sha }}
           VERSION_TAG: ${{ env.RELEASE_TAG }}
         run: node scripts/validated_merge.mjs --repo "$GITHUB_REPOSITORY" --ref "$SOURCE_REF" --tag "$VERSION_TAG"
+      - name: Set up Android signature verification tools
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        env:
+          MISE_ENABLE_TOOLS: ruby,java,android-sdk
+        with:
+          version: 2026.11.3
+          experimental: true
+          cache: false
+      - name: Verify the downloaded official Android APK before publication
+        env:
+          MISE_ENABLE_TOOLS: ruby,java,android-sdk
+        run: mise exec -- ruby scripts/verify_android_release_signature.rb release-assets/EpubToMp3_android.apk
       - name: Load the already built Docker image
         run: docker load --input release-assets/release-image.tar
       - name: Log in to GHCR
@@ -495,4 +539,4 @@ jobs:
           if ! gh release view "$VERSION_TAG" >/dev/null 2>&1; then
             gh release create "$VERSION_TAG" --verify-tag --title "$VERSION_TAG" --generate-notes
           fi
-          gh release upload "$VERSION_TAG" release-assets/*.apk release-assets/*.zip release-assets/*.tar.gz --clobber
+          gh release upload "$VERSION_TAG" release-assets/EpubToMp3_android.apk release-assets/*.zip release-assets/*.tar.gz --clobber

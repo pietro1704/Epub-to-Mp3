@@ -174,6 +174,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Version: ${BASE_VERSION} -> ${NEW} (last tag: ${LAST_TAG:-none})"
 
+      - name: Require the official Android signing reference
+        if: steps.bump.outputs.skip == 'false'
+        env:
+          ANDROID_SIGNING_AVAILABLE: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 != '' && secrets.ANDROID_RELEASE_STORE_PASSWORD != '' && secrets.ANDROID_RELEASE_KEY_ALIAS != '' && secrets.ANDROID_RELEASE_KEY_PASSWORD != '' }}
+        run: |
+          if [[ "$ANDROID_SIGNING_AVAILABLE" != true ]]; then
+            echo '::error::Official Android signing reference is unavailable.'
+            exit 1
+          fi
+
       - name: Revalidate immediately before creating a release tag
         if: steps.bump.outputs.skip == 'false'
         env:
