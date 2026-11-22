@@ -3,6 +3,11 @@ import XCTest
 @MainActor
 final class HomeWidgetGalleryUITests: XCTestCase {
     func testHomeWidgetPreviewsAreAvailableInTheSystemGallery() throws {
+        // Supervised only: it needs the app already running in the foreground and drives
+        // SpringBoard. Opt in with TEST_RUNNER_EPUB2MP3_WIDGET_GALLERY=1 on xcodebuild; any
+        // other test run skips it instead of failing.
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["EPUB2MP3_WIDGET_GALLERY"] == "1",
+                          "Set EPUB2MP3_WIDGET_GALLERY=1 in a supervised device run")
         continueAfterFailure = false
         let app = XCUIApplication()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
