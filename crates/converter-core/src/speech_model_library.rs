@@ -5,7 +5,7 @@ pub use contract::*;
 #[cfg(not(target_arch = "wasm32"))]
 mod inspection;
 
-use crate::model_catalog::{model_revision, MODELS};
+use crate::model_catalog::{manual_models, model_revision, TtsModelDescriptor, MODELS};
 use crate::tts_preferences::TtsSelection;
 use crate::tts_session::{SessionSelection, CONTRACT_VERSION};
 use sha2::{Digest, Sha256};
@@ -22,8 +22,36 @@ pub struct SpeechModelLibrary;
 
 impl SpeechModelLibrary {
     pub fn snapshot(&self, query: CatalogQuery) -> Result<SpeechModelSnapshot, CatalogError> {
-        validate_catalog(MODELS)?;
-        let catalog_revision = catalog_revision_for(MODELS)?;
+        self.snapshot_for_models(query, MODELS)
+    }
+
+    /// Entries for a user-initiated installation browser, including Piper Low.
+    pub fn manual_snapshot(
+        &self,
+        query: CatalogQuery,
+    ) -> Result<SpeechModelSnapshot, CatalogError> {
+        let models = manual_models().copied().collect::<Vec<_>>();
+        self.snapshot_for_models(query, &models)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn single_model_snapshot(
+        &self,
+        query: CatalogQuery,
+        id: &str,
+    ) -> Result<SpeechModelSnapshot, CatalogError> {
+        let model = crate::model_catalog::model_by_id(id)
+            .ok_or_else(|| CatalogError::Invalid(format!("Unknown model: {id}")))?;
+        self.snapshot_for_models(query, std::slice::from_ref(model))
+    }
+
+    fn snapshot_for_models(
+        &self,
+        query: CatalogQuery,
+        models: &[TtsModelDescriptor],
+    ) -> Result<SpeechModelSnapshot, CatalogError> {
+        validate_catalog(models)?;
+        let catalog_revision = catalog_revision_for(models)?;
         let default_selection = resolved_default_selection()?;
         let language = query
             .language
@@ -38,7 +66,7 @@ impl SpeechModelLibrary {
             architecture: query.architecture.clone(),
             os_version: query.os_version.clone(),
         };
-        let entries = MODELS
+        let entries = models
             .iter()
             .map(|model| {
                 let installable = !model.artifacts.is_empty();
@@ -55,11 +83,6 @@ impl SpeechModelLibrary {
                         .is_some_and(|minimum| query.android_api.unwrap_or(0) < minimum)
                 {
                     compatibility_reasons.push(CompatibilityReason::AndroidApiTooLow);
-                }
-                if model.engine == "piper"
-                    && crate::model_catalog::validate_piper_quality(model.id).is_err()
-                {
-                    compatibility_reasons.push(CompatibilityReason::QualityDisabled);
                 }
                 let compatible = compatibility_reasons.is_empty();
                 let mut selection_reasons = Vec::new();

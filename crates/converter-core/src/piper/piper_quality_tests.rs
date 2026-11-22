@@ -158,3 +158,95 @@ fn renamed_symlink_cannot_hide_a_low_model() {
     assert!(select_model(&PiperConfig::new(alias, config), None).is_err());
     assert!(low.is_file());
 }
+
+#[test]
+fn explicit_low_piper_primary_requires_its_catalog_revision() {
+    let id = "pt_BR-edresson-low";
+    let model = model_catalog::model_by_id(id).unwrap();
+    let mut selected = TtsSelection {
+        model_id: Some(id.into()),
+        ..TtsSelection::default()
+    };
+    let mut session = crate::tts_session::SessionSelection::from_legacy(&selected).unwrap();
+    session.model_revision = model_catalog::model_revision(model);
+    selected.session = Some(session.clone());
+    assert!(selected.validate(Some("pt-BR")).is_ok());
+    assert!(selected.validate(Some("en-US")).is_err());
+    let mut preferences = crate::tts_preferences::TtsPreferences {
+        primary: selected.clone(),
+        ..Default::default()
+    };
+    assert!(preferences.validate(Some("pt-BR")).is_ok());
+    preferences.primary = TtsSelection::default();
+    preferences.secondary = Some(selected.clone());
+    assert!(preferences.validate(Some("pt-BR")).is_err());
+
+    let selection_session = selected.session.as_mut().unwrap();
+    selection_session.model_revision = Some("obsolete".into());
+    assert!(selected.validate(None).is_err());
+    session.runtime = "piper-web".into();
+    selected.session = Some(session);
+    assert!(selected.validate(Some("pt-BR")).is_ok());
+    selected.session.as_mut().unwrap().model_revision = None;
+    assert!(selected.validate(None).is_err());
+}
+
+#[test]
+fn explicit_low_piper_probe_rejects_unverified_artifacts_without_touching_them() {
+    let root = tempfile::tempdir().unwrap();
+    let id = "pt_BR-edresson-low";
+    let namespace = root.path().join(id);
+    fs::create_dir(&namespace).unwrap();
+    let model = namespace.join("model.onnx");
+    fs::write(&model, b"retained low model").unwrap();
+    fs::write(
+        namespace.join("model.onnx.json"),
+        br#"{"audio":{"quality":"low"}}"#,
+    )
+    .unwrap();
+    let revision = model_catalog::model_revision(model_catalog::model_by_id(id).unwrap()).unwrap();
+    let runtime = Arc::new(PreparationProbe(std::sync::atomic::AtomicUsize::new(0)));
+    let result =
+        PreparedPiperModel::prepare_explicit_low(root.path(), id, &revision, runtime.clone());
+    assert!(
+        matches!(result, Err(PiperError::Synthesis(message)) if message.contains("catalog artifacts"))
+    );
+    assert_eq!(runtime.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(fs::read(model).unwrap(), b"retained low model");
+}
+
+#[test]
+fn explicit_low_piper_synthesis_reaches_runtime_and_honors_cancellation() {
+    let root = tempfile::tempdir().unwrap();
+    let model = root.path().join("voice-low.onnx");
+    let config = root.path().join("voice.json");
+    fs::write(&model, b"fixture").unwrap();
+    fs::write(&config, br#"{"audio":{"quality":"low"}}"#).unwrap();
+    let output = root.path().join("speech.wav");
+    let config = PiperConfig::new(model, config);
+    let runtime = Arc::new(RegisteredPiperRuntime::new(|_, output, _| {
+        super::tests::write_test_wav(output);
+        Ok(())
+    }));
+    let cancel = CancellationToken::default();
+    assert!(synthesize_with_runtime(&config, "Speech", &output, &cancel, runtime.clone()).is_err());
+    synthesize_selected_model(&config, "Speech", &output, &cancel, runtime.clone(), true).unwrap();
+    let audio = fs::read(&output).unwrap();
+    cancel.cancel();
+    assert_eq!(
+        synthesize_selected_model(&config, "Speech", &output, &cancel, runtime, true),
+        Err(PiperError::Cancelled)
+    );
+    assert_eq!(fs::read(output).unwrap(), audio);
+}
+
+#[test]
+fn defaults_are_offline_faber() {
+    let preferences = crate::tts_preferences::TtsPreferences::default();
+    assert_eq!(
+        preferences.primary.model_id.as_deref(),
+        Some("pt_BR-faber-medium")
+    );
+    assert!(preferences.secondary.is_none());
+    assert!(!preferences.allow_online_fallback);
+}

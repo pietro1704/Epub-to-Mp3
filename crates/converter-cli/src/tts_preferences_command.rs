@@ -167,10 +167,7 @@ pub(super) fn effective_preferences(
         }
         preferences.primary.engine = "piper".into();
         preferences.primary.model_id = Some(model.clone());
-        if let Some(descriptor) = converter_core::model_catalog::MODELS
-            .iter()
-            .find(|descriptor| descriptor.id == model)
-        {
+        if let Some(descriptor) = converter_core::model_catalog::model_by_id(model) {
             let runtime = converter_core::tts_session::runtime_for(descriptor.engine)
                 .ok_or("The model has no registered runtime descriptor")?;
             preferences.primary.engine = descriptor.engine.into();

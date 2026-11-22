@@ -412,13 +412,19 @@ fn catalog_model_capture_keeps_manual_jobs_strict_and_carries_runtime_revision()
         &converter_core::tts_preferences::TtsPreferences::app_default(true),
     )
     .unwrap();
-    let raw = ["convert", "book.epub", "--model", "pt_BR-faber-medium"].map(str::to_owned);
-    let preferences = effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).unwrap();
-    assert!(preferences.policy_version.is_none());
-    assert!(preferences.secondary.is_none());
-    let session = preferences.primary.session.as_ref().unwrap();
-    assert_eq!(session.runtime, "piper");
-    assert!(!session.model_revision.as_ref().unwrap().is_empty());
+    for id in ["pt_BR-faber-medium", "pt_BR-edresson-low"] {
+        let raw = ["convert", "book.epub", "--model", id].map(str::to_owned);
+        let preferences = effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).unwrap();
+        assert!(preferences.policy_version.is_none());
+        assert!(preferences.secondary.is_none());
+        let session = preferences.primary.session.as_ref().unwrap();
+        assert_eq!(session.runtime, "piper");
+        let model = converter_core::model_catalog::model_by_id(id).unwrap();
+        assert_eq!(
+            session.model_revision,
+            converter_core::model_catalog::model_revision(model)
+        );
+    }
     let invalid = [
         "convert",
         "book.epub",
@@ -439,7 +445,7 @@ fn fallback_catalog_capture_preserves_revision_and_rejects_engine_conflicts() {
             Vec::<(String, String)>::new(),
             temp.path().into(),
         ));
-    let args = |engine: &str| {
+    let args = |engine: &str, id: &str| {
         [
             "convert",
             "book.epub",
@@ -448,11 +454,11 @@ fn fallback_catalog_capture_preserves_revision_and_rejects_engine_conflicts() {
             "--fallback-engine",
             engine,
             "--fallback-model",
-            "pt_BR-faber-medium",
+            id,
         ]
         .map(str::to_owned)
     };
-    let raw = args("piper");
+    let raw = args("piper", "pt_BR-faber-medium");
     let preferences = effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).unwrap();
     let secondary = preferences.secondary.unwrap();
     assert_eq!(secondary.engine, "piper");
@@ -463,8 +469,10 @@ fn fallback_catalog_capture_preserves_revision_and_rejects_engine_conflicts() {
         .model_revision
         .as_ref()
         .is_some_and(|revision| !revision.is_empty()));
+    let low = args("piper", "pt_BR-edresson-low");
+    assert!(effective_preferences(&config, &parse_args(&low).unwrap(), &low).is_err());
     for engine in ["none", "system", "edge", "kokoro"] {
-        let raw = args(engine);
+        let raw = args(engine, "pt_BR-faber-medium");
         assert!(effective_preferences(&config, &parse_args(&raw).unwrap(), &raw).is_err());
     }
     let raw = [

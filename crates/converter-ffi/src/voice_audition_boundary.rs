@@ -109,13 +109,25 @@ fn synthesize_audition(
             piper_runtime::set_espeak_data_directory(Path::new(data))?;
         }
         let runtime = Arc::new(piper_runtime_boundary::EmbeddedPiperRuntime);
-        let prepared = piper::PreparedPiperModel::prepare(
-            &root,
-            model_id,
-            Path::new("model.onnx"),
-            Path::new("model.onnx.json"),
-            runtime,
-        )
+        let is_low = converter_core::model_catalog::model_by_id(model_id).is_some_and(|model| {
+            model.metadata.presentation.quality == converter_core::model_catalog::QualityTier::Low
+        });
+        let prepared = if is_low {
+            let revision = selection
+                .session
+                .as_ref()
+                .and_then(|session| session.model_revision.as_deref())
+                .ok_or("An explicit low quality audition requires a catalog revision")?;
+            piper::PreparedPiperModel::prepare_explicit_low(&root, model_id, revision, runtime)
+        } else {
+            piper::PreparedPiperModel::prepare(
+                &root,
+                model_id,
+                Path::new("model.onnx"),
+                Path::new("model.onnx.json"),
+                runtime,
+            )
+        }
         .map_err(|error| error.to_string())?;
         prepared
             .synthesize(text, output, token)

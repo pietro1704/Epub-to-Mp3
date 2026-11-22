@@ -8,7 +8,7 @@ Usage: convert [INPUT ...] [OPTIONS]
 Inputs accept EPUB and text PDF files, directories, loose multiword names, and fuzzy matches.
 
 Preferences: preferences show | preferences set JSON
-Models: models list | models install MODEL_ID | models remove MODEL_ID --yes
+Models: models list [--include-low] | models install MODEL_ID | models remove MODEL_ID --yes
 
 Voice options:
   --tts-preferences-json JSON   per-job snapshot; exclusive of other TTS options

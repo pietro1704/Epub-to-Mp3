@@ -411,11 +411,7 @@ pub fn preferences_for_language(
         selection
             .model_id
             .as_deref()
-            .and_then(|id| {
-                crate::model_catalog::MODELS
-                    .iter()
-                    .find(|model| model.id == id)
-            })
+            .and_then(crate::model_catalog::model_by_id)
             .map(|model| {
                 model
                     .languages

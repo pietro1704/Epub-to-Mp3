@@ -257,13 +257,30 @@ fn pinned_faber_manifest_preserves_verified_voice_identity() {
 }
 
 #[test]
-fn rejects_install_manifests_for_removed_piper_voices() {
-    for voice in ["pt_BR-edresson-low", "en_US-lessac-low"] {
-        assert!(matches!(
-            ModelStore::catalog_manifest(voice),
-            Err(ModelStoreError::UnknownModel(id)) if id == voice
-        ));
+fn explicit_low_piper_installation_plans_pinned_artifacts_by_id() {
+    let root = tempfile::tempdir().unwrap();
+    for id in ["pt_BR-edresson-low", "en_US-lessac-low"] {
+        let manifest = ModelStore::catalog_manifest(id).unwrap();
+        assert_eq!(manifest.model_id, id);
+        assert!(manifest.artifacts.iter().all(|artifact| artifact
+            .url
+            .contains("/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/")));
+        assert_eq!(manifest.artifacts.len(), 2);
+        let mut operation =
+            ModelInstallOperation::begin_catalog(root.path(), id, u64::MAX, Default::default())
+                .unwrap();
+        let plan = operation.plan();
+        assert!(plan.ready);
+        assert_eq!(plan.revision, manifest.revision);
+        assert_eq!(plan.artifacts[0].sha256, manifest.artifacts[0].sha256);
+        assert_eq!(plan.artifacts[1].sha256, manifest.artifacts[1].sha256);
+        operation.cancel().unwrap();
+        assert!(!root.path().join(id).exists());
     }
+    assert!(matches!(
+        ModelStore::catalog_manifest("unknown-low"),
+        Err(ModelStoreError::UnknownModel(_))
+    ));
 }
 
 #[test]

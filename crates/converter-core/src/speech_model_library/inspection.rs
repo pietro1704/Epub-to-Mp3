@@ -10,9 +10,36 @@ impl SpeechModelLibrary {
         &self,
         query: CatalogQuery,
         store: &ModelStore,
+        probe: impl FnMut(&ModelIdentity) -> RuntimeReadinessOutcome,
+    ) -> Result<SpeechModelSnapshot, CatalogError> {
+        Self::probe_snapshot(self.snapshot_with_inspection(query, store, &[])?, probe)
+    }
+
+    pub fn manual_snapshot_with_inspection(
+        &self,
+        query: CatalogQuery,
+        store: &ModelStore,
+    ) -> Result<SpeechModelSnapshot, CatalogError> {
+        Self::inspect_snapshot(self.manual_snapshot(query)?, store, &[])
+    }
+
+    /// Inspect and probe only the exact model requested by the caller.
+    pub fn snapshot_for_model_with_runtime_probe(
+        &self,
+        query: CatalogQuery,
+        store: &ModelStore,
+        model_id: &str,
+        probe: impl FnMut(&ModelIdentity) -> RuntimeReadinessOutcome,
+    ) -> Result<SpeechModelSnapshot, CatalogError> {
+        let snapshot =
+            Self::inspect_snapshot(self.single_model_snapshot(query, model_id)?, store, &[])?;
+        Self::probe_snapshot(snapshot, probe)
+    }
+
+    fn probe_snapshot(
+        mut snapshot: SpeechModelSnapshot,
         mut probe: impl FnMut(&ModelIdentity) -> RuntimeReadinessOutcome,
     ) -> Result<SpeechModelSnapshot, CatalogError> {
-        let mut snapshot = self.snapshot_with_inspection(query, store, &[])?;
         for entry in &mut snapshot.entries {
             if entry.installation.state != InstallationState::Installed
                 || !entry.compatibility.compatible
@@ -50,8 +77,15 @@ impl SpeechModelLibrary {
         store: &ModelStore,
         readiness: &[RuntimeReadinessObservation],
     ) -> Result<SpeechModelSnapshot, CatalogError> {
+        Self::inspect_snapshot(self.snapshot(query)?, store, readiness)
+    }
+
+    fn inspect_snapshot(
+        mut snapshot: SpeechModelSnapshot,
+        store: &ModelStore,
+        readiness: &[RuntimeReadinessObservation],
+    ) -> Result<SpeechModelSnapshot, CatalogError> {
         validate_readiness(readiness)?;
-        let mut snapshot = self.snapshot(query)?;
         for entry in &mut snapshot.entries {
             if !entry.distribution.installable {
                 entry.installation.state = InstallationState::NotApplicable;

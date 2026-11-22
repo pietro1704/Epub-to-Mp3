@@ -21,7 +21,7 @@ pub const MAX_SEGMENT_BYTES: usize = 16 * 1024 * 1024;
 mod recovery;
 pub use recovery::RecoveryAttempt;
 mod catalog;
-pub use catalog::{builtin_descriptors, catalog_json, runtime_for};
+pub use catalog::{builtin_descriptors, catalog_json, manual_catalog_json, runtime_for};
 mod registry;
 pub use registry::TtsRegistry;
 mod text;

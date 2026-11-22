@@ -87,10 +87,7 @@ fn installed_catalogue_voices_are_ready_and_synthesize_with_their_exact_identity
     assert!(!ids.is_empty());
     let output_root = tempfile::tempdir().unwrap();
     for id in ids {
-        let model = converter_core::model_catalog::MODELS
-            .iter()
-            .find(|model| model.id == id)
-            .unwrap();
+        let model = converter_core::model_catalog::model_by_id(&id).unwrap();
         let evidence = model
             .metadata
             .exact_languages
@@ -105,7 +102,7 @@ fn installed_catalogue_voices_are_ready_and_synthesize_with_their_exact_identity
         let input = CString::new(book.path().to_str().unwrap()).unwrap();
         let encode = |text: &str| CString::new(text).unwrap();
         unsafe {
-            let snapshot = converter_tts_catalog_probe_json_v3(
+            let snapshot = converter_tts_catalog_probe_model_json_v3(
                 encode(evidence.tag).as_ptr(),
                 encode("macos").as_ptr(),
                 0,
@@ -113,6 +110,7 @@ fn installed_catalogue_voices_are_ready_and_synthesize_with_their_exact_identity
                 encode("12.0").as_ptr(),
                 encode(&models).as_ptr(),
                 encode(&data).as_ptr(),
+                encode(&id).as_ptr(),
             );
             assert!(!snapshot.is_null());
             let snapshot_json: serde_json::Value =

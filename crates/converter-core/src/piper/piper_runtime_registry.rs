@@ -2,6 +2,7 @@
 use super::piper_wav_validation::validate_wav;
 use super::{PiperError, PiperRuntime, PiperRuntimeStatus};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
 pub(super) static MODEL_TRANSACTION: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -107,6 +108,26 @@ pub fn piper_runtime_status() -> PiperRuntimeStatus {
         })
 }
 
+// Access is serialized by MODEL_TRANSACTION. A failed explicit initialization
+// may have partially changed the runtime, so it also blocks unscoped synthesis.
+static UNSCOPED_SYNTHESIS_BLOCKED: AtomicBool = AtomicBool::new(false);
+
+pub(super) fn initialize_runtime(
+    runtime: &Arc<dyn PiperRuntime>,
+    model: &Path,
+    config: &Path,
+    explicit_low: bool,
+) -> Result<(), PiperError> {
+    if explicit_low {
+        UNSCOPED_SYNTHESIS_BLOCKED.store(true, Ordering::Relaxed);
+    }
+    runtime.init(model, config)?;
+    if !explicit_low {
+        UNSCOPED_SYNTHESIS_BLOCKED.store(false, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
 pub fn piper_runtime_init(model: &Path, config: &Path) -> Result<(), PiperError> {
     super::validate_model_file_quality(model, config)?;
     let _transaction = MODEL_TRANSACTION
@@ -120,7 +141,7 @@ pub fn piper_runtime_init(model: &Path, config: &Path) -> Result<(), PiperError>
     }
     let runtime = registered_runtime()
         .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
-    runtime.init(model, config)
+    initialize_runtime(&runtime, model, config, false)
 }
 
 pub fn piper_synthesize(text: &str, output: &Path) -> Result<PathBuf, PiperError> {
@@ -132,6 +153,11 @@ pub fn piper_synthesize(text: &str, output: &Path) -> Result<PathBuf, PiperError
     }
     let runtime = registered_runtime()
         .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
+    if UNSCOPED_SYNTHESIS_BLOCKED.load(Ordering::Relaxed) {
+        return Err(PiperError::Synthesis(
+            "An explicit low quality model cannot be used for unscoped synthesis".into(),
+        ));
+    }
     runtime.synthesize(text, output, &|| false)?;
     validate_wav(output)?;
     Ok(output.to_path_buf())

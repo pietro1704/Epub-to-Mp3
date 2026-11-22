@@ -161,3 +161,63 @@ fn verify_rejected_legacy_low_cache(recover: bool, typed: bool) {
         );
     }
 }
+
+#[test]
+fn explicit_low_piper_binds_the_installed_namespace_and_rejects_wrong_artifacts() {
+    use crate::{
+        model_catalog::{model_by_id, model_revision},
+        tts_preferences::{TtsPreferences, TtsSelection},
+        tts_session::SessionSelection,
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+        std::iter::empty::<(String, String)>(),
+        root.path().to_path_buf(),
+    ));
+    let worker = ConversionWorker::new(config).unwrap();
+    let id = "en_US-lessac-low";
+    let models_root = root.path().join("models");
+    let namespace = models_root.join(id);
+    fs::create_dir_all(&namespace).unwrap();
+    let model = namespace.join("model.onnx");
+    let voice_config = namespace.join("model.onnx.json");
+    fs::write(&model, b"unverified catalog bytes").unwrap();
+    fs::write(&voice_config, br#"{"audio":{"quality":"low"}}"#).unwrap();
+
+    let mut selected = TtsSelection {
+        model_id: Some(id.into()),
+        ..TtsSelection::default()
+    };
+    let mut capture = SessionSelection::from_legacy(&selected).unwrap();
+    capture.model_revision = model_revision(model_by_id(id).unwrap());
+    selected.session = Some(capture);
+    let preferences = TtsPreferences {
+        primary: selected.clone(),
+        ..Default::default()
+    };
+    let request = ConversionRequest {
+        tts_preferences: Some(preferences.clone()),
+        models_root: Some(models_root),
+        input: root.path().join("unused.epub"),
+        job_id: "explicit-low".into(),
+        engine: Some("piper".into()),
+        voice: None,
+        language: Some("en-US".into()),
+        piper_model: Some(root.path().join("unrelated.onnx")),
+        piper_config: Some(root.path().join("unrelated.json")),
+        chapter_indices: None,
+        no_parallel: true,
+    };
+    assert_eq!(
+        worker.selection_model_paths(&request, &selected),
+        (model.clone(), voice_config)
+    );
+    let error = worker
+        .typed_cache_request_key(&request, &preferences, Some("en-US"), "source")
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("does not match its catalog artifacts"));
+    assert_eq!(fs::read(model).unwrap(), b"unverified catalog bytes");
+}

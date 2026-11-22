@@ -393,3 +393,67 @@ fn versioned_conversion_rejects_missing_capture_before_creating_a_job() {
     }
     assert!(!root.path().join(".jobs/invalid-capture.json").exists());
 }
+
+#[test]
+fn manual_catalog_and_targeted_probe_expose_low_piper_only_by_opt_in() {
+    let root = tempfile::tempdir().unwrap();
+    let model_root = CString::new(root.path().to_str().unwrap()).unwrap();
+    let read = |result: *mut c_char| unsafe {
+        assert!(!result.is_null());
+        let value: serde_json::Value =
+            serde_json::from_slice(CStr::from_ptr(result).to_bytes()).unwrap();
+        converter_string_free(result);
+        value
+    };
+    unsafe {
+        let manual = read(converter_tts_catalog_manual_json_v3(
+            c"pt-BR".as_ptr(),
+            c"macos".as_ptr(),
+            0,
+            c"x86_64".as_ptr(),
+            c"".as_ptr(),
+            model_root.as_ptr(),
+        ));
+        let entry = manual["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["identity"]["model_id"] == "pt_BR-edresson-low")
+            .unwrap();
+        assert_eq!(entry["presentation"]["quality"], "low");
+        assert_eq!(entry["distribution"]["installable"], true);
+        assert_eq!(entry["installation"]["state"], "missing");
+        assert_eq!(entry["selection"]["selectable"], false);
+        assert_eq!(
+            manual["default_selection"]["model_id"],
+            "pt_BR-faber-medium"
+        );
+
+        let targeted = read(converter_tts_catalog_probe_model_json_v3(
+            c"pt-BR".as_ptr(),
+            c"macos".as_ptr(),
+            0,
+            c"x86_64".as_ptr(),
+            c"".as_ptr(),
+            model_root.as_ptr(),
+            c"/no-phonemizer-needed".as_ptr(),
+            c"pt_BR-edresson-low".as_ptr(),
+        ));
+        assert_eq!(targeted["entries"], serde_json::json!([entry]));
+
+        let automatic = read(converter_tts_catalog_json_v3(
+            c"pt-BR".as_ptr(),
+            c"macos".as_ptr(),
+            0,
+            c"x86_64".as_ptr(),
+            c"".as_ptr(),
+            model_root.as_ptr(),
+        ));
+        assert!(automatic["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["presentation"]["quality"] != "low"));
+    }
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+}

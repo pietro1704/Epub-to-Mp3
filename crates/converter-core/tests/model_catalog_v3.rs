@@ -265,3 +265,34 @@ fn model_catalog_v3_projects_offline_installation_and_runtime_states_without_pri
         .unwrap()
         .contains(root.path().to_string_lossy().as_ref()));
 }
+
+#[test]
+fn manual_v2_catalog_marks_only_low_models_manual_and_keeps_faber_default() {
+    let automatic: serde_json::Value =
+        serde_json::from_str(&converter_core::tts_session::catalog_json()).unwrap();
+    let manual: serde_json::Value =
+        serde_json::from_str(&converter_core::tts_session::manual_catalog_json()).unwrap();
+    let automatic_ids = automatic["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|model| model["id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    let manual_only_ids = manual["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|model| {
+            let id = model["id"].as_str().unwrap();
+            if model["manual_only"].as_bool().unwrap() {
+                assert!(!automatic_ids.contains(&id));
+                Some(id)
+            } else {
+                assert!(automatic_ids.contains(&id));
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(manual_only_ids, ["pt_BR-edresson-low", "en_US-lessac-low"]);
+    assert_eq!(automatic["default_selection"], manual["default_selection"]);
+}

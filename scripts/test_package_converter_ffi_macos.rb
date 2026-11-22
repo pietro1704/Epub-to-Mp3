@@ -69,7 +69,8 @@ class PackageConverterFfiMacOSTest < Minitest::Test
   def test_native_inspection_requires_current_conversion_and_catalog_exports
     library = File.join(@root, 'target/x86_64-apple-darwin/release/libconverter_ffi.dylib')
     symbols = %w[_converter_session_open _converter_session_free _converter_string_free
-                 _converter_session_convert_streaming_job_options_json_v1 _converter_tts_catalog_json_v3]
+                 _converter_session_convert_streaming_job_options_json_v1 _converter_tts_catalog_json_v3
+                 _converter_tts_catalog_manual_json_v3 _converter_tts_catalog_probe_model_json_v3]
     command = lambda do |*arguments|
       case arguments[1, 2]
       when ['lipo', '-archs'] then 'x86_64'
@@ -83,10 +84,13 @@ class PackageConverterFfiMacOSTest < Minitest::Test
     ConverterFfiMacOSPackage.define_singleton_method(:command, command)
     begin
       ConverterFfiMacOSPackage.inspect_macho(library)
-      symbols.delete('_converter_tts_catalog_json_v3')
-      symbols.push('_converter_bytes_free')
-      error = assert_raises(RuntimeError) { ConverterFfiMacOSPackage.inspect_macho(library) }
-      assert_includes error.message, '_converter_tts_catalog_json_v3'
+      %w[_converter_tts_catalog_json_v3 _converter_tts_catalog_manual_json_v3
+         _converter_tts_catalog_probe_model_json_v3].each do |symbol|
+        symbols.delete(symbol)
+        error = assert_raises(RuntimeError) { ConverterFfiMacOSPackage.inspect_macho(library) }
+        assert_includes error.message, symbol
+        symbols.push(symbol)
+      end
     ensure
       ConverterFfiMacOSPackage.define_singleton_method(:command, original_command)
     end

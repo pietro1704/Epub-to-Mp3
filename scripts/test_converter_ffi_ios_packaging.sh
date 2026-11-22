@@ -30,12 +30,21 @@ xcrun clang -target "$arch-apple-ios15.0-simulator" -dynamiclib \
   -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
   "$root/scripts/fixtures/incomplete_converter_ffi.c" -o "$bundle_root/incomplete.dylib"
 expect_rejection "$bundle_root/incomplete.dylib" "$arch" 7
-# A legacy library can expose every generic ABI symbol while lacking Piper.
+# A legacy library predates the explicit-model catalog exports.
 for symbol in converter_session_open converter_session_metadata_json converter_session_free \
     converter_string_free converter_last_error converter_tts_catalog_json_v3 \
     converter_tts_default_engine converter_session_convert_streaming_job_options_json_v1 converter_audio_prepare_v1; do
   printf 'void %s(void) {}\n' "$symbol"
 done > "$bundle_root/non-piper.c"
+xcrun clang -target "$arch-apple-ios15.0-simulator" -dynamiclib \
+  -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+  "$bundle_root/non-piper.c" -o "$bundle_root/previous-abi.dylib"
+CONVERTER_FFI_ENABLE_PIPER=0 expect_rejection "$bundle_root/previous-abi.dylib" "$arch" 7
+
+# The current generic ABI is complete even when Piper is disabled.
+for symbol in converter_tts_catalog_manual_json_v3 converter_tts_catalog_probe_model_json_v3; do
+  printf 'void %s(void) {}\n' "$symbol"
+done >> "$bundle_root/non-piper.c"
 xcrun clang -target "$arch-apple-ios15.0-simulator" -dynamiclib \
   -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
   "$bundle_root/non-piper.c" -o "$bundle_root/non-piper.dylib"
