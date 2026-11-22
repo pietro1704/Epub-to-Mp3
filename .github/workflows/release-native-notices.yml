@@ -1,0 +1,33 @@
+name: Prepare native release notices
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Full SHA approved by the calling release gate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/master
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Stage notices and corresponding-source references
+        env:
+          VALIDATED_SHA: ${{ inputs.source_sha }}
+        run: /usr/bin/ruby scripts/stage_native_notices.rb . "$VALIDATED_SHA" "$RUNNER_TEMP/ThirdPartyNotices"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-third-party-notices
+          path: ${{ runner.temp }}/ThirdPartyNotices
+          if-no-files-found: error
+          retention-days: 7
