@@ -13,17 +13,50 @@ if (-not [Environment]::UserInteractive) {
   throw 'The Windows runner has no interactive desktop.'
 }
 
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing
-Add-Type -TypeDefinition @'
+Add-Type -AssemblyName Accessibility, UIAutomationClient, UIAutomationTypes, System.Drawing
+Add-Type -ReferencedAssemblies ([Accessibility.IAccessible].Assembly.Location) -TypeDefinition @'
+using Accessibility;
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 public static class ReaderTestDesktop
 {
+    // Use the COM property accessors with an explicit child ID, including CHILDID_SELF.
+    private static readonly Func<IAccessible, object, string> ReadName =
+        BindAccessibleProperty<string>("get_accName");
+    private static readonly Func<IAccessible, object, object> ReadRole =
+        BindAccessibleProperty<object>("get_accRole");
+    private static readonly Func<IAccessible, object, object> ReadState =
+        BindAccessibleProperty<object>("get_accState");
+
+    private static Func<IAccessible, object, TValue> BindAccessibleProperty<TValue>(string accessor)
+    {
+        return (Func<IAccessible, object, TValue>)Delegate.CreateDelegate(
+            typeof(Func<IAccessible, object, TValue>), typeof(IAccessible).GetMethod(accessor));
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct Point
     {
         public int X, Y;
+    }
+
+    public sealed class FlutterElement
+    {
+        public string Name;
+        public object Role;
+        public int State;
+        public int Left, Top, Width, Height;
+
+        public bool IsVisible
+        {
+            get
+            {
+                const int invisibleOrOffscreen = 0x8000 | 0x10000;
+                return (State & invisibleOrOffscreen) == 0 && Width > 0 && Height > 0;
+            }
+        }
     }
 
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -32,7 +65,7 @@ public static class ReaderTestDesktop
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
-    [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid interfaceId, out IntPtr accessible);
+    [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out IAccessible accessible);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint owner);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
@@ -50,16 +83,44 @@ public static class ReaderTestDesktop
         return FindWindowEx(window, IntPtr.Zero, "FLUTTERVIEW", null);
     }
 
-    public static bool RequestClientAccessibility(IntPtr window)
+    public static FlutterElement[] ReadFlutterAccessibility(IntPtr window)
     {
         const uint objIdClient = unchecked((uint)-4);
-        var accessibleId = new Guid("618736E0-3C3D-11CF-810C-00AA00389B71"); // IID_IAccessible
-        IntPtr accessible;
-        int result = AccessibleObjectFromWindow(window, objIdClient, ref accessibleId, out accessible);
-        if (accessible == IntPtr.Zero)
-            return false;
-        Marshal.Release(accessible);
-        return result == 0;
+        Guid accessibleId = typeof(IAccessible).GUID;
+        IAccessible root;
+        var elements = new List<FlutterElement>();
+        // Flutter handles OBJID_CLIENT on its own HWND even when UIA exposes only the pane.
+        if (AccessibleObjectFromWindow(window, objIdClient, ref accessibleId, out root) == 0 && root != null)
+            ReadAccessibleNode(root, 0, 0, elements);
+        return elements.ToArray();
+    }
+
+    private static void ReadAccessibleNode(IAccessible accessible, int childId,
+                                           int depth, List<FlutterElement> elements)
+    {
+        if (depth > 64 || elements.Count >= 1024)
+            return;
+
+        var element = new FlutterElement();
+        element.Name = ReadName(accessible, childId);
+        element.Role = ReadRole(accessible, childId);
+        element.State = Convert.ToInt32(ReadState(accessible, childId));
+        accessible.accLocation(out element.Left, out element.Top, out element.Width,
+                               out element.Height, childId);
+        elements.Add(element);
+
+        if (childId != 0)
+            return;
+
+        int children = accessible.accChildCount;
+        for (int index = 1; index <= children && elements.Count < 1024; index++)
+        {
+            IAccessible child = accessible.get_accChild(index) as IAccessible;
+            if (child != null)
+                ReadAccessibleNode(child, 0, depth + 1, elements);
+            else
+                ReadAccessibleNode(accessible, index, depth + 1, elements);
+        }
     }
 
     public static void Click(int x, int y, uint owner)
@@ -101,7 +162,10 @@ function Wait-ForReaderUi([string]$Description, [scriptblock]$Lookup) {
         return $match
       }
     } catch [System.Windows.Automation.ElementNotAvailableException] {
-      # Flutter can replace accessibility elements while a frame is laid out.
+      # A native dialog element can disappear during a refresh.
+    } catch [System.Runtime.InteropServices.COMException] {
+      # A replaced MSAA node can report E_INVALIDARG, CO_E_OBJNOTCONNECTED or RPC_E_DISCONNECTED.
+      if ($_.Exception.GetBaseException().HResult -notin @(0x80070057, 0x800401FD, 0x80010108)) { throw }
     }
     Start-Sleep -Milliseconds 250
   }
@@ -124,14 +188,23 @@ function Find-VisibleElement([System.Windows.Automation.AutomationElement]$Root,
   }
 }
 
-function Find-AppText([string]$Pattern, [switch]$IncludeTooltip) {
-  $root = [System.Windows.Automation.AutomationElement]::FromHandle($flutterView)
-  Find-VisibleElement $root {
-    param($item)
-    $item.Name -match $Pattern -or
-      ($IncludeTooltip -and $item.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
-        $item.HelpText -match $Pattern)
+function Find-AppText([string]$Pattern) {
+  foreach ($element in [ReaderTestDesktop]::ReadFlutterAccessibility($flutterView)) {
+    if ($element.IsVisible -and $element.Name -match $Pattern) {
+      return $element
+    }
   }
+}
+
+function Save-FlutterAccessibility([IntPtr]$Handle) {
+  $elements = [ReaderTestDesktop]::ReadFlutterAccessibility($Handle)
+  $rows = @(
+    foreach ($element in $elements) {
+      $name = $element.Name -replace '\s+', ' '
+      "role=$($element.Role) | state=$($element.State) | bounds=$($element.Left),$($element.Top),$($element.Width),$($element.Height) | name=$name"
+    }
+  )
+  Write-AccessibilityEvidence 'MSAA' $Handle $rows
 }
 
 function Save-ReaderAccessibility([IntPtr]$Handle) {
@@ -149,12 +222,22 @@ function Save-ReaderAccessibility([IntPtr]$Handle) {
       }
     }
   )
-  $summary = "UIA handle=$Handle, descendants=$($elements.Count - 1)"
+  Write-AccessibilityEvidence 'UIA' $Handle $rows
+}
+
+function Write-AccessibilityEvidence([string]$Api, [IntPtr]$Handle, [string[]]$Rows) {
+  $summary = "$Api handle=$Handle, elements=$($Rows.Count)"
   Write-Host $summary
-  $rows | Select-Object -First 20 | ForEach-Object {
-    Write-Host ('UIA ' + $_.Substring(0, [Math]::Min(220, $_.Length)))
+  $Rows | Select-Object -First 20 | ForEach-Object {
+    Write-Host ("$Api " + $_.Substring(0, [Math]::Min(220, $_.Length)))
   }
-  @($summary) + $rows | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath 'visible-elements.txt')
+  @($summary) + $Rows | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidencePath "visible-elements-$Api.txt")
+}
+
+function Click-FlutterElement([ReaderTestDesktop+FlutterElement]$Element) {
+  $centerX = [int]($Element.Left + $Element.Width / 2)
+  $centerY = [int]($Element.Top + $Element.Height / 2)
+  [ReaderTestDesktop]::Click($centerX, $centerY, $application.Id)
 }
 
 function Click-ReaderElement([System.Windows.Automation.AutomationElement]$Element) {
@@ -214,13 +297,8 @@ try {
     $handle = [ReaderTestDesktop]::FindFlutterView($window)
     if ($handle -ne [IntPtr]::Zero -and [ReaderTestDesktop]::Owner($handle) -eq $application.Id) { $handle }
   }
-  # Flutter starts building its Windows semantics tree on a client accessibility request.
-  Wait-ForReaderUi 'the Flutter client accessibility provider' {
-    if ([ReaderTestDesktop]::RequestClientAccessibility($flutterView)) { $true }
-  } | Out-Null
-
-  $addBook = Wait-ForReaderUi 'the Library Add a book control' { Find-AppText '^Add a book$' -IncludeTooltip }
-  Click-ReaderElement $addBook
+  $addBook = Wait-ForReaderUi 'the Library Add a book control' { Find-AppText '^Add a book$' }
+  Click-FlutterElement $addBook
 
   $dialog = Wait-ForReaderUi 'the native file picker' {
     $handle = [ReaderTestDesktop]::GetForegroundWindow()
@@ -247,15 +325,15 @@ try {
   Click-ReaderElement $open
 
   $book = Wait-ForReaderUi 'the imported EPUB in Library' { Find-AppText '^Amostra p.blica do CLI(?:\s|$)' }
-  Click-ReaderElement $book
-  $chapterOne = (Wait-ForReaderUi 'the opening chapter passage' { Find-AppText 'a neblina cobria a colina' }).Current.Name
+  Click-FlutterElement $book
+  $chapterOne = (Wait-ForReaderUi 'the opening chapter passage' { Find-AppText 'a neblina cobria a colina' }).Name
   Save-ReaderFrame 'chapter-1'
 
-  $contents = Wait-ForReaderUi 'the reader Table of contents control' { Find-AppText '^Table of contents$' -IncludeTooltip }
-  Click-ReaderElement $contents
+  $contents = Wait-ForReaderUi 'the reader Table of contents control' { Find-AppText '^Table of contents$' }
+  Click-FlutterElement $contents
   $secondEntry = Wait-ForReaderUi 'the second chapter in the table of contents' { Find-AppText '^O mapa antigo$' }
-  Click-ReaderElement $secondEntry
-  $chapterTwo = (Wait-ForReaderUi 'the second chapter passage' { Find-AppText 'um mapa antigo, dobrado' }).Current.Name
+  Click-FlutterElement $secondEntry
+  $chapterTwo = (Wait-ForReaderUi 'the second chapter passage' { Find-AppText 'um mapa antigo, dobrado' }).Name
   Save-ReaderFrame 'chapter-2'
 
   [ordered]@{
@@ -277,11 +355,11 @@ try {
       Write-Warning "Could not capture the failure frame: $_"
     }
     try {
-      $diagnosticWindow = $foreground
       if ($foreground -eq $window -and $flutterView -ne [IntPtr]::Zero) {
-        $diagnosticWindow = $flutterView
+        Save-FlutterAccessibility $flutterView
+      } else {
+        Save-ReaderAccessibility $foreground
       }
-      Save-ReaderAccessibility $diagnosticWindow
     } catch {
       Write-Warning "Could not capture the accessibility tree: $_"
     }
