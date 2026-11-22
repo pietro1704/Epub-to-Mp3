@@ -117,6 +117,7 @@ public static class ReaderTestDesktop
         {
             try { ReadAccessibleNode(root, 0, 0, elements); }
             catch (COMException) { /* Flutter can replace a node mid-read; keep what was read. */ }
+            catch (ArgumentException) { /* E_INVALIDARG from a replaced node; keep what was read. */ }
         }
         return elements.ToArray();
     }
@@ -149,7 +150,9 @@ public static class ReaderTestDesktop
                 else
                     ReadAccessibleNode(accessible, index, depth + 1, elements);
             }
+            // .NET maps E_INVALIDARG to ArgumentException, so a replaced node surfaces as either type.
             catch (COMException) { /* Skip a node that disappeared or reports E_FAIL. */ }
+            catch (ArgumentException) { /* Skip a node that reports E_INVALIDARG. */ }
         }
     }
 
