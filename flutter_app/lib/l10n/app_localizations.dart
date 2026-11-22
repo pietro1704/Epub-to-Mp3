@@ -304,6 +304,30 @@ abstract class AppLocalizations {
   /// **'Add a book'**
   String get addBook;
 
+  /// No description provided for @importBookFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Import an EPUB or PDF file'**
+  String get importBookFile;
+
+  /// No description provided for @searchPublicBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Search classic books'**
+  String get searchPublicBooks;
+
+  /// No description provided for @publicBookDownloadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not download or import this book. Try again.'**
+  String get publicBookDownloadFailed;
+
+  /// No description provided for @publicBookSourceOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the publisher’s page.'**
+  String get publicBookSourceOpenFailed;
+
   /// No description provided for @removeBookTitle.
   ///
   /// In en, this message translates to:

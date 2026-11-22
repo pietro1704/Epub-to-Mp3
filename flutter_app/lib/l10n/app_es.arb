@@ -35,6 +35,10 @@
   "libraryTitle": "Biblioteca",
   "libraryEmpty": "Tu biblioteca está vacía",
   "addBook": "Agregar libro",
+  "importBookFile": "Importar archivo EPUB o PDF",
+  "searchPublicBooks": "Buscar libros clásicos",
+  "publicBookDownloadFailed": "No se pudo descargar o importar este libro. Inténtalo de nuevo.",
+  "publicBookSourceOpenFailed": "No se pudo abrir la página de la editorial.",
   "removeBookTitle": "Eliminar libro",
   "removeBookMessage": "¿Eliminar \"{title}\" de la biblioteca? El archivo no se borrará.",
   "@removeBookMessage": {
