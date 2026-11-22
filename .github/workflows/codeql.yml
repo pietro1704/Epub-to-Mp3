@@ -52,6 +52,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Java 21
+        id: android-java
         uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
@@ -81,6 +82,25 @@ jobs:
         with:
           experimental: true
 
+      - name: Identify Flutter SDK version
+        id: android-flutter
+        env:
+          MISE_ENABLE_TOOLS: flutter
+        run: |
+          set -o pipefail
+          version="$(mise ls --current --json | jq -er '.flutter[0].version')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Reuse Android CI downloads across Java 21 patches. Keep the traced build clean.
+      - name: Restore Gradle dependency downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.android-flutter.outputs.version }}-java-${{ steps.android-java.outputs.version }}-${{ hashFiles('flutter_app/android/**/*.gradle.kts', 'flutter_app/android/gradle.properties', 'flutter_app/android/gradle/wrapper/gradle-wrapper.properties', 'flutter_app/pubspec.lock') }}
+          restore-keys: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.android-flutter.outputs.version }}-
+
       - name: Install native Android prerequisites
         run: |
           sudo apt-get update
@@ -94,7 +114,7 @@ jobs:
         env:
           MISE_ENABLE_TOOLS: ruby,ninja,flutter
           MISE_EXPERIMENTAL: "1"
-        run: mise run flutter:build-apk-debug
+        run: mise exec -- ruby scripts/codeql_android_build.rb -- mise run flutter:build-apk-debug
 
       - name: Analyze
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
