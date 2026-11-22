@@ -39,6 +39,34 @@ alongside Ruby guards. They use fixtures and never contact Arch or ai-memory.
 Use actual-agent handshakes for initial integration or changed interpretation;
 routine transport revalidation uses the deterministic path above.
 
+## Terminal sessions and model switches
+
+Each pane runs its agent through ai-memory in yolo mode, keeping its
+workstream so history and handoffs continue:
+
+```sh
+# Mac panes (no jail on the Mac)
+ai-memory run --workstream WORKSTREAM --yolo --no-jail --no-exit-prompt \
+  --require-server claude --model MODEL --effort EFFORT "PROMPT"
+# Arch pane, inside ai-jail
+ai-jail --harness claude --agent-state --github --worktree --display --gpu --audio \
+  --forward-port 49374 --env CLAUDE_CODE_OAUTH_TOKEN \
+  --map ~/.local/share/claude/versions -- \
+  ai-memory run --yolo --no-exit-prompt --jail=github,worktree,display,gpu,audio \
+  --jail-map ~/.local/share/claude/versions --require-server --project Epub-to-Mp3 \
+  --workstream WORKSTREAM claude --model MODEL --effort EFFORT
+```
+
+- Map Claude's `versions` directory into the jail. Mapping the current version
+  file fails with `cannot mount ... it is not a folder`.
+- Switch a pane's model from outside the pane: write a short handoff file per
+  pane (queue, base SHA, leases, receipts), let the current turn finish, exit,
+  relaunch with the same workstream and `--yolo`, then verify the pane's agent
+  and foreground processes before reporting the switch. Do not schedule an
+  `/exit` that can collide with a new message from Pietro.
+- A starship or shell timeout warning in a pane is not an agent failure; check
+  the foreground processes before relaunching.
+
 ## Reviewed configuration installation
 
 Use the static `scripts/install_agent_collaboration.mjs`; configuration arrives as

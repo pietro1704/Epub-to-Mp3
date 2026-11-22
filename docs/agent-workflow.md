@@ -18,7 +18,9 @@ sequence; historical campaign permissions are not execution authorization.
    [stacked PR procedure](agents/execution-policy.md#git-and-publication)
    (native `gh stack`) for dependent changes. Write a short dependency and acceptance list only
    when multiple steps need coordination. Keep private task plans and progress
-   evidence local, outside the published diff.
+   evidence local, outside the published diff. Before a native window, compose
+   stacked or overlapping candidates in an isolated index or worktree to find
+   conflicts early, and label that result "not compiled".
 4. Run focused checks, inspect the complete owned diff and obtain review against
    [coding standards](../CODING_STANDARDS.md). Documentation-only changes need
    content/link checks; host fixtures do not prove native runtime behavior.
