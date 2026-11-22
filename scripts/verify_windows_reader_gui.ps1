@@ -116,10 +116,16 @@ public static class ReaderTestDesktop
         if (AccessibleObjectFromWindow(window, objIdClient, ref accessibleId, out root) == 0 && root != null)
         {
             try { ReadAccessibleNode(root, 0, 0, elements); }
-            catch (COMException) { /* Flutter can replace a node mid-read; keep what was read. */ }
-            catch (ArgumentException) { /* E_INVALIDARG from a replaced node; keep what was read. */ }
+            catch (Exception error) { if (!IsNodeFailure(error)) throw; /* Flutter can replace a node mid-read; keep what was read. */ }
         }
         return elements.ToArray();
+    }
+
+    // .NET maps E_INVALIDARG to ArgumentException, so a replaced node surfaces as either type.
+    // Windows PowerShell compiles this block as C# 5, so exception filters are not available.
+    private static bool IsNodeFailure(Exception error)
+    {
+        return error is COMException || error is ArgumentException;
     }
 
     private static void ReadAccessibleNode(IAccessible accessible, int childId,
@@ -129,17 +135,31 @@ public static class ReaderTestDesktop
             return;
 
         var element = new FlutterElement();
-        element.Name = ReadName(accessible, childId);
-        element.Role = ReadRole(accessible, childId);
-        element.State = Convert.ToInt32(ReadState(accessible, childId));
-        accessible.accLocation(out element.Left, out element.Top, out element.Width,
-                               out element.Height, childId);
+        // Each property can fail independently on a replaced node; record the reason instead of losing the subtree.
+        try { element.Name = ReadName(accessible, childId); }
+        catch (Exception error) { if (!IsNodeFailure(error)) throw; element.Name = "[name unavailable: " + error.Message + "]"; }
+        try { element.Role = ReadRole(accessible, childId); }
+        catch (Exception error) { if (!IsNodeFailure(error)) throw; element.Role = "unavailable"; }
+        try { element.State = Convert.ToInt32(ReadState(accessible, childId)); }
+        catch (Exception error) { if (!IsNodeFailure(error)) throw; element.State = 0; }
+        try
+        {
+            accessible.accLocation(out element.Left, out element.Top, out element.Width,
+                                   out element.Height, childId);
+        }
+        catch (Exception error) { if (!IsNodeFailure(error)) throw; }
         elements.Add(element);
 
         if (childId != 0)
             return;
 
-        int children = accessible.accChildCount;
+        int children = 0;
+        try { children = accessible.accChildCount; }
+        catch (Exception error)
+        {
+            if (!IsNodeFailure(error)) throw;
+            elements.Add(new FlutterElement { Name = "[child count unreadable at depth " + depth + ": " + error.Message + "]", Role = "error", State = 0x8000 });
+        }
         for (int index = 1; index <= children && elements.Count < 1024; index++)
         {
             try
@@ -150,9 +170,12 @@ public static class ReaderTestDesktop
                 else
                     ReadAccessibleNode(accessible, index, depth + 1, elements);
             }
-            // .NET maps E_INVALIDARG to ArgumentException, so a replaced node surfaces as either type.
-            catch (COMException) { /* Skip a node that disappeared or reports E_FAIL. */ }
-            catch (ArgumentException) { /* Skip a node that reports E_INVALIDARG. */ }
+            catch (Exception error)
+            {
+                if (!IsNodeFailure(error)) throw;
+                // Keep a hidden marker so diagnostics show which child could not be read and why.
+                elements.Add(new FlutterElement { Name = "[child " + index + "/" + children + " at depth " + depth + " unreadable: " + error.Message + "]", Role = "error", State = 0x8000 });
+            }
         }
     }
 
