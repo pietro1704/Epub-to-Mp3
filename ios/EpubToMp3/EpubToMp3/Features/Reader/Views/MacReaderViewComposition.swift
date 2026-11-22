@@ -12,17 +12,20 @@ final class MacReaderViewComposition {
         let settings: Selector
         let footnotes: Selector
         let listen: Selector
+        let voiceModels: Selector
         let retryLoading: Selector
 
         init(close: Selector, contents: Selector, search: Selector, settings: Selector,
              footnotes: Selector = NSSelectorFromString("showFootnotes"),
-             listen: Selector = NSSelectorFromString("listenFromReader"), retryLoading: Selector) {
+             listen: Selector = NSSelectorFromString("listenFromReader"),
+             voiceModels: Selector = NSSelectorFromString("showVoiceModels:"), retryLoading: Selector) {
             self.close = close
             self.contents = contents
             self.search = search
             self.settings = settings
             self.footnotes = footnotes
             self.listen = listen
+            self.voiceModels = voiceModels
             self.retryLoading = retryLoading
         }
     }
@@ -77,6 +80,7 @@ final class MacReaderViewComposition {
             case .search: self.target.perform(self.actions.search)
             case .footnotes: self.target.perform(self.actions.footnotes)
             case .listen: self.target.perform(self.actions.listen)
+            case .voiceModels: self.target.perform(self.actions.voiceModels, with: sender)
             }
         }
         toolBar = tools

@@ -21,6 +21,20 @@ final class ReaderListeningSession {
     private var listeningPlaybackControl: ConverterPlaybackControl?
     private var listeningChapters: [JobSnapshot.Chapter] = []
     private var hasDeliveredListeningChapter = false
+    private var requestedPDFPosition: (chapter: Int, offset: Int)?
+    private(set) var requestedVoice: TtsSelection?
+    private var voiceChangeInPreparation: ReaderVoiceChange?
+    var startingVoicePosition: ReaderVoiceChange? {
+        guard listeningJobID != nil, let requestedPage else { return nil }
+        if player.snapshot?.jobId == listeningJobID {
+            guard player.isConverting, !hasDeliveredListeningChapter, player.pendingNavigation == nil else { return nil }
+            return .init(chapter: requestedPage.chapter, pageRatio: requestedPage.ratio,
+                seek: nil, autoplay: player.hasPendingAutoplay, sourceScalarOffset: requestedPDFPosition?.offset)
+        }
+        return voiceChangeInPreparation ?? .init(chapter: requestedPage.chapter, pageRatio: requestedPage.ratio,
+            seek: nil, autoplay: true, sourceScalarOffset: requestedPDFPosition?.offset)
+    }
+
     private var requestedPage: (chapter: Int, ratio: Double)?
     private var chapterEstimates: [Int: TimeInterval] = [:]
     private var restartListening: ((Int, Double, PendingPlaybackSeek.ChapterRequest?) -> Void)?
@@ -40,6 +54,25 @@ final class ReaderListeningSession {
         self.recordConversion = recordConversion
         self.reportFailure = reportFailure
         self.makePlaybackControl = makePlaybackControl ?? { try RustConversionCoordinator.makePlaybackControl() }
+    }
+
+    convenience init(player: AudioPlayer, playerPresentation: PlayerPresentation,
+                     conversionExecutor: @escaping RustConversionCoordinator.StreamingExecutor,
+                     currentBookID: @escaping () -> String?, library: @escaping () -> LibraryStore?,
+                     reportFailure: @escaping (Error) -> Void) {
+        self.init(player: player, playerPresentation: playerPresentation, conversionExecutor: conversionExecutor,
+            currentBookID: currentBookID, openBook: { id in
+                guard let activeLibrary = library() else { throw CancellationError() }
+                return try await activeLibrary.openBookFileAsync(id: id)
+            }, recordConversion: { jobID, bookID in
+                library()?.recordConversion(jobId: jobID, for: bookID)
+            }, reportFailure: reportFailure)
+    }
+
+    func voicePickerContext(for book: BookEntity) -> ReaderVoicePickerRequest.Context {
+        guard isListening(to: book.id) else { return .init(book: book) }
+        return .init(book: book, jobID: listeningJobID, requestedVoice: requestedVoice,
+            startingPosition: startingVoicePosition, pdfPosition: requestedPDFPosition)
     }
 
     func isListening(to bookID: String) -> Bool {
@@ -143,6 +176,9 @@ final class ReaderListeningSession {
         listeningPlaybackControl = nil
         listeningChapters.removeAll()
         hasDeliveredListeningChapter = false
+        voiceChangeInPreparation = nil
+        requestedVoice = nil
+        requestedPDFPosition = nil
         requestedPage = nil
         chapterEstimates.removeAll()
         restartListening = nil
@@ -152,7 +188,8 @@ final class ReaderListeningSession {
     func start(book: BookEntity, priority: Int, pageRatio: Double?,
                catalog: [(index: Int, title: String)], conversionOptions: ConversionOptions,
                presentsFullPlayer: Bool, chapterEstimates: [Int: TimeInterval] = [:],
-               pendingSeek: PendingPlaybackSeek.ChapterRequest? = nil) {
+               pendingSeek: PendingPlaybackSeek.ChapterRequest? = nil,
+               voiceChange: ReaderVoiceChange? = nil, pdfAnchor: PDFReadingAudioMap.Anchor? = nil) {
         cancel()
         guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
         // The playback control schedules only the active chapter and one ahead.
@@ -163,6 +200,10 @@ final class ReaderListeningSession {
         pendingRestartJobID = pendingSeek?.jobID
         player.approximateSeekJobID = pendingSeek?.jobID
         listeningBookID = book.id
+        requestedVoice = conversionOptions.ttsPreferences?.primary
+        requestedPDFPosition = (voiceChange?.sourceScalarOffset ?? pdfAnchor?.sourceScalarOffset)
+            .map { (priority, $0) }
+        voiceChangeInPreparation = voiceChange
         self.chapterEstimates = chapterEstimates
         requestedPage = (priority, pageRatio ?? 0)
         restartListening = { [weak self] chapter, ratio, request in
@@ -219,10 +260,14 @@ final class ReaderListeningSession {
                         restored.approximateRatio = nil
                     }
                     carriedSeek = restored
-                } else { carriedSeek = nil }
+                } else { carriedSeek = voiceChange?.seek }
                 let playbackControl = try makePlaybackControl()
                 playbackControl.updatePlaybackWindow(currentChapter: priority, chaptersAhead: 1)
-                if let pageRatio { playbackControl.startFromPage(ratio: pageRatio) }
+                if let offset = voiceChange?.sourceScalarOffset ?? pdfAnchor?.sourceScalarOffset {
+                    playbackControl.startFromPage(sourceScalarOffset: offset)
+                } else if let pageRatio {
+                    playbackControl.startFromPage(ratio: pageRatio)
+                }
                 playbackControl.trackPlayback(player)
                 listeningPlaybackControl = playbackControl
                 let pending = JobSnapshot(jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
@@ -242,7 +287,7 @@ final class ReaderListeningSession {
                 installedPending = true
                 player.isConverting = true
                 if let carriedSeek { player.restoreListeningSeek(carriedSeek, jobID: jobID) }
-                else { player.resume() }
+                else if voiceChange?.autoplay != false { player.resume() }
                 let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
                 let result = try await conversionExecutor(
                     url, jobID, chapterStart, chapterEnd, playbackControl,

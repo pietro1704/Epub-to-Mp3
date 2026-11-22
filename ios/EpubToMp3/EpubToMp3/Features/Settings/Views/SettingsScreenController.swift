@@ -25,6 +25,8 @@ final class SettingsScreenController: UITableViewController {
     private let audition = VoiceAuditionPresentation()
     let termsAcceptance: SpeechModelTermsAcceptanceStore
     let voiceModelsOnly: Bool
+    private let readerVoicePicker: ReaderVoicePicker?
+    var displayedPrimaryVoice: TtsSelection { readerVoicePicker?.selection ?? settings.primaryTtsSelection }
     var modelDisclosure = SpeechModelSettingsDisclosure()
     /// Catalogue, install events and confirmed install/remove, shared with the Mac panel.
     let modelLibrary: SpeechModelLibrarySession
@@ -43,7 +45,7 @@ final class SettingsScreenController: UITableViewController {
          confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(),
          speechModels: SpeechModelLibraryClient = .shared,
-         voiceModelsOnly: Bool = false) {
+         voiceModelsOnly: Bool = false, readerVoicePicker: ReaderVoicePicker? = nil) {
         self.settings = settings
         self.library = library
         self.player = player
@@ -51,6 +53,7 @@ final class SettingsScreenController: UITableViewController {
         self.speechModels = speechModels
         self.termsAcceptance = termsAcceptance
         self.voiceModelsOnly = voiceModelsOnly
+        self.readerVoicePicker = readerVoicePicker
         self.modelLibrary = SpeechModelLibrarySession(client: speechModels)
         self.diagnosticsSession = diagnosticsSession ?? .shared
         self.confirmStreamingDiagnostics = confirmStreamingDiagnostics
@@ -109,7 +112,7 @@ final class SettingsScreenController: UITableViewController {
     }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if voiceModelsOnly {
-            return section == 0 ? RuntimeSettingsRows.rowCount(speechModels: speechModelState)
+            return section == 0 ? (readerVoicePicker == nil ? RuntimeSettingsRows.rowCount(speechModels: speechModelState) : 2)
                 : modelRowCount(inSection: section)
         }
         if section == Section.runtime.rawValue { return 1 }
@@ -213,22 +216,21 @@ final class SettingsScreenController: UITableViewController {
             message: L10n.string("settings.audioEngineChoiceDescription"),
             preferredStyle: .actionSheet
         )
-        for engine in TtsSelection.selectableEngines where engine != TtsSelection.piperEngine {
-            let selection = TtsSelection.engineDefault(engine)
-            alert.addAction(UIAlertAction(
-                title: speechModelState.displayName(for: selection), style: .default
-            ) { [weak self] _ in
-                self?.settings.selectPrimaryNarration(selection)
-                self?.tableView.reloadData()
-            })
-        }
-        for choice in speechModelState.selectableChoices {
+        for choice in speechModelState.primaryNarrationChoices {
             alert.addAction(UIAlertAction(title: choice.title, style: .default) { [weak self] _ in
-                self?.settings.selectPrimaryNarration(choice.selection)
-                self?.tableView.reloadData()
+                self?.choosePrimary(choice.selection)
             })
         }
         SettingsAlertPresentation.actionSheet(alert, on: self, tableView: tableView, source: indexPath)
+    }
+
+    private func choosePrimary(_ selection: TtsSelection) {
+        if let readerVoicePicker {
+            dismiss(animated: true) { readerVoicePicker.choose(selection) }
+        } else {
+            settings.selectPrimaryNarration(selection)
+            tableView.reloadData()
+        }
     }
 
     private func presentSecondaryChoices(source indexPath: IndexPath) {
@@ -310,8 +312,7 @@ final class SettingsScreenController: UITableViewController {
             Task { await speechModels.cancelInstall(modelID: entry.identity.modelID) }
         case .select:
             guard let selection = speechModelState.selection(for: entry) else { return }
-            settings.selectPrimaryNarration(selection)
-            tableView.reloadData()
+            choosePrimary(selection)
         case .remove: confirmRemoval(entry)
         case .revokeTerms:
             guard let fingerprint = entry.licence.termsFingerprint else { return }

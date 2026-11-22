@@ -10,6 +10,7 @@ final class MacSettingsViewController: NSViewController {
     private let speechModels: SpeechModelLibraryClient
     private let termsAcceptance: SpeechModelTermsAcceptanceStore
     private let voiceModelsOnly: Bool
+    private let readerVoicePicker: ReaderVoicePicker?
     private var voiceModelDestination: MacSettingsDetailNavigation?
     private var speechModelState: SpeechModelLibraryViewState
     private lazy var speechModelPanel = MacSpeechModelLibraryPanel(
@@ -42,12 +43,13 @@ final class MacSettingsViewController: NSViewController {
          clearDownloadsOperation: (() async throws -> Void)? = nil,
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(),
          speechModels: SpeechModelLibraryClient = .shared,
-         voiceModelsOnly: Bool = false) {
+         voiceModelsOnly: Bool = false, readerVoicePicker: ReaderVoicePicker? = nil) {
         self.settings = settings
         self.library = library
         self.speechModels = speechModels
         self.termsAcceptance = termsAcceptance
         self.voiceModelsOnly = voiceModelsOnly
+        self.readerVoicePicker = readerVoicePicker
         self.speechModelState = SpeechModelLibraryViewState(snapshot: speechModels.initialSnapshot)
         self.clearDownloadsOperation = clearDownloadsOperation ?? {
             try await AudioStorageMaintenance().clearAllDownloads()
@@ -152,6 +154,9 @@ final class MacSettingsViewController: NSViewController {
             title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             return [title, control]
         }
+        if readerVoicePicker != nil {
+            speechModelPanel.onSelectVoice = { [weak self] in self?.choosePrimary($0) }
+        }
         speechModelPanel.onSnapshot = { [weak self] state in
             guard let self else { return }
             speechModelState = state
@@ -170,7 +175,7 @@ final class MacSettingsViewController: NSViewController {
         let modelsButton = NSButton(title: L10n.string("settings.voiceModels"), target: self,
                                    action: #selector(showVoiceModels))
         modelsButton.setAccessibilityIdentifier("settings.speechModels.disclosure")
-        let rows = voiceModelsOnly ? audioEngineRows : [
+        let rows = voiceModelsOnly ? (readerVoicePicker == nil ? audioEngineRows : Array(audioEngineRows.prefix(2))) : [
             row(L10n.string("settings.embeddedServer"), statusLabel),
             row(L10n.string("settings.voiceModels"), modelsButton),
             row(L10n.string("settings.fontSize"), sizeControl),
@@ -188,6 +193,10 @@ final class MacSettingsViewController: NSViewController {
         grid.column(at: 1).xPlacement = .leading
         let form = NSStackView(views: voiceModelsOnly ? [grid] : [grid, refreshButton, exportDiagnosticsButton,
                                       diagnosticsButton, diagnosticsLabel, clearButton])
+        if readerVoicePicker != nil {
+            form.addArrangedSubview(NSButton(title: L10n.string("common.cancel"), target: self,
+                                             action: #selector(closeVoicePicker)))
+        }
         form.orientation = .vertical
         form.alignment = .leading
         form.spacing = 16
@@ -233,7 +242,7 @@ final class MacSettingsViewController: NSViewController {
         selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0,
                    in: layoutPopup)
         selectItem(at: narrationSelections.firstIndex {
-            SpeechModelLibraryViewState.sameChoice($0, settings.ttsPreferences.primary)
+            readerVoicePicker?.marks($0) ?? SpeechModelLibraryViewState.sameChoice($0, settings.ttsPreferences.primary)
         } ?? 0,
                    in: audioEnginePopup)
         selectItem(at: settings.ttsPreferences.secondary
@@ -286,7 +295,18 @@ final class MacSettingsViewController: NSViewController {
             refresh()
             return
         }
-        settings.selectPrimaryNarration(narrationSelections[sender.indexOfSelectedItem])
+        choosePrimary(narrationSelections[sender.indexOfSelectedItem])
+    }
+
+    @objc private func closeVoicePicker() { dismiss(nil) }
+
+    private func choosePrimary(_ selection: TtsSelection) {
+        if let readerVoicePicker {
+            dismiss(nil)
+            readerVoicePicker.choose(selection)
+            return
+        }
+        settings.selectPrimaryNarration(selection)
         speechModelPanel.render()
         refresh()
     }
@@ -324,6 +344,9 @@ final class MacSettingsViewController: NSViewController {
         for selection in settings.configuredNarrationSelections
             where !narrationSelections.contains(where: { SpeechModelLibraryViewState.sameChoice($0, selection) }) {
             narrationSelections.append(selection)
+        }
+        if let readerVoicePicker, !narrationSelections.contains(where: readerVoicePicker.marks) {
+            narrationSelections.append(readerVoicePicker.selection)
         }
         let titles = narrationSelections.map(speechModelState.displayName(for:))
         audioEnginePopup.removeAllItems()

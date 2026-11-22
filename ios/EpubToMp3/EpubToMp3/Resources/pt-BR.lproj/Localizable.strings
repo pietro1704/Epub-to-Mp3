@@ -87,6 +87,7 @@
 "settings.modelInstall.cancel" = "Cancelar download";
 "settings.modelInstall.insufficientSpace" = "Espaço insuficiente: %@ necessários, %@ disponíveis";
 "settings.voiceModels" = "Modelos de voz";
+"settings.voiceModelDownloads" = "Downloads de modelos";
 "settings.modelSize.download" = "Download %@";
 "settings.modelSize.installed" = "Tamanho instalado %@";
 "settings.modelPerformance.unmeasured" = "Velocidade não medida neste dispositivo";
