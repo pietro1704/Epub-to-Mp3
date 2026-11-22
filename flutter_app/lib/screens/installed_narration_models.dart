@@ -1,5 +1,7 @@
 part of 'settings_screen.dart';
 
+typedef _NarrationModelRow = (Map<String, dynamic> model, bool installed);
+
 class InstalledNarrationModelsCard extends ConsumerStatefulWidget {
   const InstalledNarrationModelsCard({super.key});
 
@@ -8,9 +10,10 @@ class InstalledNarrationModelsCard extends ConsumerStatefulWidget {
       _InstalledNarrationModelsCardState();
 }
 
-class _InstalledNarrationModelsCardState extends ConsumerState<InstalledNarrationModelsCard> {
-  Future<List<Map<String, dynamic>>>? _catalog;
-  Map<String, String> _installedMetadata = const {};
+class _InstalledNarrationModelsCardState
+    extends ConsumerState<InstalledNarrationModelsCard> {
+  Future<List<_NarrationModelRow>>? _catalog;
+  final Set<String> _changingModels = {};
 
   @override
   void didChangeDependencies() {
@@ -18,122 +21,158 @@ class _InstalledNarrationModelsCardState extends ConsumerState<InstalledNarratio
     _catalog ??= _loadCatalog();
   }
 
-  Future<List<Map<String, dynamic>>> _loadCatalog() async {
-    final raw = await ref.read(embeddedConverterProvider).ttsModels();
+  Future<List<_NarrationModelRow>> _loadCatalog() async {
+    final converter = ref.read(embeddedConverterProvider);
+    final raw = await converter.ttsModels();
     final models = TtsCatalog.decode(raw).models;
-    final root = await _modelRoot();
-    final metadata = <String, String>{};
+    if (!mounted || models.isEmpty) return const [];
+    final root = await ref.read(ttsModelRootProvider.future);
+    final rows = <_NarrationModelRow>[];
     for (final model in models) {
       final id = model['id'];
       if (id is! String || id.isEmpty) continue;
-      final value = await ref
-          .read(embeddedConverterProvider)
-          .ttsModelMetadata(modelId: id, root: root);
-      if (value != null) metadata[id] = value;
+      final metadata = await converter.ttsModelMetadata(
+        modelId: id,
+        root: root,
+      );
+      rows.add((model, metadata != null));
     }
-    if (mounted) _installedMetadata = metadata;
-    return models;
+    return rows;
   }
 
-  Future<String> _modelRoot() async {
-    final directory = await getApplicationSupportDirectory();
-    return '${directory.path}/tts-models';
+  void _refresh() {
+    ref.invalidate(manualLowCatalogProvider);
+    final catalog = _loadCatalog();
+    setState(() {
+      _catalog = catalog;
+    });
   }
 
-  Future<void> _install(String modelId) async {
+  Future<void> _changeInstallation(
+    String modelId, {
+    required bool installed,
+  }) async {
+    if (_changingModels.contains(modelId)) return;
+    setState(() => _changingModels.add(modelId));
     try {
-      await ref
-          .read(embeddedConverterProvider)
-          .installTtsModelFromCatalog(
-            modelId: modelId,
-            root: await _modelRoot(),
-          );
-      if (mounted) setState(() => _catalog = _loadCatalog());
+      final converter = ref.read(embeddedConverterProvider);
+      final root = await ref.read(ttsModelRootProvider.future);
+      if (installed) {
+        await converter.removeTtsModel(modelId: modelId, root: root);
+      } else {
+        await converter.installTtsModelFromCatalog(
+          modelId: modelId,
+          root: root,
+        );
+      }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        _changingModels.remove(modelId);
+        _refresh();
       }
     }
+  }
+
+  Widget _modelTile(
+    Map<String, dynamic> model, {
+    required bool installed,
+    required AppLocalizations t,
+  }) {
+    final modelId = model['id'] as String;
+    return ListTile(
+      title: Text(modelId),
+      subtitle: Text(
+        installed ? t.downloadComplete : '${model['languages'] ?? ''}',
+      ),
+      trailing: IconButton(
+        icon: Icon(installed ? Icons.delete_outline : Icons.download_outlined),
+        tooltip: installed ? t.remove : t.downloadAll,
+        onPressed: _changingModels.contains(modelId)
+            ? null
+            : () => _changeInstallation(modelId, installed: installed),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
+    final showLowQuality = ref.watch(showLowQualityModelsProvider);
+    final manualCatalog = showLowQuality
+        ? ref.watch(manualLowCatalogProvider)
+        : null;
     return Card(
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _catalog,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const ListTile(leading: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return ListTile(
-              leading: const Icon(Icons.memory_outlined),
-              title: Text(t.downloadAll),
-              subtitle: Text(snapshot.error.toString()),
-              trailing: IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: t.refresh,
-                onPressed: () => setState(() => _catalog = _loadCatalog()),
-              ),
-            );
-          }
-          final models = snapshot.data ?? const [];
-          return Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.memory_outlined),
-                title: Text(t.downloadAll),
-                subtitle: Text(t.useBuiltInEngineDesc),
-                trailing: IconButton(
-                  icon: const Icon(Icons.refresh),
-                  tooltip: t.refresh,
-                  onPressed: () => setState(() => _catalog = _loadCatalog()),
-                ),
-              ),
-              for (final model in models)
-                ListTile(
-                  title: Text('${model['id'] ?? ''}'),
-                  subtitle: Text(
-                    _installedMetadata.containsKey(model['id'])
-                        ? t.downloadComplete
-                        : '${model['languages'] ?? ''}',
-                  ),
-                  trailing: IconButton(
-                    icon: Icon(
-                      _installedMetadata.containsKey(model['id'])
-                          ? Icons.delete_outline
-                          : Icons.download_outlined,
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.memory_outlined),
+            title: Text(t.downloadAll),
+            subtitle: Text(t.useBuiltInEngineDesc),
+            trailing: IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: t.refresh,
+              onPressed: _refresh,
+            ),
+          ),
+          SwitchListTile(
+            title: Text(t.ttsShowLowQuality),
+            value: showLowQuality,
+            onChanged: (value) =>
+                ref.read(showLowQualityModelsProvider.notifier).state = value,
+          ),
+          if (manualCatalog != null)
+            manualCatalog.when(
+              skipLoadingOnRefresh: false,
+              loading: () =>
+                  const ListTile(leading: CircularProgressIndicator()),
+              error: (_, _) =>
+                  ListTile(subtitle: Text(t.ttsManualModelUnavailable)),
+              data: (catalog) => catalog == null
+                  ? ListTile(subtitle: Text(t.ttsManualModelUnavailable))
+                  : Column(
+                      children: [
+                        for (final model in catalog.lowDownloadModels)
+                          _modelTile(
+                            model,
+                            installed: _isVerifiedInstallation(model),
+                            t: t,
+                          ),
+                      ],
                     ),
-                    tooltip: _installedMetadata.containsKey(model['id'])
-                        ? t.remove
-                        : t.downloadAll,
-                    onPressed: () => _installedMetadata.containsKey(model['id'])
-                        ? _remove('${model['id']}')
-                        : _install('${model['id']}'),
-                  ),
-                ),
-            ],
-          );
-        },
+            ),
+          FutureBuilder<List<_NarrationModelRow>>(
+            future: _catalog,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const ListTile(leading: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return ListTile(subtitle: Text(snapshot.error.toString()));
+              }
+              return Column(
+                children: [
+                  for (final (model, installed)
+                      in snapshot.data ?? const <_NarrationModelRow>[])
+                    _modelTile(model, installed: installed, t: t),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 
-  Future<void> _remove(String modelId) async {
-    try {
-      await ref
-          .read(embeddedConverterProvider)
-          .removeTtsModel(modelId: modelId, root: await _modelRoot());
-      if (mounted) setState(() => _catalog = _loadCatalog());
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
-      }
-    }
+  bool _isVerifiedInstallation(Map<String, dynamic> model) {
+    final installation = model['installation'];
+    return installation is Map &&
+        installation['state'] == 'installed' &&
+        model['revision'] != null &&
+        installation['verified_revision'] == model['revision'];
   }
 }

@@ -459,4 +459,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get seekBackwardInterval => 'Skip backward';
+
+  @override
+  String get ttsShowLowQuality => 'Show low-quality models';
+
+  @override
+  String get ttsManualModelUnavailable =>
+      'Could not prepare this narration model.';
 }

@@ -23,11 +23,9 @@ String _convertOnWorker(DesktopConversionRequest request) {
     jsonDecode(request.optionsJson) as Map,
   );
   if (options['espeak_data_directory'] == null) {
-    final dataParent = Directory(
-      '${File(Platform.resolvedExecutable).parent.path}/data',
-    );
-    if (File('${dataParent.path}/espeak-ng-data/phontab').existsSync()) {
-      options['espeak_data_directory'] = dataParent.path;
+    final espeakDataDirectory = _bundledDesktopEspeakDataDirectory();
+    if (espeakDataDirectory != null) {
+      options['espeak_data_directory'] = espeakDataDirectory;
     }
   }
   final library = ffi.DynamicLibrary.open(request.libraryPath);
@@ -128,3 +126,34 @@ Future<String> runDesktopModelInstallWorker(
     library: ffi.DynamicLibrary.open(libraryPath),
   ).installFromCatalog(modelId: modelId, root: root),
 );
+
+Future<String> runDesktopManualModelCatalogWorker(
+  String libraryPath,
+  String root,
+) => Isolate.run(
+  () => DesktopTtsModelAdapter(
+    library: ffi.DynamicLibrary.open(libraryPath),
+  ).manualModelsJson(root: root),
+);
+
+Future<String> runDesktopModelProbeWorker(
+  String libraryPath,
+  String modelId,
+  String root,
+  String? language,
+) => Isolate.run(
+  () => DesktopTtsModelAdapter(
+    library: ffi.DynamicLibrary.open(libraryPath),
+  ).probeModel(
+    modelId: modelId,
+    root: root,
+    language: language,
+    espeakDataDirectory: _bundledDesktopEspeakDataDirectory() ?? '',
+  ),
+);
+
+String? _bundledDesktopEspeakDataDirectory() {
+  final dataParent = '${File(Platform.resolvedExecutable).parent.path}/data';
+  if (!File('$dataParent/espeak-ng-data/phontab').existsSync()) return null;
+  return dataParent;
+}

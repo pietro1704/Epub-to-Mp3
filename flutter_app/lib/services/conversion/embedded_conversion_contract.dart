@@ -99,6 +99,16 @@ abstract interface class CancellableEmbeddedConverter {
   Future<void> cancelConversion({String? inputPath, String? outputPath});
 }
 
+/// Offline catalog and readiness operations for an explicit model choice.
+abstract interface class ManualTtsModelCatalog {
+  Future<String> ttsManualModels({required String root});
+  Future<String> probeTtsModel({
+    required String modelId,
+    required String root,
+    String? language,
+  });
+}
+
 abstract interface class StreamingChapterConverter {
   Future<ConvertedChapterAudio> streamChapter({
     required String inputPath,

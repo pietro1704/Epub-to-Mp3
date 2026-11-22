@@ -927,6 +927,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Skip backward'**
   String get seekBackwardInterval;
+
+  /// No description provided for @ttsShowLowQuality.
+  ///
+  /// In en, this message translates to:
+  /// **'Show low-quality models'**
+  String get ttsShowLowQuality;
+
+  /// No description provided for @ttsManualModelUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare this narration model.'**
+  String get ttsManualModelUnavailable;
 }
 
 class _AppLocalizationsDelegate

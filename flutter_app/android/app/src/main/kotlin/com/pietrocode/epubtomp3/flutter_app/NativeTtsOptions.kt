@@ -26,14 +26,18 @@ object NativeTtsOptions {
         }
         val needsPiper = preferences?.optJSONObject("primary")?.optString("engine") == "piper" || preferences?.optJSONObject("secondary")?.optString("engine") == "piper"
         if (needsPiper) {
-            preparePiperAssets(options) {
-                installEspeakAssets(context.filesDir,
-                    { path -> context.assets.list(path) ?: emptyArray() },
-                    { path -> context.assets.open(path) })
-            }
+            preparePiperAssets(options) { preparePackagedEspeakData(context) }
         }
         return options.toString()
     }
+
+    @Synchronized
+    internal fun preparePackagedEspeakData(context: Context): File =
+        installEspeakAssets(
+            context.filesDir,
+            { path -> context.assets.list(path) ?: emptyArray() },
+            { path -> context.assets.open(path) },
+        )
 
     /** Unavailable packaged Piper assets must not preempt an opted-in native fallback. */
     internal fun preparePiperAssets(options: JSONObject, install: () -> File) {
