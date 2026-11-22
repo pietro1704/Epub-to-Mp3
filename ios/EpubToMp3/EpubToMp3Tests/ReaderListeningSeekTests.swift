@@ -5,6 +5,7 @@ import XCTest
 @MainActor
 final class ReaderListeningSeekTests: XCTestCase {
     private struct OpenFailure: Error {}
+    private final class ListeningPositions { var requests: [[String: Int]] = [] }
 
     @MainActor
     private final class Fixture {
@@ -12,7 +13,10 @@ final class ReaderListeningSeekTests: XCTestCase {
         let suite = "listening-seek-\(UUID().uuidString)"
         let player: AudioPlayer
         var jobs: [String] = []
+        var options: [ConversionOptions?] = []
+        var progress: [(@MainActor @Sendable (RustConversionCoordinator.ConversionProgressEvent) -> Void)?] = []
         var controls: [ConverterPlaybackControl] = []
+        let listeningPositions = ListeningPositions()
         var conversions: [CheckedContinuation<RustConversionCoordinator.Result, Error>] = []
         var pendingOpens: [CheckedContinuation<URL, Error>] = []
         var openCount = 0
@@ -20,9 +24,11 @@ final class ReaderListeningSeekTests: XCTestCase {
         var failures = 0
         lazy var session = ReaderListeningSession(player: player,
             playerPresentation: PlayerPresentation(defaults: defaults),
-            conversionExecutor: { [weak self] _, job, _, _, control, _, _, _, _ in
+            conversionExecutor: { [weak self] _, job, _, _, control, options, progress, _, _ in
                 guard let self else { throw CancellationError() }
                 jobs.append(job)
+                self.options.append(options)
+                self.progress.append(progress)
                 controls.append(control)
                 return try await withCheckedThrowingContinuation { self.conversions.append($0) }
             }, currentBookID: { "book" }, openBook: { [weak self] _ in
@@ -34,10 +40,20 @@ final class ReaderListeningSeekTests: XCTestCase {
                 return URL(fileURLWithPath: "/unused/book.epub")
             }, recordConversion: { _, _ in XCTFail("The fixture has no completed conversion") },
             reportFailure: { [weak self] _ in self?.failures += 1 },
-            makePlaybackControl: {
-                ConverterPlaybackControl(rawHandle: UnsafeMutableRawPointer(bitPattern: 1)!,
+            makePlaybackControl: { [weak self] in
+                guard let self else { throw CancellationError() }
+                let handle = Unmanaged.passUnretained(listeningPositions).toOpaque()
+                return ConverterPlaybackControl(rawHandle: handle,
                     free: { _ in }, cancel: { _ in }, prioritize: { _, _ in true },
-                    setWindow: { _, _, _ in }, windowContains: { _, _ in true })
+                    setWindow: { _, _, _ in }, windowContains: { _, _ in true },
+                    listeningPosition: { raw, json in
+                        guard let raw, let json,
+                              let request = try? JSONDecoder().decode([String: Int].self,
+                                  from: Data(String(cString: json).utf8)) else { return false }
+                        Unmanaged<ListeningPositions>.fromOpaque(UnsafeMutableRawPointer(mutating: raw))
+                            .takeUnretainedValue().requests.append(request)
+                        return true
+                    })
             })
 
         init() throws {
@@ -77,6 +93,69 @@ final class ReaderListeningSeekTests: XCTestCase {
             pendingOpens.forEach { $0.resume(throwing: CancellationError()) }
             defaults.removePersistentDomain(forName: suite)
         }
+    }
+
+    func testVoiceChangeDuringPreparationUsesExplicitSelectionAndRejectsRetiredProgress() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        fixture.start(ratio: 0.4)
+        try await fixture.waitUntil { fixture.jobs.count == 1 }
+        let target = try XCTUnwrap(fixture.session.startingVoicePosition)
+        XCTAssertEqual(target.chapter, 0)
+        XCTAssertEqual(target.pageRatio, 0.4)
+
+        let selected = TtsSelection.systemDefault
+        var explicit = ConversionOptions(forceReprocess: true)
+        explicit.ttsPreferences = .init(primary: selected, secondary: nil, allowOnlineFallback: false)
+        fixture.session.start(book: BookEntity(id: "book", title: "Book", bookmark: Data([1]),
+            displayFilename: "book.epub", addedAt: Date()), priority: target.chapter, pageRatio: target.pageRatio,
+            catalog: [(index: 0, title: "Chapter")], conversionOptions: explicit, presentsFullPlayer: false,
+            voiceChange: target)
+        try await fixture.waitUntil { fixture.jobs.count == 2 }
+        XCTAssertTrue(fixture.controls[0].isCancellationRequested)
+        XCTAssertEqual(fixture.options[1]?.ttsPreferences?.primary, selected)
+        XCTAssertEqual(fixture.options[1]?.forceReprocess, true)
+        fixture.progress[0]?(.init(jobId: fixture.jobs[0], state: "running", chapterIndex: 0,
+            chaptersTotal: 1, chaptersCompleted: 0, percent: 90, engine: "retired", message: "Retired progress"))
+
+        XCTAssertEqual(fixture.player.snapshot?.jobId, fixture.jobs[1])
+        XCTAssertNotEqual(fixture.player.snapshot?.engine, "retired")
+        XCTAssertEqual(fixture.session.requestedVoice, selected)
+    }
+
+    func testVoiceChangeFromPDFSelectionPreservesExactOffsetWithoutEPUBMap() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        let text = "Earlier words. The selected PDF position."
+        let metadata = try JSONSerialization.data(withJSONObject: ["chapters": [
+            ["index": "1", "name": "Earlier chapter", "sourcePath": "page-1", "text": "Earlier"],
+            ["index": "2", "name": "Selected chapter", "sourcePath": "page-2", "text": text],
+        ]])
+        let map = try PDFReadingAudioMap(metadata: metadata, pageTexts: ["Earlier", text])
+        let word = try XCTUnwrap(text.range(of: "selected"))
+        let anchor = try XCTUnwrap(map.anchor(page: 1, character: word.lowerBound.utf16Offset(in: text)))
+        let book = BookEntity(id: "book", title: "Book", bookmark: Data([1]),
+            displayFilename: "book.pdf", addedAt: Date(), fileType: .pdf)
+
+        fixture.session.start(book: book, priority: anchor.chapterIndex, pageRatio: nil, catalog: [],
+            conversionOptions: ConversionOptions(), presentsFullPlayer: false, pdfAnchor: anchor)
+        try await fixture.waitUntil { fixture.jobs.count == 1 }
+        let original = try XCTUnwrap(fixture.listeningPositions.requests.last)
+        XCTAssertEqual(original["chapter_index"], 1)
+        XCTAssertEqual(original["text_offset"], anchor.sourceScalarOffset)
+        XCTAssertGreaterThan(anchor.sourceScalarOffset, 0)
+
+        let target = try XCTUnwrap(fixture.session.startingVoicePosition)
+        var options = ConversionOptions(forceReprocess: true)
+        options.ttsPreferences = .init(primary: .systemDefault, secondary: nil, allowOnlineFallback: false)
+        fixture.session.start(book: book, priority: target.chapter, pageRatio: target.pageRatio, catalog: [],
+            conversionOptions: options, presentsFullPlayer: false, voiceChange: target)
+        try await fixture.waitUntil { fixture.jobs.count == 2 }
+
+        XCTAssertEqual(fixture.controls.first?.isCancellationRequested, true)
+        XCTAssertEqual(fixture.options.last.flatMap { $0 }?.ttsPreferences?.primary, .systemDefault)
+        XCTAssertEqual(fixture.listeningPositions.requests.last?["chapter_index"], original["chapter_index"])
+        XCTAssertEqual(fixture.listeningPositions.requests.last?["text_offset"], original["text_offset"])
     }
 
     func testApproximateRestartPreservesIdentityAndPausedIntent() async throws {

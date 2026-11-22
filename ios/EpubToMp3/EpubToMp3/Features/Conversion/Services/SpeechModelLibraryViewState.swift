@@ -346,6 +346,12 @@ struct SpeechModelLibraryViewState: Sendable {
         }
     }
 
+    var primaryNarrationChoices: [(selection: TtsSelection, title: String)] {
+        let engineDefaults = TtsSelection.selectableEngines.filter { $0 != TtsSelection.piperEngine }
+            .map { TtsSelection.engineDefault($0) }
+        return engineDefaults.map { ($0, displayName(for: $0)) } + selectableChoices
+    }
+
     var selectableChoices: [(selection: TtsSelection, title: String)] {
         snapshot?.entries.flatMap { entry -> [(TtsSelection, String)] in
             guard entry.selection.selectable, let runtime = entry.identity.runtime else { return [] }

@@ -14,25 +14,11 @@ final class MainReaderScreenController: UIViewController {
     private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
     private let readerControllerFactory: (@MainActor (BookEntity, Bool) -> BookOpenScreenController)?
     private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
-    private lazy var listeningSession: ReaderListeningSession = ReaderListeningSession(
-        player: player, playerPresentation: playerPresentation,
-        conversionExecutor: conversionExecutor,
-        currentBookID: { [weak self] in self?.currentBook?.id },
-        openBook: { [weak self] id in
-            guard let self else { throw CancellationError() }
-            return try await self.library.openBookFileAsync(id: id)
-        },
-        recordConversion: { [weak self] jobID, bookID in
-            self?.library.recordConversion(jobId: jobID, for: bookID)
-        },
-        reportFailure: { [weak self] error in
-            guard let self else { return }
-            self.reportListeningFailure(error)
-        }
-    )
-    private var listeningRequestID = UUID()
-    private var retryLanguageDecision: (() -> Void)?
-    private var retryWithModel: ((TtsRecoveryAlert.Choice) -> Void)?
+    private lazy var listeningSession = ReaderListeningSession(
+        player: player, playerPresentation: playerPresentation, conversionExecutor: conversionExecutor,
+        currentBookID: { [weak self] in self?.currentBook?.id }, library: { [weak self] in self?.library },
+        reportFailure: { [weak self] in self?.reportListeningFailure($0) })
+    private let listeningRecovery = ReaderListeningRecovery()
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
     var onReaderLoadingChanged: ((Bool) -> Void)?
@@ -304,6 +290,11 @@ final class MainReaderScreenController: UIViewController {
             self?.listeningSession.updateChapterEstimates(estimates, for: book.id)
         }
         reader.onListenRequested = { [weak self] in self?.startListeningFromMiniPlayer() }
+        reader.onVoiceModelsRequested = { [weak self] in self?.presentVoiceModels(bookID: book.id) }
+        reader.onPDFPlaybackRequested = { [weak self] anchor in
+            guard let self, self.currentBook?.id == book.id else { return }
+            self.startListening(presentsFullPlayer: false, requestedChapter: anchor.chapterIndex, pdfAnchor: anchor)
+        }
         reader.onSelectionPlaybackRequested = { [weak self] chapter, ratio in
             guard let self, self.currentBook?.id == book.id else { return }
             self.startListening(presentsFullPlayer: false, requestedChapter: chapter, requestedRatio: ratio)
@@ -449,8 +440,7 @@ final class MainReaderScreenController: UIViewController {
     }
 
     func dismissListeningSession() {
-        listeningRequestID = UUID()
-        retryWithModel = nil
+        listeningRecovery.invalidate()
         listeningSession.cancel()
         player.pause()
         player.persistResumePoint(force: true)
@@ -459,70 +449,52 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func reportListeningFailure(_ error: Error) {
-        if BookLanguageUncertain.decode(error) != nil, let bookID = currentBook?.id {
-            let requestID = listeningRequestID
-            Task { [weak self] in
-                let recovered = await BookLanguagePicker.recover(error, bookID: bookID, isCurrent: { [weak self] in
-                    guard let self else { return false }
-                    return self.currentBook?.id == bookID && self.listeningRequestID == requestID && self.viewIfLoaded?.window != nil
-                })
-                if recovered { self?.retryLanguageDecision?() }
-            }
-            return
-        }
-        guard TtsLanguageMismatch.decode(error) != nil else {
-            ReaderListeningAlerts.present(error, from: self, library: { [weak self] in self?.library })
-            return
-        }
-        let bookID = currentBook?.id
-        let requestID = listeningRequestID
-        Task { [weak self] in
-            let choice = await TtsRecoveryAlert.choose(for: error, isCurrent: { [weak self] in
-                guard let self else { return false }
-                return self.currentBook?.id == bookID && self.listeningRequestID == requestID && self.viewIfLoaded?.window != nil
-            })
-            if let choice { self?.retryWithModel?(choice) }
-        }
+        listeningRecovery.report(error, bookID: currentBook?.id, from: self,
+            library: { [weak self] in self?.library }, currentBookID: { [weak self] in self?.currentBook?.id })
     }
 
-    private func startListening(presentsFullPlayer: Bool, requestedChapter: Int? = nil, requestedRatio: Double? = nil, recovery: TtsRecoveryAlert.Choice? = nil) {
+    private func presentVoiceModels(bookID: String) {
+        let request = ReaderVoicePickerRequest(settings: settings, library: library, player: player,
+            currentContext: { [weak self] in
+                guard let self, let book = currentBook, book.id == bookID else { return nil }
+                return listeningSession.voicePickerContext(for: book)
+            }) { [weak self] target, options in
+                self?.startListening(presentsFullPlayer: false, requestedChapter: target.chapter,
+                    optionsOverride: options, voiceChange: target)
+            }
+        ReaderVoicePickerPresentation.present(from: self, anchor: readerNavigation.readerNavigationItem.rightBarButtonItems?.first,
+            request: request)
+    }
+
+    private func startListening(presentsFullPlayer: Bool, requestedChapter: Int? = nil, requestedRatio: Double? = nil, recovery: TtsRecoveryAlert.Choice? = nil,
+                                optionsOverride: ConversionOptions? = nil, voiceChange: ReaderVoiceChange? = nil,
+                                pdfAnchor: PDFReadingAudioMap.Anchor? = nil) {
         guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
         MiniPlayerDismissal(defaults: sessionDefaults).allowPlayback(bookID: book.id)
         let priority = requestedChapter ?? readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
-        // Capture the page before asynchronous file access or player teardown
-        // can publish another chapter. Never borrow another book's anchor.
-        let pageRatio: Double? = requestedRatio ?? {
-            guard sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == book.id,
-                  sessionDefaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int == priority,
-                  let ratio = sessionDefaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double,
-                  ratio.isFinite, ratio > 0, ratio <= 1 else { return nil }
-            return ratio
-        }()
+        let pageRatio = ReaderListeningStartLocation.pageRatio(bookID: book.id, chapter: priority,
+            explicitRatio: requestedRatio, voiceChange: voiceChange, pdfAnchor: pdfAnchor, defaults: sessionDefaults)
         let catalog = readerController?.playbackChapterCatalog
             ?? LocalFulltextCache.inMemoryPayload(bookId: book.id)?.chapters.map {
                 (index: $0.zeroBasedEpubIndex, title: $0.displayTitle)
             } ?? []
-        listeningRequestID = UUID()
-        let requestID = listeningRequestID
-        retryLanguageDecision = { [weak self] in
-            guard let self, self.currentBook?.id == book.id, self.listeningRequestID == requestID else { return }
-            self.startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: priority, requestedRatio: pageRatio)
+        listeningRecovery.begin { [weak self] choice in
+            guard let self, currentBook?.id == book.id else { return }
+            startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: priority, requestedRatio: pageRatio,
+                recovery: choice, optionsOverride: optionsOverride, voiceChange: voiceChange, pdfAnchor: pdfAnchor)
         }
-        retryWithModel = { [weak self] choice in
-            guard let self, self.currentBook?.id == book.id, self.listeningRequestID == requestID else { return }
-            self.startListening(presentsFullPlayer: presentsFullPlayer, requestedChapter: priority, requestedRatio: pageRatio, recovery: choice)
-        }
-        var options = NarrationConversionOptions.current(for: settings.ttsPreferences)
+        var options = optionsOverride ?? NarrationConversionOptions.current(for: settings.ttsPreferences)
         if let recovery { options = options.recovering(with: recovery.candidate, language: recovery.language) }
         listeningSession.start(book: book, priority: priority, pageRatio: pageRatio,
                                catalog: catalog, conversionOptions: options,
                                presentsFullPlayer: presentsFullPlayer,
                                chapterEstimates: readerController?.playbackChapterEstimates
                                    ?? ChapterPlaybackTimeline.estimates(for:
-                                       LocalFulltextCache.inMemoryPayload(bookId: book.id)?.chapters ?? []))
+                                       LocalFulltextCache.inMemoryPayload(bookId: book.id)?.chapters ?? []),
+                               voiceChange: voiceChange, pdfAnchor: pdfAnchor)
     }
 }
 #endif

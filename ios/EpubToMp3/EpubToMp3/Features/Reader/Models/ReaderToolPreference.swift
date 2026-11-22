@@ -1,7 +1,7 @@
 import Foundation
 
 enum ReaderTool: String, CaseIterable {
-    case appearance, contents, search, footnotes, listen
+    case appearance, contents, search, footnotes, listen, voiceModels
     func isAvailable(hasFootnotes: Bool) -> Bool { self != .footnotes || hasFootnotes }
 
     var title: String {
@@ -11,6 +11,7 @@ enum ReaderTool: String, CaseIterable {
         case .search: return L10n.string("reader.search")
         case .footnotes: return L10n.string("reader.footnotes.title")
         case .listen: return L10n.string("player.play")
+        case .voiceModels: return L10n.string("settings.voiceModels")
         }
     }
     var symbol: String {
@@ -20,6 +21,7 @@ enum ReaderTool: String, CaseIterable {
         case .search: return "magnifyingglass"
         case .footnotes: return "text.append"
         case .listen: return "play"
+        case .voiceModels: return "waveform"
         }
     }
     var accessibilityIdentifier: String {
@@ -29,6 +31,7 @@ enum ReaderTool: String, CaseIterable {
         case .search: return "reader.search"
         case .footnotes: return "reader.footnotes"
         case .listen: return "reader.listen"
+        case .voiceModels: return "reader.voiceModels"
         }
     }
 }

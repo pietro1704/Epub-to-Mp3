@@ -21,6 +21,7 @@ private final class MacSpeechModelActionButton: NSButton {
 
 @MainActor
 final class MacSpeechModelLibraryPanel: NSStackView {
+    var onSelectVoice: ((TtsSelection) -> Void)?
     var onSnapshot: ((SpeechModelLibraryViewState) -> Void)?
 
     private let settings: AppSettings
@@ -231,6 +232,7 @@ final class MacSpeechModelLibraryPanel: NSStackView {
             Task { await speechModels.cancelInstall(modelID: entry.identity.modelID) }
         case .select:
             guard let selection = state.selection(for: entry) else { return }
+            if let onSelectVoice { onSelectVoice(selection); return }
             settings.selectPrimaryNarration(selection)
             render()
             onSnapshot?(state)

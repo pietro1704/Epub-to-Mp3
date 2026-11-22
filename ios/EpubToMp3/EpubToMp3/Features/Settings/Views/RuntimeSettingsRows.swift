@@ -63,7 +63,8 @@ enum RuntimeSettingsRows {
                 let cell = existingCell ?? tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
                 var content = cell.defaultContentConfiguration()
                 content.text = L10n.string("settings.audioEngineChoice")
-                content.secondaryText = speechModels.displayName(for: settings.ttsPreferences.primary)
+                content.secondaryText = speechModels.displayName(for: (controller as? SettingsScreenController)?.displayedPrimaryVoice
+                    ?? settings.ttsPreferences.primary)
                 cell.accessibilityIdentifier = "settings.tts.primary"
                 cell.accessibilityValue = content.secondaryText
                 content.image = UIImage(systemName: "waveform")

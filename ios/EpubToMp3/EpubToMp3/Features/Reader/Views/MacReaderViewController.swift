@@ -16,6 +16,7 @@ final class MacReaderViewController: NSViewController {
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
     private let onListen: () -> Void
+    private let onVoiceModels: (NSViewController, NSView) -> Void
     private let onPlaySelection: (Int, Double) -> Void
     private let onPlayPDF: (PDFReadingAudioMap.Anchor) -> Void
     private let onChromeChanged: (Bool) -> Void
@@ -53,6 +54,7 @@ final class MacReaderViewController: NSViewController {
         bookmarkStore: BookmarkStore,
         onClose: @escaping () -> Void,
         onListen: @escaping () -> Void = {},
+        onVoiceModels: @escaping (NSViewController, NSView) -> Void = { _, _ in },
         onPlaySelection: @escaping (Int, Double) -> Void = { _, _ in },
         onPlayPDF: @escaping (PDFReadingAudioMap.Anchor) -> Void = { _ in },
         onChromeChanged: @escaping (Bool) -> Void = { _ in },
@@ -75,6 +77,7 @@ final class MacReaderViewController: NSViewController {
         self.bookmarkStore = bookmarkStore
         self.onClose = onClose
         self.onListen = onListen
+        self.onVoiceModels = onVoiceModels
         self.onPlaySelection = onPlaySelection
         self.onPlayPDF = onPlayPDF
         self.onChromeChanged = onChromeChanged
@@ -248,6 +251,7 @@ final class MacReaderViewController: NSViewController {
         alert.addButton(withTitle: L10n.string("common.ok"))
         alert.beginSheetModal(for: window)
     }
+    @objc private func showVoiceModels(_ sender: NSView) { onVoiceModels(self, sender) }
     private func toggleChrome() {
         chromeHidden.toggle()
         composition.setChromeHidden(chromeHidden)

@@ -20,6 +20,7 @@ final class ReaderAccessibilityContractTests: XCTestCase {
         let more = try XCTUnwrap(descendants(harness.controller.view).compactMap { $0 as? NSButton }
             .first { $0.accessibilityIdentifier() == "reader.more" })
         let tools = try XCTUnwrap(more.menu).items.compactMap { $0.representedObject as? String }
+        XCTAssertTrue(tools.contains("voiceModels"))
         XCTAssertEqual(Set(tools), Set(ReaderTool.allCases.filter { $0 != .footnotes }.map(\.rawValue)))
 #else
         XCTAssertEqual(harness.composition.textView.accessibilityIdentifier, "reader.content")
@@ -36,6 +37,7 @@ final class ReaderAccessibilityContractTests: XCTestCase {
         XCTAssertEqual(items.count, 2)
         let menu = try XCTUnwrap(items.first?.menu)
         let tools = menu.children.compactMap { ($0 as? UIAction)?.identifier.rawValue }
+        XCTAssertTrue(tools.contains("reader.voiceModels"))
         XCTAssertEqual(Set(tools), Set(ReaderTool.allCases.filter { $0 != .footnotes }.map(\.accessibilityIdentifier)))
         XCTAssertFalse(reader.isViewLoaded, "Reading action metadata must not open a source or start playback")
 #endif

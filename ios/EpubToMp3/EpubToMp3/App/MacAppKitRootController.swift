@@ -23,6 +23,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private lazy var sidebarPresentation = MacSidebarPresentation(
         actionTarget: self, action: #selector(sidebarButtonActivated(_:))
     )
+    private let voicePicker = MacReaderVoicePickerPresenter()
     private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
     private lazy var playbackSession = MacReaderPlaybackSession(
         settings: settings, library: library, player: player,
@@ -288,6 +289,9 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             bookmarkStore: bookmarkStore,
             onClose: { [weak self] in self?.show(.library) },
             onListen: { [weak self] in self?.playFromCurrentReaderPosition() },
+            onVoiceModels: { [weak self] reader, anchor in
+                self?.presentVoiceModels(bookID: bookID, from: reader, anchoredTo: anchor)
+            },
             onPlaySelection: { [weak self] chapter, ratio in
                 guard let self else { return }
                 self.playbackSession.start(owner: self, chapterOverride: chapter, pageRatioOverride: ratio)
@@ -320,6 +324,14 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         ])
         detailController = reader
         refreshPlayerBar()
+    }
+
+    private func presentVoiceModels(bookID: String, from reader: NSViewController, anchoredTo anchor: NSView) {
+        let request = playbackSession.voicePickerRequest(bookID: bookID, owner: self) { [weak self, weak reader] in
+            guard let self, let reader else { return false }
+            return self.detailController === reader
+        }
+        voicePicker.present(from: reader, anchor: anchor, request: request)
     }
 
     func startPlaybackForCurrentBook() {

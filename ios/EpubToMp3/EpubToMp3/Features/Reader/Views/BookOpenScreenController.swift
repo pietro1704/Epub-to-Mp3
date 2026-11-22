@@ -104,6 +104,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// hide chrome like the "Ouvir" button until content is ready.
     var onLoadStateChanged: ((Bool) -> Void)?
     var onPlaybackChapterEstimates: (([Int: TimeInterval]) -> Void)?
+    var onPDFPlaybackRequested: ((PDFReadingAudioMap.Anchor) -> Void)?
     var onSelectionPlaybackRequested: ((Int, Double) -> Void)?
 
     /// The host owns presentation state; it only needs this content fact
@@ -150,6 +151,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         }
     }
 var onListenRequested: (() -> Void)?
+var onVoiceModelsRequested: (() -> Void)?
 private lazy var toolBar = ReaderToolBar(defaults: sessionDefaults) { [weak self] tool in
     guard let self else { return }
     switch tool {
@@ -157,6 +159,7 @@ private lazy var toolBar = ReaderToolBar(defaults: sessionDefaults) { [weak self
     case .contents: self.presentTOC()
     case .search: self.promptSearch()
     case .footnotes: self.showFootnotes()
+    case .voiceModels: self.onVoiceModelsRequested?()
     case .listen:
         // A PDF starts at the visible page and fails closed when it has no narration text.
         if let pdf = self.composition.contentSurface.pdfPresentation { pdf.playFromCurrentPosition() }
@@ -447,7 +450,7 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
     private func showPDF(_ url: URL) {
         composition.contentSurface.configurePDF(.init(bookID: document.book.id, settings: settings,
             player: player, defaults: sessionDefaults, toggleChrome: { [weak self] in self?.toggleChromeVisibility() },
-            playFrom: { [weak self] in self?.onSelectionPlaybackRequested?($0.chapterIndex, $0.ratio) },
+            playFrom: { [weak self] in self?.onPDFPlaybackRequested?($0) },
             positionChanged: { [weak self] anchor, page, total in
                 guard let self else { return }
                 if let anchor { document.selectedChapter = anchor.chapterIndex }
