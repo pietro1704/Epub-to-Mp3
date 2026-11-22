@@ -56,6 +56,8 @@ final class AppErrorReporterTests: XCTestCase {
             let diagnostic = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             XCTAssertTrue(diagnostic.contains("book_language_uncertain_v1"), "the technical reason stays in the log")
         }
+        // L10n returns the key itself for a missing entry, which would make the checks above pass.
+        XCTAssertNotEqual(L10n.string("error.bookLanguageUncertain"), "error.bookLanguageUncertain")
         // Other unsupported input keeps the generic message.
         XCTAssertEqual(EmbeddedConverterError.conversionFailed("unsupported input: empty book").errorDescription,
                        L10n.string("error.conversionFailed"))
