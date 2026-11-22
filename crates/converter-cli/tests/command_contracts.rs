@@ -77,6 +77,22 @@ fn assert_untouched(root: &Path) {
 }
 
 #[test]
+fn help_documents_explicit_fallback_voice_and_model_selection() {
+    let runtime = tempfile::tempdir().unwrap();
+    let output = command(runtime.path(), &["--help"]);
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    for option in ["--fallback-voice VOICE", "--fallback-model MODEL"] {
+        assert!(
+            help.lines().any(|line| {
+                line.trim_start().starts_with(option) && line.contains("requires --fallback-engine")
+            }),
+            "expected {option} and its engine requirement in --help"
+        );
+    }
+}
+
+#[test]
 fn unsupported_flags_fail_before_input_resolution_synthesis_or_cleanup() {
     let fixture = tempfile::tempdir().unwrap();
     let runtime = tempfile::tempdir().unwrap();
