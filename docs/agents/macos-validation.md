@@ -159,7 +159,7 @@ Before considering another build, reuse a source-matched package from this
 checkout or its linked worktrees:
 
 ```sh
-mise exec -- ruby scripts/native_job.rb build -- ruby scripts/download_converter_ffi_macos.rb --reuse-local
+mise exec -- ruby scripts/native_job.rb build -- "$(mise which ruby)" scripts/download_converter_ffi_macos.rb --reuse-local
 ```
 
 This command verifies the current Rust/native inputs, build recipe, payload

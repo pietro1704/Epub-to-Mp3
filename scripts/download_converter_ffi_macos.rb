@@ -8,6 +8,7 @@ require 'net/http'
 require 'open3'
 require 'optparse'
 require 'pathname'
+require 'rbconfig'
 require 'tmpdir'
 require 'time'
 require 'uri'
@@ -305,7 +306,7 @@ module ConverterFfiMacOSDownloader
   def verify_with_producer(root, package, identity_sha)
     helper = File.join(root, 'scripts', 'package_converter_ffi_macos.rb')
     raise 'Trusted FFI package verifier is missing; producer PR1 must be integrated first' unless File.file?(helper)
-    output, status = Open3.capture2e('ruby', helper, 'verify', '--root', root, '--package', package, '--expected-identity-sha', identity_sha)
+    output, status = Open3.capture2e(RbConfig.ruby, helper, 'verify', '--root', root, '--package', package, '--expected-identity-sha', identity_sha)
     raise "Producer package verification failed: #{output}" unless status.success?
   end
 
@@ -382,6 +383,23 @@ module ConverterFfiMacOSDownloader
     warn "error: #{error.message}"
     1
   end
+
+  def run_cli(argv)
+    return main(argv) if [].respond_to?(:filter_map)
+
+    interpreter, status = Open3.capture2('mise', 'which', 'ruby')
+    interpreter = interpreter.strip
+    unless status.success? && Pathname.new(interpreter).absolute? && File.executable?(interpreter) &&
+           !File.identical?(interpreter, RbConfig.ruby)
+      raise 'Could not resolve the managed Ruby executable'
+    end
+
+    # Keep the inherited native lease descriptor across the interpreter change.
+    exec(interpreter, File.expand_path(__FILE__), *argv, close_others: false)
+  rescue RuntimeError, SystemCallError => error
+    warn "error: #{error.message}. Run the downloader with `mise exec -- ruby`."
+    1
+  end
 end
 
-exit ConverterFfiMacOSDownloader.main(ARGV) if $PROGRAM_NAME == __FILE__
+exit ConverterFfiMacOSDownloader.run_cli(ARGV) if $PROGRAM_NAME == __FILE__

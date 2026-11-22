@@ -137,6 +137,57 @@ class ConverterFfiMacOSDownloaderTest < Minitest::Test
     refute File.exist?(File.join(checkout, 'target')), 'Discovery alone must not install or compile'
   end
 
+  def test_offline_cli_uses_managed_ruby_when_system_ruby_is_first_on_path
+    system_ruby = '/usr/bin/ruby'
+    skip 'Requires a system Ruby without Array#filter_map' unless File.executable?(system_ruby) &&
+      system(system_ruby, '-e', 'exit([].respond_to?(:filter_map) ? 1 : 0)')
+
+    require_relative 'package_converter_ffi_macos'
+    helper = File.join(@root, 'scripts/package_converter_ffi_macos.rb')
+    workflow = File.join(@root, Downloader::WORKFLOW)
+    [helper, workflow].each { |path| FileUtils.mkdir_p(File.dirname(path)) }
+    File.write(helper, <<~RUBY)
+      abort 'Verifier used legacy Ruby' unless [].respond_to?(:filter_map)
+      abort 'Unexpected verifier command' unless ARGV.first == 'verify'
+    RUBY
+    File.write(workflow, 'name: fixture')
+    [%w[git init -q], %w[git add .]].each do |command|
+      output, status = Open3.capture2e(*command, chdir: @root)
+      assert status.success?, output
+    end
+
+    identity = ConverterFfiMacOSPackage.identity(@root)
+    File.write(File.join(@package, 'receipt.json'), JSON.generate(receipt.merge(
+      'identity' => identity, 'identity_sha256' => Digest::SHA256.hexdigest(Downloader.canonical_json(identity))
+    )))
+    ConverterFfiArtifactCache.remember(@root, @package)
+    bin = File.join(@temporary, 'bin')
+    FileUtils.mkdir_p(bin)
+    File.symlink(system_ruby, File.join(bin, 'ruby'))
+    launcher = File.join(bin, 'managed-ruby')
+    File.write(launcher, <<~SH)
+      #!/bin/sh
+      : <&9 || exit 65
+      exec "$FIXTURE_MANAGED_RUBY" "$@"
+    SH
+    File.write(File.join(bin, 'mise'), <<~SH)
+      #!/bin/sh
+      [ "$*" = 'which ruby' ] || exit 64
+      printf '%s\\n' "$FIXTURE_RUBY_LAUNCHER"
+    SH
+    File.chmod(0o755, launcher, File.join(bin, 'mise'))
+
+    cli = File.join(__dir__, 'download_converter_ffi_macos.rb')
+    environment = { 'PATH' => "#{bin}:#{ENV.fetch('PATH')}", 'FIXTURE_MANAGED_RUBY' => RbConfig.ruby,
+                    'FIXTURE_RUBY_LAUNCHER' => launcher }
+    output, status = File.open(helper) do |inherited_handle|
+      Open3.capture2e(environment, system_ruby, cli, '--root', @root, '--reuse-local', 9 => inherited_handle)
+    end
+    assert status.success?, output
+    assert_includes output, 'Reused verified Intel converter-ffi package'
+    assert_equal 'macho-fixture', File.binread(File.join(@root, 'target/release/libconverter_ffi.dylib'))
+  end
+
   def test_rejects_untrusted_run_identity_before_download
     bad_run = @run.merge('head_branch' => 'pull/7/merge')
     client, = client_for(@package, run: bad_run)
