@@ -575,6 +575,9 @@
 "models.section.online" = "%@ · Online";
 "models.showLowQuality" = "Show low-quality voices";
 "models.showLowQualityDescription" = "Low-quality voices are never picked automatically, suggested or used as a fallback. Showing one, downloading it and choosing it are separate steps.";
+"models.engine.system" = "System";
+"models.engine.systemDetail" = "Luciana when available";
+"models.engine.noPiperVoice" = "No downloaded Piper model";
 "models.automatic" = "Automatic: the best downloaded model is used for this language.";
 "models.inUse" = "In use for this language";
 "models.download" = "Tap to download · %@";

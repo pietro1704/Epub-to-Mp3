@@ -29,29 +29,35 @@ final class MacModelsNarrationControlsTests: XCTestCase {
         let secondary = try XCTUnwrap(controls.compactMap { $0 as? NSPopUpButton }.first { $0.accessibilityIdentifier() == "settings.tts.secondary" })
         let online = try XCTUnwrap(controls.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "settings.tts.onlineConsent" })
         let automatic = try XCTUnwrap(controls.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "settings.tts.automaticSystemFallback" })
+        let primaryVoice = try XCTUnwrap(controls.compactMap { $0 as? NSPopUpButton }.first { $0.accessibilityIdentifier() == "settings.tts.primary.voice" })
         XCTAssertEqual(primary.accessibilityLabel(), L10n.string("settings.audioEngineChoice"))
         XCTAssertEqual(secondary.accessibilityLabel(), L10n.string("settings.secondaryVoice"))
-        XCTAssertEqual(primary.titleOfSelectedItem, settings.primaryTtsSelection.modelID, "The saved default voice is shown")
+        // Engine first: System, Piper, Edge; the voice sits inside the engine (second popup).
+        XCTAssertEqual(primary.itemTitles, [L10n.string("models.engine.system"), "Piper", "Edge"])
+        XCTAssertEqual(primary.titleOfSelectedItem, "Piper", "The saved default (Faber) is shown as its engine")
+        XCTAssertFalse(primaryVoice.isHidden)
+        XCTAssertTrue(primaryVoice.itemTitles.contains { $0.contains("faber") || $0.contains("Faber") })
+        XCTAssertEqual(secondary.itemTitles.first, L10n.string("settings.noSecondary"))
         XCTAssertEqual(online.state, .off)
-        XCTAssertFalse(secondary.itemTitles.contains("Edge"), "Online voices are not offered as the reserve without consent")
+        XCTAssertEqual(primary.item(withTitle: "Edge")?.isEnabled, false, "Edge needs the online permission")
 
-        // The default voice persists through the control.
-        primary.selectItem(withTitle: L10n.string("settings.systemTts"))
+        // Choosing the System engine applies at once and hides the voice list.
+        primary.selectItem(withTitle: L10n.string("models.engine.system"))
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
         XCTAssertEqual(AppSettings(defaults: defaults).primaryTtsSelection, .systemDefault)
-        // The reserve cannot repeat the default voice.
         for _ in 0..<10 { try await Task.sleep(nanoseconds: 50_000_000) }
-        XCTAssertFalse(secondary.itemTitles.contains(L10n.string("settings.systemTts")), "The reserve differs from the default voice")
+        XCTAssertTrue(primaryVoice.isHidden)
+        XCTAssertEqual(secondary.item(withTitle: L10n.string("models.engine.system"))?.isEnabled, false,
+                       "The reserve cannot repeat the default engine")
 
-        // With the consent on, Edge becomes a possible reserve and persists.
+        // With the consent on, Edge becomes possible; withdrawing it drops the online reserve.
         online.performClick(nil)
         XCTAssertTrue(AppSettings(defaults: defaults).allowOnlineAudioFallback)
         for _ in 0..<10 { try await Task.sleep(nanoseconds: 50_000_000) }
-        XCTAssertTrue(secondary.itemTitles.contains("Edge"))
+        XCTAssertEqual(secondary.item(withTitle: "Edge")?.isEnabled, true)
         secondary.selectItem(withTitle: "Edge")
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
         XCTAssertEqual(AppSettings(defaults: defaults).secondaryTtsSelection?.engine, "edge")
-        // Withdrawing the consent drops the online reserve (existing policy) and the screen follows.
         online.performClick(nil)
         for _ in 0..<10 { try await Task.sleep(nanoseconds: 50_000_000) }
         XCTAssertNil(AppSettings(defaults: defaults).secondaryTtsSelection)

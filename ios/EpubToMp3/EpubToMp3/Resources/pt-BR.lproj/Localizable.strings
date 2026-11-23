@@ -575,6 +575,9 @@
 "models.section.online" = "%@ · Online";
 "models.showLowQuality" = "Mostrar qualidade baixa";
 "models.showLowQualityDescription" = "Vozes de qualidade baixa nunca são escolhidas automaticamente, sugeridas nem usadas como reserva. Mostrar, baixar e escolher uma voz são passos separados.";
+"models.engine.system" = "Sistema";
+"models.engine.systemDetail" = "Luciana quando disponível";
+"models.engine.noPiperVoice" = "Nenhum modelo Piper baixado";
 "models.automatic" = "Automático: o melhor modelo baixado é usado neste idioma.";
 "models.inUse" = "Em uso neste idioma";
 "models.download" = "Toque para baixar · %@";

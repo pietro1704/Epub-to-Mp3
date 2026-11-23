@@ -19,18 +19,17 @@ final class ModelsScreenAlertTests: XCTestCase {
 
     private func cancelCount(_ alert: UIAlertController) -> Int { alert.actions.filter { $0.style == .cancel }.count }
 
-    func testChoiceSheetsHaveExactlyOneCancelWhenPresented() throws {
+    func testNarrationMenusListTheEnginesFirstAndPiperHoldsItsModels() throws {
         let (controller, defaults, name) = try makeController()
         defer { defaults.removePersistentDomain(forName: name) }
-        let source = IndexPath(row: 0, section: 0)
-        for alert in [controller.primaryChoicesAlert(), controller.secondaryChoicesAlert()] {
-            let before = alert.actions.count
-            XCTAssertGreaterThanOrEqual(before, 1)
-            // This is the call that threw NSInternalInconsistencyException before the fix.
-            SettingsAlertPresentation.actionSheet(alert, on: controller, tableView: controller.tableView, source: source)
-            XCTAssertEqual(cancelCount(alert), 1)
-            XCTAssertEqual(alert.actions.count, before + 1, "Exactly the one shared cancel is appended")
-        }
+        let primary = controller.narrationMenu(secondary: false)
+        XCTAssertEqual(primary.children.map(\.title), ["System", "Piper", "Edge"])
+        let piper = try XCTUnwrap(primary.children[1] as? UIMenu)
+        XCTAssertFalse(piper.children.isEmpty, "Piper opens a list of its voices")
+        XCTAssertTrue(primary.children[0] is UIAction, "System selects directly")
+        let secondary = controller.narrationMenu(secondary: true)
+        XCTAssertEqual(secondary.children.map(\.title).first, "None")
+        XCTAssertEqual(secondary.children.count, 4)
     }
 
     func testActionSheetNeverAddsASecondCancel() throws {
