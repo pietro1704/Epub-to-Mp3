@@ -131,12 +131,7 @@ final class MacPlayerBarViewController: NSViewController {
         }
         view = background
         view.addGestureRecognizer(NSPanGestureRecognizer(target: self, action: #selector(dragPlayer(_:))))
-        // objectWillChange fires before @Published stores its new value.
-        // Read transport state on the next main-loop turn so an external
-        // pause/resume updates the displayed action to the committed state.
-        cancellable = player.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refresh() }
+        cancellable = player.transportUpdates.sink { [weak self] _ in self?.refresh() }
         refresh()
     }
 
@@ -192,26 +187,28 @@ final class MacPlayerBarViewController: NSViewController {
     @objc private func showFullPlayer() { onShowFullPlayer() }
 
     private func refresh() {
+        let transport = player.transportState
+        let state = transport.content
         let currentBookID = player.location.playingBookID
             ?? player.location.readingBookID
         let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
-        let bookTitle = book?.resolvedTitle ?? player.snapshot?.bookTitle ?? L10n.string("player.nothingPlaying")
-        titleLabel.stringValue = player.snapshot == nil ? bookTitle : player.effectiveChapterTitle
-        chapterLabel.stringValue = player.snapshot == nil ? "" : bookTitle
-        etaLabel.stringValue = player.durationSeconds > 0
-            ? L10n.string("player.remaining", formatTime(player.playbackDurationSeconds - player.playbackPositionSeconds))
+        let bookTitle = book?.resolvedTitle ?? state.job?.bookTitle ?? L10n.string("player.nothingPlaying")
+        titleLabel.stringValue = state.job == nil ? bookTitle : state.chapterTitle
+        chapterLabel.stringValue = state.job == nil ? "" : bookTitle
+        etaLabel.stringValue = transport.clock.durationSeconds > 0
+            ? L10n.string("player.remaining", formatTime(transport.playbackDurationSeconds - transport.playbackPositionSeconds))
             : ""
         coverView.image = book?.coverPNG.flatMap(NSImage.init(data:)) ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
-        playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
-        playButton.setAccessibilityLabel(L10n.string(player.isPlaying ? "player.pause" : "player.play"))
-        playButton.toolTip = L10n.string(player.isPlaying ? "player.pause" : "player.play")
-        playButton.isHidden = player.isLoading
-        if player.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
-        rateButton.title = player.rate.shortLabel
-        playButton.isEnabled = player.snapshot != nil || currentBookID != nil
-        previousButton.isEnabled = player.snapshot != nil
-        nextButton.isEnabled = player.snapshot != nil
-        rateButton.isEnabled = player.snapshot != nil
+        playButton.image = NSImage(systemSymbolName: state.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        playButton.setAccessibilityLabel(L10n.string(state.isPlaying ? "player.pause" : "player.play"))
+        playButton.toolTip = L10n.string(state.isPlaying ? "player.pause" : "player.play")
+        playButton.isHidden = state.isLoading
+        if state.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
+        rateButton.title = state.rate.shortLabel
+        playButton.isEnabled = state.job != nil || currentBookID != nil
+        previousButton.isEnabled = state.job != nil
+        nextButton.isEnabled = state.job != nil
+        rateButton.isEnabled = state.job != nil
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {

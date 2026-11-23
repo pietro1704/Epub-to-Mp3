@@ -11,7 +11,7 @@ final class AuditMetadataContrastTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         defer { player.stop() }
-        let controller = FullPlayerScreenController(player: player, playbackClock: PlaybackClock(),
+        let controller = FullPlayerScreenController(player: player,
             library: LibraryStore(defaults: defaults), playerPresentation: PlayerPresentation(defaults: defaults),
             settings: AppSettings(defaults: defaults), onStartListening: {})
         controller.loadViewIfNeeded()

@@ -99,14 +99,15 @@ final class PlayerViewConfigurationTests: XCTestCase {
         }
         let original = try snapshot("view-owned", title: "Original")
         player.setSnapshot(original)
-        let clock = PlaybackClock()
-        let controller = PlayerScreenController(snapshot: original, backendBaseURL: nil, player: player, playbackClock: clock)
+        let clock = player.playbackClock
+        let controller = PlayerScreenController(snapshot: original, backendBaseURL: nil, player: player)
         controller.loadViewIfNeeded()
         func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
         player.updateSnapshot(try snapshot("view-owned", title: "Updated"))
         try await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertTrue(descendants(controller.view).compactMap { $0 as? UILabel }.contains { $0.text == "Updated" })
         clock.update(positionSeconds: 12, durationSeconds: 60)
+        try await Task.sleep(nanoseconds: 20_000_000)
         let slider = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? CompactSlider }.first)
         XCTAssertEqual(slider.value, 12)
         XCTAssertEqual(slider.maximumValue, 60)

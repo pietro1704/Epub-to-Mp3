@@ -118,6 +118,7 @@ final class PlaybackSessionLifecycle {
             actions.speech(false)
         }
         teardown()
+        actions.segmentMode(false)
         actions.playing(false)
         actions.snapshotChanged(nil)
         chapterSession.clear()
@@ -139,6 +140,7 @@ final class PlaybackSessionLifecycle {
         actions.seeking(false)
         segments.cancelWaiters()
         queueSession.teardown()
+        clock.update(positionSeconds: 0, durationSeconds: 0)
         actions.paused(false)
         queueSession.clearOwnership()
         // A segment is retained until it has been inserted into the queue or

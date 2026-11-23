@@ -158,7 +158,7 @@ final class FaberNativeInferenceTests: XCTestCase {
 
         #if os(iOS)
         let controller = FullPlayerScreenController(
-            player: player, playbackClock: player.playbackClock,
+            player: player,
             library: LibraryStore(defaults: defaults, importDirectory: root),
             playerPresentation: PlayerPresentation(defaults: defaults), settings: AppSettings(defaults: defaults),
             onStartListening: {}

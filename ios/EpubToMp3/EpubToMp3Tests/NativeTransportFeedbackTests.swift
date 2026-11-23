@@ -120,7 +120,7 @@ final class NativeTransportFeedbackTests: XCTestCase {
 
     func testExpandedSliderCommitsArbitraryPositionAndLatestSeekWins() async throws {
         try await fixture { player, defaults in
-            let controller = FullPlayerScreenController(player: player, playbackClock: player.playbackClock,
+            let controller = FullPlayerScreenController(player: player,
                 library: LibraryStore(defaults: defaults), playerPresentation: PlayerPresentation(defaults: defaults),
                 settings: AppSettings(defaults: defaults), onStartListening: {})
             controller.loadViewIfNeeded()

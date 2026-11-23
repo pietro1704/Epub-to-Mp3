@@ -13,7 +13,7 @@ final class ExpandedPlayerTransportTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let controller = FullPlayerScreenController(
-            player: player, playbackClock: player.playbackClock,
+            player: player,
             library: LibraryStore(defaults: defaults),
             playerPresentation: PlayerPresentation(defaults: defaults),
             settings: AppSettings(defaults: defaults), onStartListening: startListening
