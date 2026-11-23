@@ -62,13 +62,13 @@ jobs:
               echo "PR #$pr is not verifiably green at the inspected head; left unchanged."
               continue
             fi
-            # GITHUB_TOKEN merges do not emit a new push-triggered run.
-            # Confirm delivery before dispatching the existing post-merge gate.
+            # Post-merge validation is no longer started per merge: Post-merge batch
+            # (scheduled) validates the master head once no pull request check is waiting.
             delivered=$(gh pr view "$pr" --repo "$REPO" --json state,headRefOid,mergeCommit)
             if jq -e --arg head "$head_sha" '.state == "MERGED" and .headRefOid == $head and (.mergeCommit.oid | test("^[0-9a-f]{40}$"))' <<< "$delivered" >/dev/null; then
-              gh workflow run post-merge-validation.yml --repo "$REPO" --ref master
+              echo "PR #$pr merged; the next Post-merge batch validates master."
             else
-              echo "PR #$pr merge delivery is unconfirmed; no post-merge validation dispatched."
+              echo "PR #$pr merge delivery is unconfirmed."
             fi
           done < <(jq -r '.[] | [.number, .headRefOid] | @tsv' <<< "$prs")
 

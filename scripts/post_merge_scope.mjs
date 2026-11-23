@@ -87,8 +87,9 @@ function gh(path) {
 
 const everything = reason => ({ base: null, reason, jobs: selectJobs([], { full: true }) });
 
-export function decide({ sha, event, repo, api = gh, run = git }) {
-  if (event !== 'push') return everything(`full validation for ${event}`);
+export function decide({ sha, event, repo, scopedDispatch = false, api = gh, run = git }) {
+  // A dispatch is scoped only when the batch asks for it; any other dispatch runs everything.
+  if (event !== 'push' && !(event === 'workflow_dispatch' && scopedDispatch)) return everything(`full validation for ${event}`);
   const response = api(`/repos/${repo}/actions/workflows/post-merge-validation.yml/runs?branch=master&status=success&per_page=100`);
   ensure(Array.isArray(response?.workflow_runs), 'Incomplete validation history');
   const history = run(['rev-list', '--max-count=5000', sha]);
@@ -105,7 +106,8 @@ export function decide({ sha, event, repo, api = gh, run = git }) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let result;
   try {
-    result = decide({ sha: process.env.GITHUB_SHA, event: process.env.GITHUB_EVENT_NAME, repo: process.env.GITHUB_REPOSITORY });
+    result = decide({ sha: process.env.GITHUB_SHA, event: process.env.GITHUB_EVENT_NAME, repo: process.env.GITHUB_REPOSITORY,
+      scopedDispatch: process.env.SCOPED_DISPATCH === 'true' });
   } catch (error) {
     // Any doubt selects everything; it never skips.
     result = everything(`full validation: ${error.message}`);

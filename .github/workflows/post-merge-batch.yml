@@ -1,0 +1,38 @@
+name: Post-merge batch
+
+# Post-merge validation no longer runs once per merge (it kept every hosted macOS runner
+# busy and starved the pull request gates). This workflow starts one validation of the
+# current master head when it has none and no pull request check is waiting.
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Decide and report without dispatching the validation
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: post-merge-batch
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    name: Start the pending post-merge validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'master' || github.sha }}
+          persist-credentials: false
+      - name: Decide and dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BATCH_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: node scripts/post_merge_batch.mjs

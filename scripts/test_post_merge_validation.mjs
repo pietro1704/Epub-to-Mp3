@@ -161,7 +161,8 @@ test('postmerge finishes active CodeQL validation while keeping a single pending
 test('postmerge graph contains every runtime and aggregates all called workflows', () => {
   const post = workflow('post-merge-validation.yml');
   const events = post.on ?? post.true;
-  assert.deepEqual(events.push.branches, ['master']);
+  assert.equal(events.push, undefined, 'validation is batched by post-merge-batch.yml, not started per push');
+  assert.ok(events.workflow_dispatch);
   assert.equal(events.pull_request, undefined);
   const required = Object.keys(post.jobs).filter(name => !['validated', 'publication', ...Object.keys(FOLLOW_UPS)].includes(name)).sort();
   assert.deepEqual(required, [...REQUIRED_VALIDATIONS].sort());

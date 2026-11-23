@@ -84,8 +84,7 @@ process.stdout.write(JSON.stringify(response));
       if (state === 'CLEAN' && protectionToken === 'read-protection-fixture') {
         assert.deepEqual(mutations, [
           ['pr', 'merge', '802', '--repo', repo, '--squash', '--match-head-commit', head],
-          ['workflow', 'run', 'post-merge-validation.yml', '--repo', repo, '--ref', 'master'],
-        ]);
+        ], 'A merge no longer starts Post-merge validation; the scheduled batch does');
       } else {
         assert.deepEqual(mutations, [], 'stale bases or unverifiable protection cannot mutate');
       }
