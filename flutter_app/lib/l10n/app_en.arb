@@ -205,5 +205,9 @@
   "modelsEmpty": "No models are available for this device",
   "modelsLoadFailed": "The model list could not be loaded",
   "@modelsRowSubtitle": {"placeholders": {"count": {"type": "int"}}},
-  "modelsRowSubtitle": "{count, plural, =1{1 model} other{{count} models}}"
+  "modelsRowSubtitle": "{count, plural, =1{1 model} other{{count} models}}",
+  "@modelsMissingTitle": {"placeholders": {"language": {"type": "String"}}},
+  "modelsMissingTitle": "No narration model for {language}",
+  "modelsMissingBody": "Install a narration model for this language, then try again.",
+  "modelsMissingAction": "Open Models"
 }

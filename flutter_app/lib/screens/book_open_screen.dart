@@ -45,6 +45,9 @@ import '../services/playback/resume_restoration_guard.dart';
 import '../state/providers.dart';
 import '../views/instant_reader_view.dart';
 import 'library_screen.dart';
+import 'missing_narration_dialog.dart';
+import '../services/playback/playback_narration_resolver.dart';
+import '../views/reader_narration_menu.dart' show installedNarrationModelIdsProvider;
 import 'pdf_reader_screen.dart';
 
 part 'book_content_session.dart';

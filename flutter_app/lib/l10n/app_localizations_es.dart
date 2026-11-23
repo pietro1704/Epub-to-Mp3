@@ -576,4 +576,16 @@ class AppLocalizationsEs extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String modelsMissingTitle(String language) {
+    return 'Sin modelo de narración para $language';
+  }
+
+  @override
+  String get modelsMissingBody =>
+      'Instala un modelo de narración para este idioma e inténtalo de nuevo.';
+
+  @override
+  String get modelsMissingAction => 'Abrir Modelos';
 }

@@ -1113,6 +1113,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =1{1 model} other{{count} models}}'**
   String modelsRowSubtitle(int count);
+
+  /// No description provided for @modelsMissingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No narration model for {language}'**
+  String modelsMissingTitle(String language);
+
+  /// No description provided for @modelsMissingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Install a narration model for this language, then try again.'**
+  String get modelsMissingBody;
+
+  /// No description provided for @modelsMissingAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Models'**
+  String get modelsMissingAction;
 }
 
 class _AppLocalizationsDelegate
