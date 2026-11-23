@@ -328,7 +328,11 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     bookPath: inputPath,
     configured: base,
     choices: ref.read(languageModelChoicesProvider),
-    installedModelIds: () => ref.read(installedNarrationModelIdsProvider.future),
+    // Fresh at each job start: the cached list may predate an install.
+    installedModelIds: () {
+      ref.invalidate(installedNarrationModelIdsProvider);
+      return ref.read(installedNarrationModelIdsProvider.future);
+    },
     systemVoices: () => ref.read(systemVoiceLanguagesProvider.future),
     platform: switch (defaultTargetPlatform) {
       TargetPlatform.android => 'Android',

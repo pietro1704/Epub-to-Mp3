@@ -12,6 +12,7 @@ import 'package:flutter_app/services/conversion/embedded_converter.dart';
 import 'package:flutter_app/services/conversion/model_install/model_install_models.dart';
 import 'package:flutter_app/services/conversion/model_install/model_install_runner.dart';
 import 'package:flutter_app/state/providers.dart';
+import 'package:flutter_app/views/reader_narration_menu.dart' show installedNarrationModelIdsProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -170,6 +171,28 @@ void main() {
     await _settle(tester);
     expect(bar, findsNothing);
     expect(_stored(prefs).choiceFor('pt')?.modelId, 'pt_PT-tugao-medium');
+  });
+
+  testWidgets('a finished install updates the installed list the playback resolver reads (A8: stale "no model" alert)', (tester) async {
+    final (converter, _) = await _pump(tester);
+    final container = ProviderScope.containerOf(tester.element(find.byType(ModelsScreen)));
+    // The reader menu keeps this provider alive while a book is open.
+    final subscription = container.listen(installedNarrationModelIdsProvider, (_, _) {});
+    addTearDown(subscription.close);
+    Future<Set<String>> installed() async =>
+        (await tester.runAsync(() => container.read(installedNarrationModelIdsProvider.future)))!;
+    expect(await installed(), isNot(contains('pt_PT-tugao-medium')));
+
+    await tester.tap(find.byKey(const ValueKey('language-pt')));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('model-pt-pt_PT-tugao-medium')));
+    await tester.pump();
+    converter.installed.add('pt_PT-tugao-medium');
+    converter.events!.add(_event(ModelInstallStage.completed, 100));
+    unawaited(converter.events!.close());
+    await _settle(tester);
+
+    expect(await installed(), contains('pt_PT-tugao-medium'));
   });
 
   testWidgets('cancelling a download leaves the choice untouched', (tester) async {
