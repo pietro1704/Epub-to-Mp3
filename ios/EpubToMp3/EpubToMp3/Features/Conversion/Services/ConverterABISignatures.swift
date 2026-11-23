@@ -45,6 +45,10 @@ typealias ConverterTtsCatalogProbeV3 = @convention(c) (
     UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?,
     UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?
 ) -> UnsafeMutablePointer<CChar>?
+typealias ConverterTtsCatalogProbeModelV3 = @convention(c) (
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?,
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsDefaultEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsInstalledReadyEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 typealias ConverterTtsModelInstall = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?

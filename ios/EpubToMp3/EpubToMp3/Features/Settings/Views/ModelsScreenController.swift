@@ -74,7 +74,7 @@ final class ModelsScreenController: UITableViewController {
     /// Section 0 holds the narration settings the old voice-models screen carried
     /// (default voice, reserve voice, system-voice fallback, online consent); the
     /// model groups follow.
-    private enum NarrationRow: Int, CaseIterable { case primary, secondary, automaticSystemFallback, onlineFallback }
+    private enum NarrationRow: Int, CaseIterable { case primary, secondary, automaticSystemFallback, onlineFallback, showLowQuality }
 
     override func numberOfSections(in tableView: UITableView) -> Int { groups.count + 1 }
 
@@ -183,6 +183,13 @@ final class ModelsScreenController: UITableViewController {
                            isOn: model.allowOnlineFallback, accessibilityIdentifier: "settings.tts.onlineConsent")
             cell.onValueChanged = { [weak self] isAllowed in self?.model.allowOnlineFallback = isAllowed }
             return cell
+        case .showLowQuality:
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+            cell.configure(title: L10n.string("models.showLowQuality"),
+                           subtitle: L10n.string("models.showLowQualityDescription"),
+                           isOn: model.showLowQuality, accessibilityIdentifier: "models.showLowQuality")
+            cell.onValueChanged = { [weak self] show in Task { await self?.model.setShowLowQuality(show) } }
+            return cell
         }
     }
 
@@ -228,7 +235,9 @@ final class ModelsScreenController: UITableViewController {
         let row = group.rows[indexPath.row]
         switch row.availability {
         case .ready:
-            if row.isChosen { model.clearChoice(in: group.language) } else { model.choose(row, in: group.language) }
+            if row.isChosen { model.clearChoice(in: group.language) }
+            else if row.isExplicitOnly { Task { [weak self] in await self?.model.chooseExplicit(row, in: group.language) } }
+            else { model.choose(row, in: group.language) }
         case .downloadable:
             Task { [weak self] in await self?.model.download(row, in: group.language) }
         case .needsConsent:

@@ -7,6 +7,8 @@ struct ConverterModelCatalog {
     var lastError: ConverterLastError = { nil }
     var catalogJSONV3: ConverterTtsCatalogV3? = nil
     var catalogProbeJSONV3: ConverterTtsCatalogProbeV3? = nil
+    var catalogManualJSONV3: ConverterTtsCatalogV3? = nil
+    var catalogProbeModelJSONV3: ConverterTtsCatalogProbeModelV3? = nil
     var defaultEngine: ConverterTtsDefaultEngine = { _, _, _ in nil }
     var selectInstalledReady: ConverterTtsInstalledReadyEngine?
     var installArtifact: ConverterTtsModelInstall?
@@ -26,7 +28,7 @@ struct ConverterModelCatalog {
     var installOperationFree: ConverterModelInstallOperationFree?
 
     func ttsCatalog() throws -> TtsCatalog {
-        try TtsCatalog.decode(readSnapshotData(target: .current(), modelRoot: ""))
+        try TtsCatalog.decode(readSnapshotData(target: .current(), modelRoot: "", read: catalogJSONV3))
     }
 
     func speechModelSnapshot(
@@ -39,13 +41,40 @@ struct ConverterModelCatalog {
         }
         if probeRuntime {
             guard let probe = catalogProbeJSONV3 else { throw EmbeddedConverterError.artifactUnavailable }
-            return try readProbedSnapshot(target: target, directory: espeakDataDirectory, probe: probe)
+            return try readProbedSnapshot(target: target, directory: espeakDataDirectory) { language, platform, api, arch, os, root, data in
+                probe(language, platform, api, arch, os, root, data)
+            }
         }
-        return try SpeechModelSnapshot.decode(readSnapshotData(target: target, modelRoot: target.modelsRoot.path))
+        return try SpeechModelSnapshot.decode(readSnapshotData(
+            target: target, modelRoot: target.modelsRoot.path, read: catalogJSONV3
+        ))
     }
 
-    private func readSnapshotData(target: SpeechModelLibraryTarget, modelRoot: String) throws -> Data {
-        guard available, let read = catalogJSONV3 else { throw EmbeddedConverterError.artifactUnavailable }
+    func manualSpeechModelSnapshot(target: SpeechModelLibraryTarget) throws -> SpeechModelSnapshot {
+        try SpeechModelSnapshot.decode(readSnapshotData(
+            target: target, modelRoot: target.modelsRoot.path, read: catalogManualJSONV3
+        ))
+    }
+
+    func probeSpeechModel(
+        modelID: String,
+        target: SpeechModelLibraryTarget,
+        espeakDataDirectory: String = Bundle.main.resourceURL?.path ?? ""
+    ) throws -> SpeechModelSnapshot {
+        guard available, let probe = catalogProbeModelJSONV3 else {
+            throw EmbeddedConverterError.artifactUnavailable
+        }
+        return try modelID.withCString { model in
+            try readProbedSnapshot(target: target, directory: espeakDataDirectory) { language, platform, api, arch, os, root, data in
+                probe(language, platform, api, arch, os, root, data, model)
+            }
+        }
+    }
+
+    private func readSnapshotData(
+        target: SpeechModelLibraryTarget, modelRoot: String, read: ConverterTtsCatalogV3?
+    ) throws -> Data {
+        guard available, let read else { throw EmbeddedConverterError.artifactUnavailable }
         let result = target.language.withCString { languagePointer in
             target.platform.withCString { platformPointer in
                 target.architecture.withCString { architecturePointer in
@@ -62,7 +91,9 @@ struct ConverterModelCatalog {
     }
 
     private func readProbedSnapshot(
-        target: SpeechModelLibraryTarget, directory: String, probe: ConverterTtsCatalogProbeV3
+        target: SpeechModelLibraryTarget, directory: String,
+        probe: (UnsafePointer<CChar>, UnsafePointer<CChar>, UInt32, UnsafePointer<CChar>,
+                UnsafePointer<CChar>, UnsafePointer<CChar>, UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
     ) throws -> SpeechModelSnapshot {
         let result = target.language.withCString { language in
             target.platform.withCString { platform in

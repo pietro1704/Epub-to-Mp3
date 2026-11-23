@@ -15,14 +15,20 @@ struct SpeechModelAudition {
     }
 
     func resolve(_ snapshot: SpeechModelSnapshot) throws -> (selection: TtsSelection, language: String) {
+        let selection = try Self.selection(for: entry, language: language, in: snapshot)
+        return (selection, language)
+    }
+
+    static func selection(
+        for entry: SpeechModelSnapshot.Entry, language: String, in snapshot: SpeechModelSnapshot
+    ) throws -> TtsSelection {
         guard snapshot.target?.language == language,
-              let current = snapshot.entries.first(where: {
-                  $0.identity.provider == entry.identity.provider && $0.identity.modelID == entry.identity.modelID
-                      && $0.identity.modelRevision == entry.identity.modelRevision
-              }), current.installation.state == .installed,
+              let current = snapshot.entries.first(where: { $0.identity == entry.identity }),
+              current.compatibility.compatible, current.installation.state == .installed,
+              current.readiness.state == .ready,
               let selection = SpeechModelLibraryViewState(snapshot: snapshot).selection(for: current) else {
             throw SpeechModelInstallationError.incompatible(entry.identity.modelID)
         }
-        return (selection, language)
+        return selection
     }
 }
