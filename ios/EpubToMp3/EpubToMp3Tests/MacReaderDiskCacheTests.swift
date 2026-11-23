@@ -96,6 +96,87 @@ final class MacReaderDiskCacheTests: XCTestCase {
         XCTAssertNotNil(renderer.cached(bookID: id, chapterIndex: 0, chapter: chapter, textSettings: ReaderTextSettings(settings: settings)))
     }
 
+    private actor PendingCatalog {
+        let started = XCTestExpectation(description: "The original catalog is suspended")
+        private var continuation: CheckedContinuation<EbookFulltext?, Never>?
+
+        func read() async -> EbookFulltext? {
+            await withCheckedContinuation {
+                continuation = $0
+                started.fulfill()
+            }
+        }
+
+        func resolve(_ payload: EbookFulltext?) {
+            continuation?.resume(returning: payload)
+            continuation = nil
+        }
+    }
+
+    func testLateCatalogCannotReplaceNewBookWithSameTitleAndChapterIdentity() async throws {
+        let suite = "MacCatalogSwitch-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let oldID = suite + "-old"
+        let newID = suite + "-new"
+        let pending = PendingCatalog()
+        let books = [oldID, newID].map { id in
+            BookEntity(id: id, title: "Same title", bookmark: Data([1]),
+                       displayFilename: "\(id).epub", addedAt: Date())
+        }
+        defaults.set(try JSONEncoder().encode(books), forKey: "library")
+        let library = LibraryStore(defaults: defaults, defaultsKey: "library")
+        let location = ReaderLocation(defaults: defaults)
+        location.setReadingBook(oldID)
+        let player = AudioPlayer(location: location)
+        let oldText = "Retired catalog with the same chapter number and title."
+        let newText = "Current catalog stays visible after the old read returns."
+        func payload(_ body: String) -> EbookFulltext {
+            EbookFulltext(jobId: newID, bookTitle: "Same title", bookAuthor: nil,
+                chapters: [.init(index: 1, name: "Authored chapter", text: body, html: nil,
+                    css: nil, charCount: nil, segments: nil)])
+        }
+        let retired = payload(oldText)
+        let current = payload(newText)
+        let controller = MacReaderViewController(library: library, settings: AppSettings(defaults: defaults),
+            player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "fixture"),
+            onClose: {}, preparedChapterStore: PreparedReaderChapterStore(directory: root),
+            preparedFulltextReader: { id in id == oldID ? await pending.read() : current },
+            preparedFulltextWriter: { _, _ in XCTFail("Cached or superseded content must not be persisted") })
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let savedWarm = UserDefaults.standard.object(forKey: "readerWarmBookIDs.v1")
+        defer {
+            controller.cancelBookOpen()
+            window.orderOut(nil)
+            window.contentViewController = nil
+            window.close()
+            defaults.removePersistentDomain(forName: suite)
+            UserDefaults.standard.set(savedWarm, forKey: "readerWarmBookIDs.v1")
+            for id in [oldID, newID] { ReaderProgressStore.evict(bookId: id) }
+            try? FileManager.default.removeItem(at: root)
+        }
+        window.contentViewController = controller
+        window.makeKeyAndOrderFront(nil)
+        controller.view.layoutSubtreeIfNeeded()
+        await fulfillment(of: [pending.started], timeout: 2)
+
+        controller.setBook(newID)
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            MainActor.assumeIsolated { self.findTextView(in: controller.view)?.string.contains(newText) == true }
+        }, object: nil)
+        await fulfillment(of: [shown], timeout: 5)
+        await pending.resolve(retired)
+
+        let stale = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            MainActor.assumeIsolated { self.findTextView(in: controller.view)?.string.contains(oldText) == true }
+        }, object: nil)
+        stale.isInverted = true
+        await fulfillment(of: [stale], timeout: 0.3)
+        XCTAssertTrue(try XCTUnwrap(findTextView(in: controller.view)).string.contains(newText))
+    }
+
     private func findTextView(in view: NSView) -> NSTextView? {
         if let textView = view as? NSTextView { return textView }
         return view.subviews.lazy.compactMap { self.findTextView(in: $0) }.first

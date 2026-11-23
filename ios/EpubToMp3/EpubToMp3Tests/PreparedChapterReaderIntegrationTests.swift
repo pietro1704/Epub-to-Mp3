@@ -77,6 +77,32 @@ final class PreparedChapterReaderIntegrationTests: XCTestCase {
         await renderer.flush()
     }
 
+    func testHydrationRejectsMatchingMetadataWithDifferentChapterContent() throws {
+        let id = "ProjectionCollision-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        defer { defaults.removePersistentDomain(forName: id) }
+        let book = BookEntity(id: id, title: "Same title", bookmark: Data([1]),
+                              displayFilename: "fixture.epub", addedAt: Date())
+        let document = ReaderBookDocument(book: book)
+        let generation = UUID()
+        document.loadGenerationID = generation
+        let chapter = EbookFulltext.Chapter(index: 1, name: "Authored chapter", text: "Prepared body",
+            html: "<p>Prepared body</p>", css: nil, charCount: nil, segments: nil)
+        let latest = EbookFulltext.Chapter(index: 1, name: chapter.name, text: "Hydrated body",
+            html: "<p>Hydrated body</p>", css: nil, charCount: nil, segments: nil)
+        document.activePreparedChapter = .init(bookID: id, title: book.title, author: nil, chapterOrdinal: 0,
+            chapterCount: 1, chapter: chapter, toc: nil,
+            catalogChapters: [.init(index: chapter.index, name: chapter.name, contentKind: chapter.contentKind)])
+        let presentation = ReaderPreparedPresentation(document: document, settings: AppSettings(defaults: defaults),
+            renderer: .shared, store: .shared, stageObserver: nil, viewportIsCommitted: { true },
+            textIsLaidOut: { true }, send: { _ in XCTFail("Colliding content must be rendered again before publication") })
+        let payload = EbookFulltext(jobId: id, bookTitle: book.title, bookAuthor: nil, chapters: [latest])
+
+        XCTAssertFalse(presentation.attachHydratedCatalog(payload, loadingID: generation))
+        XCTAssertNil(document.fulltext)
+        XCTAssertEqual(document.activePreparedChapter?.chapter, chapter)
+    }
+
     func testConsumedProjectionCannotRemountAfterCatalogHydrationAndTOCNavigation() async throws {
         try await verifyProjectionRestoration(delayedLayout: false)
     }

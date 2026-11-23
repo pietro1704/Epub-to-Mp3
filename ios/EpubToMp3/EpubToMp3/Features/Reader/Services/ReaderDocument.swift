@@ -1,8 +1,8 @@
 import Foundation
 
 /// The content a reader owns for one open book, shared by the iOS and Mac
-/// readers. Identity, load generations and presentation flags stay on the
-/// platform subclasses until the book-open machine absorbs them.
+/// readers. Subclasses keep presentation identifiers, while ReaderOpenSession
+/// owns the lifetime of source access and cache arrivals.
 @MainActor
 class ReaderDocument {
     var fulltext: EbookFulltext?
@@ -16,9 +16,8 @@ class ReaderDocument {
     var fontDirectoryURL: URL? { registeredFontURLs.first?.deletingLastPathComponent() }
 
     /// A load is current only for the generation and book that started it.
-    /// Cancellation is not part of the rule: the Mac adds it in `isActiveLoad`
-    /// and iOS never had it. Unifying that is a behavior change for the book-open
-    /// machine (WP-11b), not for this move.
+    /// This compares identity only. ReaderOpenSession checks cancellation
+    /// when a load resumes after asynchronous work.
     static func isCurrentLoad<Generation: Equatable>(
         generation: Generation, current: Generation?, bookID: String, currentBookID: String?
     ) -> Bool {

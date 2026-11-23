@@ -400,6 +400,7 @@ final class MainReaderScreenController: UIViewController {
 
     private func removeReaderControllerIfNeeded() {
         guard let readerController else { return }
+        readerController.cancelBookOpen()
         readerController.installNavigationBarButtonItems(in: nil)
         readerController.willMove(toParent: nil)
         readerController.view.removeFromSuperview()

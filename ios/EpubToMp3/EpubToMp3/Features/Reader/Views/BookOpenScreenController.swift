@@ -310,7 +310,6 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
         send: { [weak self] event in
             guard let self else { return }
             switch event {
-            case .cancelJourney: document.openJourney.cancelActiveBookOpenJourney()
             case .showLoading: loadingSession.showLoadingOverlay()
             case .hideLoading: loadingSession.hideLoadingOverlay()
             case .loadFixture: loadingSession.loadUITestFixture()
@@ -321,6 +320,12 @@ func installNavigationBarButtonItems(in item: UINavigationItem?) { toolBar.insta
             }
         }
     )
+
+    func cancelBookOpen() {
+        guard isViewLoaded else { return }
+        bookLoadSession.cancel()
+        loadingSession.cancelFixture()
+    }
 
     private func loadBook() {
         guard isViewLoaded else { return }

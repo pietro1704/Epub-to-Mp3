@@ -7,7 +7,6 @@ import UIKit
 final class ReaderBookLoadSession {
     typealias PreparedFulltextWriter = @Sendable (EbookFulltext, String, Int?, PreparedReaderChapterStore) async -> Void
     enum Event {
-        case cancelJourney
         case showLoading
         case hideLoading
         case loadFixture
@@ -25,7 +24,7 @@ final class ReaderBookLoadSession {
     private let preparedPresentation: ReaderPreparedPresentation
     private let observeOpenStage: (String) -> Void
     private let send: (Event) -> Void
-    private var loadTask: Task<Void, Never>?
+    private let opening: ReaderOpenSession
 
     init(document: ReaderBookDocument, settings: AppSettings, renderer: PreparedChapterRenderer,
          store: PreparedReaderChapterStore, preparedPresentation: ReaderPreparedPresentation,
@@ -34,6 +33,7 @@ final class ReaderBookLoadSession {
          openBook: @escaping (String) async throws -> URL,
          stageObserver: (@Sendable (String, UInt64) -> Void)?, send: @escaping (Event) -> Void) {
         self.document = document
+        opening = ReaderOpenSession(document: document)
         self.settings = settings
         preparedRenderer = renderer
         preparedChapterStore = store
@@ -52,27 +52,19 @@ final class ReaderBookLoadSession {
         observeOpenStage = { stageObserver?($0, DispatchTime.now().uptimeNanoseconds) }
     }
 
-    deinit { loadTask?.cancel() }
-
     func cancel() {
-        loadTask?.cancel()
+        opening.cancel()
         preparedPresentation.restoration.cancel()
         document.loadGenerationID = nil
         document.activeLoadingID = nil
     }
 
-    func waitForCompletion() async { await loadTask?.value }
-
-    private func isCurrentLoad(_ loadingID: UUID, bookID: String) -> Bool {
-        document.isCurrentLoad(loadingID, bookID: bookID)
-    }
+    func waitForCompletion() async { await opening.waitForCompletion() }
 
     func loadBook() {
         LocalFulltextCache.cancelPrewarming()
-        loadTask?.cancel()
-        loadTask = nil
+        opening.cancel()
         preparedPresentation.restoration.cancel()
-        send(.cancelJourney)
         let loadingBookID = document.book.id
         let loadingID = UUID()
         document.activeLoadingID = loadingID
@@ -83,14 +75,14 @@ final class ReaderBookLoadSession {
         document.pendingProjectionAnchor = nil
         document.presentedProjectionLoadingID = nil
         document.lastPreparedChapterOrdinal = nil
-        let journeyID = document.openJourney.begin(for: document.book)
+        let attempt = opening.begin(book: document.book, generation: loadingID) { [weak document] in
+            document?.isCurrentLoad(loadingID, bookID: loadingBookID) == true
+        }
         observeOpenStage("reader_open_requested")
 
         // Memory-ready text stays synchronous. A disk-prepared rendering is
         // restored without reopening the source or running the HTML importer.
-        if document.book.fileType != .pdf, let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: loadingBookID),
-           !warmPayload.chapters.isEmpty {
-            LatencyObservationStore.shared.classifyCache(.inMemoryWarm, for: journeyID)
+        if let warmPayload = opening.warmPayload(for: attempt) {
             document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
             if let index = preparedPresentation.preparedChapterIndex(in: warmPayload),
                let source = LocalFulltextCache.storageURL(bookId: loadingBookID) {
@@ -117,93 +109,92 @@ final class ReaderBookLoadSession {
                 }
             }
             send(.showLoading)
-            loadTask = Task { [weak self] in
+            opening.schedule(attempt) { [weak self] attempt in
                 guard let self else { return }
-                let preparedRendering = await preparedPresentation.restorePreparedChapter(in: warmPayload)
-                guard !Task.isCancelled, isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
+                let preparedRendering = try await attempt.read {
+                    await preparedPresentation.restorePreparedChapter(in: warmPayload)
+                }
                 preparedPresentation.displayPreparedPayload(warmPayload, loadingID: loadingID,
                                        preparedRendering: preparedRendering)
-            }
+            } failure: { [weak self] error in self?.send(.failure(error.localizedDescription)) }
             return
         }
 
         send(.showLoading)
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
-            LatencyObservationStore.shared.classifyCache(.cold, for: journeyID)
+            attempt.classify(.cold)
             send(.loadFixture)
             return
         }
         document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
         preparedPresentation.restoration.schedule(loadingID: loadingID, bookID: loadingBookID)
-        loadTask = Task { [weak self] in
+        opening.schedule(attempt) { [weak self] attempt in
             guard let self else { return }
             observeOpenStage("reader_load_task_started")
-            do {
-                observeOpenStage("projection_read_started")
+            observeOpenStage("projection_read_started")
+            try await attempt.read {
                 await preparedPresentation.restoration.waitForPresentation(loadingID: loadingID, bookID: loadingBookID)
                 observeOpenStage("projection_read_completed")
-                guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                observeOpenStage("prepared_fulltext_read_started")
-                let cached = await preparedFulltextReader(loadingBookID)
+            }
+            observeOpenStage("prepared_fulltext_read_started")
+            let cached = try await attempt.read {
+                let payload = await preparedFulltextReader(loadingBookID)
                 observeOpenStage("prepared_fulltext_read_completed")
-                guard !Task.isCancelled, isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                let payload: EbookFulltext
-                let cachedNeedsTitleRepair = cached?.chapters.contains(where: { $0.hasGeneratedName }) == true
-                let cachedHasReadableContent = cached?.chapters.contains(where: { $0.hasReadableContent }) == true
-                let titleRepairKey = "reader.titleRepairAttempted.\(document.book.id)"
-                let shouldRepairCachedTitles = cachedNeedsTitleRepair
-                    && !UserDefaults.standard.bool(forKey: titleRepairKey)
-                if let cached, document.book.fileType != .pdf, !shouldRepairCachedTitles, cachedHasReadableContent {
-                    LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
-                    payload = cached
-                } else {
-                    LatencyObservationStore.shared.classifyCache(.cold, for: journeyID)
-                    let url = try await openBook(loadingBookID)
-                    guard !Task.isCancelled, isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                    if document.book.fileType == .pdf {
-                        document.openJourney.pendingPDFPageJourneyID = journeyID
-                        send(.showPDF(url))
-                        guard self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                        send(.hideLoading)
-                        return
-                    }
-                    payload = await EpubFallbackParser.parseAsync(url: url, bookId: loadingBookID)
-                    guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                    if document.registeredFontURLs.isEmpty {
-                        let fonts = await Task.detached(priority: .userInitiated) {
+                return payload
+            }
+            let cachedNeedsTitleRepair = cached?.chapters.contains(where: { $0.hasGeneratedName }) == true
+            let cachedHasReadableContent = cached?.chapters.contains(where: { $0.hasReadableContent }) == true
+            let titleRepairKey = "reader.titleRepairAttempted.\(loadingBookID)"
+            let shouldRepairCachedTitles = cachedNeedsTitleRepair && !UserDefaults.standard.bool(forKey: titleRepairKey)
+            let validCache = !shouldRepairCachedTitles && cachedHasReadableContent ? cached : nil
+            let arrival = try await opening.resolve(attempt, cached: validCache, openSource: openBook) { url, attempt in
+                let payload = try await attempt.read {
+                    await EpubFallbackParser.parseAsync(url: url, bookId: loadingBookID)
+                }
+                if document.registeredFontURLs.isEmpty {
+                    let fonts = try await attempt.read {
+                        await Task.detached(priority: .userInitiated) {
                             EpubFontManager.registerFonts(from: url, bookID: loadingBookID)
                         }.value
-                        guard !Task.isCancelled, isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                        document.registeredFontURLs = fonts
                     }
+                    document.registeredFontURLs = fonts
                 }
-                guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                if preparedPresentation.attachHydratedCatalog(payload, loadingID: loadingID) { return }
-                if document.registeredFontURLs.isEmpty {
-                    document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
-                }
-                let preparedIndex = preparedPresentation.preparedChapterIndex(in: payload)
-                let preparedStore = preparedChapterStore
-                let writeFulltext = preparedFulltextWriter
-                Task.detached(priority: .utility) {
-                    await writeFulltext(payload, loadingBookID, preparedIndex, preparedStore)
-                }
-                if cachedNeedsTitleRepair {
-                    UserDefaults.standard.set(true, forKey: titleRepairKey)
-                }
-                let preparedRendering = await preparedPresentation.restorePreparedChapter(in: payload)
-                guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                document.lastPreparedChapterOrdinal = preparedIndex
-                observeOpenStage("prepared_payload_display_started")
-                preparedPresentation.displayPreparedPayload(payload, loadingID: loadingID,
-                                       preparedRendering: preparedRendering)
-                observeOpenStage("prepared_payload_display_completed")
-            } catch {
-                guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                send(.failure(error.localizedDescription))
+                return payload
             }
-        }
+            switch arrival {
+            case .pdf(let url):
+                send(.showPDF(url))
+                try attempt.check()
+                send(.hideLoading)
+            case .text(let payload, _):
+                try await publish(payload, attempt: attempt, repairsTitle: cachedNeedsTitleRepair, titleRepairKey: titleRepairKey)
+            }
+        } failure: { [weak self] error in self?.send(.failure(error.localizedDescription)) }
         observeOpenStage("reader_load_task_scheduled")
+    }
+
+    private func publish(_ payload: EbookFulltext, attempt: ReaderOpenSession.Attempt,
+                         repairsTitle: Bool, titleRepairKey: String) async throws {
+        let loadingID = attempt.generation
+        let bookID = attempt.book.id
+        if preparedPresentation.attachHydratedCatalog(payload, loadingID: loadingID) { return }
+        if document.registeredFontURLs.isEmpty {
+            document.registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: bookID)
+        }
+        let preparedIndex = preparedPresentation.preparedChapterIndex(in: payload)
+        let preparedStore = preparedChapterStore
+        let writeFulltext = preparedFulltextWriter
+        Task.detached(priority: .utility) {
+            await writeFulltext(payload, bookID, preparedIndex, preparedStore)
+        }
+        if repairsTitle { UserDefaults.standard.set(true, forKey: titleRepairKey) }
+        let preparedRendering = try await attempt.read {
+            await preparedPresentation.restorePreparedChapter(in: payload)
+        }
+        document.lastPreparedChapterOrdinal = preparedIndex
+        observeOpenStage("prepared_payload_display_started")
+        preparedPresentation.displayPreparedPayload(payload, loadingID: loadingID, preparedRendering: preparedRendering)
+        observeOpenStage("prepared_payload_display_completed")
     }
 
 }
