@@ -157,7 +157,11 @@ impl ConversionWorker {
                 stale,
                 generation,
                 source_index,
-                heading_ends,
+                structure: super::heading_pauses::Structure::new(
+                    text,
+                    heading_ends,
+                    paragraph_ends,
+                ),
                 book_identity: book_identity.as_deref(),
                 segment_cache: &segment_cache,
             };

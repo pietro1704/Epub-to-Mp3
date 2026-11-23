@@ -134,7 +134,10 @@ impl ConversionWorker {
                 .as_slice(),
             )
         };
-        let base_request_key = super::heading_pauses::request_key(&base_request_key, &heading_ends);
+        let base_request_key = super::heading_pauses::request_key(
+            &base_request_key,
+            &super::heading_pauses::Structure::new(text, &heading_ends, &paragraph_ends),
+        );
         let request_key =
             self.typed_cache_request_key(request, preferences, language, &base_request_key)?;
         let reject_opaque_native = true;
