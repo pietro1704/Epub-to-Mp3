@@ -13,6 +13,11 @@ extension AppSettings {
         get { speechPreferences.allowOnlineAudioFallback }
         set { speechPreferences.allowOnlineAudioFallback = newValue }
     }
+    var languageModelChoices: [String: TtsSelection] { speechPreferences.languageModelChoices }
+    func selectLanguageModel(_ selection: TtsSelection, for language: String) {
+        speechPreferences.selectLanguageModel(selection, for: language)
+    }
+    func clearLanguageModel(for language: String) { speechPreferences.clearLanguageModel(for: language) }
     func selectPrimaryNarration(_ selection: TtsSelection) { speechPreferences.selectPrimaryNarration(selection) }
     func selectSecondaryNarration(_ selection: TtsSelection?) { speechPreferences.selectSecondaryNarration(selection) }
 

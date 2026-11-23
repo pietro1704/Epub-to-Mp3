@@ -12,6 +12,7 @@ import os.log
 /// delegation and republishes its changes.
 final class SpeechPreferences: ObservableObject {
     static let automaticSystemFallbackKey = "allowAutomaticSystemVoiceFallback"
+    static let languageModelChoicesKey = "languageModelChoices.v1"
     private let defaults: UserDefaults
     private var loadingPersistedValues = true
     private static let log = Logger(subsystem: "epub2mp3", category: "Settings")
@@ -25,6 +26,7 @@ final class SpeechPreferences: ObservableObject {
         self.allowOnlineAudioFallback = defaults.bool(forKey: SpeechPreferenceMigration.Key.onlineFallbackConsent)
         self.allowAutomaticSystemVoiceFallback =
             defaults.object(forKey: Self.automaticSystemFallbackKey) as? Bool ?? true
+        self.languageModelChoices = Self.storedLanguageChoices(defaults)
         loadingPersistedValues = false
     }
 
@@ -57,6 +59,44 @@ final class SpeechPreferences: ObservableObject {
                 secondaryTtsSelection = nil
             }
         }
+    }
+
+    /// One optional explicit narration per BASE book language (`pt`, `en`, ...),
+    /// persisted as JSON. Absent means automatic. Rust validates a choice when it
+    /// resolves a book (an uninstalled or incompatible choice is skipped, never
+    /// deleted), so nothing here depends on what is installed.
+    @Published private(set) var languageModelChoices: [String: TtsSelection] = [:] {
+        didSet {
+            guard !loadingPersistedValues else { return }
+            do {
+                defaults.set(try JSONEncoder().encode(languageModelChoices), forKey: Self.languageModelChoicesKey)
+            } catch {
+                Self.log.error("Could not save the language model choices: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// The stored key for a language: its lowercase base tag.
+    static func languageKey(_ language: String) -> String {
+        language.split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map { String($0).lowercased() } ?? language.lowercased()
+    }
+
+    func selectLanguageModel(_ selection: TtsSelection, for language: String) {
+        languageModelChoices[Self.languageKey(language)] = selection
+    }
+
+    func clearLanguageModel(for language: String) {
+        languageModelChoices.removeValue(forKey: Self.languageKey(language))
+    }
+
+    /// An undecodable value is logged and left on disk until the next explicit choice.
+    private static func storedLanguageChoices(_ defaults: UserDefaults) -> [String: TtsSelection] {
+        guard let data = defaults.data(forKey: languageModelChoicesKey) else { return [:] }
+        guard let choices = try? JSONDecoder().decode([String: TtsSelection].self, from: data) else {
+            log.error("Saved language model choices could not be decoded; using automatic until a new choice")
+            return [:]
+        }
+        return choices
     }
 
     /// Makes `selection` the primary voice; a secondary that would now repeat
