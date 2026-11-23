@@ -140,6 +140,12 @@ class AudioPlayerService extends AudioPlayerInterface
   }
 
   Future<void> _setChapterQueue(List<ChapterProgress> chapters) async {
+    if (chapters.isEmpty) {
+      // An empty queue is how callers clear the player (switching books,
+      // removing derived data); it is not a failed request.
+      await _clearChapterQueue();
+      return;
+    }
     _playbackState.beginRequest(_player.playerState);
     debugPrint('AudioPlayer setQueue chapters=${chapters.length}');
     final children = <AudioSource>[];
@@ -206,6 +212,18 @@ class AudioPlayerService extends AudioPlayerInterface
       rethrow;
     }
     _recordQueuedAudio();
+  }
+
+  Future<void> _clearChapterQueue() async {
+    _isSegmentMode = false;
+    _segmentGeneration++;
+    _chapters = const [];
+    _playableMap = const [];
+    _chapterQueueURLs = const [];
+    await _segmentUpdates;
+    await _player.stop();
+    await _player.clearAudioSources();
+    _playbackState.beginRequest(_player.playerState);
   }
 
   @visibleForTesting
