@@ -568,3 +568,21 @@
 "tts.missingVoice.downloading" = "Descargando modelo recomendado";
 
 "reader.pdf.audioUnavailable" = "No se pudo vincular esta página con el texto de narración. Un PDF escaneado necesita OCR verificado antes de generar audio.";
+"models.title" = "Modelos";
+"models.section.local" = "%@ · Local";
+"models.section.online" = "%@ · En línea";
+"models.automatic" = "Automático: se usa el mejor modelo descargado para este idioma.";
+"models.inUse" = "En uso para este idioma";
+"models.download" = "Toca para descargar · %@";
+"models.downloading" = "Descargando %d%%";
+"models.needsConsent" = "Requiere permiso en línea";
+"models.unavailable" = "No disponible en este dispositivo";
+"models.consent.title" = "Voces en línea desactivadas";
+"models.consent.message" = "Activa «Permitir respaldo en línea» en Ajustes para usar voces en línea.";
+"models.loading" = "Cargando modelos…";
+"models.loadFailed" = "No se pudo cargar el catálogo de modelos.";
+"models.action.useAutomatic" = "Usar automático para este idioma";
+"models.removed" = "Modelo eliminado";
+"models.missing.title" = "Sin modelo para este idioma";
+"models.missing.message" = "Ningún modelo descargado puede leer el idioma de este libro (%@). Descarga uno en la pantalla de Modelos.";
+"models.missing.open" = "Abrir Modelos";

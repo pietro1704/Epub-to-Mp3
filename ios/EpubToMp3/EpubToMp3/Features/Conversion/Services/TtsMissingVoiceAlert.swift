@@ -117,26 +117,15 @@ enum TtsMissingVoiceAlert {
         }
         guard controller.presentedViewController == nil,
               let settings = findSettings(controller.view.window?.rootViewController) else { return }
-        var targetSnapshot = snapshot
-        let languageTags = snapshot?.entries.filter { $0.compatibility.compatible }
-            .flatMap { $0.languageEvidence.exactTags.map(\.tag) }.sorted() ?? []
-        if let tag = languageTags.first(where: { $0 == language }) ?? languageTags.first {
-            targetSnapshot = (try? await client.setStudyLanguage(tag)) ?? snapshot
-        }
         guard controller.presentedViewController == nil, controller.view.window != nil else { return }
-        let destination = settings.makeVoiceModelsDestination()
-        destination.loadViewIfNeeded()
-        if let targetSnapshot { destination.show(targetSnapshot) }
+        // The Models screen lists every language; open it on the book's language.
+        let destination = settings.makeModelsScreen(focusLanguage: language)
         let navigation = UINavigationController(rootViewController: destination)
         destination.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done,
             primaryAction: UIAction { [weak navigation] _ in navigation?.dismiss(animated: true) })
         destination.navigationItem.rightBarButtonItem?.accessibilityIdentifier = "settings.voiceModels.done"
         navigation.view.accessibilityIdentifier = "tts.missingVoice.voiceModels"
         controller.present(navigation, animated: true)
-        let groups = destination.modelLanguageSections
-        if let index = groups.firstIndex(where: { $0.entries.contains { $0.compatibility.compatible } }) {
-            destination.tableView.scrollToRow(at: IndexPath(row: 0, section: index + 1), at: .top, animated: false)
-        }
     }
 
     private static func dismissAlert(on controller: UIViewController) async {

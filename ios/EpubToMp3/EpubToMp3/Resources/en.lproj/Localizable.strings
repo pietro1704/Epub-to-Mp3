@@ -568,3 +568,21 @@
 "tts.missingVoice.downloading" = "Downloading recommended model";
 
 "reader.pdf.audioUnavailable" = "This page could not be matched to the narration text. A scanned PDF requires verified OCR before audio can start.";
+"models.title" = "Models";
+"models.section.local" = "%@ · Local";
+"models.section.online" = "%@ · Online";
+"models.automatic" = "Automatic: the best downloaded model is used for this language.";
+"models.inUse" = "In use for this language";
+"models.download" = "Tap to download · %@";
+"models.downloading" = "Downloading %d%%";
+"models.needsConsent" = "Needs online permission";
+"models.unavailable" = "Not available on this device";
+"models.consent.title" = "Online voices are off";
+"models.consent.message" = "Turn on “Allow online fallback” in Settings to use online voices.";
+"models.loading" = "Loading models…";
+"models.loadFailed" = "The model catalog could not be loaded.";
+"models.action.useAutomatic" = "Use automatic for this language";
+"models.removed" = "Model removed";
+"models.missing.title" = "No model for this language";
+"models.missing.message" = "No downloaded model can read this book’s language (%@). Download one on the Models screen.";
+"models.missing.open" = "Open Models";

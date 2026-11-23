@@ -168,7 +168,7 @@ final class SettingsScreenController: UITableViewController {
         switch section {
         case .runtime:
             if voiceModelsOnly { handleRuntimeSelection(row: indexPath.row, source: indexPath) }
-            else { navigationController?.pushViewController(makeVoiceModelsDestination(), animated: true) }
+            else { navigationController?.pushViewController(makeModelsScreen(), animated: true) }
         case .reader:
             choicePresentation.handleReaderSelection(row: indexPath.row)
         case .playback:
@@ -182,7 +182,15 @@ final class SettingsScreenController: UITableViewController {
         }
     }
 
+    /// The single Models entry of Settings: models by language, one choice per
+    /// language, with install, remove, preview and licence actions in the screen.
+    func makeModelsScreen(focusLanguage: String? = nil) -> ModelsScreenController {
+        ModelsScreenController(settings: settings, source: SpeechModelsSource(client: speechModels),
+                               termsAcceptance: termsAcceptance, focusLanguage: focusLanguage)
+    }
+
     /// Voice models live in their own pushed destination, never inline in Settings.
+    /// Still used by the reader's voice picker until READER-MODEL-SWITCH-BY-LANGUAGE.
     func makeVoiceModelsDestination() -> SettingsScreenController {
         SettingsScreenController(settings: settings, library: library, player: player,
             playbackClock: playbackClock, termsAcceptance: termsAcceptance,
