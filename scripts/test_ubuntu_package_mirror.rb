@@ -101,12 +101,14 @@ class UbuntuPackageMirrorTest < Minitest::Test
     assert_operator step.fetch('timeout-minutes'), :>=, 12
     assert_operator job.fetch('timeout-minutes') - step.fetch('timeout-minutes'), :>=, 30
     run = step.fetch('run')
-    assert_includes run, 'scripts/normalize_ubuntu_package_mirror.rb'
-    assert_operator run.index('scripts/normalize_ubuntu_package_mirror.rb'), :<, run.index('apt-get')
+    assert_includes run, 'scripts/ci_apt_install.sh'
+    helper = File.read(File.join(ROOT, 'scripts/ci_apt_install.sh'))
+    assert_includes helper, 'scripts/normalize_ubuntu_package_mirror.rb'
+    assert_operator helper.index('scripts/normalize_ubuntu_package_mirror.rb'), :<, helper.index('apt-get')
     %w[Acquire::Retries=2 Acquire::http::Timeout=20 Acquire::https::Timeout=20 APT::Update::Error-Mode=any].each do |option|
-      assert_includes run, option
+      assert_includes helper, option
     end
     assert_includes run, 'clang libclang-dev cmake pkg-config ffmpeg unzip binutils'
-    refute_match(/allow-unauthenticated|allow-insecure|Verify-Peer=false|trusted=yes/i, run)
+    refute_match(/allow-unauthenticated|allow-insecure|Verify-Peer=false|trusted=yes/i, run + helper)
   end
 end

@@ -37,9 +37,8 @@ jobs:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
       - name: Install hosted desktop build and ELF inspection prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake ninja-build pkg-config libgtk-3-dev liblzma-dev binutils
+        timeout-minutes: 8
+        run: bash scripts/ci_apt_install.sh clang libclang-dev cmake ninja-build pkg-config libgtk-3-dev liblzma-dev binutils
       - name: Snapshot tracked generated-source provenance before building
         run: |
           mise exec -- ruby scripts/linux_gui_artifact_evidence.rb snapshot

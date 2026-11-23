@@ -47,10 +47,8 @@ jobs:
         timeout-minutes: 15
         run: |
           set -euo pipefail
-          sudo "$(mise which ruby)" scripts/normalize_ubuntu_package_mirror.rb
-          apt_options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
-          sudo apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
-          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg unzip binutils libpcaudio-dev libsonic-dev
+          CI_APT_ATTEMPT_TIMEOUT=270 bash scripts/ci_apt_install.sh \
+            clang libclang-dev cmake pkg-config ffmpeg unzip binutils libpcaudio-dev libsonic-dev
       - name: Test real ELF dependency relocation and rejection boundaries
         run: |
           set -o pipefail

@@ -199,9 +199,10 @@ jobs:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
       - name: Install native build and audio verification tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config ffmpeg
+        timeout-minutes: 15
+        env:
+          CI_APT_ATTEMPT_TIMEOUT: '270'
+        run: bash scripts/ci_apt_install.sh clang libclang-dev cmake pkg-config ffmpeg
       - name: Provide the checksum-pinned Faber model
         uses: ./.github/actions/faber-test-model
         with:
