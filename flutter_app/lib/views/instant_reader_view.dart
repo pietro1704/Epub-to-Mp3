@@ -327,52 +327,52 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
     return Column(
       children: [
-        // Toolbar with settings button — hidden when chrome is off
-        SizedBox(
-          child: _chromeVisible
-              ? Container(
-                  color: bg,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: SafeArea(
-                    bottom: false,
-                    child: Row(
-                      children: [
-                        BackButton(
-                          color: fg,
-                          onPressed: () =>
-                              ref.read(appDestinationProvider.notifier).state =
-                                  AppDestination.library,
-                        ),
-                        Expanded(
-                          child: Semantics(
-                            header: true,
-                            child: Text(
-                              widget.fulltext.bookTitle ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    color: fg,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                          ),
-                        ),
-                        // Apple-style chrome: the recent tool beside More; the
-                        // other tools live in the overflow menu.
-                        ..._chromeTools(chapter, fg),
-                        ReaderNarrationMenu(
-                          color: fg,
-                          bookId: widget.bookId,
-                          entries: _menuEntries(chapter),
-                          onChanged: widget.onNarrationChanged,
-                          currentSentence: _liveSentencePosition,
-                        ),
-                      ],
+        // Toolbar with settings button. Hidden when the chrome is off, but it
+        // keeps its space: the page area never moves or resizes (Pietro's rule).
+        Visibility(
+          visible: _chromeVisible,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: Container(
+            color: bg,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: SafeArea(
+              bottom: false,
+              child: Row(
+                children: [
+                  BackButton(
+                    color: fg,
+                    onPressed: () =>
+                        ref.read(appDestinationProvider.notifier).state =
+                            AppDestination.library,
+                  ),
+                  Expanded(
+                    child: Semantics(
+                      header: true,
+                      child: Text(
+                        widget.fulltext.bookTitle ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
-                )
-              : const SizedBox.shrink(),
+                  // Apple-style chrome: the recent tool beside More; the
+                  // other tools live in the overflow menu.
+                  ..._chromeTools(chapter, fg),
+                  ReaderNarrationMenu(
+                    color: fg,
+                    bookId: widget.bookId,
+                    entries: _menuEntries(chapter),
+                    onChanged: widget.onNarrationChanged,
+                    currentSentence: _liveSentencePosition,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
 
         Expanded(
