@@ -7,6 +7,7 @@ import '../../models/app_settings.dart';
 import '../../models/ebook_fulltext.dart';
 import '../../views/reader_chapter_content.dart';
 import 'reader_document_geometry.dart';
+import 'reader_page_indicator.dart';
 
 /// One rich document surface for scrolling and measured pagination. Changing
 /// chrome geometry preserves its raw offset instead of rounding to a new page.
@@ -410,12 +411,11 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
                 SizedBox(
                   height: 28,
                   child: Center(
-                    child: Text(
-                      '${page < 0 ? 1 : page + 1} / ${pages.isEmpty ? 1 : pages.length}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: widget.foreground.withValues(alpha: .6),
-                      ),
+                    child: ReaderPageIndicator(
+                      page: page < 0 ? 1 : page + 1,
+                      pages: pages.isEmpty ? 1 : pages.length,
+                      background: widget.background,
+                      foreground: widget.foreground,
                     ),
                   ),
                 ),
