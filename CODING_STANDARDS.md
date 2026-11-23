@@ -42,6 +42,14 @@ Tests belong to the runtime they exercise:
 - Web/TypeScript: the web suite for active Rust/WASM client behavior.
 - Flutter/Dart: Flutter tests for bindings, state and UI behavior.
 
+Contrast follows the Apple HIG (Apple clients), Material (Android) and native
+desktop guidance (Linux/Windows), and never falls below WCAG 2.2 AA in every
+theme (light, dark, sepia) and with Increase Contrast or Reduce Transparency on.
+Normal text needs at least 4.5:1, and large text (18 pt, or 14 pt bold) at
+least 3:1. Meaningful UI components and icons need at least 3:1. Text over
+imagery or translucent chrome gets its own background. Cover contrast with
+automated tests that resolve the colors per theme.
+
 A host test may validate tooling around a native run; parsing Swift source cannot
 prove native behavior. Use XCTest for native UI automation, never osascript or
 ad hoc accessibility scripting. Select focused checks from actual mise task
