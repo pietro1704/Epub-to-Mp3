@@ -182,7 +182,9 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   @override
   Widget build(BuildContext context) {
     _publishListeningAnchor();
-    final settings = ref.watch(settingsProvider);
+    final settings = ref.watch(
+      readerSettingsProvider(ref.watch(currentlyReadingBookIdProvider)),
+    );
     final bg = ReaderThemeColors.background(
       settings.readerTheme,
       custom: settings.readerCustomColors,

@@ -3,6 +3,7 @@ part of 'book_open_screen.dart';
 mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   // Local conversion state
   bool _isConverting = false;
+  bool _speedFollowsReadingPreferences = false;
   final List<ChapterProgress> _playableChapters = [];
   LocalConversionJob? _localJob;
   ResumeRestorationGuard _resumeGuard = ResumeRestorationGuard();
@@ -241,6 +242,17 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
       );
       return ready.future;
     };
+    // This book's own narration speed (Reading preferences) applies while it plays.
+    unawaited(player.setSpeed(ref.read(readerSettingsProvider(widget.bookId)).audioRate));
+    if (!_speedFollowsReadingPreferences) {
+      _speedFollowsReadingPreferences = true;
+      ref.listenManual(
+        readerSettingsProvider(widget.bookId).select((settings) => settings.audioRate),
+        (_, rate) {
+          if (player.currentBookId == widget.bookId) unawaited(player.setSpeed(rate));
+        },
+      );
+    }
     player.onSkipOutsideCache = (sourceChapter, target) async {
       final chapters = _fulltext?.chapters;
       if (!mounted ||

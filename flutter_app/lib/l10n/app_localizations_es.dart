@@ -25,6 +25,30 @@ class AppLocalizationsEs extends AppLocalizations {
   String get audioRateLabel => 'Velocidad de reproducción';
 
   @override
+  String get readingPreferencesTitle => 'Preferencias de lectura';
+
+  @override
+  String get readingModeDefault => 'Predeterminado para todos los libros';
+
+  @override
+  String get readingModeBook => 'Solo para este libro';
+
+  @override
+  String get readingUseDefault => 'Usar el valor predeterminado';
+
+  @override
+  String get readingSpeedLabel => 'Velocidad de la narración';
+
+  @override
+  String get readingBookHint => 'Estas opciones valen solo para este libro.';
+
+  @override
+  String get readerLayoutScrolling => 'Desplazamiento';
+
+  @override
+  String get readerLayoutPaginated => 'Paginado';
+
+  @override
   String get fontSizeLabel => 'Tamaño de fuente';
 
   @override

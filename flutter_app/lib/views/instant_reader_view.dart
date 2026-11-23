@@ -20,7 +20,7 @@ import '../models/reader_listening_position.dart';
 import '../models/tts_preferences.dart';
 import '../services/reader/narration_switch_policy.dart';
 import 'reader_narration_menu.dart';
-import 'reader_settings_sheet.dart';
+import '../screens/reading_preferences_screen.dart';
 import 'reader_theme_colors.dart';
 import 'reader_view.dart';
 
@@ -247,11 +247,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   }
 
   void _showReaderSettings() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const ReaderSettingsSheet(),
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReadingPreferencesScreen(bookId: widget.bookId),
+      ),
     );
   }
 
@@ -262,7 +261,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
       readerPlaybackJumpProvider,
       (_, request) => _applyPlaybackJump(request),
     );
-    final settings = ref.watch(settingsProvider);
+    final settings = ref.watch(readerSettingsProvider(widget.bookId));
     final chapter = _resolveChapter(_currentChapterIndex);
     // Slice 25: re-prime the sentence-sync engine for the resolved
     // chapter whenever it changes. loadIfChanged is idempotent on

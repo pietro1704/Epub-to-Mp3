@@ -5,6 +5,7 @@ import '../models/tts_catalog.dart';
 import '../models/tts_session_selection.dart';
 import '../views/reader_narration_menu.dart' show installedNarrationModelIdsProvider;
 import 'models_screen.dart';
+import 'reading_preferences_screen.dart';
 import '../services/conversion/embedded_converter.dart';
 import '../services/conversion/model_install/model_install_models.dart';
 import '../services/conversion/model_install/model_install_runner.dart';
@@ -64,206 +65,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  title: Text(t.originalTypography),
-                  trailing: const Icon(Icons.restore),
-                  onTap: notifier.resetReaderTypography,
-                ),
-                const Divider(height: 1, indent: 56),
-                // Font size stepper
-                ListTile(
-                  leading: Icon(Icons.format_size, color: cs.onSurfaceVariant),
-                  title: Text(t.fontSizeLabel),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: settings.readerFontSize > 0
-                            ? () => notifier.setReaderFontSize(
-                                settings.readerFontSize - 1,
-                              )
-                            : null,
-                      ),
-                      SizedBox(
-                        width: 48,
-                        child: Text(
-                          t.nOfSteps(settings.readerFontSize + 1, 5),
-                          textAlign: TextAlign.center,
-                          style: tt.bodyMedium?.copyWith(
-                            fontFeatures: [const FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: settings.readerFontSize < 4
-                            ? () => notifier.setReaderFontSize(
-                                settings.readerFontSize + 1,
-                              )
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-
-                // Font family
-                ListTile(
-                  leading: Icon(
-                    Icons.font_download,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  title: Text(t.fontLabel),
-                  trailing: DropdownButton<ReaderFontFamily>(
-                    value: settings.readerFontFamily,
-                    underline: const SizedBox.shrink(),
-                    onChanged: (v) {
-                      if (v != null) notifier.setReaderFontFamily(v);
-                    },
-                    items: ReaderFontFamily.values
-                        .map(
-                          (f) => DropdownMenuItem(
-                            value: f,
-                            child: Text(f.displayName),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-
-                // Theme
-                ListTile(
-                  leading: Icon(
-                    Icons.palette_outlined,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  title: Text(t.themeLabel),
-                  trailing: DropdownButton<ReaderTheme>(
-                    value: settings.readerTheme,
-                    underline: const SizedBox.shrink(),
-                    onChanged: (v) {
-                      if (v != null) notifier.setReaderTheme(v);
-                    },
-                    items: ReaderTheme.values
-                        .where((t) => t != ReaderTheme.custom)
-                        .map(
-                          (t) => DropdownMenuItem(
-                            value: t,
-                            child: Text(t.displayName),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-
-                // Layout
-                ListTile(
-                  leading: Icon(
-                    Icons.view_agenda_outlined,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  title: Text(t.layoutLabel),
-                  trailing: SegmentedButton<ReaderLayout>(
-                    segments: ReaderLayout.values
-                        .map(
-                          (l) => ButtonSegment(
-                            value: l,
-                            label: Text(l.displayName),
-                          ),
-                        )
-                        .toList(),
-                    selected: {settings.readerLayout},
-                    onSelectionChanged: (s) =>
-                        notifier.setReaderLayout(s.first),
-                    showSelectedIcon: false,
-                    style: ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  key: const ValueKey('settings-reading-preferences-row'),
+                  leading: Icon(Icons.text_format, color: cs.onSurfaceVariant),
+                  title: Text(t.readingPreferencesTitle),
+                  subtitle: Text(t.readingModeDefault),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ReadingPreferencesScreen(),
                     ),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-
-                // Line spacing stepper
-                ListTile(
-                  leading: Icon(
-                    Icons.format_line_spacing,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  title: Text(t.lineSpacingLabel),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: settings.readerLineSpacing > 0
-                            ? () => notifier.setReaderLineSpacing(
-                                settings.readerLineSpacing - 2,
-                              )
-                            : null,
-                      ),
-                      SizedBox(
-                        width: 48,
-                        child: Text(
-                          '${settings.readerLineSpacing.toInt()} pt',
-                          textAlign: TextAlign.center,
-                          style: tt.bodyMedium?.copyWith(
-                            fontFeatures: [const FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: settings.readerLineSpacing < 16
-                            ? () => notifier.setReaderLineSpacing(
-                                settings.readerLineSpacing + 2,
-                              )
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-
-                // Margin stepper
-                ListTile(
-                  leading: Icon(
-                    Icons.format_indent_increase,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  title: Text(t.marginLabel),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: settings.readerMargin > 16
-                            ? () => notifier.setReaderMargin(
-                                settings.readerMargin - 4,
-                              )
-                            : null,
-                      ),
-                      SizedBox(
-                        width: 48,
-                        child: Text(
-                          '${settings.readerMargin.toInt()} pt',
-                          textAlign: TextAlign.center,
-                          style: tt.bodyMedium?.copyWith(
-                            fontFeatures: [const FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: settings.readerMargin < 80
-                            ? () => notifier.setReaderMargin(
-                                settings.readerMargin + 4,
-                              )
-                            : null,
-                      ),
-                    ],
                   ),
                 ),
                 const Divider(height: 1, indent: 56),

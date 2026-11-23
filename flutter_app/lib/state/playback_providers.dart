@@ -84,7 +84,12 @@ final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
     _,
     rate,
   ) {
-    p.setSpeed(rate);
+    // The book being played may have its own speed; the default then waits.
+    final bookId = p.currentBookId;
+    final own = bookId == null
+        ? null
+        : ref.read(bookReadingOverridesProvider(bookId)).audioRate;
+    p.setSpeed(own ?? rate);
   });
   ref.onDispose(p.dispose);
   return p;
