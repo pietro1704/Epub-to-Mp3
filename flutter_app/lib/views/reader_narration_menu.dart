@@ -54,7 +54,8 @@ final readerBookLanguageProvider = FutureProvider.autoDispose
             analysis.declared;
         if (tag == null || tag.trim().isEmpty) return null;
         return LanguageModelChoices.baseLanguage(tag);
-      } catch (_) {
+      } catch (error) {
+        debugPrint('Reader book language unavailable: $error');
         return null;
       }
     });
