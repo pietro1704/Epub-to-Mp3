@@ -161,10 +161,13 @@ void main() {
 
 void _fractionalViewport() {
   testWidgets(
-    'the page viewport has a whole-pixel height (no half-pixel leak of the next line)',
+    'the page viewport is a whole number of device pixels at a fractional pixel ratio',
     (tester) async {
       SharedPreferences.setMockInitialValues({'readerLayout': 'paginated'});
       final settings = MirrorAppSettings(await SharedPreferences.getInstance());
+      tester.view.devicePixelRatio = 2.25;
+      tester.view.physicalSize = const Size(900, 1500);
+      addTearDown(tester.view.reset);
       final paragraphs = List.generate(
         20,
         (i) =>
@@ -173,24 +176,17 @@ void _fractionalViewport() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: Align(
-              alignment: Alignment.topCenter,
-              child: SizedBox(
-                width: 400,
-                height: 361.5,
-                child: RichReaderSurface(
-                  chapter: FulltextChapter(
-                    index: 0,
-                    text: paragraphs.join('\n'),
-                    html: paragraphs.map((p) => '<p>$p</p>').join(),
-                  ),
-                  settings: settings,
-                  background: Colors.white,
-                  foreground: Colors.black,
-                  bodyStyle: const TextStyle(fontSize: 16, height: 1.6),
-                  headingStyle: const TextStyle(fontSize: 24),
-                ),
+            body: RichReaderSurface(
+              chapter: FulltextChapter(
+                index: 0,
+                text: paragraphs.join('\n'),
+                html: paragraphs.map((p) => '<p>$p</p>').join(),
               ),
+              settings: settings,
+              background: Colors.white,
+              foreground: Colors.black,
+              bodyStyle: const TextStyle(fontSize: 16, height: 1.6),
+              headingStyle: const TextStyle(fontSize: 24),
             ),
           ),
         ),
@@ -199,7 +195,12 @@ void _fractionalViewport() {
       final height = tester
           .getSize(find.byKey(const ValueKey('rich-reader-viewport')))
           .height;
-      expect(height % 1, 0, reason: 'viewport height $height');
+      final device = height * 2.25;
+      expect(
+        (device - device.roundToDouble()).abs(),
+        lessThan(1e-6),
+        reason: 'viewport $height dp = $device px',
+      );
     },
   );
 }
