@@ -126,10 +126,29 @@ class MirrorAppSettings with PlaybackSettings {
     migrateLegacyKeysIfNeeded();
     migrateReaderLayoutDefaultIfNeeded();
     removeRemoteBackendKeysIfNeeded();
+    migrateEdgePrimaryWithoutConsent();
   }
 
   @override
   final SharedPreferences _prefs;
+
+  /// Edge as the PRIMARY voice needs the same online consent as the online
+  /// fallback. A saved Edge primary without that consent moves to the default
+  /// Piper (the rest of the choice is kept); with consent it is untouched.
+  void migrateEdgePrimaryWithoutConsent() {
+    final raw = _prefs.getString('ttsPreferences');
+    if (raw == null) return;
+    try {
+      final saved = TtsPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      if (saved.primary.engine != 'edge' || saved.allowOnlineFallback) return;
+      _prefs.setString(
+        'ttsPreferences',
+        jsonEncode(saved.withPrimary(TtsSelection.automaticPiper).toJson()),
+      );
+    } catch (_) {
+      /* Invalid persisted data is ignored, as everywhere else. */
+    }
+  }
 
   TtsPreferences get ttsPreferences =>
       configuredTtsPreferences ?? const TtsPreferences.appDefaults();

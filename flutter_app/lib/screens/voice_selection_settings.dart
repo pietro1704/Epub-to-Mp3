@@ -197,7 +197,11 @@ class _VoiceSelectionSettingsState
                 subtitle: Text(t.ttsOnlineSecondaryDescription),
                 value: preferences.allowOnlineFallback,
                 onChanged: (value) {
-                  final prefs = preferences;
+                  // Edge as the primary voice needs this consent: revoking it
+                  // moves the primary to the default Piper at once.
+                  final prefs = !value && preferences.primary.engine == 'edge'
+                      ? preferences.withPrimary(TtsSelection.automaticPiper)
+                      : preferences;
                   notifier.setTtsPreferences(
                     TtsPreferences(
                       primary: prefs.primary,
