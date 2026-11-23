@@ -81,8 +81,12 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
         ContextMenuButtonItem(
           label: AppLocalizations.of(context)!.readerPlayFromHere,
           onPressed: () {
+            // Read the selection first, then leave selection mode: clear it and
+            // close the action bar before playback starts from that point.
+            final offset = _selectionStartOffset();
             region.hideToolbar();
-            _playFromSelection();
+            region.clearSelection();
+            if (offset != null) widget.onPlayFromHere?.call(offset);
           },
         ),
       );
@@ -93,14 +97,13 @@ class _RichReaderSurfaceState extends State<RichReaderSurface> {
     );
   }
 
-  void _playFromSelection() {
+  int? _selectionStartOffset() {
     final range = _selection.registered ? _selection.selection.range : null;
-    if (range == null) return;
+    if (range == null) return null;
     final start = range.startOffset < range.endOffset
         ? range.startOffset
         : range.endOffset;
-    final offset = _geometry?.sourceOffsetForContentOffset(start);
-    if (offset != null) widget.onPlayFromHere?.call(offset);
+    return _geometry?.sourceOffsetForContentOffset(start);
   }
 
   bool get _paginated => widget.settings.readerLayout == ReaderLayout.paginated;
