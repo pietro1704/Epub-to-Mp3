@@ -41,6 +41,7 @@ module CiContracts
     scripts/test_refresh_behind_pr.mjs
     scripts/test_validated_merge.mjs
     scripts/test_post_merge_validation.mjs
+    scripts/test_post_merge_batch.mjs
     scripts/test_wait_for_validation.mjs
     scripts/test_post_merge_scope.mjs
   ].freeze

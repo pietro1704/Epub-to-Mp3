@@ -91,3 +91,15 @@ test('confined trees are read only by validations their area selects', () => {
   }
   assert.ok(REQUIRED.includes('scope') && REQUIRED.includes('merge'));
 });
+
+test('a dispatch is scoped only when the batch asks for it', () => {
+  const sha = 'a'.repeat(40), base = 'b'.repeat(40);
+  const api = () => ({ workflow_runs: [{ id: 1, head_sha: base, status: 'completed', conclusion: 'success', event: 'workflow_dispatch',
+    head_branch: 'master', repository: { full_name: repo }, head_repository: { full_name: repo } }] });
+  const run = args => args[0] === 'rev-list' ? { status: 0, stdout: `${sha}\n${base}\n` } : { status: 0, stdout: 'M\0docs/a.md\0' };
+  assert.deepEqual(decide({ sha, repo, event: 'workflow_dispatch', api, run }).jobs, all, 'plain dispatch runs everything');
+  const scoped = decide({ sha, repo, event: 'workflow_dispatch', scopedDispatch: true, api, run });
+  assert.equal(scoped.base, base);
+  assert.deepEqual(scoped.jobs, none);
+  assert.deepEqual(decide({ sha, repo, event: 'schedule', scopedDispatch: true, api, run }).jobs, all);
+});

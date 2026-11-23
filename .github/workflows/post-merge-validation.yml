@@ -1,9 +1,14 @@
 name: Post-merge validation
 
+# Started by Post-merge batch (scheduled, scoped) or by hand; not on every push, so one
+# validation covers every merge since the last green one.
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
+    inputs:
+      scoped:
+        description: Select validations from the changes since the last green validation (the batch does this); false runs everything
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,6 +54,7 @@ jobs:
         id: scope
         env:
           GH_TOKEN: ${{ github.token }}
+          SCOPED_DISPATCH: ${{ inputs.scoped == true }}
         run: node scripts/post_merge_scope.mjs
 
   ci:
