@@ -1,4 +1,3 @@
-#if os(iOS)
 import XCTest
 @testable import EpubToMp3
 
@@ -15,6 +14,7 @@ final class ReaderListeningSeekTests: XCTestCase {
         var jobs: [String] = []
         var options: [ConversionOptions?] = []
         var progress: [(@MainActor @Sendable (RustConversionCoordinator.ConversionProgressEvent) -> Void)?] = []
+        var preparedChapter: (@MainActor @Sendable (RustConversionCoordinator.ChapterCompletionEvent) -> Void)?
         var controls: [ConverterPlaybackControl] = []
         let listeningPositions = ListeningPositions()
         var conversions: [CheckedContinuation<RustConversionCoordinator.Result, Error>] = []
@@ -22,16 +22,18 @@ final class ReaderListeningSeekTests: XCTestCase {
         var openCount = 0
         var blockReopen = false
         var failures = 0
+        var currentBookID = "book"
         lazy var session = ReaderListeningSession(player: player,
             playerPresentation: PlayerPresentation(defaults: defaults),
-            conversionExecutor: { [weak self] _, job, _, _, control, options, progress, _, _ in
+            conversionExecutor: { [weak self] _, job, _, _, control, options, progress, preparedChapter, _ in
                 guard let self else { throw CancellationError() }
                 jobs.append(job)
                 self.options.append(options)
                 self.progress.append(progress)
+                self.preparedChapter = preparedChapter
                 controls.append(control)
                 return try await withCheckedThrowingContinuation { self.conversions.append($0) }
-            }, currentBookID: { "book" }, openBook: { [weak self] _ in
+            }, currentBookID: { [weak self] in self?.currentBookID }, openBook: { [weak self] _ in
                 guard let self else { throw CancellationError() }
                 openCount += 1
                 if blockReopen {
@@ -93,6 +95,65 @@ final class ReaderListeningSeekTests: XCTestCase {
             pendingOpens.forEach { $0.resume(throwing: CancellationError()) }
             defaults.removePersistentDomain(forName: suite)
         }
+    }
+
+    func testBookSwitchDuringInitialOpenDoesNotInstallRetiredPlayback() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        fixture.blockReopen = true
+        fixture.start(ratio: 0.25)
+        try await fixture.waitUntil { fixture.pendingOpens.count == 1 }
+
+        fixture.currentBookID = "replacement-book"
+        fixture.pendingOpens.removeFirst().resume(returning: URL(fileURLWithPath: "/unused/retired.epub"))
+        await fixture.session.waitForCompletion()
+
+        XCTAssertTrue(fixture.jobs.isEmpty)
+        XCTAssertNil(fixture.session.listeningJobID)
+        XCTAssertNil(fixture.player.snapshot)
+        XCTAssertEqual(fixture.failures, 0)
+    }
+
+    func testPreparedChapterRetainsReportedFallbackAndPause() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        let audio = FileManager.default.temporaryDirectory.appendingPathComponent("\(fixture.suite).mp3")
+        try LegacyAudioImportFixture.audio.write(to: audio)
+        defer { try? FileManager.default.removeItem(at: audio) }
+
+        fixture.start(ratio: 0)
+        try await fixture.waitUntil { fixture.jobs.count == 1 }
+        fixture.player.pause()
+        let jobID = try XCTUnwrap(fixture.jobs.first)
+        try XCTUnwrap(fixture.progress.first ?? nil)(.init(jobId: jobID, state: "running", chapterIndex: 0,
+            chaptersTotal: 1, chaptersCompleted: 0, percent: 10, engine: "system", message: "Fallback"))
+        try XCTUnwrap(fixture.preparedChapter)(.init(jobId: jobID, bookTitle: "Book", bookAuthor: "Author",
+            chapterIndex: 0, chaptersTotal: 1, chaptersCompleted: 1, chapterTitle: "Chapter",
+            filename: audio.lastPathComponent, audioPath: audio, textChars: 100))
+
+        XCTAssertEqual(fixture.player.snapshot?.jobId, jobID)
+        XCTAssertEqual(fixture.player.snapshot?.engine, "system")
+        XCTAssertEqual(fixture.player.snapshot?.playableChapters.map(\.index), [0])
+        XCTAssertFalse(fixture.player.isPlaying)
+        XCTAssertFalse(fixture.player.hasPendingAutoplay)
+    }
+
+    func testCurrentConversionFailureRetiresItsControlAndReportsOnce() async throws {
+        let fixture = try Fixture()
+        defer { fixture.finish() }
+        fixture.start(ratio: 0)
+        try await fixture.waitUntil { fixture.conversions.count == 1 }
+        let jobID = try XCTUnwrap(fixture.jobs.first)
+        let control = try XCTUnwrap(fixture.controls.first)
+
+        fixture.conversions.removeFirst().resume(throwing: OpenFailure())
+        await fixture.session.waitForCompletion()
+
+        XCTAssertTrue(control.isCancellationRequested)
+        XCTAssertEqual(fixture.player.snapshot?.jobId, jobID)
+        XCTAssertEqual(fixture.player.snapshot?.state, "failed")
+        XCTAssertFalse(fixture.player.isPlaying)
+        XCTAssertEqual(fixture.failures, 1)
     }
 
     func testVoiceChangeDuringPreparationUsesExplicitSelectionAndRejectsRetiredProgress() async throws {
@@ -359,4 +420,3 @@ final class ReaderListeningSeekTests: XCTestCase {
         XCTAssertEqual(fixture.failures, 0)
     }
 }
-#endif

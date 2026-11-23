@@ -452,8 +452,11 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func reportListeningFailure(_ error: Error) {
-        listeningRecovery.report(error, bookID: currentBook?.id, from: self,
-            library: { [weak self] in self?.library }, currentBookID: { [weak self] in self?.currentBook?.id })
+        listeningRecovery.report(error, bookID: currentBook?.id,
+            isVisible: { [weak self] in self?.viewIfLoaded?.window != nil },
+            currentBookID: { [weak self] in self?.currentBook?.id }) { error in
+                ReaderListeningAlerts.present(error, from: self, library: { [weak self] in self?.library })
+            }
     }
 
     private func presentVoiceModels(bookID: String) {
