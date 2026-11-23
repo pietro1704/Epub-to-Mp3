@@ -82,7 +82,43 @@ fn is_heading(name: &[u8]) -> bool {
     let name = local_name(name);
     name.len() == 2 && name[0].eq_ignore_ascii_case(&b'h') && (b'1'..=b'6').contains(&name[1])
 }
-pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>, Vec<usize>) {
+/// Raw (unnormalized) projection plus the marks the note positions are derived from.
+struct RawProjection {
+    out: String,
+    paragraph_boundaries: Vec<usize>,
+    heading_boundaries: Vec<usize>,
+    /// (raw start of the link, raw end of the link, fragment) for note-like links.
+    ref_marks: Vec<(usize, usize, String)>,
+    /// Raw (start, end) of every element that carries an `id`.
+    id_ranges: HashMap<String, (usize, usize)>,
+}
+
+fn attribute(event: &quick_xml::events::BytesStart<'_>, wanted: &[u8]) -> Option<String> {
+    event
+        .attributes()
+        .with_checks(false)
+        .flatten()
+        .find(|attribute| local_name(attribute.key.as_ref()) == wanted)
+        .map(|attribute| String::from_utf8_lossy(&attribute.value).into_owned())
+}
+
+/// A same-document link is a note reference when it targets a fragment whose name or
+/// `epub:type` says note (mirrors `epub_footnotes`, which resolves the same links).
+fn note_fragment(event: &quick_xml::events::BytesStart<'_>) -> Option<String> {
+    let href = attribute(event, b"href")?;
+    let fragment = href.trim().split_once('#')?.1;
+    if fragment.is_empty() {
+        return None;
+    }
+    let fragment = percent_encoding::percent_decode_str(fragment)
+        .decode_utf8_lossy()
+        .into_owned();
+    let marker = href.to_ascii_lowercase();
+    let typed = attribute(event, b"type").is_some_and(|value| value.contains("noteref"));
+    (typed || marker.contains("foot") || marker.contains("note")).then_some(fragment)
+}
+
+fn project_raw(html: &str) -> RawProjection {
     let ordered = crate::parallel_columns::reading_order(html);
     let mut reader = Reader::from_str(&ordered);
     let mut skip_depth = 0usize;
@@ -90,6 +126,11 @@ pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>, Vec<us
     let mut paragraph_boundaries = Vec::new();
     let mut heading_boundaries = Vec::new();
     let mut heading_start = None;
+    let mut ref_marks = Vec::new();
+    let mut id_ranges = HashMap::new();
+    // Open elements outside skipped subtrees: (id, raw start) and the open link, if any.
+    let mut open: Vec<Option<(String, usize)>> = Vec::new();
+    let mut open_ref: Option<(usize, String, usize)> = None;
     loop {
         match reader.read_event() {
             Ok(Event::Start(event)) => {
@@ -99,11 +140,20 @@ pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>, Vec<us
                     skip_depth += 1;
                 } else if matches!(name, b"head" | b"script" | b"style" | b"title") {
                     skip_depth = 1;
-                } else if is_block_element(name) || is_heading(name) {
-                    paragraph_boundaries.push(out.len());
-                    out.push(' ');
-                    if is_heading(name) {
-                        heading_start = Some(out.len());
+                } else {
+                    let start = out.len();
+                    open.push(attribute(&event, b"id").map(|id| (id, start)));
+                    if name == b"a" && open_ref.is_none() {
+                        if let Some(fragment) = note_fragment(&event) {
+                            open_ref = Some((start, fragment, open.len()));
+                        }
+                    }
+                    if is_block_element(name) || is_heading(name) {
+                        paragraph_boundaries.push(out.len());
+                        out.push(' ');
+                        if is_heading(name) {
+                            heading_start = Some(out.len());
+                        }
                     }
                 }
             }
@@ -112,17 +162,29 @@ pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>, Vec<us
                 let name = local_name(&name);
                 if skip_depth > 0 {
                     skip_depth -= 1;
-                } else if is_block_element(name) || is_heading(name) {
-                    if is_heading(name) {
-                        if heading_start
-                            .take()
-                            .is_some_and(|start| !out[start..].trim().is_empty())
-                        {
-                            heading_boundaries.push(out.len());
-                        }
+                } else {
+                    if let Some(Some((id, start))) = open.pop() {
+                        id_ranges.entry(id).or_insert((start, out.len()));
                     }
-                    paragraph_boundaries.push(out.len());
-                    out.push(' ');
+                    if open_ref
+                        .as_ref()
+                        .is_some_and(|(_, _, depth)| *depth == open.len() + 1)
+                    {
+                        let (start, fragment, _) = open_ref.take().expect("open note reference");
+                        ref_marks.push((start, out.len(), fragment));
+                    }
+                    if is_block_element(name) || is_heading(name) {
+                        if is_heading(name) {
+                            if heading_start
+                                .take()
+                                .is_some_and(|start| !out[start..].trim().is_empty())
+                            {
+                                heading_boundaries.push(out.len());
+                            }
+                        }
+                        paragraph_boundaries.push(out.len());
+                        out.push(' ');
+                    }
                 }
             }
             Ok(Event::Empty(event)) if skip_depth == 0 => {
@@ -142,7 +204,90 @@ pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>, Vec<us
             _ => {}
         }
     }
-    normalize_with_paragraph_ends(&out, &paragraph_boundaries, &heading_boundaries)
+    RawProjection {
+        out,
+        paragraph_boundaries,
+        heading_boundaries,
+        ref_marks,
+        id_ranges,
+    }
+}
+
+pub(super) fn html_to_text_projection(html: &str) -> (String, Vec<usize>, Vec<usize>) {
+    let raw = project_raw(html);
+    normalize_with_paragraph_ends(&raw.out, &raw.paragraph_boundaries, &raw.heading_boundaries)
+}
+
+/// A footnote reference found in the chapter text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoteRef {
+    /// Scalar offset right after the reference label on the normalized text axis.
+    pub end: usize,
+    /// Fragment id the reference links to.
+    pub target: String,
+}
+
+/// Note positions on the unchanged normalized Unicode-scalar text axis.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NotePositions {
+    pub refs: Vec<NoteRef>,
+    /// Scalar ranges of note bodies that live inside this same document.
+    pub bodies: Vec<std::ops::Range<usize>>,
+}
+
+/// Where note references and same-document note bodies sit on the normalized text axis
+/// returned by `html_to_text_projection` (the axis itself is unchanged).
+pub(super) fn note_positions(html: &str) -> NotePositions {
+    let raw = project_raw(html);
+    if raw.ref_marks.is_empty() {
+        return NotePositions::default();
+    }
+    // Token table: (raw start, scalar start, scalar end) of the normalized words.
+    let mut tokens = Vec::new();
+    let mut cursor = 0;
+    let mut scalars = 0;
+    for token in raw.out.split_whitespace() {
+        let start = cursor + raw.out[cursor..].find(token).expect("source token");
+        if scalars > 0 {
+            scalars += 1;
+        }
+        let width = token.chars().count();
+        tokens.push((start, scalars, scalars + width));
+        scalars += width;
+        cursor = start + token.len();
+    }
+    let first_at_or_after = |mark: usize| {
+        tokens
+            .iter()
+            .find(|token| token.0 >= mark)
+            .map_or(scalars, |token| token.1)
+    };
+    let last_before = |mark: usize| {
+        tokens
+            .iter()
+            .rev()
+            .find(|token| token.0 < mark)
+            .map_or(0, |token| token.2)
+    };
+    let mut notes = NotePositions::default();
+    let mut seen_bodies = std::collections::HashSet::new();
+    for (_, end, fragment) in &raw.ref_marks {
+        let end_scalar = last_before(*end);
+        if end_scalar > 0 {
+            notes.refs.push(NoteRef {
+                end: end_scalar,
+                target: fragment.clone(),
+            });
+        }
+        if let Some((body_start, body_end)) = raw.id_ranges.get(fragment) {
+            let range = first_at_or_after(*body_start)..last_before(*body_end);
+            if range.start < range.end && seen_bodies.insert(fragment.clone()) {
+                notes.bodies.push(range);
+            }
+        }
+    }
+    notes.bodies.sort_by_key(|range| range.start);
+    notes
 }
 
 fn is_block_element(name: &[u8]) -> bool {
@@ -290,5 +435,36 @@ mod heading_tests {
         assert!(html_to_text_projection("<p>Only body</p><h1> </h1>")
             .2
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod note_position_tests {
+    use super::*;
+
+    #[test]
+    fn note_references_and_same_document_bodies_are_positioned_on_the_text_axis() {
+        let html = "<p>Texto antes<a href=\"#n1\" epub:type=\"noteref\">1</a> e depois.</p><aside id=\"n1\" epub:type=\"footnote\"><p>Corpo da nota.</p></aside>";
+        let (text, _, _) = html_to_text_projection(html);
+        assert_eq!(text, "Texto antes 1 e depois. Corpo da nota.");
+        let notes = note_positions(html);
+        let after_label = "Texto antes 1".chars().count();
+        let body_start = "Texto antes 1 e depois. ".chars().count();
+        assert_eq!(
+            notes.refs,
+            vec![NoteRef {
+                end: after_label,
+                target: "n1".into()
+            }]
+        );
+        assert_eq!(notes.bodies, vec![body_start..text.chars().count()]);
+    }
+
+    #[test]
+    fn ordinary_links_are_not_notes() {
+        let notes = note_positions(
+            "<p>Veja <a href=\"cap2.xhtml\">aqui</a> e <a href=\"#topo\">topo</a>.</p>",
+        );
+        assert_eq!(notes, NotePositions::default());
     }
 }
