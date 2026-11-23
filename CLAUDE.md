@@ -15,13 +15,18 @@ progress, cancellation and artifacts. CLI, web and Flutter use Rust binaries,
 WASM or bindings. The legacy Python application and Python host tooling were
 removed; host scripts are Ruby. Shared conversion behavior belongs in Rust first.
 
+iOS/macOS lead product development. Android/tablet and Linux/Windows (Flutter)
+must match Apple behavior and UI, each presented with its own platform's
+guidelines (Material on Android, native desktop conventions on Linux/Windows).
+
 Piper `pt_BR-faber-medium` is the default primary TTS. Default fallback uses
 installed system TTS, preferring Apple Luciana for Brazilian Portuguese when
 available. If Piper is missing or persistently fails, continue with the working
 native fallback, report the active voice, retain Piper as primary and retry it
 at bounded recovery points. Explicit per-job selections remain authoritative.
-Edge fallback requires explicit consent and is disabled by default. Web native
-fallback is listening-only; MP3 export requires Piper. Installed eSpeak NG is
+Edge fallback requires explicit consent and is disabled by default. Edge as
+primary also requires that consent; without it the job is refused with an
+actionable reason. Web native fallback is listening-only; MP3 export requires Piper. Installed eSpeak NG is
 an accepted Linux fallback with its backend/voice identified. Model installation
 requires an explicit user action, except that the HTTP `converter-server` downloads a
 missing catalog voice on demand when a conversion needs it; preserve existing models
