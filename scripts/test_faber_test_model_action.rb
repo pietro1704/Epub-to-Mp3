@@ -40,6 +40,7 @@ class FaberTestModelActionTest < Minitest::Test
     assert_includes script, 'verified "$1" "$2" ||'
     assert_includes script, 'cp "$CACHE_DIR/$onnx"', 'Consumers get the verified bytes'
     refute_match(/\|\|\s*true/, script)
+    assert_includes script, 'sha256sum < "$1"', 'Windows paths contain backslashes, which sha256sum escapes in its output'
   end
 
   def test_every_consumer_uses_the_action_and_none_downloads_the_model_itself

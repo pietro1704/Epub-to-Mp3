@@ -37,7 +37,9 @@ runs:
         config=pt_BR-faber-medium.onnx.json
         onnx_sha=858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7
         config_sha=7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f
-        sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d ' ' -f 1; else shasum -a 256 "$1" | cut -d ' ' -f 1; fi; }
+        # Hash stdin: sha256sum prefixes "\" to the digest when the file name has a
+        # backslash, as Windows runner paths do.
+        sha256() { if command -v sha256sum >/dev/null; then sha256sum < "$1" | cut -d ' ' -f 1; else shasum -a 256 < "$1" | cut -d ' ' -f 1; fi; }
         verified() { [ -f "$CACHE_DIR/$1" ] && [ "$(sha256 "$CACHE_DIR/$1")" = "$2" ]; }
         provide() {
           if verified "$1" "$2"; then return; fi
