@@ -1,0 +1,58 @@
+name: Faber test model
+description: Provide the checksum-pinned pt_BR-faber-medium fixture from the Actions cache, downloading only on a miss
+inputs:
+  directory:
+    description: Directory that receives the model files
+    required: true
+  onnx-name:
+    description: File name for the model inside the directory
+    default: pt_BR-faber-medium.onnx
+  json-name:
+    description: File name for the model configuration inside the directory
+    default: pt_BR-faber-medium.onnx.json
+runs:
+  using: composite
+  steps:
+    # Pull requests restore master's entry; only master saves (cache quota).
+    # The cache is an optimization: the files are verified against the pinned
+    # sha256 on every run, and a mismatch is re-downloaded.
+    - name: Restore the cached Faber model
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/faber-model-cache
+        key: faber-model-${{ runner.os }}-c10ece1aade47bb51c153c893d14e5bf8e5b7117-858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7
+    - name: Download on a cache miss and verify the pinned checksums
+      shell: bash
+      env:
+        CACHE_DIR: ${{ runner.temp }}/faber-model-cache
+        DESTINATION: ${{ inputs.directory }}
+        ONNX_NAME: ${{ inputs.onnx-name }}
+        JSON_NAME: ${{ inputs.json-name }}
+      run: |
+        set -euo pipefail
+        revision=c10ece1aade47bb51c153c893d14e5bf8e5b7117
+        base="https://huggingface.co/rhasspy/piper-voices/resolve/$revision/pt/pt_BR/faber/medium"
+        onnx=pt_BR-faber-medium.onnx
+        config=pt_BR-faber-medium.onnx.json
+        onnx_sha=858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7
+        config_sha=7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f
+        sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d ' ' -f 1; else shasum -a 256 "$1" | cut -d ' ' -f 1; fi; }
+        verified() { [ -f "$CACHE_DIR/$1" ] && [ "$(sha256 "$CACHE_DIR/$1")" = "$2" ]; }
+        provide() {
+          if verified "$1" "$2"; then return; fi
+          rm -f "$CACHE_DIR/$1"
+          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors --max-time 180 "$base/$1" -o "$CACHE_DIR/$1"
+          verified "$1" "$2" || { echo "::error::Checksum mismatch for $1"; exit 1; }
+        }
+        mkdir -p "$CACHE_DIR" "$DESTINATION"
+        provide "$onnx" "$onnx_sha"
+        provide "$config" "$config_sha"
+        cp "$CACHE_DIR/$onnx" "$DESTINATION/$ONNX_NAME"
+        cp "$CACHE_DIR/$config" "$DESTINATION/$JSON_NAME"
+    - name: Save the verified Faber model on master
+      if: github.ref == 'refs/heads/master' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/faber-model-cache
+        key: faber-model-${{ runner.os }}-c10ece1aade47bb51c153c893d14e5bf8e5b7117-858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7
