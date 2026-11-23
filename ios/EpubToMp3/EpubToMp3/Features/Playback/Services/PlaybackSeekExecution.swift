@@ -175,8 +175,15 @@ final class PlaybackSeekExecution {
         }
         let autoplay = previous?.autoplay ?? pending.autoplay ?? isPlaying
         begin()
+        // A backward skip can land before the audio this job generated (it started mid-chapter, or earlier
+        // segments were released): waiting for it would load forever. Carry the estimated text position so the
+        // resolver can promote the request to a restart from there ("approximate time") once it finds the target
+        // is not retained. Targets inside the retained audio still seek inside it.
+        let approximate = isSegmentMode && delta < 0 && time >= 0 && durationSeconds > 0
+            ? min(1, time / durationSeconds) : nil
         pending.chapter = .init(id: UUID(), jobID: snapshot.jobId, chapterIndex: index,
-                                autoplay: autoplay, position: time, relativeSkip: true)
+                                autoplay: autoplay, position: time, approximateRatio: approximate,
+                                relativeSkip: true)
         actions.seeking(true)
         actions.pauseTransport()
         applyPending()

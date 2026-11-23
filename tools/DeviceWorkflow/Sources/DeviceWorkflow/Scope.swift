@@ -81,6 +81,14 @@ public struct Options {
             "PDFReaderParityTests", "TtsMissingVoiceRecoveryTests", "ReaderReadingPositionTests",
             "ReaderAccessibilityContractTests", "SpeechModelObserverLifetimeTests", "ModelsScreenAlertTests"]
         let allowedMethods: [String: Set<String>] = [
+            "AudioPlayerPendingSeekTests": [
+                "testSkipBackwardBeforeTheGeneratedOriginRestartsFromTheEstimatedTextPosition",
+                "testRepeatedBackwardSkipsInsideTheRetainedAudioAccumulate",
+                "testBackwardSkipNearTheChapterStartLandsAtTheStartWithoutLoadingForever",
+                "testSkipBackwardCrossesSegmentsUsingChapterClockAndPreservesPause",
+                "testSkipForwardCrossesSegmentsUsingChapterClockAndPreservesPause",
+                "testSkipForwardWaitsForMissingSegmentAndPreservesPause",
+            ],
             "ModelsScreenAlertTests": [
                 "testChoiceSheetsHaveExactlyOneCancelWhenPresented",
                 "testActionSheetNeverAddsASecondCancel",
