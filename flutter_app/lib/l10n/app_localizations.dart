@@ -1045,7 +1045,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorEdgeConsentRequired.
   ///
   /// In en, this message translates to:
-  /// **'Edge is an online voice. Turn on “Allow online fallback” in Settings to use it, or choose an offline voice.'**
+  /// **'Online Edge voices need your permission. Turn on “Allow online fallback” in Settings, or choose a local voice, and try again.'**
   String get errorEdgeConsentRequired;
 }
 

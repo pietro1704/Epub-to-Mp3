@@ -531,5 +531,5 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get errorEdgeConsentRequired =>
-      'Edge é uma voz online. Ative “Permitir reserva online” nos Ajustes para usá-la ou escolha uma voz offline.';
+      'As vozes online do Edge precisam da sua permissão. Ative “Permitir reserva online” em Ajustes ou escolha uma voz local e tente novamente.';
 }

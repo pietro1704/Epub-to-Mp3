@@ -531,5 +531,5 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorEdgeConsentRequired =>
-      'Edge is an online voice. Turn on “Allow online fallback” in Settings to use it, or choose an offline voice.';
+      'Online Edge voices need your permission. Turn on “Allow online fallback” in Settings, or choose a local voice, and try again.';
 }

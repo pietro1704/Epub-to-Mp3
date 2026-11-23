@@ -532,5 +532,5 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get errorEdgeConsentRequired =>
-      'Edge es una voz en línea. Activa “Permitir respaldo en línea” en Ajustes para usarla o elige una voz sin conexión.';
+      'Las voces en línea de Edge necesitan tu permiso. Activa «Permitir respaldo en línea» en Ajustes o elige una voz local e inténtalo de nuevo.';
 }
