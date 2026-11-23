@@ -112,7 +112,7 @@ final class ReaderBookLoadSession {
             opening.schedule(attempt) { [weak self] attempt in
                 guard let self else { return }
                 let preparedRendering = try await attempt.read {
-                    await preparedPresentation.restorePreparedChapter(in: warmPayload)
+                    await self.preparedPresentation.restorePreparedChapter(in: warmPayload)
                 }
                 preparedPresentation.displayPreparedPayload(warmPayload, loadingID: loadingID,
                                        preparedRendering: preparedRendering)
@@ -133,13 +133,13 @@ final class ReaderBookLoadSession {
             observeOpenStage("reader_load_task_started")
             observeOpenStage("projection_read_started")
             try await attempt.read {
-                await preparedPresentation.restoration.waitForPresentation(loadingID: loadingID, bookID: loadingBookID)
-                observeOpenStage("projection_read_completed")
+                await self.preparedPresentation.restoration.waitForPresentation(loadingID: loadingID, bookID: loadingBookID)
+                self.observeOpenStage("projection_read_completed")
             }
             observeOpenStage("prepared_fulltext_read_started")
             let cached = try await attempt.read {
-                let payload = await preparedFulltextReader(loadingBookID)
-                observeOpenStage("prepared_fulltext_read_completed")
+                let payload = await self.preparedFulltextReader(loadingBookID)
+                self.observeOpenStage("prepared_fulltext_read_completed")
                 return payload
             }
             let cachedNeedsTitleRepair = cached?.chapters.contains(where: { $0.hasGeneratedName }) == true
@@ -151,13 +151,13 @@ final class ReaderBookLoadSession {
                 let payload = try await attempt.read {
                     await EpubFallbackParser.parseAsync(url: url, bookId: loadingBookID)
                 }
-                if document.registeredFontURLs.isEmpty {
+                if self.document.registeredFontURLs.isEmpty {
                     let fonts = try await attempt.read {
                         await Task.detached(priority: .userInitiated) {
                             EpubFontManager.registerFonts(from: url, bookID: loadingBookID)
                         }.value
                     }
-                    document.registeredFontURLs = fonts
+                    self.document.registeredFontURLs = fonts
                 }
                 return payload
             }

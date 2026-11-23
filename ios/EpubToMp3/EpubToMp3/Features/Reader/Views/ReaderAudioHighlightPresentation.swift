@@ -42,7 +42,7 @@ final class ReaderAudioHighlightPresentation {
         observation = player.playbackClock.audioOutput.$position.sink { [weak self] in self?.render($0) }
         speechObservation = player.speechOutput.$spokenWord.sink { [weak self] in self?.renderSpeech($0) }
         transportObservation = player.transportContentUpdates
-            .sink { [weak self] in self?.refresh() }
+            .sink { [weak self] _ in self?.refresh() }
     }
 
     func refresh() {

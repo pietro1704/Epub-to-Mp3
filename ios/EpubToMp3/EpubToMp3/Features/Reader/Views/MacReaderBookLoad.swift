@@ -149,7 +149,7 @@ final class MacReaderBookLoad {
                 send(.showLoading(book))
                 opening.schedule(attempt) { [weak self] attempt in
                     guard let self else { return }
-                    try await attempt.read { await textPresentation.restoreSelectedChapter(bookID: book.id) }
+                    try await attempt.read { await self.textPresentation.restoreSelectedChapter(bookID: book.id) }
                     presentLoadedChapter(bookID: book.id)
                 } failure: { [weak self] error in self?.send(.failure(error)) }
             }
@@ -188,7 +188,7 @@ final class MacReaderBookLoad {
                 selectedChapter = prepared.chapterOrdinal
                 send(.chapterCount(prepared.chapterCount))
                 attempt.classify(.preparedDisk)
-                try await attempt.read { await textPresentation.restoreSelectedChapter(bookID: book.id) }
+                try await attempt.read { await self.textPresentation.restoreSelectedChapter(bookID: book.id) }
                 presentLoadedChapter(bookID: book.id, onControlsResolved: startCatalog)
             } else {
                 startCatalog()
@@ -203,12 +203,12 @@ final class MacReaderBookLoad {
                             EpubFontManager.registerFonts(from: url, bookID: book.id)
                         }.value
                     }
-                    document.registeredFontURLs = fonts
+                    self.document.registeredFontURLs = fonts
                     return try await MacEpubParser.parse(at: url, bookId: book.id)
                 }
             switch arrival {
             case .pdf(let url):
-                guard let wasNormalized = try await attempt.read({ await textPresentation.showPDF(url) }) else { return }
+                guard let wasNormalized = try await attempt.read({ await self.textPresentation.showPDF(url) }) else { return }
                 observation.recordFirstPDFPage(wasNormalized: wasNormalized)
                 send(.hideLoading)
                 try attempt.check()
