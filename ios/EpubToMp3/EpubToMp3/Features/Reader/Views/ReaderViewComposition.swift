@@ -37,7 +37,7 @@ final class ReaderViewComposition {
         comicPageImageView: comicPageImageView
     )
     let scrollView = UIScrollView()
-    let pageIndicator = UILabel()
+    let pageIndicator = ReaderPageIndicatorLabel()
     let pageOverflowGuard = UIView()
     let pageUnderflowGuard = UIView()
     let flickerChapterLabel = UILabel()
@@ -197,8 +197,9 @@ final class ReaderViewComposition {
         view.addSubview(pageIndicator)
         view.addSubview(scrollView)
         NSLayoutConstraint.activate([
-            pageIndicator.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
-            pageIndicator.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            pageIndicator.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
+            pageIndicator.leadingAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            pageIndicator.trailingAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
             pageIndicator.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -80),
             pageIndicator.heightAnchor.constraint(greaterThanOrEqualToConstant: pageIndicator.font.lineHeight),
             scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),

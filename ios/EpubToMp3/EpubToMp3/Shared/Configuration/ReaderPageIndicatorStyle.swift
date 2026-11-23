@@ -14,8 +14,25 @@ enum ReaderPageIndicatorStyle {
         let fill: PlatformColor?
     }
 
+    /// A pill that contrasts with the page whatever the theme: dark with light text over a light page, light with
+    /// dark text over a dark page (the page's own foreground can be too close to its background, e.g. Auto in dark).
     static func appearance(background: PlatformColor, foreground: PlatformColor) -> Appearance {
-        Appearance(text: foreground.withAlphaComponent(0.7), fill: nil)
+        #if canImport(UIKit)
+        func isLight(_ trait: UITraitCollection) -> Bool {
+            let c = rgba(background, dark: trait.userInterfaceStyle == .dark)
+            return luminance(c) > 0.4
+        }
+        return Appearance(
+            text: UIColor { isLight($0) ? .white : .black },
+            fill: UIColor { isLight($0) ? UIColor.black.withAlphaComponent(0.78) : UIColor.white.withAlphaComponent(0.88) })
+        #else
+        func isLight(_ appearance: NSAppearance) -> Bool {
+            luminance(rgba(background, dark: appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)) > 0.4
+        }
+        return Appearance(
+            text: NSColor(name: nil) { isLight($0) ? .white : .black },
+            fill: NSColor(name: nil) { isLight($0) ? NSColor.black.withAlphaComponent(0.78) : NSColor.white.withAlphaComponent(0.88) })
+        #endif
     }
 
     /// WCAG contrast ratio of `text` over `fill` (itself over `page`), in light or dark appearance.
