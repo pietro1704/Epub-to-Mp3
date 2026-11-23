@@ -1,6 +1,9 @@
 #if os(macOS)
 import AppKit
 
+// Launch-only test isolation must be in place before anything touches the library, caches or defaults.
+AppIsolation.activateIfRequested()
+
 MainActor.assumeIsolated {
     if EpubToMp3App.isRunningUnderXCTest() {
         let application = NSApplication.shared
@@ -12,6 +15,8 @@ MainActor.assumeIsolated {
 }
 #else
 import UIKit
+
+AppIsolation.activateIfRequested()
 
 UIApplicationMain(
     CommandLine.argc,
