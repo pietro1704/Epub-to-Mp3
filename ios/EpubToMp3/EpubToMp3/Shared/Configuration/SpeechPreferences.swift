@@ -28,6 +28,15 @@ final class SpeechPreferences: ObservableObject {
             defaults.object(forKey: Self.automaticSystemFallbackKey) as? Bool ?? true
         self.languageModelChoices = Self.storedLanguageChoices(defaults)
         loadingPersistedValues = false
+        migrateUnconsentedEdgePrimary()
+    }
+
+    /// Mirror of the Rust `TtsPreferences::migrate_unconsented_edge_primary` (the owner's decision): a saved Edge
+    /// primary without the online consent becomes the default Piper voice and is saved; everything else, including
+    /// the installed models and the consent, stays. With the consent nothing changes.
+    private func migrateUnconsentedEdgePrimary() {
+        guard primaryTtsSelection.isEdge, !allowOnlineAudioFallback else { return }
+        selectPrimaryNarration(.defaultPiper)
     }
 
     /// Explicit narration choices, persisted as `TtsSelection` JSON. Change them

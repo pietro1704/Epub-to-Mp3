@@ -70,4 +70,49 @@ final class SpeechPreferencesTests: XCTestCase {
         XCTAssertEqual(seenBeforeChange, [.defaultPiper])
         withExtendedLifetime(observation) {}
     }
+
+    // MARK: EDGE-PRIMARY-MIGRATION-TO-PIPER
+
+    private func defaultsSuite() throws -> (UserDefaults, String) {
+        let name = "speech-prefs-migration-\(UUID().uuidString)"
+        return (try XCTUnwrap(UserDefaults(suiteName: name)), name)
+    }
+
+    func testAnEdgePrimarySavedWithoutConsentMigratesToDefaultPiperAndIsSaved() throws {
+        let (defaults, name) = try defaultsSuite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(try JSONEncoder().encode(TtsSelection.edgeDefault), forKey: SpeechPreferenceMigration.Key.primarySelection)
+        defaults.set(try JSONEncoder().encode(TtsSelection.systemDefault), forKey: SpeechPreferenceMigration.Key.secondarySelection)
+        defaults.set(false, forKey: SpeechPreferenceMigration.Key.onlineFallbackConsent)
+        defaults.set(true, forKey: SpeechPreferences.automaticSystemFallbackKey)
+        let preferences = SpeechPreferences(defaults: defaults)
+        XCTAssertEqual(preferences.primaryTtsSelection.engine, "piper")
+        XCTAssertEqual(preferences.primaryTtsSelection.modelID, TtsSelection.defaultPiperModelID)
+        XCTAssertEqual(preferences.secondaryTtsSelection?.engine, "system", "The reserve voice is preserved")
+        XCTAssertFalse(preferences.allowOnlineAudioFallback)
+        // Saved: a fresh load sees Piper without migrating again.
+        let reloaded = SpeechPreferences(defaults: defaults)
+        XCTAssertEqual(reloaded.primaryTtsSelection.engine, "piper")
+        XCTAssertEqual(SpeechPreferences(defaults: defaults).ttsPreferences.primary.engine, "piper")
+    }
+
+    func testAnEdgePrimaryWithConsentIsKeptAndOtherPrimariesAreUntouched() throws {
+        let (defaults, name) = try defaultsSuite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(try JSONEncoder().encode(TtsSelection.edgeDefault), forKey: SpeechPreferenceMigration.Key.primarySelection)
+        defaults.set(true, forKey: SpeechPreferenceMigration.Key.onlineFallbackConsent)
+        XCTAssertEqual(SpeechPreferences(defaults: defaults).primaryTtsSelection.engine, "edge")
+        let (system, systemName) = try defaultsSuite()
+        defer { system.removePersistentDomain(forName: systemName) }
+        system.set(try JSONEncoder().encode(TtsSelection.systemDefault), forKey: SpeechPreferenceMigration.Key.primarySelection)
+        XCTAssertEqual(SpeechPreferences(defaults: system).primaryTtsSelection.engine, "system")
+    }
+
+    func testAReserveThatWouldRepeatTheMigratedPrimaryIsDropped() throws {
+        let (defaults, name) = try defaultsSuite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(try JSONEncoder().encode(TtsSelection.edgeDefault), forKey: SpeechPreferenceMigration.Key.primarySelection)
+        defaults.set(try JSONEncoder().encode(TtsSelection.defaultPiper), forKey: SpeechPreferenceMigration.Key.secondarySelection)
+        XCTAssertNil(SpeechPreferences(defaults: defaults).secondaryTtsSelection)
+    }
 }
