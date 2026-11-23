@@ -6,6 +6,11 @@ destination="${1:?destination required}"
 scheme="${2:?scheme required}"
 derived_data="${3:?derived data required}"
 action="${4:?action required}"
+build_jobs="${CODEQL_SWIFT_BUILD_JOBS:-1}"
+case "$build_jobs" in
+  [1-9]|[1-9][0-9]) ;;
+  *) echo "Invalid CODEQL_SWIFT_BUILD_JOBS: $build_jobs" >&2; exit 2 ;;
+esac
 build_settings=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
 if [[ "$destination" == *macOS* ]]; then
   if [[ "${GITHUB_ACTIONS:-}" == 'true' ]]; then
@@ -45,7 +50,7 @@ exec xcodebuild \
   -destination "$destination" \
   -configuration Debug \
   -derivedDataPath "$derived_data" \
-  -jobs 1 \
+  -jobs "$build_jobs" \
   -parallel-testing-enabled NO \
   "${build_settings[@]}" \
   "$action"

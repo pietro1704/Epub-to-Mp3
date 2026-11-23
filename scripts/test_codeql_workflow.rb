@@ -32,6 +32,21 @@ class CodeqlWorkflowTest < Minitest::Test
   end
 end
 
+class CodeqlSwiftOrderTest < Minitest::Test
+  def test_rust_and_project_generation_run_before_the_tracer_and_without_a_one_job_pin
+    steps = YAML.load_file(CodeqlWorkflowTest::WORKFLOW).fetch("jobs").fetch("swift").fetch("steps")
+    names = steps.map { |step| step["name"] }
+    rust = steps.find { |step| step["name"] == "Build actual embedded Rust library" }
+    build = steps.find { |step| step["name"] == "Build Swift target" }
+    refute rust.fetch("env", {}).key?("CARGO_BUILD_JOBS")
+    assert_equal "3", build.fetch("env").fetch("CODEQL_SWIFT_BUILD_JOBS")
+    init = names.index("Initialize CodeQL")
+    assert_operator names.index("Build actual embedded Rust library"), :<, init
+    assert_operator names.index("Generate Xcode project after native prerequisites exist"), :<, init
+    assert_equal init + 1, names.index("Build Swift target")
+  end
+end
+
 class CodeqlAndroidBuildTest < Minitest::Test
   THROTTLED = "Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/2.2.20/kotlin-gradle-plugins-bom-2.2.20.pom'. Received status code 429 from server: Too Many Requests"
   FIXTURE_BUILD = <<~'RUBY'

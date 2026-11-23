@@ -205,6 +205,22 @@ class CodeqlSwiftBuildTest < Minitest::Test
     assert_equal 'build-for-testing', arguments.last
   end
 
+  def test_xcode_build_jobs_default_to_one_and_accept_a_bounded_override
+    _output, error, status = invoke('platform=macOS')
+    assert status.success?, error
+    arguments = JSON.parse(File.read(@calls)).fetch('argv')
+    assert_equal '1', arguments[arguments.index('-jobs') + 1]
+    _output, error, status = invoke('platform=macOS', 'CODEQL_SWIFT_BUILD_JOBS' => '3')
+    assert status.success?, error
+    arguments = JSON.parse(File.read(@calls)).fetch('argv')
+    assert_equal '3', arguments[arguments.index('-jobs') + 1]
+    FileUtils.rm_f(@calls)
+    _output, error, status = invoke('platform=macOS', 'CODEQL_SWIFT_BUILD_JOBS' => '0')
+    assert_equal 2, status.exitstatus
+    assert_includes error, 'Invalid CODEQL_SWIFT_BUILD_JOBS'
+    refute File.exist?(@calls)
+  end
+
   def test_explicit_destination_is_preserved_for_build_for_testing
     destination = 'platform=macOS,arch=arm64'
     _output, error, status = invoke(destination)
