@@ -87,6 +87,7 @@ class CiAptInstallTest < Minitest::Test
     assert status.success?, "#{out}#{err}"
     assert_includes log, "Dir::Cache::Archives=#{archives}"
     assert_includes log, 'APT::Keep-Downloaded-Packages=true'
+    assert_includes log, 'sudo chown -R'
     assert File.directory?(File.join(archives, 'partial'))
     assert_equal 2, log.lines.grep(/^apt-get .*Dir::Cache::Archives=#{Regexp.escape(archives)}/).size, 'update and install share the archive'
     refute_match(/allow-unauthenticated|allow-insecure|trusted=yes/, log)

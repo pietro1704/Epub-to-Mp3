@@ -32,6 +32,9 @@ if [[ -n "${CI_APT_ARCHIVES:-}" ]]; then
   chmod 0755 "$CI_APT_ARCHIVES"
   chmod 0777 "$CI_APT_ARCHIVES/partial"
   export CI_APT_ARCHIVES
+  # apt runs as root, so hand the tree back to the runner user on exit; otherwise
+  # actions/cache cannot read root-owned partial/ and lock entries when saving.
+  trap 'sudo chown -R "$(id -u):$(id -g)" "$CI_APT_ARCHIVES" 2>/dev/null || true' EXIT
 fi
 
 missing=()
@@ -55,6 +58,10 @@ for (( n = 1; n <= attempts; n++ )); do
     options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
     if [[ -n "${CI_APT_ARCHIVES:-}" ]]; then
       options+=(-o "Dir::Cache::Archives=$CI_APT_ARCHIVES" -o APT::Keep-Downloaded-Packages=true)
+      # The runner workspace is not traversable by the _apt user, which only
+      # produced an unsandboxed warning; download as root explicitly. Signature
+      # validation of the downloaded packages is unchanged.
+      options+=(-o APT::Sandbox::User=root)
     fi
     sudo apt-get "${options[@]}" -o APT::Update::Error-Mode=any update
     sudo apt-get "${options[@]}" install -y ${flag:+"$flag"} "$@"
