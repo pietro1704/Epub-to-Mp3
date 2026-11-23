@@ -15,6 +15,10 @@ progress, cancellation and artifacts. CLI, web and Flutter use Rust binaries,
 WASM or bindings. The legacy Python application and Python host tooling were
 removed; host scripts are Ruby. Shared conversion behavior belongs in Rust first.
 
+iOS/macOS lead product development. Android/tablet and Linux/Windows (Flutter)
+must match Apple behavior and UI, each presented with its own platform's
+guidelines (Material on Android, native desktop conventions on Linux/Windows).
+
 Piper `pt_BR-faber-medium` is the default primary TTS. Default fallback uses
 installed system TTS, preferring Apple Luciana for Brazilian Portuguese when
 available. If Piper is missing or persistently fails, continue with the working
