@@ -84,6 +84,23 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     if (mounted) setState(() => _isConverting = false);
   }
 
+  /// A new narration model applies immediately while listening: a fresh job
+  /// starts at the reader's current position and captures the saved model.
+  /// Idle readers only persist the choice; the next listen uses it.
+  Future<void> _narrationModelChanged(TtsSelection selection) async {
+    final position = narrationSwitchRestartPosition(
+      position: _readerListeningPosition,
+      listening: ref.read(globalAudioPlayerProvider).isPlaying || _isConverting,
+      supportsPositionedStart:
+          ref.read(embeddedConverterProvider) is PositionedChapterConverter,
+    );
+    if (!mounted || position == null) return;
+    await _startLocalConversion(
+      readerPosition: position,
+      playbackChapterIndex: position.chapterIndex,
+    );
+  }
+
   Future<void> _startLocalConversion({
     required int playbackChapterIndex,
     ReaderListeningPosition? readerPosition,

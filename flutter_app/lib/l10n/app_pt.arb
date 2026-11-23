@@ -172,5 +172,6 @@
   "seekForwardInterval": "Avançar",
   "seekBackwardInterval": "Retroceder",
   "ttsShowLowQuality": "Mostrar qualidade baixa",
-  "ttsManualModelUnavailable": "Não foi possível preparar este modelo de narração."
+  "ttsManualModelUnavailable": "Não foi possível preparar este modelo de narração.",
+  "readerNarrationModel": "Modelo de narração"
 }

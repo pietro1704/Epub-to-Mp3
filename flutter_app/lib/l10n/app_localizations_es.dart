@@ -471,4 +471,7 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get ttsManualModelUnavailable =>
       'No se pudo preparar este modelo de narración.';
+
+  @override
+  String get readerNarrationModel => 'Modelo de narración';
 }

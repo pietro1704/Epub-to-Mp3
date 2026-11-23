@@ -945,6 +945,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not prepare this narration model.'**
   String get ttsManualModelUnavailable;
+
+  /// No description provided for @readerNarrationModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Narration model'**
+  String get readerNarrationModel;
 }
 
 class _AppLocalizationsDelegate

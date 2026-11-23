@@ -15,6 +15,8 @@ import '../services/playback/sentence_sync_coordinator.dart';
 import '../services/playback/sync_engine.dart';
 import '../state/providers.dart';
 
+import '../models/tts_preferences.dart';
+import 'reader_narration_menu.dart';
 import 'reader_settings_sheet.dart';
 import 'reader_theme_colors.dart';
 import 'reader_view.dart';
@@ -31,6 +33,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
   final String? activeSentenceId;
   final Uint8List? coverArt;
   final String? bookId;
+  final Future<void> Function(TtsSelection selection)? onNarrationChanged;
 
   const InstantReaderView({
     super.key,
@@ -41,6 +44,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
     this.activeSentenceId,
     this.coverArt,
     this.bookId,
+    this.onNarrationChanged,
   });
 
   @override
@@ -375,6 +379,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                             minWidth: 48,
                             minHeight: 48,
                           ),
+                        ),
+                        ReaderNarrationMenu(
+                          color: fg,
+                          onChanged: widget.onNarrationChanged,
                         ),
                       ],
                     ),

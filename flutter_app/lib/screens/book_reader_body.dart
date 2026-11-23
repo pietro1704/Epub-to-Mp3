@@ -12,6 +12,7 @@ class _BookReaderBody extends ConsumerWidget {
     required this.playableChapters,
     required this.onRetry,
     required this.onListeningPosition,
+    required this.onNarrationChanged,
   });
 
   final String bookId;
@@ -24,6 +25,7 @@ class _BookReaderBody extends ConsumerWidget {
   final List<ChapterProgress> playableChapters;
   final VoidCallback onRetry;
   final ValueChanged<ReaderListeningPosition?> onListeningPosition;
+  final Future<void> Function(TtsSelection selection) onNarrationChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -116,6 +118,7 @@ class _BookReaderBody extends ConsumerWidget {
               children: [
                 InstantReaderView(
                   fulltext: fulltext!,
+                  onNarrationChanged: onNarrationChanged,
                   onVisibleTextOffset: (chapter, offset) {
                     if (offset == null ||
                         chapter < 0 ||

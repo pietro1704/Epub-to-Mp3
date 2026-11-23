@@ -1,0 +1,130 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/models/tts_catalog.dart';
+import 'package:flutter_app/models/tts_preferences.dart';
+import 'package:flutter_app/state/providers.dart';
+import 'package:flutter_app/views/reader_narration_menu.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+Future<ProviderContainer> _pumpMenu(
+  WidgetTester tester, {
+  Map<String, Object> seed = const {},
+  required List<TtsSelection> changes,
+}) async {
+  SharedPreferences.setMockInitialValues(seed);
+  final prefs = await SharedPreferences.getInstance();
+  final container = ProviderContainer(
+    overrides: [
+      sharedPrefsProvider.overrideWithValue(prefs),
+      ttsCatalogProvider.overrideWith(
+        (ref) => Future<TtsCatalog>.error(StateError('catalog unavailable')),
+      ),
+    ],
+  );
+  addTearDown(container.dispose);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          appBar: AppBar(
+            actions: [
+              ReaderNarrationMenu(
+                onChanged: (selection) async => changes.add(selection),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+  return container;
+}
+
+Future<void> _openMenu(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('reader-overflow-menu')));
+  await tester.pumpAndSettle();
+}
+
+Map<String, bool> _checked(WidgetTester tester) => {
+  for (final item in tester.widgetList<CheckedPopupMenuItem<int>>(
+    find.byType(CheckedPopupMenuItem<int>),
+  ))
+    (item.child! as Text).data!: item.checked,
+};
+
+void main() {
+  testWidgets('lists narration models and marks the active one', (tester) async {
+    final changes = <TtsSelection>[];
+    await _pumpMenu(tester, changes: changes);
+    await _openMenu(tester);
+
+    expect(find.text('Narration model'), findsOneWidget);
+    final checked = _checked(tester);
+    expect(
+      checked.keys,
+      containsAll([
+        'Piper · Book language',
+        'Faber medium · Offline',
+        'System voice · Offline fallback',
+      ]),
+    );
+    expect(checked.values.where((value) => value), hasLength(1));
+    expect(checked['Piper · Book language'], isTrue);
+    expect(find.text('Edge · Online'), findsNothing,
+        reason: 'online speech needs the explicit fallback consent');
+  });
+
+  testWidgets('switching saves the new primary and notifies once', (tester) async {
+    final changes = <TtsSelection>[];
+    final container = await _pumpMenu(tester, changes: changes);
+    await _openMenu(tester);
+    await tester.tap(find.text('System voice · Offline fallback'));
+    await tester.pumpAndSettle();
+
+    expect(changes, hasLength(1));
+    expect(changes.single.engine, 'system');
+    final saved = container.read(settingsProvider).configuredTtsPreferences;
+    expect(saved?.primary.engine, 'system');
+
+    await _openMenu(tester);
+    expect(_checked(tester)['System voice · Offline fallback'], isTrue);
+    expect(_checked(tester)['Piper · Book language'], isFalse,
+        reason: 'the previous model stays selectable so the user can go back');
+  });
+
+  testWidgets('choosing the active model changes nothing', (tester) async {
+    final changes = <TtsSelection>[];
+    final container = await _pumpMenu(tester, changes: changes);
+    await _openMenu(tester);
+    await tester.tap(find.text('Piper · Book language'));
+    await tester.pumpAndSettle();
+
+    expect(changes, isEmpty);
+    expect(container.read(settingsProvider).configuredTtsPreferences, isNull);
+  });
+
+  test('choices keep the active manual model and hide Edge without consent', () {
+    const manual = TtsSelection(
+      engine: 'piper',
+      modelId: 'pt_BR-edresson-low',
+      manualModel: true,
+    );
+    final choices = readerNarrationChoices(
+      preferences: const TtsPreferences(primary: manual),
+      recommended: const TtsPreferences.appDefaults(),
+      catalog: null,
+    );
+    expect(choices.first.modelId, 'pt_BR-edresson-low');
+    expect(choices.any((choice) => choice.engine == 'edge'), isFalse);
+    expect(
+      choices.where((choice) => choice.representsSameRequest(manual)),
+      hasLength(1),
+    );
+  });
+}

@@ -21,6 +21,7 @@ import 'package:path_provider/path_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/tts_catalog.dart';
+import '../models/tts_preferences.dart';
 import '../models/reader_listening_position.dart';
 import '../services/playback/listening_schedule.dart';
 import '../models/book_entity.dart';
@@ -33,6 +34,7 @@ import '../services/conversion/embedded_converter.dart';
 import '../services/conversion/book_language_uncertain.dart';
 import '../services/conversion/rust_playback_conversion.dart';
 import '../services/playback/platform_voice_notice.dart';
+import '../services/reader/narration_switch_policy.dart';
 import '../services/reader/reader_playback_startup.dart';
 import '../services/latency_observation.dart';
 
@@ -141,5 +143,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     playableChapters: _playableChapters,
     onRetry: _load,
     onListeningPosition: (position) => _readerListeningPosition = position,
+    onNarrationChanged: _narrationModelChanged,
   );
 }
