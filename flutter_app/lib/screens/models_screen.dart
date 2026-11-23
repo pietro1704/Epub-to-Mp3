@@ -10,6 +10,7 @@ import '../models/tts_preferences.dart';
 import '../services/conversion/model_install/model_install_models.dart';
 import '../services/conversion/model_install/model_install_runner.dart';
 import '../state/providers.dart';
+import '../views/reader_narration_menu.dart' show installedNarrationModelIdsProvider;
 import 'settings_screen.dart' show InstalledNarrationModelsCard, VoiceSelectionSettings;
 
 /// Narration models grouped by book language. The user picks, per language,
@@ -114,6 +115,8 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     } finally {
       _cancellations.remove(id);
       _progress.remove(id);
+      // Whoever keeps the installed list alive (the reader menu) must see it.
+      ref.invalidate(installedNarrationModelIdsProvider);
       if (mounted) _reload();
     }
   }

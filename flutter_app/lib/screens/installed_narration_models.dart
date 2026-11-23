@@ -44,6 +44,8 @@ class _InstalledNarrationModelsCardState
 
   void _refresh() {
     ref.invalidate(manualLowCatalogProvider);
+    // An install or removal changes what the reader menu and playback see.
+    ref.invalidate(installedNarrationModelIdsProvider);
     final catalog = _loadCatalog();
     setState(() {
       _catalog = catalog;
