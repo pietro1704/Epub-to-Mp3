@@ -42,18 +42,28 @@ _SortMode _savedSortMode(SharedPreferences prefs) {
   );
 }
 
-/// Orders the library as Apple does: played books by last audible playback,
-/// then the never-played ones by date added. Opening a book never reorders.
+/// The moment a book last had activity: opened to read or to listen, or heard.
+DateTime? bookActivityAt(BookEntity book) {
+  final opened = book.lastOpenedAt;
+  final played = book.lastPlayedAt;
+  if (opened == null) return played;
+  if (played == null) return opened;
+  return opened.isAfter(played) ? opened : played;
+}
+
+/// Orders the library by last activity: a book moves to the first place the
+/// moment it is opened (to read or to listen) or played; books never opened or
+/// played follow, newest added first.
 List<BookEntity> sortBooksByRecentPlayback(List<BookEntity> books) =>
     List.of(books)..sort((a, b) {
-      final aPlayed = a.lastPlayedAt;
-      final bPlayed = b.lastPlayedAt;
-      if (aPlayed != null && bPlayed != null) {
-        final byPlayed = bPlayed.compareTo(aPlayed);
-        if (byPlayed != 0) return byPlayed;
-      } else if (aPlayed != null) {
+      final aActivity = bookActivityAt(a);
+      final bActivity = bookActivityAt(b);
+      if (aActivity != null && bActivity != null) {
+        final byActivity = bActivity.compareTo(aActivity);
+        if (byActivity != 0) return byActivity;
+      } else if (aActivity != null) {
         return -1;
-      } else if (bPlayed != null) {
+      } else if (bActivity != null) {
         return 1;
       }
       return b.addedAt.compareTo(a.addedAt);
