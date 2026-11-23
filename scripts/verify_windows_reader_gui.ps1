@@ -258,9 +258,9 @@ $window = [IntPtr]::Zero
 $flutterView = [IntPtr]::Zero
 $dialog = $null
 
-function Wait-ForReaderUi([string]$Description, [scriptblock]$Lookup) {
+function Wait-ForReaderUi([string]$Description, [scriptblock]$Lookup, [int]$TimeoutSeconds = 35) {
   $clock = [Diagnostics.Stopwatch]::StartNew()
-  while ($clock.Elapsed.TotalSeconds -lt 35) {
+  while ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
     $application.Refresh()
     if ($application.HasExited) {
       throw "The packaged application exited with code $($application.ExitCode) while waiting for $Description."
@@ -468,10 +468,7 @@ try {
   }
   $addBook = Wait-ForReaderUi 'the Library Add a book control' { Find-AppText '^Add a book$' }
   Click-FlutterElement $addBook
-  $importFile = Wait-ForReaderUi 'the local EPUB or PDF import control' { Find-AppText '^Import an EPUB or PDF file$' }
-  Click-FlutterElement $importFile
-
-  $dialog = Wait-ForReaderUi 'the native file picker' {
+  $pickerLookup = {
     $handle = [ReaderTestDesktop]::GetForegroundWindow()
     if ($handle -ne $window -and [ReaderTestDesktop]::Owner($handle) -eq $application.Id) {
       [System.Windows.Automation.AutomationElement]::FromHandle($handle)
@@ -486,6 +483,20 @@ try {
       }
     }
   }
+  # The Add a book dialog animates in, and a click landing mid-animation can miss, so wait a
+  # moment before clicking and retry the import control a few times.
+  $dialog = $null
+  for ($attempt = 1; $attempt -le 3 -and $null -eq $dialog; $attempt++) {
+    $importFile = Wait-ForReaderUi 'the local EPUB or PDF import control' { Find-AppText '^Import an EPUB or PDF file$' }
+    Start-Sleep -Milliseconds 800
+    try {
+      Click-FlutterElement $importFile
+      $dialog = Wait-ForReaderUi 'the native file picker' $pickerLookup -TimeoutSeconds 12
+    } catch {
+      Write-Host "The native file picker did not open on attempt ${attempt}: $($_.Exception.Message)"
+    }
+  }
+  if ($null -eq $dialog) { throw 'Timed out waiting for the native file picker.' }
   # The Windows 11 common dialog exposes no stable file name edit through UIA, but it opens with the
   # file name box focused. Prefer the UIA field when present, otherwise type into the focused box.
   $filename = $null
