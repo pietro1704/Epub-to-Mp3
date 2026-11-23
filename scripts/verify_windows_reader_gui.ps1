@@ -13,7 +13,7 @@ if (-not [Environment]::UserInteractive) {
   throw 'The Windows runner has no interactive desktop.'
 }
 
-Add-Type -AssemblyName Accessibility, UIAutomationClient, UIAutomationTypes, System.Drawing
+Add-Type -AssemblyName Accessibility, UIAutomationClient, UIAutomationTypes, WindowsBase, System.Drawing
 $readerSource = @'
 using Accessibility;
 using System;
@@ -299,12 +299,64 @@ function Find-VisibleElement([System.Windows.Automation.AutomationElement]$Root,
   }
 }
 
+# MSAA exposes the Library but not the reader's scrolling content (its children are bare
+# child IDs that reject every property). UIA hit testing still reaches those nodes, so
+# a coarse grid of points reads them as a second source.
+function Read-FlutterPointElements {
+  if ($flutterView -eq [IntPtr]::Zero) { return @() }
+  $bounds = [System.Windows.Automation.AutomationElement]::FromHandle($flutterView).Current.BoundingRectangle
+  if ($bounds.IsEmpty) { return @() }
+  $seen = @{}
+  $found = New-Object System.Collections.Generic.List[object]
+  for ($y = $bounds.Top + 16; $y -lt $bounds.Bottom; $y += 36) {
+    for ($x = $bounds.Left + 16; $x -lt $bounds.Right; $x += 64) {
+      try {
+        $hit = [System.Windows.Automation.AutomationElement]::FromPoint((New-Object System.Windows.Point $x, $y))
+        $info = $hit.Current
+        $name = $info.Name
+        if ([string]::IsNullOrWhiteSpace($name) -or $name -eq 'FLUTTERVIEW') { continue }
+        $rectangle = $info.BoundingRectangle
+        $key = "$name|$rectangle"
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        $element = New-Object ReaderTestDesktop+FlutterElement
+        $element.Name = $name
+        $element.Role = $info.ControlType.ProgrammaticName
+        $element.State = 0
+        $element.Left = [int]$rectangle.Left
+        $element.Top = [int]$rectangle.Top
+        $element.Width = [int]$rectangle.Width
+        $element.Height = [int]$rectangle.Height
+        $found.Add($element)
+      } catch {
+        # A point can fall on a node that is being replaced; the next poll retries it.
+      }
+    }
+  }
+  $found.ToArray()
+}
+
 function Find-AppText([string]$Pattern) {
   foreach ($element in [ReaderTestDesktop]::ReadFlutterAccessibility($flutterView)) {
     if ($element.IsVisible -and $element.Name -match $Pattern) {
       return $element
     }
   }
+  foreach ($element in (Read-FlutterPointElements)) {
+    if ($element.IsVisible -and $element.Name -match $Pattern) {
+      return $element
+    }
+  }
+}
+
+function Save-FlutterPointTree([IntPtr]$Handle) {
+  $rows = @(
+    foreach ($element in (Read-FlutterPointElements)) {
+      $name = $element.Name -replace '\s+', ' '
+      "role=$($element.Role) | bounds=$($element.Left),$($element.Top),$($element.Width),$($element.Height) | name=$name"
+    }
+  )
+  Write-AccessibilityEvidence 'POINTS' $Handle $rows
 }
 
 function Save-FlutterAccessibility([IntPtr]$Handle) {
@@ -523,6 +575,11 @@ try {
     try {
       if ($foreground -eq $window -and $flutterView -ne [IntPtr]::Zero) {
         Save-FlutterAccessibility $flutterView
+        try {
+          Save-FlutterPointTree $flutterView
+        } catch {
+          Write-Warning "Could not capture the UIA point tree: $_"
+        }
         try {
           Save-ReaderAccessibility $flutterView
         } catch {
