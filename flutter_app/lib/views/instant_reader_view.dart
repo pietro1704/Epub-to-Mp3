@@ -363,6 +363,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                         ..._chromeTools(chapter, fg),
                         ReaderNarrationMenu(
                           color: fg,
+                          bookId: widget.bookId,
                           entries: _menuEntries(chapter),
                           onChanged: widget.onNarrationChanged,
                           currentSentence: _liveSentencePosition,

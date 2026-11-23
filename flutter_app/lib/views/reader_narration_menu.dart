@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/language_model_choices.dart';
+import '../models/language_names.dart';
+import '../screens/library_screen.dart' show libraryStoreProvider;
+import '../screens/models_screen.dart';
 import '../models/tts_catalog.dart';
 import '../models/reader_listening_position.dart';
 import '../models/tts_preferences.dart';
@@ -25,6 +29,34 @@ final installedNarrationModelIdsProvider =
         }
       }
       return installed;
+    });
+
+/// Base language of the open book, analyzed once per book by Rust and cached
+/// (`confirmed`, else the first detected, else the declared language). Null when
+/// it cannot be determined: the menu then keeps the plain catalog list.
+final readerBookLanguageProvider = FutureProvider.autoDispose
+    .family<String?, String>((ref, bookId) async {
+      try {
+        final library = ref.read(libraryStoreProvider);
+        final index = library.books.indexWhere((book) => book.id == bookId);
+        if (index < 0) return null;
+        final path = await library.ensureSupportedBookPath(library.books[index]);
+        final analysis = await ref
+            .read(bookLanguageCacheProvider)
+            .analysis(
+              converter: ref.read(embeddedConverterProvider),
+              bookId: bookId,
+              path: path,
+            );
+        final tag =
+            analysis.confirmed ??
+            (analysis.languages.isEmpty ? null : analysis.languages.first) ??
+            analysis.declared;
+        if (tag == null || tag.trim().isEmpty) return null;
+        return LanguageModelChoices.baseLanguage(tag);
+      } catch (_) {
+        return null;
+      }
     });
 
 /// Localized name of a narration choice, shared by Settings and the reader.
@@ -89,6 +121,60 @@ List<TtsSelection> readerNarrationChoices({
   return result;
 }
 
+/// The reader's live switch for a book in [language]: only what is ready for
+/// it (installed models serving the language, the system voice when the
+/// platform has one, and online speech once consented). The active primary is
+/// always listed and marked, even when it is not one of them.
+({List<TtsSelection> choices, bool hasNoModel}) readerNarrationChoicesForLanguage({
+  required String language,
+  required TtsPreferences preferences,
+  required TtsCatalog? catalog,
+  required Set<String> installedModelIds,
+  required List<String> systemVoiceLanguages,
+}) {
+  final base = LanguageModelChoices.baseLanguage(language);
+  bool serves(Map<String, dynamic> model) {
+    final tags = model['languages'];
+    return tags is List &&
+        tags.any((tag) => LanguageModelChoices.baseLanguage('$tag') == base);
+  }
+
+  final servedPiper = <String>{};
+  var servesOnline = false;
+  for (final model in catalog?.models ?? const <Map<String, dynamic>>[]) {
+    if (!serves(model)) continue;
+    if (model['engine'] == 'edge') {
+      servesOnline = true;
+    } else if (model['id'] is String) {
+      servedPiper.add(model['id'] as String);
+    }
+  }
+  final result = <TtsSelection>[];
+  void add(TtsSelection candidate) {
+    if (!result.any((existing) => existing.representsSameRequest(candidate))) {
+      result.add(candidate);
+    }
+  }
+
+  // Same selections the Models screen stores per language.
+  for (final id in servedPiper) {
+    if (installedModelIds.contains(id)) {
+      add(TtsSelection(engine: 'piper', modelId: id));
+    }
+  }
+  if (systemVoiceLanguages.any(
+    (tag) => LanguageModelChoices.baseLanguage(tag) == base,
+  )) {
+    add(TtsSelection.system);
+  }
+  if (servesOnline && preferences.allowOnlineFallback) add(TtsSelection.edge);
+  final hasNoModel = result.isEmpty;
+  if (!result.any((s) => s.representsSameRequest(preferences.primary))) {
+    result.insert(0, preferences.primary);
+  }
+  return (choices: result, hasNoModel: hasNoModel);
+}
+
 /// One command of the reader overflow menu. A [tool] entry becomes the recent
 /// tool when chosen; an entry without one is a plain command.
 class ReaderMenuEntry {
@@ -111,6 +197,8 @@ class ReaderMenuEntry {
 /// one, then the narration models with the active one marked. A different
 /// model is saved before [onChanged] runs; choosing the active model does
 /// nothing.
+const Object _openModels = 'open-models';
+
 class ReaderNarrationMenu extends ConsumerWidget {
   const ReaderNarrationMenu({
     super.key,
@@ -118,7 +206,13 @@ class ReaderNarrationMenu extends ConsumerWidget {
     this.onChanged,
     this.currentSentence,
     this.entries = const [],
+    this.bookId,
   });
+
+  /// The open book; its language narrows the narration list to what is ready
+  /// for it. Without it (or when the language is unknown) the whole catalog
+  /// list is shown.
+  final String? bookId;
 
   final Color? color;
 
@@ -147,18 +241,49 @@ class ReaderNarrationMenu extends ConsumerWidget {
     final recommended =
         catalog?.recommendedPreferences ?? const TtsPreferences.appDefaults();
     final preferences = settings.configuredTtsPreferences ?? recommended;
-    final choices = readerNarrationChoices(
-      preferences: preferences,
-      recommended: recommended,
-      catalog: catalog,
-      installedModelIds: installed,
-    );
+    final language = bookId == null
+        ? null
+        : ref.watch(readerBookLanguageProvider(bookId!)).asData?.value;
+    // Only a known book language needs the platform's voices.
+    final systemVoices = language == null
+        ? const <String>[]
+        : ref.watch(systemVoiceLanguagesProvider).asData?.value ??
+              const <String>[];
+    final forLanguage = language == null
+        ? null
+        : readerNarrationChoicesForLanguage(
+            language: language,
+            preferences: preferences,
+            catalog: catalog,
+            installedModelIds: installed,
+            systemVoiceLanguages: systemVoices,
+          );
+    final choices =
+        forLanguage?.choices ??
+        readerNarrationChoices(
+          preferences: preferences,
+          recommended: recommended,
+          catalog: catalog,
+          installedModelIds: installed,
+        );
+    // Nothing is ready for the book's language: lead to the Models screen on it.
+    final onlyActive = forLanguage?.hasNoModel ?? false;
 
     return PopupMenuButton<Object>(
       key: const ValueKey('reader-overflow-menu'),
       icon: Icon(Icons.more_vert, color: color),
       tooltip: MaterialLocalizations.of(context).showMenuTooltip,
       onSelected: (value) async {
+        if (value == _openModels) {
+          if (language != null) {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ModelsScreen(initialLanguage: language),
+              ),
+            );
+          }
+          return;
+        }
         if (value is ReaderMenuEntry) {
           final tool = value.tool;
           if (tool != null) {
@@ -173,6 +298,12 @@ class ReaderNarrationMenu extends ConsumerWidget {
         await ref
             .read(settingsProvider.notifier)
             .setTtsPreferences(preferences.withPrimary(selected));
+        // The language's persisted choice follows the live switch.
+        if (language != null) {
+          ref
+              .read(languageModelChoicesProvider.notifier)
+              .choose(language, selected);
+        }
         await onChanged?.call(selected, sentence);
       },
       itemBuilder: (_) => [
@@ -200,6 +331,19 @@ class ReaderNarrationMenu extends ConsumerWidget {
             checked: choices[index].representsSameRequest(preferences.primary),
             child: Text(ttsSelectionLabel(t, choices[index])),
           ),
+        if (onlyActive) ...[
+          const PopupMenuDivider(),
+          PopupMenuItem<Object>(
+            enabled: false,
+            key: const ValueKey('narration-missing'),
+            child: Text(t.modelsMissingTitle(languageEndonym(language!))),
+          ),
+          PopupMenuItem<Object>(
+            key: const ValueKey('reader-menu-open-models'),
+            value: _openModels,
+            child: Text(t.modelsMissingAction),
+          ),
+        ],
       ],
     );
   }
