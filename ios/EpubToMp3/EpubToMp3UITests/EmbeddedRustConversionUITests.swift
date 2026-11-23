@@ -48,7 +48,9 @@ final class TtsPreferencesUITests: XCTestCase {
     func testSettingsAndManualOverrideAreReachableAndKeepDefaultsSeparate() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTestFixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        // Isolated settings: this test changes narration and consent and must not touch the real app's preferences.
+        app.launchArguments = ["-uiTestFixture", "-uiTestIsolatedSettings",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 10))
         app.tabBars.buttons["Settings"].tap()

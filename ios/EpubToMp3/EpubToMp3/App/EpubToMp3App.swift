@@ -15,7 +15,7 @@ private typealias PlatformApplicationDelegate = UIApplicationDelegate
 
 @MainActor
 final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
-    let settings = AppSettings()
+    let settings = AppSettings(defaults: SettingsDefaultsSource.resolve())
     let library: LibraryStore
     let player = AudioPlayer()
     let playerPresentation = PlayerPresentation()
