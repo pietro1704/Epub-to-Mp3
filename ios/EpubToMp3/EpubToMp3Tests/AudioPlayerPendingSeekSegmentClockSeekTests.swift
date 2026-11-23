@@ -114,6 +114,53 @@ extension AudioPlayerPendingSeekTests {
         }
     }
 
+    // SKIP-BACK-15S: a backward skip that leaves the generated audio restarts from the estimated text position
+    // instead of loading forever; inside the retained audio it seeks there, and repeated taps accumulate.
+    @MainActor
+    func testSkipBackwardBeforeTheGeneratedOriginRestartsFromTheEstimatedTextPosition() async throws {
+        try await withPlayingFixture(streaming: true) { player, _ in
+            player.pause()
+            player.setSegmentChapterEstimate(180, forChapterIndex: 0, startingRatio: 0.5)
+            let origin = player.services.segments.startingPosition(for: 0)
+            XCTAssertEqual(origin, 90, accuracy: 0.1)
+            player.seek(to: origin + 5)
+            try await self.waitForNavigation(player)
+            player.skipBackward(seconds: 15)
+            for _ in 0..<40 where player.pendingNavigation == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+            guard case .approximateTime(let ratio)? = player.pendingNavigation?.target else {
+                return XCTFail("The skip must request a restart from the estimated position, got \(String(describing: player.pendingNavigation))")
+            }
+            XCTAssertEqual(ratio, (origin + 5 - 15) / 180, accuracy: 0.01)
+            XCTAssertTrue(player.isSeeking)
+        }
+    }
+
+    @MainActor
+    func testRepeatedBackwardSkipsInsideTheRetainedAudioAccumulate() async throws {
+        try await withPlayingFixture(streaming: true) { player, _ in
+            player.pause()
+            player.seek(to: 65)
+            try await self.waitForNavigation(player)
+            player.skipBackward(seconds: 15)
+            player.skipBackward(seconds: 15)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.positionSeconds, 35, accuracy: 0.2)
+            XCTAssertFalse(player.isPlaying)
+        }
+    }
+
+    @MainActor
+    func testBackwardSkipNearTheChapterStartLandsAtTheStartWithoutLoadingForever() async throws {
+        try await withPlayingFixture(streaming: true) { player, _ in
+            player.pause()
+            player.seek(to: 10)
+            try await self.waitForNavigation(player)
+            player.skipBackward(seconds: 15)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.positionSeconds, 0, accuracy: 0.2)
+        }
+    }
+
     @MainActor
     func testSkipForwardCrossesSegmentsUsingChapterClockAndPreservesPause() async throws {
         try await withPlayingFixture(streaming: true) { player, _ in

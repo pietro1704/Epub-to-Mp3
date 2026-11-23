@@ -43,6 +43,16 @@ final class DeviceSelectionTests: XCTestCase {
         XCTAssertEqual(options.expectedTestCount, 2)
     }
 
+    func testSkipBackRegressionsAreAuditedAsExactMethods() throws {
+        let prefix = "EpubToMp3Tests/AudioPlayerPendingSeekTests/"
+        let names = ["testSkipBackwardBeforeTheGeneratedOriginRestartsFromTheEstimatedTextPosition",
+                     "testRepeatedBackwardSkipsInsideTheRetainedAudioAccumulate",
+                     "testBackwardSkipNearTheChapterStartLandsAtTheStartWithoutLoadingForever"].map { prefix + $0 }
+        let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": names.joined(separator: ",")])
+        XCTAssertEqual(options.testFilters, names)
+        XCTAssertEqual(options.expectedTestCount, 3)
+    }
+
     func testExactMethodSelectorRemainsLiteral() throws {
         let selector = "EpubToMp3Tests/ReaderViewportTransitionTests/testCancelInvalidatesOutstandingToken"
         let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": selector])
