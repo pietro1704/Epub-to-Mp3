@@ -101,8 +101,18 @@ jobs:
           key: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.android-flutter.outputs.version }}-java-${{ steps.android-java.outputs.version }}-${{ hashFiles('flutter_app/android/**/*.gradle.kts', 'flutter_app/android/gradle.properties', 'flutter_app/android/gradle/wrapper/gradle-wrapper.properties', 'flutter_app/pubspec.lock') }}
           restore-keys: android-jvm-downloads-${{ runner.os }}-${{ runner.arch }}-flutter-${{ steps.android-flutter.outputs.version }}-
 
+      - name: Identify the runner image for the apt package cache
+        id: apt-image
+        run: echo "image=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Cache downloaded apt packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt-image.outputs.image }}-clang-recommends-build
       - name: Install native Android prerequisites
         timeout-minutes: 12
+        env:
+          CI_APT_ARCHIVES: ${{ runner.temp }}/apt-archives
         run: |
           bash scripts/ci_apt_install.sh --install-recommends clang libclang-dev cmake pkg-config
           sdk_manager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"

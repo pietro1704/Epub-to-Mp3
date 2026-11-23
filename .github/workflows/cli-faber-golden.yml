@@ -15,8 +15,9 @@ jobs:
   packaged-cli:
     name: Public packaged CLI offline Faber
     runs-on: ubuntu-24.04
-    # 15 min for apt on a slow mirror plus the single-job build and golden run.
-    timeout-minutes: 45
+    # Up to 22 min for apt (two 10 min attempts; audit p90 is 7.5-8.5 min) plus the
+    # single-job build and golden run.
+    timeout-minutes: 52
     env:
       MISE_ENABLE_TOOLS: rust,ruby
       ORT_PREFER_DYNAMIC_LINK: '1'
@@ -43,11 +44,23 @@ jobs:
       # its libav*/codec libraries (about 87 of the 94 packages, 62 of 105 MB), which
       # --no-install-recommends cannot drop. The same 105 MB took from 3 s to more than the
       # old 7-minute bound (6 of 17 post-merge runs), so the bound covers a slow mirror.
+      - name: Identify the runner image for the apt package cache
+        id: apt-image
+        run: echo "image=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Cache downloaded apt packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: apt-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt-image.outputs.image }}-cli-ffmpeg-build
       - name: Install native build and full audio decoding prerequisites
-        timeout-minutes: 15
+        timeout-minutes: 22
+        env:
+          CI_APT_ARCHIVES: ${{ runner.temp }}/apt-archives
+          CI_APT_ATTEMPTS: '2'
+          CI_APT_ATTEMPT_TIMEOUT: '600'
         run: |
           set -euo pipefail
-          CI_APT_ATTEMPT_TIMEOUT=270 bash scripts/ci_apt_install.sh \
+          bash scripts/ci_apt_install.sh \
             clang libclang-dev cmake pkg-config ffmpeg unzip binutils libpcaudio-dev libsonic-dev
       - name: Test real ELF dependency relocation and rejection boundaries
         run: |
