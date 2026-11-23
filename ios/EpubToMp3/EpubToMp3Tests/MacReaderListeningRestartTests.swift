@@ -231,6 +231,63 @@ final class MacReaderListeningRestartTests: XCTestCase {
         XCTAssertEqual(player.snapshot?.jobId, submissions.first?.jobID)
     }
 
+    func testTimelineSeekRestartsMacListeningWithoutLosingPauseOrRequestIdentity() async throws {
+        let suite = "mac-listening-seek-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let library = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: root)
+        let source = try EpubFixture.createWithChapters(["First paragraph. A later paragraph."])
+        let book = try library.importBook(from: source)
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let location = player.location
+        location.setReadingBook(book.id)
+        location.setReaderAnchor(chapter: 0, pageRatio: 0.6)
+        let started = expectation(description: "Original listening job")
+        let restarted = expectation(description: "Chapter-timeline job")
+        var conversions: [CheckedContinuation<RustConversionCoordinator.Result, Error>] = []
+        var jobs: [String] = []
+        var firstControl: ConverterPlaybackControl?
+        let session = MacReaderPlaybackSession(settings: AppSettings(defaults: defaults), library: library,
+            player: player, playerPresentation: PlayerPresentation(defaults: defaults),
+            conversionExecutor: { _, jobID, chapter, _, control, _, _, _, _ in
+                XCTAssertEqual(chapter, 0)
+                jobs.append(jobID)
+                return try await withCheckedThrowingContinuation { continuation in
+                    conversions.append(continuation)
+                    if jobs.count == 1 {
+                        firstControl = control
+                        started.fulfill()
+                    } else if jobs.count == 2 {
+                        restarted.fulfill()
+                    }
+                }
+            })
+        defer {
+            session.cancel()
+            conversions.forEach { $0.resume(throwing: CancellationError()) }
+            defaults.removePersistentDomain(forName: suite)
+            for url in [root, source] { try? FileManager.default.removeItem(at: url) }
+        }
+
+        session.start(owner: self)
+        await fulfillment(of: [started], timeout: 5)
+        let originalJob = try XCTUnwrap(jobs.first)
+        let request = PendingPlaybackSeek.ChapterRequest(id: UUID(), jobID: originalJob,
+            chapterIndex: 0, autoplay: false, position: 12)
+        player.restoreListeningSeek(request, jobID: originalJob)
+        await fulfillment(of: [restarted], timeout: 5)
+
+        let replacementJob = try XCTUnwrap(jobs.last)
+        XCTAssertNotEqual(replacementJob, originalJob)
+        XCTAssertTrue(try XCTUnwrap(firstControl).isCancellationRequested)
+        let navigation = try XCTUnwrap(player.pendingNavigation)
+        XCTAssertEqual(navigation.requestID, request.id)
+        XCTAssertEqual(navigation.jobID, replacementJob)
+        XCTAssertEqual(navigation.target, .chapterTime(12))
+        XCTAssertEqual(player.pendingListeningSeek(for: navigation)?.autoplay, false)
+        XCTAssertFalse(player.isPlaying)
+    }
+
     func testNewPageRetiresJobControlAndLateProgressAndAudio() async throws {
         let suite = "mac-listening-restart-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
