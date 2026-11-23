@@ -237,6 +237,21 @@ Before each push, run the checks CI will run:
 Use one feature branch and one PR per coherent change. Start independent changes
 from current `master` and continue them while earlier PRs are open.
 
+Worktrees and disk (Pietro, 2026-11-23, after the Mac fell to 3.8 GiB free):
+- Remove a worktree as soon as its PR merges or closes (`git worktree remove`).
+- For a small task, reuse one of your idle worktrees with `git switch`; do not
+  create a new one. Keep at most six active worktrees per agent.
+- A worktree idle for more than 24 hours keeps no build output: delete
+  `ios/EpubToMp3/.build` and `tools/DeviceWorkflow/.build` (Flutter: `build/`
+  and `.dart_tool/`).
+- Every pushed branch ends in a PR. Do not push branches only to host files.
+- `mise run clean:worktrees` applies these rules: it removes merged or closed
+  worktrees without tracked changes and the build output of idle ones. It
+  refuses while a compiler job holds the lease. Before removing a worktree with
+  tracked changes, save `git diff HEAD --binary` and its untracked sources under
+  `~/Developer/epubtomp3-logs/worktree-backup-<date>/`, and keep the branch.
+- The coordinator alerts below 10 GiB free, and `warn_free_gib` warns at 15.
+
 Never open or leave a PR in draft. Open every PR ready, with squash auto-merge
 enabled; work that is not ready to merge stays local on its branch. A draft is
 never the way to mark a dependent or unfinished change.

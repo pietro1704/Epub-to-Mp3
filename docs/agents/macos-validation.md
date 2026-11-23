@@ -90,7 +90,12 @@ after one Swift edit; four focused suites with `test`: 9. `xcodegen generate`
 takes about 2.5 seconds and does not slow the next warm build (8.6 vs 13.3),
 so it is not skipped.
 
-Do not delete the shared `target/`: a cold release `converter-ffi` build takes
+When disk is low, `target/debug` (deps, build, incremental) is the first
+regenerable cache to delete; the next `cargo test` rebuilds it. Keep
+`target/release`, `target/local-dev` and the device and simulator FFI
+directories while their work is active.
+
+Do not delete the shared `target/` as a whole: a cold release `converter-ffi` build takes
 about 11 minutes and every worktree shares it. `mise run clean:build` removes
 only superseded Xcode DerivedData and keeps `target/`.
 
