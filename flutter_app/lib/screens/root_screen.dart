@@ -30,6 +30,7 @@ class RootScreen extends ConsumerWidget {
     final reader = destination == AppDestination.reader && book != null;
     final chromeVisible = !reader || ref.watch(readerChromeVisibleProvider);
     ref.watch(playbackResumePersistenceProvider);
+    ref.watch(playbackRecencyProvider);
     final selected = destinations.indexOf(destination);
     final labels = [t.libraryTitle, t.settingsTitle, t.convertTitle];
     const icons = [

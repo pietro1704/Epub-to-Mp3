@@ -484,11 +484,11 @@ abstract class AppLocalizations {
   /// **'{n} of {total}'**
   String nOfSteps(int n, int total);
 
-  /// No description provided for @sortLastOpened.
+  /// No description provided for @sortLastPlayed.
   ///
   /// In en, this message translates to:
-  /// **'Last opened'**
-  String get sortLastOpened;
+  /// **'Recently played'**
+  String get sortLastPlayed;
 
   /// No description provided for @sortTitle.
   ///

@@ -224,7 +224,7 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get sortLastOpened => 'Último aberto';
+  String get sortLastPlayed => 'Tocados recentemente';
 
   @override
   String get sortTitle => 'Título';

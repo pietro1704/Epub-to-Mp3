@@ -121,6 +121,16 @@ class LibraryStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Audio of [bookId] became audible: it moves to the front of "Recently
+  /// played". Opening a book never calls this.
+  void recordPlayback(String bookId, {DateTime? at}) {
+    final index = _books.indexWhere((b) => b.id == bookId);
+    if (index < 0) return;
+    _books[index].lastPlayedAt = at ?? DateTime.now();
+    _persist();
+    notifyListeners();
+  }
+
   void update(BookEntity book) {
     final i = _books.indexWhere((b) => b.id == book.id);
     if (i < 0) return;
