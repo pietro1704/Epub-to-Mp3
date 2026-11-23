@@ -54,8 +54,10 @@ class AndroidModelInstallOperations implements ModelInstallOperations {
       'root': root,
       'availableBytes': availableBytes,
     });
-    // Zero is an error (thrown by the channel); -1 is "nothing to recover".
-    if (handle == null || handle <= 0) return null;
+    // Zero is an error (thrown by the channel); -1 is "nothing to recover". Any other
+    // value is a native pointer: with tagged heap pointers (Android 11+ on some devices,
+    // e.g. the SM-X620) it is negative as a signed Long, so the sign says nothing.
+    if (handle == null || handle == 0 || handle == -1) return null;
     return _AndroidOperation(this, handle);
   }
 }
