@@ -299,7 +299,10 @@ fn one_inconclusive_sample_next_to_a_unanimous_language_is_confirmed() {
     let text = ENGLISH.repeat(20);
     let noise = inconclusive_passage();
     let result = analyze_book([text.as_str(), noise.as_str()], Some("en"), &|| false).unwrap();
-    assert_eq!(result.inconclusive_samples, 1, "the fixture must yield exactly one inconclusive sample");
+    assert_eq!(
+        result.inconclusive_samples, 1,
+        "the fixture must yield exactly one inconclusive sample"
+    );
     assert_eq!(result.languages.len(), 1);
     assert_eq!(result.confirmed.as_deref().map(base), Some("en"));
 }
@@ -315,7 +318,10 @@ fn two_inconclusive_samples_still_leave_the_book_unconfirmed() {
         &|| false,
     )
     .unwrap();
-    assert_eq!(result.inconclusive_samples, 2, "the fixture must yield exactly two inconclusive samples");
+    assert_eq!(
+        result.inconclusive_samples, 2,
+        "the fixture must yield exactly two inconclusive samples"
+    );
     assert_eq!(result.languages.len(), 1);
     assert!(result.confirmed.is_none());
 }
@@ -331,7 +337,10 @@ fn diverging_conclusive_languages_stay_unconfirmed_even_with_one_inconclusive_sa
         &|| false,
     )
     .unwrap();
-    assert_eq!(result.inconclusive_samples, 1, "the fixture must yield exactly one inconclusive sample");
+    assert_eq!(
+        result.inconclusive_samples, 1,
+        "the fixture must yield exactly one inconclusive sample"
+    );
     assert_eq!(result.languages.len(), 2);
     assert!(result.confirmed.is_none());
 }

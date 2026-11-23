@@ -282,7 +282,9 @@ pub fn analyze_book<'a>(
     result.languages = languages.into_iter().collect();
     // One inconclusive sample among otherwise unanimous conclusive ones does not
     // make the book uncertain; two or more, or any divergence, still do.
-    if result.languages.len() == 1 && result.inconclusive_samples <= MAX_TOLERATED_INCONCLUSIVE_SAMPLES {
+    if result.languages.len() == 1
+        && result.inconclusive_samples <= MAX_TOLERATED_INCONCLUSIVE_SAMPLES
+    {
         result.confirmed = result.languages.first().cloned();
     }
     Ok(result)
