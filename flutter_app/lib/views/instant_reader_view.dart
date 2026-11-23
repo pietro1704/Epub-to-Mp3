@@ -42,6 +42,9 @@ class InstantReaderView extends ConsumerStatefulWidget {
   )?
   onNarrationChanged;
 
+  /// Starts listening at a position chosen with "Play from here".
+  final Future<void> Function(ReaderListeningPosition position)? onListenFrom;
+
   const InstantReaderView({
     super.key,
     required this.fulltext,
@@ -52,6 +55,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
     this.coverArt,
     this.bookId,
     this.onNarrationChanged,
+    this.onListenFrom,
   });
 
   @override
@@ -382,6 +386,9 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                               .getInt('readPos_offset_${widget.bookId}') ??
                           0
                     : 0),
+            onPlayFromHere: widget.onListenFrom == null
+                ? null
+                : (utf16) => _playFromHere(chapter, utf16),
             onVisibleTextOffset: (offset) {
               _visibleTextOffset = offset ?? _visibleTextOffset;
               final book = widget.bookId;

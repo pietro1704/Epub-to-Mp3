@@ -180,5 +180,6 @@
   "readerNarrationModel": "Narration model",
   "readerFootnotes": "Footnotes",
   "openReaderAtPlayback": "Open in reader",
-  "readerAppearance": "Text appearance"
+  "readerAppearance": "Text appearance",
+  "readerPlayFromHere": "Play from here"
 }

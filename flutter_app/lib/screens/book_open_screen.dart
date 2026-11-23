@@ -144,5 +144,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     onRetry: _load,
     onListeningPosition: (position) => _readerListeningPosition = position,
     onNarrationChanged: _narrationModelChanged,
+    onListenFrom: _listenFrom,
   );
 }
