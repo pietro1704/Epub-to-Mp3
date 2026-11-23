@@ -171,6 +171,10 @@ public struct Options {
                 "testReentrantGeometryChangeInvalidatesItsOwnCommit",
                 "testCancelInvalidatesOutstandingToken",
             ],
+            "BackgroundLockPlaybackDeviceUITests": [
+                "testPlaybackContinuesAtHomeAndLockedAcrossChapterBoundary",
+                "testLOTRGrowingAudioContinuesAtHomeAndLocked",
+            ],
             "ReaderProgressStoreTests": [
                 "testSaveAndReadRoundTrip", "testReadMissingBookReturnsNil", "testOffsetFractionIsClamped",
                 "testNegativeChapterIndexIsClampedForNewAndLegacyProgress",
@@ -190,7 +194,11 @@ public struct Options {
         var expectedCount = 0
         for filter in filters {
             let parts = filter.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-            guard (parts.count == 2 || parts.count == 3), parts[0] == "EpubToMp3Tests",
+            let uiTestClasses: Set<String> = ["BackgroundLockPlaybackDeviceUITests"]
+            let targetMatches = parts.first == "EpubToMp3Tests"
+                ? parts.count > 1 && !uiTestClasses.contains(parts[1])
+                : parts.first == "EpubToMp3UITests" && parts.count > 1 && uiTestClasses.contains(parts[1])
+            guard (parts.count == 2 || parts.count == 3), targetMatches,
                   let methods = allowedMethods[parts[1]], seen.insert(filter).inserted else {
                 throw WorkflowError("IOS_TESTS must contain distinct audited EpubToMp3Tests class or method selectors.")
             }

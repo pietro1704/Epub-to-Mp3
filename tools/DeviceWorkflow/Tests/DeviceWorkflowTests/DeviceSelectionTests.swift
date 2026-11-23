@@ -110,6 +110,21 @@ final class DeviceSelectionTests: XCTestCase {
         }
     }
 
+    func testBackgroundLockUITestAdmitsOnlyItsExactMethodInTheUITestTarget() throws {
+        let method = "testPlaybackContinuesAtHomeAndLockedAcrossChapterBoundary"
+        let selector = "EpubToMp3UITests/BackgroundLockPlaybackDeviceUITests/\(method)"
+        let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": selector])
+        XCTAssertEqual(options.testFilters, [selector])
+        XCTAssertEqual(options.expectedTestCount, 1)
+        for rejected in ["EpubToMp3UITests/BackgroundLockPlaybackDeviceUITests",
+                         "EpubToMp3Tests/BackgroundLockPlaybackDeviceUITests/\(method)",
+                         "EpubToMp3UITests/BackgroundLockPlaybackDeviceUITests/testUnaudited",
+                         "EpubToMp3UITests/ReaderViewportTransitionTests/testCancelInvalidatesOutstandingToken"] {
+            XCTAssertThrowsError(try Options(arguments: ["test"], root: root,
+                                             environment: ["IOS_TESTS": rejected]), rejected)
+        }
+    }
+
     func testRetainedAudioAuditAdmitsOnlyTheIsolatedFixtureMethods() throws {
         let filters = [
             "EpubToMp3Tests/DownloadedAudioFilesMirrorTests/testRedownloadKeepsAFileTheListenerEditedAtTheOriginalPath",
