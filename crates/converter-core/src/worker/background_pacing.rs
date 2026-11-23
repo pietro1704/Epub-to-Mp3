@@ -7,13 +7,16 @@
 //! duty cycle at or below the configured percentage; in the foreground nothing changes.
 
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
 /// Percent of one core the process may use while backgrounded; 0 means unpaced (foreground).
 static BACKGROUND_CPU_LIMIT_PERCENT: AtomicU32 = AtomicU32::new(0);
 
 /// A single rest never exceeds this, so a stale limit cannot freeze a job.
 const MAXIMUM_REST: Duration = Duration::from_secs(60);
+#[cfg(not(target_arch = "wasm32"))]
 const REST_SLICE: Duration = Duration::from_millis(50);
 
 /// Sets the background CPU budget (1..=100 percent of one core) or lifts it with 0. Applies to every running job.
@@ -51,12 +54,28 @@ pub fn rest_for(cpu_used: Duration, wall_elapsed: Duration, limit_percent: u32) 
     needed_wall.saturating_sub(wall_elapsed).min(MAXIMUM_REST)
 }
 
+/// Browser build: there is no on-device synthesis loop to pace (and `Instant`/`sleep` are unavailable on
+/// wasm32-unknown-unknown), so every operation is a no-op.
+#[cfg(target_arch = "wasm32")]
+pub(crate) struct DutyCycle;
+
+#[cfg(target_arch = "wasm32")]
+impl DutyCycle {
+    pub(crate) fn begin() -> Self {
+        Self
+    }
+
+    pub(crate) fn rest_if_backgrounded(&self, _cancelled: &dyn Fn() -> bool) {}
+}
+
 /// Measures one unit of synthesis so the caller can rest afterwards.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct DutyCycle {
     wall: Instant,
     cpu: Option<Duration>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl DutyCycle {
     pub(crate) fn begin() -> Self {
         Self {
@@ -102,7 +121,7 @@ impl DutyCycle {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
