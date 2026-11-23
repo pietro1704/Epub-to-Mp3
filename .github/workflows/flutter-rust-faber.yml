@@ -213,8 +213,8 @@ jobs:
           echo "ORT_DYLIB_PATH=$runtime/libonnxruntime.so" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$runtime" >> "$GITHUB_ENV"
           base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
-          curl --fail --location --retry 3 --max-time 180 "$base/pt_BR-faber-medium.onnx" -o "$owned/models/pt_BR-faber-medium/model.onnx"
-          curl --fail --location --retry 3 --max-time 60 "$base/pt_BR-faber-medium.onnx.json" -o "$owned/models/pt_BR-faber-medium/model.onnx.json"
+          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors --max-time 180 "$base/pt_BR-faber-medium.onnx" -o "$owned/models/pt_BR-faber-medium/model.onnx"
+          curl --fail --location --retry 8 --retry-delay 15 --retry-all-errors --max-time 60 "$base/pt_BR-faber-medium.onnx.json" -o "$owned/models/pt_BR-faber-medium/model.onnx.json"
           printf '%s  %s\n' \
             '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$owned/models/pt_BR-faber-medium/model.onnx" \
             '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$owned/models/pt_BR-faber-medium/model.onnx.json" \
