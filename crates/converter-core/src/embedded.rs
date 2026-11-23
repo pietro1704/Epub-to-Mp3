@@ -54,6 +54,8 @@ pub struct EmbeddedChapterMetadata {
     pub text_chars: usize,
     pub text: String,
     pub level: u32,
+    /// Plain-text footnote bodies linked from this chapter; empty when none.
+    pub footnotes: Vec<crate::epub::Footnote>,
 }
 
 #[derive(Debug, Error)]
@@ -278,6 +280,7 @@ fn metadata_from_book(book: &Book) -> EmbeddedBookMetadata {
                 text_chars: chapter.text.chars().count(),
                 text: chapter.text.clone(),
                 level: chapter.level,
+                footnotes: chapter.footnotes.clone(),
             })
             .collect(),
     }

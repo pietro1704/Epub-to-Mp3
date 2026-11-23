@@ -122,6 +122,29 @@ unsafe fn c_string(value: *const c_char, name: &str) -> Result<String, String> {
         .map_err(|_| format!("{name} must be valid UTF-8"))
 }
 
+/// One chapter of the metadata payload. `footnotes` is additive: the key is
+/// omitted when a chapter has none, so existing consumers see unchanged JSON.
+fn chapter_metadata_json(
+    chapter: &converter_core::embedded::EmbeddedChapterMetadata,
+) -> serde_json::Value {
+    let mut value = json!({
+        "index": chapter.index,
+        "name": chapter.name,
+        "sourcePath": chapter.source_path,
+        "textChars": chapter.text_chars,
+        "text": chapter.text,
+        "level": chapter.level,
+    });
+    if !chapter.footnotes.is_empty() {
+        value["footnotes"] = chapter
+            .footnotes
+            .iter()
+            .map(|note| json!({ "number": note.number, "text": note.text }))
+            .collect();
+    }
+    value
+}
+
 fn metadata_json(
     metadata: &EmbeddedBookMetadata,
     structure: &converter_core::structure::StructureVerification,
@@ -130,14 +153,7 @@ fn metadata_json(
         "title": metadata.title,
         "author": metadata.author,
         "language": metadata.language,
-        "chapters": metadata.chapters.iter().map(|chapter| json!({
-            "index": chapter.index,
-            "name": chapter.name,
-            "sourcePath": chapter.source_path,
-            "textChars": chapter.text_chars,
-            "text": chapter.text,
-            "level": chapter.level,
-        })).collect::<Vec<_>>(),
+        "chapters": metadata.chapters.iter().map(chapter_metadata_json).collect::<Vec<_>>(),
         "structure": {
             "source": format!("{:?}", structure.source),
             "verified": structure.verified,
