@@ -799,13 +799,13 @@ abstract class AppLocalizations {
   /// No description provided for @ttsPrimaryNarration.
   ///
   /// In en, this message translates to:
-  /// **'Primary narration'**
+  /// **'Voice engine'**
   String get ttsPrimaryNarration;
 
   /// No description provided for @ttsSecondaryNarration.
   ///
   /// In en, this message translates to:
-  /// **'Secondary narration'**
+  /// **'Secondary voice'**
   String get ttsSecondaryNarration;
 
   /// No description provided for @ttsFaberOffline.
@@ -873,6 +873,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'If selected voices fail, try an installed system voice. Turn off to use only your selected voices.'**
   String get ttsAutomaticSystemFallbackDescription;
+
+  /// No description provided for @ttsEngineSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System voice'**
+  String get ttsEngineSystem;
+
+  /// No description provided for @ttsEnginePiper.
+  ///
+  /// In en, this message translates to:
+  /// **'Piper'**
+  String get ttsEnginePiper;
+
+  /// No description provided for @ttsEngineEdge.
+  ///
+  /// In en, this message translates to:
+  /// **'Edge (online)'**
+  String get ttsEngineEdge;
+
+  /// No description provided for @ttsVoiceBookLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Book language'**
+  String get ttsVoiceBookLanguage;
+
+  /// No description provided for @ttsVoiceSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed system voice'**
+  String get ttsVoiceSystem;
+
+  /// No description provided for @ttsVoiceEdge.
+  ///
+  /// In en, this message translates to:
+  /// **'Online speech'**
+  String get ttsVoiceEdge;
 
   /// No description provided for @ttsUsePreferences.
   ///

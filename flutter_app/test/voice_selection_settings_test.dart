@@ -114,32 +114,42 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final primary = find.byType(DropdownButtonFormField<String>).first;
-    final secondary = find.byType(DropdownButtonFormField<String>).last;
-    final lowLabel = find.text('Piper · $_installedId');
+    final primary = find.byKey(const ValueKey('narration-primary-row'));
+    final secondary = find.byKey(const ValueKey('narration-secondary-row'));
+    final lowLabel = find.text(_installedId);
     final toggle = container.read(showLowQualityModelsProvider.notifier);
     final defaults = TtsSelection.automaticPiper.modelId;
     TtsPreferences current() => AppSettings(prefs).ttsPreferences;
 
+    Future<void> openVoices(Finder row) async {
+      await tester.tap(find.descendant(of: row, matching: find.byType(ListTile)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('narration-engine-piper')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> dismiss() async {
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+    }
+
     expect(converter.catalogReads, 0);
-    await tester.tap(primary);
-    await tester.pumpAndSettle();
+    await openVoices(primary);
     expect(lowLabel, findsNothing);
-    await tester.tapAt(const Offset(5, 550));
-    await tester.pumpAndSettle();
+    await dismiss();
 
     toggle.state = true;
     await tester.pumpAndSettle();
     expect(converter.catalogReads, 1);
-    await tester.tap(secondary);
+    // The secondary voice never offers manual Low models (a single-voice
+    // engine would be chosen on the spot, so only the engines are opened).
+    await tester.tap(find.descendant(of: secondary, matching: find.byType(ListTile)));
     await tester.pumpAndSettle();
     expect(lowLabel, findsNothing);
-    await tester.tapAt(const Offset(5, 550));
-    await tester.pumpAndSettle();
+    await dismiss();
 
     Future<void> selectLow() async {
-      await tester.tap(primary);
-      await tester.pumpAndSettle();
+      await openVoices(primary);
       expect(find.textContaining(_missingId), findsNothing);
       await tester.tap(lowLabel);
       await tester.pumpAndSettle();
@@ -184,19 +194,11 @@ void main() {
 
     toggle.state = false;
     await tester.pumpAndSettle();
-    expect(lowLabel, findsOneWidget);
-    final choices = tester
-        .widget<DropdownButton<String>>(
-          find.descendant(
-            of: primary,
-            matching: find.byType(DropdownButton<String>),
-          ),
-        )
-        .items!;
+    expect(lowLabel, findsOneWidget, reason: 'the saved Low voice stays visible');
+    await openVoices(primary);
     expect(
-      choices
-          .where((item) => item.value!.contains(_installedId))
-          .single
+      tester
+          .widget<ListTile>(find.ancestor(of: lowLabel.last, matching: find.byType(ListTile)))
           .enabled,
       isFalse,
     );

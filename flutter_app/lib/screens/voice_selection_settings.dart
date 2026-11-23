@@ -64,7 +64,6 @@ class _VoiceSelectionSettingsState
     final recommended =
         catalog?.recommendedPreferences ?? const TtsPreferences.appDefaults();
     final preferences = settings.configuredTtsPreferences ?? recommended;
-    final primaryKey = jsonEncode(preferences.primary.toJson());
     final catalogSelections = catalog?.selections() ?? const <TtsSelection>[];
     final showLow = ref.watch(showLowQualityModelsProvider);
     ref.listen(showLowQualityModelsProvider, (_, enabled) {
@@ -112,9 +111,6 @@ class _VoiceSelectionSettingsState
         (selection) => !selection.representsSameRequest(preferences.primary),
       ),
     );
-    String selectionLabel(TtsSelection selection) =>
-        ttsSelectionLabel(t, selection);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -123,42 +119,43 @@ class _VoiceSelectionSettingsState
         Card(
           child: Column(
             children: [
-              DropdownButtonFormField<String>(
-                isExpanded: true,
-                key: ValueKey('primary-$_primaryFieldRevision-$primaryKey'),
-                initialValue: primaryKey,
-                decoration: InputDecoration(labelText: t.ttsPrimaryNarration),
-                items: primaryOptions.entries
-                    .map(
-                      (entry) => DropdownMenuItem(
-                        value: entry.key,
-                        // Edge is online speech: as the primary voice it needs the
-                        // same consent as the online fallback, so it is not offered
-                        // until the user allows it (a saved Edge primary stays).
-                        enabled:
-                            (!entry.value.manualModel ||
-                                (showLow && entry.key != primaryKey)) &&
-                            (entry.value.engine != 'edge' ||
-                                preferences.allowOnlineFallback ||
-                                entry.key == primaryKey),
-                        child: Text(selectionLabel(entry.value)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (key) async {
-                  final selected = primaryOptions[key];
-                  if (selected == null) return;
+              NarrationChoiceRow(
+                key: const ValueKey('narration-primary-row'),
+                label: t.ttsPrimaryNarration,
+                selection: preferences.primary,
+                onTap: () async {
+                  final pick = await showNarrationPicker(
+                    context,
+                    title: t.ttsPrimaryNarration,
+                    options: primaryOptions.values.toList(),
+                    current: preferences.primary,
+                    // Edge is online speech: as the primary voice it needs the
+                    // same consent as the online fallback, so it is not offered
+                    // until the user allows it (a saved Edge primary stays).
+                    enabled: (selection) =>
+                        (!selection.manualModel ||
+                            (showLow &&
+                                !selection.representsSameRequest(
+                                  preferences.primary,
+                                ))) &&
+                        (selection.engine != 'edge' ||
+                            preferences.allowOnlineFallback ||
+                            selection.representsSameRequest(preferences.primary)),
+                  );
+                  final selected = pick?.selection;
+                  if (selected == null || !mounted) return;
+                  if (selected.representsSameRequest(preferences.primary) &&
+                      !selected.manualModel) {
+                    return;
+                  }
                   if (selected.manualModel) {
                     if (manualCatalog != null &&
-                        ref.read(showLowQualityModelsProvider) &&
-                        key != primaryKey) {
+                        ref.read(showLowQualityModelsProvider)) {
                       await _selectManualPrimary(
                         selected.session!,
                         manualCatalog,
                         recommended,
                       );
-                    } else {
-                      setState(() => _primaryFieldRevision++);
                     }
                     return;
                   }
@@ -168,35 +165,26 @@ class _VoiceSelectionSettingsState
                   );
                 },
               ),
-              DropdownButtonFormField<String>(
-                isExpanded: true,
-                key: ValueKey(
-                  'secondary-${jsonEncode(preferences.primary.toJson())}-${jsonEncode(preferences.secondary?.toJson())}',
-                ),
-                initialValue: preferences.secondary == null
-                    ? 'none'
-                    : jsonEncode(preferences.secondary!.toJson()),
-                decoration: InputDecoration(labelText: t.ttsSecondaryNarration),
-                items: [
-                  DropdownMenuItem(
-                    value: 'none',
-                    child: Text(t.ttsNoSecondary),
-                  ),
-                  ...secondaryOptions.entries.map(
-                    (entry) => DropdownMenuItem(
-                      value: entry.key,
-                      enabled:
-                          entry.value.engine != 'edge' ||
-                          preferences.allowOnlineFallback,
-                      child: Text(selectionLabel(entry.value)),
-                    ),
-                  ),
-                ],
-                onChanged: (key) {
-                  notifier.setTtsPreferences(
+              NarrationChoiceRow(
+                key: const ValueKey('narration-secondary-row'),
+                label: t.ttsSecondaryNarration,
+                selection: preferences.secondary,
+                onTap: () async {
+                  final pick = await showNarrationPicker(
+                    context,
+                    title: t.ttsSecondaryNarration,
+                    options: secondaryOptions.values.toList(),
+                    current: preferences.secondary,
+                    allowNone: true,
+                    enabled: (selection) =>
+                        selection.engine != 'edge' ||
+                        preferences.allowOnlineFallback,
+                  );
+                  if (pick == null || !mounted) return;
+                  await notifier.setTtsPreferences(
                     TtsPreferences(
                       primary: preferences.primary,
-                      secondary: secondaryOptions[key],
+                      secondary: pick.selection,
                       allowOnlineFallback: preferences.allowOnlineFallback,
                       // Keep an explicit "no automatic system voice" policy.
                       policyVersion: preferences.policyVersion == 3 ? 3 : 2,

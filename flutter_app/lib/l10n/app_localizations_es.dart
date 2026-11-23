@@ -431,6 +431,24 @@ class AppLocalizationsEs extends AppLocalizations {
       'Si fallan las voces seleccionadas, intenta una voz instalada del sistema. Desactiva para usar solo las voces seleccionadas.';
 
   @override
+  String get ttsEngineSystem => 'Voz del sistema';
+
+  @override
+  String get ttsEnginePiper => 'Piper';
+
+  @override
+  String get ttsEngineEdge => 'Edge (en línea)';
+
+  @override
+  String get ttsVoiceBookLanguage => 'Idioma del libro';
+
+  @override
+  String get ttsVoiceSystem => 'Voz instalada en el sistema';
+
+  @override
+  String get ttsVoiceEdge => 'Voz en línea';
+
+  @override
   String get ttsUsePreferences => 'Usar preferencias de audio';
 
   @override

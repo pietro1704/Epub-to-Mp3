@@ -3,7 +3,6 @@ import '../features/settings/local_audio_storage_screen.dart';
 import '../models/tts_preferences.dart';
 import '../models/tts_catalog.dart';
 import '../models/tts_session_selection.dart';
-import '../views/reader_narration_menu.dart';
 import 'models_screen.dart';
 import '../services/conversion/embedded_converter.dart';
 import '../services/conversion/model_install/model_install_models.dart';
@@ -20,6 +19,7 @@ import '../models/app_settings.dart';
 import '../state/providers.dart';
 
 part 'voice_selection_settings.dart';
+part 'narration_voice_picker.dart';
 part 'installed_narration_models.dart';
 part 'playback_preferences.dart';
 

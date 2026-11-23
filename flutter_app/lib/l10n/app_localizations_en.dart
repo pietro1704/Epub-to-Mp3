@@ -388,10 +388,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get off => 'Off';
 
   @override
-  String get ttsPrimaryNarration => 'Primary narration';
+  String get ttsPrimaryNarration => 'Voice engine';
 
   @override
-  String get ttsSecondaryNarration => 'Secondary narration';
+  String get ttsSecondaryNarration => 'Secondary voice';
 
   @override
   String get ttsFaberOffline => 'Faber medium · Offline';
@@ -428,6 +428,24 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get ttsAutomaticSystemFallbackDescription =>
       'If selected voices fail, try an installed system voice. Turn off to use only your selected voices.';
+
+  @override
+  String get ttsEngineSystem => 'System voice';
+
+  @override
+  String get ttsEnginePiper => 'Piper';
+
+  @override
+  String get ttsEngineEdge => 'Edge (online)';
+
+  @override
+  String get ttsVoiceBookLanguage => 'Book language';
+
+  @override
+  String get ttsVoiceSystem => 'Installed system voice';
+
+  @override
+  String get ttsVoiceEdge => 'Online speech';
 
   @override
   String get ttsUsePreferences => 'Use audio preferences';
