@@ -28,6 +28,7 @@ rusty_mp3 = "1.0.0"
 js-sys = "0.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libc = "0.2"
 unicode-normalization = "0.1"
 pdf-extract = "0.12.1"
 tempfile.workspace = true
