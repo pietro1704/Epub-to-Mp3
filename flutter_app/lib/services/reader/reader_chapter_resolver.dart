@@ -12,7 +12,11 @@ import 'chapter_index_mapper.dart';
 /// — e.g. audio plays EPUB-2 while the reader renders EPUB-1.
 ///
 /// This resolver translates playable → EPUB via `ChapterIndexMapper`
-/// and then looks up the fulltext entry whose `.index` matches. When
+/// and then takes the fulltext chapter at that place in the book. The audio
+/// queue names chapters by their position in `fulltext.chapters`; the parser's
+/// `FulltextChapter.index` is a different identity (1-based for Rust-parsed
+/// books, and not even numeric for nested tables of contents), so it is never
+/// compared with the queue. When
 /// `playableChapters` is empty (typically before audio exists) it
 /// falls back to direct indexing so the user can still read the
 /// book.
@@ -34,9 +38,8 @@ class ReaderChapterResolver {
     final epubIndex = mapper.epubIndexForPlayableIndex(playableIndex);
     if (epubIndex == null) return null;
 
-    for (final c in chapters) {
-      if (c.index == epubIndex) return c;
-    }
-    return null;
+    return epubIndex >= 0 && epubIndex < chapters.length
+        ? chapters[epubIndex]
+        : null;
   }
 }

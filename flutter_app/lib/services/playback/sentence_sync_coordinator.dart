@@ -54,7 +54,11 @@ class SentenceSyncCoordinator {
     if (chapter == null) return;
     _lastFulltext = fulltext;
     _lastPlayableIndex = playableIndex;
-    final duration = _durationForChapter(playableChapters, chapter.index);
+    // The queue is keyed by place in the book, not by FulltextChapter.index.
+    final duration = _durationForChapter(
+      playableChapters,
+      fulltext.chapters.indexOf(chapter),
+    );
     _engine.load(chapter, duration);
   }
 
