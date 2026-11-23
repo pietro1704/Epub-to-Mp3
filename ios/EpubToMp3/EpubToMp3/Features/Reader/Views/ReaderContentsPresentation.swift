@@ -69,7 +69,8 @@ final class ReaderContentsPresentation {
 
     static func makeSheet(book: BookEntity, rows: [ReaderTocRow], library: LibraryStore,
                           settings: AppSettings, snapshot: JobSnapshot?, playingIndex: Int?,
-                          readingIndex: Int?, onSelect: @escaping (Int) -> Void) -> UINavigationController {
+                          readingIndex: Int?, canSelectChapter: @escaping (Int) -> Bool = { _ in true },
+                          onSelect: @escaping (Int) -> Void) -> UINavigationController {
         let downloads = ReaderChapterDownloads(book: book, library: library, settings: settings, snapshot: snapshot)
         let downloadEnabled = book.fileType.supportsAudioConversion
         let scopedSnapshot = snapshot.flatMap {
@@ -86,7 +87,8 @@ final class ReaderContentsPresentation {
             onDownloadAll: downloadEnabled && !rows.isEmpty ? { downloads.start(rows.compactMap(\.chapterIndex)) } : nil,
             onCancelDownloads: downloadEnabled ? { downloads.cancel() } : nil,
             onClearDownloads: downloadEnabled ? { Task { await downloads.remove(chapter: nil) } } : nil,
-            sourceRows: rows, downloadBookID: downloadEnabled ? book.id : nil)
+            sourceRows: rows, downloadBookID: downloadEnabled ? book.id : nil,
+            canSelectChapter: canSelectChapter)
         downloads.controller = controller
         let navigationController = UINavigationController(rootViewController: controller)
         navigationController.modalPresentationStyle = .pageSheet

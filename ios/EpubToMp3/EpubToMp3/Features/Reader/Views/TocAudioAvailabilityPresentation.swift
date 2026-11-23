@@ -16,7 +16,8 @@ enum TocAudioAvailabilityPresentation {
     }
 
     static func configure(_ cell: UITableViewCell, row: Row, isFocused: Bool, tintColor: UIColor,
-                          onDownload: ((Int) -> Void)?, onRemoveDownload: ((Int, String) -> Void)?) {
+                          isSelectable: Bool, onDownload: ((Int) -> Void)?,
+                          onRemoveDownload: ((Int, String) -> Void)?) {
         var content = cell.defaultContentConfiguration()
         content.text = row.title
         var secondary: [String] = []
@@ -33,7 +34,7 @@ enum TocAudioAvailabilityPresentation {
         ),
                   let status = TocChapterPresentation.schedulerStatusText(for: row.schedulerState) {
             secondary.append(status)
-        } else if !row.audioReady && row.zeroBasedIndex >= 0 {
+        } else if (!row.audioReady || !isSelectable) && row.zeroBasedIndex >= 0 {
             secondary.append(L10n.string("toc.textOnly"))
         }
         content.secondaryText = secondary.joined(separator: " · ")
@@ -56,10 +57,11 @@ enum TocAudioAvailabilityPresentation {
                     artifactState: row.artifactState,
                     schedulerState: row.schedulerState
                 ) ? TocChapterPresentation.schedulerStatusText(for: row.schedulerState) : nil)
-                ?? (row.audioReady ? L10n.string("player.downloadChapter") : L10n.string("toc.textOnly")))
-        cell.selectionStyle = .default
+                ?? (row.audioReady && isSelectable ? L10n.string("player.downloadChapter") : L10n.string("toc.textOnly")))
+        cell.selectionStyle = isSelectable ? .default : .none
         cell.isUserInteractionEnabled = true
-        cell.accessibilityTraits = row.zeroBasedIndex < 0 ? .header : (row.isCurrent ? [.button, .selected] : .button)
+        cell.accessibilityTraits = row.zeroBasedIndex < 0 ? .header : (isSelectable ? .button : .staticText)
+        if row.isCurrent { cell.accessibilityTraits.insert(.selected) }
     }
 
     static func makeAccessoryView(for row: Row, onDownload: ((Int) -> Void)?, onRemoveDownload: ((Int, String) -> Void)?) -> UIView? {

@@ -26,6 +26,7 @@ final class TocScreenController: UITableViewController {
     private var isVisible = false
     private let sourceRows: [ReaderTocRow]?
     private let downloadBookID: String?
+    private let canSelectChapter: (Int) -> Bool
 
     init(
         fulltext: EbookFulltext?,
@@ -41,7 +42,8 @@ final class TocScreenController: UITableViewController {
         onRetryFailed: (() -> Void)? = nil,
         onExport: (() -> Void)? = nil,
         sourceRows: [ReaderTocRow]? = nil,
-        downloadBookID: String? = nil
+        downloadBookID: String? = nil,
+        canSelectChapter: @escaping (Int) -> Bool = { _ in true }
     ) {
         self.fulltext = fulltext
         self.snapshot = snapshot
@@ -57,6 +59,7 @@ final class TocScreenController: UITableViewController {
         self.onExport = onExport
         self.sourceRows = sourceRows
         self.downloadBookID = downloadBookID
+        self.canSelectChapter = canSelectChapter
         super.init(style: .plain)
         title = L10n.string("player.chapters")
     }
@@ -159,16 +162,32 @@ final class TocScreenController: UITableViewController {
         }
         TocAudioAvailabilityPresentation.configure(
             cell, row: row, isFocused: isFocused, tintColor: view.tintColor,
+            isSelectable: isSelectable(row.zeroBasedIndex),
             onDownload: row.zeroBasedIndex >= 0 ? onDownload : nil, onRemoveDownload: removeAction
         )
         return cell
     }
 
+    override func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        selectionTarget(at: indexPath) == nil ? nil : indexPath
+    }
+
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard rows.indices.contains(indexPath.row), rows[indexPath.row].zeroBasedIndex >= 0 else { return }
-        onJump(rows[indexPath.row].zeroBasedIndex)
+        guard let chapter = selectionTarget(at: indexPath) else { return }
+        onJump(chapter)
         dismiss(animated: true)
+    }
+
+    private func selectionTarget(at indexPath: IndexPath) -> Int? {
+        let rows = rows
+        guard rows.indices.contains(indexPath.row) else { return nil }
+        let chapter = rows[indexPath.row].zeroBasedIndex
+        return isSelectable(chapter) ? chapter : nil
+    }
+
+    private func isSelectable(_ chapter: Int) -> Bool {
+        chapter >= 0 && canSelectChapter(chapter)
     }
 
     private var rows: [Row] {
