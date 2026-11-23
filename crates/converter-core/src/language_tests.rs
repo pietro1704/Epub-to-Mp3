@@ -280,3 +280,67 @@ fn automatic_piper_extended_catalog_has_installable_language_defaults() {
         }));
     }
 }
+
+/// One run of unreadable Latin text shorter than a sample: exactly one inconclusive sample.
+fn inconclusive_passage() -> String {
+    "Xqvz krpt qtxz wvrq psxz rqjk qzwr xkqr ".repeat(20)
+}
+
+#[test]
+fn unanimous_book_without_inconclusive_samples_is_confirmed() {
+    let text = ENGLISH.repeat(20);
+    let result = analyze_book([text.as_str()], Some("pt-BR"), &|| false).unwrap();
+    assert_eq!(result.inconclusive_samples, 0);
+    assert_eq!(result.confirmed.as_deref(), Some("en-US"));
+}
+
+#[test]
+fn one_inconclusive_sample_next_to_a_unanimous_language_is_confirmed() {
+    let text = ENGLISH.repeat(20);
+    let noise = inconclusive_passage();
+    let result = analyze_book([text.as_str(), noise.as_str()], Some("en"), &|| false).unwrap();
+    assert_eq!(
+        result.inconclusive_samples, 1,
+        "the fixture must yield exactly one inconclusive sample"
+    );
+    assert_eq!(result.languages.len(), 1);
+    assert_eq!(result.confirmed.as_deref().map(base), Some("en"));
+}
+
+#[test]
+fn two_inconclusive_samples_still_leave_the_book_unconfirmed() {
+    let text = ENGLISH.repeat(20);
+    let noise = inconclusive_passage();
+    let more_noise = inconclusive_passage().replace('X', "J");
+    let result = analyze_book(
+        [text.as_str(), noise.as_str(), more_noise.as_str()],
+        Some("en"),
+        &|| false,
+    )
+    .unwrap();
+    assert_eq!(
+        result.inconclusive_samples, 2,
+        "the fixture must yield exactly two inconclusive samples"
+    );
+    assert_eq!(result.languages.len(), 1);
+    assert!(result.confirmed.is_none());
+}
+
+#[test]
+fn diverging_conclusive_languages_stay_unconfirmed_even_with_one_inconclusive_sample() {
+    let english = ENGLISH.repeat(12);
+    let portuguese = PORTUGUESE.repeat(12);
+    let noise = inconclusive_passage();
+    let result = analyze_book(
+        [english.as_str(), portuguese.as_str(), noise.as_str()],
+        Some("en"),
+        &|| false,
+    )
+    .unwrap();
+    assert_eq!(
+        result.inconclusive_samples, 1,
+        "the fixture must yield exactly one inconclusive sample"
+    );
+    assert_eq!(result.languages.len(), 2);
+    assert!(result.confirmed.is_none());
+}
