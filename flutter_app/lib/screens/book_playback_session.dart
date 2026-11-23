@@ -89,10 +89,14 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
   /// A new narration model applies immediately while listening: a fresh job
   /// starts at the reader's current position and captures the saved model.
   /// Idle readers only persist the choice; the next listen uses it.
-  Future<void> _narrationModelChanged(TtsSelection selection) async {
+  Future<void> _narrationModelChanged(
+    TtsSelection selection,
+    ReaderListeningPosition? sentence,
+  ) async {
     final player = ref.read(globalAudioPlayerProvider);
     final playerIndex = player.currentIndexValue;
     final position = narrationSwitchRestartPosition(
+      sentence: sentence,
       position: _readerListeningPosition ?? _activeListeningStart,
       playingChapter: player.isPlaying && playerIndex != null
           ? _sourceChapterIndexForPlayerIndex(player, playerIndex)
@@ -103,7 +107,7 @@ mixin BookPlaybackSession on ConsumerState<BookOpenScreen>, BookContentSession {
     );
     debugPrint(
       'BookOpenScreen: narration switch playing=${player.isPlaying} '
-      'converting=$_isConverting readerPosition=${_readerListeningPosition?.chapterIndex}:'
+      'converting=$_isConverting sentence=${sentence?.chapterIndex}:${sentence?.textOffset} readerPosition=${_readerListeningPosition?.chapterIndex}:'
       '${_readerListeningPosition?.textOffset} restart=${position?.chapterIndex}:${position?.textOffset}',
     );
     if (!mounted || position == null) return;

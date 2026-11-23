@@ -1,3 +1,6 @@
+import 'dart:ui' show TextRange;
+
+import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/models/reader_listening_position.dart';
 import 'package:flutter_app/services/reader/narration_switch_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,6 +73,109 @@ void main() {
         supportsPositionedStart: true,
       ),
       same(position),
+    );
+  });
+
+  _liveSentenceTests();
+  _estimateTests();
+
+  test('the sentence being read wins over chapter and reader position', () {
+    const sentence = ReaderListeningPosition(5, 321);
+    expect(
+      narrationSwitchRestartPosition(
+        sentence: sentence,
+        position: position,
+        playingChapter: 5,
+        listening: true,
+        supportsPositionedStart: true,
+      ),
+      same(sentence),
+    );
+    expect(
+      narrationSwitchRestartPosition(
+        sentence: sentence,
+        position: position,
+        playingChapter: 5,
+        listening: false,
+        supportsPositionedStart: true,
+      ),
+      isNull,
+      reason: 'nothing playing: only the choice is saved',
+    );
+  });
+}
+
+
+void _estimateTests() {
+  final chapter = FulltextChapter(
+    index: 1,
+    text: 'One here now. Two comes next. Three follows after. Four ends it.',
+  );
+
+  test('estimate picks the sentence at the same fraction of the text', () {
+    final start = estimatedSentenceStart(
+      chapter: chapter,
+      seconds: 5,
+      durationSeconds: 10,
+    );
+    expect(start?.chapterIndex, 1);
+    final spoken = String.fromCharCodes(chapter.text.runes.skip(start!.textOffset));
+    expect(spoken.startsWith('Three') || spoken.startsWith('Two'), isTrue);
+  });
+
+  test('estimate starts at the first sentence at time zero', () {
+    final start = estimatedSentenceStart(chapter: chapter, seconds: 0, durationSeconds: 10);
+    expect(start?.textOffset, 0);
+  });
+
+  test('estimate is null without a known duration', () {
+    expect(estimatedSentenceStart(chapter: chapter, seconds: 4, durationSeconds: 0), isNull);
+    expect(estimatedSentenceStart(chapter: chapter, seconds: double.nan, durationSeconds: 10), isNull);
+  });
+}
+
+void _liveSentenceTests() {
+  final chapter = FulltextChapter(
+    index: 2,
+    text: 'First sentence here. Second sentence follows. Third one ends.',
+  );
+
+  test('live sentence start snaps the measured word to its sentence start', () {
+    final second = chapter.text.indexOf('sentence follows');
+    final start = liveSentenceStart(
+      chapter: chapter,
+      measured: TextRange(start: second, end: second + 8),
+      liveSentenceId: null,
+    );
+    expect(start?.chapterIndex, 2);
+    expect(chapter.text.runes.skip(start!.textOffset).take(6), 'Second'.runes);
+  });
+
+  test('live sentence start falls back to the live sentence span', () {
+    final spans = chapter.splitSentences();
+    final second = spans[1];
+    final start = liveSentenceStart(
+      chapter: chapter,
+      measured: null,
+      liveSentenceId: second.id,
+    );
+    expect(start?.chapterIndex, 2);
+    expect(start?.textOffset, second.startChar);
+    expect(chapter.text.runes.skip(start!.textOffset).take(6), 'Second'.runes);
+  });
+
+  test('live sentence start is null without audible text or outside it', () {
+    expect(
+      liveSentenceStart(chapter: chapter, measured: null, liveSentenceId: null),
+      isNull,
+    );
+    expect(
+      liveSentenceStart(
+        chapter: chapter,
+        measured: const TextRange(start: 9999, end: 10000),
+        liveSentenceId: null,
+      ),
+      isNull,
     );
   });
 }

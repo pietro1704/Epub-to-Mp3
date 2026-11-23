@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/models/reader_listening_position.dart';
 import 'package:flutter_app/models/tts_catalog.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/state/providers.dart';
@@ -10,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 Future<ProviderContainer> _pumpMenu(
   WidgetTester tester, {
+  ReaderListeningPosition? sentence,
+  List<ReaderListeningPosition?>? sentences,
   Map<String, Object> seed = const {},
   Set<String> installed = const {'pt_BR-faber-medium'},
   required List<TtsSelection> changes,
@@ -38,7 +41,11 @@ Future<ProviderContainer> _pumpMenu(
           appBar: AppBar(
             actions: [
               ReaderNarrationMenu(
-                onChanged: (selection) async => changes.add(selection),
+                currentSentence: () async => sentence,
+                onChanged: (selection, atSentence) async {
+                  changes.add(selection);
+                  sentences?.add(atSentence);
+                },
               ),
             ],
           ),
@@ -100,6 +107,22 @@ void main() {
     expect(_checked(tester)['System voice · Offline fallback'], isTrue);
     expect(_checked(tester)['Piper · Book language'], isFalse,
         reason: 'the previous model stays selectable so the user can go back');
+  });
+
+  testWidgets('a switch reports the sentence being read at the tap', (tester) async {
+    final changes = <TtsSelection>[];
+    final sentences = <ReaderListeningPosition?>[];
+    const sentence = ReaderListeningPosition(4, 88);
+    await _pumpMenu(
+      tester,
+      sentence: sentence,
+      sentences: sentences,
+      changes: changes,
+    );
+    await _openMenu(tester);
+    await tester.tap(find.text('System voice · Offline fallback'));
+    await tester.pumpAndSettle();
+    expect(sentences, [sentence]);
   });
 
   testWidgets('choosing the active model changes nothing', (tester) async {
