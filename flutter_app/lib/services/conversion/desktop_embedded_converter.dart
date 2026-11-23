@@ -12,6 +12,8 @@ import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 
 import '../../models/ebook_fulltext.dart';
+import '../../models/language_model_resolution.dart';
+import 'desktop_language_model_bindings.dart';
 import 'embedded_converter.dart';
 import '../playback/growing_chapter_audio_source.dart';
 import '../playback/listening_schedule.dart';
@@ -87,6 +89,32 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter
 
   @override
   Future<String> ttsModels() async => _models.modelsJson();
+
+  late final DesktopLanguageModelBindings _languageModels =
+      DesktopLanguageModelBindings(library: _library);
+
+  @override
+  Future<List<TtsCatalogLanguage>> ttsCatalogLanguages() async =>
+      TtsCatalogLanguage.parseAll(
+        _languageModels.catalogLanguagesJson(
+          platform: Platform.isWindows ? 'windows' : 'linux',
+        ),
+      );
+
+  @override
+  Future<LanguageModelResolution> resolveLanguageModel(
+    LanguageModelRequest request,
+  ) async => LanguageModelResolution.parse(
+    _languageModels.resolveJson(jsonEncode(request.toJson())),
+  );
+
+  @override
+  Future<BookLanguageAnalysis> bookLanguage(String path) async {
+    _requireWorkerLibrary();
+    return BookLanguageAnalysis.parse(
+      await bookLanguageJsonInIsolate(_libraryPath, path),
+    );
+  }
 
   @override
   Future<String> ttsManualModels({required String root}) async {
