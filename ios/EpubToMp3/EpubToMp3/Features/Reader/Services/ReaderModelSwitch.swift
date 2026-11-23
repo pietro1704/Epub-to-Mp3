@@ -60,7 +60,10 @@ enum ReaderModelSwitch {
         }
         let hasNoModel = choices.isEmpty
         if !choices.contains(where: \.selected) {
-            choices.insert(.init(selection: picker.selection, title: picker.resolvedTitle ?? picker.selection.modelID ?? TtsSelection.displayName(forEngine: picker.selection.engine) ?? picker.selection.engine,
+            choices.insert(.init(selection: picker.selection, title: picker.resolvedTitle
+                                    ?? SpeechModelPresentationStore.shared.displayName(
+                                        engine: picker.selection.engine, modelID: picker.selection.modelID, voice: picker.selection.voice)
+                                    ?? picker.selection.modelID ?? picker.selection.engine,
                                  selected: true, available: false), at: 0)
         }
         return Content(language: language, choices: choices, hasNoModel: hasNoModel)

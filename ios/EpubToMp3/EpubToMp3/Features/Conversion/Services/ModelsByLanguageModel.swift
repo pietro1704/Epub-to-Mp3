@@ -298,11 +298,24 @@ final class ModelsByLanguageModel: ObservableObject {
         }
     }
 
+    /// The book's language: its groups come first so the screen opens on it.
+    var priorityLanguage: String? {
+        didSet { if oldValue != priorityLanguage { rebuild() } }
+    }
+
     private func rebuild() {
-        state = .make(
+        let made = ModelsByLanguageViewState.make(
             languages: snapshots.map { .init(tag: $0.tag, snapshot: $0.snapshot) },
             choices: settings.languageModelChoices,
             allowOnlineFallback: settings.allowOnlineAudioFallback,
             systemVoiceLanguages: systemVoiceLanguages())
+        guard let focus = priorityLanguage.map(SpeechPreferences.languageKey),
+              let index = made.sections.firstIndex(where: { $0.language == focus }), index > 0 else {
+            state = made
+            return
+        }
+        var sections = made.sections
+        sections.insert(sections.remove(at: index), at: 0)
+        state = ModelsByLanguageViewState(sections: sections)
     }
 }

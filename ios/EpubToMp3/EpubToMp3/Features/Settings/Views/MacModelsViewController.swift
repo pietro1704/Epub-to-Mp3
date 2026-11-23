@@ -32,6 +32,7 @@ final class MacModelsViewController: NSViewController, NSTableViewDataSource, NS
     init(settings: AppSettings, source: ModelsByLanguageSource = SpeechModelsSource(),
          termsAcceptance: SpeechModelTermsAcceptanceStore = .init(), focusLanguage: String? = nil) {
         self.model = ModelsByLanguageModel(source: source, settings: settings, terms: termsAcceptance)
+        self.model.priorityLanguage = focusLanguage
         self.focusLanguage = focusLanguage
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("models.title")
