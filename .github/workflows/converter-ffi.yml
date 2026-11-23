@@ -52,7 +52,6 @@ jobs:
     name: Build converter-ffi native artifacts
     env:
       MISE_ENABLE_TOOLS: rust,ruby
-      CARGO_BUILD_JOBS: '1'
     needs: host-validation
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -106,7 +105,7 @@ jobs:
 
       - name: Build converter-ffi artifact (verification only)
         run: |
-          mise exec -- ruby scripts/native_job.rb build -- cargo build --locked -p converter-ffi --release --jobs 1 --target "${{ matrix.rust_target }}"
+          mise exec -- ruby scripts/native_job.rb build -- cargo build --locked -p converter-ffi --release --target "${{ matrix.rust_target }}"
 
       - name: Verify expected artifact exists
         shell: bash

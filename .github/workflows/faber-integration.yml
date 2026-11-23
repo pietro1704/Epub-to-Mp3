@@ -517,7 +517,7 @@ jobs:
             -project EpubToMp3.xcodeproj
             -scheme EpubToMp3-UnitTests -destination 'platform=macOS'
             -derivedDataPath .build/faber-ci
-            -jobs 1 -parallel-testing-enabled NO
+            -jobs 3 -parallel-testing-enabled NO
             CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
             "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$EPUB2MP3_PIPER_TEST_MODEL_ROOT"
