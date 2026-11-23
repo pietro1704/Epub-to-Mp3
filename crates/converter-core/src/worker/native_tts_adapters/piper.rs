@@ -161,6 +161,9 @@ impl PiperSession {
         let cancel = shared
             .cancel
             .with_timeout(std::time::Duration::from_secs(timeout_seconds));
+        // Local synthesis is pure CPU: while the app is backgrounded the segment is followed by a rest that
+        // keeps the process under the OS background CPU limit (otherwise iOS kills it within a minute).
+        let duty_cycle = super::super::background_pacing::DutyCycle::begin();
         let result = crate::piper::synthesize_selected_model(
             &config,
             segment,
@@ -169,6 +172,7 @@ impl PiperSession {
             runtime,
             self.allows_low_quality,
         );
+        duty_cycle.rest_if_backgrounded(&|| shared.cancel.is_cancelled());
         if shared.cancel.is_cancelled() {
             return Err(WorkerError::Cancelled);
         }

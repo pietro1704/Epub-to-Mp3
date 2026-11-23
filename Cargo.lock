@@ -476,6 +476,7 @@ dependencies = [
  "id3",
  "image",
  "js-sys",
+ "libc",
  "pdf-extract",
  "percent-encoding",
  "quick-xml",
