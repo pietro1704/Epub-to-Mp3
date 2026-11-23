@@ -246,10 +246,14 @@ final class ReaderVoiceChangeTests: XCTestCase {
         let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
             object: nil, queue: .main) { notification in
             MainActor.assumeIsolated {
-                guard let menu = notification.object as? NSMenu, menu.title == L10n.string("settings.voiceModels") else { return }
-                XCTAssertEqual(menu.items.filter { $0.state == .on }.map(\.title), [L10n.string("settings.systemTts")])
-                XCTAssertTrue(menu.items.contains { $0.isEnabled && $0.state == .off && $0.title == "Edge" })
-                XCTAssertTrue(menu.items.contains { $0.title == L10n.string("settings.voiceModelDownloads") })
+                guard let menu = notification.object as? NSMenu, menu.title == L10n.string("models.title") else { return }
+                // The book's language decides the list: the active system voice stays marked, an online
+                // voice is listed only with the online consent, and the Models screen is one item away.
+                XCTAssertEqual(menu.items.filter { $0.state == .on }.map(\.title).count, 1)
+                XCTAssertTrue([L10n.string("settings.systemTts"), L10n.string("models.systemVoice")]
+                    .contains(menu.items.first { $0.state == .on }?.title ?? ""))
+                XCTAssertFalse(menu.items.contains { $0.title == "Edge" }, "Online voices need the consent")
+                XCTAssertTrue(menu.items.contains { $0.title == L10n.string("models.missing.open") })
                 visible.fulfill()
                 let timer = Timer(timeInterval: 0.1, repeats: false) { _ in
                     MainActor.assumeIsolated { menu.cancelTracking() }
@@ -280,4 +284,54 @@ final class ReaderVoiceChangeTests: XCTestCase {
         XCTAssertEqual(selected, [.voiceModels])
     }
 #endif
+
+    // MARK: reader model switch by language
+
+    private func row(_ id: String, _ title: String, _ availability: ModelsByLanguageViewState.Availability,
+                     engine: String = "piper", kind: ModelsByLanguageViewState.Kind = .local) -> ModelsByLanguageViewState.Row {
+        .init(id: id, kind: kind, title: title, detail: "medium",
+              selection: engine == "piper" ? TtsSelection(engine: "piper", modelID: id, voice: nil) : .engineDefault(engine),
+              availability: availability, isChosen: false)
+    }
+
+    func testSwitchListsOnlyReadyModelsOfTheBooksLanguage() {
+        let picker = ReaderVoicePicker(selection: TtsSelection(engine: "piper", modelID: "pt_BR-faber-medium", voice: nil)) { _ in }
+        let content = ReaderModelSwitch.content(language: "pt", rows: [
+            row("pt_BR-faber-medium", "Faber", .ready), row("pt_BR-cadu-medium", "Cadu", .downloadable(bytes: 10)),
+            row("pt_BR-jeff-medium", "Jeff", .unavailable), row("edge", "Edge", .needsConsent, engine: "edge", kind: .online),
+            row("system", "System", .ready, engine: "system"),
+        ], picker: picker)
+        XCTAssertEqual(content.choices.map(\.title), ["Faber", "System"], "Only downloaded models of the language")
+        XCTAssertEqual(content.choices.first?.selected, true)
+        XCTAssertTrue(content.choices.allSatisfy(\.available))
+        XCTAssertFalse(content.hasNoModel)
+        XCTAssertEqual(content.language, "pt")
+    }
+
+    func testSwitchWithNoReadyModelKeepsTheActiveVoiceVisibleAndOffersTheModelsScreen() {
+        let picker = ReaderVoicePicker(selection: TtsSelection(engine: "piper", modelID: "pt_BR-faber-medium", voice: nil),
+                                       resolvedTitle: "Faber") { _ in }
+        let content = ReaderModelSwitch.content(language: "en", rows: [
+            row("en_US-ljspeech-high", "LJ Speech", .downloadable(bytes: 10)),
+        ], picker: picker)
+        XCTAssertTrue(content.hasNoModel, "No model qualifies: the menu leads to the Models screen")
+        XCTAssertEqual(content.choices.map(\.title), ["Faber"])
+        XCTAssertEqual(content.choices.first?.available, false, "The active voice is shown but cannot be re-picked")
+    }
+
+    func testChoosingInTheSwitchKeepsTheLanguageChoiceAndSwitchesImmediately() throws {
+        let suite = "reader-switch-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        var changes: [TtsSelection] = []
+        let picker = ReaderVoicePicker(selection: .systemDefault) { changes.append($0) }
+        let cadu = TtsSelection(engine: "piper", modelID: "pt_BR-cadu-medium", voice: nil)
+        let content = ReaderModelSwitch.content(language: "pt", rows: [row("pt_BR-cadu-medium", "Cadu", .ready)], picker: picker)
+        content.choose(cadu, picker: picker, settings: settings)
+        XCTAssertEqual(changes, [cadu], "The live switch restarts at once through the existing picker")
+        XCTAssertEqual(settings.languageModelChoices["pt"], cadu, "The language's persisted choice follows the switch")
+        content.choose(.systemDefault, picker: picker, settings: settings)
+        XCTAssertEqual(changes, [cadu], "Choosing the active voice changes nothing")
+    }
 }
