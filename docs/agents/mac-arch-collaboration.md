@@ -70,7 +70,7 @@ Pietro set these roles on 2026-11-22. He talks only to `epub-coord`.
 | --- | --- | --- | --- |
 | `epub-coord` | Mac, left pane of the epub tab | Plans, prioritizes the board, writes task cards, dispatches, reviews results and PRs, merges and reports. Runs no native build, Simulator or device job and holds no lease unless Pietro asks. Sole channel to Arch. | Opus, high |
 | `epub-apple` | Mac, right pane | Sole owner of the Apple window, the build lease, Swift/iOS/macOS code, SE1 and the 16e. | Sonnet, high (medium for routine) |
-| `epub-android` | Arch pane in ai-jail | Flutter Linux/Android, adb, Windows through CI, Android signing. | Sonnet, high (medium for routine) |
+| `epub-android` | Arch pane, outside ai-jail (ai-memory only, so it can reach the host adb server) | Flutter Linux/Android, adb, Windows through CI, Android signing. | Sonnet, high (medium for routine) |
 
 A task card states ID, goal, scope, files and worktree, acceptance, verification,
 out-of-scope items and where to record evidence.
@@ -90,8 +90,8 @@ Relaunch commands:
 cd ios/EpubToMp3 && ai-memory run --yolo claude --model opus --effort high
 # epub-apple (Mac)
 cd ios/EpubToMp3 && ai-memory run --yolo claude --model sonnet --effort high
-# epub-android (Arch)
-~/Developer/epubtomp3-overnight-20261121/resume-claude-arch.sh
+# epub-android (Arch): ai-memory run --no-jail, same workstream
+~/Developer/epubtomp3-overnight-20261121/resume-claude-arch-nojail.sh
 ```
 
 ### Native window handback receipt
