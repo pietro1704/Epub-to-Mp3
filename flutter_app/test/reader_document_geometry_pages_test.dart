@@ -35,4 +35,19 @@ void main() {
       reason: 'a page that starts after the last line is blank',
     );
   });
+
+  test('guards also hide the few pixels of ink that pass the edge of the neighbouring line box', () {
+    // Seen on the SM-X620: the tops of ascenders and parentheses of the next line showed
+    // as a dotted sliver under the last whole line.
+    final geometry = ReaderDocumentGeometry(400, [
+      Rect.fromLTWH(0, 90, 100, 20),
+      Rect.fromLTWH(0, 190, 100, 20),
+    ], const []);
+    // Viewport 0..100: the line 90..110 crosses the bottom edge.
+    final (_, bottom) = geometry.edgeGuards(0, 100);
+    expect(bottom, greaterThan(100 - 90));
+    // Viewport 100..200: the line 90..110 crosses the top edge.
+    final (top, _) = geometry.edgeGuards(100, 100);
+    expect(top, greaterThan(110 - 100));
+  });
 }
