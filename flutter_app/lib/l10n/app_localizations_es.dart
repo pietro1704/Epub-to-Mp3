@@ -480,4 +480,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get openReaderAtPlayback => 'Abrir en el lector';
+
+  @override
+  String get readerAppearance => 'Apariencia del texto';
 }

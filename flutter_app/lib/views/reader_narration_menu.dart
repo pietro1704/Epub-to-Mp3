@@ -89,17 +89,41 @@ List<TtsSelection> readerNarrationChoices({
   return result;
 }
 
-/// Reader overflow menu: lists narration models, marks the active one and
-/// persists the choice. [onChanged] runs only after a different model is saved.
+/// One command of the reader overflow menu. A [tool] entry becomes the recent
+/// tool when chosen; an entry without one is a plain command.
+class ReaderMenuEntry {
+  const ReaderMenuEntry({
+    required this.keyName,
+    required this.icon,
+    required this.label,
+    required this.onSelected,
+    this.tool,
+  });
+
+  final String keyName;
+  final IconData icon;
+  final String label;
+  final VoidCallback onSelected;
+  final ReaderTool? tool;
+}
+
+/// Reader overflow menu ("More"): the reader tools that are not the recent
+/// one, then the narration models with the active one marked. A different
+/// model is saved before [onChanged] runs; choosing the active model does
+/// nothing.
 class ReaderNarrationMenu extends ConsumerWidget {
   const ReaderNarrationMenu({
     super.key,
     this.color,
     this.onChanged,
     this.currentSentence,
+    this.entries = const [],
   });
 
   final Color? color;
+
+  /// Tools and commands listed above the narration models.
+  final List<ReaderMenuEntry> entries;
 
   /// Called after a different model is saved, with the sentence that was
   /// being read when it was chosen (null when none is playing).
@@ -130,12 +154,20 @@ class ReaderNarrationMenu extends ConsumerWidget {
       installedModelIds: installed,
     );
 
-    return PopupMenuButton<int>(
+    return PopupMenuButton<Object>(
       key: const ValueKey('reader-overflow-menu'),
       icon: Icon(Icons.more_vert, color: color),
       tooltip: MaterialLocalizations.of(context).showMenuTooltip,
-      onSelected: (index) async {
-        final selected = choices[index];
+      onSelected: (value) async {
+        if (value is ReaderMenuEntry) {
+          final tool = value.tool;
+          if (tool != null) {
+            ref.read(readerRecentToolProvider.notifier).set(tool);
+          }
+          value.onSelected();
+          return;
+        }
+        final selected = choices[value as int];
         if (selected.representsSameRequest(preferences.primary)) return;
         final sentence = await currentSentence?.call();
         await ref
@@ -144,12 +176,25 @@ class ReaderNarrationMenu extends ConsumerWidget {
         await onChanged?.call(selected, sentence);
       },
       itemBuilder: (_) => [
-        PopupMenuItem<int>(
+        for (final entry in entries)
+          PopupMenuItem<Object>(
+            key: ValueKey('reader-menu-${entry.keyName}'),
+            value: entry,
+            child: Row(
+              children: [
+                Icon(entry.icon, size: 20),
+                const SizedBox(width: 12),
+                Flexible(child: Text(entry.label)),
+              ],
+            ),
+          ),
+        if (entries.isNotEmpty) const PopupMenuDivider(),
+        PopupMenuItem<Object>(
           enabled: false,
           child: Text(t.readerNarrationModel),
         ),
         for (var index = 0; index < choices.length; index++)
-          CheckedPopupMenuItem<int>(
+          CheckedPopupMenuItem<Object>(
             key: ValueKey('narration-${jsonEncode(choices[index].toJson())}'),
             value: index,
             checked: choices[index].representsSameRequest(preferences.primary),

@@ -63,8 +63,8 @@ Future<void> _openMenu(WidgetTester tester) async {
 }
 
 Map<String, bool> _checked(WidgetTester tester) => {
-  for (final item in tester.widgetList<CheckedPopupMenuItem<int>>(
-    find.byType(CheckedPopupMenuItem<int>),
+  for (final item in tester.widgetList<CheckedPopupMenuItem<Object>>(
+    find.byType(CheckedPopupMenuItem<Object>),
   ))
     (item.child! as Text).data!: item.checked,
 };

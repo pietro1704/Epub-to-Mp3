@@ -38,6 +38,33 @@ final bookDerivedDataRemoverProvider = Provider<BookDerivedDataRemover>((ref) {
 final readerPlaybackJumpProvider =
     StateProvider<({String bookId, int chapterIndex})?>((ref) => null);
 
+/// Reader tools that can sit beside the overflow menu (Apple `ReaderTool`).
+enum ReaderTool { appearance, contents, search, bookmarks, footnotes }
+
+const _recentToolKey = 'reader.recentTool.v1';
+
+/// The tool shown beside the overflow menu: the one used last, initially the
+/// text appearance. Persisted across launches.
+final readerRecentToolProvider =
+    StateNotifierProvider<_RecentToolNotifier, ReaderTool>((ref) {
+      return _RecentToolNotifier(ref.watch(sharedPrefsProvider));
+    });
+
+class _RecentToolNotifier extends StateNotifier<ReaderTool> {
+  _RecentToolNotifier(this._prefs)
+    : super(
+        ReaderTool.values.asNameMap()[_prefs.getString(_recentToolKey)] ??
+            ReaderTool.appearance,
+      );
+
+  final SharedPreferences _prefs;
+
+  void set(ReaderTool tool) {
+    state = tool;
+    _prefs.setString(_recentToolKey, tool.name);
+  }
+}
+
 /// Tab index controller for the root NavigationBar, so library can switch to
 /// the reader tab programmatically.
 final appDestinationProvider = StateProvider<AppDestination>(
