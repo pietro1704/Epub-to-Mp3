@@ -29,7 +29,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
             AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
             AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
         let saved = keys.map { standard.object(forKey: $0) }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         var offset: Int?
         let completed = expectation(description: "The captured source remainder is persisted")
         var session: MacReaderPlaybackSession!
@@ -73,12 +73,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         let library = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: directory)
         let source = try EpubFixture.createWithChapters((0..<12).map { "Source chapter \($0 + 1)." })
         let book = try library.importBook(from: source)
-        let standard = UserDefaults.standard
-        let keys = ["reader.recentTool.v1", ReaderSessionState.currentlyReadingBookIDKey,
-            AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
-            AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
-        let saved = keys.map { standard.object(forKey: $0) }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(location: ReaderLocation(defaults: defaults))
         var submittedChapter: Int32?
         let submitted = expectation(description: "Captured reader request arrives")
         var session: MacReaderPlaybackSession!
@@ -94,17 +89,16 @@ final class MacReaderListeningRestartTests: XCTestCase {
             session.cancel()
             player.stop()
             session = nil
-            for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
             defaults.removePersistentDomain(forName: suite)
             for url in [source, directory] { try? FileManager.default.removeItem(at: url) }
         }
-        standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
-        standard.set(10, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-        standard.set(0.2, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        defaults.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(10, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        defaults.set(0.2, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
         session.start(owner: self)
         // This navigation happens before the MainActor task can open the file.
-        standard.set(11, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-        standard.set(0.9, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        defaults.set(11, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        defaults.set(0.9, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
         await fulfillment(of: [submitted], timeout: 5)
         XCTAssertEqual(submittedChapter, 10, "An accepted Play intent must retain its selected source chapter.")
     }
@@ -129,7 +123,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
         standard.set(0, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
         standard.set(0.0, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
         ReaderProgressStore.save(bookId: book.id, chapterIndex: 0, offsetFraction: 0)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let audio = directory.appendingPathComponent("old-chapter.wav")
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1))
         let samples = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480_000))
@@ -249,7 +243,7 @@ final class MacReaderListeningRestartTests: XCTestCase {
             AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
             AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
         let saved = keys.map { standard.object(forKey: $0) }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let first = expectation(description: "First page job submitted")
         let second = expectation(description: "Second page job submitted")
         var jobs: [String] = []

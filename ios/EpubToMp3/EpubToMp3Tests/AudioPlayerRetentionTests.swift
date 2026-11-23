@@ -27,7 +27,7 @@ final class AudioPlayerRetentionTests: XCTestCase {
         widget?.set("", forKey: "currentlyPlayingBookId")
         standard.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         standard.set(bookID, forKey: AudioPlayer.currentBookIDDefaultsKey)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard,
                                  artifactStore: store)
         defer {
             player.stop()

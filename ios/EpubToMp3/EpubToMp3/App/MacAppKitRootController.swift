@@ -131,7 +131,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     let playingBook = self.playbackSession.localPlaybackBookID
-                        ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+                        ?? self.player.location.playingBookID
                     guard bookID == nil || playingBook == bookID else { return }
                     self.playbackSession.cancel()
                     self.player.stop()
@@ -247,7 +247,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             switch destination {
             case .library:
                 controller = MacLibraryViewController(
-                    library: library,
+                    library: library, location: player.location,
                     bookmarkStore: bookmarkStore,
                 onOpenBook: { [weak self] bookID in self?.showReader(bookID: bookID) },
                     onDownloadBook: { [weak self] bookID in
@@ -307,7 +307,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             },
             onPlayPDF: { [weak self] anchor in
                 guard let self,
-                      UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID
+                      self.player.location.readingBookID == bookID
                 else { return }
                 self.playbackSession.start(owner: self, pdfAnchor: anchor)
             },
@@ -345,7 +345,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
 
     func startPlaybackForCurrentBook() {
         MiniPlayerDismissal().allowPlayback(bookID:
-            UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey))
+            player.location.readingBookID)
         playbackSession.start(owner: self)
     }
 
@@ -355,11 +355,11 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     /// audio from a previous chapter.
     private func playFromCurrentReaderPosition() {
         // Preserve normal Pause; paused Play resolves reader movement explicitly.
-        guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else {
+        guard let bookID = player.location.readingBookID else {
             if player.snapshot == nil { startPlaybackForCurrentBook() } else { player.resume() }
             return
         }
-        let chapterIndex = ReaderPlaybackPriorityChapter.index(bookID: bookID)
+        let chapterIndex = ReaderPlaybackPriorityChapter.index(bookID: bookID, location: player.location)
         let pageRatio = readerPageRatio(bookID: bookID)
         let belongsToReader = player.isPlaybackForReaderBook(bookID)
             || (player.snapshot != nil && library.books.first(where: { $0.id == bookID })?.lastJobId == player.snapshot?.jobId)
@@ -408,12 +408,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     }
 
     private func readerPageRatio(bookID: String) -> Double? {
-        UserDefaults.standard.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double
+        player.location.pageRatio
             ?? ReaderProgressStore.read(bookId: bookID)?.offsetFraction
     }
 
     private func playCurrentReaderPage() {
-        guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else { return }
+        guard let bookID = player.location.readingBookID else { return }
         guard player.isPlaybackForReaderBook(bookID)
             || (player.snapshot != nil && library.books.first(where: { $0.id == bookID })?.lastJobId == player.snapshot?.jobId) else { return }
         if playbackSession.localPlaybackGeneration != nil
@@ -421,8 +421,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             // Partial audio needs a new Rust source range and job identity.
             playbackSession.start(owner: self)
         } else {
-            player.startFromReaderPage(ReaderPlaybackPriorityChapter.index(bookID: bookID),
-                sentenceId: UserDefaults.standard.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey),
+            player.startFromReaderPage(ReaderPlaybackPriorityChapter.index(bookID: bookID, location: player.location),
+                sentenceId: player.location.sentenceID,
                 sentenceOffsetRatio: readerPageRatio(bookID: bookID))
         }
     }
@@ -449,12 +449,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
 
     private func refreshPlayerBar() {
         syncPlayerCoverArt()
-        let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
-            ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let bookID = player.location.readingBookID
+            ?? player.location.playingBookID
         let dismissal = MiniPlayerDismissal()
         let showsReaderChrome = !(detailController is MacReaderViewController) || !readerChromeHidden
         let hasReadingContext = showsReaderChrome && !dismissal.isDismissed(bookID: bookID) && (player.snapshot != nil
-            || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
+            || player.location.readingBookID != nil
             || library.books.contains { $0.lastOpenedAt != nil })
         // Keep the internal stack constrained to the full bar width. Toggling
         // only `isHidden` leaves the bar visible with its edge constraints
@@ -467,8 +467,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
 
     private func dismissMiniPlayer() {
         MiniPlayerDismissal().dismiss(readingBookID:
-            UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
-            playingBookID: UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
+            player.location.readingBookID,
+            playingBookID: player.location.playingBookID)
         player.pause()
         player.persistResumePoint(force: true)
         playbackSession.cancel(stopPlayer: false)
@@ -486,8 +486,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     }
 
     private func syncPlayerCoverArt() {
-        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let bookID = player.location.playingBookID
+            ?? player.location.readingBookID
         let cover = bookID.flatMap { id in library.books.first(where: { $0.id == id })?.coverPNG }
         player.updateCoverArtData(cover)
     }

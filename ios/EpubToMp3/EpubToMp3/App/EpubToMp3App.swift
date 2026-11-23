@@ -39,7 +39,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     override init() {
         library = AppStartupTiming.shared.measure(.libraryStoreCreation) { LibraryStore() }
         sessionDefaults = .standard
-        player = AudioPlayer()
+        player = AudioPlayer(location: .standard)
         super.init()
         // One-shot and idempotent; it removes only values of removed features.
         LegacyPreferenceCleanup.runIfNeeded(standard: .standard,
@@ -57,7 +57,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     init(library: LibraryStore, sessionDefaults: UserDefaults = .standard, player: AudioPlayer? = nil) {
         self.library = library
         self.sessionDefaults = sessionDefaults
-        self.player = player ?? AudioPlayer()
+        self.player = player ?? AudioPlayer(location: ReaderLocation(defaults: sessionDefaults))
         super.init()
         observePlaybackRecency()
     }
@@ -181,12 +181,12 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
             ReaderProgressStore.clearAll()
         }
         if ProcessInfo.processInfo.arguments.contains("-uiTestResetActiveReader") {
-            ReaderSessionState.setCurrentlyReading(bookID: nil)
+            player.location.setReadingBook(nil)
         }
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             // Each UI test must start at the deterministic library surface;
             // otherwise a previous reader or full-player presentation wins at launch.
-            ReaderSessionState.setCurrentlyReading(bookID: nil)
+            player.location.setReadingBook(nil)
             playerPresentation.dismissFullPlayer()
         }
         // The scene manifest always declares IOSSceneDelegate. It is the sole
@@ -351,16 +351,16 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
             incomingBookRequestID = request
             // Capture before scheduling: another selection may happen before
             // the import task starts as well as while its file copy is running.
-            let originalSelection = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            let originalSelection = player.location.readingBookID
             return Task { [weak self] in
                 guard let self, !Task.isCancelled else { return }
                 guard let book = try? await library.importBookAsync(from: url),
                       !Task.isCancelled, incomingBookRequestID == request,
-                      sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection,
+                      player.location.readingBookID == originalSelection,
                       library.books.contains(where: { $0.id == book.id }) else { return }
                 // A superseded request still imports durably; only navigation
                 // depends on the reader and incoming request remaining current.
-                ReaderSessionState.setCurrentlyReading(bookID: book.id, defaults: sessionDefaults)
+                player.location.setReadingBook(book.id)
 #if os(macOS)
                 rootController?.showReader(bookID: book.id)
 #endif
@@ -370,9 +370,9 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
               let bookID = components.queryItems?.first(where: { $0.name == "bookId" })?.value,
               library.books.contains(where: { $0.id == bookID }) else { return nil }
         incomingBookRequestID = UUID()
-        ReaderSessionState.setCurrentlyReading(bookID: bookID, defaults: sessionDefaults)
+        player.location.setReadingBook(bookID)
         if components.host == "player" {
-            PlaybackBindingStore.setCurrentlyPlaying(bookID: bookID, chapterIndex: 0)
+            PlaybackBindingStore.setCurrentlyPlaying(bookID: bookID, chapterIndex: 0, defaults: sessionDefaults)
             playerPresentation.showFullPlayer()
         }
         return nil
@@ -386,7 +386,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     private func openBookById(_ bookID: String) {
         guard library.books.contains(where: { $0.id == bookID }) else { return }
-        ReaderSessionState.setCurrentlyReading(bookID: bookID)
+        player.location.setReadingBook(bookID)
     }
 
     /// A failed catalog is unknown membership, never an empty library. The

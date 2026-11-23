@@ -10,7 +10,7 @@ final class ReaderThemeAppearanceTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
         let settings = AppSettings(defaults: defaults)
         let library = LibraryStore(defaults: defaults, defaultsKey: "library")
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let root = MainReaderScreenController(library: library, settings: settings, player: player,
             playerPresentation: PlayerPresentation(defaults: defaults),
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
@@ -277,7 +277,7 @@ final class ReaderThemeAppearanceTests: XCTestCase {
         let chapter = EbookFulltext.Chapter(index: 1, name: "Palette chapter", text: "Author red internal note.",
                                             html: html, css: nil, charCount: nil, segments: nil)
         LocalFulltextCache.save(EbookFulltext(jobId: id, bookTitle: "Palette regression", bookAuthor: nil, chapters: [chapter]), bookId: id)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let reader = BookOpenScreenController(book: BookEntity(id: id, title: "Palette regression", bookmark: Data(),
             displayFilename: "palette.epub", addedAt: Date()), library: LibraryStore(defaults: defaults, defaultsKey: "library"),
             settings: settings, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), player: player,

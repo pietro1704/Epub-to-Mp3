@@ -42,7 +42,7 @@ final class NativeReaderTestHarness {
         showChapter: { [weak self] in self?.showChapter($0) }
     )
     lazy var text: MacReaderTextPresentation = MacReaderTextPresentation(
-        document: document, composition: composition, settings: settings, renderer: renderer,
+        document: document, composition: composition, settings: settings, location: player.location, renderer: renderer,
         initialPositionScheduler: { $0() }, stageObserver: nil,
         repaintSavedHighlights: { [weak self] in self?.annotations.repaintSavedHighlights(chapterIndex: $0) },
         prepareChapterProjection: { _, _ in }, selectCurrentTOCRow: {}, closeReader: {}
@@ -67,7 +67,7 @@ final class NativeReaderTestHarness {
         persistProgress: { [weak self] in self?.persisted += 1 },
         showChapter: { [weak self] in self?.showChapter($0) }, present: { _ in }
     )
-    lazy var position: ReaderReadingPosition = ReaderReadingPosition(document: document, composition: composition,
+    lazy var position: ReaderReadingPosition = ReaderReadingPosition(document: document, composition: composition, location: player.location,
         facts: { .init(chromeHidden: false, isPaginated: true, isLoading: false, layoutResult: nil) }, send: { _ in })
     lazy var prepared: ReaderPreparedPresentation = ReaderPreparedPresentation(document: document, settings: settings, renderer: renderer,
         store: PreparedReaderChapterStore(directory: archiveDirectory.appendingPathComponent("chapters")),
@@ -87,7 +87,7 @@ final class NativeReaderTestHarness {
         renderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(directory: archiveDirectory))
         book = BookEntity(id: id, title: "Reader seam", bookmark: Data([1]),
             displayFilename: "seam.epub", addedAt: Date())
-        player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
 #if os(macOS)
         controller.view = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         document.currentBookId = id

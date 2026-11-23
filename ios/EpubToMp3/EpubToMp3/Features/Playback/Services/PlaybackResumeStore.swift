@@ -5,10 +5,12 @@ import Foundation
 /// Offline retention of heard chapters lives in `PlaybackArtifactRetention`.
 @MainActor
 final class PlaybackResumeStore {
+    private let location: ReaderLocation
     private let resumeStore: ResumeStore
     private var lastResumePersist: Date = .distantPast
 
-    init(store: ResumeStore) {
+    init(store: ResumeStore, location: ReaderLocation) {
+        self.location = location
         resumeStore = store
     }
 
@@ -37,10 +39,7 @@ final class PlaybackResumeStore {
             wasPlaying: isPlaying,
             now: now
         )
-        UserDefaults.standard.set(
-            sourceChapterIndex,
-            forKey: Self.currentChapterIndexDefaultsKey
-        )
+        location.playingChapter = sourceChapterIndex
     }
 
     static func sourceChapterIndex(snapshot: JobSnapshot?, playbackChapters: [JobSnapshot.Chapter],
@@ -83,8 +82,8 @@ final class PlaybackResumeStore {
     /// `nonisolated` — a plain string constant carries no actor state,
     /// so it must be referenceable from any context (tests, nonisolated
     /// call sites) without a Swift-6 main-actor-isolation warning.
-    nonisolated static let currentBookIDDefaultsKey = "currentlyPlayingBookID"
+    nonisolated static let currentBookIDDefaultsKey = ReaderLocation.Key.playingBook
 
     /// Companion key — zero-based chapter index of the resumed book.
-    nonisolated static let currentChapterIndexDefaultsKey = "currentlyPlayingChapterIndex"
+    nonisolated static let currentChapterIndexDefaultsKey = ReaderLocation.Key.playingChapter
 }

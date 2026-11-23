@@ -33,7 +33,7 @@ final class PlaybackChapterExecutionTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fixture = try PlaybackPublicationFixture()
-        let player = AudioPlayer(resumeStore: fixture.resumeStore)
+        let player = AudioPlayer(resumeStore: fixture.resumeStore, location: .standard)
         defer {
             fixture.restore(afterStopping: player)
             try? FileManager.default.removeItem(at: directory)
@@ -54,7 +54,7 @@ final class PlaybackChapterExecutionTests: XCTestCase {
     @MainActor
     func testMissingChapterFilesRemainWaitingAndTerminalLoadSurfacesFailure() throws {
         let fixture = try PlaybackPublicationFixture()
-        let player = AudioPlayer(resumeStore: fixture.resumeStore)
+        let player = AudioPlayer(resumeStore: fixture.resumeStore, location: .standard)
         defer { fixture.restore(afterStopping: player) }
         let id = UUID().uuidString
         player.play(snapshot: snapshot(id: id, chapters: [chapter(7)]), restoreAutoplay: false)
@@ -72,7 +72,7 @@ final class PlaybackChapterExecutionTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fixture = try PlaybackPublicationFixture()
-        let player = AudioPlayer(resumeStore: fixture.resumeStore)
+        let player = AudioPlayer(resumeStore: fixture.resumeStore, location: .standard)
         defer {
             fixture.restore(afterStopping: player)
             try? FileManager.default.removeItem(at: directory)

@@ -17,7 +17,7 @@ extension NativeResponsiveScreenTests {
             displayedBook.bookmark = Data([1])
             displayedBook.author = "An author whose complete name must stay visible in the expanded player"
             defaults.set(try JSONEncoder().encode([displayedBook]), forKey: "library.books.v1")
-            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
             defer { player.stop() }
             UserDefaults.standard.set(displayedBook.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
             UserDefaults.standard.set(displayedBook.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
@@ -64,7 +64,7 @@ extension NativeResponsiveScreenTests {
 
 #if os(iOS)
     func testExpandedPlayerMetadataFollowsAccessibilityTextSize() throws {
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer { player.stop() }
         let controller = FullPlayerScreenController(player: player, playbackClock: PlaybackClock(),
             library: LibraryStore(defaults: defaults), playerPresentation: PlayerPresentation(defaults: defaults),
@@ -83,7 +83,7 @@ extension NativeResponsiveScreenTests {
 
 #if os(iOS)
     func testJobPlayerScrollsOnSEAndNamesIconControlsForVoiceOver() throws {
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer { player.stop() }
         let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data("""
         {"jobId":"responsive-player","state":"completed","bookTitle":"A long audiobook title for a compact phone","chapterProgress":[]}
@@ -114,7 +114,7 @@ extension NativeResponsiveScreenTests {
 #if os(iOS)
 #else
     func testExpandedPlayerFitsShortWindowAndNamesTransportControls() throws {
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer { player.stop() }
         let controller = MacFullPlayerViewController(player: player, library: LibraryStore(defaults: defaults),
             presentation: PlayerPresentation(defaults: defaults), onStartPlayback: {})

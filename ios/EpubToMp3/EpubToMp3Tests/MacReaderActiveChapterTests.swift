@@ -61,7 +61,7 @@ final class MacReaderActiveChapterTests: XCTestCase {
         var scheduledRestores: [@MainActor () -> Void] = []
         var release: AsyncStream<Void>.Continuation!
         let gate = AsyncStream<Void> { release = $0 }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         defer {
             release.finish(); player.stop()
             for (key, value) in zip(keys, prior) { UserDefaults.standard.set(value, forKey: key) }

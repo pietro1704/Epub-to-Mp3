@@ -49,7 +49,7 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         let controlsReady = expectation(description: "The initial reader restoration must finish before navigating.")
         let controller = MacReaderViewController(
             library: LibraryStore(defaults: defaults, defaultsKey: "library"), settings: settings,
-            player: AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults))),
+            player: AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard),
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
             preparedRenderer: renderer, preparedChapterStore: chapterStore,
             preparedFulltextReader: { _ in payload }, preparedFulltextWriter: { _, _ in },

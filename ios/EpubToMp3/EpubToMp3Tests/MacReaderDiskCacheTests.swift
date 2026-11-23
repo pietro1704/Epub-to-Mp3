@@ -53,7 +53,7 @@ final class MacReaderDiskCacheTests: XCTestCase {
                               displayFilename: "fixture.epub", addedAt: Date())
         defaults.set(try JSONEncoder().encode([book]), forKey: "library.\(id)")
         let library = LibraryStore(defaults: defaults, defaultsKey: "library.\(id)")
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         UserDefaults.standard.set(id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         ReaderProgressStore.save(bookId: id, chapterIndex: 0, offsetFraction: 0)
         let controller = MacReaderViewController(library: library, settings: settings,
@@ -131,7 +131,7 @@ final class MacReaderDiskCacheTests: XCTestCase {
         defaults.set(try JSONEncoder().encode([book]), forKey: "library.\(id)")
         let library = LibraryStore(defaults: defaults, defaultsKey: "library.\(id)")
         XCTAssertEqual(library.books.map(\.id), [id])
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         UserDefaults.standard.set(id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let controller = MacReaderViewController(library: library, settings: AppSettings(defaults: defaults),
             player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "fixture"),

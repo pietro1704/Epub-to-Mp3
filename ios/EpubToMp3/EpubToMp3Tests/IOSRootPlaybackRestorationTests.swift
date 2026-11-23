@@ -24,7 +24,7 @@ final class IOSRootPlaybackRestorationTests: XCTestCase {
                           "widget.nowPlayingBookRemainingSeconds", "widget.nowPlayingTotalChapters"]
         let savedWidget = widgetKeys.map { widget?.object(forKey: $0) }
         let library = LibraryStore(defaults: defaults, defaultsKey: "library", importDirectory: root)
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         let oldSource = try EpubFixture.createWithChapters(["Old book first.", "Old book second."])
         let currentSource = try EpubFixture.createWithChapters(["Current reader first.", "Current reader second."])
         let oldBook = try library.importBook(from: oldSource)

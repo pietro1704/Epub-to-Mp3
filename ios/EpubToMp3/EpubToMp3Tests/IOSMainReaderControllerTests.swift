@@ -49,6 +49,7 @@ final class IOSMainReaderControllerTests: XCTestCase {
         ReaderSessionState.setCurrentlyReading(bookID: nil, defaults: defaults)
 
         XCTAssertEqual(defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey), "")
+        XCTAssertNil(ReaderLocation(defaults: defaults).readingBookID)
     }
 
     func testClosingReaderClearsInjectedSessionAndCallsLibraryAction() throws {

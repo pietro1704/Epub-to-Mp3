@@ -112,8 +112,8 @@ final class MacFullPlayerViewController: NSViewController {
     }
 
     private func refresh() {
-        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let bookID = player.location.playingBookID
+            ?? player.location.readingBookID
         let book = bookID.flatMap { id in library.books.first(where: { $0.id == id }) }
         titleLabel.stringValue = player.snapshot?.bookTitle ?? book?.resolvedTitle ?? L10n.string("player.nothingPlaying")
         coverView.image = book?.coverPNG.flatMap(NSImage.init(data:))

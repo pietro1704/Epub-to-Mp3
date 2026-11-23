@@ -70,7 +70,7 @@ extension AudioPlayerObservationPrivacyTests {
             try file.write(from: buffer)
         }
         let player = AudioPlayer(
-            resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)),
+            resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard,
             backendBaseURL: baseURL)
         defer { player.stop() }
         standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)

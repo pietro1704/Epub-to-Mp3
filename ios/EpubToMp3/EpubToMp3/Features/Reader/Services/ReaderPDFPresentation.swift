@@ -8,7 +8,8 @@ final class ReaderPDFPresentation {
     private struct SavedPosition: Codable { let page: Int; let x: Double; let y: Double }
     let view: ReaderPDFView
     let bookID: String
-    private let defaults: UserDefaults
+    private let location: ReaderLocation
+    private var defaults: UserDefaults { location.defaults }
     private weak var player: AudioPlayer?
     private var settings: AppSettings?
     private var observers: Set<AnyCancellable> = []
@@ -32,7 +33,7 @@ final class ReaderPDFPresentation {
          settings: AppSettings? = nil, player: AudioPlayer? = nil) {
         self.view = view
         self.bookID = bookID
-        self.defaults = defaults
+        self.location = ReaderLocation(defaults: defaults)
         self.settings = settings
         self.player = player
         view.autoScales = true
@@ -237,9 +238,9 @@ final class ReaderPDFPresentation {
         persistPosition()
         view.accessibilityValue = L10n.string("reader.pageOf", index + 1, document.pageCount)
         let anchor = currentAnchor
-        if let anchor, defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID {
-            defaults.set(anchor.chapterIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-            defaults.set(anchor.ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        if let anchor, location.readingBookID == bookID {
+            location.readerChapter = anchor.chapterIndex
+            location.pageRatio = anchor.ratio
         }
         onPositionChanged?(anchor, index + 1, document.pageCount)
     }

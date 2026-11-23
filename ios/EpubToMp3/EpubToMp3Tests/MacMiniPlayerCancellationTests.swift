@@ -19,7 +19,7 @@ final class MacMiniPlayerCancellationTests: XCTestCase {
             AudioPlayer.currentChapterIndexDefaultsKey, "readerProgress.v1", "readerWarmBookIDs.v1",
             "player.dismissedMiniPlayerBooks.v1"]
         let saved = keys.map { standard.object(forKey: $0) }
-        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)), location: .standard)
         var control: ConverterPlaybackControl?
         var progress: (@MainActor @Sendable (RustConversionCoordinator.ConversionProgressEvent) -> Void)?
         var chunk: (@Sendable (Int, Int, Data) -> Bool)?

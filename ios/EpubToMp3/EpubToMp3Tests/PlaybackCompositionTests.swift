@@ -61,7 +61,7 @@ final class PlaybackCompositionTests: XCTestCase {
     @MainActor
     func testComposedServicesReleaseAuthorityAndFinishChapterSubscribers() async throws {
         let fixture = try Fixture()
-        var player: AudioPlayer? = AudioPlayer(resumeStore: fixture.resumeStore)
+        var player: AudioPlayer? = AudioPlayer(resumeStore: fixture.resumeStore, location: .standard)
         defer { fixture.restore(afterStopping: player) }
         weak var released = player
         let waiting = try snapshot(id: UUID().uuidString)
@@ -89,7 +89,7 @@ final class PlaybackCompositionTests: XCTestCase {
     @MainActor
     func testComposedAuthorityPreservesSynchronousPublicationAndSnapshotCacheOrder() throws {
         let fixture = try Fixture()
-        let player = AudioPlayer(resumeStore: fixture.resumeStore)
+        let player = AudioPlayer(resumeStore: fixture.resumeStore, location: .standard)
         defer { fixture.restore(afterStopping: player) }
         var previous: [(Bool, Bool, PlaybackRate, Bool, String?)] = []
         let observer = player.objectWillChange.sink {
@@ -122,7 +122,7 @@ final class PlaybackCompositionTests: XCTestCase {
     @MainActor
     func testRootStopInvalidatesGenerationAndReleasesReadinessWithoutGrantingPlayback() throws {
         let fixture = try Fixture()
-        let player = AudioPlayer(resumeStore: fixture.resumeStore)
+        let player = AudioPlayer(resumeStore: fixture.resumeStore, location: .standard)
         defer { fixture.restore(afterStopping: player) }
         let book = try snapshot(id: "composed-stop")
         XCTAssertTrue(player.beginRemoteStreaming(snapshot: book, backendBaseURL: URL(string: "https://example.invalid")!))

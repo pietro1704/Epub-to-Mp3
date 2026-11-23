@@ -103,7 +103,7 @@ final class ReaderListeningSession {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     let playingBook = self.listeningBookID
-                        ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+                        ?? self.player.location.playingBookID
                     guard bookID == nil || playingBook == bookID else { return }
                     self.cancel()
                     self.player.stop()

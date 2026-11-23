@@ -6,6 +6,7 @@ import Combine
 /// Owns Mac chapter mounting and saved-position restoration after committed layout.
 @MainActor
 final class MacReaderTextPresentation {
+    private let location: ReaderLocation
     private let document: MacReaderDocument
     private let composition: MacReaderViewComposition
     private let settings: AppSettings
@@ -64,12 +65,13 @@ final class MacReaderTextPresentation {
         set { document.pendingAppearanceRefresh = newValue }
     }
 
-    init(document: MacReaderDocument, composition: MacReaderViewComposition, settings: AppSettings,
+    init(document: MacReaderDocument, composition: MacReaderViewComposition, settings: AppSettings, location: ReaderLocation,
          renderer: PreparedChapterRenderer,
          initialPositionScheduler: @escaping (@escaping @MainActor () -> Void) -> Void,
          stageObserver: (@Sendable (String, UInt64) -> Void)?, repaintSavedHighlights: @escaping (Int) -> Void,
          prepareChapterProjection: @escaping (String, Int) -> Void, selectCurrentTOCRow: @escaping () -> Void,
          closeReader: @escaping () -> Void) {
+        self.location = location
         self.document = document
         self.composition = composition
         self.settings = settings
@@ -162,7 +164,7 @@ final class MacReaderTextPresentation {
             contentScrollView.reflectScrolledClipView(clipView)
         }
         composition.setFootnotesAvailable(chapter.footnotes?.isEmpty == false)
-        ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: 0)
+        ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: 0, defaults: location.defaults)
         if let bookID = currentBookId { prepareChapterProjection(bookID, index) }
     }
 
@@ -278,7 +280,7 @@ final class MacReaderTextPresentation {
                         / Double(text.string.utf16.count)
                 }
             }
-            ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: playbackFraction)
+            ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: playbackFraction, defaults: location.defaults)
         }
     }
 
@@ -315,7 +317,7 @@ final class MacReaderTextPresentation {
                 clipView.scroll(to: NSPoint(x: 0, y: entry.offsetFraction * scrollable))
                 self.contentScrollView.reflectScrolledClipView(clipView)
                 if let chapter = self.chapter(at: chapterIndex) {
-                    ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: entry.offsetFraction)
+                    ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: entry.offsetFraction, defaults: self.location.defaults)
                 }
             }
             self.isRestoringInitialPosition = false
