@@ -192,6 +192,7 @@ pub fn markup_language(html: &str) -> Option<String> {
 /// Pure language analysis of a book file for clients that need the language
 /// before a job exists (it applies the same sampling and confirmation rule as a
 /// conversion). Reads and parses the file only; nothing is written.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn analyze_book_file(
     path: &std::path::Path,
     cancelled: &dyn Fn() -> bool,
