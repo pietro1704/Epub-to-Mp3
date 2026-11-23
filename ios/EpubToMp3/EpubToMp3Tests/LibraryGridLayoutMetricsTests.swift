@@ -46,15 +46,25 @@ final class LibraryGridLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(metrics.columnCount(forWidth: -100), 1)
     }
 
+    /// IPHONE-LIBRARY-COLUMNS: choosing 3 or 4 columns on a phone must render 3 or 4 columns, not silently stay at 2.
+    func testPhoneRendersTheRequestedThreeAndFourColumns() {
+        for requested in [1, 2, 3, 4] {
+            let metrics = LibraryGridLayoutMetrics(requestedColumns: requested)
+            XCTAssertEqual(metrics.columnCount(forWidth: 390), requested, "requested \(requested) on a 390 pt phone")
+        }
+        let four = LibraryGridLayoutMetrics(requestedColumns: 4)
+        XCTAssertGreaterThanOrEqual(four.tileWidth(forWidth: 390, columns: 4), four.minimumTileWidth)
+    }
+
     func testRequestedColumnsReturnAfterNarrowingAndAccessibilityConstraints() {
         let metrics = LibraryGridLayoutMetrics(requestedColumns: 6)
         XCTAssertEqual(metrics.columnCount(forWidth: 1200), 6)
-        XCTAssertEqual(metrics.columnCount(forWidth: 320), 2)
+        XCTAssertEqual(metrics.columnCount(forWidth: 320), 3)
         XCTAssertEqual(metrics.columnCount(forWidth: 1200, accessibilityText: true), 1)
         XCTAssertEqual(metrics.columnCount(forWidth: 1200), 6)
         XCTAssertEqual(metrics.requestedColumns, 6)
         let visible = metrics.columnCount(forWidth: 320)
-        XCTAssertGreaterThanOrEqual(metrics.tileWidth(forWidth: 320, columns: visible), 120)
+        XCTAssertGreaterThanOrEqual(metrics.tileWidth(forWidth: 320, columns: visible), metrics.minimumTileWidth)
     }
 
     func testColumnPreferenceSurvivesReopeningWithoutSavingTemporaryDensity() throws {
@@ -65,7 +75,7 @@ final class LibraryGridLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(preference.requestedColumns, 2)
         preference.requestedColumns = 6
         let metrics = LibraryGridLayoutMetrics(requestedColumns: preference.requestedColumns)
-        XCTAssertEqual(metrics.columnCount(forWidth: 320), 2)
+        XCTAssertEqual(metrics.columnCount(forWidth: 320), 3)
         XCTAssertEqual(LibraryColumnPreference(defaults: defaults).requestedColumns, 6)
     }
 
@@ -153,15 +163,15 @@ final class IOSLibraryCollectionLayoutTests: XCTestCase {
         XCTAssertEqual(try frames(), twoColumns)
 
         controller.setRequestedColumns(3)
-        XCTAssertEqual(try frames(), twoColumns)
-
-        collection.frame.size.width = 460
         let threeColumns = try frames()
         XCTAssertEqual(threeColumns[0].minY, threeColumns[1].minY, accuracy: 0.5)
         XCTAssertEqual(threeColumns[1].minY, threeColumns[2].minY, accuracy: 0.5)
         XCTAssertGreaterThan(threeColumns[1].minX, threeColumns[0].maxX)
         XCTAssertGreaterThan(threeColumns[2].minX, threeColumns[1].maxX)
         XCTAssertLessThan(threeColumns[2].maxX, collection.bounds.width)
+
+        controller.setRequestedColumns(2)
+        XCTAssertEqual(try frames(), twoColumns, "Returning to 2 columns restores the earlier layout")
     }
 
     func testActualLibraryCollectionHasTwoItemsPerRowAcrossResize() async throws {
