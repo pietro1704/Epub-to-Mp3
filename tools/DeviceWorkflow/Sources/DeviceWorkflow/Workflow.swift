@@ -13,6 +13,9 @@ public final class Workflow {
     private let heavyLock: URL
     private let environment: [String: String]
     private let scopeObserver: ([BenchmarkCase]) -> Void
+    private let unlockPollSeconds: TimeInterval
+    private let sleeper: (TimeInterval) -> Void
+    private let notice: (String) -> Void
     private var cases: [BenchmarkCase] = []
     private var timings: [String: Double] = ["deviceWaitSeconds": 0]
     private var staged: String?
@@ -25,11 +28,15 @@ public final class Workflow {
                 resourceCheck: @escaping () throws -> Void = HostProcess.resourceCheck,
                 heavyLock: URL = URL(fileURLWithPath: "/tmp/epub2mp3.heavy-job.lock"),
                 environment: [String: String] = ProcessInfo.processInfo.environment,
-                scopeObserver: @escaping ([BenchmarkCase]) -> Void = { _ in }) {
+                scopeObserver: @escaping ([BenchmarkCase]) -> Void = { _ in },
+                unlockPollSeconds: TimeInterval = 5,
+                sleeper: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
+                notice: @escaping (String) -> Void = { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }) {
         self.root = root; self.options = options; self.runID = runID
         self.runner = runner; self.identity = identity; self.resourceCheck = resourceCheck
         self.heavyLock = heavyLock; self.environment = environment
         self.scopeObserver = scopeObserver
+        self.unlockPollSeconds = unlockPollSeconds; self.sleeper = sleeper; self.notice = notice
         directory = options.reportDirectory.appendingPathComponent(runID)
     }
 
@@ -144,12 +151,50 @@ public final class Workflow {
         return result
     }
 
+    /// How long a locked device is waited for before the run is `blocked`.
+    static let defaultUnlockWaitSeconds: TimeInterval = 1800
+
+    private var unlockWaitSeconds: TimeInterval {
+        environment["DEVICE_UNLOCK_WAIT_SECONDS"].flatMap(TimeInterval.init).map { max(0, $0) }
+            ?? Self.defaultUnlockWaitSeconds
+    }
+
+    /// A locked device does not abort the run: it is polled every few seconds, one
+    /// `WAITING_FOR_UNLOCK` line is emitted, the report says `waiting_for_unlock`, and
+    /// the run continues as soon as the device unlocks. Only the timeout marks `blocked`.
     private func readiness(_ phase: String) throws {
-        let lock = try deviceJSON(["info", "lockState"], phase)
-        guard lock["passcodeRequired"] as? Bool == false else {
-            report["status"] = "blocked"
-            throw WorkflowError("Unlock the paired iPhone and explicitly retry; no launch retries are queued.")
+        var lock = try deviceJSON(["info", "lockState"], phase)
+        guard lock["passcodeRequired"] as? Bool != false else { return }
+        let previousStatus = report["status"] as? String ?? "preflight"
+        let previousNextAction = report["nextAction"] as? String
+        let since = Date()
+        let waitStart = ProcessInfo.processInfo.systemUptime
+        var slept: TimeInterval = 0
+        // Real elapsed time, or the requested sleeps when a test replaces the sleeper.
+        func waitedSeconds() -> TimeInterval { max(ProcessInfo.processInfo.systemUptime - waitStart, slept) }
+        let sinceUTC = ISO8601DateFormatter().string(from: since)
+        report["status"] = "waiting_for_unlock"
+        report["waitingForUnlockSince"] = sinceUTC
+        report["nextAction"] = "Unlock the paired iPhone; the run continues by itself (waits up to \(Int(unlockWaitSeconds)) s)."
+        try checkpoint()
+        notice("WAITING_FOR_UNLOCK device=\(options.device) since=\(sinceUTC)")
+        while lock["passcodeRequired"] as? Bool != false {
+            let waited = waitedSeconds()
+            guard waited < unlockWaitSeconds else {
+                timings["deviceWaitSeconds", default: 0] += waited
+                report["status"] = "blocked"
+                report["nextAction"] = "Unlock the paired iPhone and explicitly retry."
+                throw WorkflowError("The paired iPhone stayed locked for \(Int(waited)) s; unlock it and explicitly retry.")
+            }
+            let nap = min(unlockPollSeconds, unlockWaitSeconds - waited)
+            sleeper(nap); slept += nap
+            lock = try deviceJSON(["info", "lockState"], phase)
         }
+        timings["deviceWaitSeconds", default: 0] += waitedSeconds()
+        report["status"] = previousStatus
+        report["nextAction"] = previousNextAction
+        report["unlockedAfterWaitingSince"] = sinceUTC
+        try checkpoint()
     }
 
     private func perform() throws {

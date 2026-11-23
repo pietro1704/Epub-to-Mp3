@@ -135,8 +135,14 @@ Operational pitfalls observed in the November 2026 campaign:
   supervised SE1 run consumed about 3 GiB.
 - When storage is low, the agent may prune only reproducible caches under the
   lease and must verify retained artifact hashes before and after.
-- Request the 16e unlock only after the device preflight passes. The device
-  unified log requires root (exit 77); record it as unobservable.
+- A locked 16e never aborts a device run. The workflow polls `lockState` every
+  5 s (at preflight and again before the test step) for up to
+  `DEVICE_UNLOCK_WAIT_SECONDS` (default 1800), prints one
+  `WAITING_FOR_UNLOCK device=<id> since=<UTC>` line to stderr, reports
+  `waiting_for_unlock`, and continues by itself once the device unlocks; only
+  the timeout marks the run `blocked`. When that line appears, alert Pietro once;
+  do not relaunch. Run the command in the background, not under `nohup` or `&`.
+  The device unified log requires root (exit 77); record it as unobservable.
 
 ### Host incident of 2026-11-19 21:35 BRT (2026-11-20 00:35 UTC): x86 CPU CATERR
 
