@@ -15,7 +15,10 @@ import '../state/providers.dart';
 /// which model plays books in it (or Automatic); Rust resolves the rest at job
 /// start. Installing a model is always an explicit tap on its row.
 class ModelsScreen extends ConsumerStatefulWidget {
-  const ModelsScreen({super.key});
+  const ModelsScreen({super.key, this.initialLanguage});
+
+  /// Base language whose section starts expanded (from the missing-model alert).
+  final String? initialLanguage;
 
   @override
   ConsumerState<ModelsScreen> createState() => _ModelsScreenState();
@@ -192,6 +195,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     );
     return ExpansionTile(
       key: ValueKey('language-$base'),
+      initiallyExpanded: base == widget.initialLanguage,
       title: Text(languageEndonym(base)),
       subtitle: Text(
         '${choice == null ? t.modelsAutomatic : choice.modelId ?? choice.displayName}'

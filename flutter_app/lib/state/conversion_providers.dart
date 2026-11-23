@@ -51,6 +51,10 @@ class LanguageModelChoicesNotifier extends StateNotifier<LanguageModelChoices> {
   }
 }
 
+final bookLanguageCacheProvider = Provider<BookLanguageCache>((ref) {
+  return BookLanguageCache(ref.watch(sharedPrefsProvider));
+});
+
 final showLowQualityModelsProvider = StateProvider<bool>((ref) => false);
 
 final ttsModelRootProvider = FutureProvider.autoDispose<String>((ref) async {

@@ -56,17 +56,37 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
         if (converter is ListeningScheduleFactory) {
           final catalog = TtsCatalog.decode(await converter.ttsModels());
           if (!_isCurrentConversion(generation)) return;
-          ttsSnapshot = catalog.captureNewPreferences(
-            configured ?? catalog.recommendedPreferences,
-          );
-        } else if (configured == null && converter is AndroidEmbeddedConverter) {
+          var base = configured ?? catalog.recommendedPreferences;
+          final narration = await _resolveNarration(converter, inputPath, base);
+          if (!_isCurrentConversion(generation)) return;
+          if (narration is MissingNarration) {
+            await _offerModelsFor(narration, generation);
+            return;
+          }
+          if (narration is ResolvedNarration) base = narration.preferences;
+          ttsSnapshot = catalog.captureNewPreferences(base);
+        } else if (converter is AndroidEmbeddedConverter) {
+          TtsCatalog? catalog;
           try {
-            final catalog = await ref.read(ttsCatalogProvider.future);
-            ttsSnapshot = catalog.recommendedPreferences;
+            final loaded = await ref.read(ttsCatalogProvider.future);
+            catalog = loaded;
+            if (configured == null) ttsSnapshot = loaded.recommendedPreferences;
           } catch (error) {
             debugPrint('Listening voice catalog unavailable: $error');
           }
           if (!_isCurrentConversion(generation)) return;
+          final narration = await _resolveNarration(
+            converter,
+            inputPath,
+            ttsSnapshot,
+            androidApi: catalog?.androidApi,
+          );
+          if (!_isCurrentConversion(generation)) return;
+          if (narration is MissingNarration) {
+            await _offerModelsFor(narration, generation);
+            return;
+          }
+          if (narration is ResolvedNarration) ttsSnapshot = narration.preferences;
         }
       }
       final ttsSupport = await getApplicationSupportDirectory();
@@ -284,4 +304,37 @@ mixin BookLocalPlaybackExecution on ConsumerState<BookOpenScreen>, BookContentSe
     }
   }
 
+
+  /// The narration this NEW job should use for the book's language. Only a
+  /// per-language choice changes anything; see [resolvePlaybackNarration].
+  Future<PlaybackNarration> _resolveNarration(
+    EmbeddedConverter converter,
+    String inputPath,
+    TtsPreferences base, {
+    int? androidApi,
+  }) => resolvePlaybackNarration(
+    converter: converter,
+    cache: ref.read(bookLanguageCacheProvider),
+    bookId: widget.bookId,
+    bookPath: inputPath,
+    configured: base,
+    choices: ref.read(languageModelChoicesProvider),
+    installedModelIds: () => ref.read(installedNarrationModelIdsProvider.future),
+    platform: switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'Android',
+      TargetPlatform.windows => 'Windows',
+      TargetPlatform.macOS => 'Macos',
+      TargetPlatform.iOS => 'Ios',
+      _ => 'Linux',
+    },
+    androidApi: androidApi,
+  );
+
+  /// Nothing usable is installed for the book's language: stop before any job
+  /// exists and offer the Models screen at that language.
+  Future<void> _offerModelsFor(MissingNarration missing, int generation) async {
+    if (!mounted) return;
+    setState(() => _isConverting = false);
+    await showMissingNarrationDialog(context, language: missing.language);
+  }
 }

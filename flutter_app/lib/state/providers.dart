@@ -11,6 +11,7 @@ import '../models/app_settings.dart';
 import '../models/language_model_choices.dart';
 import '../models/tts_catalog.dart';
 import '../models/tts_preferences.dart';
+import '../services/playback/playback_narration_resolver.dart';
 import '../services/playback/audio_player_service.dart';
 import '../services/playback/background_audio_handler.dart';
 import '../services/storage/book_derived_data_remover.dart';

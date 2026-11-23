@@ -211,6 +211,15 @@ class BookLanguageAnalysis {
         detector: json['detector'] as String?,
       );
 
+  Map<String, dynamic> toJson() => {
+    'declared': declared,
+    'confirmed': confirmed,
+    'languages': languages,
+    'samples_examined': samplesExamined,
+    'inconclusive_samples': inconclusiveSamples,
+    'detector': detector,
+  };
+
   factory BookLanguageAnalysis.parse(String json) =>
       BookLanguageAnalysis.fromJson(
         Map<String, dynamic>.from(jsonDecode(json) as Map),

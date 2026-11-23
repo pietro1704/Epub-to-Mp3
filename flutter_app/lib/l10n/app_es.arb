@@ -200,5 +200,8 @@
   "modelsNotInstalled": "Toca para descargar y usar",
   "modelsEmpty": "No hay modelos disponibles para este dispositivo",
   "modelsLoadFailed": "No se pudo cargar la lista de modelos",
-  "modelsRowSubtitle": "{count, plural, =1{1 modelo} other{{count} modelos}}"
+  "modelsRowSubtitle": "{count, plural, =1{1 modelo} other{{count} modelos}}",
+  "modelsMissingTitle": "Sin modelo de narración para {language}",
+  "modelsMissingBody": "Instala un modelo de narración para este idioma e inténtalo de nuevo.",
+  "modelsMissingAction": "Abrir Modelos"
 }
