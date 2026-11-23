@@ -437,6 +437,10 @@ run = "ruby scripts/test_mac_build_budget.rb"
 description = "Prune superseded project Xcode caches under the native lease; preserve current artifacts"
 run = "ruby scripts/mac_build_budget.rb prune"
 
+[tasks."clean:worktrees"]
+description = "Remove linked worktrees whose PR is merged/closed and clear idle build dirs; refuses while a job holds the lease (use -- --dry-run to preview)"
+run = "ruby scripts/clean_worktrees.rb"
+
 [tasks."clean:build:if-low"]
 description = "Prune superseded Xcode caches below the configured free-space floor, only without active jobs"
 run = "ruby scripts/mac_build_budget.rb prune-if-low"

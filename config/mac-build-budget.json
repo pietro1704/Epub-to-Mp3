@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "warn_free_gib": 5,
+  "warn_free_gib": 15,
   "advisory": {
     "warn_load_percent_of_cpus": 75,
     "warn_swap_used_mib": 1600,

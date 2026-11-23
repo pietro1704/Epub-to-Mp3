@@ -66,12 +66,12 @@ class MacBuildBudgetTest < Minitest::Test
   # Owner decision 2026-11-22: free space is only reported; no floor stops a build.
   def test_shipped_threshold_only_words_a_note_for_a_nearly_full_disk
     shipped = JSON.parse(File.read(File.expand_path("../config/mac-build-budget.json", __dir__)))
-    assert_equal 5, shipped.fetch("warn_free_gib")
+    assert_equal 15, shipped.fetch("warn_free_gib")
     refute_includes shipped.keys, "minimum_free_gib"
     refute_includes shipped.keys, "check_interval_seconds"
     floor = shipped.fetch("warn_free_gib") * MacBuildBudget::GIB
-    assert_nil MacBuildBudget.evaluate(shipped, free_bytes: 6 * MacBuildBudget::GIB, destination: @dir)
-    assert_match(/Free disk below 5 GiB/, MacBuildBudget.evaluate(shipped, free_bytes: floor - 1, destination: @dir))
+    assert_nil MacBuildBudget.evaluate(shipped, free_bytes: 16 * MacBuildBudget::GIB, destination: @dir)
+    assert_match(/Free disk below 15 GiB/, MacBuildBudget.evaluate(shipped, free_bytes: floor - 1, destination: @dir))
   end
 
   def test_floor_and_host_scope
