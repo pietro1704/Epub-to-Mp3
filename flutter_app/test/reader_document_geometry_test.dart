@@ -34,7 +34,9 @@ void main() {
       const Rect.fromLTWH(0, 20, 100, 30),
       const Rect.fromLTWH(0, 120, 100, 30),
     ], []);
-    expect(geometry.edgeGuards(30, 100), (20, 10));
+    // The fragment's own extent plus the ink margin that passes a line box.
+    const ink = ReaderDocumentGeometry.inkOverflow;
+    expect(geometry.edgeGuards(30, 100), (20 + ink, 10 + ink));
   });
 
   test(

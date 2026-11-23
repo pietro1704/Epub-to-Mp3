@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show BoxHeightStyle;
 
 import 'package:flutter/rendering.dart';
@@ -96,7 +97,11 @@ class ReaderDocumentGeometry {
   List<double> pageOffsets(double viewport) {
     if (viewport <= 0) return const [0];
     final offsets = <double>[0];
-    while (offsets.last + viewport < height - 0.5) {
+    // The document padding is not content: a page that would hold only it stays out.
+    final contentEnd = fragments.isEmpty
+        ? height
+        : fragments.map((fragment) => fragment.bottom).reduce(math.max);
+    while (offsets.last + viewport < contentEnd - 0.5) {
       final start = offsets.last;
       var end = start + viewport;
       for (final fragment in fragments) {
@@ -149,6 +154,11 @@ class ReaderDocumentGeometry {
     for (final paragraph in paragraphs) ...paragraph.boxesFor(sourceRange),
   ];
 
+  /// Glyph tops (ascenders, parentheses) can pass the edge of their line box by about a
+  /// pixel; the guards hide that too. Less than the leading between lines, so the
+  /// descenders of the last whole line are never touched.
+  static const inkOverflow = 2.0;
+
   /// Cover only the fragments intersecting viewport edges, not whole lines.
   (double, double) edgeGuards(double offset, double viewport) {
     var top = 0.0;
@@ -156,11 +166,14 @@ class ReaderDocumentGeometry {
     for (final fragment in fragments) {
       if (fragment.height > viewport) continue;
       if (fragment.top < offset - 0.5 && fragment.bottom > offset + 0.5) {
-        top = (fragment.bottom - offset).clamp(top, viewport);
+        top = (fragment.bottom + inkOverflow - offset).clamp(top, viewport);
       }
       if (fragment.top < offset + viewport - 0.5 &&
           fragment.bottom > offset + viewport + 0.5) {
-        bottom = (offset + viewport - fragment.top).clamp(bottom, viewport);
+        bottom = (offset + viewport - fragment.top + inkOverflow).clamp(
+          bottom,
+          viewport,
+        );
       }
     }
     return (top, bottom);
