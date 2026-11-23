@@ -130,6 +130,54 @@ abstract class AppLocalizations {
   /// **'Audio playback rate'**
   String get audioRateLabel;
 
+  /// No description provided for @readingPreferencesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading preferences'**
+  String get readingPreferencesTitle;
+
+  /// No description provided for @readingModeDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default for all books'**
+  String get readingModeDefault;
+
+  /// No description provided for @readingModeBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Only for this book'**
+  String get readingModeBook;
+
+  /// No description provided for @readingUseDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the default'**
+  String get readingUseDefault;
+
+  /// No description provided for @readingSpeedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Narration speed'**
+  String get readingSpeedLabel;
+
+  /// No description provided for @readingBookHint.
+  ///
+  /// In en, this message translates to:
+  /// **'These choices apply to this book only.'**
+  String get readingBookHint;
+
+  /// No description provided for @readerLayoutScrolling.
+  ///
+  /// In en, this message translates to:
+  /// **'Scrolling'**
+  String get readerLayoutScrolling;
+
+  /// No description provided for @readerLayoutPaginated.
+  ///
+  /// In en, this message translates to:
+  /// **'Paginated'**
+  String get readerLayoutPaginated;
+
   /// No description provided for @fontSizeLabel.
   ///
   /// In en, this message translates to:

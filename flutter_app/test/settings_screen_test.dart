@@ -327,40 +327,20 @@ void main() {
       expect(find.byType(SwitchListTile), findsWidgets);
     });
 
-    testWidgets('reader section has font and theme controls', (t) async {
+    testWidgets('reader section is one row that opens the reading preferences (default for all books)', (t) async {
       await _pump(t);
-
-      await t.scrollUntilVisible(
-        find.text('Reader font size'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.text('Reader font size'), findsOneWidget);
+      final row = find.byKey(const ValueKey('settings-reading-preferences-row'));
+      await t.scrollUntilVisible(row, 200, scrollable: find.byType(Scrollable).first);
+      expect(find.descendant(of: row, matching: find.text('Default for all books')), findsOneWidget);
+      // The appearance controls no longer repeat inline.
+      expect(find.text('Line spacing'), findsNothing);
+      await t.tap(row);
+      await t.pumpAndSettle();
+      expect(find.text('Reading preferences'), findsWidgets);
       expect(find.text('Font'), findsOneWidget);
       expect(find.text('Theme'), findsOneWidget);
-    });
-
-    testWidgets('reader section has layout and spacing', (t) async {
-      await _pump(t);
-
-      await t.scrollUntilVisible(
-        find.text('Layout'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
       expect(find.text('Layout'), findsOneWidget);
       expect(find.text('Line spacing'), findsOneWidget);
-    });
-
-    testWidgets('font size stepper shows n of 5', (t) async {
-      await _pump(t, prefsData: {'readerFontSize': 2});
-
-      await t.scrollUntilVisible(
-        find.text('3 of 5'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.text('3 of 5'), findsOneWidget);
     });
 
     testWidgets('auto-scroll toggle present', (t) async {

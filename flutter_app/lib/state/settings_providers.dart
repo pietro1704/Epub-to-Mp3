@@ -125,3 +125,38 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
   final prefs = ref.watch(sharedPrefsProvider);
   return SettingsNotifier(prefs);
 });
+
+/// One book's own reading preferences (appearance and speed), persisted per book.
+class BookReadingOverridesNotifier extends StateNotifier<ReadingOverrides> {
+  BookReadingOverridesNotifier(SharedPreferences prefs, this.bookId)
+    : _store = BookReadingStore(prefs),
+      super(BookReadingStore(prefs).read(bookId));
+
+  final String bookId;
+  final BookReadingStore _store;
+
+  Future<void> update(ReadingOverrides Function(ReadingOverrides) change) async {
+    state = change(state);
+    await _store.write(bookId, state);
+  }
+
+  /// "Use the default": the book follows the default for all books again.
+  Future<void> clear() async {
+    state = ReadingOverrides.none;
+    await _store.write(bookId, state);
+  }
+}
+
+final bookReadingOverridesProvider =
+    StateNotifierProvider.family<BookReadingOverridesNotifier, ReadingOverrides, String>(
+      (ref, bookId) => BookReadingOverridesNotifier(ref.watch(sharedPrefsProvider), bookId),
+    );
+
+/// The settings the reader of [bookId] uses: the default for all books with the
+/// book's own overrides on top (null = the default itself).
+final readerSettingsProvider = Provider.family<AppSettings, String?>((ref, bookId) {
+  final base = ref.watch(settingsProvider);
+  if (bookId == null) return base;
+  final overrides = ref.watch(bookReadingOverridesProvider(bookId));
+  return overrides.isEmpty ? base : BookScopedAppSettings(ref.watch(sharedPrefsProvider), overrides);
+});
