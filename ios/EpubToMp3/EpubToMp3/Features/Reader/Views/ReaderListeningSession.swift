@@ -24,6 +24,9 @@ final class ReaderListeningSession {
     private var requestedPDFPosition: (chapter: Int, offset: Int)?
     private(set) var requestedVoice: TtsSelection?
     private var voiceChangeInPreparation: ReaderVoiceChange?
+    /// The job the player still shows while a replacement (voice change, restart) is being prepared. Its snapshot
+    /// is not a sign that another owner took the player over, so it must not cancel the replacement.
+    private var retiringPlayerJobID: String?
     var startingVoicePosition: ReaderVoiceChange? {
         guard listeningJobID != nil, let requestedPage else { return nil }
         if player.snapshot?.jobId == listeningJobID {
@@ -90,7 +93,7 @@ final class ReaderListeningSession {
         player.$snapshot
             .sink { [weak self] snapshot in
                 guard let self, let snapshot, let jobID = self.listeningJobID,
-                      snapshot.jobId != jobID else { return }
+                      snapshot.jobId != jobID, snapshot.jobId != self.retiringPlayerJobID else { return }
                 self.cancel()
             }
             .store(in: &cancellables)
@@ -177,6 +180,7 @@ final class ReaderListeningSession {
         listeningChapters.removeAll()
         hasDeliveredListeningChapter = false
         voiceChangeInPreparation = nil
+        retiringPlayerJobID = nil
         requestedVoice = nil
         requestedPDFPosition = nil
         requestedPage = nil
@@ -196,6 +200,7 @@ final class ReaderListeningSession {
         let chapterEnd: Int32 = -1
         let jobID = UUID().uuidString
         let previousPlayerJob = player.snapshot?.jobId
+        retiringPlayerJobID = previousPlayerJob
         listeningJobID = jobID
         pendingRestartJobID = pendingSeek?.jobID
         player.approximateSeekJobID = pendingSeek?.jobID
@@ -286,6 +291,7 @@ final class ReaderListeningSession {
                 updateChapterEstimates(self.chapterEstimates, for: book.id)
                 player.approximateSeekJobID = jobID
                 installedPending = true
+                retiringPlayerJobID = nil
                 player.isConverting = true
                 if let carriedSeek { player.restoreListeningSeek(carriedSeek, jobID: jobID) }
                 else if voiceChange?.autoplay != false { player.resume() }

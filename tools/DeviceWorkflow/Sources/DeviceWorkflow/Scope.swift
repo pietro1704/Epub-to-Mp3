@@ -89,6 +89,9 @@ public struct Options {
                 "testSkipForwardCrossesSegmentsUsingChapterClockAndPreservesPause",
                 "testSkipForwardWaitsForMissingSegmentAndPreservesPause",
             ],
+            "ReaderListeningSessionTests": [
+                "testSwitchingTheModelWhileListeningRetiresTheOldJobSilentlyAndKeepsPlaying",
+            ],
             "ModelsScreenAlertTests": [
                 "testChoiceSheetsHaveExactlyOneCancelWhenPresented",
                 "testActionSheetNeverAddsASecondCancel",

@@ -53,6 +53,15 @@ final class DeviceSelectionTests: XCTestCase {
         XCTAssertEqual(options.expectedTestCount, 3)
     }
 
+    func testModelSwitchRegressionIsAuditedAsOneExactMethod() throws {
+        let selector = "EpubToMp3Tests/ReaderListeningSessionTests/testSwitchingTheModelWhileListeningRetiresTheOldJobSilentlyAndKeepsPlaying"
+        let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": selector])
+        XCTAssertEqual(options.testFilters, [selector])
+        XCTAssertEqual(options.expectedTestCount, 1)
+        XCTAssertThrowsError(try Options(arguments: ["test"], root: root,
+            environment: ["IOS_TESTS": "EpubToMp3Tests/ReaderListeningSessionTests"]))
+    }
+
     func testExactMethodSelectorRemainsLiteral() throws {
         let selector = "EpubToMp3Tests/ReaderViewportTransitionTests/testCancelInvalidatesOutstandingToken"
         let options = try Options(arguments: ["test"], root: root, environment: ["IOS_TESTS": selector])

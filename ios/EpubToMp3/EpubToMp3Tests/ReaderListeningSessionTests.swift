@@ -110,5 +110,82 @@ final class ReaderListeningSessionTests: XCTestCase {
         XCTAssertNil(player.snapshot)
         XCTAssertFalse(player.isConverting)
     }
+
+    /// P0: switching the voice model while listening showed "Conversion cancelled" and playback never resumed.
+    /// The switch retires the old job silently and the new job (new model, current position) keeps playing even
+    /// while the player still republishes the retiring job's snapshot during the switch.
+    func testSwitchingTheModelWhileListeningRetiresTheOldJobSilentlyAndKeepsPlaying() async throws {
+        let suite = "reader-listening-switch-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defer { player.stop() }
+        let settings = AppSettings(defaults: defaults)
+        settings.selectPrimaryNarration(TtsSelection(engine: "piper", modelID: "pt_BR-cadu-medium", voice: nil))
+        let cadu = NarrationConversionOptions.current(for: settings.ttsPreferences)
+        settings.selectPrimaryNarration(TtsSelection(engine: "piper", modelID: "pt_BR-faber-medium", voice: nil))
+        let faber = NarrationConversionOptions.current(for: settings.ttsPreferences)
+
+        var jobs: [(id: String, model: String?)] = []
+        var failures: [Error] = []
+        var oldJobEnded = false
+        var opens = 0
+        var secondOpen: CheckedContinuation<URL, Error>?
+        let secondOpenPending = expectation(description: "The replacement's file open is pending")
+        let session = ReaderListeningSession(
+            player: player, playerPresentation: PlayerPresentation(defaults: defaults),
+            conversionExecutor: { _, jobID, _, _, control, options, _, _, _ in
+                jobs.append((jobID, options?.ttsPreferences?.primary.modelID))
+                let isFirst = jobs.count == 1
+                // Like Rust: a running job ends with a "cancelled" failure once its control is cancelled.
+                while control?.isCancellationRequested != true, !Task.isCancelled {
+                    try await Task.sleep(nanoseconds: 20_000_000)
+                }
+                if isFirst { oldJobEnded = true }
+                throw EmbeddedConverterError.conversionFailed("Conversion cancelled")
+            },
+            currentBookID: { "book" },
+            openBook: { _ in
+                opens += 1
+                if opens == 1 { return URL(fileURLWithPath: "/unused/book.epub") }
+                return try await withCheckedThrowingContinuation { continuation in
+                    secondOpen = continuation
+                    secondOpenPending.fulfill()
+                }
+            },
+            recordConversion: { _, _ in }, reportFailure: { failures.append($0) }
+        )
+        session.observePlayback()
+        session.start(book: book("book"), priority: 0, pageRatio: nil, catalog: [(index: 0, title: "One")],
+                      conversionOptions: cadu, presentsFullPlayer: false, chapterEstimates: [0: 600])
+        for _ in 0..<100 where player.snapshot?.jobId != jobs.first?.id || jobs.isEmpty {
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+        let first = try XCTUnwrap(jobs.first, "The first listening job must be running")
+        XCTAssertEqual(player.snapshot?.jobId, first.id)
+        XCTAssertEqual(first.model, "pt_BR-cadu-medium")
+
+        // The reader's model switch: the same book, from the current position, with the new model.
+        let change = ReaderVoiceChange(chapter: 0, pageRatio: 0.3, seek: nil, autoplay: true)
+        session.start(book: book("book"), priority: 0, pageRatio: 0.3, catalog: [(index: 0, title: "One")],
+                      conversionOptions: faber, presentsFullPlayer: false, chapterEstimates: [0: 600], voiceChange: change)
+        await fulfillment(of: [secondOpenPending], timeout: 3)
+        // While the replacement prepares, the player keeps publishing the retiring job's snapshot.
+        player.setSnapshot(try XCTUnwrap(player.snapshot))
+        XCTAssertTrue(session.isListening(to: "book"), "Republishing the retiring job must not cancel its replacement")
+
+        secondOpen?.resume(returning: URL(fileURLWithPath: "/unused/book.epub"))
+        for _ in 0..<100 where jobs.count < 2 { try await Task.sleep(nanoseconds: 30_000_000) }
+        XCTAssertEqual(jobs.count, 2, "The replacement job must start")
+        XCTAssertEqual(jobs.last?.model, "pt_BR-faber-medium", "...with the new model")
+        for _ in 0..<100 where !oldJobEnded { try await Task.sleep(nanoseconds: 30_000_000) }
+        XCTAssertTrue(oldJobEnded, "The old job is cancelled")
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(failures.isEmpty, "A retired job's cancellation is never shown as a failure: \(failures)")
+        XCTAssertTrue(session.isListening(to: "book"), "Playback continues with the new job")
+        XCTAssertEqual(player.snapshot?.jobId, jobs.last?.id)
+        XCTAssertNotEqual(player.snapshot?.state, "failed")
+        session.cancel()
+    }
 }
 #endif
